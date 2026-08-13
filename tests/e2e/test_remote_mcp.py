@@ -45,9 +45,7 @@ def _tool_call(adapter: str) -> dict[str, object]:
         }
     return {"name": tool_name, "arguments": {}}
 
-@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
-@pytest.mark.parametrize("adapter", ["claude", "codex", "deepagents", "hermes"])
-async def test_e2e_remote_mcp(
+async def _test_e2e_remote_mcp(
     adapter: str,
     api_server: str,
     mcp_server: tuple[str, Path],
@@ -135,3 +133,51 @@ async def test_e2e_remote_mcp(
         and record["headers"].get("x-api-key") == f"Bearer {secret_key}"
         for record in requests_logged
     ), requests_logged
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_e2e_remote_mcp_claude(
+    api_server: str,
+    mcp_server: tuple[str, Path],
+    tmp_path: Path,
+    adapter_ids: dict[str, str],
+):
+    pytest.importorskip("claude_agent_sdk")
+    await _test_e2e_remote_mcp(
+        "claude", api_server, mcp_server, tmp_path, adapter_ids
+    )
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_e2e_remote_mcp_codex(
+    api_server: str,
+    mcp_server: tuple[str, Path],
+    tmp_path: Path,
+    adapter_ids: dict[str, str],
+):
+    pytest.importorskip("openai_codex")
+    await _test_e2e_remote_mcp(
+        "codex", api_server, mcp_server, tmp_path, adapter_ids
+    )
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_e2e_remote_mcp_deepagents(
+    api_server: str,
+    mcp_server: tuple[str, Path],
+    tmp_path: Path,
+    adapter_ids: dict[str, str],
+):
+    pytest.importorskip("deepagents")
+    await _test_e2e_remote_mcp(
+        "deepagents", api_server, mcp_server, tmp_path, adapter_ids
+    )
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay", "requires_hermes_agent")
+async def test_e2e_remote_mcp_hermes(
+    api_server: str,
+    mcp_server: tuple[str, Path],
+    tmp_path: Path,
+    adapter_ids: dict[str, str],
+):
+    await _test_e2e_remote_mcp(
+        "hermes", api_server, mcp_server, tmp_path, adapter_ids
+    )
