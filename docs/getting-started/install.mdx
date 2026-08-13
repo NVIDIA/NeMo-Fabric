@@ -25,26 +25,22 @@ installation alternatives. A **No** entry means that the expression does not
 install that component; the component can already exist in the environment or
 be managed separately.
 
-| Installation | Runtime | Adapter | Harness | NeMo Relay Python Package |
-| --- | --- | --- | --- | --- |
-| `nemo-fabric` | Yes | No | No | No |
-| `nemo-fabric[relay]` | Yes | No | No | Yes |
-| `nemo-fabric[hermes-agent,relay]` | Yes | Yes | Yes | Yes |
-| `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | No |
-| `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | No |
-| `nemo-fabric-adapters-deepagents[full]` | No | Yes | Yes | Yes |
-| `nemo-fabric-adapters-hermes[relay]` | No | Yes | No | Yes |
-| `nemo-fabric-adapters-claude` | No | Yes | No | No |
+| Installation | Runtime | Adapter | Harness | Relay Python | Relay CLI |
+| --- | --- | --- | --- | --- | --- |
+| `nemo-fabric` | Yes | No | No | No | No |
+| `nemo-fabric[relay]` | Yes | No | No | Yes | No |
+| `nemo-fabric[hermes-agent,relay]` | Yes | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | Yes | Yes |
+| `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | Yes | Yes |
+| `nemo-fabric-adapters-deepagents[full]` | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-hermes[relay]` | No | Yes | No | Yes | No |
+| `nemo-fabric-adapters-claude` | No | Yes | No | No | No |
 
-An adapter package's `full` extra is scoped to the adapter environment. It
-installs the supported harness and any Python Relay dependency, but it does not
-install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent to
-`harness` because their Relay integration requires an external executable. For
-LangChain Deep Agents and Hermes Agent, `full` installs both the harness and the
-NeMo Relay Python package.
-
-For Claude and Codex, no NeMo Fabric package extra installs the external
-`nemo-relay` CLI required by Relay telemetry and `Runtime.invoke_stream()`.
+An adapter package's `full` extra is scoped to the adapter environment and does
+not install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent
+to `harness`; both install the supported harness and `nemo-relay` CLI. For
+LangChain Deep Agents and Hermes Agent, `full` installs the harness and NeMo
+Relay Python package without the CLI.
 
 ### Install the NeMo Fabric Runtime
 
@@ -71,15 +67,16 @@ pip install "nemo-fabric[hermes-agent]"
 
 Each `nemo-fabric` harness extra installs the corresponding adapter package
 with its `harness` extra. You can combine independent `nemo-fabric` extras. For
-example, the following command also installs Harbor and the NeMo Relay Python
-package:
+example, the following command also installs Harbor; the Claude harness extra
+supplies the Relay CLI, while `relay` supplies the Relay Python package:
 
 ```bash
 pip install "nemo-fabric[claude,harbor,relay]"
 ```
 
-The `relay` extra does not install the external `nemo-relay` CLI that Claude and
-Codex require for Relay-enabled runs.
+The Claude and Codex harness extras install the `nemo-relay` CLI required for
+Relay-enabled runs. The root `relay` extra installs only the Relay Python
+package for SDK-native integrations.
 
 ### Install an Adapter and Harness Without the Runtime
 
@@ -175,7 +172,8 @@ one or more `RelayOpenTelemetryEndpointConfig` entries.
 
 #### NeMo Relay CLI
 
-Install the compatible Python package and CLI binary together:
+Claude and Codex harness extras install the compatible Python package and CLI
+binary together. To install them independently of an adapter, run:
 
 ```bash
 pip install "nemo-relay[cli]>=0.7.2,<0.8"

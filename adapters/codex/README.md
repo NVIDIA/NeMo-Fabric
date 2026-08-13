@@ -16,8 +16,8 @@ The following table shows which components each installation provides:
 
 | Installation | Runtime | Adapter | Harness | NeMo Relay CLI |
 | --- | --- | --- | --- | --- |
-| `pip install "nemo-fabric[codex]"` | Yes | Yes | Yes | No |
-| `pip install "nemo-fabric-adapters-codex[harness]"` | No | Yes | Yes | No |
+| `pip install "nemo-fabric[codex]"` | Yes | Yes | Yes | Yes |
+| `pip install "nemo-fabric-adapters-codex[harness]"` | No | Yes | Yes | Yes |
 | `pip install nemo-fabric-adapters-codex` | No | Yes | No | No |
 
 For an environment-managed SDK, use `openai-codex==0.144.4`. For split runtime
@@ -25,9 +25,9 @@ and adapter environments, configure `ADAPTER_PYTHON` and use matching NeMo
 Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-The `full` extra is equivalent to `harness`. Relay is optional for ordinary
-runs. Relay telemetry and `Runtime.invoke_stream()` require the external CLI
-described under [Relay Integration](#relay-integration).
+The `full` extra is equivalent to `harness`. Both install the supported NeMo
+Relay CLI so Relay telemetry and `Runtime.invoke_stream()` work without a
+separate CLI installation.
 
 ## Authentication
 
@@ -146,9 +146,9 @@ Codex state variables, the selected model's `api_key_env`, and explicit
 ## Relay Integration
 
 Relay requires a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH`. The
-Codex adapter does not provide a `relay` extra. The root `nemo-fabric[relay]`
-extra installs only the Relay Python package, not the CLI. Follow the
-[NeMo Relay installation instructions](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-nemo-relay).
+Codex adapter does not provide a separate `relay` extra; its `harness` and
+`full` extras install the compatible CLI through `nemo-relay[cli]`. The root
+`nemo-fabric[relay]` extra installs only the Relay Python package.
 
 Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the
 installed `nemo-relay` CLI as a supervised sidecar; do not start the gateway

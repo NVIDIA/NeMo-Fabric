@@ -31,11 +31,9 @@ pip install "nemo-fabric-adapters-claude[harness]"
 ```
 
 The adapter package's `full` extra installs the same dependencies as `harness`;
-it does not install the NeMo Fabric runtime. Claude Relay integration launches
-the `nemo-relay` CLI and does not import the Relay Python API, so this adapter
-does not provide a `relay` extra. Follow the
-[NeMo Relay CLI installation procedure](../../getting-started/install.mdx#install-nemo-relay),
-then ensure `nemo-relay` is on `PATH`.
+it does not install the NeMo Fabric runtime. Both extras install the supported
+`nemo-relay` CLI. Claude does not import the Relay Python API, so this adapter
+does not provide a separate `relay` extra.
 
 If the environment already manages a compatible Claude Agent SDK, install only
 the adapter:

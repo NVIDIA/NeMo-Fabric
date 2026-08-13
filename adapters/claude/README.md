@@ -18,17 +18,17 @@ The following table shows which components each installation provides:
 
 | Installation | Runtime | Adapter | Harness | NeMo Relay CLI |
 | --- | --- | --- | --- | --- |
-| `pip install "nemo-fabric[claude]"` | Yes | Yes | Yes | No |
-| `pip install "nemo-fabric-adapters-claude[harness]"` | No | Yes | Yes | No |
+| `pip install "nemo-fabric[claude]"` | Yes | Yes | Yes | Yes |
+| `pip install "nemo-fabric-adapters-claude[harness]"` | No | Yes | Yes | Yes |
 | `pip install nemo-fabric-adapters-claude` | No | Yes | No | No |
 
 For split runtime and adapter environments, configure `ADAPTER_PYTHON` and use
 matching NeMo Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-The `full` extra is equivalent to `harness`. Relay is optional for ordinary
-runs. Relay telemetry and `Runtime.invoke_stream()` require the external CLI
-described under [Relay Observability](#relay-observability).
+The `full` extra is equivalent to `harness`. Both install the supported NeMo
+Relay CLI so Relay telemetry and `Runtime.invoke_stream()` work without a
+separate CLI installation.
 
 ## Authentication
 
@@ -122,9 +122,9 @@ by the SDK and is not persisted as a NeMo Fabric artifact.
 ## Relay Observability
 
 Relay requires a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH`. The
-Claude adapter does not provide a `relay` extra. The root `nemo-fabric[relay]`
-extra installs only the Relay Python package, not the CLI. Follow the
-[NeMo Relay installation instructions](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-nemo-relay).
+Claude adapter does not provide a separate `relay` extra; its `harness` and
+`full` extras install the compatible CLI through `nemo-relay[cli]`. The root
+`nemo-fabric[relay]` extra installs only the Relay Python package.
 
 Enable Relay through the normalized NeMo Fabric configuration:
 

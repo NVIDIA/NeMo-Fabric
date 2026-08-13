@@ -611,10 +611,9 @@ Streaming has the following v0.1 constraints:
   warning check.
 
 Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and
-require a release in the `>=0.7.2,<0.8` range. Follow the
-[NeMo Relay CLI installation instructions](../getting-started/install.mdx#install-nemo-relay)
-to provision it. Hermes Agent and Deep Agents use their in-process NeMo Relay
-integrations.
+require a release in the `>=0.7.2,<0.8` range. Their adapter `harness` and
+`full` extras install the supported CLI. Hermes Agent and Deep Agents use their
+in-process NeMo Relay integrations.
 
 ## Application-Owned Parallelism
 

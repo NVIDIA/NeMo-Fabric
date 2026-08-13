@@ -33,9 +33,11 @@ dependencies = [
 [project.optional-dependencies]
 harness = [
   "claude-agent-sdk==0.2.120",
+  "nemo-relay[cli]>=0.7.2,<0.8",
 ]
 full = [
   "claude-agent-sdk==0.2.120",
+  "nemo-relay[cli]>=0.7.2,<0.8",
 ]
 
 [project.urls]

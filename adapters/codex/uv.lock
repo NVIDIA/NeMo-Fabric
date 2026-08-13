@@ -32,9 +32,11 @@ dependencies = [
 
 [package.optional-dependencies]
 full = [
+    { name = "nemo-relay", extra = ["cli"] },
     { name = "openai-codex" },
 ]
 harness = [
+    { name = "nemo-relay", extra = ["cli"] },
     { name = "openai-codex" },
 ]
 
@@ -42,6 +44,8 @@ harness = [
 requires-dist = [
     { name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
+    { name = "nemo-relay", extras = ["cli"], marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },
+    { name = "nemo-relay", extras = ["cli"], marker = "extra == 'harness'", specifier = ">=0.7.2,<0.8" },
     { name = "openai-codex", marker = "extra == 'full'", specifier = "==0.144.4" },
     { name = "openai-codex", marker = "extra == 'harness'", specifier = "==0.144.4" },
     { name = "tomli-w", specifier = "~=1.2" },
@@ -52,6 +56,40 @@ provides-extras = ["harness", "full"]
 name = "nemo-fabric-adapters-common"
 version = "0.2.0"
 source = { editable = "../common" }
+
+[[package]]
+name = "nemo-relay"
+version = "0.7.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/81/a7a545ac3a2f8c670d261c89df599aa8fbf49d8be45fd1f52efb36b489eb/nemo_relay-0.7.2.tar.gz", hash = "sha256:828d9f6c7d7e4e42276bb7192bd44202c761e0c76fa4943d84e051b5a99028e5", size = 1295616, upload-time = "2026-08-08T01:54:00.953Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/cd/f50440257f01bc5ab3d668331c90e06cf4edcc84dc7dc582d322ad05b622/nemo_relay-0.7.2-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:e7c7977f0903793cc34c5542bf2b2e44d107def8a5ae9f1b28f06dd61ddec4ed", size = 9246341, upload-time = "2026-08-08T01:53:19.832Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/9f/4041446dd134218799a34b5b5fad3a62d3e1d0a6c322ba2ca4b896ba1393/nemo_relay-0.7.2-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b4ae77c1f3d58eabda264e82ffaca54548df80caede7dd6af8cbd8f72b4a82ed", size = 8454070, upload-time = "2026-08-08T01:53:22.524Z" },
+    { url = "https://files.pythonhosted.org/packages/11/83/90230c2e9fae1aee39f768d4a9ef57e9f2716bcaed1a5923cce8b526c66b/nemo_relay-0.7.2-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0ce7103aec546766649c182619d16aa6ad07439e4d0ebd16d95c5004afb3e56a", size = 8954377, upload-time = "2026-08-08T01:53:25.267Z" },
+    { url = "https://files.pythonhosted.org/packages/71/e7/463fa461d0801146fec6a00cbc02e8961b30089d65ba170f9dfa9e6e3dcd/nemo_relay-0.7.2-cp311-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:2e7d0c2629ade7313aaed71d2272dca96a2fafad0248d0f87cf40a7720b252a0", size = 10322132, upload-time = "2026-08-08T01:53:27.991Z" },
+    { url = "https://files.pythonhosted.org/packages/32/8c/e20ec9c52bd1edd953157aaf24d0d9f9ab8afcbf108fc2356f398e252da8/nemo_relay-0.7.2-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:b841c92395d7686c7f233036008294b9d362af1ec5123ab0babbfd11cbb04054", size = 10704141, upload-time = "2026-08-08T01:53:30.453Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/c1/92a73961ea759b433b1f897b225662d499123cb962b48dc8ece19f610a09/nemo_relay-0.7.2-cp311-abi3-win_amd64.whl", hash = "sha256:0cdcc5e09d6d62d5c1d385dc62c9233eb714a25f36a09da81e5b9731e3c67903", size = 8803938, upload-time = "2026-08-08T01:53:33.437Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/ec/2de114dab437431173988b9b11f46e8d377e12d57e1b4903258f3e03c2df/nemo_relay-0.7.2-cp311-abi3-win_arm64.whl", hash = "sha256:ca5f66e617311f836a10d96f120f3f32a99b4267d65048453b31951de3419a9d", size = 8438997, upload-time = "2026-08-08T01:53:36.12Z" },
+]
+
+[package.optional-dependencies]
+cli = [
+    { name = "nemo-relay-cli-bin" },
+]
+
+[[package]]
+name = "nemo-relay-cli-bin"
+version = "0.7.2"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/4d/a81d807ef45b2b216d6f5982d9e0443238c8ad8af3081d13dd5fc229c95d/nemo_relay_cli_bin-0.7.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:90ffae675b6c21be68e67f9edb5d2641fe324a869c3d43f5a669cf6cc838341d", size = 11363061, upload-time = "2026-08-08T01:53:39.369Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/03/06b5293540c3a42be2babd76b704efa96fbdd30e98273260c8be6df3ca39/nemo_relay_cli_bin-0.7.2-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:ae2f1d50f1177ddad4bcfb5d84ba74bf30c95baf32d6d48872c11bbb0dc9cf37", size = 11705962, upload-time = "2026-08-08T01:53:42.338Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/da/05aa704a0b4ba95c5ac13042605c47900028dda0b408d6a6b447cb01f9cb/nemo_relay_cli_bin-0.7.2-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:5d9feafb8e91205ecaa63d60067ac6b16e3f38388222e3f5615c5cf6e4c83c9f", size = 11754574, upload-time = "2026-08-08T01:53:45.117Z" },
+    { url = "https://files.pythonhosted.org/packages/11/a3/ec7004850e926ec3545a95803760ec7ab3ea08266a5ca538b321201fdfd0/nemo_relay_cli_bin-0.7.2-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:d033a31b9024cf8042d07ff06091693276dc2a95bddc78cfcacca5c09187a24d", size = 11680753, upload-time = "2026-08-08T01:53:48.057Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/e0/df0498cc6166d6e2953242ae3fc345627c39a804df0776bcbc11f06250e9/nemo_relay_cli_bin-0.7.2-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:039a17a42c68cff9980ec7f8529083f7a6baa7646b383c96e5892cbca0dcd408", size = 12339559, upload-time = "2026-08-08T01:53:50.703Z" },
+    { url = "https://files.pythonhosted.org/packages/40/02/d2df64986bab3b8f1e443c158cc57d43c357b43af794c18daf31cc595af8/nemo_relay_cli_bin-0.7.2-py3-none-win_amd64.whl", hash = "sha256:ccb76eb01af7632c27385082691830f0fe41af079ff2a50b107c8a677fc9035e", size = 9946628, upload-time = "2026-08-08T01:53:53.614Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/84/00931350543b731d454d6a3d672969adcfbe323453af3449c14a30d93b78/nemo_relay_cli_bin-0.7.2-py3-none-win_arm64.whl", hash = "sha256:483ee1177f38c0eadf57e81e21a99b2f29acd9ff2e7f07d32d50435b7c13358d", size = 9430042, upload-time = "2026-08-08T01:53:57.138Z" },
+]
 
 [[package]]
 name = "openai-codex"
