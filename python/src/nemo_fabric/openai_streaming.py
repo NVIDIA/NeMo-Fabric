@@ -144,6 +144,9 @@ class _OpenAIStreamListener:
         self._set_error(message)
         self._completion.set()
 
+    def set_error(self, message: str) -> None:
+        self._set_error(message)
+
     def _accept(
         self,
         reader: asyncio.StreamReader,
@@ -173,27 +176,7 @@ class _OpenAIStreamListener:
                 reader.readuntil(b"\r\n\r\n"),
                 _OPENAI_STREAM_HEADER_TIMEOUT,
             )
-            request_line, *header_lines = request[:-4].split(b"\r\n")
-            method, target, _version = request_line.decode("ascii").split(" ", 2)
-            headers = _http_headers(header_lines)
-            if method != "POST" or target.split("?", 1)[0] != _STREAM_PATH:
-                raise _ProtocolError("Unknown OpenAI stream endpoint", 404)
-            authorization = headers.get("authorization", "")
-            if not secrets.compare_digest(authorization, f"Bearer {self._token}"):
-                raise _ProtocolError("Invalid OpenAI stream authorization", 401)
-            if headers.get("content-type", "").split(";", 1)[0].strip() != (
-                "application/x-ndjson"
-            ):
-                raise _ProtocolError("OpenAI stream must use NDJSON", 415)
-            transfer_codings = [
-                coding.strip().lower()
-                for coding in headers.get("transfer-encoding", "").split(",")
-                if coding.strip()
-            ]
-            if not transfer_codings or transfer_codings[-1] != "chunked":
-                raise _ProtocolError("OpenAI stream must use chunked transfer encoding", 411)
-            if headers.get("expect", "").lower() != "100-continue":
-                raise _ProtocolError("OpenAI stream must use Expect: 100-continue", 417)
+            self._validate_request(request)
             # Authentication and request validation are connection-local. Claim the
             # invocation only after they succeed, with no await between check/set.
             if self._connected:
@@ -210,10 +193,13 @@ class _OpenAIStreamListener:
                 raise _ProtocolError("OpenAI stream ended without an end record")
             await _write_http_response(writer, 200, "OK")
         except _ProtocolError as error:
-            if claimed:
-                self._set_error(str(error))
-            with suppress(ConnectionError):
-                await _write_http_response(writer, error.status, "Rejected")
+            await self._reject_client(
+                writer,
+                claimed,
+                str(error),
+                error.status,
+                "Rejected",
+            )
         except (
             UnicodeDecodeError,
             ValueError,
@@ -221,30 +207,82 @@ class _OpenAIStreamListener:
             asyncio.IncompleteReadError,
             asyncio.LimitOverrunError,
         ):
-            if claimed:
-                self._set_error("OpenAI stream contained malformed transport data")
-            with suppress(ConnectionError):
-                await _write_http_response(writer, 400, "Bad Request")
+            await self._reject_client(
+                writer,
+                claimed,
+                "OpenAI stream contained malformed transport data",
+                400,
+                "Bad Request",
+            )
         except ConnectionError:
-            if claimed:
-                self._connection_closed = True
-                self._set_error("OpenAI stream connection closed before completion")
+            self._record_connection_closed(claimed)
         except asyncio.CancelledError:
             raise
         except Exception:
-            if claimed:
-                self._set_error("OpenAI stream transport failed while parsing records")
-            with suppress(ConnectionError):
-                await _write_http_response(writer, 400, "Bad Request")
+            await self._reject_client(
+                writer,
+                claimed,
+                "OpenAI stream transport failed while parsing records",
+                400,
+                "Bad Request",
+            )
         finally:
-            if claimed and not self._ended and self._error is not None:
-                await self._queue.put(_END)
-            if claimed:
-                self._completion.set()
-            self._writers.discard(writer)
-            writer.close()
-            with suppress(ConnectionError):
-                await writer.wait_closed()
+            await self._finish_client(writer, claimed)
+
+    async def _reject_client(
+        self,
+        writer: asyncio.StreamWriter,
+        claimed: bool,
+        message: str,
+        status: int,
+        reason: str,
+    ) -> None:
+        if claimed:
+            self._set_error(message)
+        with suppress(ConnectionError):
+            await _write_http_response(writer, status, reason)
+
+    def _record_connection_closed(self, claimed: bool) -> None:
+        if claimed:
+            self._connection_closed = True
+            self._set_error("OpenAI stream connection closed before completion")
+
+    async def _finish_client(
+        self,
+        writer: asyncio.StreamWriter,
+        claimed: bool,
+    ) -> None:
+        if claimed and not self._ended and self._error is not None:
+            await self._queue.put(_END)
+        if claimed:
+            self._completion.set()
+        self._writers.discard(writer)
+        writer.close()
+        with suppress(ConnectionError):
+            await writer.wait_closed()
+
+    def _validate_request(self, request: bytes) -> None:
+        request_line, *header_lines = request[:-4].split(b"\r\n")
+        method, target, _version = request_line.decode("ascii").split(" ", 2)
+        headers = _http_headers(header_lines)
+        if method != "POST" or target.split("?", 1)[0] != _STREAM_PATH:
+            raise _ProtocolError("Unknown OpenAI stream endpoint", 404)
+        authorization = headers.get("authorization", "")
+        if not secrets.compare_digest(authorization, f"Bearer {self._token}"):
+            raise _ProtocolError("Invalid OpenAI stream authorization", 401)
+        if headers.get("content-type", "").split(";", 1)[0].strip() != (
+            "application/x-ndjson"
+        ):
+            raise _ProtocolError("OpenAI stream must use NDJSON", 415)
+        transfer_codings = [
+            coding.strip().lower()
+            for coding in headers.get("transfer-encoding", "").split(",")
+            if coding.strip()
+        ]
+        if not transfer_codings or transfer_codings[-1] != "chunked":
+            raise _ProtocolError("OpenAI stream must use chunked transfer encoding", 411)
+        if headers.get("expect", "").lower() != "100-continue":
+            raise _ProtocolError("OpenAI stream must use Expect: 100-continue", 417)
 
     async def _read_chunked(
         self,
@@ -535,64 +573,10 @@ class OpenAIInvokeStream:
             elif not queue.empty():
                 item = queue.get_nowait()
             elif self._task.done():
-                if self._task.cancelled() or self._task.exception() is not None:
-                    await self._finalize()
-                    self._raise_stream_error()
-                    raise StopAsyncIteration
-                result = self._task.result()
-                if (
-                    result.status != "succeeded"
-                    and self._listener.invocation_id is None
-                ):
-                    await self._finalize()
-                    raise StopAsyncIteration
-                getter = asyncio.create_task(queue.get())
-                try:
-                    await asyncio.wait(
-                        {getter},
-                        timeout=_OPENAI_STREAM_COMPLETION_TIMEOUT,
-                    )
-                except asyncio.CancelledError:
-                    if not getter.done():
-                        getter.cancel()
-                    try:
-                        self._pending_item = await getter
-                    except asyncio.CancelledError:
-                        pass
-                    raise
-                if getter.done() and not getter.cancelled():
-                    item = getter.result()
-                else:
-                    getter.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await getter
-                    self._listener.fail(
-                        "OpenAI stream did not establish and complete its event channel"
-                    )
-                    await self._finalize()
-                    self._raise_stream_error()
-                    raise StopAsyncIteration from None
+                item = await self._next_item_after_terminal_result(queue)
             else:
-                getter = asyncio.create_task(queue.get())
-                try:
-                    await asyncio.wait(
-                        {getter, self._task},
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                except asyncio.CancelledError:
-                    if not getter.done():
-                        getter.cancel()
-                    try:
-                        self._pending_item = await getter
-                    except asyncio.CancelledError:
-                        pass
-                    raise
-                if getter.done() and not getter.cancelled():
-                    item = getter.result()
-                else:
-                    getter.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await getter
+                item = await self._next_item_while_running(queue)
+                if item is None:
                     continue
             if item is _END:
                 self._end_observed = True
@@ -600,6 +584,69 @@ class OpenAIInvokeStream:
                 self._raise_stream_error()
                 raise StopAsyncIteration
             return item  # type: ignore[return-value]
+
+    async def _next_item_after_terminal_result(
+        self,
+        queue: _ChunkQueue,
+    ) -> dict[str, Any] | object:
+        if self._task.cancelled() or self._task.exception() is not None:
+            await self._finalize()
+            self._raise_stream_error()
+            raise StopAsyncIteration
+        result = self._task.result()
+        if result.status != "succeeded" and self._listener.invocation_id is None:
+            await self._finalize()
+            raise StopAsyncIteration
+        getter = asyncio.create_task(queue.get())
+        try:
+            await asyncio.wait(
+                {getter},
+                timeout=_OPENAI_STREAM_COMPLETION_TIMEOUT,
+            )
+        except asyncio.CancelledError:
+            if not getter.done():
+                getter.cancel()
+            try:
+                self._pending_item = await getter
+            except asyncio.CancelledError:
+                pass
+            raise
+        if getter.done() and not getter.cancelled():
+            return getter.result()
+        getter.cancel()
+        with suppress(asyncio.CancelledError):
+            await getter
+        self._listener.fail(
+            "OpenAI stream did not establish and complete its event channel"
+        )
+        await self._finalize()
+        self._raise_stream_error()
+        raise StopAsyncIteration from None
+
+    async def _next_item_while_running(
+        self,
+        queue: _ChunkQueue,
+    ) -> dict[str, Any] | object | None:
+        getter = asyncio.create_task(queue.get())
+        try:
+            await asyncio.wait(
+                {getter, self._task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        except asyncio.CancelledError:
+            if not getter.done():
+                getter.cancel()
+            try:
+                self._pending_item = await getter
+            except asyncio.CancelledError:
+                pass
+            raise
+        if getter.done() and not getter.cancelled():
+            return getter.result()
+        getter.cancel()
+        with suppress(asyncio.CancelledError):
+            await getter
+        return None
 
     async def result(self) -> RunResult:
         """Drain the stream and return its separate normalized terminal result."""
@@ -651,6 +698,7 @@ class OpenAIInvokeStream:
                 if not self._task.cancelled():
                     raise
             except Exception:
+                # result() and _raise_stream_error() propagate this task failure.
                 pass
 
             if result is not None:
@@ -684,7 +732,7 @@ class OpenAIInvokeStream:
             else:
                 mismatched = result.invocation_id != invocation_id
             if mismatched:
-                self._listener._set_error(
+                self._listener.set_error(
                     "OpenAI stream invocation ID does not match its terminal result"
                 )
         if self._listener.error is not None:

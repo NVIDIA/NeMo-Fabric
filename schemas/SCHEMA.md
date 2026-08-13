@@ -86,10 +86,10 @@ descriptor schema.
   and the northbound `run-request`. It will be removed after adapters consume
   the typed southbound request directly.
 - `adapter-contract/legacy/openai-stream-invocation`: current native OpenAI
-  stream payload sent to an initialized persistent local adapter host. It adds
-  a Fabric-owned authenticated loopback stream sink to the per-turn runtime
-  context and request. The common host validates and removes the sink before
-  calling `invoke_openai_stream(payload, emit)`.
+  stream payload sent to an initialized persistent local adapter host. It
+  contains the per-turn runtime context and request plus a Fabric-owned
+  authenticated loopback stream sink. The common host validates and removes the
+  sink before calling `invoke_openai_stream(payload, emit)`.
 - `adapter-contract/legacy/openai-stream-record`: correlated chunk and explicit
   end records carried as chunked NDJSON. The chunk variant freezes the
   `openai.chat_completions.chunk/v1` profile accepted by the SDK listener.

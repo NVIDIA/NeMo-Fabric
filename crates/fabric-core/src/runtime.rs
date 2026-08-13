@@ -3084,7 +3084,31 @@ for line in sys.stdin:
         let port = listener.local_addr().expect("listener address").port();
         let expected_token = token.to_string();
         let capture = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept stream connection");
+            listener
+                .set_nonblocking(true)
+                .expect("set stream listener nonblocking");
+            let accept_deadline = Instant::now() + Duration::from_secs(5);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error)
+                        if error.kind() == ErrorKind::WouldBlock
+                            && Instant::now() < accept_deadline =>
+                    {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                        panic!("timed out waiting for stream connection")
+                    }
+                    Err(error) => panic!("accept stream connection: {error}"),
+                }
+            };
+            stream
+                .set_nonblocking(false)
+                .expect("set accepted stream blocking");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("set stream read timeout");
             let mut reader = BufReader::new(stream.try_clone().expect("clone stream"));
             let mut headers = Vec::new();
             loop {
