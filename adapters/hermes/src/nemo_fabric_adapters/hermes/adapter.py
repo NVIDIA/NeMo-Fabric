@@ -21,12 +21,11 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
+import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
-from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
-import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import telemetry
 
