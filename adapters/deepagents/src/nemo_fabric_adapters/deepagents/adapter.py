@@ -943,10 +943,10 @@ def resolve_observability(
 
     if relay_enabled and telemetry_provider == "relay":
         return Observability(
-            common_utils.load_relay_plugin_config(
-                base_dir_value=base_dir,
+            common_utils.load_relay_plugin_config_for_runtime(
+                base_dir=base_dir,
                 runtime_id=runtime_context.runtime_id,
-                agent_name_value=agent_name,
+                agent_name=agent_name,
                 model_name=model_name,
             ),
             "deepagents.observability/nemo_relay",
