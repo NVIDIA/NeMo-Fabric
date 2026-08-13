@@ -31,10 +31,10 @@ Use the generated
 [`AgentRunResult` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-run-result.schema.json)
 for exact fields and constraints.
 
-A failed result must contain `error`. A succeeded result must not contain
-`error`. Do not infer status from arbitrary fields in `output`. Exactly one
-terminal result is produced for an invocation, and its status is immutable
-once returned.
+A failed result must contain `error`. A succeeded result can omit `error` or
+set it to `null`; it must not contain a non-null error. Do not infer status
+from arbitrary fields in `output`. Exactly one terminal result is produced for
+an invocation, and its status is immutable once returned.
 
 ## Failure Classes
 

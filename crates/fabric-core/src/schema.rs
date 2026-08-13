@@ -449,6 +449,10 @@ mod tests {
         })));
         assert!(validator.is_valid(&serde_json::json!({
             "status": "succeeded",
+            "output": null
+        })));
+        assert!(validator.is_valid(&serde_json::json!({
+            "status": "succeeded",
             "output": null,
             "error": null
         })));
