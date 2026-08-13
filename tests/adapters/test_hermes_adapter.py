@@ -626,14 +626,31 @@ def test_hermes_rejects_mcp_service_account_authentication():
         )
 
 
-def test_hermes_accepts_configured_mcp_oauth_timeout():
+def test_hermes_rejects_configured_mcp_oauth_timeout():
+    with pytest.raises(
+        ValueError,
+        match="authorization_timeout_seconds is not supported by Hermes Agent",
+    ):
+        adapter.hermes_mcp_server_config(
+            AgentMcpServerConfig(
+                transport="streamable-http",
+                url="https://mcp.example.test/mcp",
+                authentication={
+                    "type": "oauth2",
+                    "authorization_timeout_seconds": 30,
+                },
+            )
+        )
+
+
+def test_hermes_accepts_default_mcp_oauth_timeout():
     config = adapter.hermes_mcp_server_config(
         AgentMcpServerConfig(
             transport="streamable-http",
             url="https://mcp.example.test/mcp",
             authentication={
                 "type": "oauth2",
-                "authorization_timeout_seconds": 30,
+                "authorization_timeout_seconds": 300,
             },
         )
     )

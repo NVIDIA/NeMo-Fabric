@@ -200,6 +200,11 @@ def hermes_mcp_server_config(
             raise ValueError(
                 f"MCP server {name!r} authentication.token_endpoint_auth_method is not supported by Hermes"
             )
+        if "authorization_timeout_seconds" in authentication.to_mapping():
+            raise ValueError(
+                f"MCP server {name!r} authentication.authorization_timeout_seconds "
+                "is not supported by Hermes Agent"
+            )
 
         oauth = common_utils.without_none(
             {
