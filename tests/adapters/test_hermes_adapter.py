@@ -252,7 +252,10 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
     monkeypatch.setattr(
         telemetry,
         "write_hermes_relay_plugin_config",
-        lambda _payload: (plugin_config_path, {"version": 1}),
+        lambda *, base_dir, runtime_id, agent_name, model_name: (
+            plugin_config_path,
+            {"version": 1},
+        ),
     )
 
     def stop_after_staging(*_args, **kwargs):
