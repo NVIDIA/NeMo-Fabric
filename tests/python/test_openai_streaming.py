@@ -438,6 +438,44 @@ async def test_failed_terminal_result_without_stream_preserves_failure(
     assert runtime.status is RuntimeStatus.ACTIVE
 
 
+@pytest.mark.parametrize("iterate_first", [False, True])
+async def test_host_crash_remains_authoritative_when_stream_connection_closes(
+    iterate_first,
+):
+    async def invoke(transport):
+        reader, writer = await asyncio.open_connection(
+            "127.0.0.1",
+            transport["port"],
+        )
+        writer.write(_stream_request(transport))
+        await writer.drain()
+        assert await _read_async_http_status(reader) == 100
+        writer.close()
+        await writer.wait_closed()
+        await asyncio.sleep(0)
+        raise FabricRuntimeError(
+            "persistent local adapter host exited while processing invoke_openai_stream",
+            stage="invoke",
+            code="host_crashed",
+        )
+
+    stream = openai_streaming.OpenAIInvokeStream(
+        invoke,
+        runtime_id="runtime-1",
+        request_id="request-1",
+    )
+
+    if iterate_first:
+        with pytest.raises(FabricRuntimeError) as iteration_error:
+            async for _chunk_value in stream:
+                pass
+        assert iteration_error.value.code == "host_crashed"
+
+    with pytest.raises(FabricRuntimeError) as result_error:
+        await stream.result()
+    assert result_error.value.code == "host_crashed"
+
+
 async def test_unauthenticated_probe_does_not_poison_the_adapter_stream(mock_native):
     def invoke_after_probe(_plan_json, runtime_json, request_json, transport_json):
         runtime = json.loads(runtime_json)

@@ -99,6 +99,7 @@ class _OpenAIStreamListener:
         self._invocation_id: str | None = None
         self._expected_sequence = 0
         self._connected = False
+        self._connection_closed = False
         self._ended = False
         self._discard = False
         self._error: FabricRuntimeError | None = None
@@ -123,6 +124,10 @@ class _OpenAIStreamListener:
     @property
     def records(self) -> _ChunkQueue:
         return self._queue
+
+    @property
+    def connection_closed(self) -> bool:
+        return self._connection_closed
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(self._accept, _HOST, self._port)
@@ -222,6 +227,7 @@ class _OpenAIStreamListener:
                 await _write_http_response(writer, 400, "Bad Request")
         except ConnectionError:
             if claimed:
+                self._connection_closed = True
                 self._set_error("OpenAI stream connection closed before completion")
         except asyncio.CancelledError:
             raise
@@ -247,6 +253,8 @@ class _OpenAIStreamListener:
     ) -> None:
         while True:
             size_line = await reader.readline()
+            if not size_line:
+                raise ConnectionError("OpenAI stream connection closed before completion")
             size = int(size_line.split(b";", 1)[0].strip(), 16)
             if size < 0:
                 raise _ProtocolError("Invalid OpenAI stream chunk size")
@@ -519,7 +527,7 @@ class OpenAIInvokeStream:
         while True:
             if self._end_observed:
                 await self._finalize()
-                self._raise_protocol_error()
+                self._raise_stream_error()
                 raise StopAsyncIteration
             if self._pending_item is not None:
                 item = self._pending_item
@@ -529,6 +537,7 @@ class OpenAIInvokeStream:
             elif self._task.done():
                 if self._task.cancelled() or self._task.exception() is not None:
                     await self._finalize()
+                    self._raise_stream_error()
                     raise StopAsyncIteration
                 result = self._task.result()
                 if (
@@ -561,7 +570,7 @@ class OpenAIInvokeStream:
                         "OpenAI stream did not establish and complete its event channel"
                     )
                     await self._finalize()
-                    self._raise_protocol_error()
+                    self._raise_stream_error()
                     raise StopAsyncIteration from None
             else:
                 getter = asyncio.create_task(queue.get())
@@ -588,7 +597,7 @@ class OpenAIInvokeStream:
             if item is _END:
                 self._end_observed = True
                 await self._finalize()
-                self._raise_protocol_error()
+                self._raise_stream_error()
                 raise StopAsyncIteration
             return item  # type: ignore[return-value]
 
@@ -603,9 +612,9 @@ class OpenAIInvokeStream:
                 self._raise_protocol_error()
             raise
         except Exception:
-            self._raise_protocol_error()
+            self._raise_stream_error()
             raise
-        self._raise_protocol_error()
+        self._raise_stream_error()
         return self._accepted_result if self._accepted_result is not None else result
 
     async def aclose(self) -> None:
@@ -697,6 +706,17 @@ class OpenAIInvokeStream:
         if error is not None:
             self._report_protocol_failure()
             raise error
+
+    def _raise_stream_error(self) -> None:
+        if (
+            self._listener.connection_closed
+            and self._task.done()
+            and not self._task.cancelled()
+        ):
+            invocation_error = self._task.exception()
+            if invocation_error is not None:
+                raise invocation_error
+        self._raise_protocol_error()
 
 
 def _http_headers(lines: list[bytes]) -> dict[str, str]:
