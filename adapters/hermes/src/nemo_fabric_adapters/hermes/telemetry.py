@@ -46,16 +46,11 @@ def validate_hermes_telemetry_provider(runtime_context: RuntimeContext) -> None:
 
 
 def write_hermes_relay_plugin_config(
-    *, base_dir: str, runtime_id: str, agent_name: str, model_name: str
+    payload: dict[str, Any],
 ) -> tuple[Path, dict[str, Any]]:
     """Stage Fabric's resolved Relay config for Hermes' bundled integration."""
 
-    plugin_config = common_utils.load_relay_plugin_config(
-        base_dir=base_dir,
-        runtime_id=runtime_id,
-        agent_name=agent_name,
-        model_name=model_name,
-    )
+    plugin_config = common_utils.load_relay_plugin_config(payload)
     hermes_plugin_config = copy.deepcopy(plugin_config)
     relay_version = distribution_version("nemo-relay")
     try:
