@@ -3,12 +3,15 @@
 
 import os
 import shutil
+import subprocess
 import sys
+import time
 import types
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import requests
 
 CUR_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = CUR_DIR.parent.resolve()
@@ -113,6 +116,52 @@ def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
 
     with mock_api_server(unused_tcp_port) as base_url:
         yield base_url
+
+
+@pytest.fixture(name="mcp_server")
+def mcp_server_fixture(
+    unused_tcp_port: int,
+    tmp_path: Path,
+) -> Iterator[tuple[str, Path]]:
+    log_path = tmp_path / "log.jsonl"
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(CUR_DIR / "_utils" / "logging_mcp_server.py"),
+            "--port",
+            str(unused_tcp_port),
+            "--log-requests",
+            str(log_path),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    base_url = f"http://127.0.0.1:{unused_tcp_port}"
+    deadline = time.monotonic() + 30
+    try:
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError(
+                    f"MCP server exited with status {process.returncode} before becoming healthy"
+                )
+            try:
+                response = requests.get(f"{base_url}/health", timeout=1)
+                if response.status_code == 200:
+                    break
+            except requests.RequestException:
+                pass
+            time.sleep(0.1)
+        else:
+            raise RuntimeError("MCP server did not become healthy within 30 seconds")
+
+        yield f"{base_url}/mcp", log_path
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
 
 
 @pytest.fixture(name="nemo_relay")

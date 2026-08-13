@@ -112,12 +112,15 @@ package = [
 
 test = [
     "fastapi~=0.138",
+    "mcp>=1.23",
     "mcp-server-time~=2026.7",
     "pkginfo~=1.12",
     "pytest>=8",
     "pytest-asyncio>=0.26",
     "pytest-cov~=7.0",
     "pyyaml>=6.0",
+    "requests~=2.32",
+    "starlette>=0.46",
     "tomli-w~=1.2",
     "uvicorn~=0.49",
 ]
