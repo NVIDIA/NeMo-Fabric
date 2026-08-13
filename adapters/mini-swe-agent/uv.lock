@@ -1170,8 +1170,8 @@ harness = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mini-swe-agent", marker = "extra == 'full'", specifier = "==2.4.6" },
-    { name = "mini-swe-agent", marker = "extra == 'harness'", specifier = "==2.4.6" },
+    { name = "mini-swe-agent", marker = "extra == 'full'", specifier = ">=2.0,<3" },
+    { name = "mini-swe-agent", marker = "extra == 'harness'", specifier = ">=2.0,<3" },
     { name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
 ]

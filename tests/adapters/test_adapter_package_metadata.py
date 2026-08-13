@@ -47,7 +47,7 @@ ADAPTER_EXTRAS = {
     "mini-swe-agent": {
         "path": "adapters/mini-swe-agent",
         "root": f"nemo-fabric-adapters-mini-swe-agent[harness] == {PACKAGE_VERSION}",
-        "harness": ["mini-swe-agent==2.4.6"],
+        "harness": ["mini-swe-agent>=2.0,<3"],
     },
     "hermes-agent": {
         "path": "adapters/hermes",

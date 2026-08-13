@@ -28,10 +28,10 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "timeout_seconds": {
+      "timeout": {
         "type": "integer",
         "minimum": 1,
-        "default": 180,
+        "default": 30,
         "description": "Maximum duration of one shell command."
       }
     },

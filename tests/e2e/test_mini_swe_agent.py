@@ -23,12 +23,12 @@ def mini_config(api_server: str, workspace: Path) -> FabricConfig:
         harness=HarnessConfig(
             adapter_id="nvidia.fabric.mini-swe-agent",
             resolution="preinstalled",
-            settings={"timeout_seconds": 30},
+            settings={"timeout": 30},
         ),
         models={
             "default": ModelConfig(
                 provider="openai",
-                model="fabric-echo",
+                model="gpt-4o-mini",
                 api_key_env="FABRIC_TEST_API_KEY",
                 base_url=f"{api_server}/v1",
                 temperature=0.0,
@@ -64,6 +64,7 @@ async def test_mini_swe_agent_plans_diagnoses_and_runs(
     )
     response.raise_for_status()
     monkeypatch.setenv("MSWEA_SILENT_STARTUP", "1")
+    monkeypatch.setenv("MSWEA_COST_TRACKING", "ignore_errors")
     monkeypatch.setenv("MSWEA_GLOBAL_CONFIG_DIR", str(tmp_path / "mini-config"))
     config = mini_config(api_server, tmp_path)
     client = Fabric()

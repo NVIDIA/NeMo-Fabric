@@ -31,10 +31,10 @@ dependencies = [
 
 [project.optional-dependencies]
 harness = [
-  "mini-swe-agent==2.4.6",
+  "mini-swe-agent>=2.0,<3",
 ]
 full = [
-  "mini-swe-agent==2.4.6",
+  "mini-swe-agent>=2.0,<3",
 ]
 
 [project.urls]

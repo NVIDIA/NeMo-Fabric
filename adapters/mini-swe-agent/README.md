@@ -17,21 +17,21 @@ the mini-SWE-agent Python package is an implementation detail.
 | `pip install "nemo-fabric-adapters-mini-swe-agent[harness]"` | No | Yes | Yes |
 | `pip install nemo-fabric-adapters-mini-swe-agent` | No | Yes | No |
 
-The `harness` and `full` extras pin `mini-swe-agent==2.4.6`.
+The `harness` and `full` extras install the latest compatible mini-SWE-agent
+2.x release.
 
 ## Configuration
 
 The adapter maps `models`, `models.base_url`, `models.temperature`,
 `instructions.system`, `runtime.max_turns`, and `environment.workspace` to
 mini-SWE-agent. `runtime.timeout_seconds` remains the NVIDIA NeMo Fabric
-invocation deadline. Use the adapter-specific `harness.settings.timeout_seconds`
-to set the maximum duration of one shell command; it defaults to `180`.
+invocation deadline. Use the adapter-specific `harness.settings.timeout` to set
+the maximum duration of one shell command; mini-SWE-agent defaults to `30`.
 
-mini-SWE-agent uses LiteLLM. The adapter sends the configured model credential
-directly to LiteLLM from `models.<role>.api_key_env` or the conventional
-credential variable for OpenAI, Anthropic, NVIDIA, or OpenRouter. It does not
-persist the credential. The adapter does not expose MCP, skills, tool policy,
-native streaming, or native telemetry.
+mini-SWE-agent uses LiteLLM. The adapter forwards a configured
+`models.<role>.api_key_env` credential to LiteLLM without persisting it. Without
+that setting, LiteLLM uses its native credential handling. The adapter does not
+expose MCP, skills, tool policy, native streaming, or native telemetry.
 
 ```python
 import asyncio
@@ -45,7 +45,7 @@ config = FabricConfig(
     harness=HarnessConfig(
         adapter_id="nvidia.fabric.mini-swe-agent",
         resolution="preinstalled",
-        settings={"timeout_seconds": 180},
+        settings={"timeout": 30},
     ),
     models={
         "default": ModelConfig(

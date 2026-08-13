@@ -26,8 +26,9 @@ NeMo Fabric runtime, use the `harness` extra:
 pip install "nemo-fabric-adapters-mini-swe-agent[harness]"
 ```
 
-The `harness` and `full` extras both install `mini-swe-agent==2.4.6`. To use
-an environment-managed compatible package, install the bare adapter:
+The `harness` and `full` extras install the latest compatible mini-SWE-agent
+2.x release. To use an environment-managed compatible package, install the
+bare adapter:
 
 ```bash
 pip install nemo-fabric-adapters-mini-swe-agent
@@ -47,21 +48,20 @@ from nemo_fabric import HarnessConfig
 
 harness = HarnessConfig(
     adapter_id="nvidia.fabric.mini-swe-agent",
-    settings={"timeout_seconds": 180},
+    settings={"timeout": 30},
 )
 ```
 
 The adapter maps `models`, `models.base_url`, `models.temperature`,
 `instructions.system`, `runtime.max_turns`, and `environment.workspace` to
-mini-SWE-agent. It passes model credentials from `models.<role>.api_key_env` to
-LiteLLM without persisting the credential. When no explicit variable is
-configured, it uses the conventional variable for OpenAI, Anthropic, NVIDIA, or
-OpenRouter.
+mini-SWE-agent. It forwards a credential configured through
+`models.<role>.api_key_env` to LiteLLM without persisting it. Without that
+setting, LiteLLM uses its native credential handling.
 
 `runtime.timeout_seconds` remains the NVIDIA NeMo Fabric invocation deadline.
-The adapter-specific `harness.settings.timeout_seconds` maps to the maximum
-duration of one mini-SWE-agent shell command and defaults to `180` seconds.
-Planning validates that setting and rejects unknown adapter settings.
+The adapter-specific `harness.settings.timeout` maps to the maximum duration of
+one mini-SWE-agent shell command and defaults to `30` seconds. Planning
+validates that setting and rejects unknown adapter settings.
 
 mini-SWE-agent exposes its native bash tool only. The adapter does not support
 normalized MCP, skills, tool policy, native streaming, or native telemetry.
@@ -81,7 +81,7 @@ config = FabricConfig(
     metadata=MetadataConfig(name="mini-swe-agent"),
     harness=HarnessConfig(
         adapter_id="nvidia.fabric.mini-swe-agent",
-        settings={"timeout_seconds": 180},
+        settings={"timeout": 30},
     ),
     models={
         "default": ModelConfig(

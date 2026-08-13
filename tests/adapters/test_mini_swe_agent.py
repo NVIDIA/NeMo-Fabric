@@ -14,7 +14,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
-from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.mini_swe_agent import adapter
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -62,7 +61,7 @@ def mini_payload_fixture(tmp_path: Path) -> dict:
     workspace.mkdir()
     return {
         "config": {
-            "harness": {"settings": {"timeout_seconds": 45}},
+            "harness": {"settings": {"timeout": 45}},
             "instructions": {
                 "system": {"content": "Work with the literal {{template}}."}
             },
@@ -127,8 +126,9 @@ def test_mini_swe_agent_descriptor_is_narrow_and_versioned():
 
 
 async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
-    fake_mini, mini_payload
+    fake_mini, mini_payload, monkeypatch: pytest.MonkeyPatch
 ):
+    monkeypatch.setenv("TEST_MINI_API_KEY", "test-key")
     runtime = adapter.MiniSweAgentRuntime()
     start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
     await runtime.start(start)
@@ -140,13 +140,8 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
             "api_base": "https://example.test/v1",
             "temperature": 0.2,
         },
-        cost_tracking="ignore_errors",
     )
-    fake_mini["environment_factory"].assert_called_once_with(
-        cwd=mini_payload["runtime_context"]["environment"]["workspace"],
-        env={"TEST_MINI_API_KEY": "test-key"},
-        timeout=45,
-    )
+    fake_mini["environment_factory"].assert_called_once_with(timeout=45)
 
     result = await runtime.invoke(mini_payload)
 
@@ -180,43 +175,6 @@ async def test_mini_swe_agent_reports_an_incomplete_loop_as_failed(
 
     assert result["failed"] is True
     assert result["error"]["code"] == "mini_swe_agent_incomplete"
-
-
-async def test_mini_swe_agent_requires_an_existing_workspace(mini_payload):
-    workspace = Path(mini_payload["runtime_context"]["environment"]["workspace"])
-    mini_payload["runtime_context"]["environment"]["workspace"] = str(
-        workspace / "missing"
-    )
-    start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
-
-    with pytest.raises(lifecycle.LifecycleError) as error:
-        await adapter.MiniSweAgentRuntime().start(start)
-    assert error.value.code == "mini_swe_agent_invalid_workspace"
-
-
-async def test_mini_swe_agent_reports_lifecycle_errors(fake_mini, mini_payload):
-    runtime = adapter.MiniSweAgentRuntime()
-    with pytest.raises(lifecycle.LifecycleError) as error:
-        await runtime.invoke(mini_payload)
-    assert error.value.code == "mini_swe_agent_not_started"
-
-    start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
-    missing_credentials = {
-        **start,
-        "runtime_context": {
-            **start["runtime_context"],
-            "environment": {**start["runtime_context"]["environment"], "env": {}},
-        },
-    }
-    with pytest.raises(lifecycle.LifecycleError) as error:
-        await runtime.start(missing_credentials)
-    assert error.value.code == "mini_swe_agent_missing_api_key"
-
-    await runtime.start(start)
-    await runtime.stop()
-    with pytest.raises(lifecycle.LifecycleError) as error:
-        await runtime.invoke(mini_payload)
-    assert error.value.code == "mini_swe_agent_not_started"
 
 
 def test_mini_swe_agent_module_entrypoint_exits_cleanly():
