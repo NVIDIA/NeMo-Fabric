@@ -115,6 +115,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "tools.enabled",
         "tools.blocked",
         "mcp",
+        "mcp.auth.oauth2",
         "skills",
     ]
 

@@ -1524,6 +1524,7 @@ def test_descriptor_has_no_codex_binary_requirement():
         "models.base_url",
         "instructions.system",
         "mcp",
+        "mcp.auth.oauth2",
         "skills",
     ]
     assert descriptor["model_schema"]["if"]["properties"]["provider"] == {

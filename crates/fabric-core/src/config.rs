@@ -512,6 +512,9 @@ pub enum AdapterConfigField {
     /// Harness-native MCP servers.
     #[serde(rename = "mcp")]
     Mcp,
+    /// OAuth 2.0 authentication for MCP servers.
+    #[serde(rename = "mcp.auth.oauth2")]
+    McpAuthOauth2,
     /// Per-server MCP tool allowlists and blocklists.
     #[serde(rename = "mcp.tool_filters")]
     McpToolFilters,
