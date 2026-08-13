@@ -171,6 +171,7 @@ def atif_plugin_config(output_directory: Path) -> dict[str, Any]:
             {
                 "kind": "observability",
                 "config": {
+                    "version": 3,
                     "atif": {
                         "enabled": True,
                         "output_directory": str(output_directory),
@@ -213,6 +214,7 @@ def mock_codex_fixture(monkeypatch):
     mock_codex.next_result = None
     mock_codex.next_thread = None
     mock_codex.mcp_auth_statuses = {}
+    mock_codex.report_mcp_auth_statuses = True
     mock_codex.mcp_login_success = True
     mock_codex.mcp_login_error = None
     mock_codex.oauth_authorization_url = "https://auth.example.test/authorize"
@@ -274,7 +276,10 @@ def mock_codex_fixture(monkeypatch):
         async def thread_start(**kwargs):
             config = kwargs.get("config") or {}
             for name, server in config.get("mcp_servers", {}).items():
-                if server.get("auth") == "oauth":
+                if (
+                    server.get("auth") == "oauth"
+                    and mock_codex.report_mcp_auth_statuses
+                ):
                     mock_codex.mcp_auth_statuses.setdefault(
                         name, adapter.McpAuthStatus.o_auth
                     )
@@ -633,7 +638,7 @@ async def test_mcp_auth_statuses_distinguishes_request_timeout():
 
 @pytest.mark.parametrize(
     ("invocation_timeout", "oauth_timeout", "expected_timeout"),
-    [(30, 12, 12), (5, 12, 5)],
+    [(30, 12, 12), (5, 12, 5), (5.1, 12, 6)],
 )
 def test_codex_logs_into_mcp_server_before_first_turn(
     codex_payload,
@@ -710,6 +715,34 @@ def test_codex_reports_failed_mcp_oauth_login_before_turn(
     assert output["error"]["message"] == (
         "Codex MCP OAuth login failed for server 'remote'"
     )
+    mock_codex.instances[0].thread.turn.assert_not_awaited()
+
+
+def test_codex_reports_missing_mcp_auth_status_before_turn(codex_payload, mock_codex):
+    configure_mcp(
+        codex_payload,
+        {
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {"type": "oauth2"},
+            },
+        },
+    )
+    mock_codex.report_mcp_auth_statuses = False
+
+    output = invoke_once(codex_payload)
+
+    assert output["failed"] is True
+    assert output["error"] == {
+        "code": "codex_mcp_authentication_failed",
+        "message": "Codex did not report a status for MCP server 'remote'",
+        "retryable": False,
+    }
+    assert [call.args[0] for call in mock_codex.skill_request.await_args_list] == [
+        "mcpServerStatus/list"
+    ]
+    mock_codex.next_notification.assert_not_awaited()
     mock_codex.instances[0].thread.turn.assert_not_awaited()
 
 
@@ -1369,12 +1402,20 @@ def test_prepare_relay_reuses_one_resolved_executable(
     plugin_path = config_path.parent / "plugins.toml"
     resolve = MagicMock(return_value=executable)
     contract = MagicMock(
-        return_value=adapter.relay_gateway.RelayCliContract(
-            version=(0, 6, 0), observability_version=2
-        )
+        return_value=adapter.relay_gateway.RelayCliContract(version=(0, 7, 2))
     )
     write = MagicMock(return_value=(config_path, plugin_path))
-    load = MagicMock(return_value={"version": 1, "components": []})
+    load = MagicMock(
+        return_value={
+            "version": 1,
+            "components": [
+                {
+                    "kind": "observability",
+                    "config": {"version": 3, "atif": {"enabled": True}},
+                }
+            ],
+        }
+    )
     monkeypatch.setattr(adapter.relay_gateway, "resolve_relay_command", resolve)
     monkeypatch.setattr(adapter.relay_gateway, "relay_cli_contract", contract)
     monkeypatch.setattr(adapter.relay_gateway, "find_available_tcp_port", lambda: 43210)
@@ -1390,6 +1431,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
     assert relay.gateway.executable == executable
     assert relay.gateway.url == "http://127.0.0.1:43210"
     assert relay.gateway.openai_base_url == "https://acme.example/v1"
+    assert relay.plugin_config["components"][0]["config"]["version"] == 3
     resolve.assert_called_once_with(
         Path(codex_payload["base_dir"]).resolve(),
         "nemo-relay",
@@ -1405,8 +1447,56 @@ def test_prepare_relay_reuses_one_resolved_executable(
     )
     write.assert_called_once_with(
         relay_config={},
-        plugin_config={"version": 1, "components": []},
-        observability_version=2,
+        plugin_config={
+            "version": 1,
+            "components": [
+                {
+                    "kind": "observability",
+                    "config": {"version": 3, "atif": {"enabled": True}},
+                }
+            ],
+        },
+    )
+
+
+def test_prepare_relay_rejects_v2_observability_config(
+    codex_payload, monkeypatch, tmp_path
+):
+    codex_payload["runtime_context"]["telemetry"] = {
+        "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
+    }
+    relay_intent_path = tmp_path / "relay.json"
+    relay_intent_path.write_text(
+        json.dumps({"relay": {"config": {"version": 2}}}),
+        encoding="utf-8",
+    )
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(relay_intent_path)
+    executable = tmp_path / "nemo-relay"
+    executable.touch()
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "resolve_relay_command",
+        MagicMock(return_value=executable),
+    )
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "relay_cli_contract",
+        MagicMock(
+            return_value=adapter.relay_gateway.RelayCliContract(version=(0, 7, 2))
+        ),
+    )
+
+    config, context, base_dir = runtime_input(codex_payload)
+    with pytest.raises(adapter.AdapterRelayError) as caught:
+        adapter.prepare_codex_relay(
+            codex_payload["agent_name"], config, context, base_dir
+        )
+
+    assert caught.value.code == "codex_relay_configuration_failed"
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert str(caught.value.__cause__) == (
+        "unsupported NeMo Relay observability config version 2; expected version 3"
     )
 
 
@@ -1571,6 +1661,7 @@ def test_descriptor_has_no_codex_binary_requirement():
         "models.base_url",
         "instructions.system",
         "mcp",
+        "mcp.auth.oauth2",
         "skills",
     ]
     assert descriptor["model_schema"]["if"]["properties"]["provider"] == {

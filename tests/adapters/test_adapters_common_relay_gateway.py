@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import re
 import subprocess
 from unittest.mock import MagicMock, call
@@ -48,8 +49,9 @@ def test_resolve_relay_command_rejects_missing_executable(monkeypatch, tmp_path)
 @pytest.mark.parametrize(
     ("output", "expected_version"),
     [
-        ("nemo-relay 0.6.0-alpha.20260714\n", (0, 6, 0)),
-        ("nemo-relay 0.6.99\n", (0, 6, 99)),
+        ("nemo-relay 0.7.2\n", (0, 7, 2)),
+        ("nemo-relay 0.7.2+build.1\n", (0, 7, 2)),
+        ("nemo-relay 0.7.99\n", (0, 7, 99)),
     ],
 )
 def test_relay_cli_contract_selects_compatible_contract(
@@ -63,13 +65,18 @@ def test_relay_cli_contract_selects_compatible_contract(
 
     assert relay_gateway.relay_cli_contract(
         tmp_path / "nemo-relay"
-    ) == relay_gateway.RelayCliContract(
-        version=expected_version,
-        observability_version=2,
-    )
+    ) == relay_gateway.RelayCliContract(version=expected_version)
 
 
-@pytest.mark.parametrize("output", ["nemo-relay 0.5.9", "nemo-relay 0.7.0"])
+@pytest.mark.parametrize(
+    "output",
+    [
+        "nemo-relay 0.7.1",
+        "nemo-relay 0.7.2-alpha.20260811",
+        "nemo-relay 0.8.0",
+        "nemo-relay 1.0.0",
+    ],
+)
 def test_relay_cli_contract_rejects_unsupported_version(monkeypatch, tmp_path, output):
     monkeypatch.setattr(
         relay_gateway.subprocess,
@@ -79,7 +86,7 @@ def test_relay_cli_contract_rejects_unsupported_version(monkeypatch, tmp_path, o
 
     with pytest.raises(
         relay_gateway.RelayGatewayError,
-        match=r"NeMo Fabric requires >=0\.6\.0,<0\.7\.0",
+        match=r"NeMo Fabric requires >=0\.7\.2,<0\.8\.0",
     ):
         relay_gateway.relay_cli_contract(tmp_path / "nemo-relay")
 
@@ -98,6 +105,7 @@ def test_relay_cli_contract_rejects_unparseable_output(monkeypatch, tmp_path):
 
 
 def test_start_relay_gateway_captures_logs_and_waits_for_health(monkeypatch, tmp_path):
+    os.environ["NEMO_RELAY_CONFIG_SCOPE"] = "project"
     executable = tmp_path / "nemo-relay"
     config_path = tmp_path / "relay-config" / "config.toml"
     config_path.parent.mkdir()
@@ -136,6 +144,8 @@ def test_start_relay_gateway_captures_logs_and_waits_for_health(monkeypatch, tmp
         "https://anthropic.example",
     ]
     assert mock_popen.call_args.kwargs["cwd"] == tmp_path
+    assert mock_popen.call_args.kwargs["env"]["NEMO_RELAY_CONFIG_SCOPE"] == "user"
+    assert os.environ["NEMO_RELAY_CONFIG_SCOPE"] == "project"
     assert mock_popen.call_args.kwargs["stderr"] is subprocess.STDOUT
     assert mock_popen.call_args.kwargs["start_new_session"] is True
     assert mock_popen.call_args.kwargs["stdout"].name == str(log_path)

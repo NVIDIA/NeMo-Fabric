@@ -61,9 +61,9 @@ runtime assumptions but never installs harnesses or credentials at run time.
   bare `nemo-fabric-adapters-<adapter>` distribution. Bare adapter
   distributions contain only adapter-owned runtime dependencies.
 - LangChain Deep Agents and Hermes Agent adapter packages provide `relay` and
-  include the NeMo Relay Python package in `full`. Claude and Codex use an
-  external `nemo-relay` CLI, so their adapter packages do not provide `relay`,
-  and `full` equals `harness`.
+  include the NeMo Relay Python package in `full`. Claude and Codex do not
+  provide `relay`; their `harness` and `full` extras install the supported
+  `nemo-relay` CLI alongside the harness SDK.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise
@@ -147,6 +147,9 @@ def to_fabric_config(job) -> FabricConfig:
   exposes none; blocked tools are removed after applying that allowlist. Tool
   names must be non-blank, and planning rejects a tool that appears in both
   lists.
+- Configure MCP authentication only when the selected adapter declares
+  `mcp.auth.oauth2` or `mcp.auth.service_account`, matching the authentication
+  type.
 - Create deployment or evaluation variants with `model_copy(deep=True)` and
   ordinary Python functions; each copy plans and runs independently.
 - Pass `base_dir=...` to any `Fabric` call when the config uses relative paths,

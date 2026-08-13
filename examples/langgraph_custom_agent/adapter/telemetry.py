@@ -49,9 +49,7 @@ def _load_plugin_config(
             "Relay is enabled but RuntimeContext has no Relay configuration path",
         )
     try:
-        wrapper = json.loads(
-            Path(telemetry.config_path).read_text(encoding="utf-8")
-        )
+        wrapper = json.loads(Path(telemetry.config_path).read_text(encoding="utf-8"))
         plugin_config = wrapper.get("relay", {}).get("config") or {}
         if "components" not in plugin_config:
             plugin_config = {
@@ -60,7 +58,7 @@ def _load_plugin_config(
                     {
                         "kind": "observability",
                         "enabled": True,
-                        "config": plugin_config or {"version": 2},
+                        "config": plugin_config or {"version": 3},
                     }
                 ],
             }
@@ -125,12 +123,14 @@ async def observe_invocation(
         agent_name=agent_name,
         model_name=model_name,
     )
+    common_utils.reject_ambient_relay_plugin_config()
     plugin, scope, scope_type, callback_handler = _relay_api()
     observation = InvocationTelemetry(
         runnable_config={"callbacks": [callback_handler()]},
         plugin_config=plugin_config,
     )
-    async with plugin.plugin(plugin_config):
+    async with plugin.plugin(plugin_config) as activation_report:
+        common_utils.reject_inherited_relay_plugin_config(activation_report)
         with scope.scope(
             "email-phishing-invocation",
             scope_type.Agent,

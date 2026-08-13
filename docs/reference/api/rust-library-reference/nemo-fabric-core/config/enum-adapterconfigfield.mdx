@@ -20,6 +20,8 @@ pub enum AdapterConfigField {
     ToolDefinitions,
     BlockedTools,
     Mcp,
+    McpAuthOauth2,
+    McpAuthServiceAccount,
     McpToolFilters,
     Skills,
 }
@@ -82,6 +84,18 @@ Adapter-native tool names to block.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Mcp"}} /></pre>
 
 Harness-native MCP servers.
+
+### `McpAuthOauth2`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "McpAuthOauth2"}} /></pre>
+
+OAuth 2.0 authentication for MCP servers.
+
+### `McpAuthServiceAccount`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "McpAuthServiceAccount"}} /></pre>
+
+OAuth 2.0 service-account authentication for MCP servers.
 
 ### `McpToolFilters`
 

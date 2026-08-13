@@ -38,8 +38,11 @@ from nemo_fabric import RelayAtofConfig
 from nemo_fabric import RelayAtofFileSinkConfig
 from nemo_fabric import RelayAtofStreamSinkConfig
 from nemo_fabric import RelayComponentConfig
+from nemo_fabric import RelayConfig
 from nemo_fabric import RelayConfigPolicy
 from nemo_fabric import RelayObservabilityConfig
+from nemo_fabric import RelayOpenTelemetryConfig
+from nemo_fabric import RelayOpenTelemetryEndpointConfig
 from nemo_fabric import RunOutput
 from nemo_fabric import RunPlan
 from nemo_fabric import RunRequest
@@ -839,6 +842,16 @@ def test_fabric_config_authors_first_class_relay_observability():
                 filename_template="trajectory-{session_id}.atif.json",
                 agent_name="fabric-tests",
             ),
+            opentelemetry=RelayOpenTelemetryConfig(
+                enabled=True,
+                endpoints=[
+                    RelayOpenTelemetryEndpointConfig(
+                        type="openinference",
+                        endpoint="http://localhost:6006/v1/traces",
+                        header_env={"authorization": "OTEL_AUTHORIZATION"},
+                    )
+                ],
+            ),
         ),
         components=[
             RelayComponentConfig(kind="switchyard", config={"route": "canary"}),
@@ -852,7 +865,7 @@ def test_fabric_config_authors_first_class_relay_observability():
     assert config.to_mapping()["relay"] == {
         "output_dir": "./artifacts/relay",
         "observability": {
-            "version": 2,
+            "version": 3,
             "atof": {
                 "enabled": True,
                 "sinks": [
@@ -880,6 +893,23 @@ def test_fabric_config_authors_first_class_relay_observability():
                 "output_directory": "./artifacts/relay",
                 "filename_template": "trajectory-{session_id}.atif.json",
             },
+            "opentelemetry": {
+                "enabled": True,
+                "endpoints": [
+                    {
+                        "type": "openinference",
+                        "endpoint": "http://localhost:6006/v1/traces",
+                        "mark_projection": "inherit",
+                        "mark_exclude_names": ["llm.chunk"],
+                        "transport": "http_binary",
+                        "header_env": {"authorization": "OTEL_AUTHORIZATION"},
+                        "service_name": "unknown_service",
+                        "instrumentation_scope": "opentelemetry",
+                        "timeout_millis": 3000,
+                    }
+                ],
+            },
+            "enable_full_payloads": False,
         },
         "components": [
             {
@@ -894,6 +924,316 @@ def test_fabric_config_authors_first_class_relay_observability():
             "unsupported_value": "error",
         },
     }
+
+
+@pytest.mark.parametrize("version", [1, 2, 4, True, 3.0, "3"])
+def test_typed_relay_observability_requires_exact_v3(version):
+    with pytest.raises(
+        ValidationError, match="requires observability config version 3"
+    ):
+        RelayObservabilityConfig(version=version)
+
+
+def test_relay_mapping_inputs_validate_typed_v3_observability():
+    with pytest.raises(
+        ValidationError, match="requires observability config version 3"
+    ):
+        RelayConfig(observability={"version": 2})
+
+    with pytest.raises(
+        ValidationError, match="requires observability config version 3"
+    ):
+        FabricConfig(
+            metadata=MetadataConfig(name="demo"),
+            harness=HarnessConfig(adapter_id="test.fabric.shim"),
+            relay={"observability": {"version": 2}},
+        )
+
+    config = _fabric_config()
+    with pytest.raises(
+        ValidationError, match="requires observability config version 3"
+    ):
+        config.enable_relay(observability={"version": 2})
+    assert config.relay is None
+    assert config.telemetry is None
+
+    valid = FabricConfig(
+        metadata=MetadataConfig(name="demo"),
+        harness=HarnessConfig(adapter_id="test.fabric.shim"),
+        relay={"observability": {"version": 3}},
+    )
+    assert isinstance(valid.relay, RelayConfig)
+    assert isinstance(valid.relay.observability, RelayObservabilityConfig)
+
+
+@pytest.mark.parametrize("version", [1, 2, 4, True, 3.0, "3"])
+def test_relay_generic_observability_component_requires_explicit_v3(version):
+    with pytest.raises(
+        ValidationError, match="requires observability config version 3"
+    ):
+        RelayConfig(
+            components=[
+                RelayComponentConfig(
+                    kind="observability",
+                    config={"version": version},
+                )
+            ]
+        )
+
+
+def test_relay_generic_observability_component_allows_implicit_or_v3_version():
+    for config in ({}, {"version": 3}):
+        relay = RelayConfig(
+            components=[
+                RelayComponentConfig(kind="observability", config=config),
+            ]
+        )
+        assert relay.components[0].config == config
+
+
+def test_relay_generic_observability_component_requires_mapping_config():
+    with pytest.raises(ValidationError, match="component config must be an object"):
+        RelayConfig(
+            components=[
+                {
+                    "kind": "observability",
+                    "config": 1,
+                }
+            ]
+        )
+
+
+def test_relay_generic_observability_component_reports_version_before_v3_shape():
+    with pytest.raises(
+        ValidationError,
+        match="requires observability config version 3",
+    ):
+        RelayConfig(
+            components=[
+                RelayComponentConfig(
+                    kind="observability",
+                    config={
+                        "version": 2,
+                        "opentelemetry": {
+                            "enabled": True,
+                            "endpoint": "http://localhost:4318/v1/traces",
+                        },
+                    },
+                )
+            ]
+        )
+
+
+@pytest.mark.parametrize(
+    ("opentelemetry", "valid"),
+    [
+        ({"enabled": True}, False),
+        ({"enabled": True, "endpoints": []}, False),
+        ({"enabled": False, "endpoints": []}, True),
+    ],
+)
+def test_relay_generic_observability_component_requires_enabled_endpoint(
+    opentelemetry: dict[str, object],
+    valid: bool,
+):
+    config = {
+        "version": 3,
+        "opentelemetry": opentelemetry,
+    }
+    if valid:
+        relay = RelayConfig(
+            components=[
+                RelayComponentConfig(kind="observability", config=config),
+            ]
+        )
+        assert relay.components[0].config == config
+    else:
+        with pytest.raises(ValidationError, match="requires at least one endpoint"):
+            RelayConfig(
+                components=[
+                    RelayComponentConfig(kind="observability", config=config),
+                ]
+            )
+
+
+@pytest.mark.parametrize(
+    ("opentelemetry", "message"),
+    [
+        (False, "opentelemetry config must be an object"),
+        ({"enabled": "true"}, r"opentelemetry\.enabled must be a boolean"),
+        ({"endpoints": None}, r"opentelemetry\.endpoints must be a list"),
+        ({"endpoints": "endpoint"}, r"opentelemetry\.endpoints must be a list"),
+        (
+            {"endpoints": [False]},
+            r"endpoint must be an object for relay\.components\[0\]",
+        ),
+        (
+            {"endpoints": [{"endpoint": "http://localhost:4318/v1/traces"}]},
+            r"endpoint type must be one of .*endpoints\[0\]\.type",
+        ),
+        (
+            {
+                "endpoints": [
+                    {
+                        "type": "zipkin",
+                        "endpoint": "http://localhost:4318/v1/traces",
+                    }
+                ]
+            },
+            r"endpoint type must be one of .*endpoints\[0\]\.type",
+        ),
+    ],
+)
+def test_relay_generic_observability_component_rejects_malformed_opentelemetry(
+    opentelemetry: object,
+    message: str,
+):
+    with pytest.raises(ValidationError, match=message):
+        RelayConfig(
+            components=[
+                {
+                    "kind": "observability",
+                    "config": {
+                        "version": 3,
+                        "opentelemetry": opentelemetry,
+                    },
+                }
+            ]
+        )
+
+
+@pytest.mark.parametrize("endpoint_type", ["full", "gen_ai", "openinference"])
+def test_relay_generic_observability_component_accepts_endpoint_types(
+    endpoint_type: str,
+):
+    RelayConfig(
+        components=[
+            {
+                "kind": "observability",
+                "config": {
+                    "version": 3,
+                    "opentelemetry": {
+                        "endpoints": [
+                            {
+                                "type": endpoint_type,
+                                "endpoint": "http://localhost:4318/v1/traces",
+                            }
+                        ]
+                    },
+                },
+            }
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        {"type": "full"},
+        {"type": "full", "endpoint": None},
+        {"type": "full", "endpoint": 42},
+        {"type": "full", "endpoint": ""},
+        {"type": "full", "endpoint": "   "},
+    ],
+)
+def test_relay_generic_observability_component_requires_nonblank_endpoint(endpoint):
+    with pytest.raises(ValidationError, match="endpoint must be a non-empty string"):
+        RelayConfig(
+            components=[
+                {
+                    "kind": "observability",
+                    "config": {
+                        "version": 3,
+                        "opentelemetry": {
+                            "enabled": True,
+                            "endpoints": [endpoint],
+                        },
+                    },
+                }
+            ]
+        )
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "version": 3,
+            "openinference": {
+                "enabled": True,
+                "endpoint": "http://localhost:6006/v1/traces",
+            },
+        },
+        {
+            "version": 3,
+            "opentelemetry": {
+                "enabled": True,
+                "endpoint": "http://localhost:4318/v1/traces",
+            },
+        },
+    ],
+)
+def test_relay_generic_observability_component_rejects_legacy_exporters(config):
+    with pytest.raises(ValidationError, match="observability config version 3"):
+        RelayConfig(
+            components=[
+                RelayComponentConfig(kind="observability", config=config),
+            ]
+        )
+
+
+@pytest.mark.parametrize("endpoint", ["", "   "])
+def test_relay_opentelemetry_endpoint_must_be_nonblank(endpoint: str):
+    with pytest.raises(ValidationError):
+        RelayOpenTelemetryEndpointConfig(type="full", endpoint=endpoint)
+
+
+def test_relay_opentelemetry_requires_an_endpoint_when_enabled():
+    with pytest.raises(ValidationError, match="requires at least one endpoint"):
+        RelayOpenTelemetryConfig(enabled=True)
+
+    assert RelayOpenTelemetryConfig().endpoints == []
+
+
+def test_relay_observability_rejects_legacy_openinference_section():
+    with pytest.raises(ValidationError, match="as an opentelemetry endpoint"):
+        RelayObservabilityConfig(
+            openinference={
+                "enabled": True,
+                "endpoint": "http://localhost:6006/v1/traces",
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("attribute_mappings", [{"key": "model", "alias": "llm.model"}]),
+        ("endpoint", "http://localhost:4318/v1/traces"),
+        ("transport", "http_binary"),
+        ("headers", {"authorization": "test"}),
+        ("header_env", {"authorization": "OTEL_AUTHORIZATION"}),
+        ("resource_attributes", {"deployment.environment": "test"}),
+        ("service_name", "fabric"),
+        ("service_namespace", "platform"),
+        ("service_version", "0.4.0"),
+        ("instrumentation_scope", "fabric.relay"),
+        ("timeout_millis", 1000),
+        ("mark_projection", "tool"),
+        ("mark_exclude_names", ["llm.chunk"]),
+        ("semantic_selector", "openinference"),
+        ("capture_content", True),
+    ],
+)
+def test_relay_opentelemetry_rejects_flat_v2_exporter_fields(field, value):
+    with pytest.raises(ValidationError, match=rf"endpoints: {field}"):
+        RelayOpenTelemetryConfig(**{field: value})
+
+
+def test_relay_opentelemetry_preserves_unknown_future_fields():
+    config = RelayOpenTelemetryConfig(future_option={"enabled": True})
+
+    assert config.extra_fields == {"future_option": {"enabled": True}}
 
 
 @pytest.mark.parametrize(
@@ -947,6 +1287,21 @@ def test_fabric_config_enable_relay_preserves_omitted_fields():
 
     config.enable_relay(components=[])
     assert config.to_mapping()["relay"]["components"] == []
+
+
+def test_fabric_config_enable_relay_preserves_path_and_extra_fields():
+    output_dir = Path("artifacts") / "relay"
+    config = _fabric_config()
+    config.relay = RelayConfig(
+        output_dir=output_dir,
+        future_relay_option={"enabled": True},
+    )
+
+    config.enable_relay(project="fabric-tests")
+
+    assert config.relay.output_dir == output_dir
+    assert isinstance(config.relay.output_dir, Path)
+    assert config.relay.model_extra == {"future_relay_option": {"enabled": True}}
 
 
 def test_telemetry_config_enable_native_preserves_existing_config():

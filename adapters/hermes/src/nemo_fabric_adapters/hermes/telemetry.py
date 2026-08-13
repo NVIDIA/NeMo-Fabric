@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-import copy
-from importlib.metadata import version as distribution_version
 from pathlib import Path
 from typing import Any
 
@@ -50,49 +48,14 @@ def write_hermes_relay_plugin_config(
 ) -> tuple[Path, dict[str, Any]]:
     """Stage Fabric's resolved Relay config for Hermes' bundled integration."""
 
-    plugin_config = common_utils.load_relay_plugin_config(payload)
-    hermes_plugin_config = copy.deepcopy(plugin_config)
-    relay_version = distribution_version("nemo-relay")
-    try:
-        relay_major, relay_minor = (
-            int(part) for part in relay_version.split(".", maxsplit=2)[:2]
-        )
-    except ValueError as error:
-        raise RuntimeError(
-            f"unsupported NeMo Relay version {relay_version!r}"
-        ) from error
-    observability_version = 3 if (relay_major, relay_minor) >= (0, 7) else 2
+    common_utils.reject_ambient_relay_plugin_config()
+    hermes_plugin_config = common_utils.load_relay_plugin_config(payload)
     for component in hermes_plugin_config.get("components", []):
         if component.get("kind") != "observability":
             continue
         observability = component.get("config")
         if not isinstance(observability, dict):
             continue
-
-        if observability_version == 3 and observability.get("version") != 3:
-            # Relay 0.7 combines Fabric's legacy OTLP and OpenInference exporter
-            # settings into typed OpenTelemetry endpoints in its v3 schema.
-            endpoints = []
-            for config_name, endpoint_type in (
-                ("opentelemetry", "full"),
-                ("openinference", "openinference"),
-            ):
-                exporter = observability.pop(config_name, None)
-                if not isinstance(exporter, dict) or not exporter.get("enabled"):
-                    continue
-                endpoint = {
-                    key: value
-                    for key, value in exporter.items()
-                    if key != "enabled" and value is not None
-                }
-                endpoint["type"] = endpoint_type
-                endpoints.append(endpoint)
-            if endpoints:
-                observability["opentelemetry"] = {
-                    "enabled": True,
-                    "endpoints": endpoints,
-                }
-            observability["version"] = 3
 
         # Fabric finalizes Hermes' Relay session after every invocation. Each
         # finalization reinitializes Relay for the next turn, so a file sink
@@ -102,9 +65,8 @@ def write_hermes_relay_plugin_config(
                 if sink.get("mode") == "overwrite":
                     sink["mode"] = "append"
     _, plugin_config_path = common_utils.write_relay_configs(
-        plugin_config=hermes_plugin_config,
-        observability_version=observability_version,
+        plugin_config=hermes_plugin_config
     )
     if plugin_config_path is None:
         raise RuntimeError("Hermes Relay plugin configuration was not generated")
-    return plugin_config_path, plugin_config
+    return plugin_config_path, hermes_plugin_config

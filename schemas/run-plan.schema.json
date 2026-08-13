@@ -49,6 +49,16 @@
           "type": "string"
         },
         {
+          "const": "mcp.auth.oauth2",
+          "description": "OAuth 2.0 authentication for MCP servers.",
+          "type": "string"
+        },
+        {
+          "const": "mcp.auth.service_account",
+          "description": "OAuth 2.0 service-account authentication for MCP servers.",
+          "type": "string"
+        },
+        {
           "const": "mcp.tool_filters",
           "description": "Per-server MCP tool allowlists and blocklists.",
           "type": "string"
@@ -2206,27 +2216,21 @@
           ],
           "description": "ATOF export configuration."
         },
-        "openinference": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RelayOtlpConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "OpenInference export configuration."
+        "enable_full_payloads": {
+          "default": false,
+          "description": "Retain complete sanitized request data on LLM start events.",
+          "type": "boolean"
         },
         "opentelemetry": {
           "anyOf": [
             {
-              "$ref": "#/$defs/RelayOtlpConfig"
+              "$ref": "#/$defs/RelayOpenTelemetryConfig"
             },
             {
               "type": "null"
             }
           ],
-          "description": "OpenTelemetry export configuration."
+          "description": "OpenTelemetry and OpenInference export configuration."
         },
         "policy": {
           "anyOf": [
@@ -2240,45 +2244,88 @@
           "description": "Relay config validation policy."
         },
         "version": {
-          "default": 2,
+          "const": 3,
+          "default": 3,
           "description": "Relay observability config version.",
           "format": "uint32",
-          "maximum": 4294967295,
           "minimum": 0,
           "type": "integer"
         }
       },
       "type": "object"
     },
-    "RelayOtlpConfig": {
+    "RelayOpenTelemetryConfig": {
       "additionalProperties": true,
-      "description": "Relay OpenTelemetry/OpenInference export configuration.",
+      "description": "Relay OpenTelemetry export section.",
       "properties": {
         "enabled": {
           "default": false,
-          "description": "Whether OTLP export is enabled.",
+          "description": "Whether OpenTelemetry export is enabled.",
           "type": "boolean"
+        },
+        "endpoints": {
+          "description": "Typed OTLP destinations.",
+          "items": {
+            "$ref": "#/$defs/RelayOpenTelemetryEndpointConfig"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "RelayOpenTelemetryEndpointConfig": {
+      "additionalProperties": true,
+      "description": "One typed Relay OpenTelemetry OTLP destination.",
+      "properties": {
+        "attribute_mappings": {
+          "description": "Attribute mapping rules.",
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "type": "array"
         },
         "endpoint": {
           "description": "OTLP endpoint.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "header_env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment-variable-backed OTLP headers.",
+          "type": "object"
         },
         "headers": {
           "additionalProperties": {
             "type": "string"
           },
-          "description": "OTLP headers.",
+          "description": "Static OTLP headers.",
           "type": "object"
         },
         "instrumentation_scope": {
+          "default": "opentelemetry",
           "description": "OTLP instrumentation scope.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
+        },
+        "mark_exclude_names": {
+          "default": [
+            "llm.chunk"
+          ],
+          "description": "Event names excluded from mark projection.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mark_projection": {
+          "$ref": "#/$defs/RelayOpenTelemetryMarkProjection",
+          "default": "inherit",
+          "description": "Mark projection policy."
         },
         "resource_attributes": {
           "additionalProperties": {
@@ -2288,7 +2335,7 @@
           "type": "object"
         },
         "service_name": {
-          "default": "nemo-relay",
+          "default": "unknown_service",
           "description": "OTLP service name.",
           "type": "string"
         },
@@ -2318,9 +2365,57 @@
           "$ref": "#/$defs/RelayOtlpTransport",
           "default": "http_binary",
           "description": "OTLP transport."
+        },
+        "type": {
+          "$ref": "#/$defs/RelayOpenTelemetryEndpointType",
+          "description": "Span projection emitted to this destination."
         }
       },
+      "required": [
+        "type",
+        "endpoint"
+      ],
       "type": "object"
+    },
+    "RelayOpenTelemetryEndpointType": {
+      "description": "Relay OpenTelemetry span projection.",
+      "oneOf": [
+        {
+          "const": "full",
+          "description": "Emit full Relay spans.",
+          "type": "string"
+        },
+        {
+          "const": "gen_ai",
+          "description": "Emit GenAI semantic-convention spans.",
+          "type": "string"
+        },
+        {
+          "const": "openinference",
+          "description": "Emit OpenInference semantic-convention spans.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelayOpenTelemetryMarkProjection": {
+      "description": "Relay OpenTelemetry mark projection policy.",
+      "oneOf": [
+        {
+          "const": "inherit",
+          "description": "Inherit the endpoint type's projection behavior.",
+          "type": "string"
+        },
+        {
+          "const": "event",
+          "description": "Project marks as events.",
+          "type": "string"
+        },
+        {
+          "const": "tool",
+          "description": "Project marks as tool spans.",
+          "type": "string"
+        }
+      ]
     },
     "RelayOtlpTransport": {
       "description": "Relay OTLP transport.",

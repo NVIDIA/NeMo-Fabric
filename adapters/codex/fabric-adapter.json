@@ -91,6 +91,7 @@
       "models.base_url",
       "instructions.system",
       "mcp",
+      "mcp.auth.oauth2",
       "skills"
     ]
   },

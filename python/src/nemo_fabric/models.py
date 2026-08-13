@@ -30,6 +30,27 @@ from pydantic import model_serializer
 from pydantic import model_validator
 
 
+_LEGACY_FLAT_OTEL_FIELDS = frozenset(
+    {
+        "attribute_mappings",
+        "capture_content",
+        "endpoint",
+        "header_env",
+        "headers",
+        "instrumentation_scope",
+        "mark_exclude_names",
+        "mark_projection",
+        "resource_attributes",
+        "semantic_selector",
+        "service_name",
+        "service_namespace",
+        "service_version",
+        "timeout_millis",
+        "transport",
+    }
+)
+
+
 def _json_value(value: Any, name: str) -> Any:
     """Validate and detach a JSON-compatible value."""
 
@@ -650,30 +671,82 @@ class RelayAtifConfig(FabricBaseModel):
     ) = None
 
 
-class RelayOtlpConfig(FabricBaseModel):
-    """NeMo Relay OTLP export configuration for OpenTelemetry/OpenInference."""
+class RelayOpenTelemetryEndpointConfig(FabricBaseModel):
+    """One typed NeMo Relay OpenTelemetry destination."""
 
-    enabled: bool = False
+    type: Literal["full", "gen_ai", "openinference"]
+    endpoint: str = Field(min_length=1, pattern=r"\S")
+    mark_projection: Literal["inherit", "event", "tool"] = "inherit"
+    mark_exclude_names: list[str] = Field(default_factory=lambda: ["llm.chunk"])
+    attribute_mappings: list[dict[str, str]] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
     transport: Literal["http_binary", "grpc"] = "http_binary"
-    endpoint: str | None = None
-    headers: dict[str, str] = Field(default_factory=dict)
-    resource_attributes: dict[str, str] = Field(default_factory=dict)
-    service_name: str = "nemo-relay"
+    headers: dict[str, str] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
+    header_env: dict[str, str] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
+    resource_attributes: dict[str, str] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
+    service_name: str = "unknown_service"
     service_namespace: str | None = None
     service_version: str | None = None
-    instrumentation_scope: str | None = None
+    instrumentation_scope: str = "opentelemetry"
     timeout_millis: int = 3000
+
+
+class RelayOpenTelemetryConfig(FabricBaseModel):
+    """NeMo Relay typed OpenTelemetry destination configuration."""
+
+    enabled: bool = False
+    endpoints: list[RelayOpenTelemetryEndpointConfig] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
+
+    @model_validator(mode="after")
+    def _validate_v3_shape(self) -> Self:
+        legacy_fields = _LEGACY_FLAT_OTEL_FIELDS.intersection(self.model_extra or {})
+        if legacy_fields:
+            fields = ", ".join(sorted(legacy_fields))
+            raise ValueError(
+                "NeMo Relay observability config version 3 requires exporter "
+                f"fields inside opentelemetry.endpoints: {fields}"
+            )
+        if self.enabled and not self.endpoints:
+            raise ValueError(
+                "enabled NeMo Relay OpenTelemetry requires at least one endpoint"
+            )
+        return self
 
 
 class RelayObservabilityConfig(FabricBaseModel):
     """NeMo Relay observability component configuration."""
 
-    version: int = 2
+    version: Literal[3] = 3
     atof: RelayAtofConfig | dict[str, Any] | None = None
     atif: RelayAtifConfig | dict[str, Any] | None = None
-    opentelemetry: RelayOtlpConfig | dict[str, Any] | None = None
-    openinference: RelayOtlpConfig | dict[str, Any] | None = None
+    opentelemetry: RelayOpenTelemetryConfig | None = None
     policy: RelayConfigPolicy | dict[str, Any] | None = None
+    enable_full_payloads: bool = False
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _validate_version(cls, value: Any) -> Any:
+        if not isinstance(value, int) or isinstance(value, bool) or value != 3:
+            raise ValueError("NeMo Relay 0.7 requires observability config version 3")
+        return value
+
+    @model_validator(mode="after")
+    def _reject_legacy_openinference_section(self) -> Self:
+        if "openinference" in (self.model_extra or {}):
+            raise ValueError(
+                "NeMo Relay observability config version 3 requires OpenInference "
+                "as an opentelemetry endpoint"
+            )
+        return self
 
 
 class RelayComponentConfig(FabricBaseModel):
@@ -689,11 +762,107 @@ class RelayConfig(FabricBaseModel):
 
     project: str | None = None
     output_dir: str | Path | None = None
-    observability: RelayObservabilityConfig | dict[str, Any] | None = None
+    observability: RelayObservabilityConfig | None = None
     components: list[RelayComponentConfig | dict[str, Any]] = Field(
         default_factory=list
     )
     policy: RelayConfigPolicy | dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _validate_observability_component_versions(self) -> Self:
+        for index, component in enumerate(self.components):
+            if isinstance(component, RelayComponentConfig):
+                kind = component.kind
+                config = component.config
+            else:
+                kind = component.get("kind")
+                config = component.get("config", {})
+            if kind != "observability":
+                continue
+            if not isinstance(config, Mapping):
+                raise ValueError(
+                    "NeMo Relay observability component config must be an object "
+                    f"for relay.components[{index}]"
+                )
+            if "version" in config:
+                version = config["version"]
+                if (
+                    not isinstance(version, int)
+                    or isinstance(version, bool)
+                    or version != 3
+                ):
+                    raise ValueError(
+                        "NeMo Relay 0.7 requires observability config version 3 "
+                        f"for relay.components[{index}]"
+                    )
+            if "openinference" in config:
+                raise ValueError(
+                    "NeMo Relay observability config version 3 requires OpenInference "
+                    f"as an opentelemetry endpoint for relay.components[{index}]"
+                )
+            if "opentelemetry" not in config:
+                continue
+            opentelemetry = config["opentelemetry"]
+            if not isinstance(opentelemetry, Mapping):
+                raise ValueError(
+                    "NeMo Relay opentelemetry config must be an object for "
+                    f"relay.components[{index}]"
+                )
+            legacy_fields = sorted(
+                _LEGACY_FLAT_OTEL_FIELDS.intersection(opentelemetry)
+            )
+            if legacy_fields:
+                fields = ", ".join(legacy_fields)
+                raise ValueError(
+                    "NeMo Relay observability config version 3 requires exporter "
+                    "fields inside opentelemetry.endpoints for "
+                    f"relay.components[{index}]: {fields}"
+                )
+            enabled = opentelemetry.get("enabled", False)
+            if not isinstance(enabled, bool):
+                raise ValueError(
+                    "NeMo Relay opentelemetry.enabled must be a boolean for "
+                    f"relay.components[{index}]"
+                )
+            endpoints = opentelemetry.get("endpoints")
+            if "endpoints" in opentelemetry and not isinstance(endpoints, list):
+                raise ValueError(
+                    "NeMo Relay opentelemetry.endpoints must be a list for "
+                    f"relay.components[{index}]"
+                )
+            if enabled and not endpoints:
+                raise ValueError(
+                    "enabled NeMo Relay OpenTelemetry requires at least one "
+                    f"endpoint for relay.components[{index}]"
+                )
+            for endpoint_index, endpoint_config in enumerate(endpoints or []):
+                if not isinstance(endpoint_config, Mapping):
+                    raise ValueError(
+                        "NeMo Relay OpenTelemetry endpoint must be an object for "
+                        f"relay.components[{index}].config.opentelemetry."
+                        f"endpoints[{endpoint_index}]"
+                    )
+                endpoint_type = endpoint_config.get("type")
+                if not isinstance(endpoint_type, str) or endpoint_type not in {
+                    "full",
+                    "gen_ai",
+                    "openinference",
+                }:
+                    raise ValueError(
+                        "NeMo Relay OpenTelemetry endpoint type must be one of "
+                        "'full', 'gen_ai', or 'openinference' for "
+                        f"relay.components[{index}].config.opentelemetry."
+                        f"endpoints[{endpoint_index}].type"
+                    )
+                endpoint = endpoint_config.get("endpoint")
+                if not isinstance(endpoint, str) or not endpoint.strip():
+                    raise ValueError(
+                        "NeMo Relay OpenTelemetry endpoint must be a non-empty "
+                        "string for "
+                        f"relay.components[{index}].config.opentelemetry."
+                        f"endpoints[{endpoint_index}].endpoint"
+                    )
+        return self
 
 
 class TelemetryProviderConfig(FabricBaseModel):
@@ -849,7 +1018,7 @@ class FabricConfig(FabricBaseModel):
     mcp: McpConfig | None = None
     skills: SkillConfig | None = None
     telemetry: TelemetryConfig | None = None
-    relay: RelayConfig | dict[str, Any] | None = None
+    relay: RelayConfig | None = None
     tools: ToolsConfig | None = None
 
     @classmethod
@@ -989,15 +1158,10 @@ class FabricConfig(FabricBaseModel):
     ) -> Self:
         """Enable NeMo Relay telemetry and return this config."""
 
-        if self.telemetry is None:
-            self.telemetry = TelemetryConfig()
-        self.telemetry.enable_relay()
         if self.relay is None:
             relay = RelayConfig()
-        elif isinstance(self.relay, RelayConfig):
-            relay = self.relay.model_copy(deep=True)
         else:
-            relay = RelayConfig.from_mapping(self.relay)
+            relay = self.relay.model_copy(deep=True)
         if project is not None:
             relay.project = project
         if output_dir is not None:
@@ -1006,17 +1170,25 @@ class FabricConfig(FabricBaseModel):
             relay.observability = (
                 observability
                 if isinstance(observability, RelayObservabilityConfig)
-                else dict(observability)
+                else RelayObservabilityConfig.model_validate(observability)
             )
         if components is not None:
             relay.components = [
-                item if isinstance(item, RelayComponentConfig) else dict(item)
+                item
+                if isinstance(item, RelayComponentConfig)
+                else RelayComponentConfig.model_validate(item)
                 for item in components
             ]
         if policy is not None:
             relay.policy = (
-                policy if isinstance(policy, RelayConfigPolicy) else dict(policy)
+                policy
+                if isinstance(policy, RelayConfigPolicy)
+                else RelayConfigPolicy.model_validate(policy)
             )
+        relay = RelayConfig.model_validate(relay.model_dump(mode="python"))
+        if self.telemetry is None:
+            self.telemetry = TelemetryConfig()
+        self.telemetry.enable_relay()
         self.relay = relay
         return self
 

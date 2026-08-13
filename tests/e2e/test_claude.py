@@ -53,7 +53,7 @@ from pathlib import Path
 
 args = sys.argv[1:]
 if args == ["--version"]:
-    print("nemo-relay 0.6.0")
+    print("nemo-relay 0.7.2")
     raise SystemExit(0)
 Path({str(log_path)!r}).write_text(json.dumps(args), encoding="utf-8")
 bind = args[args.index("--bind") + 1]
@@ -398,10 +398,15 @@ async def test_fabric_claude_relay_supervises_gateway_and_injects_plugin(tmp_pat
     reason="set FABRIC_NEMO_RELAY_COMMAND to test an installed NeMo Relay CLI",
 )
 async def test_fabric_claude_accepts_real_relay_gateway_with_mock_claude(tmp_path):
+    project_plugin_config = tmp_path / ".nemo-relay" / "plugins.toml"
+    project_plugin_config.parent.mkdir()
+    project_plugin_config.write_text("version = [\n", encoding="utf-8")
+    os.environ["NEMO_RELAY_CONFIG_SCOPE"] = "project"
     config = fabric_config(
         tmp_path,
         cli_path=MOCK_CLAUDE_CLI,
         relay=True,
+        atif=False,
         nemo_relay_command=os.environ["FABRIC_NEMO_RELAY_COMMAND"],
     )
 
@@ -411,6 +416,7 @@ async def test_fabric_claude_accepts_real_relay_gateway_with_mock_claude(tmp_pat
     assert result.output["relay_runtime"]["enabled"] is True
     gateway_log_path = Path(result.output["relay_runtime"]["gateway_log_path"])
     assert gateway_log_path.is_file()
+    assert os.environ["NEMO_RELAY_CONFIG_SCOPE"] == "project"
 
 
 @pytest.mark.skipif(

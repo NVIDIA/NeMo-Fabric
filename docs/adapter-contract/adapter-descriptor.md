@@ -31,8 +31,8 @@ to adapters that have not migrated.
 `config.accepts` lists normalized fields the adapter can enforce. Planning
 rejects configured fields that the adapter cannot apply. The current values
 include models, model endpoint and temperature, system instructions, turn
-limit, enabled/blocked tools, named tool definitions, MCP and MCP filters, and
-skills. Refer to the
+limit, enabled/blocked tools, named tool definitions, MCP, MCP authentication
+modes, MCP filters, and skills. Refer to the
 [`AdapterConfigField` schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/adapter-descriptor.schema.json)
 for exact wire values.
 

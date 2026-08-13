@@ -48,8 +48,8 @@ directly:
 - Bare leaf dependencies remain adapter-owned, and the root `adapter-tests`
   dependency group installs each leaf through its `harness` extra.
 - Every leaf provides `full`. Only adapters that import NeMo Relay Python APIs
-  provide `relay`; for adapters that use an external Relay executable, `full`
-  equals `harness`.
+  provide `relay`; adapters that launch the Relay CLI install
+  `nemo-relay-cli-bin` through both `harness` and `full`.
 
 ## Common Commands
 

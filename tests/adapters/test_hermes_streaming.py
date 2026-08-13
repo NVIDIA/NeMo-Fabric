@@ -3,6 +3,7 @@
 
 """Dependency-free tests for Hermes Relay streaming integration."""
 
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +26,8 @@ async def test_relay_invocation_passes_fabric_request_id_to_hermes(
     monkeypatch,
     tmp_path: Path,
 ):
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path / "xdg-config")
+    monkeypatch.chdir(tmp_path)
     events: list[str] = []
     task_ids: list[object] = []
     runtime = adapter.HermesRuntime()

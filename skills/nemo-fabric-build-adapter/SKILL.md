@@ -51,6 +51,8 @@ translation:
   target `harness`, `adapter_kind`, and runner binding.
 - Set `config.input` to `agent_config` for a new adapter.
 - Declare only normalized `config.accepts` fields the implementation enforces.
+- Declare `mcp.auth.oauth2` or `mcp.auth.service_account` only when the adapter
+  implements the corresponding MCP authentication mode.
 - Publish closed `settings_schema`, `model_schema`, `workflow_schema`,
   `tool_definition_schema`, and `extension_schemas` where applicable. Use
   `model_schema` only for static model/provider compatibility and model settings;

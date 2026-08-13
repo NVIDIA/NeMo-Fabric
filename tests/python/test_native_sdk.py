@@ -80,6 +80,50 @@ def test_plan_rejects_adapter_incompatible_normalized_tool_policy():
         Fabric().plan(config, base_dir=BASE_DIR)
 
 
+@pytest.mark.parametrize(
+    ("authentication", "capability"),
+    [
+        ({"type": "oauth2"}, "mcp.auth.oauth2"),
+        (
+            {
+                "type": "service_account",
+                "client_id": "fabric-client",
+                "client_secret_env": "MCP_CLIENT_SECRET",
+                "token_url": "https://auth.example/token",
+                "token_endpoint_auth_method": "client_secret_basic",
+            },
+            "mcp.auth.service_account",
+        ),
+    ],
+)
+def test_plan_rejects_adapter_incompatible_mcp_authentication(
+    authentication,
+    capability,
+):
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "unsupported-mcp-authentication"},
+            "harness": {"adapter_id": "nvidia.fabric.claude"},
+            "mcp": {
+                "servers": {
+                    "docs": {
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example/docs",
+                        "authentication": authentication,
+                    }
+                }
+            },
+        }
+    )
+
+    with pytest.raises(FabricConfigError) as exc_info:
+        Fabric().plan(config, base_dir=BASE_DIR)
+
+    message = str(exc_info.value)
+    assert "mcp.servers.docs.authentication" in message
+    assert capability in message
+
+
 async def smoke(client: Fabric, fixture_agent: Path) -> None:
     example_config = base_config()
 

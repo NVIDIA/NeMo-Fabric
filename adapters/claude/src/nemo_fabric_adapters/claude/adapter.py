@@ -519,7 +519,7 @@ def prepare_claude_relay(
         ) from error
 
     try:
-        relay_contract = relay_gateway.relay_cli_contract(executable)
+        relay_gateway.relay_cli_contract(executable)
         plugin_config = common_utils.load_relay_plugin_config(
             {
                 "agent_name": agent_name,
@@ -531,7 +531,6 @@ def prepare_claude_relay(
         config_path, plugin_config_path = common_utils.write_relay_configs(
             relay_config={"agents": {"claude": {"command": "claude"}}},
             plugin_config=plugin_config,
-            observability_version=relay_contract.observability_version,
         )
     except (
         OSError,

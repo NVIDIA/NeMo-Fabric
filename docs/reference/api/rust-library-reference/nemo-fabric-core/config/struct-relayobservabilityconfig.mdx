@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RelayObservabilityConfig &#123;\n    pub version: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u32.html\">u32</a>,\n    pub atof: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayatofconfig.mdx\">RelayAtofConfig</a>&gt;,\n    pub atif: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>&gt;,\n    pub opentelemetry: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayotlpconfig.mdx\">RelayOtlpConfig</a>&gt;,\n    pub openinference: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayotlpconfig.mdx\">RelayOtlpConfig</a>&gt;,\n    pub policy: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayconfigpolicy.mdx\">RelayConfigPolicy</a>&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RelayObservabilityConfig &#123;\n    pub version: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u32.html\">u32</a>,\n    pub atof: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayatofconfig.mdx\">RelayAtofConfig</a>&gt;,\n    pub atif: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>&gt;,\n    pub opentelemetry: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayopentelemetryconfig.mdx\">RelayOpenTelemetryConfig</a>&gt;,\n    pub policy: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayconfigpolicy.mdx\">RelayConfigPolicy</a>&gt;,\n    pub enable_full_payloads: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
 
 NeMo Relay observability component configuration.
 
@@ -27,17 +27,17 @@ ATOF export configuration.
 
 ATIF export configuration.
 
-### `opentelemetry: Option<RelayOtlpConfig>`
+### `opentelemetry: Option<RelayOpenTelemetryConfig>`
 
-OpenTelemetry export configuration.
-
-### `openinference: Option<RelayOtlpConfig>`
-
-OpenInference export configuration.
+OpenTelemetry and OpenInference export configuration.
 
 ### `policy: Option<RelayConfigPolicy>`
 
 Relay config validation policy.
+
+### `enable_full_payloads: bool`
+
+Retain complete sanitized request data on LLM start events.
 
 ### `extensions: BTreeMap<String, Value>`
 

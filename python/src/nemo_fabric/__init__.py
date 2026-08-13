@@ -30,7 +30,8 @@ from nemo_fabric.models import RelayConfig
 from nemo_fabric.models import RelayConfigPolicy
 from nemo_fabric.models import RelayHttpStorageConfig
 from nemo_fabric.models import RelayObservabilityConfig
-from nemo_fabric.models import RelayOtlpConfig
+from nemo_fabric.models import RelayOpenTelemetryConfig
+from nemo_fabric.models import RelayOpenTelemetryEndpointConfig
 from nemo_fabric.models import RelayS3StorageConfig
 from nemo_fabric.models import RunRequest
 from nemo_fabric.models import RuntimeConfig
@@ -90,7 +91,8 @@ __all__ = [
     "RelayConfigPolicy",
     "RelayHttpStorageConfig",
     "RelayObservabilityConfig",
-    "RelayOtlpConfig",
+    "RelayOpenTelemetryConfig",
+    "RelayOpenTelemetryEndpointConfig",
     "RelayS3StorageConfig",
     "RelayConfig",
     "FabricNativeUnavailableError",
