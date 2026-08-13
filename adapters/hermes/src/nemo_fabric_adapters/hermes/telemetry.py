@@ -50,7 +50,7 @@ def write_hermes_relay_plugin_config(
 ) -> tuple[Path, dict[str, Any]]:
     """Stage Fabric's resolved Relay config for Hermes' bundled integration."""
 
-    plugin_config = common_utils.load_relay_plugin_config_for_runtime(
+    plugin_config = common_utils.load_relay_plugin_config(
         base_dir=base_dir,
         runtime_id=runtime_id,
         agent_name=agent_name,

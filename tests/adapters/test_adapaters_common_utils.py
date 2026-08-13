@@ -391,7 +391,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     previous_atif_dir.mkdir(parents=True)
     (previous_atof_dir / "events.atof.jsonl").write_text("{}", encoding="utf-8")
     (previous_atif_dir / "trajectory-old.atif.json").write_text("{}", encoding="utf-8")
-    plugin_config = common_utils.load_relay_plugin_config_for_runtime(
+    plugin_config = common_utils.load_relay_plugin_config(
         base_dir=str(tmp_path),
         runtime_id="runtime-current",
         agent_name="review-agent",

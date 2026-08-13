@@ -1370,7 +1370,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
     monkeypatch.setattr(adapter.relay_gateway, "relay_cli_contract", contract)
     monkeypatch.setattr(adapter.relay_gateway, "find_available_tcp_port", lambda: 43210)
     monkeypatch.setattr(
-        adapter.common_utils, "load_relay_plugin_config_for_runtime", load
+        adapter.common_utils, "load_relay_plugin_config", load
     )
     monkeypatch.setattr(adapter.common_utils, "write_relay_configs", write)
 
