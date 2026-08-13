@@ -23,6 +23,9 @@ from nemo_fabric import (
     HarnessConfig,
     MetadataConfig,
     ModelConfig,
+    RelayAtofConfig,
+    RelayAtofFileSinkConfig,
+    RelayObservabilityConfig,
     RuntimeConfig,
 )
 
@@ -54,7 +57,7 @@ async def test_e2e_remote_mcp(
     mcp_url, request_log = mcp_server
 
     model_config = ModelConfig(
-        provider="fabric-test", 
+        provider="nvidia", 
         model="fabric-test-model",
         api_key_env="FABRIC_TEST_API_KEY",
         base_url=f"{api_server}/v1",
@@ -69,6 +72,22 @@ async def test_e2e_remote_mcp(
             workspace=tmp_path,
             artifacts=tmp_path / "artifacts",
             env={"FABRIC_TEST_API_KEY": "test"},
+        ),
+    )
+
+    config.enable_relay(
+        output_dir="./artifacts/relay",
+        observability=RelayObservabilityConfig(
+            atof=RelayAtofConfig(
+                enabled=True,
+                sinks=[
+                    RelayAtofFileSinkConfig(
+                        output_directory="./artifacts/relay",
+                        filename="events.atof.jsonl",
+                        mode="overwrite",
+                    )
+                ],
+            ),
         ),
     )
 
