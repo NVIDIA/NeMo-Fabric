@@ -341,11 +341,6 @@ class HermesRuntime:
             if not statuses.get(name, {}).get("connected")
         }
         if disconnected:
-            total_authorization_timeout_seconds = sum(
-                server.authentication.authorization_timeout_seconds
-                for name, server in self._agent_config.mcp.servers.items()
-                if name in disconnected
-            )
 
             def authenticate() -> None:
                 lifecycle_stdin = sys.stdin
@@ -361,10 +356,7 @@ class HermesRuntime:
                     sys.stdin = lifecycle_stdin
 
             try:
-                await asyncio.wait_for(
-                    asyncio.to_thread(authenticate),
-                    timeout=total_authorization_timeout_seconds,
-                )
+                await asyncio.to_thread(authenticate)
             except Exception as error:
                 raise lifecycle.LifecycleError(
                     "hermes_mcp_authentication_failed",
