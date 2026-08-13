@@ -539,12 +539,14 @@ async def test_ambient_relay_config_fails_runtime_start_before_agent_creation(
 
 
 async def test_inherited_relay_config_report_fails_before_agent_invocation(
-    tmp_path, relay_payload, monkeypatch, fake_sdks, fake_relay
+    tmp_path, relay_payload, monkeypatch, fake_relay
 ):
     import contextlib
 
     @contextlib.asynccontextmanager
-    async def inherited_plugin(_config: object):
+    async def inherited_plugin(
+        _config: object,
+    ) -> AsyncIterator[dict[str, object]]:
         yield {
             "diagnostics": [
                 {

@@ -1593,6 +1593,22 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                         "must contain at least one endpoint when OpenTelemetry export is enabled",
                     );
                 }
+                if let Some(endpoints) = opentelemetry.get("endpoints").and_then(Value::as_array) {
+                    for (endpoint_index, endpoint) in endpoints.iter().enumerate() {
+                        if endpoint
+                            .get("endpoint")
+                            .and_then(Value::as_str)
+                            .is_none_or(|value| value.trim().is_empty())
+                        {
+                            return invalid_config(
+                                format!(
+                                    "relay.components.{index}.config.opentelemetry.endpoints.{endpoint_index}.endpoint"
+                                ),
+                                "must be a non-empty string",
+                            );
+                        }
+                    }
+                }
             }
         }
     }
@@ -3415,6 +3431,45 @@ mod tests {
     }
 
     #[test]
+    fn relay_opentelemetry_deserializes_complete_typed_v3_config() {
+        let opentelemetry: RelayOpenTelemetryConfig = serde_json::from_value(serde_json::json!({
+            "enabled": true,
+            "endpoints": [
+                {
+                    "type": "openinference",
+                    "endpoint": "http://localhost:4318/v1/traces",
+                    "mark_projection": "event",
+                    "mark_exclude_names": ["llm.chunk", "tool.result"],
+                    "attribute_mappings": [{"source": "target"}],
+                    "transport": "grpc",
+                    "service_name": "fabric",
+                    "service_namespace": "evaluation",
+                    "service_version": "1.0.0",
+                    "instrumentation_scope": "nemo.fabric",
+                    "timeout_millis": 5000,
+                    "headers": {"authorization": "Bearer token"},
+                    "header_env": {"x-api-key": "API_KEY"},
+                    "resource_attributes": {"deployment.environment": "test"}
+                }
+            ]
+        }))
+        .expect("complete Relay v3 OpenTelemetry config");
+
+        assert!(opentelemetry.enabled);
+        assert!(opentelemetry.extensions.is_empty());
+        let [endpoint] = opentelemetry.endpoints.as_slice() else {
+            panic!("expected one typed OpenTelemetry endpoint");
+        };
+        assert_eq!(
+            endpoint.r#type,
+            RelayOpenTelemetryEndpointType::Openinference
+        );
+        assert_eq!(endpoint.transport, RelayOtlpTransport::Grpc);
+        assert_eq!(endpoint.service_name, "fabric");
+        assert!(endpoint.extensions.is_empty());
+    }
+
+    #[test]
     fn relay_observability_rejects_explicit_v2() {
         let error = serde_json::from_value::<RelayObservabilityConfig>(serde_json::json!({
             "version": 2,
@@ -3512,6 +3567,49 @@ mod tests {
                         if field == "relay.components.0.config.opentelemetry.endpoints"
                 ));
             }
+        }
+    }
+
+    #[test]
+    fn generic_relay_observability_component_rejects_invalid_endpoint() {
+        for endpoint in [
+            serde_json::json!(null),
+            serde_json::json!(42),
+            serde_json::json!(""),
+            serde_json::json!(" \t"),
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.relay = Some(RelayConfig {
+                components: vec![RelayComponentConfig {
+                    kind: "observability".to_string(),
+                    enabled: true,
+                    config: BTreeMap::from([
+                        ("version".to_string(), serde_json::json!(3)),
+                        (
+                            "opentelemetry".to_string(),
+                            serde_json::json!({
+                                "enabled": true,
+                                "endpoints": [
+                                    {
+                                        "type": "full",
+                                        "endpoint": "http://localhost:4318/v1/traces"
+                                    },
+                                    {"type": "openinference", "endpoint": endpoint}
+                                ]
+                            }),
+                        ),
+                    ]),
+                    extensions: BTreeMap::new(),
+                }],
+                ..RelayConfig::default()
+            });
+
+            let error = validate_config(&config).expect_err("invalid endpoint must fail");
+            assert!(matches!(
+                error,
+                FabricError::InvalidConfig { field, .. }
+                    if field == "relay.components.0.config.opentelemetry.endpoints.1.endpoint"
+            ));
         }
     }
 

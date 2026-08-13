@@ -166,7 +166,7 @@ files with its runtime-owned configuration. Remove or relocate a user
 Relay-enabled Deep Agents or Hermes Agent runtime. System configuration in
 `/etc/nemo-relay/plugins.toml` remains administrator controlled.
 
-#### Migrate Relay observability configs from 0.6
+#### Migrate Relay Observability Configurations from 0.6
 
 Relay 0.7 requires observability schema version 3. Move flat OpenTelemetry
 exporter fields into entries under `opentelemetry.endpoints`. In the Python SDK,
@@ -181,21 +181,21 @@ Install the compatible Python package and CLI binary together:
 pip install "nemo-relay[cli]>=0.7.2,<0.8"
 ```
 
-**Shell installation method (Linux and macOS):**
+On Linux and macOS, install the pinned CLI with the shell installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
   NEMO_RELAY_VERSION=0.7.2 sh -s --
 ```
 
-**Windows PowerShell installation method:**
+On Windows, install the pinned CLI with PowerShell:
 
 ```powershell
 $env:NEMO_RELAY_VERSION = "0.7.2"
 irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
 ```
 
-**Cargo installation method (requires `cargo-binstall`):**
+If `cargo-binstall` is available, install the pinned CLI with Cargo:
 
 ```bash
 cargo binstall nemo-relay-cli --version 0.7.2

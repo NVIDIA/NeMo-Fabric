@@ -450,6 +450,18 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
                 raise ValueError(
                     "enabled NeMo Relay OpenTelemetry requires at least one endpoint"
                 )
+            if isinstance(endpoints, list):
+                for index, endpoint in enumerate(endpoints):
+                    value = (
+                        endpoint.get("endpoint")
+                        if isinstance(endpoint, dict)
+                        else None
+                    )
+                    if not isinstance(value, str) or not value.strip():
+                        raise ValueError(
+                            "NeMo Relay OpenTelemetry endpoint must be a non-empty "
+                            f"string for opentelemetry.endpoints[{index}]"
+                        )
 
 
 def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:

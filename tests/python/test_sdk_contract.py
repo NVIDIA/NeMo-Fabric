@@ -991,6 +991,18 @@ def test_relay_generic_observability_component_allows_implicit_or_v3_version():
         assert relay.components[0].config == config
 
 
+def test_relay_generic_observability_component_requires_mapping_config():
+    with pytest.raises(ValidationError, match="component config must be an object"):
+        RelayConfig(
+            components=[
+                {
+                    "kind": "observability",
+                    "config": 1,
+                }
+            ]
+        )
+
+
 def test_relay_generic_observability_component_reports_version_before_v3_shape():
     with pytest.raises(
         ValidationError,
@@ -1042,6 +1054,34 @@ def test_relay_generic_observability_component_requires_enabled_endpoint(
                     RelayComponentConfig(kind="observability", config=config),
                 ]
             )
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        {},
+        {"endpoint": None},
+        {"endpoint": 42},
+        {"endpoint": ""},
+        {"endpoint": "   "},
+    ],
+)
+def test_relay_generic_observability_component_requires_nonblank_endpoint(endpoint):
+    with pytest.raises(ValidationError, match="endpoint must be a non-empty string"):
+        RelayConfig(
+            components=[
+                {
+                    "kind": "observability",
+                    "config": {
+                        "version": 3,
+                        "opentelemetry": {
+                            "enabled": True,
+                            "endpoints": [endpoint],
+                        },
+                    },
+                }
+            ]
+        )
 
 
 @pytest.mark.parametrize(
@@ -1177,6 +1217,21 @@ def test_fabric_config_enable_relay_preserves_omitted_fields():
 
     config.enable_relay(components=[])
     assert config.to_mapping()["relay"]["components"] == []
+
+
+def test_fabric_config_enable_relay_preserves_path_and_extra_fields():
+    output_dir = Path("artifacts") / "relay"
+    config = _fabric_config()
+    config.relay = RelayConfig(
+        output_dir=output_dir,
+        future_relay_option={"enabled": True},
+    )
+
+    config.enable_relay(project="fabric-tests")
+
+    assert config.relay.output_dir == output_dir
+    assert isinstance(config.relay.output_dir, Path)
+    assert config.relay.model_extra == {"future_relay_option": {"enabled": True}}
 
 
 def test_telemetry_config_enable_native_preserves_existing_config():

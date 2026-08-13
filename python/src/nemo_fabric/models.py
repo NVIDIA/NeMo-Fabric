@@ -779,6 +779,11 @@ class RelayConfig(FabricBaseModel):
                 config = component.get("config", {})
             if kind != "observability":
                 continue
+            if not isinstance(config, Mapping):
+                raise ValueError(
+                    "NeMo Relay observability component config must be an object "
+                    f"for relay.components[{index}]"
+                )
             if "version" in config:
                 version = config["version"]
                 if (
@@ -815,6 +820,20 @@ class RelayConfig(FabricBaseModel):
                         "enabled NeMo Relay OpenTelemetry requires at least one "
                         f"endpoint for relay.components[{index}]"
                     )
+                if isinstance(endpoints, list):
+                    for endpoint_index, endpoint_config in enumerate(endpoints):
+                        endpoint = (
+                            endpoint_config.get("endpoint")
+                            if isinstance(endpoint_config, Mapping)
+                            else None
+                        )
+                        if not isinstance(endpoint, str) or not endpoint.strip():
+                            raise ValueError(
+                                "NeMo Relay OpenTelemetry endpoint must be a "
+                                "non-empty string for "
+                                f"relay.components[{index}].config.opentelemetry."
+                                f"endpoints[{endpoint_index}].endpoint"
+                            )
         return self
 
 

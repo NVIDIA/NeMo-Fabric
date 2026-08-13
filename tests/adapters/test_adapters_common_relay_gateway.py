@@ -50,6 +50,7 @@ def test_resolve_relay_command_rejects_missing_executable(monkeypatch, tmp_path)
     ("output", "expected_version"),
     [
         ("nemo-relay 0.7.2\n", (0, 7, 2)),
+        ("nemo-relay 0.7.2+build.1\n", (0, 7, 2)),
         ("nemo-relay 0.7.99\n", (0, 7, 99)),
     ],
 )

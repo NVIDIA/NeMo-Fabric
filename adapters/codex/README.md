@@ -145,8 +145,9 @@ Codex state variables, the selected model's `api_key_env`, and explicit
 
 ## Relay Integration
 
-Relay requires a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH`. NeMo
-Fabric's `relay` extra does not install the CLI. Follow the
+Relay requires a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH`. The
+Codex adapter does not provide a `relay` extra. The root `nemo-fabric[relay]`
+extra installs only the Relay Python package, not the CLI. Follow the
 [NeMo Relay installation instructions](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-nemo-relay).
 
 Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the

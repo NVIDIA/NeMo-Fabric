@@ -406,10 +406,14 @@ def test_reject_inherited_relay_plugin_config_allows_system_policy():
 @pytest.mark.parametrize(
     "message",
     [
-        "inherited plugin configuration from discovered file: "
-        "/workspace/.nemo-relay/plugins.toml",
-        "inherited plugin configuration from discovered file: "
-        "/etc/nemo-relay/../nemo-relay/plugins.toml",
+        (
+            "inherited plugin configuration from discovered file: "
+            "/workspace/.nemo-relay/plugins.toml"
+        ),
+        (
+            "inherited plugin configuration from discovered file: "
+            "/etc/nemo-relay/../nemo-relay/plugins.toml"
+        ),
         "inherited plugin configuration from an unknown source",
     ],
 )
@@ -1212,6 +1216,32 @@ def test_validate_relay_observability_v3_requires_endpoint_when_enabled(
     else:
         with pytest.raises(ValueError, match="requires at least one endpoint"):
             common_utils.validate_relay_observability_v3(plugin_config)
+
+
+@pytest.mark.parametrize("endpoint", [None, 42, "", " \t "])
+def test_validate_relay_observability_v3_rejects_invalid_endpoint(endpoint: object):
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {
+                    "version": 3,
+                    "opentelemetry": {
+                        "enabled": True,
+                        "endpoints": [{"type": "full", "endpoint": endpoint}],
+                    },
+                },
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"non-empty string for opentelemetry\.endpoints\[0\]",
+    ):
+        common_utils.validate_relay_observability_v3(plugin_config)
 
 
 @pytest.mark.parametrize("config", [None, [], "version = 3", 3])
