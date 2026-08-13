@@ -344,8 +344,12 @@ async def test_single_invocation_normalizes_response_usage_and_thread(
     assert "instructions" not in fake_sdks["create_kwargs"]
 
 
-async def test_missing_api_key_fails_runtime_start(tmp_path, make_payload):
-    os.environ.pop("NVIDIA_API_KEY", None)
+@pytest.mark.parametrize("api_key", [None, ""])
+async def test_missing_api_key_fails_runtime_start(tmp_path, make_payload, api_key):
+    if api_key is None:
+        os.environ.pop("NVIDIA_API_KEY", None)
+    else:
+        os.environ["NVIDIA_API_KEY"] = api_key
 
     with pytest.raises(RuntimeError, match="NVIDIA_API_KEY"):
         await adapter.DeepAgentsRuntime().start(
@@ -389,14 +393,6 @@ async def test_agent_creation_error_fails_runtime_start(
         await adapter.DeepAgentsRuntime().start(
             lifecycle_start_payload(make_payload(tmp_path))
         )
-
-
-async def test_runtime_start_requires_validated_agent_config(tmp_path, make_payload):
-    payload = make_payload(tmp_path)
-    start = {key: value for key, value in payload.items() if key != "request"}
-
-    with pytest.raises(adapter.lifecycle.LifecycleError, match="validated AgentConfig"):
-        await adapter.DeepAgentsRuntime().start(start)
 
 
 async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
@@ -962,6 +958,29 @@ async def test_native_telemetry_exports_without_artifacts(
     assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get(
         "callbacks", []
     )
+
+
+def test_native_telemetry_requires_mapping(tmp_path, make_payload):
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["telemetry"] = {
+        "relay_enabled": False,
+        "metadata": {
+            "telemetry_providers": ["native"],
+            "native_config": [],
+        },
+    }
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="native_config must be a mapping"
+    ):
+        adapter.resolve_observability(
+            RuntimeContext.from_mapping(payload["runtime_context"]),
+            str(tmp_path),
+            "deepagents-test",
+            "model",
+            "native",
+            False,
+        )
 
 
 async def test_relay_disabled_adds_no_scope_or_callbacks(

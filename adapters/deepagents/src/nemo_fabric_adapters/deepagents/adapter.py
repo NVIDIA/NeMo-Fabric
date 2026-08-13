@@ -146,7 +146,7 @@ def preflight_check(model_config: AgentModelConfig) -> None:
         )
 
     api_key_env = resolve_api_key_env(model_config)
-    if api_key_env not in os.environ:
+    if not os.environ.get(api_key_env):
         raise RuntimeError(
             f"the model-provider credential env var '{api_key_env}' is not set in the "
             "environment. Set it to your API key, or set models.default.api_key_env to the "
@@ -173,9 +173,7 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
 
     model_name = model_config.model
     api_key_env = resolve_api_key_env(model_config)
-    api_key = os.environ.get(api_key_env)
-    if not api_key:
-        raise RuntimeError(f"{api_key_env} is required for the Deep Agents adapter")
+    api_key = os.environ[api_key_env]
 
     provider = model_config.provider
     base_url = model_config.base_url
@@ -504,12 +502,7 @@ class DeepAgentsRuntime:
             )
 
         try:
-            agent_config = payload.get("config")
-            if not isinstance(agent_config, AgentConfig):
-                raise lifecycle.LifecycleError(
-                    "deepagents_invalid_config",
-                    "Deep Agents requires a validated AgentConfig",
-                )
+            agent_config = payload["config"]
             runtime_context = RuntimeContext.from_mapping(
                 payload.get("runtime_context")
             )
@@ -955,9 +948,12 @@ def resolve_observability(
             True,
         )
     if telemetry_provider == "native":
-        telemetry = runtime_context.telemetry
-        native_config = telemetry.metadata.get("native_config", {}) if telemetry else {}
-        if isinstance(native_config, dict) and native_config.get("components"):
+        native_config = runtime_context.telemetry.metadata.get("native_config", {})
+        if not isinstance(native_config, dict):
+            raise AdapterConfigError(
+                "runtime_context.telemetry.metadata.native_config must be a mapping."
+            )
+        if native_config.get("components"):
             return Observability(
                 native_config, "deepagents.observability/native", False
             )
