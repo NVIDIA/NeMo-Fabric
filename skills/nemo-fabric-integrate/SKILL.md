@@ -147,6 +147,9 @@ def to_fabric_config(job) -> FabricConfig:
   exposes none; blocked tools are removed after applying that allowlist. Tool
   names must be non-blank, and planning rejects a tool that appears in both
   lists.
+- Configure MCP authentication only when the selected adapter declares
+  `mcp.auth.oauth2` or `mcp.auth.service_account`, matching the authentication
+  type.
 - Create deployment or evaluation variants with `model_copy(deep=True)` and
   ordinary Python functions; each copy plans and runs independently.
 - Pass `base_dir=...` to any `Fabric` call when the config uses relative paths,

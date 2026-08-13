@@ -47,6 +47,7 @@
       "models",
       "models.temperature",
       "mcp",
+      "mcp.auth.oauth2",
       "skills"
     ]
   },

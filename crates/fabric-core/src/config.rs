@@ -515,6 +515,9 @@ pub enum AdapterConfigField {
     /// OAuth 2.0 authentication for MCP servers.
     #[serde(rename = "mcp.auth.oauth2")]
     McpAuthOauth2,
+    /// OAuth 2.0 service-account authentication for MCP servers.
+    #[serde(rename = "mcp.auth.service_account")]
+    McpAuthServiceAccount,
     /// Per-server MCP tool allowlists and blocklists.
     #[serde(rename = "mcp.tool_filters")]
     McpToolFilters,
@@ -1881,6 +1884,26 @@ pub(crate) fn adapter_config_compatibility_issues(
             issues.push(incompatible(
                 format!("models.{role}.temperature"),
                 "the adapter does not declare an equivalent native mapping".to_string(),
+            ));
+        }
+    }
+    for (name, server) in config.mcp.iter().flat_map(|mcp| mcp.servers.iter()) {
+        let required = match server.authentication.as_ref() {
+            Some(McpAuthenticationConfig::OAuth2 { .. }) => {
+                Some((AdapterConfigField::McpAuthOauth2, "mcp.auth.oauth2"))
+            }
+            Some(McpAuthenticationConfig::ServiceAccount { .. }) => Some((
+                AdapterConfigField::McpAuthServiceAccount,
+                "mcp.auth.service_account",
+            )),
+            None => None,
+        };
+        if let Some((field, capability)) = required
+            && !accepts(field)
+        {
+            issues.push(incompatible(
+                format!("mcp.servers.{name}.authentication"),
+                format!("the adapter does not declare `{capability}` support"),
             ));
         }
     }
@@ -3444,7 +3467,7 @@ mod tests {
     }
 
     #[test]
-    fn mcp_service_account_authentication_survives_capability_planning() {
+    fn mcp_service_account_authentication_requires_adapter_support() {
         let mut config = typed_config("nvidia.fabric.langchain.deepagents");
         config.skills = None;
         config.mcp = Some(McpConfig {
@@ -3469,26 +3492,18 @@ mod tests {
             extensions: BTreeMap::new(),
         });
 
-        let plan = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
-            .expect("authenticated Deep Agents MCP plan");
-        let server = plan
-            .capability_plan
-            .native
-            .mcp_servers
-            .get("automation")
-            .expect("native automation MCP server");
+        let error = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect_err("Deep Agents does not support service-account MCP authentication");
 
-        assert_eq!(
-            server.authentication,
-            Some(McpAuthenticationConfig::ServiceAccount {
-                client_id: "fabric-client".to_string(),
-                client_secret_env: "MCP_CLIENT_SECRET".to_string(),
-                token_url: "https://auth.example/token".to_string(),
-                scopes: vec!["mcp:invoke".to_string()],
-                token_endpoint_auth_method: Some(OAuthTokenEndpointAuthMethod::ClientSecretBasic,),
-                token_cache_buffer_seconds: 60,
-            })
-        );
+        assert!(matches!(
+            error,
+            FabricError::AdapterCompatibility {
+                adapter_id,
+                field,
+                ..
+            } if adapter_id == "nvidia.fabric.langchain.deepagents"
+                && field == "mcp.servers.automation.authentication"
+        ));
     }
 
     #[test]
@@ -4073,6 +4088,57 @@ mod tests {
                 ..
             } if adapter_id == "nvidia.fabric.claude" && field == "mcp.servers.docs"
         ));
+    }
+
+    #[test]
+    fn mcp_authentication_requires_an_explicit_adapter_claim() {
+        for (authentication, capability) in [
+            (serde_json::json!({"type": "oauth2"}), "mcp.auth.oauth2"),
+            (
+                serde_json::json!({
+                    "type": "service_account",
+                    "client_id": "fabric-client",
+                    "client_secret_env": "MCP_CLIENT_SECRET",
+                    "token_url": "https://auth.example/token",
+                    "token_endpoint_auth_method": "client_secret_basic"
+                }),
+                "mcp.auth.service_account",
+            ),
+        ] {
+            let mut config = typed_config("nvidia.fabric.claude");
+            config.mcp = Some(McpConfig {
+                servers: BTreeMap::from([(
+                    "docs".to_string(),
+                    serde_json::from_value(serde_json::json!({
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example/docs",
+                        "exposure": "harness_native",
+                        "authentication": authentication,
+                    }))
+                    .expect("authenticated MCP server"),
+                )]),
+                extensions: BTreeMap::new(),
+            });
+
+            let error = resolve_run_plan_from_config(
+                config,
+                ResolveContext::new("/tmp/fabric-unsupported-mcp-authentication"),
+            )
+            .expect_err("Claude does not advertise MCP authentication support");
+
+            match error {
+                FabricError::AdapterCompatibility {
+                    adapter_id,
+                    field,
+                    reason,
+                } => {
+                    assert_eq!(adapter_id, "nvidia.fabric.claude");
+                    assert_eq!(field, "mcp.servers.docs.authentication");
+                    assert!(reason.contains(capability), "{reason}");
+                }
+                error => panic!("unexpected error: {error}"),
+            }
+        }
     }
 
     #[test]
