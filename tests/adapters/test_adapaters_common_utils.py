@@ -211,7 +211,9 @@ def test_selected_model_config(
 def test_normalized_instruction_runtime_and_tool_accessors():
     payload = {
         "config": {
-            "instructions": {"system": {"content": "Be concise.", "mode": "replace"}},
+            "instructions": {
+                "system": {"content": "Be concise.", "mode": "replace"}
+            },
             "runtime": {"timeout_seconds": 12.5, "max_turns": 7},
             "tools": {
                 "enabled": [],
@@ -391,12 +393,17 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     previous_atif_dir.mkdir(parents=True)
     (previous_atof_dir / "events.atof.jsonl").write_text("{}", encoding="utf-8")
     (previous_atif_dir / "trajectory-old.atif.json").write_text("{}", encoding="utf-8")
-    plugin_config = common_utils.load_relay_plugin_config(
-        base_dir=str(tmp_path),
-        runtime_id="runtime-current",
-        agent_name="review-agent",
-        model_name="typed/deepagents-model",
-    )
+    payload = {
+        "agent_name": "review-agent",
+        "base_dir": str(tmp_path),
+        "config": {
+            "harness": {"settings": {"model": "review"}},
+            "models": {"review": {"model": "nvidia/review-model"}},
+        },
+        "runtime_context": {"runtime_id": "runtime-current"},
+    }
+
+    plugin_config = common_utils.load_relay_plugin_config(payload)
     observability = plugin_config["components"][0]["config"]
 
     assert plugin_config["version"] == 1
@@ -421,7 +428,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
         == "trajectory-{session_id}.atif.json"
     )
     assert observability["atif"]["agent_name"] == "review-agent"
-    assert observability["atif"]["model_name"] == "typed/deepagents-model"
+    assert observability["atif"]["model_name"] == "nvidia/review-model"
     assert Path(observability["atif"]["output_directory"]).is_dir()
 
     atof_file = Path(file_sink["output_directory"]) / "events.atof.jsonl"
@@ -644,16 +651,12 @@ def test_collect_relay_artifacts_ignores_path_resolution_runtime_errors(
 
     monkeypatch.setattr(Path, "resolve", resolve)
 
-    assert (
-        common_utils.collect_relay_artifacts(_atof_artifact_config(tmp_path / "loop"))
-        == []
-    )
-    assert (
-        common_utils.collect_relay_artifacts(
-            _atof_artifact_config(artifact_dir, filename="loop")
-        )
-        == []
-    )
+    assert common_utils.collect_relay_artifacts(
+        _atof_artifact_config(tmp_path / "loop")
+    ) == []
+    assert common_utils.collect_relay_artifacts(
+        _atof_artifact_config(artifact_dir, filename="loop")
+    ) == []
 
 
 def test_collect_relay_artifacts_non_string_atof_filename_uses_glob(tmp_path: Path):

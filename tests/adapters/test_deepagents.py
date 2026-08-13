@@ -404,11 +404,10 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
 ):
     artifacts = [{"kind": "atof", "path": str(tmp_path / "events.atof.jsonl")}]
     plugin_config = {"version": 1, "components": []}
-    load_relay_plugin_config = MagicMock(return_value=plugin_config)
     monkeypatch.setattr(
         adapter.common_utils,
         "load_relay_plugin_config",
-        load_relay_plugin_config,
+        lambda _p: plugin_config,
     )
     monkeypatch.setattr(
         adapter.common_utils, "collect_relay_artifacts", lambda _c: artifacts
@@ -424,12 +423,6 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
     assert fake_relay["plugin_configs"] == [plugin_config]
-    assert load_relay_plugin_config.call_args.kwargs == {
-        "base_dir": str(tmp_path),
-        "runtime_id": "run-1",
-        "agent_name": "fabric-agent",
-        "model_name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-    }
     assert output["telemetry"] == {
         "enabled": True,
         "provider": "relay",
@@ -456,10 +449,7 @@ def relay_payload_fixture(make_payload, monkeypatch):
     monkeypatch.setattr(
         adapter.common_utils,
         "load_relay_plugin_config",
-        lambda *, base_dir, runtime_id, agent_name, model_name: {
-            "version": 1,
-            "components": [],
-        },
+        lambda _p: {"version": 1, "components": []},
     )
 
     def build(tmp_path) -> dict[str, Any]:
@@ -1408,7 +1398,7 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
     monkeypatch.setattr(
         adapter.common_utils,
         "load_relay_plugin_config",
-        lambda *, base_dir, runtime_id, agent_name, model_name: plugin_config,
+        lambda _payload: plugin_config,
     )
     monkeypatch.setattr(
         adapter.common_utils,

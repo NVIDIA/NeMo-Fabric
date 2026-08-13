@@ -576,12 +576,7 @@ def prepare_claude_relay(payload: dict[str, Any]) -> ClaudeRelaySettings | None:
 
     try:
         relay_contract = relay_gateway.relay_cli_contract(executable)
-        plugin_config = common_utils.load_relay_plugin_config(
-            base_dir=common_utils.base_dir(payload),
-            runtime_id=common_utils.runtime_context(payload)["runtime_id"],
-            agent_name=common_utils.agent_name(payload),
-            model_name=common_utils.relay_model_name(payload),
-        )
+        plugin_config = common_utils.load_relay_plugin_config(payload)
         config_path, plugin_config_path = common_utils.write_relay_configs(
             relay_config={"agents": {"claude": {"command": "claude"}}},
             plugin_config=plugin_config,

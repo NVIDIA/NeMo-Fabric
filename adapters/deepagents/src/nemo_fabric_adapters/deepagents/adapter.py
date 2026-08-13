@@ -215,7 +215,7 @@ def resolve_backend(runtime_context: RuntimeContext, base_dir: str) -> Any:
     """Root the Deep Agents filesystem backend at the Fabric workspace, if set."""
 
     workspace = runtime_context.environment.workspace
-    if not workspace:
+    if workspace is None:
         return None
     root = Path(str(workspace))
     if not root.is_absolute():
@@ -943,12 +943,7 @@ def resolve_observability(
 
     if relay_enabled and telemetry_provider == "relay":
         return Observability(
-            common_utils.load_relay_plugin_config(
-                base_dir=base_dir,
-                runtime_id=runtime_context.runtime_id,
-                agent_name=agent_name,
-                model_name=model_name,
-            ),
+            common_utils.load_relay_plugin_config(payload),
             "deepagents.observability/nemo_relay",
             True,
         )
