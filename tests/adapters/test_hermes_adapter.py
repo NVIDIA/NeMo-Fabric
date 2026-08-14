@@ -1118,6 +1118,94 @@ def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
     )
 
 
+@pytest.fixture(name="started_hermes_runtime")
+def started_hermes_runtime_fixture(
+    monkeypatch,
+) -> tuple[adapter.HermesRuntime, MagicMock]:
+    mock_turn = MagicMock()
+    monkeypatch.setattr(adapter, "_invoke_hermes_turn", mock_turn)
+    agent_config = _agent_config(
+        {"models": {"default": {"provider": "test", "model": "test-model"}}}
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._agent_config = agent_config
+    runtime._model_config = agent_config.models["default"]
+    runtime._runtime_id = "runtime-incomplete"
+    runtime._agent = MagicMock()
+    return runtime, mock_turn
+
+
+@pytest.mark.parametrize(
+    ("result_update", "expected_failed", "expected_error"),
+    [
+        pytest.param({"failed": True}, True, None, id="failed"),
+        pytest.param({"partial": True}, True, None, id="partial"),
+        pytest.param(
+            {"error": "Response remained truncated after 4 continuation attempts"},
+            True,
+            {
+                "code": "hermes_reported_failure",
+                "message": "Response remained truncated after 4 continuation attempts",
+                "retryable": False,
+                "metadata": {},
+            },
+            id="string-error",
+        ),
+        pytest.param(
+            {
+                "error": {
+                    "code": "hermes_rate_limited",
+                    "message": "provider rate limited the request",
+                    "retryable": True,
+                    "metadata": {"provider": "test"},
+                }
+            },
+            True,
+            {
+                "code": "hermes_rate_limited",
+                "message": "provider rate limited the request",
+                "retryable": True,
+                "metadata": {"provider": "test"},
+            },
+            id="structured-error",
+        ),
+        pytest.param({"error": ""}, False, "", id="empty-error"),
+        pytest.param({}, False, None, id="completed-false-only"),
+    ],
+)
+async def test_hermes_failure_signals_are_normalized(
+    started_hermes_runtime,
+    result_update: dict[str, object],
+    *,
+    expected_failed: bool,
+    expected_error: object | None,
+):
+    runtime, mock_turn = started_hermes_runtime
+    mock_turn.return_value = (
+        {
+            "final_response": "done",
+            "completed": False,
+            "messages": [],
+            **result_update,
+        },
+        "",
+    )
+
+    output = await runtime.invoke(
+        {
+            "runtime_context": _runtime_context(
+                runtime_id="runtime-incomplete"
+            ).to_mapping(),
+            "request": {"input": "complete the task"},
+        }
+    )
+
+    assert output["completed"] is False
+    assert output["failed"] is expected_failed
+    assert output["error"] == expected_error
+
+
 async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     monkeypatch,
     tmp_path: Path,

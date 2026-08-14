@@ -1,0 +1,104 @@
+---
+title: "Use the mini-SWE-agent Adapter"
+description: "Install and configure the NVIDIA NeMo Fabric harness integration for mini-SWE-agent."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the NVIDIA NeMo Fabric `nvidia.fabric.mini-swe-agent` adapter to run tasks
+with mini-SWE-agent.
+
+## Install the Adapter
+
+To install the NVIDIA NeMo Fabric runtime, adapter, and supported
+mini-SWE-agent package in one environment, run:
+
+```bash
+pip install "nemo-fabric[mini-swe-agent]"
+```
+
+To install the adapter and supported mini-SWE-agent package without the NVIDIA
+NeMo Fabric runtime, use the `harness` extra:
+
+```bash
+pip install "nemo-fabric-adapters-mini-swe-agent[harness]"
+```
+
+The `harness` and `full` extras install the latest compatible mini-SWE-agent
+2.x release. To use an environment-managed compatible package, install the
+bare adapter:
+
+```bash
+pip install nemo-fabric-adapters-mini-swe-agent
+```
+
+For separate runtime and adapter environments, set `ADAPTER_PYTHON` in the
+runtime environment to the adapter environment's Python interpreter. Use
+matching NVIDIA NeMo Fabric release versions for the runtime and adapter unless
+you have validated a different pairing.
+
+## Configure the Adapter
+
+Select the mini-SWE-agent harness by adapter ID:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.mini-swe-agent",
+    settings={"timeout": 30},
+)
+```
+
+The adapter supports `models`, `models.base_url`, `models.temperature`,
+`instructions.system`, `runtime.max_turns`, and `environment.workspace`. Set
+`models.<role>.api_key_env` to the environment variable containing the
+model-provider credential.
+
+`runtime.timeout_seconds` sets the NVIDIA NeMo Fabric invocation deadline. Use
+`harness.settings.timeout` to set the maximum duration of one command; the
+default is `30` seconds.
+
+This adapter does not support MCP, skills, tool policy, streaming, or telemetry
+output.
+
+## Run a Task
+
+```python
+import asyncio
+
+from nemo_fabric import EnvironmentConfig, Fabric, FabricConfig, HarnessConfig
+from nemo_fabric import InstructionConfig, InstructionsConfig, MetadataConfig
+from nemo_fabric import ModelConfig, RuntimeConfig
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="mini-swe-agent"),
+    harness=HarnessConfig(
+        adapter_id="nvidia.fabric.mini-swe-agent",
+        settings={"timeout": 30},
+    ),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
+        )
+    },
+    instructions=InstructionsConfig(
+        system=InstructionConfig(content="Inspect the issue and verify the change.")
+    ),
+    runtime=RuntimeConfig(max_turns=50, timeout_seconds=1800),
+    environment=EnvironmentConfig(provider="local", workspace="/workspace"),
+)
+
+async def main():
+    return await Fabric().run(
+        config, base_dir="/workspace", input="Fix the failing test."
+    )
+
+
+result = asyncio.run(main())
+```
+
+The result includes the submitted final output and API-call usage.

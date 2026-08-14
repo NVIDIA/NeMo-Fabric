@@ -217,7 +217,8 @@ Before the first supported TypeScript package release:
    must use account-level two-factor authentication.
 2. Create and protect the GitHub `npmjs` environment. Require the release
    approvers who should authorize registry publication, and restrict deployment
-   tags to `v*`.
+   tags to `v*`. Nightly alpha tags use the `v0.1.0-alpha.YYYYMMDD` format and
+   are included by this rule.
 3. After `publish_typescript.yml` is present on the default branch, configure
    the package's single trusted publisher in npm with these exact,
    case-sensitive values:
@@ -239,10 +240,9 @@ Before the first supported TypeScript package release:
    token publication. Then remove or revoke any local credentials used for the
    bootstrap.
 
-The workflow publishes stable versions with the `latest` dist-tag and beta or
-RC versions with `next`. Stable releases do not move `next`; it continues to
-identify the most recently published prerelease until a later beta or RC
-replaces it. Alpha versions are not published. A retry skips only
+The workflow publishes stable versions with the `latest` dist-tag, beta and RC
+versions with `next`, and nightly alpha versions with `alpha`. Stable releases
+do not move either prerelease dist-tag. A retry skips only
 when the immutable package version, packed artifact integrity, and expected
 dist-tag all match. If any of them differs, the workflow fails so a maintainer
 can inspect and repair the registry state explicitly. Publication also fails
@@ -382,7 +382,7 @@ Pushing a valid tag triggers :
 |---|---|
 | [`.github/workflows/ci_python.yml`](.github/workflows/ci_python.yml) | For all tags including alpha |
 | [`.github/workflows/publish_rust.yml`](.github/workflows/publish_rust.yml) | For RC, beta and release tags |
-| [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml) | For RC, beta and release tags |
+| [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml) | For all release tags, including nightly alpha |
 | [`.github/workflows/fern-docs.yml`](.github/workflows/fern-docs.yml) | For RC, beta and release tags |
 
 The release pipeline then:
@@ -395,10 +395,9 @@ The release pipeline then:
 3. Publishes `nemo-fabric-core` and `nemo-fabric-cli` to crates.io through
    trusted publishing for stable, beta, and RC tags. Alpha tags are not
    published to crates.io.
-4. Publishes `nemo-fabric-adapter-contract` to npm through trusted
-   publishing for stable, beta, and RC tags. Stable releases use the `latest`
-   dist-tag; beta and RC releases use `next`. Alpha tags are not published to
-   npm.
+4. Publishes `nemo-fabric-adapter-contract` to npm through trusted publishing.
+   Stable releases use the `latest` dist-tag, beta and RC releases use `next`,
+   and nightly alpha releases use `alpha`.
 5. Publishes Fern documentation versions for stable, beta, and RC tags. Alpha
    tags do not publish a separate documentation version.
 

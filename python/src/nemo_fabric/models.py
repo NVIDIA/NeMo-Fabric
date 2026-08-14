@@ -982,11 +982,18 @@ class ToolsConfig(FabricBaseModel):
 
         if not name.strip():
             raise ValueError("tool definition names must not be empty")
+        extras = dict(extra_fields or {})
+        overlap = {"kind", "ref", "settings"}.intersection(extras)
+        if overlap:
+            raise ValueError(
+                "extra_fields duplicates known fields: "
+                + ", ".join(sorted(overlap))
+            )
         value = {
             "kind": kind,
             "ref": ref,
             "settings": dict(settings or {}),
-            **dict(extra_fields or {}),
+            **extras,
         }
         self.definitions[name] = ToolDefinitionConfig.model_validate(value)
         return self

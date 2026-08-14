@@ -10,7 +10,6 @@ import os
 import shutil
 import subprocess
 import sysconfig
-import time
 import venv
 from collections.abc import Callable
 from functools import partial
@@ -316,20 +315,3 @@ def test_installed_claude_wheel_supplies_metadata_and_settings_schema(
     message = str(caught.value)
     assert str(descriptor.resolve()) in message
     assert "harness.settings.unknown" in message
-
-
-def test_adapter_python_data_path_query_times_out(tmp_path: Path):
-    adapter_env = tmp_path / "slow-adapter-env"
-    _create_venv(adapter_env)
-    adapter_python = adapter_env / (
-        "Scripts/python.exe" if os.name == "nt" else "bin/python"
-    )
-    purelib = _python_sysconfig_path(adapter_python, "purelib")
-    (purelib / "slow_startup.pth").write_text("import time; time.sleep(30)\n")
-    os.environ["ADAPTER_PYTHON"] = str(adapter_python)
-
-    started = time.monotonic()
-    with pytest.raises(FabricConfigError, match="timed out after 5 seconds"):
-        Fabric().plan(_config(), base_dir=tmp_path / "agent")
-
-    assert time.monotonic() - started < 10

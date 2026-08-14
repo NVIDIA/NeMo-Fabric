@@ -44,6 +44,7 @@ expressions install the components shown in each column:
 | [Codex](docs/integrations/harness/codex.mdx) | `nemo-fabric[codex]` | `nemo-fabric-adapters-codex[harness]` | `nemo-fabric-adapters-codex` |
 | [Hermes Agent](docs/integrations/harness/hermes.mdx) | Install Hermes Agent separately, then install `nemo-fabric` and `nemo-fabric-adapters-hermes` | Install Hermes Agent separately, then install `nemo-fabric-adapters-hermes` | `nemo-fabric-adapters-hermes` |
 | [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
+| [mini-SWE-agent](docs/integrations/harness/mini-swe-agent.mdx) | `nemo-fabric[mini-swe-agent]` | `nemo-fabric-adapters-mini-swe-agent[harness]` | `nemo-fabric-adapters-mini-swe-agent` |
 
 The `nemo-fabric` package always installs the runtime. Package-installable
 harnesses provide root extras that add the corresponding adapter and supported

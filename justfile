@@ -12,7 +12,7 @@ ref_name := ""
 # Linux wheel artifacts target this minimum glibc version for compatibility.
 linux_glibc_version := "2.17"
 
-python_projects := ". python adapter-contract adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes"
+python_projects := ". python adapter-contract adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes adapters/mini-swe-agent"
 
 bash_helpers := '''
 set -euo pipefail
