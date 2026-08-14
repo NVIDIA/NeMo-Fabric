@@ -74,10 +74,14 @@ version `0.2.0`.
 | Harbor host | `nemo-fabric[harbor]==0.2.0` | Harbor CLI, `FabricAgent`, and typed `FabricConfig` construction |
 | Claude task without Relay | `nemo-fabric[claude]==0.2.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
 | Claude task with Relay | `nemo-fabric[claude]==0.2.0` plus a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
-| Hermes Agent task with Relay | `nemo-fabric[hermes-agent,relay]==0.2.0` | NeMo Fabric runner, Hermes Agent adapter and harness, and the NeMo Relay Python package |
+| Hermes Agent task with Relay | Task image with Hermes Agent, `nemo-fabric==0.2.0`, `nemo-fabric-adapters-hermes==0.2.0`, and `nemo-relay>=0.7.2,<0.8` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
 
 The `nemo-fabric` package installs the runtime. The `relay` extra installs the
 NeMo Relay Python package, not the CLI required by Claude.
+Hermes Agent 0.20 and later is no longer installable from PyPI. Prepare Hermes
+Agent task images by following the
+[Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
+then install the bare Hermes adapter into the same Python environment.
 
 ## How Harbor Inputs Become FabricConfig
 

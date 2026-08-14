@@ -70,17 +70,18 @@ packages into a virtual environment with:
 uv pip install --find-links ./dist nemo-fabric
 ```
 
-Adapters are distributed as optional extras. For example, install the Hermes
-Agent adapter and harness with:
+Hermes Agent 0.20 and later is not installable from PyPI. For local development,
+check out the pinned Hermes source and synchronize it into the project
+environment with:
 
 ```bash
-uv pip install --find-links ./dist "nemo-fabric[hermes-agent]"
+just install-hermes-agent
 ```
 
-To install only the Hermes adapter and its supported harness, use
-`nemo-fabric-adapters-hermes[harness]`. Install
-`nemo-fabric-adapters-hermes` without an extra when the environment already
-manages a compatible Hermes Agent installation.
+The recipe checks out Hermes Agent under `external/hermes-agent` and installs
+it as the editable source declared in `pyproject.toml`. End users should follow
+the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation)
+and install `nemo-fabric-adapters-hermes` without a harness extra.
 
 Refer to the [installation guide](docs/getting-started/install.mdx) for the
 complete list of adapters and installation options.

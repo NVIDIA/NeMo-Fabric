@@ -35,6 +35,15 @@ curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
     --install-dir "$FABRIC_BUNDLE/.relay/bin"
 ```
 
+The `hermes-agent` extra in `FABRIC_PACKAGE` installs only the NeMo Fabric
+Hermes adapter; it does not install Hermes Agent. Hermes Agent 0.20 and later is
+no longer installable from PyPI. Before running the Hermes examples, prepare the
+task image by following the
+[Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation)
+and ensure that the Fabric runner uses the Python environment containing Hermes
+Agent and `nemo-fabric-adapters-hermes`. The dynamic `fabric_package` install is
+not a substitute for that image preparation.
+
 The curl command downloads and installs the standalone NeMo Relay 0.7.2 CLI tool
 and verifies its checksum. For other installation methods, refer to the
 [NeMo Relay installation instructions](../../../docs/getting-started/install.mdx#install-nemo-relay).

@@ -339,7 +339,9 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "swebench/README.md" in landing
     assert f"nemo-fabric[harbor]=={package_version}" in landing
     assert f"nemo-fabric[claude]=={package_version}" in landing
-    assert f"nemo-fabric[hermes-agent,relay]=={package_version}" in landing
+    assert f"nemo-fabric=={package_version}" in landing
+    assert f"nemo-fabric-adapters-hermes=={package_version}" in landing
+    assert "Hermes Agent 0.20 and later is no longer installable from PyPI" in landing
     assert documented_root_extras(
         "\n".join((calculator, dockerfile, landing, swebench))
     ) <= declared_extras

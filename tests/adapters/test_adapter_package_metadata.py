@@ -48,10 +48,9 @@ ADAPTER_EXTRAS = {
     "hermes-agent": {
         "path": "adapters/hermes",
         "root": (
-            f"nemo-fabric-adapters-hermes[harness] == {PACKAGE_VERSION}; "
+            f"nemo-fabric-adapters-hermes == {PACKAGE_VERSION}; "
             "python_version < '3.14'"
         ),
-        "harness": ["hermes-agent>=0.19.0; python_version < '3.14'"],
         "relay": ["nemo-relay>=0.7.2,<0.8"],
     },
 }
@@ -135,7 +134,7 @@ def test_root_relay_extra_installs_only_relay():
 
 
 @pytest.mark.parametrize("name", ADAPTER_EXTRAS)
-def test_root_adapter_extras_delegate_to_leaf_harness_extras(name: str):
+def test_root_adapter_extras_delegate_to_leaf_adapter_extras(name: str):
     extras = load_pyproject("")["project"]["optional-dependencies"]
     assert extras[name] == [ADAPTER_EXTRAS[name]["root"]]
     assert set(extras) == set(ADAPTER_EXTRAS) | {"harbor", "relay"}
@@ -147,11 +146,14 @@ def test_leaf_adapter_extras_separate_harness_and_relay(name: str):
     extras = load_pyproject(expected["path"])["project"]["optional-dependencies"]
     relay = expected.get("relay", [])
     full_relay = expected.get("full_relay", relay)
+    harness = expected.get("harness", [])
 
-    assert extras["harness"] == expected["harness"]
-    assert sorted(extras["full"]) == sorted([*expected["harness"], *full_relay])
+    assert sorted(extras["full"]) == sorted([*harness, *full_relay])
 
-    expected_names = {"harness", "full"}
+    expected_names = {"full"}
+    if harness:
+        expected_names.add("harness")
+        assert extras["harness"] == harness
     if relay:
         expected_names.add("relay")
         assert extras["relay"] == relay

@@ -10,20 +10,20 @@ This guide demonstrates how to install and run a simple agent using NeMo Fabric.
 
 ## Install NeMo Fabric
 
-Using Python 3.11 through 3.13, create a virtual environment and install the
-NeMo Fabric runtime, Hermes Agent adapter, and supported Hermes Agent
-dependencies:
+Hermes Agent 0.20 and later is no longer installable from PyPI. Follow the
+[Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
+then install NeMo Fabric and its bare Hermes adapter into the Python environment
+that runs Hermes Agent:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install "nemo-fabric[hermes-agent]"
+python -m pip install nemo-fabric nemo-fabric-adapters-hermes
 ```
 
-If the environment already manages Hermes Agent, install the runtime and bare
-adapter with `pip install nemo-fabric nemo-fabric-adapters-hermes`. Refer to the
-[installation guide](install.mdx) for separate adapter environments and the
-other supported package combinations.
+These packages do not install Hermes Agent. For local development from a NeMo
+Fabric checkout, run `just install-hermes-agent` from the repository root
+instead. The recipe checks out the pinned Hermes Agent source and synchronizes
+it into the project environment. Refer to the [NeMo Fabric installation guide](install.mdx)
+for separate adapter environments and other supported package combinations.
 
 ## Obtaining API Keys
 

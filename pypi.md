@@ -51,7 +51,7 @@ The following table shows the install target for each supported agent harness:
 | --- | --- | --- | --- |
 | [Claude Code](https://pypi.org/project/nemo-fabric-adapters-claude/) | `nemo-fabric[claude]` | `nemo-fabric-adapters-claude[harness]` | `nemo-fabric-adapters-claude` |
 | [Codex](https://pypi.org/project/nemo-fabric-adapters-codex/) | `nemo-fabric[codex]` | `nemo-fabric-adapters-codex[harness]` | `nemo-fabric-adapters-codex` |
-| [Hermes Agent](https://pypi.org/project/nemo-fabric-adapters-hermes/) | `nemo-fabric[hermes-agent]` | `nemo-fabric-adapters-hermes[harness]` | `nemo-fabric-adapters-hermes` |
+| [Hermes Agent](https://pypi.org/project/nemo-fabric-adapters-hermes/) | Install Hermes Agent separately, then install `nemo-fabric` and `nemo-fabric-adapters-hermes` | Install Hermes Agent separately, then install `nemo-fabric-adapters-hermes` | `nemo-fabric-adapters-hermes` |
 | [LangChain Deep Agents](https://pypi.org/project/nemo-fabric-adapters-deepagents/) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
 
 
@@ -62,8 +62,12 @@ environment, choose one of the following `nemo-fabric` harness extras:
 pip install "nemo-fabric[claude]"
 pip install "nemo-fabric[codex]"
 pip install "nemo-fabric[deepagents]"
-pip install "nemo-fabric[hermes-agent]"
 ```
+
+Hermes Agent 0.20 and later is not installable from PyPI. Follow the
+[Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
+then install `nemo-fabric` and `nemo-fabric-adapters-hermes` into the Python
+environment that runs Hermes Agent.
 
 To install an adapter and its harness without the NeMo Fabric runtime, choose
 one of the following adapter package `harness` extras:
@@ -72,13 +76,13 @@ one of the following adapter package `harness` extras:
 pip install "nemo-fabric-adapters-claude[harness]"
 pip install "nemo-fabric-adapters-codex[harness]"
 pip install "nemo-fabric-adapters-deepagents[harness]"
-pip install "nemo-fabric-adapters-hermes[harness]"
 ```
 
 Every adapter package also provides an adapter-scoped `full` extra, which does
 not install the NeMo Fabric runtime. For Claude and Codex, `full` installs the
-same dependencies as `harness`. For LangChain Deep Agents and Hermes Agent,
-`full` also installs the NeMo Relay Python package.
+same dependencies as `harness`. For LangChain Deep Agents, `full` also installs
+the NeMo Relay Python package. The Hermes adapter's `full` extra installs NeMo
+Relay but does not install Hermes Agent.
 
 If the environment already manages a compatible harness, choose one of the
 following bare adapter packages:
@@ -91,9 +95,10 @@ pip install nemo-fabric-adapters-hermes
 ```
 
 The adapter distribution contains only adapter-owned runtime dependencies. It
-does not install the NeMo Fabric runtime. Select `harness` or `full` to install
-the harness. If the runtime shares an environment with an existing compatible
-harness, install `nemo-fabric` and the bare adapter package together.
+does not install the NeMo Fabric runtime. For package-installable harnesses,
+select `harness` or `full` to install the harness. The Hermes adapter never
+installs Hermes Agent. If the runtime shares an environment with an existing
+compatible harness, install `nemo-fabric` and the bare adapter package together.
 
 
 ### Integrations

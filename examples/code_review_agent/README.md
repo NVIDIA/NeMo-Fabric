@@ -13,27 +13,27 @@ Each variant is an independent Python factory that returns a complete config.
 
 ## Set up
 
-Run commands from the repository root. Build NeMo Fabric and install its Python SDK
-into the project virtual environment:
+Run commands from the repository root. Build NeMo Fabric, then check out the
+pinned Hermes Agent source and synchronize it into the project environment:
 
 ```bash
 just build-all
+just install-hermes-agent
 ```
 
-The default variant uses Hermes Agent with an NVIDIA-hosted model. Follow the
-[Hermes Agent quick start](../../README.md#quick-start-hermes-agent) through the
-environment installation steps, which create `.tmp/hermes-venv`, then set
-`NVIDIA_API_KEY`. Select that interpreter only for Hermes Agent commands:
+The default variant uses Hermes Agent with an NVIDIA-hosted model. Set
+`NVIDIA_API_KEY`, then run it with the project interpreter:
 
 ```bash
-ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python" \
-  .venv/bin/python -m examples.code_review_agent \
+.venv/bin/python -m examples.code_review_agent \
   --input "Reply with exactly: NeMo Fabric works"
 ```
 
-Do not export a Hermes Agent-only `ADAPTER_PYTHON` globally before running the
-Codex, Claude, or Deep Agents variants. Those variants use the project
-interpreter unless you select another interpreter explicitly.
+Hermes Agent 0.20 and later is no longer installable from PyPI. End users
+installing outside a source checkout must follow the
+[Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation).
+If Hermes Agent uses a separate environment, set `ADAPTER_PYTHON` to that
+environment's Python interpreter only for Hermes Agent commands.
 
 ## Inspect the plan
 
@@ -51,8 +51,7 @@ environment, and telemetry plan.
 Run one request through the default Hermes Agent variant:
 
 ```bash
-ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python" \
-  .venv/bin/python -m examples.code_review_agent \
+.venv/bin/python -m examples.code_review_agent \
   --input "Reply with exactly: NeMo Fabric works"
 ```
 
@@ -66,7 +65,7 @@ The entrypoint exposes complete harness configs defined in
 
 | Variant | Command option | Additional setup |
 | --- | --- | --- |
-| Hermes Agent | `--variant hermes` | Created the environment from the [Hermes Agent quick start](../../README.md#quick-start-hermes-agent) and set `NVIDIA_API_KEY` |
+| Hermes Agent | `--variant hermes` | Ran `just install-hermes-agent` and set `NVIDIA_API_KEY` |
 | Codex | `--variant codex` | Installed [Codex adapter](../../adapters/codex/README.md) and an existing ChatGPT or API key login |
 | Claude | `--variant claude` | Installed [Claude adapter requirements](../../adapters/claude/README.md) and `ANTHROPIC_API_KEY` |
 | Deep Agents | `--variant deepagents` | Installed [Deep Agents adapter requirements](../../adapters/deepagents/README.md) and `NVIDIA_API_KEY` |
@@ -81,8 +80,7 @@ Relay Python package in their selected adapter environment. Refer to the
 for the current compatibility requirements.
 
 ```bash
-ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python" \
-  .venv/bin/python -m examples.code_review_agent \
+.venv/bin/python -m examples.code_review_agent \
   --variant hermes \
   --relay \
   --input "Review calculator.py"

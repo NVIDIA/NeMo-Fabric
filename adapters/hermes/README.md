@@ -9,21 +9,32 @@ This adapter runs Hermes Agent through its Python SDK.
 
 ## Install
 
-Hermes Agent and this adapter require Python 3.11 through 3.13. The following
-table shows which components each installation provides:
+Hermes Agent and this adapter require Python 3.11 through 3.13. Hermes Agent
+0.20 and later is not installable from PyPI. Install Hermes Agent by following
+the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
+then install the NeMo Fabric packages into the Python environment that runs
+Hermes Agent.
+
+The following table shows which NeMo Fabric components each package expression
+provides. None of these expressions installs Hermes Agent:
 
 | Installation | Runtime | Adapter | Harness | NeMo Relay Python Package |
 | --- | --- | --- | --- | --- |
-| `pip install "nemo-fabric[hermes-agent]"` | Yes | Yes | No | No |
-| `pip install "nemo-fabric[hermes-agent,relay]"` | Yes | Yes | No | Yes |
+| `pip install nemo-fabric nemo-fabric-adapters-hermes` | Yes | Yes | No | No |
+| `pip install "nemo-fabric[relay]" nemo-fabric-adapters-hermes` | Yes | Yes | No | Yes |
 | `pip install "nemo-fabric-adapters-hermes[full]"` | No | Yes | No | Yes |
 | `pip install "nemo-fabric-adapters-hermes[relay]"` | No | Yes | No | Yes |
 | `pip install nemo-fabric-adapters-hermes` | No | Yes | No | No |
 
+For local development from this repository, check out and install the pinned
+Hermes Agent source into the project environment:
 
-As of v0.20 Hermes Agent is no longer installable from PyPI. Refer to the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation) for details.
+```bash
+just install-hermes-agent
+```
 
-For split runtime and adapter environments, configure `ADAPTER_PYTHON` and use matching NeMo Fabric release versions. Refer to the
+For split runtime and adapter environments, configure `ADAPTER_PYTHON` and use
+matching NeMo Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
 Relay is optional for ordinary runs. Relay telemetry and
