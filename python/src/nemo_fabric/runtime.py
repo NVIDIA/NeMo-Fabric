@@ -541,9 +541,18 @@ async def _run_native_lifecycle(
         finally:
             try:
                 stop_events = json.loads(native.stop_runtime(plan_json, runtime_json))
-            except Exception:
+            except Exception as error:
                 if invoke_error is None:
-                    raise
+                    if result is None:
+                        raise
+                    if result.get("status") == "succeeded":
+                        result["status"] = "failed"
+                        result["error"] = {
+                            "stage": "stop",
+                            "code": "runtime_stop_failed",
+                            "message": str(error),
+                            "retryable": False,
+                        }
                 stop_events = []
             if result is not None and isinstance(stop_events, list):
                 result.setdefault("events", []).extend(stop_events)
