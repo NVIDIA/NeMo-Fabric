@@ -89,6 +89,10 @@ jobs:
         with:
           shared-key: fabric-rust-${{ runner.os }}-${{ runner.arch }}
 
+      - name: Create virtual environment
+        run: |
+          uv venv --python "${UV_PYTHON:-${{ matrix.python-version }}}" .venv
+
       - name: Install Hermes Agent
         if: ${{ matrix.python-version != '3.14' }}
         run: just install-hermes-agent
@@ -98,7 +102,6 @@ jobs:
       # installable for leaf adapter development.
       - name: Build SDK with native extension
         run: |
-          uv venv --python "${UV_PYTHON:-${{ matrix.python-version }}}" .venv
           uv sync --no-default-groups --group adapter-tests --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes-agent' || '' }} --extra relay
 
       - name: Run pytest
