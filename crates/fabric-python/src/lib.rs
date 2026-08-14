@@ -244,6 +244,14 @@ fn resolve_adapter_python(base_dir: &Path, adapter_python: OsString) -> PathBuf 
 }
 
 fn query_python_data_path(python: &Path, origin: &str) -> Result<String, String> {
+    query_python_data_path_with_timeout(python, origin, PYTHON_DATA_PATH_QUERY_TIMEOUT)
+}
+
+fn query_python_data_path_with_timeout(
+    python: &Path,
+    origin: &str,
+    timeout: Duration,
+) -> Result<String, String> {
     let mut child = Command::new(python)
         .arg("-c")
         .arg(PYTHON_DATA_PATH_SCRIPT)
@@ -256,7 +264,7 @@ fn query_python_data_path(python: &Path, origin: &str) -> Result<String, String>
                 python.display()
             )
         })?;
-    let deadline = Instant::now() + PYTHON_DATA_PATH_QUERY_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(_)) => break,
@@ -269,7 +277,7 @@ fn query_python_data_path(python: &Path, origin: &str) -> Result<String, String>
                 return Err(format!(
                     "{origin} interpreter `{}` timed out after {} seconds while reporting its data path",
                     python.display(),
-                    PYTHON_DATA_PATH_QUERY_TIMEOUT.as_secs()
+                    timeout.as_secs_f64()
                 ));
             }
             Err(error) => {
@@ -308,6 +316,49 @@ fn query_python_data_path(python: &Path, origin: &str) -> Result<String, String>
         ));
     }
     Ok(data_path)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::{Duration, Instant, SystemTime};
+
+    use super::query_python_data_path_with_timeout;
+
+    #[test]
+    fn python_data_path_query_times_out() {
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("system clock should be after the Unix epoch")
+            .as_nanos();
+        let test_dir = std::env::temp_dir().join(format!(
+            "nemo-fabric-python-data-path-timeout-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir(&test_dir).expect("temporary test directory should be created");
+        let slow_python = test_dir.join("slow-python");
+        fs::write(&slow_python, "#!/bin/sh\nwhile :; do :; done\n")
+            .expect("slow test executable should be written");
+        let mut permissions = fs::metadata(&slow_python)
+            .expect("slow test executable metadata should be readable")
+            .permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&slow_python, permissions)
+            .expect("slow test executable should be executable");
+
+        let started = Instant::now();
+        let error = query_python_data_path_with_timeout(
+            &slow_python,
+            "ADAPTER_PYTHON",
+            Duration::from_millis(50),
+        )
+        .expect_err("slow data path query should time out");
+
+        assert!(error.contains("timed out after 0.05 seconds"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(1));
+        fs::remove_dir_all(test_dir).expect("temporary test directory should be removed");
+    }
 }
 
 fn parse_config(contents: String) -> PyResult<FabricConfig> {

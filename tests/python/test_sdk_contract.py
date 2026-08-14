@@ -763,6 +763,19 @@ def test_typed_tool_definition_omits_empty_settings():
     }
 
 
+@pytest.mark.parametrize("field", ["kind", "ref", "settings"])
+def test_typed_tool_definition_rejects_known_extra_field_collisions(field: str):
+    tools = ToolsConfig()
+
+    with pytest.raises(ValueError, match="extra_fields duplicates known fields"):
+        tools.add_definition(
+            "web",
+            kind="function_group",
+            ref="web_tools",
+            extra_fields={field: "replacement"},
+        )
+
+
 def test_run_plan_snapshot_removes_named_definition():
     config = _FabricConfigSnapshot.from_mapping(
         {

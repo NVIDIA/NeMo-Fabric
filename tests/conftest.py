@@ -110,13 +110,19 @@ def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
         "code-review-agent",
     )
 
-
-@pytest.fixture(name="api_server")
-def api_server_fixture(unused_tcp_port_factory) -> Iterator[str]:
+@pytest.fixture(name="api_server_session", scope="session")
+def api_server_session_fixture(unused_tcp_port_factory) -> Iterator[str]:
     from _utils.mock_api_server import mock_api_server
 
     with mock_api_server(unused_tcp_port_factory()) as base_url:
         yield base_url
+
+
+@pytest.fixture(name="api_server")
+def api_server_fixture(api_server_session: str) -> Iterator[str]:
+    yield api_server_session
+
+    requests.post(f"{api_server_session}/_reset", timeout=5)
 
 
 @pytest.fixture(name="adapter_ids")

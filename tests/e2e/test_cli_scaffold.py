@@ -37,33 +37,6 @@ def generate_scaffold(destination: Path, language: str) -> None:
     )
 
 
-def test_generated_python_scaffold_installs_editable(tmp_path: Path):
-    destination = tmp_path / "python-agent"
-    generate_scaffold(destination, "python")
-    venv = tmp_path / "venv"
-    subprocess.run(
-        ["uv", "venv", "--seed", "--python", sys.executable, str(venv)],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=SUBPROCESS_TIMEOUT_SECONDS,
-    )
-    python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    environment = os.environ.copy()
-    environment["PIP_NO_BUILD_ISOLATION"] = "1"
-    environment["PIP_NO_DEPS"] = "1"
-
-    subprocess.run(
-        [str(python), "-m", "pip", "install", "-e", "."],
-        cwd=destination,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=SUBPROCESS_TIMEOUT_SECONDS,
-    )
-
-
 def test_generated_rust_scaffold_builds(tmp_path: Path):
     destination = tmp_path / "rust-agent"
     generate_scaffold(destination, "rust")

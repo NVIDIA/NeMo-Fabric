@@ -19,6 +19,7 @@ def mock_api_server(port: int) -> Iterator[str]:
 
     Use the /_requests endpoint to inspect captured chat-completion payloads after a test action.
     Use the /_scenario endpoint to configure the server to return a specific status code for subsequent requests.
+    Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
         port (int): The port on which the server will listen.
@@ -28,11 +29,15 @@ def mock_api_server(port: int) -> Iterator[str]:
     """
 
     app = FastAPI()
-    app.state.requests = []
-    app.state.status_code = 200
-    app.state.tool_call = None
-    app.state.tool_call_sent = False
-    app.state.mcp_authorization_headers = []
+
+    def reset_state() -> None:
+        app.state.requests = []
+        app.state.status_code = 200
+        app.state.tool_call = None
+        app.state.tool_call_sent = False
+        app.state.mcp_authorization_headers = []
+
+    reset_state()
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -70,6 +75,13 @@ def mock_api_server(port: int) -> Iterator[str]:
             "status_code": app.state.status_code,
             "tool_call": app.state.tool_call,
         }
+
+    @app.post("/_reset")
+    def reset() -> dict[str, str]:
+        """Clear captured requests and restore the default response scenario."""
+
+        reset_state()
+        return {"status": "ok"}
 
     @app.get("/_mcp_authorization_headers")
     def mcp_authorization_headers() -> list[str | None]:
