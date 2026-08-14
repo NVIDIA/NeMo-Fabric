@@ -16,16 +16,17 @@ SPDX-License-Identifier: Apache-2.0
 ## Install
 
 Hermes Agent and this adapter require Python versions 3.11 through 3.13.
-Installation can be performed using the `nemo-fabric` meta package with the `hermes-agent` extra, or by installing the adapter and harness packages separately. The following table shows which components each installation provides:
+The following table shows which components each installation provides:
 
 | Installation | Runtime | Adapter | Harness | NeMo Relay Python Package |
 | --- | --- | --- | --- | --- |
-| `pip install "nemo-fabric[hermes-agent]"` | Yes | Yes | Yes | No |
-| `pip install "nemo-fabric[hermes-agent,relay]"` | Yes | Yes | Yes | Yes |
-| `pip install "nemo-fabric-adapters-hermes[harness]"` | No | Yes | Yes | No |
-| `pip install "nemo-fabric-adapters-hermes[full]"` | No | Yes | Yes | Yes |
+| `pip install "nemo-fabric[hermes-agent]"` | Yes | Yes | No | No |
+| `pip install "nemo-fabric[hermes-agent,relay]"` | Yes | Yes | No | Yes |
+| `pip install "nemo-fabric-adapters-hermes[full]"` | No | Yes | No | Yes |
 | `pip install "nemo-fabric-adapters-hermes[relay]"` | No | Yes | No | Yes |
 | `pip install nemo-fabric-adapters-hermes` | No | Yes | No | No |
+
+As of v0.20 Hermes Agent is no longer installable from PyPI. Refer to the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation) for details.
 
 NeMo Relay is optional for ordinary runs. NeMo Relay telemetry and streaming
 require one of the installations in the table that includes the NeMo Relay

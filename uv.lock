@@ -2218,6 +2218,9 @@ harbor = [
     { name = "harbor", marker = "python_full_version >= '3.12'" },
     { name = "pyyaml" },
 ]
+hermes-agent = [
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
+]
 relay = [
     { name = "nemo-relay" },
 ]
@@ -2283,11 +2286,12 @@ requires-dist = [
     { name = "nemo-fabric-adapters-claude", extras = ["harness"], marker = "extra == 'claude'", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex", extras = ["harness"], marker = "extra == 'codex'", editable = "adapters/codex" },
     { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "adapters/hermes" },
     { name = "nemo-fabric-runtime", editable = "python" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.7.2,<0.8" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
 ]
-provides-extras = ["claude", "codex", "deepagents", "harbor", "relay"]
+provides-extras = ["claude", "codex", "deepagents", "harbor", "hermes-agent", "relay"]
 
 [package.metadata.requires-dev]
 adapter-tests = [

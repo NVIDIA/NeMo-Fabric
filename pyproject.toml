@@ -56,6 +56,10 @@ harbor = [
   "pyyaml>=6.0",
 ]
 
+hermes-agent = [
+  "nemo-fabric-adapters-hermes == 0.2.0; python_version < '3.14'",
+]
+
 relay = [
   "nemo-relay>=0.7.2,<0.8",
 ]
