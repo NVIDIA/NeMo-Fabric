@@ -51,7 +51,7 @@ runtime assumptions but never installs harnesses or credentials at run time.
   or `nemo-fabric[deepagents]`.
 - Hermes Agent 0.20 and later is no longer installable from PyPI. Follow the
   [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
-  then install `nemo-fabric` and the bare `nemo-fabric-adapters-hermes` package
+  then install the `nemo-fabric[hermes-agent]` package
   into the Python environment that runs Hermes Agent. These packages do not
   install Hermes Agent.
 - In a separate adapter environment, install
