@@ -51,6 +51,10 @@ deepagents = [
   "nemo-fabric-adapters-deepagents[harness] == 0.2.0",
 ]
 
+mini-swe-agent = [
+  "nemo-fabric-adapters-mini-swe-agent[harness] == 0.2.0",
+]
+
 harbor = [
   "harbor>=0.18,<0.19; python_version >= '3.12'",
   "pyyaml>=6.0",
@@ -74,6 +78,7 @@ adapters = [
   # and test environments exercise the SDK-native NeMo Relay integration.
   "nemo-fabric-adapters-deepagents[relay]",
   "nemo-fabric-adapters-hermes; python_version < '3.14'",
+  "nemo-fabric-adapters-mini-swe-agent",
 ]
 
 adapter-tests = [
@@ -81,6 +86,7 @@ adapter-tests = [
   "nemo-fabric-adapters-codex[harness]",
   "nemo-fabric-adapters-deepagents[harness]",
   "nemo-fabric-adapters-hermes[harness]; python_version < '3.14'",
+  "nemo-fabric-adapters-mini-swe-agent[harness]",
 ]
 
 langgraph-example = [
@@ -140,6 +146,7 @@ nemo-fabric-adapters-claude = { path = "adapters/claude", editable = true }
 nemo-fabric-adapters-codex = { path = "adapters/codex", editable = true }
 nemo-fabric-adapters-deepagents = { path = "adapters/deepagents", editable = true }
 nemo-fabric-adapters-hermes = { path = "adapters/hermes", editable = true }
+nemo-fabric-adapters-mini-swe-agent = { path = "adapters/mini-swe-agent", editable = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

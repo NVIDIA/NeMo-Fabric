@@ -45,6 +45,11 @@ ADAPTER_EXTRAS = {
         "relay": ["nemo-relay>=0.7.2,<0.8"],
         "full_relay": ["nemo-relay[deepagents]>=0.7.2,<0.8"],
     },
+    "mini-swe-agent": {
+        "path": "adapters/mini-swe-agent",
+        "root": f"nemo-fabric-adapters-mini-swe-agent[harness] == {PACKAGE_VERSION}",
+        "harness": ["mini-swe-agent>=2.0,<3"],
+    },
     "hermes-agent": {
         "path": "adapters/hermes",
         "root": (
@@ -95,6 +100,13 @@ ADAPTER_EXTRAS = {
                 f"nemo-fabric-adapters-common == {PACKAGE_VERSION}",
             ],
         ),
+        (
+            "adapters/mini-swe-agent",
+            [
+                f"nemo-fabric-adapter-contract == {PACKAGE_VERSION}",
+                f"nemo-fabric-adapters-common == {PACKAGE_VERSION}",
+            ],
+        ),
     ],
 )
 def test_adapter_runtime_dependencies(path: str, expected: list[str]):
@@ -116,6 +128,7 @@ def test_adapter_test_dependency_group_matches_leaf_harnesses():
         "nemo-fabric-adapters-codex[harness]",
         "nemo-fabric-adapters-deepagents[harness]",
         "nemo-fabric-adapters-hermes[harness]; python_version < '3.14'",
+        "nemo-fabric-adapters-mini-swe-agent[harness]",
     ]
     assert sorted(manifest["dependency-groups"]["adapter-tests"]) == sorted(expected)
     assert "adapter-tests" not in manifest["tool"]["uv"]["default-groups"]
