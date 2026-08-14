@@ -70,6 +70,7 @@ adapters = [
   # and test environments exercise the SDK-native NeMo Relay integration.
   "nemo-fabric-adapters-deepagents[relay]",
   "nemo-fabric-adapters-hermes; python_version < '3.14'",
+  "hermes-agent==0.20.1; python_version < '3.14'",
 ]
 
 adapter-tests = [
@@ -123,8 +124,12 @@ test = [
 
 [tool.uv]
 default-groups = ["adapters", "dev", "test"]
+# Hermes v0.20.1 imports the top-level registration_lifecycle module but omits
+# it from setuptools' py-modules, so standard editable installs cannot import it.
+config-settings-package = { "hermes-agent" = { editable_mode = "compat" } }
 
 [tool.uv.sources]
+hermes-agent = { path = "external/hermes-agent", editable = true }
 nemo-fabric-runtime = { path = "python", editable = true }
 nemo-fabric-adapter-contract = { path = "adapter-contract", editable = true }
 nemo-fabric-adapters-common = { path = "adapters/common", editable = true }

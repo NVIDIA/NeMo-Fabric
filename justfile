@@ -324,16 +324,7 @@ install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
     hermes_commit="f80f453ae0679347e38abc917c7f94f717bf96c5"
-    hermes_checkout="$REPO_ROOT/.venv/src/hermes-agent"
-
-    if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
-        venv_python="$REPO_ROOT/.venv/bin/python"
-    elif [[ -x "$REPO_ROOT/.venv/Scripts/python.exe" ]]; then
-        venv_python="$REPO_ROOT/.venv/Scripts/python.exe"
-    else
-        echo "ERROR: expected Fabric virtualenv Python executable under .venv" >&2
-        exit 1
-    fi
+    hermes_checkout="$REPO_ROOT/external/hermes-agent"
 
     if [[ -e "$hermes_checkout" && ! -d "$hermes_checkout/.git" ]]; then
         echo "ERROR: expected a Git checkout at $hermes_checkout" >&2
@@ -349,7 +340,7 @@ install-hermes-agent:
     fi
     git -C "$hermes_checkout" fetch --depth 1 origin "$hermes_commit"
     git -C "$hermes_checkout" checkout --quiet --detach FETCH_HEAD
-    uv pip install --python "$venv_python" --editable "$hermes_checkout"
+    uv sync --inexact --reinstall-package hermes-agent
 
 # Build the TypeScript adapter contract using the locked dependency set.
 build-typescript: install-typescript

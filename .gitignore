@@ -4,6 +4,7 @@
 /target/
 /.tmp/
 /.venv/
+/external/hermes-agent/
 /.env
 /.env.*
 !.env.example
