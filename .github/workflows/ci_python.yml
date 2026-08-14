@@ -97,6 +97,10 @@ jobs:
           uv venv --python "${UV_PYTHON:-${{ matrix.python-version }}}" .venv
           uv sync --no-default-groups --group adapter-tests --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes-agent' || '' }} --extra relay
 
+      - name: Install Hermes Agent
+        if: ${{ matrix.python-version != '3.14' }}
+        run: just install-hermes-agent
+
       - name: Run pytest
         run: |
           set -euo pipefail
