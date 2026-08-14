@@ -73,6 +73,9 @@ Harness integration skills also live directly under `skills/`:
 
 - **Naming:** integration skills are prefixed with the product name,
   `nemo-fabric-<topic>`.
+- **Release collection:** before publishing release-bound skill updates to an
+  external skills registry, collect the merged public integration-skill changes
+  from `skills/` and preserve their source PR references.
 - **Frontmatter:** each `SKILL.md` begins with YAML frontmatter containing at
   least `name` and `description`. `SKILL.md` files do not carry an SPDX header;
   every other file, including this README and bundled `references/`, does.
