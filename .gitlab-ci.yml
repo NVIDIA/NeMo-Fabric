@@ -184,7 +184,7 @@ publish:artifactory:wheels:
     - job: collect:github-artifacts
       artifacts: true
   before_script:
-    - uv sync --locked --no-install-project --no-default-groups --group dev
+    - uv sync --frozen --no-install-project --no-default-groups --group dev
   script:
     - |
       set -eu
@@ -248,6 +248,8 @@ publish:artifactory:cargo:
         exit 1
       fi
 
+      uv venv --python "${UV_PYTHON:-${NEMO_FABRIC_CI_PYTHON_VERSION}}" .venv
+      just install-hermes-agent
       just set-version "$version"
 
       cargo_home="${CARGO_HOME:-${HOME}/.cargo}"
