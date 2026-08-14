@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# NeMo Agent Toolkit Reference Adapter for NVIDIA NeMo Fabric
+# NVIDIA NeMo Agent Toolkit Reference Adapter for NVIDIA NeMo Fabric
 
 This source-only adapter runs a NeMo Agent Toolkit workflow behind
 the NeMo Fabric lifecycle contract. It is a third-party adapter reference, not a

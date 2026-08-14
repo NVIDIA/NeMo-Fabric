@@ -18,4 +18,4 @@ The following source-only reference adapter is available:
 
 | Harness | Adapter ID | Reference |
 | --- | --- | --- |
-| NeMo Agent Toolkit | `nvidia.fabric.nat` | [NeMo Agent Toolkit adapter](nat/README.md) |
+| NVIDIA NeMo Agent Toolkit | `nvidia.fabric.nat` | [NeMo Agent Toolkit adapter](nat/README.md) |
