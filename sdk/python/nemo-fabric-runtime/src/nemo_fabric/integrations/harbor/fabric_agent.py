@@ -74,7 +74,8 @@ if _HARBOR_IMPORT_ERROR is not None:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ModuleNotFoundError(
                 "nemo_fabric.integrations.harbor requires the Harbor optional "
-                "dependency; install nemo-fabric with the harbor extra"
+                "dependency, which requires Python 3.12 or later; install "
+                "nemo-fabric[harbor] on a supported interpreter"
             ) from _HARBOR_IMPORT_ERROR
 
         @staticmethod

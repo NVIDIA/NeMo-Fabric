@@ -18,9 +18,24 @@ def test_set_python_project_versions_updates_internal_pins_with_extras(
     tmp_path: Path,
 ):
     (tmp_path / "adapters" / "claude").mkdir(parents=True)
-    (tmp_path / "adapter-contract").mkdir()
-    (tmp_path / "python").mkdir()
-    (tmp_path / "pyproject.toml").write_text(
+    (tmp_path / "adapter-contract" / "python").mkdir(parents=True)
+    (tmp_path / "sdk" / "python" / "nemo-fabric").mkdir(parents=True)
+    (tmp_path / "sdk" / "python" / "nemo-fabric-runtime").mkdir()
+    coordinator_path = tmp_path / "pyproject.toml"
+    coordinator_path.write_text(
+        """\
+[project]
+name = "nemo-fabric-development"
+version = "0.0.0"
+dependencies = [
+  "nemo-fabric",
+  "nemo-fabric-runtime == 0.2.0",
+]
+""",
+        encoding="utf-8",
+    )
+    sdk_path = tmp_path / "sdk" / "python" / "nemo-fabric" / "pyproject.toml"
+    sdk_path.write_text(
         """\
 [project]
 name = "nemo-fabric"
@@ -50,7 +65,7 @@ dependencies = [
 """,
         encoding="utf-8",
     )
-    (tmp_path / "adapter-contract" / "pyproject.toml").write_text(
+    (tmp_path / "adapter-contract" / "python" / "pyproject.toml").write_text(
         """\
 [project]
 name = "nemo-fabric-adapter-contract"
@@ -58,7 +73,9 @@ version = "0.2.0"
 """,
         encoding="utf-8",
     )
-    runtime_path = tmp_path / "python" / "pyproject.toml"
+    runtime_path = (
+        tmp_path / "sdk" / "python" / "nemo-fabric-runtime" / "pyproject.toml"
+    )
     runtime_path.write_text(
         """\
 [project]
@@ -70,26 +87,24 @@ dynamic = ["version"]
 
     set_python_project_versions.set_python_project_versions(tmp_path, "0.2.0rc5")
 
-    root_project = tomllib.loads(
-        (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
-    )["project"]
+    sdk_project = tomllib.loads(sdk_path.read_text(encoding="utf-8"))["project"]
     adapter_project = tomllib.loads(
         (tmp_path / "adapters" / "claude" / "pyproject.toml").read_text(
             encoding="utf-8"
         )
     )["project"]
     contract_project = tomllib.loads(
-        (tmp_path / "adapter-contract" / "pyproject.toml").read_text(
+        (tmp_path / "adapter-contract" / "python" / "pyproject.toml").read_text(
             encoding="utf-8"
         )
     )["project"]
 
-    assert root_project["version"] == "0.2.0rc5"
-    assert root_project["dependencies"] == ["nemo-fabric-runtime == 0.2.0rc5"]
-    assert root_project["optional-dependencies"]["claude"] == [
+    assert sdk_project["version"] == "0.2.0rc5"
+    assert sdk_project["dependencies"] == ["nemo-fabric-runtime == 0.2.0rc5"]
+    assert sdk_project["optional-dependencies"]["claude"] == [
         "nemo-fabric-adapters-claude[harness] == 0.2.0rc5"
     ]
-    assert root_project["optional-dependencies"]["hermes-agent"] == [
+    assert sdk_project["optional-dependencies"]["hermes-agent"] == [
         "nemo-fabric-adapters-hermes[harness] == 0.2.0rc5; python_version < '3.14'"
     ]
     assert adapter_project["version"] == "0.2.0rc5"
@@ -100,3 +115,11 @@ dynamic = ["version"]
     assert tomllib.loads(runtime_path.read_text(encoding="utf-8"))["project"][
         "dynamic"
     ] == ["version"]
+    coordinator_project = tomllib.loads(coordinator_path.read_text(encoding="utf-8"))[
+        "project"
+    ]
+    assert coordinator_project["version"] == "0.0.0"
+    assert coordinator_project["dependencies"] == [
+        "nemo-fabric",
+        "nemo-fabric-runtime == 0.2.0rc5",
+    ]

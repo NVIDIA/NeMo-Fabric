@@ -70,12 +70,25 @@ def test_configure_root_points_node_collector_at_typescript_package(
 
         assert license_diff.attributions_lockfile_md.ROOT == tmp_path.resolve()
         assert license_diff.attributions_lockfile_md.NODE == (
-            tmp_path.resolve() / "typescript" / "adapter-contract"
+            tmp_path.resolve() / "adapter-contract" / "typescript"
         )
 
 
+def test_configure_root_supports_comparison_with_previous_layout(tmp_path: Path):
+    previous_package = tmp_path / "typescript" / "adapter-contract"
+    previous_package.mkdir(parents=True)
+
+    with (
+        patch.object(license_diff.attributions_lockfile_md, "ROOT"),
+        patch.object(license_diff.attributions_lockfile_md, "NODE"),
+    ):
+        license_diff._configure_root(tmp_path)
+
+        assert license_diff.attributions_lockfile_md.NODE == previous_package.resolve()
+
+
 def test_node_inventory_includes_locked_dev_dependencies(tmp_path: Path):
-    package_dir = tmp_path / "typescript" / "adapter-contract"
+    package_dir = tmp_path / "adapter-contract" / "typescript"
     package_dir.mkdir(parents=True)
     lock = {
         "name": "local-package",

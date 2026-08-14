@@ -24,6 +24,12 @@ The dataclasses provide strict `from_mapping()` validation and JSON-compatible
 adapter uses Pydantic models for typed extensions or wants Pydantic
 interoperability. Both paths use the same contract dataclasses.
 
+Import `AgentConfig` from the contract models module:
+
+```python
+from nemo_fabric_adapter_contract.models import AgentConfig
+```
+
 An adapter descriptor opts into the southbound configuration with
 `config.input=agent_config`. Python adapters using the optional common
 lifecycle host pass `AgentConfig.from_mapping` as the `config_loader`.

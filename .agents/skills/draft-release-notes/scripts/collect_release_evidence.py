@@ -90,13 +90,16 @@ def public_paths(commits_to_report: tuple[Commit, ...]) -> tuple[str, ...]:
     """Return changed paths likely to support public release-note claims."""
     package_paths = {
         "Cargo.toml",
+        "crates/fabric-python/Cargo.toml",
         "adapters/claude/pyproject.toml",
         "adapters/codex/pyproject.toml",
         "adapters/common/pyproject.toml",
         "adapters/deepagents/pyproject.toml",
         "adapters/hermes/pyproject.toml",
-        "pyproject.toml",
-        "python/pyproject.toml",
+        "sdk/python/nemo-fabric/pyproject.toml",
+        "sdk/python/nemo-fabric-runtime/pyproject.toml",
+        "adapter-contract/python/pyproject.toml",
+        "adapter-contract/typescript/package.json",
     }
     return tuple(
         sorted(
@@ -107,6 +110,7 @@ def public_paths(commits_to_report: tuple[Commit, ...]) -> tuple[str, ...]:
                 if path == "README.md"
                 or path.startswith("docs/")
                 or path.endswith("/README.md")
+                or path.endswith("/pypi.md")
                 or path in package_paths
             }
         )

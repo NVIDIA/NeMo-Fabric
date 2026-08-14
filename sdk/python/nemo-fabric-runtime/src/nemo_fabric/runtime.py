@@ -550,7 +550,7 @@ async def _run_native_lifecycle(
                         result["error"] = {
                             "stage": "stop",
                             "code": "runtime_stop_failed",
-                            "message": str(error),
+                            "message": str(error) or "runtime shutdown failed",
                             "retryable": False,
                         }
                 stop_events = []

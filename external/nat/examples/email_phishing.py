@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run a NAT workflow with the installed email-phishing analyzer function."""
+"""Run a NeMo Agent Toolkit workflow with the installed email-phishing analyzer function."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from nemo_fabric import WorkflowEntrypointConfig
 
 
 def build_config() -> FabricConfig:
-    """Build the NAT-native email-phishing configuration."""
+    """Build the native NeMo Agent Toolkit email-phishing configuration."""
 
     tools = ToolsConfig()
     tools.add_definition(
@@ -38,7 +38,7 @@ def build_config() -> FabricConfig:
     config = FabricConfig(
         metadata=MetadataConfig(
             name="nat-email-phishing-analyzer",
-            description="Classifies an email with an installed NAT function.",
+            description="Classifies an email with an installed NeMo Agent Toolkit function.",
         ),
         harness=HarnessConfig(
             adapter_id="nvidia.fabric.nat",

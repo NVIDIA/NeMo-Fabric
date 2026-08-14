@@ -18,7 +18,7 @@ SEMVER_PATTERN = re.compile(
     rf"(?:-{PRERELEASE_IDENTIFIER}(?:\.{PRERELEASE_IDENTIFIER})*)?"
     rf"(?:\+{BUILD_IDENTIFIER}(?:\.{BUILD_IDENTIFIER})*)?"
 )
-PACKAGE_DIRECTORY = Path("typescript/adapter-contract")
+PACKAGE_DIRECTORY = Path("adapter-contract/typescript")
 
 
 def _read_json_object(path: Path) -> dict[str, Any]:

@@ -12,7 +12,9 @@ ref_name := ""
 # Linux wheel artifacts target this minimum glibc version for compatibility.
 linux_glibc_version := "2.17"
 
-python_projects := ". python adapter-contract adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes adapters/mini-swe-agent"
+python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes adapters/mini-swe-agent"
+
+python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes adapters/mini-swe-agent"
 
 bash_helpers := '''
 set -euo pipefail
@@ -267,22 +269,32 @@ set_project_version() {
 # Remove local Rust, Python, and TypeScript build and test artifacts.
 clean:
     #!/usr/bin/env bash
-    shopt -s globstar nullglob
+    set -euo pipefail
     cargo clean
     rm -rf \
         .coverage \
-        .pytest_cache \
-        python/.pytest_cache \
-        **/__pycache__ \
-        **/*.egg-info \
-        **/*.so \
-        **/coverage.xml \
-        **/dist \
+        build \
+        dist \
+        adapter-contract/python/build \
+        adapter-contract/python/dist \
         docs/node_modules \
-        typescript/adapter-contract/node_modules \
-        typescript/adapter-contract/*.tgz \
-        target/ \
-        **/build/
+        adapter-contract/typescript/node_modules \
+        adapter-contract/typescript/dist \
+        adapters/*/build \
+        adapters/*/dist \
+        sdk/python/*/build \
+        sdk/python/*/dist \
+        adapter-contract/typescript/*.tgz
+    find . \
+        \( -path './.venv' -o -path './.git' \) -prune -o \
+        -type d \( \
+            -name .pytest_cache -o \
+            -name __pycache__ -o \
+            -name '*.egg-info' \
+        \) -prune -exec rm -rf {} +
+    find . \
+        \( -path './.venv' -o -path './.git' \) -prune -o \
+        -type f \( -name '*.so' -o -name coverage.xml \) -exec rm -f {} +
 
 # Build the Rust workspace using the locked dependency set.
 build-rust:
@@ -296,7 +308,7 @@ build-python:
     set -euo pipefail
     if [[ "{{ no_uv }}" == "true" ]]; then
         editable_projects=()
-        for project in {{ python_projects }}; do
+        for project in {{ python_packages }}; do
             editable_projects+=(--editable "$project")
         done
         uv pip install --python .venv/bin/python --no-deps --reinstall \
@@ -310,7 +322,7 @@ build-python:
 
 # Install the TypeScript adapter contract dependencies from the lockfile.
 install-typescript:
-    npm ci --prefix typescript/adapter-contract --ignore-scripts
+    npm ci --prefix adapter-contract/typescript --ignore-scripts
 
 # Install the Hermes Agent into the Fabric virtualenv for local development
 # and testing.
@@ -344,15 +356,15 @@ install-hermes-agent:
 
 # Build the TypeScript adapter contract using the locked dependency set.
 build-typescript: install-typescript
-    npm run build --prefix typescript/adapter-contract
+    npm run build --prefix adapter-contract/typescript
 
 # Generate the TypeScript adapter contract from the committed JSON Schemas.
 generate-typescript-contract: install-typescript
-    npm run generate --prefix typescript/adapter-contract
+    npm run generate --prefix adapter-contract/typescript
 
 # Verify the TypeScript adapter contract package tarball.
 pack-typescript: install-typescript
-    npm run pack:check --prefix typescript/adapter-contract
+    npm run pack:check --prefix adapter-contract/typescript
 
 # Generate the JSON Schema files from the Rust configuration types.
 schemas:
@@ -434,7 +446,7 @@ test-rust:
 
 # Run the TypeScript adapter contract checks using the locked dependency set.
 test-typescript: install-typescript
-    npm test --prefix typescript/adapter-contract
+    npm test --prefix adapter-contract/typescript
 
 # Run all Rust, Python, and TypeScript tests.
 test-all: test-rust test-python test-typescript
@@ -449,12 +461,12 @@ wheels:
     if [[ "$(uname -s)" == "Linux" ]]; then
         prepend_ziglang_to_path "$(uv_python_executable)"
     fi
-    projects=({{ python_projects }})
-    uv build --wheel --clear --out-dir dist .
+    projects=({{ python_packages }})
+    uv build --wheel --clear --out-dir dist sdk/python/nemo-fabric
     for project in "${projects[@]}"; do
-        if [[ "$project" == "." || "$project" == "python" ]]; then
-            # Exclude the top-level package as we already built that
-            # Exclude the python package as that needs special handling for maturin
+        if [[ "$project" == "sdk/python/nemo-fabric" || "$project" == "sdk/python/nemo-fabric-runtime" ]]; then
+            # The metapackage was built first so --clear applies exactly once.
+            # The native runtime needs Maturin's platform compatibility handling.
             continue
         fi
         uv build --wheel --out-dir dist "$project"
@@ -465,10 +477,14 @@ wheels:
         build_args+=("$arg")
     done < <(python_wheel_build_args)
     (
-        cd python
+        cd sdk/python/nemo-fabric-runtime
         maturin build \
             --release \
             --locked \
             "${build_args[@]}" \
-            --out ../dist
+            --out "$REPO_ROOT/dist"
     )
+
+# Verify every built wheel contains the canonical repository license.
+check-wheel-licenses:
+    uv run --no-project --no-cache python scripts/ci/check_wheel_licenses.py

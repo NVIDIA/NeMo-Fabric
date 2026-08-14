@@ -30,7 +30,7 @@ Use this table for common review calls:
 | Item | Format | Review Signal |
 |---|---|---|
 | Code elements, commands, parameters, package names, expressions | Monospace | Flag prose such as "run just test-rust" and rewrite as `run just test-rust`. |
-| Directories, file names, and paths | Monospace | Use backticks around paths such as `python/src/nemo_fabric/client.py`. |
+| Directories, file names, and paths | Monospace | Use backticks around paths such as `sdk/python/nemo-fabric-runtime/src/nemo_fabric/client.py`. |
 | Variables inside paths | Angle brackets inside monospace | Prefer `/home/<username>/.login` for placeholders. |
 | Error messages and strings | Quotation marks | Keep literal code strings in code formatting when that is clearer. |
 | UI buttons, menus, fields, and labels | Bold | Example: Select **Save**. |

@@ -38,8 +38,8 @@ pip install nemo-fabric
 
 ### Supported Python Versions
 
-NeMo Fabric supports Python 3.11 through 3.14. However some harnesses and
-and integrations have more restrictive requirements. Hermes Agent requires
+NeMo Fabric supports Python 3.11 through 3.14. However, some harnesses and
+integrations have more restrictive requirements. Hermes Agent requires
 Python 3.11 through 3.13, and the Harbor integration requires Python 3.12 or later.
 
 
@@ -53,6 +53,7 @@ The following table shows the install target for each supported agent harness:
 | [Codex](https://pypi.org/project/nemo-fabric-adapters-codex/) | `nemo-fabric[codex]` | `nemo-fabric-adapters-codex[harness]` | `nemo-fabric-adapters-codex` |
 | [Hermes Agent](https://pypi.org/project/nemo-fabric-adapters-hermes/) | Install Hermes Agent separately, then install `nemo-fabric` and `nemo-fabric-adapters-hermes` | Install Hermes Agent separately, then install `nemo-fabric-adapters-hermes` | `nemo-fabric-adapters-hermes` |
 | [LangChain Deep Agents](https://pypi.org/project/nemo-fabric-adapters-deepagents/) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
+| [mini-SWE-agent](https://pypi.org/project/nemo-fabric-adapters-mini-swe-agent/) | `nemo-fabric[mini-swe-agent]` | `nemo-fabric-adapters-mini-swe-agent[harness]` | `nemo-fabric-adapters-mini-swe-agent` |
 
 
 To install the NeMo Fabric runtime, adapter, and supported harness in one
@@ -62,9 +63,10 @@ environment, choose one of the following `nemo-fabric` harness extras:
 pip install "nemo-fabric[claude]"
 pip install "nemo-fabric[codex]"
 pip install "nemo-fabric[deepagents]"
+pip install "nemo-fabric[mini-swe-agent]"
 ```
 
-Hermes Agent 0.20 and later is not installable from PyPI. Follow the
+Hermes Agent 0.20 and later is not installable from PyPI. For this reason the Hermes Agent adapter does not provide a `harness` extra.Follow the
 [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
 then install `nemo-fabric` and `nemo-fabric-adapters-hermes` into the Python
 environment that runs Hermes Agent.
@@ -76,13 +78,11 @@ one of the following adapter package `harness` extras:
 pip install "nemo-fabric-adapters-claude[harness]"
 pip install "nemo-fabric-adapters-codex[harness]"
 pip install "nemo-fabric-adapters-deepagents[harness]"
+pip install "nemo-fabric-adapters-mini-swe-agent[harness]"
 ```
 
 Every adapter package also provides an adapter-scoped `full` extra, which does
-not install the NeMo Fabric runtime. For Claude and Codex, `full` installs the
-same dependencies as `harness`. For LangChain Deep Agents, `full` also installs
-the NeMo Relay Python package. The Hermes adapter's `full` extra installs NeMo
-Relay but does not install Hermes Agent.
+not install the NeMo Fabric runtime. For Claude, Codex, and mini-SWE-agent, `full` installs the same dependencies as `harness`. For LangChain Deep Agents, `full` also installs the NeMo Relay Python package. The Hermes adapter's `full` extra installs NeMo Relay but does not install Hermes Agent.
 
 If the environment already manages a compatible harness, choose one of the
 following bare adapter packages:
@@ -92,6 +92,7 @@ pip install nemo-fabric-adapters-claude
 pip install nemo-fabric-adapters-codex
 pip install nemo-fabric-adapters-deepagents
 pip install nemo-fabric-adapters-hermes
+pip install nemo-fabric-adapters-mini-swe-agent
 ```
 
 The adapter distribution contains only adapter-owned runtime dependencies. It
@@ -105,11 +106,15 @@ compatible harness, install `nemo-fabric` and the bare adapter package together.
 
 #### Harbor Integration
 
+Install the Harbor integration with the `harbor` extra:
+
 ```bash
 pip install "nemo-fabric[harbor]"
 ```
 
 #### NeMo Relay Integration
+
+Install a compatible NeMo Relay package with the `relay` extra:
 
 ```bash
 pip install "nemo-fabric[relay]"
@@ -131,4 +136,4 @@ install guide for instructions on installing the CLI tool.
 
 Refer to the [NVIDIA NeMo Fabric documentation](https://docs.nvidia.com/nemo/fabric)
 for installation, configuration, and usage guidance. Source code is available
-in the [NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/nemo-fabric/).
+in the [NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/NeMo-Fabric/).

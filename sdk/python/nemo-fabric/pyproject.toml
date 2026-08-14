@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = [
+  "setuptools>=77",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nemo-fabric"
+version = "0.2.0"
+description = "Python SDK distribution for NeMo Fabric"
+authors = [
+  { name = "NVIDIA Corporation" },
+]
+keywords = ["agents", "ai", "nemo-fabric", "runtime", "tools"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+readme = "pypi.md"
+requires-python = ">=3.11"
+dependencies = [
+  "nemo-fabric-runtime == 0.2.0",
+]
+
+[project.urls]
+Repository = "https://github.com/NVIDIA/NeMo-Fabric"
+Homepage = "https://github.com/NVIDIA/NeMo-Fabric"
+Issues = "https://github.com/NVIDIA/NeMo-Fabric/issues"
+Documentation = "https://docs.nvidia.com/nemo/fabric"
+
+[tool.setuptools]
+packages = []
+
+[tool.uv.sources]
+nemo-fabric-runtime = { path = "../nemo-fabric-runtime", editable = true }
+nemo-fabric-adapter-contract = { path = "../../../adapter-contract/python", editable = true }
+nemo-fabric-adapters-common = { path = "../../../adapters/common", editable = true }
+nemo-fabric-adapters-claude = { path = "../../../adapters/claude", editable = true }
+nemo-fabric-adapters-codex = { path = "../../../adapters/codex", editable = true }
+nemo-fabric-adapters-deepagents = { path = "../../../adapters/deepagents", editable = true }
+nemo-fabric-adapters-hermes = { path = "../../../adapters/hermes", editable = true }
+nemo-fabric-adapters-mini-swe-agent = { path = "../../../adapters/mini-swe-agent", editable = true }
+
+[project.optional-dependencies]
+
+claude = [
+  "nemo-fabric-adapters-claude[harness] == 0.2.0",
+]
+
+codex = [
+  "nemo-fabric-adapters-codex[harness] == 0.2.0",
+]
+
+deepagents = [
+  "nemo-fabric-adapters-deepagents[harness] == 0.2.0",
+]
+
+mini-swe-agent = [
+  "nemo-fabric-adapters-mini-swe-agent[harness] == 0.2.0",
+]
+
+harbor = [
+  "harbor>=0.18,<0.19; python_version >= '3.12'",
+  "pyyaml>=6.0",
+]
+
+hermes-agent = [
+  "nemo-fabric-adapters-hermes == 0.2.0; python_version < '3.14'",
+]
+
+relay = [
+  "nemo-relay>=0.7.2,<0.8",
+]

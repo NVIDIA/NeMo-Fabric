@@ -51,6 +51,15 @@ const schemaSpecs = [
   { name: "runtime-context", output: "runtime-context.ts" },
 ];
 
+// These local-host transport schemas are canonical southbound contracts, but
+// they are not part of the dependency-free TypeScript model package. Keep the
+// exclusion explicit now that all adapter schemas share one flat directory.
+const transportSchemaNames = [
+  "adapter-invocation.schema.json",
+  "openai-stream-invocation.schema.json",
+  "openai-stream-record.schema.json",
+];
+
 const pendingFiles = new Map();
 let contractVersion;
 
@@ -61,7 +70,10 @@ const schemaInventory = (await readdir(schemaDirectory, { withFileTypes: true })
   .map((entry) => entry.name);
 assertAdapterSchemaInventory(
   schemaInventory,
-  schemaSpecs.map((spec) => `${spec.name}.schema.json`),
+  [
+    ...schemaSpecs.map((spec) => `${spec.name}.schema.json`),
+    ...transportSchemaNames,
+  ],
 );
 
 for (const spec of schemaSpecs) {

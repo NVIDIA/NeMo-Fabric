@@ -20,12 +20,14 @@ consumed outside the source tree.
 ## Audit Areas
 
 - Rust `Cargo.toml` package names and workspace metadata
-- Python and maturin packaging in `pyproject.toml`
-- Python package metadata in `python/pyproject.toml`
-- Native extension naming and placement under `python/src/nemo_fabric`
+- Root development coordination in `pyproject.toml`
+- Published Python package metadata under `sdk/python/` and
+  `adapter-contract/python/`
+- Native extension naming and placement under
+  `sdk/python/nemo-fabric-runtime/src/nemo_fabric`
 - Dependency resolution in `Cargo.lock` and `uv.lock`
 - TypeScript adapter-contract metadata and dependency resolution in
-  `typescript/adapter-contract/package.json` and `package-lock.json`
+  `adapter-contract/typescript/package.json` and `package-lock.json`
 - Documentation tooling metadata in `docs/package.json` and
   `docs/package-lock.json`
 - CI workflows, install commands, and example commands
@@ -41,8 +43,8 @@ Treat every direct dependency as a long-lived API, supply-chain, and licensing
 commitment.
 
 - Keep `nemo-fabric` as a metapackage that unconditionally installs the
-  exact-version `nemo-fabric-runtime` distribution. Root harness extras delegate
-  to version-matched leaf adapter `harness` extras. Do not add root adapter-only
+  exact-version `nemo-fabric-runtime` distribution. Its harness extras delegate
+  to version-matched leaf adapter `harness` extras. Do not add adapter-only
   aliases.
 - Keep leaf adapters adapter-only by default. Every leaf provides `harness` and
   `full`; provide `relay` only when the adapter imports the NeMo Relay Python
@@ -64,7 +66,7 @@ commitment.
   `uv run --no-project python scripts/licensing/license_diff.py --base-ref origin/main`
   after updating manifests and lockfiles, then review added packages and license
   changes.
-- For `typescript/adapter-contract/package-lock.json`, inspect the resolved
+- For `adapter-contract/typescript/package-lock.json`, inspect the resolved
   package entries and their `license` fields. The adapter-contract package must
   keep an empty production dependency graph; build-only dependencies still
   require permissive, recorded license evidence.
@@ -102,14 +104,16 @@ compatibility decisions using the distribution and linkage context.
 
 - `pyproject.toml`
 - `RELEASING.md`
-- `python/pyproject.toml`
+- `sdk/python/nemo-fabric/pyproject.toml`
+- `sdk/python/nemo-fabric-runtime/pyproject.toml`
+- `adapter-contract/python/pyproject.toml`
 - `Cargo.toml`
 - `Cargo.lock`
 - `uv.lock`
 - `docs/package.json`
 - `docs/package-lock.json`
-- `typescript/adapter-contract/package.json`
-- `typescript/adapter-contract/package-lock.json`
+- `adapter-contract/typescript/package.json`
+- `adapter-contract/typescript/package-lock.json`
 - `.github/workflows/ci_typescript.yml`
 - `.github/workflows/publish_typescript.yml`
 - `scripts/ci/publish_typescript_package.py`

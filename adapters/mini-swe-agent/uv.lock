@@ -1140,7 +1140,7 @@ wheels = [
 [[package]]
 name = "nemo-fabric-adapter-contract"
 version = "0.2.0"
-source = { editable = "../../adapter-contract" }
+source = { editable = "../../adapter-contract/python" }
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" }]
@@ -1172,7 +1172,7 @@ harness = [
 requires-dist = [
     { name = "mini-swe-agent", marker = "extra == 'full'", specifier = ">=2.0,<3" },
     { name = "mini-swe-agent", marker = "extra == 'harness'", specifier = ">=2.0,<3" },
-    { name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract" },
+    { name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
 ]
 provides-extras = ["harness", "full"]

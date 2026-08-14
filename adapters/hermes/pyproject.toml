@@ -53,5 +53,5 @@ include = ["nemo_fabric_adapters.hermes*"]
 "share/nemo-fabric/adapters/hermes" = ["fabric-adapter.json"]
 
 [tool.uv.sources]
-nemo-fabric-adapter-contract = { path = "../../adapter-contract", editable = true }
+nemo-fabric-adapter-contract = { path = "../../adapter-contract/python", editable = true }
 nemo-fabric-adapters-common = { path = "../common", editable = true }

@@ -13,7 +13,7 @@ docs:
   - 'fern/**'
   - 'justfile'
   - 'pyproject.toml'
-  - 'python/src/nemo_fabric/**'
+  - 'sdk/python/**'
   - 'scripts/generate_api_docs.sh'
   - 'scripts/docs/**'
   - 'uv.lock'

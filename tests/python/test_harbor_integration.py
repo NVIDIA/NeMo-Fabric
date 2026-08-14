@@ -354,7 +354,10 @@ def test_harbor_propagates_runtime_identity(tmp_path: Path):
 
 
 async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
-    with (Path(__file__).resolve().parents[2] / "pyproject.toml").open("rb") as file:
+    with (
+        Path(__file__).resolve().parents[2]
+        / "sdk/python/nemo-fabric/pyproject.toml"
+    ).open("rb") as file:
         package_version = tomllib.load(file)["project"]["version"]
     fabric_package = f"nemo-fabric[codex,harbor]=={package_version}"
     agent = FabricAgent(

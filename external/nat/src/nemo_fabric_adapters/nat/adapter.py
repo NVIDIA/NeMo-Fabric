@@ -4,8 +4,8 @@
 
 """NeMo Agent Toolkit adapter for NeMo Fabric.
 
-The adapter builds one in-memory NAT configuration from Fabric's normalized
-configuration and adapter-owned NAT component settings. One persistent adapter
+The adapter builds one in-memory NeMo Agent Toolkit configuration from Fabric's
+normalized configuration and adapter-owned NeMo Agent Toolkit component settings. One persistent adapter
 host owns the resulting workflow for the complete Fabric runtime lifecycle.
 """
 
@@ -53,7 +53,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class _NatStreamSerializationError(Exception):
-    """Internal marker for a NAT chunk that cannot cross the JSON boundary."""
+    """Internal marker for a NeMo Agent Toolkit chunk that cannot cross the JSON boundary."""
 
 
 def main() -> None:
@@ -72,7 +72,7 @@ def _runtime_id(payload: dict[str, Any]) -> str:
     except ValueError as error:
         raise _config_error(
             "nat_invalid_runtime_context",
-            "NAT lifecycle payload is missing a runtime ID",
+            "NeMo Agent Toolkit lifecycle payload is missing a runtime ID",
         ) from error
 
 
@@ -81,7 +81,7 @@ def _agent_config(payload: dict[str, Any]) -> AgentConfig:
     if not isinstance(config, AgentConfig):
         raise _config_error(
             "nat_invalid_agent_config",
-            "NAT requires a validated AgentConfig start payload",
+            "NeMo Agent Toolkit requires a validated AgentConfig start payload",
         )
     return config
 
@@ -105,7 +105,7 @@ def _nat_workflow(agent_config: AgentConfig) -> dict[str, Any]:
     if entrypoint.ref != FABRIC_REACT_AGENT:
         raise _config_error(
             "nat_invalid_workflow",
-            f"NAT does not support workflow factory {entrypoint.ref!r}",
+            f"NeMo Agent Toolkit does not support workflow factory {entrypoint.ref!r}",
             field="workflow.entrypoint.ref",
         )
 
@@ -131,7 +131,7 @@ def _nat_tool_component(
     if definition.kind not in {"function", "function_group"}:
         raise _config_error(
             "nat_unsupported_tool_definition",
-            f"NAT does not support tool definition kind {definition.kind!r}",
+            f"NeMo Agent Toolkit does not support tool definition kind {definition.kind!r}",
             definition=name,
             kind=definition.kind,
         )
@@ -151,7 +151,7 @@ def _nat_component_settings(agent_config: AgentConfig) -> dict[str, Any]:
     if agent_config.harness is not None and agent_config.harness.settings:
         raise _config_error(
             "nat_invalid_harness_settings",
-            "The shared NAT adapter does not accept harness settings",
+            "The shared NeMo Agent Toolkit adapter does not accept harness settings",
             fields=sorted(agent_config.harness.settings),
         )
 
@@ -171,9 +171,10 @@ def _nat_component_settings(agent_config: AgentConfig) -> dict[str, Any]:
 
 
 def _nat_llm_type(provider: str) -> str:
-    # NAT calls NVIDIA's OpenAI-compatible provider ``nim``. Other provider
-    # identifiers are already NAT component type names and are validated after
-    # installed NAT plugins register their config objects.
+    # NeMo Agent Toolkit calls NVIDIA's OpenAI-compatible provider ``nim``. Other
+    # provider identifiers are already NeMo Agent Toolkit component type names
+    # and are validated after installed NeMo Agent Toolkit plugins register their
+    # config objects.
     return "nim" if provider == "nvidia" else provider
 
 
@@ -233,7 +234,7 @@ def _apply_system_instruction(
     if not _is_react_agent(workflow):
         raise _config_error(
             "nat_system_instruction_unsupported",
-            "instructions.system is supported only for a NAT react_agent workflow",
+            "instructions.system is supported only for a NeMo Agent Toolkit react_agent workflow",
             workflow_type=workflow.get("_type"),
         )
     if "additional_instructions" in workflow:
@@ -266,14 +267,14 @@ def _string_list(value: Any, field: str, *, optional: bool = False) -> list[str]
 
 
 def nat_mcp_server_config(name: str, server: AgentMcpServerConfig) -> dict[str, Any]:
-    """Translate one normalized MCP server into a NAT server mapping."""
+    """Translate one normalized MCP server into a NeMo Agent Toolkit server mapping."""
 
     transport = server.transport.strip().lower().replace("_", "-")
     target = os.path.expandvars(server.url).strip()
     if not target:
         raise _config_error(
             "nat_invalid_mcp_server",
-            f"NAT MCP server {name!r} requires a non-empty url",
+            f"NeMo Agent Toolkit MCP server {name!r} requires a non-empty url",
             server=name,
         )
 
@@ -294,7 +295,7 @@ def nat_mcp_server_config(name: str, server: AgentMcpServerConfig) -> dict[str, 
     if transport not in {"sse", "streamable-http"}:
         raise _config_error(
             "nat_unsupported_mcp_transport",
-            f"NAT MCP server {name!r} has unsupported transport {transport!r}",
+            f"NeMo Agent Toolkit MCP server {name!r} has unsupported transport {transport!r}",
             server=name,
             transport=transport,
         )
@@ -309,7 +310,7 @@ def _workflow_tool_names(config: dict[str, Any], reason: str) -> list[str]:
     ):
         raise _config_error(
             "nat_workflow_tools_unsupported",
-            f"{reason} requires a NAT workflow with a string-list tool_names field",
+            f"{reason} requires a NeMo Agent Toolkit workflow with a string-list tool_names field",
             field="workflow.settings.tool_names",
         )
     return tool_names
@@ -332,7 +333,7 @@ def _mcp_group(name: str, server: AgentMcpServerConfig) -> dict[str, Any] | None
         if overlap:
             raise _config_error(
                 "nat_invalid_mcp_tool_policy",
-                f"NAT MCP server {name!r} cannot both allow and block a tool",
+                f"NeMo Agent Toolkit MCP server {name!r} cannot both allow and block a tool",
                 server=name,
                 tool=overlap[0],
             )
@@ -343,7 +344,7 @@ def _mcp_group(name: str, server: AgentMcpServerConfig) -> dict[str, Any] | None
         "_type": "mcp_client",
         "server": nat_mcp_server_config(name, server),
     }
-    # NAT forbids include and exclude together. A non-empty Fabric allowlist is
+    # NeMo Agent Toolkit forbids include and exclude together. A non-empty Fabric allowlist is
     # already the effective exposed set after the disjoint blocklist is applied.
     if allowed is not None:
         group["include"] = allowed
@@ -366,7 +367,7 @@ def _apply_mcp_servers(config: dict[str, Any], agent_config: AgentConfig) -> set
         if name in functions or name in function_groups:
             raise _config_error(
                 "nat_mcp_name_conflict",
-                f"NAT MCP server {name!r} conflicts with an existing function or function group",
+                f"NeMo Agent Toolkit MCP server {name!r} conflicts with an existing function or function group",
                 server=name,
             )
 
@@ -407,7 +408,7 @@ def _group_mapping(groups: dict[str, Any], name: str) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         raise _config_error(
             "nat_invalid_harness_settings",
-            f"NAT function group {name!r} must be a mapping",
+            f"NeMo Agent Toolkit function group {name!r} must be a mapping",
             group=name,
         )
     return value
@@ -416,7 +417,7 @@ def _group_mapping(groups: dict[str, Any], name: str) -> dict[str, Any] | None:
 def _unknown_tool_selector(selector: str) -> lifecycle.LifecycleError:
     return _config_error(
         "nat_unknown_tool_selector",
-        f"Fabric tool selector {selector!r} does not match a configured NAT function or function group",
+        f"Fabric tool selector {selector!r} does not match a configured NeMo Agent Toolkit function or function group",
         selector=selector,
     )
 
@@ -599,14 +600,14 @@ def _apply_tool_policy(
 
 
 def apply_nat_capabilities(config: dict[str, Any], agent_config: AgentConfig) -> None:
-    """Compile normalized MCP routing and tool policy into a raw NAT config."""
+    """Compile normalized MCP routing and tool policy into a raw NeMo Agent Toolkit config."""
 
     suppressed = _apply_mcp_servers(config, agent_config)
     _apply_tool_policy(config, agent_config, suppressed)
 
 
 def build_nat_config_mapping(agent_config: AgentConfig) -> dict[str, Any]:
-    """Build the raw in-memory NAT mapping from typed southbound config."""
+    """Build the raw in-memory NeMo Agent Toolkit mapping from typed southbound config."""
 
     config = _nat_component_settings(agent_config)
     llms = _nat_llms(agent_config)
@@ -618,7 +619,7 @@ def build_nat_config_mapping(agent_config: AgentConfig) -> dict[str, Any]:
 
 
 def build_nat_config(agent_config: AgentConfig) -> Any:
-    """Build and validate a typed NAT Config without a workflow YAML file."""
+    """Build and validate a typed NeMo Agent Toolkit Config without a workflow YAML file."""
 
     raw_config = build_nat_config_mapping(agent_config)
 
@@ -636,7 +637,7 @@ def build_nat_config(agent_config: AgentConfig) -> Any:
     except Exception as error:
         raise _config_error(
             "nat_config_translation_failed",
-            "Fabric config could not be translated into a valid NAT config",
+            "Fabric config could not be translated into a valid NeMo Agent Toolkit config",
         ) from error
 
 
@@ -645,7 +646,9 @@ def _session_kwargs(request: dict[str, Any]) -> dict[str, str]:
     if context is None:
         context = {}
     if not isinstance(context, dict):
-        raise ValueError("NAT invocation request.context must be a mapping")
+        raise ValueError(
+            "NeMo Agent Toolkit invocation request.context must be a mapping"
+        )
 
     values = {
         "user_id": context.get("user_id"),
@@ -658,7 +661,7 @@ def _session_kwargs(request: dict[str, Any]) -> dict[str, str]:
             continue
         if not isinstance(value, str) or not value:
             raise ValueError(
-                f"NAT invocation request context {name} must be a non-empty string"
+                f"NeMo Agent Toolkit invocation request context {name} must be a non-empty string"
             )
         result[name] = value
     return result
@@ -699,13 +702,13 @@ async def _close_after_failed_start(stack: AsyncExitStack) -> None:
         raise
     except Exception as error:
         LOGGER.error(
-            "NAT workflow cleanup failed after start error (error_type=%s)",
+            "NeMo Agent Toolkit workflow cleanup failed after start error (error_type=%s)",
             type(error).__name__,
         )
 
 
 class NatRuntime:
-    """One NAT WorkflowBuilder and SessionManager owned by a Fabric runtime."""
+    """One NeMo Agent Toolkit WorkflowBuilder and SessionManager owned by a Fabric runtime."""
 
     def __init__(self) -> None:
         self._runtime_id: str | None = None
@@ -721,19 +724,19 @@ class NatRuntime:
         if self._sessions is None or self._runtime_id is None:
             raise lifecycle.LifecycleError(
                 "nat_runtime_not_started",
-                "NAT runtime is not started",
+                "NeMo Agent Toolkit runtime is not started",
             )
         if _runtime_id(payload) != self._runtime_id:
             raise lifecycle.LifecycleError(
                 "nat_runtime_mismatch",
-                "NAT invocation does not match the active runtime",
+                "NeMo Agent Toolkit invocation does not match the active runtime",
             )
 
         request = common_utils.request_payload(payload)
         if not isinstance(request, dict):
             return None, _failure_output(
                 "nat_invalid_request",
-                "NAT invocation request must be a mapping",
+                "NeMo Agent Toolkit invocation request must be a mapping",
             )
         return request, None
 
@@ -741,7 +744,7 @@ class NatRuntime:
         if self._exit_stack is not None:
             raise lifecycle.LifecycleError(
                 "nat_runtime_already_started",
-                "NAT runtime is already started",
+                "NeMo Agent Toolkit runtime is already started",
             )
 
         runtime_id = _runtime_id(payload)
@@ -770,7 +773,7 @@ class NatRuntime:
             await _close_after_failed_start(stack)
             raise lifecycle.LifecycleError(
                 "nat_workflow_start_failed",
-                "NAT workflow failed to load; inspect adapter stderr for details",
+                "NeMo Agent Toolkit workflow failed to load; inspect adapter stderr for details",
             ) from error
 
         self._runtime_id = runtime_id
@@ -800,12 +803,12 @@ class NatRuntime:
             raise
         except Exception as error:
             LOGGER.error(
-                "NAT workflow invocation failed (error_type=%s)",
+                "NeMo Agent Toolkit workflow invocation failed (error_type=%s)",
                 type(error).__name__,
             )
             return _failure_output(
                 "nat_workflow_invoke_failed",
-                "NAT workflow invocation failed; inspect adapter stderr for details",
+                "NeMo Agent Toolkit workflow invocation failed; inspect adapter stderr for details",
             )
 
         try:
@@ -814,12 +817,12 @@ class NatRuntime:
             response = to_jsonable_python(result, serialize_unknown=False)
         except (TypeError, ValueError) as error:
             LOGGER.error(
-                "NAT workflow returned a non-JSON result (error_type=%s)",
+                "NeMo Agent Toolkit workflow returned a non-JSON result (error_type=%s)",
                 type(error).__name__,
             )
             return _failure_output(
                 "nat_result_not_json_serializable",
-                "NAT workflow returned a result that cannot be represented as JSON",
+                "NeMo Agent Toolkit workflow returned a result that cannot be represented as JSON",
             )
         return _success_output(response)
 
@@ -828,7 +831,7 @@ class NatRuntime:
         payload: dict[str, Any],
         emit: lifecycle.OpenAIChunkEmitter,
     ) -> dict[str, Any]:
-        """Forward one NAT result stream declared as OpenAI chunks."""
+        """Forward one NeMo Agent Toolkit result stream declared as OpenAI chunks."""
 
         request, failure = self._invocation_request(payload)
         if failure is not None:
@@ -844,18 +847,18 @@ class NatRuntime:
             )
         except Exception as error:
             LOGGER.error(
-                "NAT workflow streaming schema lookup failed (error_type=%s)",
+                "NeMo Agent Toolkit workflow streaming schema lookup failed (error_type=%s)",
                 type(error).__name__,
             )
             return _failure_output(
                 "nat_workflow_stream_failed",
-                "NAT workflow streaming failed; inspect adapter stderr for details",
+                "NeMo Agent Toolkit workflow streaming failed; inspect adapter stderr for details",
             )
 
         if streaming_output_schema is not ChatResponseChunk:
             return _failure_output(
                 "nat_openai_stream_unsupported_schema",
-                "NAT native OpenAI streaming requires a ChatResponseChunk output schema",
+                "Native NeMo Agent Toolkit OpenAI streaming requires a ChatResponseChunk output schema",
             )
 
         try:
@@ -913,7 +916,7 @@ class NatRuntime:
                             await close_stream()
                         except BaseException as error:
                             LOGGER.error(
-                                "NAT workflow stream cleanup failed while preserving "
+                                "NeMo Agent Toolkit workflow stream cleanup failed while preserving "
                                 "the primary failure (error_type=%s)",
                                 type(error).__name__,
                             )
@@ -926,21 +929,21 @@ class NatRuntime:
             raise
         except _NatStreamSerializationError as error:
             LOGGER.error(
-                "NAT workflow returned a non-JSON stream chunk (error_type=%s)",
+                "NeMo Agent Toolkit workflow returned a non-JSON stream chunk (error_type=%s)",
                 type(error.__cause__ or error).__name__,
             )
             return _failure_output(
                 "nat_stream_chunk_not_json_serializable",
-                "NAT workflow returned a stream chunk that cannot be represented as JSON",
+                "NeMo Agent Toolkit workflow returned a stream chunk that cannot be represented as JSON",
             )
         except Exception as error:
             LOGGER.error(
-                "NAT workflow streaming failed (error_type=%s)",
+                "NeMo Agent Toolkit workflow streaming failed (error_type=%s)",
                 type(error).__name__,
             )
             return _failure_output(
                 "nat_workflow_stream_failed",
-                "NAT workflow streaming failed; inspect adapter stderr for details",
+                "NeMo Agent Toolkit workflow streaming failed; inspect adapter stderr for details",
             )
 
         return _success_output("".join(response_parts))
@@ -960,7 +963,7 @@ class NatRuntime:
         except Exception as error:
             raise lifecycle.LifecycleError(
                 "nat_runtime_stop_failed",
-                "NAT runtime failed to stop cleanly",
+                "NeMo Agent Toolkit runtime failed to stop cleanly",
             ) from error
 
 

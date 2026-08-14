@@ -23,7 +23,8 @@ and NVIDIA NeMo Fabric repo conventions.
 - Treat all files under `docs/reference/api/` as generated output. Do not modify
   them directly.
 - For Python API reference changes, update the source docstrings under
-  `python/src/nemo_fabric/` or the generator in `scripts/generate_api_docs.sh`.
+  `sdk/python/nemo-fabric-runtime/src/nemo_fabric/` or the generator in
+  `scripts/generate_api_docs.sh`.
 - For Rust API reference changes, update the Rust documentation comments under
   `crates/fabric-core/` or the generator in
   `scripts/docs/generate_rust_library_reference.py`.

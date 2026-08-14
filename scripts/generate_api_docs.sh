@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Generate the Python SDK API reference (Markdown) from the SDK docstrings via
-# lazydocs, for the Fern docs site. The docstrings in python/src/nemo_fabric are
-# the source of truth; run this before publishing docs (and in CI) so the
-# reference stays in sync with the code.
+# lazydocs, for the Fern docs site. The docstrings in
+# sdk/python/nemo-fabric-runtime/src/nemo_fabric are the source of truth; run
+# this before publishing docs (and in CI) so the reference stays in sync with
+# the code.
 #
 #   pip install -e ".[docs]"        # provides lazydocs
 #   scripts/generate_api_docs.sh
@@ -18,7 +19,7 @@ out="docs/reference/api/python-library-reference"
 rm -rf "$out"
 mkdir -p "$out"
 
-PYTHONPATH="python/src" lazydocs \
+PYTHONPATH="sdk/python/nemo-fabric-runtime/src" lazydocs \
   --output-path "$out" \
   --overview-file "index.md" \
   "nemo_fabric.client" \
@@ -51,7 +52,7 @@ perl -0pi -e 's/(### <kbd>method<\/kbd> `(aclose|result)`\n\n```python\n)\2\(/${
 
 # Restore signature semantics that lazydocs drops and add field-level contracts
 # for the SDK's Pydantic and immutable mapping models.
-PYTHONPATH="python/src" python scripts/docs/enhance_python_api_reference.py "$out"
+PYTHONPATH="sdk/python/nemo-fabric-runtime/src" python scripts/docs/enhance_python_api_reference.py "$out"
 
 add_frontmatter() {
   local file="$1"

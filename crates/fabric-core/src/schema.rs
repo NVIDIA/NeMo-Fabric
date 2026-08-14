@@ -119,13 +119,11 @@ impl SchemaName {
             | Self::AgentRunRequest
             | Self::AgentRunResult
             | Self::AdapterDescriptor
+            | Self::AdapterInvocation
+            | Self::OpenAiStreamInvocation
+            | Self::OpenAiStreamRecord
             | Self::RuntimeContext => PathBuf::from("adapter-contract").join(filename),
-            Self::AdapterInvocation | Self::OpenAiStreamInvocation | Self::OpenAiStreamRecord => {
-                PathBuf::from("adapter-contract")
-                    .join("legacy")
-                    .join(filename)
-            }
-            _ => PathBuf::from(filename),
+            _ => PathBuf::from("sdk").join(filename),
         }
     }
 
@@ -272,12 +270,15 @@ mod tests {
     }
 
     #[test]
-    fn adapter_contract_schemas_use_dedicated_snapshot_paths() {
+    fn schemas_use_contract_boundary_snapshot_paths() {
         for schema in [
             SchemaName::AdapterDescriptor,
             SchemaName::AgentConfig,
             SchemaName::AgentRunRequest,
             SchemaName::AgentRunResult,
+            SchemaName::AdapterInvocation,
+            SchemaName::OpenAiStreamInvocation,
+            SchemaName::OpenAiStreamRecord,
             SchemaName::RuntimeContext,
         ] {
             assert_eq!(
@@ -285,28 +286,23 @@ mod tests {
                 PathBuf::from("adapter-contract").join(schema.filename())
             );
         }
-        assert_eq!(
-            SchemaName::AdapterInvocation.relative_path(),
-            PathBuf::from("adapter-contract")
-                .join("legacy")
-                .join(SchemaName::AdapterInvocation.filename())
-        );
-        assert_eq!(
-            SchemaName::OpenAiStreamInvocation.relative_path(),
-            PathBuf::from("adapter-contract")
-                .join("legacy")
-                .join(SchemaName::OpenAiStreamInvocation.filename())
-        );
-        assert_eq!(
-            SchemaName::OpenAiStreamRecord.relative_path(),
-            PathBuf::from("adapter-contract")
-                .join("legacy")
-                .join(SchemaName::OpenAiStreamRecord.filename())
-        );
-        assert_eq!(
-            SchemaName::Agent.relative_path(),
-            PathBuf::from(SchemaName::Agent.filename())
-        );
+        for schema in [
+            SchemaName::Agent,
+            SchemaName::RunPlan,
+            SchemaName::EnvironmentHandle,
+            SchemaName::RuntimeHandle,
+            SchemaName::InvocationHandle,
+            SchemaName::RunRequest,
+            SchemaName::RunResult,
+            SchemaName::ArtifactManifest,
+            SchemaName::ErrorInfo,
+            SchemaName::FabricEvent,
+        ] {
+            assert_eq!(
+                schema.relative_path(),
+                PathBuf::from("sdk").join(schema.filename())
+            );
+        }
     }
 
     #[test]

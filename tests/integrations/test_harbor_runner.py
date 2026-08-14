@@ -22,7 +22,15 @@ SWEBENCH_README = SWEBENCH_ROOT / "README.md"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
-    ROOT / "python" / "src" / "nemo_fabric" / "integrations" / "harbor" / "README.md"
+    ROOT
+    / "sdk"
+    / "python"
+    / "nemo-fabric-runtime"
+    / "src"
+    / "nemo_fabric"
+    / "integrations"
+    / "harbor"
+    / "README.md"
 )
 HARBOR_PACKAGE_INIT = SDK_INTEGRATION_README.parent / "__init__.py"
 
@@ -312,10 +320,10 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
     landing = INTEGRATION_README.read_text(encoding="utf-8")
     swebench = SWEBENCH_README.read_text(encoding="utf-8")
-    with (ROOT / "pyproject.toml").open("rb") as file:
-        project = tomllib.load(file)["project"]
-    package_version = project["version"]
-    declared_extras = set(project["optional-dependencies"])
+    with (ROOT / "sdk/python/nemo-fabric/pyproject.toml").open("rb") as file:
+        sdk_project = tomllib.load(file)["project"]
+    package_version = sdk_project["version"]
+    declared_extras = set(sdk_project["optional-dependencies"])
 
     assert "run.sh" not in calculator
     assert calculator.count(" harbor run \\") == 4

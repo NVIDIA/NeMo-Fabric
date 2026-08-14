@@ -95,8 +95,8 @@ jobs:
 
           python3 scripts/ci/set_typescript_project_version.py "$version"
           git diff --exit-code -- \
-            typescript/adapter-contract/package.json \
-            typescript/adapter-contract/package-lock.json
+            adapter-contract/typescript/package.json \
+            adapter-contract/typescript/package-lock.json
           {
             echo "version=$version"
             echo "dist_tag=$dist_tag"
@@ -113,6 +113,6 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ci/publish_typescript_package.py \
-            --package-directory typescript/adapter-contract \
+            --package-directory adapter-contract/typescript \
             --version "$RELEASE_VERSION" \
             --dist-tag "$RELEASE_DIST_TAG"

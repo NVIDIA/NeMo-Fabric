@@ -47,10 +47,11 @@ Key conventions for the two tiers:
 These workflow notes keep public documentation, examples, and PR preparation aligned
 with repository expectations.
 
-- Update user-facing entry points when public behavior, the `nemo-fabric` package (imported as `nemo_fabric`), examples, or supported bindings change: `README.md`, the Fern docs under `docs/` (navigation in `docs/index.yml`, site config in `fern/docs.yml`), and the adapter/integration READMEs (`adapters/*/README.md`, `python/src/nemo_fabric/integrations/*/README.md`, `examples/README.md`).
+- Update user-facing entry points when public behavior, the `nemo-fabric` package (imported as `nemo_fabric`), examples, or supported bindings change: `README.md`, the Fern docs under `docs/` (navigation in `docs/index.yml`, site config in `fern/docs.yml`), and the adapter/integration READMEs (`adapters/*/README.md`, `sdk/python/nemo-fabric-runtime/src/nemo_fabric/integrations/*/README.md`, `examples/README.md`).
 - Keep public bindings current when the API changes: `docs/sdk/python.mdx` for
-  the Python SDK; `adapter-contract/` and `typescript/adapter-contract/` for the
-  southbound adapter contract; the JSON Schema notes in `schemas/SCHEMA.md`;
+  the Python SDK; `adapter-contract/python/` and
+  `adapter-contract/typescript/` for the southbound adapter contract; the JSON
+  Schema notes in `schemas/SCHEMA.md`;
   the generated references under `docs/reference/api/`; and the integration
   skills under `skills/` (which restate public contracts and must be kept in
   parity). Regenerate docs with `just docs` after changing the docs site.

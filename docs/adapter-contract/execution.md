@@ -105,9 +105,9 @@ reserve stdout for the single terminal lifecycle response.
 
 Bindings that implement the transport without the common Python host must
 read the sink from the generated
-[`openai-stream-invocation.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/legacy/openai-stream-invocation.schema.json)
+[`openai-stream-invocation.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/openai-stream-invocation.schema.json)
 payload and follow the generated
-[`openai-stream-record.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/legacy/openai-stream-record.schema.json)
+[`openai-stream-record.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/openai-stream-record.schema.json)
 envelope for monotonic chunk records and the explicit end record.
 
 The `fabric.openai_stream/v1alpha1` wire sequence is fixed:
