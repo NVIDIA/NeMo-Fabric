@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapters.mini_swe_agent import adapter
+from minisweagent.exceptions import Submitted
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -30,16 +31,24 @@ def mock_mini_fixture(monkeypatch):
         return {
             "role": "assistant",
             "content": "Working.",
-            "extra": {"actions": []},
+            "extra": {"actions": [{"command": "submit", "tool_call_id": "call-1"}]},
         }
 
     model.query.side_effect = query
-    model.format_observation_messages.side_effect = lambda *_: [
+    model.format_observation_messages.side_effect = lambda _message, outputs, *_: [
         {
-            "role": "exit",
-            "extra": {"exit_status": "Submitted", "submission": "done"},
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "content": outputs[0]["output"],
         }
     ]
+    environment.execute.side_effect = Submitted(
+        {
+            "role": "exit",
+            "content": "done",
+            "extra": {"exit_status": "Submitted", "submission": "done"},
+        }
+    )
     model_factory = MagicMock(return_value=model)
     environment_factory = MagicMock(return_value=environment)
     monkeypatch.setattr(
@@ -161,6 +170,10 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
 async def test_mini_swe_agent_reports_an_incomplete_loop_as_failed(
     mock_mini, mini_payload
 ):
+    mock_mini["model"].query.side_effect = lambda _: {
+        "role": "assistant",
+        "extra": {"actions": []},
+    }
     mock_mini["model"].format_observation_messages.side_effect = lambda *_: [
         {
             "role": "exit",
@@ -194,16 +207,17 @@ async def test_mini_swe_agent_retains_history_between_invocations(
         "system",
         "user",
         "assistant",
-        "assistant",
+        "tool",
         "user",
     ]
     assert [message["role"] for message in agent.messages] == [
         "system",
         "user",
         "assistant",
-        "assistant",
+        "tool",
         "user",
         "assistant",
+        "tool",
         "exit",
     ]
     assert agent.messages[4]["content"] == "Continue the task."

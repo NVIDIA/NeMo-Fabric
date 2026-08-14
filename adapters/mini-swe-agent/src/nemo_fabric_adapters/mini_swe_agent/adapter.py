@@ -41,6 +41,7 @@ class MiniSweAgentRuntime:
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
         from minisweagent.environments.local import LocalEnvironment
+        from minisweagent.exceptions import Submitted
         from minisweagent.models.litellm_model import LitellmModel
         from minisweagent.agents.default import DefaultAgent
 
@@ -68,12 +69,41 @@ class MiniSweAgentRuntime:
             def run(self, task: str = "", **kwargs: Any) -> dict[str, Any]:
                 if self.messages:
                     self.n_calls = self.cost = self.n_consecutive_format_errors = 0
-                    self.messages[-1]["role"] = "assistant"
+                    self.messages.pop()
                     self.add_messages(
                         self.model.format_message(role="user", content=task)
                     )
                     self._retain_messages = True
                 return super().run(task, **kwargs)
+
+            def execute_actions(self, message: dict[str, Any]) -> list[dict[str, Any]]:
+                actions = message.get("extra", {}).get("actions", [])
+                outputs = []
+                for action in actions:
+                    try:
+                        outputs.append(self.env.execute(action))
+                    except Submitted as error:
+                        outputs.append(
+                            {
+                                "output": (
+                                    "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\n"
+                                    f"{error.messages[0]['content']}"
+                                ),
+                                "returncode": 0,
+                                "exception_info": "",
+                            }
+                        )
+                        self.add_messages(
+                            *self.model.format_observation_messages(
+                                message, outputs, self.get_template_vars()
+                            )
+                        )
+                        raise
+                return self.add_messages(
+                    *self.model.format_observation_messages(
+                        message, outputs, self.get_template_vars()
+                    )
+                )
 
         model = _selected_model(config)
         model_kwargs: dict[str, Any] = {}
