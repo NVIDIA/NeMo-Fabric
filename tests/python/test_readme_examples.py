@@ -18,7 +18,7 @@ DOCUMENTED_SNIPPETS = [
     "config = FabricConfig(",
     "[`01_quickstart.ipynb` notebook](examples/notebooks/01_quickstart.ipynb)",
     "[Python SDK guide](docs/sdk/python.mdx)",
-    "pip install nemo-fabric",
+    'pip install "nemo-fabric[hermes-agent]"',
 ]
 
 DETAILED_SDK_SNIPPETS = (
