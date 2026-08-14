@@ -47,7 +47,7 @@ jobs:
           fi
 
           tag_date="$(date -u +%Y%m%d)"
-          tag="${version}-alpha.${tag_date}"
+          tag="v${version}-alpha.${tag_date}"
           target_sha="$(git rev-parse HEAD)"
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
 

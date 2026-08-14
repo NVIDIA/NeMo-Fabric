@@ -103,18 +103,22 @@ def _exact_view_responses(
     ]
 
 
-def test_existing_exact_package_is_an_idempotent_success(package_directory: Path):
+@pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next"])
+def test_existing_exact_package_is_an_idempotent_success(
+    package_directory: Path,
+    dist_tag: str,
+):
     runner = NpmRunner(
         [
             (["pack", "--json", "--ignore-scripts"], _pack_result()),
-            *_exact_view_responses(),
+            *_exact_view_responses(dist_tag=dist_tag),
         ]
     )
 
     publish_typescript_package.publish_package(
         package_directory,
         VERSION,
-        "latest",
+        dist_tag,
         run_npm=runner,
         sleep=lambda _: None,
     )
@@ -123,15 +127,20 @@ def test_existing_exact_package_is_an_idempotent_success(package_directory: Path
 
 
 @pytest.mark.parametrize(
-    ("integrity", "dist_tag_version", "error"),
+    ("dist_tag", "integrity", "dist_tag_version", "error"),
     [
-        ("", VERSION, "Published integrity is missing"),
-        ("sha512-wrong", VERSION, "Expected integrity"),
-        (INTEGRITY, "0.1.0", "Published latest dist-tag"),
+        (dist_tag, integrity, dist_tag_version, error)
+        for dist_tag in ("alpha", "latest", "next")
+        for integrity, dist_tag_version, error in (
+            ("", VERSION, "Published integrity is missing"),
+            ("sha512-wrong", VERSION, "Expected integrity"),
+            (INTEGRITY, "0.1.0", f"Published {dist_tag} dist-tag"),
+        )
     ],
 )
 def test_existing_conflicting_package_fails(
     package_directory: Path,
+    dist_tag: str,
     integrity: str,
     dist_tag_version: str,
     error: str,
@@ -141,6 +150,7 @@ def test_existing_conflicting_package_fails(
             (["pack", "--json", "--ignore-scripts"], _pack_result()),
             *_exact_view_responses(
                 integrity=integrity,
+                dist_tag=dist_tag,
                 dist_tag_version=dist_tag_version,
             ),
         ]
@@ -153,7 +163,7 @@ def test_existing_conflicting_package_fails(
         publish_typescript_package.publish_package(
             package_directory,
             VERSION,
-            "latest",
+            dist_tag,
             run_npm=runner,
             sleep=lambda _: None,
         )
@@ -217,24 +227,28 @@ def test_non_404_lookup_failure_fails_closed(package_directory: Path):
     runner.assert_finished()
 
 
-def test_dist_tag_cannot_move_backward(package_directory: Path):
+@pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next"])
+def test_dist_tag_cannot_move_backward(
+    package_directory: Path,
+    dist_tag: str,
+):
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
             (["pack", "--json", "--ignore-scripts"], _pack_result()),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
-            (["view", PACKAGE, "dist-tags.latest"], _result("0.3.0")),
+            (["view", PACKAGE, f"dist-tags.{dist_tag}"], _result("0.3.0")),
         ]
     )
 
     with pytest.raises(
         publish_typescript_package.PublicationError,
-        match="Refusing to move latest backward",
+        match=f"Refusing to move {dist_tag} backward",
     ):
         publish_typescript_package.publish_package(
             package_directory,
             VERSION,
-            "latest",
+            dist_tag,
             run_npm=runner,
             sleep=lambda _: None,
         )

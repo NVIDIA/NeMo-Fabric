@@ -217,7 +217,8 @@ Before the first supported TypeScript package release:
    must use account-level two-factor authentication.
 2. Create and protect the GitHub `npmjs` environment. Require the release
    approvers who should authorize registry publication, and restrict deployment
-   tags to `v*` and `*-alpha.*`.
+   tags to `v*`. Nightly alpha tags use the `v0.1.0-alpha.YYYYMMDD` format and
+   are included by this rule.
 3. After `publish_typescript.yml` is present on the default branch, configure
    the package's single trusted publisher in npm with these exact,
    case-sensitive values:

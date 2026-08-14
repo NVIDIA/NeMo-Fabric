@@ -7,10 +7,10 @@ on:
   push:
     tags:
       - 'v*'
-      - '*-alpha.*'
+      - 'v*-alpha.*'
 
 concurrency:
-  group: publish-typescript-${{ github.ref }}
+  group: publish-typescript
   cancel-in-progress: false
 
 defaults:
