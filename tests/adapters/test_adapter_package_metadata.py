@@ -129,7 +129,7 @@ def test_adapter_test_dependency_group_matches_leaf_harnesses():
         "nemo-fabric-adapters-claude[harness]",
         "nemo-fabric-adapters-codex[harness]",
         "nemo-fabric-adapters-deepagents[harness]",
-        "nemo-fabric-adapters-hermes[harness]; python_version < '3.14'",
+        "nemo-fabric-adapters-hermes[full]; python_version < '3.14'",
         "nemo-fabric-adapters-mini-swe-agent[harness]",
     ]
     assert sorted(manifest["dependency-groups"]["adapter-tests"]) == sorted(expected)
@@ -158,8 +158,7 @@ def test_root_project_is_a_private_development_coordinator():
         "mini-swe-agent": ["nemo-fabric[mini-swe-agent]"],
         "harbor": ["nemo-fabric[harbor]"],
         "hermes-agent": [
-            f"nemo-fabric-adapters-hermes == {PACKAGE_VERSION}; "
-            "python_version < '3.14'"
+            "nemo-fabric[hermes-agent]; python_version < '3.14'"
         ],
         "relay": ["nemo-fabric[relay]"],
     }

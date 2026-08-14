@@ -49,7 +49,7 @@ claude = [
   "nemo-fabric-adapters-claude[harness] == 0.2.0",
 ]
 hermes-agent = [
-  "nemo-fabric-adapters-hermes[harness] == 0.2.0; python_version < '3.14'",
+  "nemo-fabric-adapters-hermes[full] == 0.2.0; python_version < '3.14'",
 ]
 """,
         encoding="utf-8",
@@ -105,7 +105,7 @@ dynamic = ["version"]
         "nemo-fabric-adapters-claude[harness] == 0.2.0rc5"
     ]
     assert sdk_project["optional-dependencies"]["hermes-agent"] == [
-        "nemo-fabric-adapters-hermes[harness] == 0.2.0rc5; python_version < '3.14'"
+        "nemo-fabric-adapters-hermes[full] == 0.2.0rc5; python_version < '3.14'"
     ]
     assert adapter_project["version"] == "0.2.0rc5"
     assert adapter_project["dependencies"] == [
