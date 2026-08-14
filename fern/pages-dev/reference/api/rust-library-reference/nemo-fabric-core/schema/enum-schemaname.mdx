@@ -16,6 +16,7 @@ pub enum SchemaName {
     AgentRunRequest,
     AgentRunResult,
     AdapterDescriptor,
+    AdapterTargetDescriptor,
     RunPlan,
     AdapterInvocation,
     OpenAiStreamInvocation,
@@ -65,6 +66,12 @@ Adapter-facing terminal result schema.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterDescriptor"}} /></pre>
 
 Adapter descriptor schema.
+
+### `AdapterTargetDescriptor`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterTargetDescriptor"}} /></pre>
+
+Adapter target descriptor schema.
 
 ### `RunPlan`
 
@@ -152,7 +159,7 @@ NeMo Fabric lifecycle event schema.
 
 #### `ALL`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.array.html\">18</a>]"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.array.html\">19</a>]"}} /></pre>
 
 All public schemas in stable output order.
 

@@ -26,9 +26,11 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::AdapterConfigInput;`
 - `pub use config::AdapterConfigSupport;`
 - `pub use config::AdapterDescriptor;`
-- `pub use config::AdapterDescriptorSource;`
 - `pub use config::AdapterKind;`
 - `pub use config::AdapterRequirements;`
+- `pub use config::AdapterTarget;`
+- `pub use config::AdapterTargetDescriptor;`
+- `pub use config::AdapterTargetType;`
 - `pub use config::AdapterTelemetryProviderSupport;`
 - `pub use config::AdapterTelemetrySupport;`
 - `pub use config::AgentConfig;`
@@ -46,6 +48,9 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::AgentWorkflowEntrypointConfig;`
 - `pub use config::CapabilityPlan;`
 - `pub use config::ControlLocation;`
+- `pub use config::DescriptorProvenance;`
+- `pub use config::DescriptorSource;`
+- `pub use config::DiscoveryConfig;`
 - `pub use config::EnvironmentConfig;`
 - `pub use config::EnvironmentOwnership;`
 - `pub use config::EnvironmentPlan;`
@@ -65,6 +70,7 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::ResolutionStrategy;`
 - `pub use config::ResolveContext;`
 - `pub use config::ResolvedAdapterDescriptor;`
+- `pub use config::ResolvedAdapterTargetDescriptor;`
 - `pub use config::RunPlan;`
 - `pub use config::RuntimeCapabilities;`
 - `pub use config::RuntimeConfig;`
@@ -77,7 +83,9 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::ToolsConfig;`
 - `pub use config::WorkflowConfig;`
 - `pub use config::WorkflowEntrypointConfig;`
+- `pub use config::WorkflowTargetSpec;`
 - `pub use config::load_adapter_descriptor;`
+- `pub use config::load_adapter_target_descriptor;`
 - `pub use config::resolve_run_plan_from_config;`
 - `pub use doctor::DoctorCheck;`
 - `pub use doctor::DoctorReport;`

@@ -24,7 +24,6 @@ Resolved adapter identity attached to a run plan.
 **Attributes:**
 
  - <b>`adapter_id`</b>:  Stable identifier of the NeMo Fabric adapter implementation.
- - <b>`harness`</b>:  Stable machine-readable harness identifier.
  - <b>`adapter_kind`</b>:  Execution mechanism used by the adapter.
  - <b>`metadata`</b>:  Adapter-specific, JSON-compatible metadata.
 
@@ -37,7 +36,6 @@ The mapping exposes the following typed fields:
 | Field | Type |
 | --- | --- |
 | `adapter_id` | `str` |
-| `harness` | `str` |
 | `adapter_kind` | `str` |
 | `metadata` | `Mapping[str, Any]` |
 

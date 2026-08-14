@@ -221,9 +221,9 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `WorkflowEntrypointConfig`
+## <kbd>class</kbd> `WorkflowConfig`
 
-Adapter-owned workflow entry point.
+Registered workflow target and immutable construction settings.
 
 
 
@@ -233,8 +233,8 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `kind` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
-| `ref` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
+| `target_id` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
+| `settings` | `dict[str, Any]` | No | `dict()` | — | — |
 
 ---
 
@@ -292,9 +292,9 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `WorkflowConfig`
+## <kbd>class</kbd> `DiscoveryConfig`
 
-Adapter-owned workflow selection and immutable construction settings.
+Explicit local descriptor discovery paths.
 
 
 
@@ -304,8 +304,7 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `entrypoint` | `WorkflowEntrypointConfig` | Yes | — | — | — |
-| `settings` | `dict[str, Any]` | No | `dict()` | — | — |
+| `local_paths` | `list[str \| Path]` | No | `list()` | — | — |
 
 ---
 
@@ -2350,8 +2349,9 @@ The model defines the following fields:
 | --- | --- | --- | --- | --- | --- |
 | `schema_version` | `str` | No | `'fabric.agent/v1alpha1'` | — | — |
 | `metadata` | `MetadataConfig` | Yes | — | — | — |
-| `harness` | `HarnessConfig` | Yes | — | — | — |
+| `harness` | `HarnessConfig \| None` | No | `None` | — | — |
 | `workflow` | `WorkflowConfig \| None` | No | `None` | — | — |
+| `discovery` | `DiscoveryConfig \| None` | No | `None` | — | — |
 | `runtime` | `RuntimeConfig` | No | `RuntimeConfig()` | — | — |
 | `environment` | `EnvironmentConfig \| None` | No | `None` | — | — |
 | `models` | `dict[str, ModelConfig]` | No | `dict()` | — | — |

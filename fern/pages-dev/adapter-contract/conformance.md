@@ -14,7 +14,7 @@ reviewed, trusted, or verified the adapter.
 
 The required profile covers the minimum adapter contract:
 
-- The package installs one self-contained `fabric-adapter.json` descriptor.
+- The package installs one self-contained `*.fabric-adapter.json` descriptor.
 - `contract_version` matches the installed NeMo Fabric adapter contract.
 - The descriptor can be discovered without importing adapter code.
 - Every embedded schema compiles and rejects undeclared fields where the
@@ -54,7 +54,7 @@ Test each descriptor claim separately:
 Run this minimum test matrix before publishing an adapter:
 
 1. Descriptor discovery from an installed wheel.
-2. Descriptor discovery from `<base_dir>/adapters` for development.
+2. Descriptor discovery from an explicit `discovery.local_paths` entry for development.
 3. `Fabric().plan(...)` with the smallest valid config.
 4. Planning rejection for one unsupported normalized field.
 5. Planning rejection for invalid adapter settings and each published schema.

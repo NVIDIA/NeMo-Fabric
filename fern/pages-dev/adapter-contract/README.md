@@ -27,7 +27,7 @@ the target, target lifecycle state, request execution, and target cleanup.
 
 A conforming local adapter provides:
 
-1. A discoverable `fabric-adapter.json` descriptor.
+1. A discoverable `*.fabric-adapter.json` descriptor.
 2. One `start` operation that initializes an isolated runtime.
 3. Zero or more ordered `invoke` operations.
 4. One `stop` operation that attempts to release all runtime resources.
@@ -53,17 +53,16 @@ not the adapter contract version.
 
 ## Contract Status
 
-`AgentConfig` is enforced for adapters that declare
-`config.input: agent_config`. `AgentRunRequest` and `AgentRunResult` are preview
+Adapters receive `AgentConfig`; `FabricConfig` is never sent across the
+southbound boundary. `AgentRunRequest` and `AgentRunResult` are preview
 schemas only: the current local-host transport still sends `RunRequest` inside
 the invocation payload and accepts JSON-compatible adapter output. Do not emit
 `AgentRunResult` as the current host protocol; keep request and result
 translation isolated for the future typed boundary.
 
-All NVIDIA-maintained adapters will transition to `AgentConfig`. Once that
-migration is complete, NeMo Fabric can stop sending the legacy `FabricConfig`
-start payload and pass typed invocation inputs directly, so adapters no longer
-need to parse the generic invocation payload.
+The current local-host transport still wraps invocation input in a generic
+payload. A future contract version can promote the typed request and result
+schemas without changing the normalized configuration boundary.
 
 ## Continue Reading
 

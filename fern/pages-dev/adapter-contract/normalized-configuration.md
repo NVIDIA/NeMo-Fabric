@@ -11,17 +11,16 @@ into `AgentConfig`. Adapters consume this resolved southbound projection; they
 do not need to understand consumer-only planning fields.
 
 ```text
-FabricConfig + adapter descriptor + resolved capability plan
-                           |
-                           v
-              NeMo Fabric core validation
-                 and field projection
-                           |
-                           v
-                      AgentConfig
-                           |
-                           v
-                adapter-target translation
+FabricConfig + Adapter Descriptor + optional Adapter Target Descriptor
+                              |
+                              v
+                  resolve | validate | project
+                              |
+                              v
+                         AgentConfig
+                              |
+                              v
+                    adapter translation
 ```
 
 `FabricConfig` remains the source of truth for consumer authoring.
@@ -65,8 +64,10 @@ The descriptor controls the projection:
 - HTTP MCP authentication metadata and custom headers remain attached to each
   projected server. Authentication contains credential environment-variable
   names, not resolved secret values.
-- `harness.settings` and a configured `workflow` are validated against the
-  selected descriptor before startup.
+- `harness.settings` is validated against the Adapter Descriptor.
+- `workflow.settings` is validated against the selected Adapter Target
+  Descriptor. The target's entry point is projected into `AgentConfig` with
+  those settings.
 - Named tool definitions are validated individually against
   `tool_definition_schema` before they are projected.
 - NeMo Fabric-owned metadata, installation policy, environment preparation,

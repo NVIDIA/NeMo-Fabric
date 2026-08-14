@@ -174,7 +174,7 @@ by adapter:
 | `metadata.name`, `.description` | Core | Core | Core | Core | Core |
 | `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core |
 | `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema |
-| `workflow.entrypoint`, `.settings` | No | No | No | No | No |
+| `workflow.target_id`, `.settings` | No | No | No | No | No |
 | `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | Configured provider |
 | `models.<role>.model` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes |
@@ -811,14 +811,13 @@ Executable paths, Relay command discovery, state directories, and similar
 launch mechanics are runtime implementation details rather than public adapter
 settings.
 
-Use the optional `workflow` block to select an adapter-owned executable and
-provide its immutable construction settings. `workflow.entrypoint.kind`
-identifies the adapter-defined resolution mechanism, and
-`workflow.entrypoint.ref` identifies the concrete workflow. The selected
-adapter's `workflow_schema` validates the complete block during planning and
-again before runtime startup. A configured workflow fails when the descriptor
-does not declare this schema. A schema can require `workflow` or accept `null`
-when the adapter provides a default. Validation does not apply schema defaults.
+Use the optional `workflow` block to select a registered target by `target_id`
+and provide its immutable construction settings. The Adapter Target Descriptor
+selects the adapter, supplies the target-native entry point, and validates
+`workflow.settings` during planning. Fabric then projects the entry point and
+settings into `AgentConfig.workflow`; consumer configuration does not repeat
+adapter-specific entry-point semantics. Validation does not apply schema
+defaults.
 
 Use `FabricConfig.metadata` for human-readable agent identity and caller-owned
 annotations. NeMo Fabric preserves these values in the resolved configuration
@@ -881,8 +880,8 @@ maintained artifacts cross package boundaries:
 
 - `schema_version` identifies the typed NeMo Fabric config contract transported
   across SDK and language boundaries.
-- `contract_version` identifies the adapter descriptor contract implemented by
-  a `fabric-adapter.json` file.
+- `contract_version` identifies the contract implemented by
+  `*.fabric-adapter.json` and `*.fabric-target.json` records.
 - Python and Rust package versions identify the installed SDK/core release.
 
 NeMo Fabric versions top-level typed contracts and independently maintained adapter

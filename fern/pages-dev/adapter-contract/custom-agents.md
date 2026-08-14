@@ -17,14 +17,15 @@ statically by NeMo Fabric. The shared adapter therefore resolves configuration,
 loads the selected entry point, constructs a target-native agent, and retains
 that agent for the NeMo Fabric runtime.
 
-One adapter can support many custom agents built for the same adapter target.
-Agent-specific `workflow.settings` still belongs to each `AgentConfig`, and the
-descriptor must bound the workflow shapes that the shared adapter accepts.
+One shared adapter can support many custom agents built for the same framework.
+Each registered custom agent has an Adapter Target Descriptor that fixes its
+entry point and bounds its `workflow.settings`.
 
 ## Workflow
 
-`workflow` is the `AgentConfig` construct that selects and configures one
-custom agent or workflow:
+`workflow` is the `AgentConfig` construct that configures one custom agent or
+workflow. NeMo Fabric projects it from the selected Adapter Target Descriptor
+and the consumer's `WorkflowConfig`:
 
 - `workflow.entrypoint.kind` selects well-known resolution semantics.
 - `workflow.entrypoint.ref` identifies the factory within those semantics.
@@ -33,14 +34,13 @@ custom agent or workflow:
 Runtime/session identity comes from `RuntimeContext`, and per-invocation input
 comes from `AgentRunRequest`. Neither belongs in workflow settings.
 
-The descriptor's `workflow_schema` advertises the kinds, references, and
-settings the adapter supports. A configured workflow fails planning if the
-descriptor does not publish that schema.
+The Adapter Target Descriptor advertises the entry point and the settings
+schema the adapter supports. Invalid settings fail during planning.
 
 ## Resolution Kinds
 
-The initial Python contract defines three resolution kinds. An adapter
-implements only the kinds allowed by its descriptor.
+The initial Python contract defines three resolution kinds. Each target record
+selects one kind, and the shared adapter implements its resolution semantics.
 
 | `kind` | Meaning of `ref` | Resolution |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ implements only the kinds allowed by its descriptor.
 `ref` is never a filesystem path. Resolution and module import occur in the
 task environment during `start`, not in the planning process.
 
-### Fabric Factory Intent
+### NeMo Fabric Factory Intent
 
 Use a NeMo Fabric-defined factory intent for portable agent behavior:
 

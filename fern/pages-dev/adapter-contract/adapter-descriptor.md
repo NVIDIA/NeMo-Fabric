@@ -3,30 +3,40 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 */}
 
-# NVIDIA NeMo Fabric Adapter Descriptor
+# Adapter Descriptors
 
-`fabric-adapter.json` makes an adapter discoverable and validates its public
-surface without importing or executing adapter code. The selected descriptor
-is included in `RunPlan` and is authoritative for the adapter's runner,
-configuration support, schemas, requirements, telemetry, and capabilities.
+NVIDIA NeMo Fabric resolves two independent records without importing adapter
+code:
 
-## Core Fields
+- An **Adapter Descriptor** describes one adapter implementation: how to start
+  it, which normalized configuration it accepts, and which runtime operations
+  it supports.
+- An **Adapter Target Descriptor** describes one registered target implemented
+  by an adapter. A workflow target supplies its entry point and the schema for
+  its per-workflow settings.
+
+Both records use the same `contract_version`. They do not have independent
+package, schema, or target versions.
+
+## Adapter Descriptor
+
+Adapter Descriptor filenames end in `.fabric-adapter.json`.
 
 | Field | Description |
 | --- | --- |
-| `contract_version` | Adapter contract implemented by the package. Use `fabric.adapter/v1alpha2`. |
-| `adapter_id` | Globally stable implementation ID, normally a reverse-domain name. |
-| `harness` | Stable machine-readable adapter-target ID. |
-| `adapter_kind` | Execution binding: `python`, `process`, `http`, or `native_plugin`. Python and process hosts are implemented locally today. |
-| `runner` | Binding-specific launch metadata, such as a Python `module`. |
-| `requirements` | Binaries, environment-variable names, files, services, or plugin hooks checked during diagnostics. |
-| `config` | Southbound input mode and normalized fields the adapter accepts. |
-| `capabilities` | Runtime operations claimed by the adapter. Fabric intersects these claims with the selected runtime implementation. |
-| `telemetry` | Provider-specific outputs and integration modes the adapter supports. |
+| `contract_version` | Adapter Contract version. Use `fabric.adapter/v1alpha2`. |
+| `adapter_id` | Globally stable adapter implementation ID. |
+| `adapter_kind` | Runtime binding: `python`, `process`, `http`, or `native_plugin`. |
+| `runner` | Binding-specific launch metadata, such as a Python module. |
+| `target_types` | Target types this adapter can load, such as `workflow`. Omit for a harness-only adapter. |
+| `requirements` | Binaries, environment-variable names, files, services, or plugin hooks checked by diagnostics. |
+| `config` | Southbound input and normalized fields the adapter accepts. |
+| `capabilities` | Optional adapter APIs implemented through the selected runtime binding. |
+| `telemetry` | Telemetry outputs and integration modes implemented by the adapter. |
 
-Use `config.input: agent_config` for the typed southbound boundary. Omitting
-`config.input` selects the legacy `fabric_config` input and should be limited
-to adapters that have not migrated.
+New adapters use `config.input: agent_config`. `config.accepts` declares only
+normalized fields the implementation can apply. NeMo Fabric rejects configured
+behavior outside that surface; it does not silently drop it.
 
 `config.accepts` lists normalized fields the adapter can enforce. Planning
 rejects configured fields that the adapter cannot apply. The current values
@@ -38,65 +48,94 @@ for exact wire values.
 
 ## Descriptor Schemas
 
+Adapter-owned schemas are static:
+
 | Field | Validates |
 | --- | --- |
 | `settings_schema` | `FabricConfig.harness.settings` |
-| `model_schema` | Every entry in `FabricConfig.models` after excluding separately validated extensions |
-| `workflow_schema` | The complete `FabricConfig.workflow` block |
-| `tool_definition_schema` | Every entry in `FabricConfig.tools.definitions` |
-| `extension_schemas` | Named `extensions` maps at southbound extension points |
-
-Schemas must be valid, self-contained JSON Schema objects. NeMo Fabric does
-not load HTTP or file references from a descriptor. Object-valued configuration
-schemas must accept an object root. Prefer closed schemas with
-`additionalProperties: false`; use an open object only where arbitrary target
-settings are an intentional compatibility surface.
-
-If an adapter does not support settings, publish a closed empty
-`settings_schema`. A configured workflow fails planning when the descriptor
-does not publish `workflow_schema`. Named tool definitions similarly fail when
-`tool_definition_schema` is absent. An omitted `model_schema` preserves dynamic
-model-provider behavior; when present, the schema is applied to every model role
-and its failures are reported consistently by planning and `doctor(...)`.
+| `model_schema` | Every configured model role |
+| `tool_definition_schema` | Every normalized named tool definition |
+| `extension_schemas` | Named southbound extension points |
 
 ## Minimal Python Descriptor
 
-The following example declares the minimum Python adapter metadata:
+The following is a complete minimal descriptor for an in-process Python adapter:
 
 ```json
 {
   "contract_version": "fabric.adapter/v1alpha2",
   "adapter_id": "com.acme.fabric.example",
-  "harness": "example",
   "adapter_kind": "python",
-  "runner": {
-    "module": "acme_fabric_adapter.adapter"
-  },
+  "runner": {"module": "acme_fabric_adapter.adapter"},
   "settings_schema": {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {},
     "additionalProperties": false
   },
-  "requirements": {},
   "config": {
     "input": "agent_config",
     "accepts": ["models", "instructions.system"]
-  },
-  "capabilities": {
-    "service": false,
-    "streaming": false,
-    "updates": false,
-    "cancellation": false
   }
 }
 ```
 
-Do not advertise an optional capability merely because the underlying target
-supports it. Advertise only behavior implemented through the current NeMo Fabric
-runtime binding. Relay-backed ATOF streaming is NeMo Fabric-provided and does not
-require `capabilities.streaming`.
+## Adapter Target Descriptor
 
-See [Registration and Discovery](registration-and-discovery.md) for packaging
-the descriptor and [Normalized Configuration](normalized-configuration.md)
-for schema ownership.
+Adapter Target Descriptor filenames end in `.fabric-target.json`. Targets are
+registered independently so a shared adapter can load workflows installed by
+other packages.
+
+| Field | Description |
+| --- | --- |
+| `contract_version` | The same Adapter Contract version used by the adapter. |
+| `id` | Globally stable target ID selected by consumer configuration. |
+| `adapter_id` | Adapter that implements the target. |
+| `type` | Target semantics. The current contract supports `workflow`. |
+| `spec` | Type-specific resolution and validation metadata. |
+
+A workflow target owns the entry point. `FabricConfig` selects the target by
+ID and supplies settings; it does not repeat adapter-specific entry-point
+semantics.
+
+```json
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "id": "com.acme.email-phishing",
+  "adapter_id": "nvidia.fabric.nat",
+  "type": "workflow",
+  "spec": {
+    "entrypoint": {
+      "kind": "factory",
+      "ref": "fabric.agent.react"
+    },
+    "settings_schema": {
+      "type": "object",
+      "properties": {
+        "llm_name": {"type": "string", "minLength": 1}
+      },
+      "required": ["llm_name"],
+      "additionalProperties": false
+    }
+  }
+}
+```
+
+Planning resolves the target first, obtains its `adapter_id`, resolves the
+Adapter Descriptor, validates both records, and projects the target entry point
+plus consumer settings into `AgentConfig.workflow`.
+
+## Schema Rules
+
+Descriptor schemas must be valid, self-contained JSON Schema objects. NeMo
+Fabric does not load HTTP or file references. Object-valued configuration
+schemas must accept an object root. Prefer `additionalProperties: false` so
+typos and stale settings fail during planning.
+
+Do not advertise an optional capability merely because the underlying target
+supports it. Advertise only behavior implemented through the adapter boundary.
+Relay-backed ATOF streaming is NeMo Fabric-owned and does not require native
+adapter streaming.
+
+See [Registration and Discovery](registration-and-discovery.md) for package and
+lookup rules and [Normalized Configuration](normalized-configuration.md) for
+projection semantics.

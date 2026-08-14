@@ -1,8 +1,8 @@
 ---
 title: "Struct Workflow Entrypoint Config"
 sidebar-title: "WorkflowEntrypointConfig"
-description: "Adapter-owned workflow entry point."
-position: 64
+description: "Adapter-owned workflow entry point supplied by an Adapter Target Descriptor."
+position: 70
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -11,13 +11,13 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct WorkflowEntrypointConfig &#123;\n    pub kind: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    pub ref: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
 
-Adapter-owned workflow entry point.
+Adapter-owned workflow entry point supplied by an Adapter Target Descriptor.
 
 ## Fields
 
 ### `kind: String`
 
-Adapter-defined entry-point kind.
+Adapter-defined entry-point resolution semantics.
 
 ### `ref: String`
 

@@ -2,14 +2,14 @@
 title: "Enum Fabric Error"
 sidebar-title: "FabricError"
 description: "Errors raised by NeMo Fabric config loading and validation."
-position: 71
+position: 79
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum FabricError &#123;\n    ResolveBaseDirectory &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.97.1/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    PathNotFound(<a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>),\n    UnknownAdapter &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    AdapterDescriptorMismatch &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        expected: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        actual: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    AdapterDescriptorUnsupported &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        value: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidAdapterDescriptor &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        message: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidHarnessSettings &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        descriptor_source: <a href=\"../config/enum-adapterdescriptorsource.mdx\">AdapterDescriptorSource</a>,\n        descriptor_path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        settings_path: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidWorkflow &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        descriptor_source: <a href=\"../config/enum-adapterdescriptorsource.mdx\">AdapterDescriptorSource</a>,\n        descriptor_path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        workflow_path: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidToolDefinition &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        descriptor_source: <a href=\"../config/enum-adapterdescriptorsource.mdx\">AdapterDescriptorSource</a>,\n        descriptor_path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        definition_path: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidAdapterExtension &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        descriptor_source: <a href=\"../config/enum-adapterdescriptorsource.mdx\">AdapterDescriptorSource</a>,\n        descriptor_path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        extension_path: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidConfig &#123;\n        field: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    AdapterCompatibility &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        field: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnknownSchema &#123;\n        schema: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    UnsupportedRuntimeAdapter &#123;\n        harness: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        adapter_kind: <a href=\"../config/enum-adapterkind.mdx\">AdapterKind</a>,\n    &#125;,\n    UnsupportedRuntimeCapability &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        capability: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n    &#125;,\n    InvalidOpenAiStreamTransport &#123;\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        reason: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n    &#125;,\n    AdapterLifecycleOperation &#123;\n        operation: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        runtime_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        code: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        message: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        diagnostics: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    RuntimeHandleMismatch &#123;\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        expected: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        actual: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        runtime_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnsupportedEnvironmentProvider &#123;\n        provider: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        adapter_kind: <a href=\"../config/enum-adapterkind.mdx\">AdapterKind</a>,\n    &#125;,\n    InvalidProcessSettings &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n    InvalidPythonSettings &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n    PythonInterpreterUnavailable &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        origin: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    ProcessRunner &#123;\n        command: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.97.1/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    SerializeJson(<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>),\n    Read &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.97.1/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    Write &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.97.1/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    ParseJson &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum FabricError &#123;\n    ResolveBaseDirectory &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.97.1/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    PathNotFound(<a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>),\n    UnknownAdapter &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    UnknownAdapterTarget &#123;\n        target_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    AmbiguousDescriptor &#123;\n        descriptor_kind: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        paths: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    &#125;,\n    AdapterDescriptorMismatch &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        expected: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        actual: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    AdapterDescriptorUnsupported &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        value: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidAdapterDescriptor &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        message: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidAdapterTargetDescriptor &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        message: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidHarnessSettings &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        descriptor_source: <a href=\"../config/enum-descriptorsource.mdx\">DescriptorSource</a>,\n        descriptor_path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        settings_path: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidWorkflow &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        descriptor_source: <a href=\"../config/enum-descriptorsource.mdx\">DescriptorSource</a>,\n        descriptor_path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        workflow_path: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidToolDefinition &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        descriptor_source: <a href=\"../config/enum-descriptorsource.mdx\">DescriptorSource</a>,\n        descriptor_path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        definition_path: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidAdapterExtension &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        descriptor_source: <a href=\"../config/enum-descriptorsource.mdx\">DescriptorSource</a>,\n        descriptor_path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        extension_path: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidConfig &#123;\n        field: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    AdapterCompatibility &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        field: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnknownSchema &#123;\n        schema: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    UnsupportedRuntimeAdapter &#123;\n        harness: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        adapter_kind: <a href=\"../config/enum-adapterkind.mdx\">AdapterKind</a>,\n    &#125;,\n    UnsupportedRuntimeCapability &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        capability: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n    &#125;,\n    InvalidOpenAiStreamTransport &#123;\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        reason: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n    &#125;,\n    AdapterLifecycleOperation &#123;\n        operation: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        runtime_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        code: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        message: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        diagnostics: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    RuntimeHandleMismatch &#123;\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>,\n        expected: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        actual: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        runtime_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnsupportedEnvironmentProvider &#123;\n        provider: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        adapter_kind: <a href=\"../config/enum-adapterkind.mdx\">AdapterKind</a>,\n    &#125;,\n    InvalidProcessSettings &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n    InvalidPythonSettings &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n    PythonInterpreterUnavailable &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        origin: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    ProcessRunner &#123;\n        command: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.97.1/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    SerializeJson(<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>),\n    Read &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.97.1/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    Write &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.97.1/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    ParseJson &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.97.1/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n&#125;"}} /></pre>
 
 Errors raised by NeMo Fabric config loading and validation.
 
@@ -52,6 +52,42 @@ Requested adapter id.
 ##### `available: Vec<String>`
 
 Available adapter ids.
+
+### `UnknownAdapterTarget`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "UnknownAdapterTarget"}} /></pre>
+
+A requested Adapter Target Descriptor id was not discovered.
+
+#### Fields
+
+##### `target_id: String`
+
+Requested target id.
+
+##### `available: Vec<String>`
+
+Available target ids.
+
+### `AmbiguousDescriptor`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AmbiguousDescriptor"}} /></pre>
+
+More than one distinct descriptor record was discovered for one id.
+
+#### Fields
+
+##### `descriptor_kind: &'static str`
+
+Human-readable descriptor category.
+
+##### `id: String`
+
+Conflicting descriptor id.
+
+##### `paths: Vec<PathBuf>`
+
+Every conflicting descriptor path.
 
 ### `AdapterDescriptorMismatch`
 
@@ -113,6 +149,22 @@ Adapter descriptor path.
 
 Validation message.
 
+### `InvalidAdapterTargetDescriptor`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "InvalidAdapterTargetDescriptor"}} /></pre>
+
+An Adapter Target Descriptor is malformed.
+
+#### Fields
+
+##### `path: PathBuf`
+
+Adapter Target Descriptor path.
+
+##### `message: String`
+
+Validation message.
+
 ### `InvalidHarnessSettings`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "InvalidHarnessSettings"}} /></pre>
@@ -125,7 +177,7 @@ Adapter-owned harness settings do not satisfy the resolved descriptor schema.
 
 Selected adapter id.
 
-##### `descriptor_source: AdapterDescriptorSource`
+##### `descriptor_source: DescriptorSource`
 
 Registry source of the selected descriptor.
 
@@ -153,7 +205,7 @@ Adapter-owned workflow configuration does not satisfy the resolved descriptor sc
 
 Selected adapter id.
 
-##### `descriptor_source: AdapterDescriptorSource`
+##### `descriptor_source: DescriptorSource`
 
 Registry source of the selected descriptor.
 
@@ -181,7 +233,7 @@ A normalized tool definition does not satisfy the resolved descriptor schema.
 
 Selected adapter id.
 
-##### `descriptor_source: AdapterDescriptorSource`
+##### `descriptor_source: DescriptorSource`
 
 Registry source of the selected descriptor.
 
@@ -209,7 +261,7 @@ Adapter-owned extensions do not satisfy a descriptor extension schema.
 
 Selected adapter id.
 
-##### `descriptor_source: AdapterDescriptorSource`
+##### `descriptor_source: DescriptorSource`
 
 Registry source of the selected descriptor.
 
