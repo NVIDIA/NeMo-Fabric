@@ -59,6 +59,12 @@ jobs:
           path: ~/.cache/pre-commit
           key: fabric-pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', 'uv.lock') }}
 
+      - name: Create virtual environment
+        run: uv venv --python "${UV_PYTHON:-${{ 3.12 }}}" .venv
+
+      - name: Install Hermes Agent
+        run: just install-hermes-agent
+
       - name: Install pre-commit
         run: uv sync --frozen --no-default-groups --group dev --no-install-project
 
