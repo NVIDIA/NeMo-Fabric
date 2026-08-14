@@ -529,10 +529,14 @@ async def test_run_surfaces_cleanup_failure_after_success(
 ):
     mock_native.stop_runtime.side_effect = RuntimeError("stop failed")
 
-    with pytest.raises(FabricRuntimeError, match="stop failed") as caught:
-        await native_client.run(_config(), input="hello")
+    result = await native_client.run(_config(), input="hello")
 
-    assert caught.value.stage == "run"
+    assert result.status == "failed"
+    assert result.output["messages"][-1]["content"] == "reply-1"
+    assert result.error is not None
+    assert result.error.stage == "stop"
+    assert result.error.code == "runtime_stop_failed"
+    assert result.error.message == "stop failed"
     assert mock_native.stop_runtime.call_count == 1
 
 

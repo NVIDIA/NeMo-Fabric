@@ -199,10 +199,10 @@
         ]
       },
       "then": {
-        "not": {
-          "required": [
-            "error"
-          ]
+        "properties": {
+          "error": {
+            "type": "null"
+          }
         }
       }
     }

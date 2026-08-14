@@ -712,7 +712,20 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
             return Err(error);
         }
     };
-    result.events.extend(stop_runtime(plan, &runtime)?);
+    match stop_runtime(plan, &runtime) {
+        Ok(events) => result.events.extend(events),
+        Err(error) if result.status == RunStatus::Succeeded => {
+            result.status = RunStatus::Failed;
+            result.error = Some(ErrorInfo {
+                stage: ErrorStage::Stop,
+                code: "runtime_stop_failed".to_string(),
+                message: error.to_string(),
+                retryable: false,
+                metadata: BTreeMap::new(),
+            });
+        }
+        Err(_) => {}
+    }
     Ok(result)
 }
 
@@ -3936,6 +3949,23 @@ for line in sys.stdin:
         assert!(error.to_string().contains("fake_stop"), "{error}");
         let retry = stop_runtime(&plan, &runtime).expect("cleanup retry is idempotent");
         assert_eq!(retry[0].metadata["already_stopped"], true);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn run_plan_preserves_completed_result_when_stop_fails() {
+        let (root, plan) = local_host_plan("stop_failure");
+
+        let result = run_plan(&plan, RunRequest::text("completed"))
+            .expect("completed result with stop failure");
+
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(result.output["input"], "completed");
+        let error = result.error.expect("stop error");
+        assert_eq!(error.stage, ErrorStage::Stop);
+        assert_eq!(error.code, "runtime_stop_failed");
+        assert!(error.message.contains("fake_stop"), "{}", error.message);
 
         let _ = fs::remove_dir_all(root);
     }

@@ -3,12 +3,16 @@
 
 import os
 import shutil
+import subprocess
 import sys
+import time
 import types
+import typing
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import requests
 
 CUR_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = CUR_DIR.parent.resolve()
@@ -108,11 +112,86 @@ def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
 
 
 @pytest.fixture(name="api_server")
-def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
+def api_server_fixture(unused_tcp_port_factory) -> Iterator[str]:
     from _utils.mock_api_server import mock_api_server
 
-    with mock_api_server(unused_tcp_port) as base_url:
+    with mock_api_server(unused_tcp_port_factory()) as base_url:
         yield base_url
+
+
+@pytest.fixture(name="adapter_ids")
+def adapter_ids_fixture() -> dict[str, str]:
+    return {
+        "deepagents": "nvidia.fabric.langchain.deepagents",
+        "claude": "nvidia.fabric.claude",
+        "codex": "nvidia.fabric.codex",
+        "hermes": "nvidia.fabric.hermes",
+    }
+
+
+def _mcp_server(
+    transport: typing.Literal["sse", "streamable-http"],
+    port: int,
+    tmp_path: Path,
+) -> Iterator[tuple[str, Path]]:
+    endpoint = "sse" if transport == "sse" else "mcp"
+    log_path = tmp_path / "log.jsonl"
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(CUR_DIR / "_utils" / "logging_mcp_server.py"),
+            "--port",
+            str(port),
+            "--transport",
+            transport,
+            "--log-requests",
+            str(log_path),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    base_url = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + 30
+    try:
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError(
+                    f"MCP server exited with status {process.returncode} before becoming healthy"
+                )
+            try:
+                response = requests.get(f"{base_url}/health", timeout=1)
+                if response.status_code == 200:
+                    break
+            except requests.RequestException:
+                pass
+            time.sleep(0.1)
+        else:
+            raise RuntimeError("MCP server did not become healthy within 30 seconds")
+
+        yield f"{base_url}/{endpoint}", log_path
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+
+@pytest.fixture(name="mcp_server", scope="session")
+def mcp_server_fixture(
+    unused_tcp_port_factory,
+    tmpdir_factory: pytest.TempPathFactory,
+) -> Iterator[tuple[str, Path]]:
+    yield from _mcp_server("streamable-http", unused_tcp_port_factory(), tmpdir_factory.mktemp("mcp_server"))
+
+
+@pytest.fixture(name="sse_mcp_server", scope="session")
+def sse_mcp_server_fixture(
+    unused_tcp_port_factory,
+    tmpdir_factory: pytest.TempPathFactory,
+) -> Iterator[tuple[str, Path]]:
+    yield from _mcp_server("sse", unused_tcp_port_factory(), tmpdir_factory.mktemp("sse_mcp_server"))
 
 
 @pytest.fixture(name="nemo_relay")
