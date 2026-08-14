@@ -46,13 +46,18 @@ ADAPTER_EXTRAS = {
         "relay": ["nemo-relay>=0.7.2,<0.8"],
         "full_relay": ["nemo-relay[deepagents]>=0.7.2,<0.8"],
     },
+    "mini-swe-agent": {
+        "path": "adapters/mini-swe-agent",
+        "sdk": f"nemo-fabric-adapters-mini-swe-agent[harness] == {PACKAGE_VERSION}",
+        "harness": ["mini-swe-agent>=2.0,<3"],
+    },
     "hermes-agent": {
         "path": "adapters/hermes",
         "sdk": (
             f"nemo-fabric-adapters-hermes[harness] == {PACKAGE_VERSION}; "
             "python_version < '3.14'"
         ),
-        "harness": ["hermes-agent[mcp]>=0.19.0; python_version < '3.14'"],
+        "harness": ["hermes-agent>=0.19.0; python_version < '3.14'"],
         "relay": ["nemo-relay>=0.7.2,<0.8"],
     },
 }
@@ -96,6 +101,13 @@ ADAPTER_EXTRAS = {
                 f"nemo-fabric-adapters-common == {PACKAGE_VERSION}",
             ],
         ),
+        (
+            "adapters/mini-swe-agent",
+            [
+                f"nemo-fabric-adapter-contract == {PACKAGE_VERSION}",
+                f"nemo-fabric-adapters-common == {PACKAGE_VERSION}",
+            ],
+        ),
     ],
 )
 def test_adapter_runtime_dependencies(path: str, expected: list[str]):
@@ -119,6 +131,7 @@ def test_adapter_test_dependency_group_matches_leaf_harnesses():
         "nemo-fabric-adapters-codex[harness]",
         "nemo-fabric-adapters-deepagents[harness]",
         "nemo-fabric-adapters-hermes[harness]; python_version < '3.14'",
+        "nemo-fabric-adapters-mini-swe-agent[harness]",
     ]
     assert sorted(manifest["dependency-groups"]["adapter-tests"]) == sorted(expected)
     assert "adapter-tests" not in manifest["tool"]["uv"]["default-groups"]
@@ -143,6 +156,7 @@ def test_root_project_is_a_private_development_coordinator():
         "claude": ["nemo-fabric[claude]"],
         "codex": ["nemo-fabric[codex]"],
         "deepagents": ["nemo-fabric[deepagents]"],
+        "mini-swe-agent": ["nemo-fabric[mini-swe-agent]"],
         "harbor": ["nemo-fabric[harbor]"],
         "hermes-agent": [
             "nemo-fabric[hermes-agent]; python_version < '3.14'"

@@ -8,9 +8,9 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nemo-fabric-adapters-hermes"
+name = "nemo-fabric-adapters-mini-swe-agent"
 version = "0.2.0"
-description = "Hermes Agent adapter for NeMo Fabric"
+description = "mini-SWE-agent adapter for NeMo Fabric"
 authors = [
   { name = "NVIDIA Corporation" },
 ]
@@ -23,8 +23,7 @@ classifiers = [
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 readme = "pypi.md"
-# Hermes Agent does not currently support Python 3.14 or later.
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11"
 dependencies = [
   "nemo-fabric-adapter-contract == 0.2.0",
   "nemo-fabric-adapters-common == 0.2.0",
@@ -32,14 +31,10 @@ dependencies = [
 
 [project.optional-dependencies]
 harness = [
-  "hermes-agent>=0.19.0; python_version < '3.14'",
-]
-relay = [
-  "nemo-relay>=0.7.2,<0.8",
+  "mini-swe-agent>=2.0,<3",
 ]
 full = [
-  "hermes-agent>=0.19.0; python_version < '3.14'",
-  "nemo-relay>=0.7.2,<0.8",
+  "mini-swe-agent>=2.0,<3",
 ]
 
 [project.urls]
@@ -50,10 +45,10 @@ Documentation = "https://docs.nvidia.com/nemo/fabric"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["nemo_fabric_adapters.hermes*"]
+include = ["nemo_fabric_adapters.mini_swe_agent*"]
 
 [tool.setuptools.data-files]
-"share/nemo-fabric/adapters/hermes" = ["fabric-adapter.json"]
+"share/nemo-fabric/adapters/mini-swe-agent" = ["fabric-adapter.json"]
 
 [tool.uv.sources]
 nemo-fabric-adapter-contract = { path = "../../adapter-contract/python", editable = true }

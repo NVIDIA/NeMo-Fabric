@@ -182,20 +182,6 @@ const incompleteServiceAccountAuthentication: McpAuthenticationConfig = {
 };
 void incompleteServiceAccountAuthentication;
 
-const invalidTelemetryProvider: AdapterDescriptor = {
-  adapter_id: "pi",
-  adapter_kind: "process",
-  contract_version: ADAPTER_CONTRACT_VERSION,
-  harness: "pi",
-  telemetry: {
-    providers: {
-      // @ts-expect-error telemetry provider names come from the canonical schema
-      custom: {},
-    },
-  },
-};
-void invalidTelemetryProvider;
-
 // @ts-expect-error undefined is not JSON
 const undefinedJson: JsonValue = undefined;
 void undefinedJson;

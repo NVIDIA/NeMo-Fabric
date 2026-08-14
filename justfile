@@ -12,9 +12,9 @@ ref_name := ""
 # Linux wheel artifacts target this minimum glibc version for compatibility.
 linux_glibc_version := "2.17"
 
-python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes"
+python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes adapters/mini-swe-agent"
 
-python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes"
+python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes adapters/mini-swe-agent"
 
 bash_helpers := '''
 set -euo pipefail
