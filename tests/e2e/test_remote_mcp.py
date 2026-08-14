@@ -9,6 +9,7 @@ import json
 import os
 from importlib.metadata import version as distribution_version
 from pathlib import Path
+import time
 import sys
 
 from packaging.version import Version
@@ -100,7 +101,7 @@ async def _test_e2e_remote_mcp(
         custom_headers={"X-API-Key": "Bearer ${TEST_SECRET_KEY}"},
     )
 
-    secret_key = "TEST_ABC123"
+    secret_key = f"TEST_ABC_{time.time()}"
     os.environ.update(
         {
             "ADAPTER_PYTHON": sys.executable,
@@ -153,7 +154,7 @@ def _assert_claude_mcp_config_excludes_secret(result, tmp_path: Path) -> None:
         / "mcp.json"
     )
     assert mcp_config_path.is_file()
-    assert "TEST_ABC123" not in mcp_config_path.read_text(encoding="utf-8")
+    assert "TEST_ABC_" not in mcp_config_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")

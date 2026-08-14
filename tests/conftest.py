@@ -178,20 +178,20 @@ def _mcp_server(
             process.wait()
 
 
-@pytest.fixture(name="mcp_server")
+@pytest.fixture(name="mcp_server", scope="session")
 def mcp_server_fixture(
     unused_tcp_port_factory,
-    tmp_path: Path,
+    tmpdir_factory: pytest.TempPathFactory,
 ) -> Iterator[tuple[str, Path]]:
-    yield from _mcp_server("streamable-http", unused_tcp_port_factory(), tmp_path)
+    yield from _mcp_server("streamable-http", unused_tcp_port_factory(), tmpdir_factory.mktemp("mcp_server"))
 
 
-@pytest.fixture(name="sse_mcp_server")
+@pytest.fixture(name="sse_mcp_server", scope="session")
 def sse_mcp_server_fixture(
     unused_tcp_port_factory,
-    tmp_path: Path,
+    tmpdir_factory: pytest.TempPathFactory,
 ) -> Iterator[tuple[str, Path]]:
-    yield from _mcp_server("sse", unused_tcp_port_factory(), tmp_path)
+    yield from _mcp_server("sse", unused_tcp_port_factory(), tmpdir_factory.mktemp("sse_mcp_server"))
 
 
 @pytest.fixture(name="nemo_relay")
