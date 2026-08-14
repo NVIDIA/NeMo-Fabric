@@ -140,7 +140,7 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [Codex](codex/README.md) | `AsyncCodex` app-server client and SDK thread | Runtime-owned Relay CLI gateway and Codex SDK hooks | Reuses the SDK thread and persists its thread ID | Closes the SDK client and app server, then stops the gateway | Not implemented |
 | [LangChain Deep Agents](deepagents/README.md) | Compiled LangGraph agent, checkpointer, and thread ID | NeMo Relay Python SDK integration added when the agent is compiled | Creates a fresh Relay request scope and callback for each invocation | Closes the checkpointer; no gateway process | Not implemented |
 | [Hermes Agent](hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes Agent NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
-| [mini-SWE-agent](mini-swe-agent/README.md) | Not applicable | Not supported | Not applicable | Not applicable | Not implemented |
+| [mini-SWE-agent](mini-swe-agent/README.md) | Conversation history | Not supported | Not applicable | Not applicable | Not implemented |
 
 Telemetry output names use the descriptor contract values. Claude, Codex, and
 Hermes Agent can emit NeMo Relay ATIF, OpenTelemetry, and OpenInference output. Deep
