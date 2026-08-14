@@ -2328,7 +2328,7 @@ Remove one named definition and return this tools config.
 def to_mapping() -> dict[str, Any]
 ```
 
-Return a detached JSON-compatible mapping for Rust/core calls.
+Return the tool mapping without collapsing an explicit empty policy.
 
 
 ---
