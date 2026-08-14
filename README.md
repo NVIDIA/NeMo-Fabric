@@ -181,6 +181,7 @@ Create an environment for the NeMo Fabric runtime:
 ```bash
 python -m venv .venv-fabric
 source .venv-fabric/bin/activate
+python -m pip install "nemo-fabric==0.2.0"
 ```
 
 Install Hermes Agent by following its
@@ -188,21 +189,26 @@ Install Hermes Agent by following its
 Then install the Hermes adapter into the Hermes-managed Python environment:
 
 ```bash
-pip install "nemo-fabric[hermes-agent]"==0.2.0
+if [ -z "${ADAPTER_PYTHON:-}" ]; then
+  if [ -x "$HOME/.hermes/hermes-agent/venv/bin/python" ]; then
+    ADAPTER_PYTHON="$HOME/.hermes/hermes-agent/venv/bin/python"
+  else
+    ADAPTER_PYTHON="/usr/local/lib/hermes-agent/venv/bin/python"
+  fi
+fi
+if [ ! -x "$ADAPTER_PYTHON" ]; then
+  echo "Hermes Agent Python is not executable: $ADAPTER_PYTHON" >&2
+  exit 1
+fi
+export ADAPTER_PYTHON
+"$ADAPTER_PYTHON" -m pip install "nemo-fabric-adapters-hermes==0.2.0"
 ```
 
-The adapter package keeps this environment independent from the `nemo-fabric`
-distribution and does not install Hermes Agent. Use matching NeMo Fabric
-release versions for the runtime and adapter package unless a different
-pairing has been explicitly validated.
-
-Run NeMo Fabric from its environment and set `ADAPTER_PYTHON` to the interpreter
-that contains the adapter and harness:
-
-```bash
-source .venv-fabric/bin/activate
-export ADAPTER_PYTHON="${HERMES_HOME:-$HOME/.hermes}/hermes-agent/venv/bin/python"
-```
+The adapter package keeps the Hermes environment independent from the
+`nemo-fabric` runtime distribution and does not install Hermes Agent. Keep the
+NeMo Fabric environment active and `ADAPTER_PYTHON` set when running NeMo
+Fabric. Use matching NeMo Fabric release versions for the runtime and adapter
+package unless a different pairing has been explicitly validated.
 
 For package options and platform-specific instructions, refer to the
 [installation guide](docs/getting-started/install.mdx).

@@ -31,12 +31,14 @@ Follow these repository-specific requirements after applying the public skill:
    `README.md`, `<name>.fabric-adapter.json`, language-native package and lock
    files, a source entry point, and focused tests.
 2. Give each Python leaf adapter a small base installation, a `harness` extra
-   for supported target packages, and a `full` extra for package-installable
-   integrations. Add a `relay` extra only when the adapter imports NVIDIA NeMo
-   Relay Python APIs.
+   for package-installable target packages, and a `full` extra for
+   package-installable integrations. The Hermes adapter is the sole source-only
+   exception and omits `harness`. Add a `relay` extra only when the adapter
+   imports NVIDIA NeMo Relay Python APIs.
 3. Add one canonical root extra that delegates to the matching leaf adapter
-   and its `harness` extra. Keep `nemo-fabric-runtime` an exact-version,
-   unconditional root dependency.
+   and its `harness` extra. The Hermes root extra delegates to the bare adapter
+   because users install Hermes Agent separately from source. Keep
+   `nemo-fabric-runtime` an exact-version, unconditional root dependency.
 4. Add the package to the root adapter-test dependency group,
    `[tool.uv.sources]`, `python_projects` in `justfile`, applicable catalogs,
    and CI enumerations. Ship its descriptor under
