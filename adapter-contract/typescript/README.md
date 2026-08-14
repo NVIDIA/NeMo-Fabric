@@ -21,8 +21,8 @@ npm install nemo-fabric-adapter-contract
 Until then, build and install an exact tarball from a NeMo Fabric checkout:
 
 ```bash
-npm ci --prefix typescript/adapter-contract --ignore-scripts
-npm pack --prefix typescript/adapter-contract
+npm ci --prefix adapter-contract/typescript --ignore-scripts
+npm pack ./adapter-contract/typescript
 npm install ./nemo-fabric-adapter-contract-0.2.0.tgz
 ```
 

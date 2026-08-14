@@ -1369,7 +1369,9 @@ def test_config_emits_schema_shape_and_validates():
 
 
 def test_agent_model_tracks_rust_schema_top_level_fields():
-    schema = json.loads(Path("schemas/agent.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads(
+        Path("schemas/sdk/agent.schema.json").read_text(encoding="utf-8")
+    )
     pydantic_schema = FabricConfig.model_json_schema()
 
     assert set(pydantic_schema["properties"]).issuperset(schema["properties"])

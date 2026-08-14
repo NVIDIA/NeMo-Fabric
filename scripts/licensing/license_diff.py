@@ -50,8 +50,12 @@ def _status(message: str) -> None:
 def _configure_root(root: Path) -> None:
     """Point the shared attribution collectors at a repository root."""
     resolved = root.resolve()
+    node_package = resolved / "adapter-contract" / "typescript"
+    previous_node_package = resolved / "typescript" / "adapter-contract"
+    if not node_package.exists() and previous_node_package.exists():
+        node_package = previous_node_package
     attributions_lockfile_md.ROOT = resolved
-    attributions_lockfile_md.NODE = resolved / "typescript" / "adapter-contract"
+    attributions_lockfile_md.NODE = node_package
 
 
 def generate_inventory(

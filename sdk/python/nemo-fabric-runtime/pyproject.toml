@@ -34,7 +34,7 @@ Issues = "https://github.com/NVIDIA/NeMo-Fabric/issues"
 Documentation = "https://docs.nvidia.com/nemo/fabric"
 
 [tool.maturin]
-manifest-path = "../crates/fabric-python/Cargo.toml"
+manifest-path = "../../../crates/fabric-python/Cargo.toml"
 python-source = "src"
 module-name = "nemo_fabric._native"
 features = ["pyo3/extension-module"]

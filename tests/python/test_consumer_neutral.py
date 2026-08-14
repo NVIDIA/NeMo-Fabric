@@ -29,8 +29,10 @@ import tomllib
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-SDK_ROOT = ROOT_DIR / "python" / "src" / "nemo_fabric"
-PYPROJECT = ROOT_DIR / "python" / "pyproject.toml"
+SDK_ROOT = (
+    ROOT_DIR / "sdk" / "python" / "nemo-fabric-runtime" / "src" / "nemo_fabric"
+)
+PYPROJECT = ROOT_DIR / "sdk" / "python" / "nemo-fabric-runtime" / "pyproject.toml"
 ALLOWED = set(sys.stdlib_module_names) | {
     "nemo_fabric",
     "pydantic",

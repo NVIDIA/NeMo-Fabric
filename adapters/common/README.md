@@ -71,7 +71,7 @@ stdout or log stream credentials. This method is not used for Relay-backed
 `Runtime.invoke_stream()`, which continues to execute ordinary `invoke`.
 Process bindings that implement the wire protocol directly must follow the
 generated
-[`openai-stream-record.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/legacy/openai-stream-record.schema.json)
+[`openai-stream-record.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/openai-stream-record.schema.json)
 chunk and explicit-end envelopes.
 
 Adapters whose descriptor sets `config.input` to `agent_config` can ask the

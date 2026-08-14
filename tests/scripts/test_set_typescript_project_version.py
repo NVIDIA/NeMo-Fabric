@@ -18,7 +18,7 @@ import set_typescript_project_version  # noqa: E402
 
 @pytest.fixture(name="package_files")
 def package_files_fixture(tmp_path: Path) -> tuple[Path, Path]:
-    package_directory = tmp_path / "typescript" / "adapter-contract"
+    package_directory = tmp_path / "adapter-contract" / "typescript"
     package_directory.mkdir(parents=True)
     package_path = package_directory / "package.json"
     lock_path = package_directory / "package-lock.json"

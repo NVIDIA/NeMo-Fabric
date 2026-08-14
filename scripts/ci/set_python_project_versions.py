@@ -18,8 +18,8 @@ INTERNAL_PIN_PATTERN = re.compile(
 
 def set_python_project_versions(root: Path, version: str) -> None:
     project_paths = (
-        root / "pyproject.toml",
-        root / "adapter-contract" / "pyproject.toml",
+        root / "sdk" / "python" / "nemo-fabric" / "pyproject.toml",
+        root / "adapter-contract" / "python" / "pyproject.toml",
         *sorted((root / "adapters").glob("**/pyproject.toml")),
     )
 
@@ -44,12 +44,15 @@ def set_python_project_versions(root: Path, version: str) -> None:
         else:
             print(f"{path.relative_to(root)} already set to {version}")
 
-    runtime_path = root / "python" / "pyproject.toml"
+    runtime_path = (
+        root / "sdk" / "python" / "nemo-fabric-runtime" / "pyproject.toml"
+    )
     runtime = tomllib.loads(runtime_path.read_text(encoding="utf-8"))
     project = runtime.get("project", {})
     if "version" in project or "version" not in project.get("dynamic", []):
         raise SystemExit(
-            "python/pyproject.toml must keep a dynamic version derived from Cargo.toml"
+            "sdk/python/nemo-fabric-runtime/pyproject.toml must keep a dynamic "
+            "version derived from Cargo.toml"
         )
 
     mismatched_pins = []
@@ -62,7 +65,10 @@ def set_python_project_versions(root: Path, version: str) -> None:
             "Internal Python dependency pins are not synchronized: "
             + ", ".join(mismatched_pins)
         )
-    print("python/pyproject.toml continues to derive its version from Cargo.toml")
+    print(
+        "sdk/python/nemo-fabric-runtime/pyproject.toml continues to derive its "
+        "version from Cargo.toml"
+    )
 
 
 if __name__ == "__main__":

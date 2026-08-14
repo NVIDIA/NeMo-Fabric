@@ -64,13 +64,13 @@ repos:
         name: ATTRIBUTIONS-Node.md (TypeScript package-lock.json)
         entry: bash scripts/generate_attributions.sh node
         language: system
-        files: '^(typescript/adapter-contract/package-lock\.json|ATTRIBUTIONS-Node\.md)$'
+        files: '^(adapter-contract/typescript/package-lock\.json|ATTRIBUTIONS-Node\.md)$'
         pass_filenames: false
 
       - id: license-diff
         name: Dependency license diff
         entry: uv run --no-project python scripts/licensing/license_diff.py --base-ref HEAD
         language: system
-        files: '(^|/)(Cargo\.toml|Cargo\.lock|pyproject\.toml|uv\.lock)$|^typescript/adapter-contract/package(?:-lock)?\.json$'
+        files: '(^|/)(Cargo\.toml|Cargo\.lock|pyproject\.toml|uv\.lock)$|^adapter-contract/typescript/package(?:-lock)?\.json$'
         pass_filenames: false
         verbose: false

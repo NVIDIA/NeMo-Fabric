@@ -44,17 +44,20 @@ NeMo Fabric versions are anchored on the workspace SemVer in the repository root
   version for the Rust workspace.
 - The root `Cargo.toml` `workspace.dependencies` entry for
   `nemo-fabric-core` must stay aligned with that same version.
-- The root `pyproject.toml` and every `adapters/**/pyproject.toml` carry the
-  Python package versions and internal dependency pins and must stay aligned
-  with the same release version.
-- `typescript/adapter-contract/package.json` and its lockfile carry the npm
+- `sdk/python/nemo-fabric/pyproject.toml`,
+  `adapter-contract/python/pyproject.toml`, and every
+  `adapters/**/pyproject.toml` carry the Python package versions and internal
+  dependency pins and must stay aligned with the same release version. The
+  root `pyproject.toml` is a private development coordinator and remains at
+  `0.0.0`.
+- `adapter-contract/typescript/package.json` and its lockfile carry the npm
   adapter-contract package version and must stay aligned with the same release
   version. The package version is independent of the
   `fabric.adapter/v1alpha2` wire contract version.
 - The `nemo-fabric-runtime` Python package version is derived at packaging time.
-  `python/pyproject.toml` stays `dynamic = ["version"]` in the repository, and
-  Maturin derives the version from `crates/fabric-python/Cargo.toml`, which
-  inherits the workspace version.
+  `sdk/python/nemo-fabric-runtime/pyproject.toml` stays
+  `dynamic = ["version"]` in the repository, and Maturin derives the version
+  from `crates/fabric-python/Cargo.toml`, which inherits the workspace version.
 
 ## Release Tags
 
@@ -146,9 +149,11 @@ The helper updates:
 1. The root [`Cargo.toml`](Cargo.toml) workspace version.
 2. The root [`Cargo.toml`](Cargo.toml) `workspace.dependencies` versions for
    `nemo-fabric-core`.
-3. [`pyproject.toml`](pyproject.toml), every `adapters/**/pyproject.toml`, and
-   their internal dependency pins to the same release version.
-4. [`typescript/adapter-contract/package.json`](typescript/adapter-contract/package.json)
+3. [`sdk/python/nemo-fabric/pyproject.toml`](sdk/python/nemo-fabric/pyproject.toml),
+   [`adapter-contract/python/pyproject.toml`](adapter-contract/python/pyproject.toml),
+   every `adapters/**/pyproject.toml`, and their internal dependency pins to
+   the same release version.
+4. [`adapter-contract/typescript/package.json`](adapter-contract/typescript/package.json)
    and its npm lockfile.
 5. [`Cargo.lock`](Cargo.lock), [`uv.lock`](uv.lock), and every Python project
    lockfile.
@@ -160,8 +165,9 @@ Review docs and snippets that mention explicit versions, including:
 - [`docs/getting-started/install.mdx`](docs/getting-started/install.mdx)
 - Any binding README or example that pins a release number
 
-Do not commit a static Python package version into `python/pyproject.toml` just
-to cut the release. Maturin derives that version from Cargo during the build.
+Do not commit a static Python package version into
+`sdk/python/nemo-fabric-runtime/pyproject.toml` just to cut the release.
+Maturin derives that version from Cargo during the build.
 
 ## Local Validation
 

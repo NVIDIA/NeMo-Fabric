@@ -95,8 +95,10 @@ def public_paths(commits_to_report: tuple[Commit, ...]) -> tuple[str, ...]:
         "adapters/common/pyproject.toml",
         "adapters/deepagents/pyproject.toml",
         "adapters/hermes/pyproject.toml",
-        "pyproject.toml",
-        "python/pyproject.toml",
+        "sdk/python/nemo-fabric/pyproject.toml",
+        "sdk/python/nemo-fabric-runtime/pyproject.toml",
+        "adapter-contract/python/pyproject.toml",
+        "adapter-contract/typescript/package.json",
     }
     return tuple(
         sorted(

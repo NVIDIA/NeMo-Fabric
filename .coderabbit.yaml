@@ -58,14 +58,14 @@ reviews:
     - path: "crates/fabric-python/**/*"
       instructions: |
         Treat native binding changes as public API changes. Check JSON/type conversion, error propagation, GIL/thread behavior, and parity with the Python SDK.
-    - path: "python/src/nemo_fabric/**/*"
+    - path: "sdk/python/nemo-fabric-runtime/src/nemo_fabric/**/*"
       instructions: |
         Review Python SDK changes for typed API consistency, import-time dependency neutrality, async/session behavior, and parity with the native extension.
         Stubs and runtime implementations should stay aligned.
     - path: "schemas/**/*"
       instructions: |
         Schemas are generated public contract snapshots. Check that schema diffs correspond to intentional Rust type changes and are covered by core tests.
-    - path: "{tests/**,python/tests/**}"
+    - path: "tests/**"
       instructions: |
         Tests should cover the behavior promised by the changed API surface, including error paths, lifecycle cleanup, and SDK/native parity where relevant.
     - path: "{adapters/**,examples/**}"

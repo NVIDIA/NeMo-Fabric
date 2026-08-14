@@ -22,22 +22,24 @@ consumer and Fabric-runtime schemas:
 
 ```text
 schemas/
-├── adapter-contract/          # Public adapter-facing contract
+├── sdk/                       # Northbound SDK and runtime contract
+│   ├── agent.schema.json
+│   ├── run-plan.schema.json
+│   └── ...
+└── adapter-contract/          # Southbound adapter-facing contract
 │   ├── adapter-descriptor.schema.json
 │   ├── agent-config.schema.json
 │   ├── agent-run-request.schema.json
 │   ├── agent-run-result.schema.json
 │   ├── runtime-context.schema.json
-│   └── legacy/
-│       ├── adapter-invocation.schema.json
-│       ├── openai-stream-invocation.schema.json
-│       └── openai-stream-record.schema.json
-└── *.schema.json              # Northbound and Fabric-runtime contracts
+│   ├── adapter-invocation.schema.json
+│   ├── openai-stream-invocation.schema.json
+│   └── openai-stream-record.schema.json
 ```
 
 An adapter author can treat `adapter-contract/` as the complete schema entry
-point. The `legacy/` subdirectory contains transitional local-host payloads
-used while first-party adapters migrate to typed execution types.
+point. Contract versions remain explicit fields in the wire format rather than
+directory names.
 
 The language bindings preserve this boundary:
 
@@ -79,18 +81,18 @@ configuration otherwise. The base normalized fields and adapter-owned
 extensions are validated separately against the generated contract and the
 descriptor schema.
 
-### Legacy Adapter Transport
+### Adapter Transport
 
-- `adapter-contract/legacy/adapter-invocation`: current per-turn payload sent to
+- `adapter-contract/adapter-invocation`: current per-turn payload sent to
   an initialized persistent local adapter host. It contains `runtime_context`
   and the northbound `run-request`. It will be removed after adapters consume
   the typed southbound request directly.
-- `adapter-contract/legacy/openai-stream-invocation`: current native OpenAI
+- `adapter-contract/openai-stream-invocation`: current native OpenAI
   stream payload sent to an initialized persistent local adapter host. It
   contains the per-turn runtime context and request plus a Fabric-owned
   authenticated loopback stream sink. The common host validates and removes the
   sink before calling `invoke_openai_stream(payload, emit)`.
-- `adapter-contract/legacy/openai-stream-record`: correlated chunk and explicit
+- `adapter-contract/openai-stream-record`: correlated chunk and explicit
   end records carried as chunked NDJSON. The chunk variant freezes the
   `openai.chat_completions.chunk/v1` profile accepted by the SDK listener.
 
@@ -98,24 +100,24 @@ descriptor schema.
 
 ### Config and Planning
 
-- `agent`: complete typed northbound `FabricConfig`.
-- `run-plan`: executable plan containing the canonical northbound config, its
+- `sdk/agent`: complete typed northbound `FabricConfig`.
+- `sdk/run-plan`: executable plan containing the canonical northbound config, its
   projected southbound `AgentConfig`, the selected adapter, and derived
   execution metadata.
-- `run-request`: northbound per-invocation request and input.
+- `sdk/run-request`: northbound per-invocation request and input.
 
 ### Runtime Lifecycle
 
-- `environment-handle`: prepared execution environment context.
-- `runtime-handle`: active harness runtime identity and opaque adapter binding.
-- `invocation-handle`: one request or turn sent to a runtime.
+- `sdk/environment-handle`: prepared execution environment context.
+- `sdk/runtime-handle`: active harness runtime identity and opaque adapter binding.
+- `sdk/invocation-handle`: one request or turn sent to a runtime.
 
 ### Results, Artifacts, and Diagnostics
 
-- `run-result`: normalized consumer-facing invocation result.
-- `artifact-manifest`: normalized artifact references.
-- `error-info`: structured runtime or adapter error metadata.
-- `fabric-event`: NeMo Fabric lifecycle or progress event.
+- `sdk/run-result`: normalized consumer-facing invocation result.
+- `sdk/artifact-manifest`: normalized artifact references.
+- `sdk/error-info`: structured runtime or adapter error metadata.
+- `sdk/fabric-event`: NeMo Fabric lifecycle or progress event.
 
 ### Deferred Core Objects
 
