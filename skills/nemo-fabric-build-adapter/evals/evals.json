@@ -18,10 +18,10 @@
   },
   {
     "id": "nemo-fabric-build-adapter-002-native-openai-streaming",
-    "question": "Extend our third-party adapter with native OpenAI Chat Completions streaming. The target SDK yields chunks and a separate terminal result. What descriptor capability, lifecycle method, transport rules, and failure tests are required?",
+    "question": "Extend our third-party Python adapter, which uses the common Fabric host, with native OpenAI Chat Completions streaming. The target SDK yields chunks and a separate terminal result. What descriptor capability, lifecycle method, adapter-owned output rules, and tests are required?",
     "expected_skill": "nemo-fabric-build-adapter",
     "expected_script": null,
-    "ground_truth": "The agent sets capabilities.streaming only when the adapter implements async invoke_openai_stream(payload, emit). The adapter invokes the target exactly once, awaits emit for structurally valid openai.chat_completions.chunk/v1 chunks, and returns one JSON-compatible terminal outcome. It relies on the SDK-owned authenticated loopback NDJSON transport, does not emit SSE or log credentials, and tests empty and multi-chunk streams, malformed or oversized records, sequence and identity mismatches, early close, a missing end record, one active turn, and exactly one target invocation.",
+    "ground_truth": "The agent sets capabilities.streaming only when the adapter implements async invoke_openai_stream(payload, emit). The adapter invokes the target exactly once, awaits emit only for structurally valid openai.chat_completions.chunk/v1 mappings, translates target failures at the adapter boundary, and returns one separate JSON-compatible terminal outcome. It relies on the common host for authenticated loopback NDJSON transport and consumer lifecycle, does not emit SSE or log credentials, and tests empty and multi-chunk streams, invalid target chunks, target failure, one active turn, a separate terminal result, and exactly one target invocation.",
     "expected_behavior": [
       "Routes to nemo-fabric-build-adapter",
       "Declares capabilities.streaming only with an invoke_openai_stream implementation",
@@ -29,7 +29,7 @@
       "Returns a separate JSON-compatible terminal outcome",
       "Uses the openai.chat_completions.chunk/v1 profile and valid chat.completion.chunk records",
       "Relies on the SDK-owned authenticated loopback NDJSON transport rather than SSE or stdout",
-      "Tests empty, malformed, oversized, mismatched, early-close, and single-invocation cases",
+      "Tests empty and multi-chunk streams, invalid target chunks, target failure, one active turn, a separate terminal result, and exactly one target invocation",
       "Does not conflate native OpenAI streaming with Relay-backed ATOF streaming"
     ]
   },
