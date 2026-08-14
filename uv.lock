@@ -2336,6 +2336,9 @@ harbor = [
     { name = "harbor", marker = "python_full_version >= '3.12'" },
     { name = "pyyaml" },
 ]
+hermes-agent = [
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
+]
 mini-swe-agent = [
     { name = "nemo-fabric-adapters-mini-swe-agent", extra = ["harness"] },
 ]
@@ -2476,6 +2479,11 @@ dependencies = [
     { name = "nemo-fabric-adapters-common", marker = "python_full_version < '3.14'" },
 ]
 
+[package.optional-dependencies]
+full = [
+    { name = "nemo-relay", marker = "python_full_version < '3.14'" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
@@ -2531,7 +2539,7 @@ harbor = [
     { name = "nemo-fabric", extra = ["harbor"] },
 ]
 hermes-agent = [
-    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
+    { name = "nemo-fabric", extra = ["hermes-agent"], marker = "python_full_version < '3.14'" },
 ]
 mini-swe-agent = [
     { name = "nemo-fabric", extra = ["mini-swe-agent"] },
@@ -2545,7 +2553,7 @@ adapter-tests = [
     { name = "nemo-fabric-adapters-claude", extra = ["harness"] },
     { name = "nemo-fabric-adapters-codex", extra = ["harness"] },
     { name = "nemo-fabric-adapters-deepagents", extra = ["harness"] },
-    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
+    { name = "nemo-fabric-adapters-hermes", extra = ["full"], marker = "python_full_version < '3.14'" },
     { name = "nemo-fabric-adapters-mini-swe-agent", extra = ["harness"] },
 ]
 adapters = [
@@ -2604,9 +2612,9 @@ requires-dist = [
     { name = "nemo-fabric", extras = ["codex"], marker = "extra == 'codex'", editable = "sdk/python/nemo-fabric" },
     { name = "nemo-fabric", extras = ["deepagents"], marker = "extra == 'deepagents'", editable = "sdk/python/nemo-fabric" },
     { name = "nemo-fabric", extras = ["harbor"], marker = "extra == 'harbor'", editable = "sdk/python/nemo-fabric" },
+    { name = "nemo-fabric", extras = ["hermes-agent"], marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "sdk/python/nemo-fabric" },
     { name = "nemo-fabric", extras = ["mini-swe-agent"], marker = "extra == 'mini-swe-agent'", editable = "sdk/python/nemo-fabric" },
     { name = "nemo-fabric", extras = ["relay"], marker = "extra == 'relay'", editable = "sdk/python/nemo-fabric" },
-    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "adapters/hermes" },
     { name = "nemo-fabric-runtime", editable = "sdk/python/nemo-fabric-runtime" },
 ]
 provides-extras = ["claude", "codex", "deepagents", "mini-swe-agent", "harbor", "hermes-agent", "relay"]
@@ -2616,7 +2624,7 @@ adapter-tests = [
     { name = "nemo-fabric-adapters-claude", extras = ["harness"], editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex", extras = ["harness"], editable = "adapters/codex" },
     { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], editable = "adapters/deepagents" },
-    { name = "nemo-fabric-adapters-hermes", extras = ["harness"], marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
+    { name = "nemo-fabric-adapters-hermes", extras = ["full"], marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
     { name = "nemo-fabric-adapters-mini-swe-agent", extras = ["harness"], editable = "adapters/mini-swe-agent" },
 ]
 adapters = [

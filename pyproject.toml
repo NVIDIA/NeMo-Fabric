@@ -33,7 +33,7 @@ harbor = [
 ]
 
 hermes-agent = [
-  "nemo-fabric-adapters-hermes == 0.2.0; python_version < '3.14'",
+  "nemo-fabric[hermes-agent]; python_version < '3.14'",
 ]
 
 relay = [
@@ -58,7 +58,7 @@ adapter-tests = [
   "nemo-fabric-adapters-claude[harness]",
   "nemo-fabric-adapters-codex[harness]",
   "nemo-fabric-adapters-deepagents[harness]",
-  "nemo-fabric-adapters-hermes[harness]; python_version < '3.14'",
+  "nemo-fabric-adapters-hermes[full]; python_version < '3.14'",
   "nemo-fabric-adapters-mini-swe-agent[harness]",
 ]
 
