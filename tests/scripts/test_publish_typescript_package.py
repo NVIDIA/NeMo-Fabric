@@ -161,7 +161,7 @@ def test_existing_conflicting_package_fails(
     runner.assert_finished()
 
 
-@pytest.mark.parametrize("dist_tag", ["latest", "next"])
+@pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next"])
 def test_absent_package_publishes_and_verifies(
     package_directory: Path,
     dist_tag: str,

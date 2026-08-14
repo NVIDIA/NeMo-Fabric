@@ -4,18 +4,13 @@
 name: Publish TypeScript package
 
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag, such as v0.1.0 or v0.1.0-rc1. Alpha tags are not published.'
-        required: true
-        type: string
   push:
     tags:
-      - '*'
+      - 'v*'
+      - '*-alpha.*'
 
 concurrency:
-  group: publish-typescript-${{ inputs.tag || github.ref }}
+  group: publish-typescript-${{ github.ref }}
   cancel-in-progress: false
 
 defaults:
@@ -23,48 +18,9 @@ defaults:
     shell: bash
 
 jobs:
-  skip-alpha:
-    name: Skip alpha release
-    if: >-
-      ${{
-        (
-          github.event_name == 'workflow_dispatch'
-          && contains(inputs.tag, '-alpha')
-        )
-        || (
-          github.event_name == 'push'
-          && github.ref_type == 'tag'
-          && contains(github.ref_name, '-alpha')
-        )
-      }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - name: Report alpha skip
-        env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          set -euo pipefail
-          echo "Alpha releases are not published to npm: ${RELEASE_TAG}"
-
   publish-typescript:
     name: Publish (npmjs.com)
-    # Stable, beta, and RC tags publish. Alpha tags remain artifact-only.
-    if: >-
-      ${{
-        (
-          github.event_name == 'workflow_dispatch'
-          && inputs.tag != ''
-          && !contains(inputs.tag, '-alpha')
-        )
-        || (
-          github.event_name == 'push'
-          && github.ref_type == 'tag'
-          && !contains(github.ref_name, '-alpha')
-        )
-      }}
+    if: ${{ github.ref_type == 'tag' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -79,7 +35,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-          ref: ${{ inputs.tag || github.ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
@@ -118,7 +73,7 @@ jobs:
       - name: Prepare release metadata
         id: release
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
@@ -129,10 +84,7 @@ jobs:
           fi
 
           case "$version" in
-            *-alpha*)
-              echo "Alpha releases are not published to npm: $version" >&2
-              exit 1
-              ;;
+            *-alpha*) dist_tag="alpha" ;;
             *-beta*|*-rc*) dist_tag="next" ;;
             *-*)
               echo "Unsupported npm prerelease: $version" >&2
