@@ -96,6 +96,13 @@ jobs:
           cache: npm
           cache-dependency-path: source-checkout/docs/package-lock.json
 
+      - name: Create virtual environment
+        run: |
+          uv venv --python "${UV_PYTHON:-${{ 3.12 }}}" .venv
+
+      - name: Install Hermes Agent
+        run: just install-hermes-agent
+
       - name: Generate and validate source docs
         working-directory: source-checkout
         env:
