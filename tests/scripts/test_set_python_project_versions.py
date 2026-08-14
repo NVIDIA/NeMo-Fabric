@@ -27,7 +27,10 @@ def test_set_python_project_versions_updates_internal_pins_with_extras(
 [project]
 name = "nemo-fabric-development"
 version = "0.0.0"
-dependencies = ["nemo-fabric"]
+dependencies = [
+  "nemo-fabric",
+  "nemo-fabric-runtime == 0.2.0",
+]
 """,
         encoding="utf-8",
     )
@@ -112,6 +115,11 @@ dynamic = ["version"]
     assert tomllib.loads(runtime_path.read_text(encoding="utf-8"))["project"][
         "dynamic"
     ] == ["version"]
-    assert tomllib.loads(coordinator_path.read_text(encoding="utf-8"))["project"][
-        "version"
-    ] == "0.0.0"
+    coordinator_project = tomllib.loads(coordinator_path.read_text(encoding="utf-8"))[
+        "project"
+    ]
+    assert coordinator_project["version"] == "0.0.0"
+    assert coordinator_project["dependencies"] == [
+        "nemo-fabric",
+        "nemo-fabric-runtime == 0.2.0rc5",
+    ]

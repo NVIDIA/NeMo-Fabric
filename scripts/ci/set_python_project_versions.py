@@ -44,6 +44,22 @@ def set_python_project_versions(root: Path, version: str) -> None:
         else:
             print(f"{path.relative_to(root)} already set to {version}")
 
+    coordinator_path = root / "pyproject.toml"
+    coordinator_text = coordinator_path.read_text(encoding="utf-8")
+    coordinator_updated = INTERNAL_PIN_PATTERN.sub(
+        lambda match: f"{match.group('prefix')}{version}",
+        coordinator_text,
+    )
+    if coordinator_updated != coordinator_text:
+        coordinator_path.write_text(coordinator_updated, encoding="utf-8")
+        print(
+            f"{coordinator_path.relative_to(root)} internal pins updated to {version}"
+        )
+    else:
+        print(
+            f"{coordinator_path.relative_to(root)} internal pins already set to {version}"
+        )
+
     runtime_path = (
         root / "sdk" / "python" / "nemo-fabric-runtime" / "pyproject.toml"
     )
@@ -55,8 +71,23 @@ def set_python_project_versions(root: Path, version: str) -> None:
             "version derived from Cargo.toml"
         )
 
+    coordinator_project = tomllib.loads(
+        coordinator_path.read_text(encoding="utf-8")
+    ).get("project", {})
+    expected_runtime_pin = f"nemo-fabric-runtime == {version}"
+    runtime_pins = [
+        dependency
+        for dependency in coordinator_project.get("dependencies", [])
+        if dependency.startswith("nemo-fabric-runtime")
+    ]
+    if runtime_pins != [expected_runtime_pin]:
+        raise SystemExit(
+            "Root project must declare exactly one unconditional runtime pin: "
+            f"{expected_runtime_pin}"
+        )
+
     mismatched_pins = []
-    for path in project_paths:
+    for path in (coordinator_path, *project_paths):
         for match in INTERNAL_PIN_PATTERN.finditer(path.read_text(encoding="utf-8")):
             if match.group("version") != version:
                 mismatched_pins.append(f"{path.relative_to(root)}: {match.group(0)}")

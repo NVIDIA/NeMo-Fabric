@@ -36,8 +36,9 @@ pre-release or build-metadata variants used during packaging.
   - `adapters/**/pyproject.toml`
 - Keep internal Python package requirement pins aligned with the Python release
   version:
-  - All `nemo-fabric-* == <version>` requirements in the published
-    `sdk/python/nemo-fabric/pyproject.toml` optional dependencies.
+  - The unconditional `nemo-fabric-runtime == <version>` dependency in the
+    published `sdk/python/nemo-fabric/pyproject.toml`.
+  - All `nemo-fabric-* == <version>` requirements in its optional dependencies.
   - Each adapter's `nemo-fabric-adapters-common == <version>` dependency.
 - Keep `adapter-contract/typescript/package.json` and the root package entries in
   its `package-lock.json` aligned with the Cargo SemVer release version.
@@ -90,7 +91,7 @@ If editing the helper code, keep these contracts aligned:
 - Inspect Cargo version fields:
   `rg -n '^version =|nemo-fabric-core = \{ path = .*version =' Cargo.toml`
 - Inspect explicit Python versions and internal pins:
-  `rg -n '^version =|nemo-fabric-[a-z-]+ == ' sdk adapter-contract/python adapters --glob 'pyproject.toml'`
+  `rg -n '^version =|nemo-fabric-[a-z-]+(?:\[[^]]+\])? == ' pyproject.toml sdk adapter-contract/python adapters --glob 'pyproject.toml'`
 - Confirm the runtime remains dynamic:
   `rg -n 'dynamic = \["version"\]' sdk/python/nemo-fabric-runtime/pyproject.toml`
 - Inspect the TypeScript package and lockfile root versions:

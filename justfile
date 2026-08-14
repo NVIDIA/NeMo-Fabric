@@ -273,17 +273,24 @@ clean:
     cargo clean
     rm -rf \
         .coverage \
+        build \
+        dist \
+        adapter-contract/python/build \
+        adapter-contract/python/dist \
         docs/node_modules \
         adapter-contract/typescript/node_modules \
+        adapter-contract/typescript/dist \
+        adapters/*/build \
+        adapters/*/dist \
+        sdk/python/*/build \
+        sdk/python/*/dist \
         adapter-contract/typescript/*.tgz
     find . \
         \( -path './.venv' -o -path './.git' \) -prune -o \
         -type d \( \
             -name .pytest_cache -o \
             -name __pycache__ -o \
-            -name '*.egg-info' -o \
-            -name build -o \
-            -name dist \
+            -name '*.egg-info' \
         \) -prune -exec rm -rf {} +
     find . \
         \( -path './.venv' -o -path './.git' \) -prune -o \
@@ -447,3 +454,7 @@ wheels:
             "${build_args[@]}" \
             --out "$REPO_ROOT/dist"
     )
+
+# Verify every built wheel contains the canonical repository license.
+check-wheel-licenses:
+    uv run --no-project --no-cache python scripts/ci/check_wheel_licenses.py

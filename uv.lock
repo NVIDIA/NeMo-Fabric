@@ -2296,6 +2296,7 @@ version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "nemo-fabric" },
+    { name = "nemo-fabric-runtime" },
 ]
 
 [package.optional-dependencies]
@@ -2383,6 +2384,7 @@ requires-dist = [
     { name = "nemo-fabric", extras = ["harbor"], marker = "extra == 'harbor'", editable = "sdk/python/nemo-fabric" },
     { name = "nemo-fabric", extras = ["hermes-agent"], marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "sdk/python/nemo-fabric" },
     { name = "nemo-fabric", extras = ["relay"], marker = "extra == 'relay'", editable = "sdk/python/nemo-fabric" },
+    { name = "nemo-fabric-runtime", editable = "sdk/python/nemo-fabric-runtime" },
 ]
 provides-extras = ["claude", "codex", "deepagents", "harbor", "hermes-agent", "relay"]
 

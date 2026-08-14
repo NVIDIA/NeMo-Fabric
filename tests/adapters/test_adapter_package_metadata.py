@@ -137,7 +137,7 @@ def test_root_project_is_a_private_development_coordinator():
 
     assert manifest["project"]["name"] == "nemo-fabric-development"
     assert manifest["project"]["version"] == "0.0.0"
-    assert manifest["project"]["dependencies"] == ["nemo-fabric"]
+    assert manifest["project"]["dependencies"] == ["nemo-fabric", RUNTIME_DEPENDENCY]
     assert manifest["tool"]["uv"]["package"] is False
     assert manifest["project"]["optional-dependencies"] == {
         "claude": ["nemo-fabric[claude]"],
