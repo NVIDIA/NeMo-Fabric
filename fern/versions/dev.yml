@@ -60,6 +60,8 @@ navigation:
       path: ../pages-dev/integrations/harness/hermes.mdx
     - page: LangChain Deep Agents
       path: ../pages-dev/integrations/harness/deepagents.mdx
+    - page: mini-SWE-agent
+      path: ../pages-dev/integrations/harness/mini-swe-agent.mdx
 - section: Reference
   contents:
   - section: API
