@@ -154,6 +154,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
+      - name: Create virtual environment
+        run: uv venv --python "${UV_PYTHON:-${{ 3.12 }}}" .venv
+
+      - name: Install Hermes Agent
+        run: just install-hermes-agent
+
       - name: Set version from tag
         if: ${{ (inputs.ref_type || github.ref_type) == 'tag' }}
         env:
