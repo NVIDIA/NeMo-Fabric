@@ -56,10 +56,6 @@ harbor = [
   "pyyaml>=6.0",
 ]
 
-hermes-agent = [
-  "nemo-fabric-adapters-hermes[harness] == 0.2.0; python_version < '3.14'",
-]
-
 relay = [
   "nemo-relay>=0.7.2,<0.8",
 ]
@@ -127,10 +123,6 @@ test = [
 
 [tool.uv]
 default-groups = ["adapters", "dev", "test"]
-# Keep this override until hermes-agent adopts 12.3.0+.
-override-dependencies = [
-  "pillow>=12.3.0; python_version < '3.14'",
-]
 
 [tool.uv.sources]
 nemo-fabric-runtime = { path = "python", editable = true }
