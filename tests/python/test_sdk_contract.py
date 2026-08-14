@@ -583,6 +583,20 @@ def test_typed_tools_config_serializes_blocked_policy():
     assert config.to_mapping()["tools"] == {"blocked": ["browser", "shell"]}
 
 
+@pytest.mark.parametrize(
+    ("enabled", "expected"),
+    [
+        (None, {}),
+        ([], {"enabled": []}),
+    ],
+)
+def test_typed_tools_config_preserves_explicit_empty_policy(
+    enabled: list[str] | None,
+    expected: dict[str, object],
+):
+    assert ToolsConfig(enabled=enabled).to_mapping() == expected
+
+
 def test_typed_config_serializes_normalized_execution_fields():
     config = FabricConfig(
         metadata=MetadataConfig(name="demo"),

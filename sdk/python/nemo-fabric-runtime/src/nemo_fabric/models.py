@@ -969,6 +969,14 @@ class ToolsConfig(FabricBaseModel):
                 raise ValueError(f"tool {name!r} cannot be both enabled and blocked")
         return self
 
+    def to_mapping(self) -> dict[str, Any]:
+        """Return the tool mapping without collapsing an explicit empty policy."""
+
+        data = super().to_mapping()
+        if self.enabled == []:
+            data["enabled"] = []
+        return data
+
     def add_definition(
         self,
         name: str,
