@@ -12,7 +12,6 @@ repository.workspace = true
 [lib]
 name = "_native"
 crate-type = ["cdylib", "rlib"]
-test = false
 doctest = false
 
 [dependencies]
