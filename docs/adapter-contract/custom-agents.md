@@ -63,8 +63,8 @@ workflow:
 ```
 
 NeMo Fabric owns the intent name and its portable semantics. Each adapter maps a
-supported intent to its target-native implementation. The NAT reference
-adapter currently demonstrates this mode for `fabric.agent.react`.
+supported intent to its target-native implementation. The NeMo Agent Toolkit
+reference adapter currently demonstrates this mode for `fabric.agent.react`.
 
 ### Installed Python Entry Point
 

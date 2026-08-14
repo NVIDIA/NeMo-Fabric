@@ -25,7 +25,7 @@
           },
           "ref": {
             "const": "fabric.agent.react",
-            "description": "Build Fabric's ReAct agent intent with the NAT react_agent factory."
+            "description": "Build Fabric's ReAct agent intent with the NeMo Agent Toolkit react_agent factory."
           }
         },
         "required": ["kind", "ref"],
@@ -37,7 +37,7 @@
           "_type": false
         },
         "additionalProperties": true,
-        "description": "NAT workflow component settings; _type is derived from entrypoint.ref."
+        "description": "NeMo Agent Toolkit workflow component settings; _type is derived from entrypoint.ref."
       }
     },
     "required": ["entrypoint"],
@@ -54,7 +54,7 @@
         "type": "string",
         "minLength": 1,
         "pattern": "^\\S+$",
-        "description": "NAT component type registered by an installed component package."
+        "description": "NeMo Agent Toolkit component type registered by an installed component package."
       },
       "settings": {
         "type": "object",
@@ -62,7 +62,7 @@
           "_type": false
         },
         "additionalProperties": true,
-        "description": "NAT component settings; _type is derived from ref."
+        "description": "NeMo Agent Toolkit component settings; _type is derived from ref."
       }
     },
     "required": ["kind", "ref"],

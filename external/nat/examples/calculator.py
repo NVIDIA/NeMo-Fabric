@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run a NAT ReAct workflow with a portable calculator MCP server."""
+"""Run a NeMo Agent Toolkit ReAct workflow with a portable calculator MCP server."""
 
 from __future__ import annotations
 

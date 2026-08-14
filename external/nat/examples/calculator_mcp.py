@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Self-contained calculator MCP server for the NAT reference example."""
+"""Self-contained calculator MCP server for the NeMo Agent Toolkit reference example."""
 
 from __future__ import annotations
 

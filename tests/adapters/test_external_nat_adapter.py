@@ -30,7 +30,7 @@ from nemo_fabric_adapters.nat import adapter  # noqa: E402
 
 
 class _AsyncChunkStream:
-    """Small controllable async stream used to verify NAT stream ownership."""
+    """Small controllable async stream used to verify NeMo Agent Toolkit stream ownership."""
 
     def __init__(
         self,
@@ -136,7 +136,7 @@ def make_payload_fixture(tmp_path: Path):
 
 @pytest.fixture(name="mock_nat")
 def mock_nat_fixture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Install mocked NAT modules and return lifecycle call recorders."""
+    """Install mocked NeMo Agent Toolkit modules and return lifecycle call recorders."""
 
     mock_typed_config = MagicMock(name="typed_nat_config")
     mock_config_type = MagicMock(name="Config")
@@ -304,7 +304,7 @@ def test_descriptor_declares_exact_source_reference_contract():
 
 
 def test_installed_nat_chat_response_chunk_serializes_to_openai_mapping():
-    """Keep the adapter serializer aligned with NAT's public chunk model."""
+    """Keep the adapter serializer aligned with the NeMo Agent Toolkit public chunk model."""
 
     api_server = pytest.importorskip("nat.data_models.api_server")
     pydantic_core = pytest.importorskip("pydantic_core")
@@ -566,11 +566,11 @@ def test_build_typed_config_contract_with_installed_nat(
 ):
     config_module = pytest.importorskip(
         "nat.data_models.config",
-        reason="NAT is not installed in the base Fabric test environment",
+        reason="NeMo Agent Toolkit is not installed in the base Fabric test environment",
     )
     pytest.importorskip(
         "nat.plugins.langchain.agent.react_agent",
-        reason="The NAT LangChain extra is not installed",
+        reason="The NeMo Agent Toolkit LangChain extra is not installed",
     )
     monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
     payload = make_payload(
@@ -1058,7 +1058,7 @@ async def test_openai_stream_rejects_non_openai_schema_before_session(
     assert result["error"] == {
         "code": "nat_openai_stream_unsupported_schema",
         "message": (
-            "NAT native OpenAI streaming requires a ChatResponseChunk output schema"
+            "Native NeMo Agent Toolkit OpenAI streaming requires a ChatResponseChunk output schema"
         ),
         "retryable": False,
     }
@@ -1093,7 +1093,7 @@ async def test_openai_stream_normalizes_partial_nat_failure_without_leaking_caus
 
     assert result["error"] == {
         "code": "nat_workflow_stream_failed",
-        "message": "NAT workflow streaming failed; inspect adapter stderr for details",
+        "message": "NeMo Agent Toolkit workflow streaming failed; inspect adapter stderr for details",
         "retryable": False,
     }
     emit.assert_awaited_once_with(chunk)
@@ -1139,7 +1139,7 @@ async def test_openai_stream_normalizes_chunk_serialization_failure(
     assert result["error"] == {
         "code": "nat_stream_chunk_not_json_serializable",
         "message": (
-            "NAT workflow returned a stream chunk that cannot be represented as JSON"
+            "NeMo Agent Toolkit workflow returned a stream chunk that cannot be represented as JSON"
         ),
         "retryable": False,
     }
@@ -1210,7 +1210,7 @@ async def test_start_rejects_an_already_started_runtime(make_payload, mock_nat):
         await runtime.stop()
 
     assert error.value.code == "nat_runtime_already_started"
-    assert error.value.message == "NAT runtime is already started"
+    assert error.value.message == "NeMo Agent Toolkit runtime is already started"
     mock_nat["workflow_builder"].from_config.assert_called_once()
 
 
@@ -1238,7 +1238,7 @@ async def test_invoke_rejects_a_runtime_that_has_not_started(
         await runtime.invoke(make_invocation_payload())
 
     assert error.value.code == "nat_runtime_not_started"
-    assert error.value.message == "NAT runtime is not started"
+    assert error.value.message == "NeMo Agent Toolkit runtime is not started"
 
 
 async def test_invoke_rejects_a_different_runtime_id(
@@ -1255,7 +1255,10 @@ async def test_invoke_rejects_a_different_runtime_id(
         await runtime.stop()
 
     assert error.value.code == "nat_runtime_mismatch"
-    assert error.value.message == "NAT invocation does not match the active runtime"
+    assert (
+        error.value.message
+        == "NeMo Agent Toolkit invocation does not match the active runtime"
+    )
     mock_nat["sessions"].session.assert_not_called()
 
 
@@ -1275,7 +1278,7 @@ async def test_invoke_normalizes_a_non_mapping_request(
 
     assert result["error"] == {
         "code": "nat_invalid_request",
-        "message": "NAT invocation request must be a mapping",
+        "message": "NeMo Agent Toolkit invocation request must be a mapping",
         "retryable": False,
     }
     mock_nat["sessions"].session.assert_not_called()
@@ -1297,7 +1300,7 @@ async def test_invoke_normalizes_a_non_mapping_request_context(
 
     assert result["error"] == {
         "code": "nat_invalid_request",
-        "message": "NAT invocation request.context must be a mapping",
+        "message": "NeMo Agent Toolkit invocation request.context must be a mapping",
         "retryable": False,
     }
     mock_nat["sessions"].session.assert_not_called()
@@ -1337,7 +1340,7 @@ def test_config_translation_failure_is_normalized_and_redacts_cause(
 
     assert error.value.code == "nat_config_translation_failed"
     assert error.value.message == (
-        "Fabric config could not be translated into a valid NAT config"
+        "Fabric config could not be translated into a valid NeMo Agent Toolkit config"
     )
     assert "super-secret" not in str(error.value)
 
@@ -1354,7 +1357,7 @@ async def test_stop_failure_clears_runtime_state_and_redacts_cause(
         await runtime.stop()
 
     assert error.value.code == "nat_runtime_stop_failed"
-    assert error.value.message == "NAT runtime failed to stop cleanly"
+    assert error.value.message == "NeMo Agent Toolkit runtime failed to stop cleanly"
     assert "super-secret" not in str(error.value)
     mock_nat["sessions"].shutdown.assert_awaited_once_with()
     assert mock_nat["builder_context"].__aexit__.await_count == 1
@@ -1384,7 +1387,7 @@ async def test_invoke_failure_is_normalized_and_redacts_cause(
     assert result["response"] is None
     assert result["error"] == {
         "code": "nat_workflow_invoke_failed",
-        "message": "NAT workflow invocation failed; inspect adapter stderr for details",
+        "message": "NeMo Agent Toolkit workflow invocation failed; inspect adapter stderr for details",
         "retryable": False,
     }
     assert "super-secret" not in json.dumps(result)
@@ -1408,7 +1411,7 @@ async def test_non_json_result_is_normalized_without_value_leak(
 
     assert result["error"] == {
         "code": "nat_result_not_json_serializable",
-        "message": "NAT workflow returned a result that cannot be represented as JSON",
+        "message": "NeMo Agent Toolkit workflow returned a result that cannot be represented as JSON",
         "retryable": False,
     }
     assert "secret-object-repr" not in json.dumps(result)
@@ -1486,7 +1489,7 @@ def test_mcp_stdio_rejects_a_whitespace_only_command():
 
     assert error.value.code == "nat_invalid_mcp_server"
     assert error.value.message == (
-        "NAT MCP server 'calculator' requires a non-empty url"
+        "NeMo Agent Toolkit MCP server 'calculator' requires a non-empty url"
     )
 
 
