@@ -81,7 +81,7 @@ Then install NeMo Fabric and the Hermes adapter into the Python environment
 that runs Hermes Agent:
 
 ```bash
-python -m pip install nemo-fabric nemo-fabric-adapters-hermes
+pip install "nemo-fabric[hermes-agent]"
 ```
 
 For local development from this repository, run `just install-hermes-agent`
@@ -180,7 +180,6 @@ Create an environment for the NeMo Fabric runtime:
 ```bash
 python -m venv .venv-fabric
 source .venv-fabric/bin/activate
-pip install nemo-fabric==0.2.0
 ```
 
 Install Hermes Agent by following its
@@ -188,7 +187,7 @@ Install Hermes Agent by following its
 Then install the Hermes adapter into the Hermes-managed Python environment:
 
 ```bash
-pip install nemo-fabric-adapters-hermes==0.2.0
+pip install "nemo-fabric[hermes-agent]"==0.2.0
 ```
 
 The adapter package keeps this environment independent from the `nemo-fabric`
