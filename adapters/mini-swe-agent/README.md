@@ -14,6 +14,7 @@ NVIDIA NeMo Fabric.
 | --- | --- | --- | --- |
 | `pip install "nemo-fabric[mini-swe-agent]"` | Yes | Yes | Yes |
 | `pip install "nemo-fabric-adapters-mini-swe-agent[harness]"` | No | Yes | Yes |
+| `pip install "nemo-fabric-adapters-mini-swe-agent[full]"` | No | Yes | Yes |
 | `pip install nemo-fabric-adapters-mini-swe-agent` | No | Yes | No |
 
 The `harness` and `full` extras install the latest compatible mini-SWE-agent
@@ -47,9 +48,10 @@ config = FabricConfig(
     ),
     models={
         "default": ModelConfig(
-            provider="openai",
-            model="gpt-5-mini",
-            api_key_env="OPENAI_API_KEY",
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
         )
     },
     instructions=InstructionsConfig(

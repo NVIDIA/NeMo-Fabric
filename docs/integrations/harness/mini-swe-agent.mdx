@@ -79,9 +79,10 @@ config = FabricConfig(
     ),
     models={
         "default": ModelConfig(
-            provider="openai",
-            model="gpt-5-mini",
-            api_key_env="OPENAI_API_KEY",
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
         )
     },
     instructions=InstructionsConfig(

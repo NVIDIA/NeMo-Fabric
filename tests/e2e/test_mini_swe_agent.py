@@ -14,8 +14,6 @@ from nemo_fabric import EnvironmentConfig, Fabric, FabricConfig, HarnessConfig
 from nemo_fabric import InstructionConfig, InstructionsConfig, MetadataConfig
 from nemo_fabric import ModelConfig, RuntimeConfig
 
-ROOT = Path(__file__).resolve().parents[2]
-
 
 def mini_config(api_server: str, workspace: Path) -> FabricConfig:
     return FabricConfig(
@@ -47,7 +45,10 @@ def mini_config(api_server: str, workspace: Path) -> FabricConfig:
 
 
 async def test_mini_swe_agent_plans_diagnoses_and_runs(
-    api_server: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    api_server: str,
+    repo_root: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     response = await asyncio.to_thread(
         requests.post,
@@ -69,9 +70,9 @@ async def test_mini_swe_agent_plans_diagnoses_and_runs(
     config = mini_config(api_server, tmp_path)
     client = Fabric()
 
-    plan = client.plan(config, base_dir=ROOT)
-    report = await client.doctor(config, base_dir=ROOT)
-    result = await client.run(config, base_dir=ROOT, input="Finish the task.")
+    plan = client.plan(config, base_dir=repo_root)
+    report = await client.doctor(config, base_dir=repo_root)
+    result = await client.run(config, base_dir=repo_root, input="Finish the task.")
 
     assert plan["adapter_descriptor"]["descriptor"]["adapter_id"] == (
         "nvidia.fabric.mini-swe-agent"
