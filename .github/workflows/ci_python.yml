@@ -102,7 +102,7 @@ jobs:
       # installable for leaf adapter development.
       - name: Build SDK with native extension
         run: |
-          uv sync --no-default-groups --group adapter-tests --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes-agent' || '' }} --extra relay
+          uv sync --no-default-groups --group adapter-tests --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes-agent' || '' }} --extra relay ${{ matrix.python-version == '3.14' && '--frozen --no-sources-package hermes-agent' || '' }}
 
       - name: Run pytest
         run: |
