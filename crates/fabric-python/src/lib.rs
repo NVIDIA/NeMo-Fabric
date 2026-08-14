@@ -277,7 +277,7 @@ fn query_python_data_path_with_timeout(
                 return Err(format!(
                     "{origin} interpreter `{}` timed out after {} seconds while reporting its data path",
                     python.display(),
-                    timeout.as_secs()
+                    timeout.as_secs_f64()
                 ));
             }
             Err(error) => {
@@ -355,7 +355,7 @@ mod tests {
         )
         .expect_err("slow data path query should time out");
 
-        assert!(error.contains("timed out"), "{error}");
+        assert!(error.contains("timed out after 0.05 seconds"), "{error}");
         assert!(started.elapsed() < Duration::from_secs(1));
         fs::remove_dir_all(test_dir).expect("temporary test directory should be removed");
     }
