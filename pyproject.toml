@@ -139,7 +139,7 @@ default-groups = ["adapters", "dev", "test"]
 config-settings-package = { "hermes-agent" = { editable_mode = "compat" } }
 
 [tool.uv.sources]
-hermes-agent = { path = "external/hermes-agent", editable = true }
+hermes-agent = { path = "external/hermes-agent", editable = true, marker = "python_version < '3.14'" }
 nemo-fabric-runtime = { path = "python", editable = true }
 nemo-fabric-adapter-contract = { path = "adapter-contract", editable = true }
 nemo-fabric-adapters-common = { path = "adapters/common", editable = true }
