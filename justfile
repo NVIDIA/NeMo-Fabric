@@ -312,6 +312,45 @@ build-python:
 install-typescript:
     npm ci --prefix typescript/adapter-contract --ignore-scripts
 
+# Install the Hermes Agent into the Fabric virtualenv for local development
+# and testing.
+# Hermes Agent no longer publishes a PyPI package, so we need to install it
+# from source.
+# The documented https://hermes-agent.nousresearch.com/install.sh script is
+# tied directly to Python 3.11, we also want to ensure that we are installing
+# into our Fabric virtualenv
+# f80f453ae0679347e38abc917c7f94f717bf96c5 aligns with Hermes Agent v0.20.1.
+install-hermes-agent:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    hermes_commit="f80f453ae0679347e38abc917c7f94f717bf96c5"
+    hermes_checkout="$REPO_ROOT/.venv/src/hermes-agent"
+
+    if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
+        venv_python="$REPO_ROOT/.venv/bin/python"
+    elif [[ -x "$REPO_ROOT/.venv/Scripts/python.exe" ]]; then
+        venv_python="$REPO_ROOT/.venv/Scripts/python.exe"
+    else
+        echo "ERROR: expected Fabric virtualenv Python executable under .venv" >&2
+        exit 1
+    fi
+
+    if [[ -e "$hermes_checkout" && ! -d "$hermes_checkout/.git" ]]; then
+        echo "ERROR: expected a Git checkout at $hermes_checkout" >&2
+        exit 1
+    fi
+    if [[ ! -d "$hermes_checkout/.git" ]]; then
+        mkdir -p "$(dirname "$hermes_checkout")"
+        git init --quiet "$hermes_checkout"
+        git -C "$hermes_checkout" remote add origin https://github.com/NousResearch/hermes-agent.git
+    elif ! git -C "$hermes_checkout" diff --quiet || ! git -C "$hermes_checkout" diff --cached --quiet; then
+        echo "ERROR: Hermes Agent checkout has tracked changes: $hermes_checkout" >&2
+        exit 1
+    fi
+    git -C "$hermes_checkout" fetch --depth 1 origin "$hermes_commit"
+    git -C "$hermes_checkout" checkout --quiet --detach FETCH_HEAD
+    uv pip install --python "$venv_python" --editable "$hermes_checkout"
+
 # Build the TypeScript adapter contract using the locked dependency set.
 build-typescript: install-typescript
     npm run build --prefix typescript/adapter-contract
