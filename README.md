@@ -269,7 +269,7 @@ through adapters. Use the following reference to compare the integrations:
 
 - **Custom harness adapter contract:** Publish and evolve canonical schemas and
   dependency-free language bindings for third-party harness integrations.
-- **Experimental NeMo Agent Toolkit adapter:** Develop an experimental adapter
+- **Experimental NVIDIA NeMo Agent Toolkit adapter:** Develop an experimental adapter
   for running NeMo Agent Toolkit workflows through the NeMo Fabric lifecycle.
 - **OOAgents:** Add support for
   [OOAgents](https://github.com/NVIDIA-NeMo/labs-OO-Agents).
