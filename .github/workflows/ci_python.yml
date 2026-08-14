@@ -107,7 +107,7 @@ jobs:
       - name: Run pytest
         run: |
           set -euo pipefail
-          just test-python
+          just --set no_uv true test-python
 
   build-wheels:
     name: Build wheels (${{ matrix.platform }})
