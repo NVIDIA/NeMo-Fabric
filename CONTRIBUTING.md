@@ -47,6 +47,7 @@ cd NeMo-Fabric
 
 uv venv --seed .venv --python 3.13
 source .venv/bin/activate
+just install-hermes-agent
 uv sync --all-groups --all-extras
 just no_uv=true build-all
 ```
