@@ -1,19 +1,21 @@
 [
   {
     "id": "nemo-fabric-build-adapter-001-new-python-adapter",
-    "question": "Build a third-party Python adapter package for AcmeHarness. It must accept normalized models, instructions, MCP servers, and tool policy, support repeated invocations, and be discoverable by an installed NeMo Fabric runtime. Define the descriptor and lifecycle, and explain how to validate the package.",
+    "question": "Build a third-party Python adapter package for AcmeHarness. It must accept normalized models, instructions, MCP servers, and tool policy, support repeated invocations, and expose registered workflows selected by target ID. Define the adapter and target descriptors, lifecycle, discovery metadata, and validation approach.",
     "expected_skill": "nemo-fabric-build-adapter",
     "expected_script": null,
-    "ground_truth": "The agent builds against the published adapter contract. It defines a self-contained fabric-adapter.json before implementation, declares only enforced normalized fields and capabilities, installs the descriptor under share/nemo-fabric/adapters, maps the validated AgentConfig at the adapter boundary, implements start/invoke/stop with isolated runtime state, returns safe normalized outcomes, and validates discovery, planning, doctor checks, lifecycle failures, cleanup, and runtime isolation.",
+    "ground_truth": "The agent builds against the published adapter contract. It defines a self-contained acme.fabric-adapter.json before implementation, declares only enforced normalized fields and capabilities, lists supported target types, and creates one *.fabric-target.json per registered workflow target with the same contract version, adapter_id, typed entry point, and closed workflow settings schema. It installs adapter and target descriptors under share/nemo-fabric/adapters and share/nemo-fabric/targets, maps the validated AgentConfig at the adapter boundary, implements start/invoke/stop with isolated runtime state, returns safe normalized outcomes, and validates discovery, planning of both resolved descriptors, doctor checks, lifecycle failures, cleanup, and runtime isolation.",
     "expected_behavior": [
       "Routes to nemo-fabric-build-adapter",
       "Uses the published adapter contract and committed JSON Schemas",
-      "Defines fabric-adapter.json before implementing target translation",
+      "Defines a named *.fabric-adapter.json before implementing target translation",
       "Declares only normalized fields and capabilities the adapter enforces",
-      "Installs discovery metadata under share/nemo-fabric/adapters",
+      "Lists supported target types and defines one *.fabric-target.json per registered workflow target",
+      "Keeps adapter and target contract versions aligned and validates workflow settings against the target descriptor",
+      "Installs discovery metadata under share/nemo-fabric/adapters and share/nemo-fabric/targets",
       "Maps a validated AgentConfig into target-native values at the adapter boundary",
       "Implements one start, ordered invoke calls, and one stop with isolated runtime state",
-      "Tests discovery, plan, doctor, failures, cleanup, and two-runtime isolation"
+      "Tests discovery, resolution of both descriptors in plan, doctor, failures, cleanup, and two-runtime isolation"
     ]
   },
   {
