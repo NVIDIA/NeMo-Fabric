@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric-adapters-claude"
-version = "0.3.0"
+version = "0.2.0"
 description = "Claude adapter for NeMo Fabric"
 authors = [
   { name = "NVIDIA Corporation" },
@@ -25,8 +25,8 @@ license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
 dependencies = [
-  "nemo-fabric-adapter-contract == 0.3.0",
-  "nemo-fabric-adapters-common == 0.3.0",
+  "nemo-fabric-adapter-contract == 0.2.0",
+  "nemo-fabric-adapters-common == 0.2.0",
   "tomli-w~=1.2",
 ]
 

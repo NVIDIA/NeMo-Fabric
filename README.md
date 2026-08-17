@@ -161,7 +161,7 @@ selected adapter, and the harness inside an isolated task environment such as a
 Docker container or Daytona sandbox. Adapter discovery and task-path resolution
 occur inside that sandbox.
 
-Install `nemo-fabric[harbor]==0.3.0` in the host environment. For a Hermes
+Install `nemo-fabric[harbor]==0.2.0` in the host environment. For a Hermes
 Agent task, use a task image that installs Hermes Agent according to its
 installation guide, then install `nemo-fabric`, `nemo-fabric-adapters-hermes`,
 and optionally `nemo-fabric[relay]` in that environment. For Claude or Codex
@@ -181,7 +181,7 @@ Create an environment for the NeMo Fabric runtime:
 ```bash
 python -m venv .venv-fabric
 source .venv-fabric/bin/activate
-python -m pip install "nemo-fabric==0.3.0"
+python -m pip install "nemo-fabric==0.2.0"
 ```
 
 Install Hermes Agent by following its
@@ -201,7 +201,7 @@ if [ ! -x "$ADAPTER_PYTHON" ]; then
   exit 1
 fi
 export ADAPTER_PYTHON
-"$ADAPTER_PYTHON" -m pip install "nemo-fabric-adapters-hermes==0.3.0"
+"$ADAPTER_PYTHON" -m pip install "nemo-fabric-adapters-hermes==0.2.0"
 ```
 
 The adapter package keeps the Hermes environment independent from the

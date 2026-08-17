@@ -834,7 +834,7 @@ wheels = [
 
 [[package]]
 name = "nemo-fabric-adapter-contract"
-version = "0.3.0"
+version = "0.2.0"
 source = { editable = "../../adapter-contract/python" }
 
 [package.metadata]
@@ -843,12 +843,12 @@ provides-extras = ["pydantic"]
 
 [[package]]
 name = "nemo-fabric-adapters-common"
-version = "0.3.0"
+version = "0.2.0"
 source = { editable = "../common" }
 
 [[package]]
 name = "nemo-fabric-adapters-deepagents"
-version = "0.3.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "langchain-mcp-adapters" },

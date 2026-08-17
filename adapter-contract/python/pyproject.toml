@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric-adapter-contract"
-version = "0.3.0"
+version = "0.2.0"
 description = "Typed Python contract for NeMo Fabric adapters"
 authors = [
   { name = "NVIDIA Corporation" },

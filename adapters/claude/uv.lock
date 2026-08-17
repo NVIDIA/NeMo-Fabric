@@ -350,7 +350,7 @@ wheels = [
 
 [[package]]
 name = "nemo-fabric-adapter-contract"
-version = "0.3.0"
+version = "0.2.0"
 source = { editable = "../../adapter-contract/python" }
 
 [package.metadata]
@@ -359,7 +359,7 @@ provides-extras = ["pydantic"]
 
 [[package]]
 name = "nemo-fabric-adapters-claude"
-version = "0.3.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "nemo-fabric-adapter-contract" },
@@ -391,7 +391,7 @@ provides-extras = ["harness", "full"]
 
 [[package]]
 name = "nemo-fabric-adapters-common"
-version = "0.3.0"
+version = "0.2.0"
 source = { editable = "../common" }
 
 [[package]]

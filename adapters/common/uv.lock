@@ -10,5 +10,5 @@ resolution-markers = [
 
 [[package]]
 name = "nemo-fabric-adapters-common"
-version = "0.3.0"
+version = "0.2.0"
 source = { editable = "." }

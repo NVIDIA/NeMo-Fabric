@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric-adapters-common"
-version = "0.3.0"
+version = "0.2.0"
 description = "Shared Python helpers for NeMo Fabric adapters"
 authors = [
   { name = "NVIDIA Corporation" },

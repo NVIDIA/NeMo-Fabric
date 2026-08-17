@@ -1,6 +1,6 @@
 {
   "name": "nemo-fabric-adapter-contract",
-  "version": "0.3.0",
+  "version": "0.2.0",
   "description": "Dependency-free TypeScript types for the NVIDIA NeMo Fabric adapter contract.",
   "license": "Apache-2.0",
   "type": "module",
