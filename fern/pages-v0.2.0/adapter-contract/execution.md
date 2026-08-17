@@ -51,7 +51,7 @@ as opaque correlation values.
 | `telemetry` | Invocation telemetry context, including generated Relay config and environment when enabled. |
 
 Use the generated
-[`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.1/schemas/adapter-contract/runtime-context.schema.json)
+[`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.2/schemas/adapter-contract/runtime-context.schema.json)
 for the exact shape. Runtime/session identity belongs here, not in
 `AgentConfig.workflow`; caller task context belongs in the invocation request.
 
@@ -105,9 +105,9 @@ reserve stdout for the single terminal lifecycle response.
 
 Bindings that implement the transport without the common Python host must
 read the sink from the generated
-[`openai-stream-invocation.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.1/schemas/adapter-contract/openai-stream-invocation.schema.json)
+[`openai-stream-invocation.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.2/schemas/adapter-contract/openai-stream-invocation.schema.json)
 payload and follow the generated
-[`openai-stream-record.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.1/schemas/adapter-contract/openai-stream-record.schema.json)
+[`openai-stream-record.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.2/schemas/adapter-contract/openai-stream-record.schema.json)
 envelope for monotonic chunk records and the explicit end record.
 
 The `fabric.openai_stream/v1alpha1` wire sequence is fixed:

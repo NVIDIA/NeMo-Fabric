@@ -28,7 +28,7 @@ The result contains these adapter-facing fields:
 | `extensions` | Optional | Adapter-owned result data validated by the descriptor. |
 
 Use the generated
-[`AgentRunResult` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.1/schemas/adapter-contract/agent-run-result.schema.json)
+[`AgentRunResult` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.2/schemas/adapter-contract/agent-run-result.schema.json)
 for exact fields and constraints.
 
 A failed result must contain `error`. A succeeded result can omit `error` or

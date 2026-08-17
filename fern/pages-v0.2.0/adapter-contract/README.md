@@ -77,7 +77,7 @@ Use these pages for the detailed contract:
 - [Conformance](conformance.md)
 
 Canonical adapter-facing JSON Schemas are published in the repository
-[`schemas/adapter-contract/` directory](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.1/schemas/adapter-contract).
+[`schemas/adapter-contract/` directory](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.2/schemas/adapter-contract).
 Python adapters can validate the southbound models with
 `nemo-fabric-adapter-contract` without depending on the NeMo Fabric runtime.
 TypeScript adapters can import the descriptor, configuration, runtime-context,

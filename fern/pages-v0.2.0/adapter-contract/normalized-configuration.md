@@ -43,7 +43,7 @@ FabricConfig + Adapter Descriptor + optional Adapter Target Descriptor
 | `extensions` | Adapter-owned fields validated at a declared extension point. |
 
 Use the generated
-[`AgentConfig` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.1/schemas/adapter-contract/agent-config.schema.json)
+[`AgentConfig` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.2/schemas/adapter-contract/agent-config.schema.json)
 for exact fields and constraints. Python adapters can import matching
 dataclasses from `nemo_fabric_adapter_contract.models`. MCP authentication is
 decoded as `McpOAuth2Config` or `McpServiceAccountConfig` before the adapter

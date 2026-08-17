@@ -43,7 +43,7 @@ rejects configured fields that the adapter cannot apply. The current values
 include models, model endpoint and temperature, system instructions, turn
 limit, enabled/blocked tools, named tool definitions, MCP, MCP authentication
 modes, MCP filters, and skills. Refer to the
-[`AdapterConfigField` schema](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.1/schemas/adapter-contract/adapter-descriptor.schema.json)
+[`AdapterConfigField` schema](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.2/schemas/adapter-contract/adapter-descriptor.schema.json)
 for exact wire values.
 
 ## Descriptor Schemas
