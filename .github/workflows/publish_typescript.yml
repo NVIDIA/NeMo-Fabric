@@ -7,23 +7,13 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: 'The Git ref to check out; defaults to the triggering commit'
-        required: false
-        default: ''
-        type: string
-      ref_name:
-        description: 'The effective ref name; defaults to the triggering ref name'
-        required: false
-        default: ''
-        type: string
-      ref_type:
-        description: 'The effective ref type; defaults to the triggering ref type'
-        required: false
-        default: ''
+        description: 'The Git tag ref to publish'
+        required: true
         type: string
   push:
     tags:
       - 'v*'
+      - '!v*-alpha*'
 
 concurrency:
   group: publish-typescript
@@ -36,7 +26,7 @@ defaults:
 jobs:
   publish-typescript:
     name: Publish (npmjs.com)
-    if: ${{ (inputs.ref_type || github.ref_type) == 'tag' }}
+    if: ${{ github.event_name == 'workflow_call' || github.ref_type == 'tag' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -51,7 +41,27 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Verify release tag
+        id: source
+        env:
+          RELEASE_REF: ${{ inputs.ref || github.ref }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$RELEASE_REF" != refs/tags/* ]]; then
+            echo "Release ref must be a tag: ${RELEASE_REF}" >&2
+            exit 1
+          fi
+          release_tag="${RELEASE_REF#refs/tags/}"
+          tag_commit="$(git rev-parse --verify "refs/tags/${release_tag}^{commit}")"
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "$tag_commit" != "$head_commit" ]]; then
+            echo "Release tag ${release_tag} points to ${tag_commit}, not checked-out commit ${head_commit}" >&2
+            exit 1
+          fi
+          echo "tag=${release_tag}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
@@ -90,7 +100,7 @@ jobs:
       - name: Prepare release metadata
         id: release
         env:
-          RELEASE_TAG: ${{ inputs.ref_name || github.ref_name }}
+          RELEASE_TAG: ${{ steps.source.outputs.tag }}
         run: |
           set -euo pipefail
 

@@ -15,27 +15,47 @@ NIGHTLY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-alpha-tag.yml"
 
 
 def _load_workflow(path: Path) -> dict:
-    return yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    # PyYAML uses YAML 1.1 and parses GitHub's YAML 1.2 `on` key as `True`.
+    workflow["on"] = workflow.pop(True)
+    return workflow
+
+
+def _tag_triggers_workflow(tag: str, patterns: list[str]) -> bool:
+    matches = False
+    for pattern in patterns:
+        excluded = pattern.startswith("!")
+        if fnmatchcase(tag, pattern.removeprefix("!")):
+            matches = not excluded
+    return matches
 
 
 def test_typescript_publisher_accepts_an_explicit_tag_ref():
     workflow = _load_workflow(PUBLISH_WORKFLOW)
     inputs = workflow["on"]["workflow_call"]["inputs"]
-    assert set(inputs) >= {"ref", "ref_name", "ref_type"}
+    assert set(inputs) == {"ref"}
+    assert inputs["ref"]["required"] is True
 
     tag_patterns = workflow["on"]["push"]["tags"]
-    assert any(fnmatchcase("v0.3.0-rc.1", pattern) for pattern in tag_patterns)
-    assert any(
-        fnmatchcase("v0.3.0-alpha.20260817", pattern) for pattern in tag_patterns
-    )
+    for tag in ("v0.3.0", "v0.3.0-beta.1", "v0.3.0-rc.1"):
+        assert _tag_triggers_workflow(tag, tag_patterns)
+    assert not _tag_triggers_workflow("v0.3.0-alpha.20260817", tag_patterns)
 
     job = workflow["jobs"]["publish-typescript"]
-    assert job["if"] == "${{ (inputs.ref_type || github.ref_type) == 'tag' }}"
+    assert job["if"] == (
+        "${{ github.event_name == 'workflow_call' || github.ref_type == 'tag' }}"
+    )
 
     steps = {step["name"]: step for step in job["steps"]}
-    assert steps["Checkout"]["with"]["ref"] == "${{ inputs.ref || github.sha }}"
+    assert steps["Checkout"]["with"]["ref"] == "${{ inputs.ref || github.ref }}"
+    assert steps["Verify release tag"]["env"]["RELEASE_REF"] == (
+        "${{ inputs.ref || github.ref }}"
+    )
+    verify_tag = steps["Verify release tag"]["run"]
+    assert 'git rev-parse --verify "refs/tags/${release_tag}^{commit}"' in verify_tag
+    assert "git rev-parse HEAD" in verify_tag
     assert steps["Prepare release metadata"]["env"]["RELEASE_TAG"] == (
-        "${{ inputs.ref_name || github.ref_name }}"
+        "${{ steps.source.outputs.tag }}"
     )
 
 
@@ -48,6 +68,4 @@ def test_nightly_alpha_calls_typescript_publisher_for_created_tag():
     assert job["permissions"] == {"contents": "read", "id-token": "write"}
     assert job["with"] == {
         "ref": "refs/tags/${{ needs.tag-nightly-alpha.outputs.tag }}",
-        "ref_name": "${{ needs.tag-nightly-alpha.outputs.tag }}",
-        "ref_type": "tag",
     }

@@ -105,6 +105,25 @@ def _exact_view_responses(
     ]
 
 
+def test_invalid_readme_encoding_fails_closed(package_directory: Path):
+    (package_directory / "README.md").write_bytes(b"invalid utf-8: \xff")
+    runner = NpmRunner([])
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match="Package README.md could not be read",
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+            sleep=lambda _: None,
+        )
+
+    runner.assert_finished()
+
+
 @pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next"])
 def test_existing_exact_package_is_an_idempotent_success(
     package_directory: Path,

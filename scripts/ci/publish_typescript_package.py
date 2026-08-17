@@ -106,7 +106,7 @@ def _pack_package(
 ) -> PackageArtifact:
     try:
         readme = (package_directory / "README.md").read_text(encoding="utf-8").strip()
-    except OSError as error:
+    except (OSError, UnicodeError) as error:
         raise PublicationError("Package README.md could not be read") from error
     if not readme:
         raise PublicationError("Package README.md is empty")
