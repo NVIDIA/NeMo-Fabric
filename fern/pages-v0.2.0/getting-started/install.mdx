@@ -1,0 +1,259 @@
+---
+title: "NVIDIA NeMo Fabric Installation"
+description: "Install guide."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+## Package Installation Method
+
+The `nemo-fabric` package installs the NeMo Fabric runtime. Harness adapters can
+run in that environment or in a separate environment with their harness
+dependencies.
+
+### Supported Python Versions
+
+NeMo Fabric supports Python 3.11 through 3.14. Some integrations and adapters
+have additional requirements. The Hermes Agent adapter does not support Python
+3.14, and the Harbor integration requires Python 3.12 or later.
+
+### Choose an Installation
+
+The following table shows a representative subset of package expressions and
+the components they install. The sections that follow describe the complete
+installation alternatives. A **No** entry means that the expression does not
+install that component; the component can already exist in the environment or
+be managed separately.
+
+| Installation | Runtime | Adapter | Harness | Relay Python | Relay CLI |
+| --- | --- | --- | --- | --- | --- |
+| `nemo-fabric` | Yes | No | No | No | No |
+| `nemo-fabric[relay]` | Yes | No | No | Yes | No |
+| `nemo-fabric[hermes-agent,relay]` | Yes | Yes | No | Yes | No |
+| `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | No | Yes |
+| `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | No | Yes |
+| `nemo-fabric-adapters-deepagents[full]` | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-hermes[relay]` | No | Yes | No | Yes | No |
+| `nemo-fabric-adapters-claude` | No | Yes | No | No | No |
+
+An adapter package's `full` extra is scoped to the adapter environment and does
+not install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent
+to `harness`; both install the supported harness and `nemo-relay` CLI. For
+LangChain Deep Agents, `full` installs the harness and NeMo Relay Python package
+without the CLI. For Hermes Agent, `full` installs only the adapter and NeMo
+Relay Python package; Hermes Agent must be installed separately.
+
+### Install the NeMo Fabric Runtime
+
+Install the NeMo Fabric runtime:
+
+```bash
+pip install nemo-fabric
+```
+
+The `nemo-fabric` package installs the matching NeMo Fabric runtime
+unconditionally.
+
+### Install a Complete Runtime and Harness
+
+Use a `nemo-fabric` harness extra when the runtime, adapter, and harness run in
+the same Python environment:
+
+```bash
+pip install "nemo-fabric[claude]"
+pip install "nemo-fabric[codex]"
+pip install "nemo-fabric[deepagents]"
+```
+
+Each `nemo-fabric` harness extra installs the corresponding adapter package
+with its `harness` extra. You can combine independent `nemo-fabric` extras. For
+example, the following command also installs Harbor; the Claude harness extra
+supplies the Relay CLI, while `relay` supplies the Relay Python package:
+
+```bash
+pip install "nemo-fabric[claude,harbor,relay]"
+```
+
+The Claude and Codex harness extras install the `nemo-relay` CLI required for
+Relay-enabled runs. The root `relay` extra installs only the Relay Python
+package for SDK-native integrations.
+
+### Install Hermes Agent
+
+Hermes Agent 0.20 and later is no longer installable from PyPI. End users must
+follow the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
+then install NeMo Fabric and the bare Hermes adapter into the Python environment
+that runs Hermes Agent:
+
+```bash
+pip install "nemo-fabric[hermes-agent]"
+```
+
+These packages do not install Hermes Agent. For local NeMo Fabric development,
+check out the pinned Hermes Agent source and synchronize it into the project
+environment by running this command from the repository root:
+
+```bash
+just install-hermes-agent
+```
+
+### Install an Adapter and Harness Without the Runtime
+
+Use an adapter package's `harness` extra when a different environment runs NeMo
+Fabric:
+
+```bash
+pip install "nemo-fabric-adapters-claude[harness]"
+pip install "nemo-fabric-adapters-codex[harness]"
+pip install "nemo-fabric-adapters-deepagents[harness]"
+```
+
+This installation mode keeps the runtime dependencies out of the adapter
+environment. Set `ADAPTER_PYTHON` in the runtime environment to the adapter
+environment's Python interpreter. A Python adapter and its Python harness must
+use the same interpreter. Use matching NeMo Fabric
+release versions for the runtime and adapter package unless a different pairing
+has been explicitly validated.
+
+### Add an Adapter to an Existing Harness Environment
+
+Install an adapter package without an extra when the environment already
+supplies and manages a compatible harness:
+
+```bash
+pip install nemo-fabric-adapters-claude
+pip install nemo-fabric-adapters-codex
+pip install nemo-fabric-adapters-deepagents
+pip install nemo-fabric-adapters-hermes
+```
+
+Bare adapter distributions install only adapter-owned dependencies. They do not
+install the NeMo Fabric runtime or the harness.
+
+If the existing harness and runtime share an environment, install the runtime
+and bare adapter together. The following example preserves the existing Codex
+SDK instead of installing the adapter's supported SDK version:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-codex
+```
+
+### Install NeMo Relay
+
+[NeMo Relay](https://docs.nvidia.com/nemo/relay) integration occurs in two
+ways:
+
+- [Python package](https://pypi.org/project/nemo-relay/)
+- [NeMo Relay CLI](https://crates.io/crates/nemo-relay-cli)
+
+The required integration depends on the agent harness. Relay-enabled runs with
+the Claude and Codex adapters require the
+[`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli).
+
+#### NeMo Relay Python Package
+
+The root `relay` extra installs a version of the NeMo Relay Python package known
+to be compatible with the installed version of NeMo Fabric:
+
+```bash
+pip install "nemo-fabric[relay]"
+```
+
+LangChain Deep Agents and Hermes Agent import the NeMo Relay Python package
+directly. Their adapter packages provide `relay` and `full` extras:
+
+```bash
+pip install "nemo-fabric-adapters-deepagents[relay]"
+pip install "nemo-fabric-adapters-hermes[relay]"
+pip install "nemo-fabric-adapters-deepagents[full]"
+pip install "nemo-fabric-adapters-hermes[full]"
+```
+
+Use `relay` when the environment already manages the harness. For Deep Agents,
+use `full` to install the harness and Relay package together. For Hermes Agent,
+`relay` and `full` install the adapter and Relay package, but neither installs
+Hermes Agent. Claude and Codex do not provide a `relay` extra because their
+adapters launch the external CLI instead of importing this Python package.
+
+NeMo Fabric requires `nemo-relay>=0.7.2,<0.8`. For Python-backed Relay
+integrations, NeMo Fabric does not merge user or workspace `plugins.toml`
+files with its runtime-owned configuration. Remove or relocate a user
+`plugins.toml` or the nearest `.nemo-relay/plugins.toml` before starting a
+Relay-enabled Deep Agents or Hermes Agent runtime. System configuration in
+`/etc/nemo-relay/plugins.toml` remains administrator controlled.
+
+#### Migrate Relay Observability Configurations from 0.6
+
+Relay 0.7 requires observability schema version 3. Move flat OpenTelemetry
+exporter fields into entries under `opentelemetry.endpoints`. In the Python SDK,
+replace the removed `RelayOtlpConfig` model with `RelayOpenTelemetryConfig` and
+one or more `RelayOpenTelemetryEndpointConfig` entries.
+
+#### NeMo Relay CLI
+
+Claude and Codex harness extras install the compatible CLI binary without the
+Relay Python package. To install the CLI independently of an adapter, run:
+
+```bash
+pip install "nemo-relay-cli-bin>=0.7.2,<0.8"
+```
+
+On Linux and macOS, install the pinned CLI with the shell installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
+  NEMO_RELAY_VERSION=0.7.2 sh -s --
+```
+
+On Windows, install the pinned CLI with PowerShell:
+
+```powershell
+$env:NEMO_RELAY_VERSION = "0.7.2"
+irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
+```
+
+If `cargo-binstall` is available, install the pinned CLI with Cargo:
+
+```bash
+cargo binstall nemo-relay-cli --version 0.7.2
+```
+
+After installation, run `nemo-relay --version` and confirm the version is in
+the `>=0.7.2,<0.8` range. When Relay is enabled with
+`FabricConfig.enable_relay(...)`, the Claude and Codex adapters start and
+supervise the CLI gateway automatically.
+
+## Source Installation Method
+
+**Prerequisites:**
+- Rust and Cargo
+- Python 3.11 through 3.14
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- `just` 1.50.0+
+
+1. Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
+
+```bash
+uv venv -p 3.13 --seed .venv
+source .venv/bin/activate
+just install-hermes-agent
+```
+
+2. Build the Rust core and Python libraries.
+
+```bash
+just build-all
+```
+
+The above command will install only those dependencies that are strictly necessary for the build.
+Alternately If you want to install all optional dependencies, you can run:
+
+```bash
+uv sync --all-groups --all-extras
+```
+
+Then run the build command with the `no_uv=true` flag to avoid re-installing the dependencies:
+
+```bash
+just no_uv=true build-all
+```

@@ -1,0 +1,162 @@
+---
+title: "Enum McpAuthentication Config"
+sidebar-title: "McpAuthenticationConfig"
+description: "MCP server authentication configuration."
+position: 47
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum McpAuthenticationConfig &#123;\n    OAuth2 &#123;\n        client_id: <a href=\"https://doc.rust-lang.org/1.97.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n        client_secret_env: <a href=\"https://doc.rust-lang.org/1.97.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n        scopes: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n        redirect_uri: <a href=\"https://doc.rust-lang.org/1.97.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n        enable_dynamic_registration: <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.bool.html\">bool</a>,\n        client_name: <a href=\"https://doc.rust-lang.org/1.97.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n        token_endpoint_auth_method: <a href=\"https://doc.rust-lang.org/1.97.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-oauthtokenendpointauthmethod.mdx\">OAuthTokenEndpointAuthMethod</a>&gt;,\n        authorization_timeout_seconds: <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.u64.html\">u64</a>,\n    &#125;,\n    ServiceAccount &#123;\n        client_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        client_secret_env: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        token_url: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n        scopes: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n        token_endpoint_auth_method: <a href=\"https://doc.rust-lang.org/1.97.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-oauthtokenendpointauthmethod.mdx\">OAuthTokenEndpointAuthMethod</a>&gt;,\n        token_cache_buffer_seconds: <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.u64.html\">u64</a>,\n    &#125;,\n&#125;"}} /></pre>
+
+MCP server authentication configuration.
+
+## Variants
+
+### `OAuth2`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "OAuth2"}} /></pre>
+
+OAuth 2.0 authorization-code authentication.
+
+#### Fields
+
+##### `client_id: Option<String>`
+
+Pre-registered OAuth client identifier. Omit to allow dynamic registration.
+
+##### `client_secret_env: Option<String>`
+
+Environment variable containing the OAuth client secret.
+
+##### `scopes: Vec<String>`
+
+OAuth scopes requested by the MCP client.
+
+##### `redirect_uri: Option<String>`
+
+OAuth callback URI for clients that require a pre-registered redirect URI.
+
+##### `enable_dynamic_registration: bool`
+
+Whether the client may register dynamically when `client_id` is omitted.
+
+##### `client_name: Option<String>`
+
+Client name advertised during dynamic registration.
+
+##### `token_endpoint_auth_method: Option<OAuthTokenEndpointAuthMethod>`
+
+Client authentication method used at the token endpoint.
+
+##### `authorization_timeout_seconds: u64`
+
+Maximum time to wait for interactive authorization.
+
+### `ServiceAccount`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ServiceAccount"}} /></pre>
+
+OAuth 2.0 client-credentials authentication for headless workloads.
+
+#### Fields
+
+##### `client_id: String`
+
+OAuth client identifier.
+
+##### `client_secret_env: String`
+
+Environment variable containing the OAuth client secret.
+
+##### `token_url: String`
+
+OAuth token endpoint.
+
+##### `scopes: Vec<String>`
+
+OAuth scopes requested by the MCP client.
+
+##### `token_endpoint_auth_method: Option<OAuthTokenEndpointAuthMethod>`
+
+Client authentication method used at the token endpoint.
+
+##### `token_cache_buffer_seconds: u64`
+
+Refresh the cached token this many seconds before expiry.
+
+## Trait Implementations
+
+### `impl Clone for McpAuthenticationConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.97.1/core/clone/trait.Clone.html\">Clone</a> for <a href=\"enum-mcpauthenticationconfig.mdx\">McpAuthenticationConfig</a>"}} /></pre>
+
+#### `clone`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.97.1/core/clone/trait.Clone.html#tymethod.clone\">clone</a>(&amp;self) -&gt; <a href=\"enum-mcpauthenticationconfig.mdx\">McpAuthenticationConfig</a>"}} /></pre>
+
+#### `clone_from`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.97.1/core/clone/trait.Clone.html#method.clone_from\">clone_from</a>(&amp;mut self, source: &amp;Self)"}} /></pre>
+
+### `impl Debug for McpAuthenticationConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.97.1/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"enum-mcpauthenticationconfig.mdx\">McpAuthenticationConfig</a>"}} /></pre>
+
+#### `fmt`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.97.1/core/fmt/trait.Debug.html#tymethod.fmt\">fmt</a>(&amp;self, f: &amp;mut <a href=\"https://doc.rust-lang.org/1.97.1/core/fmt/struct.Formatter.html\">Formatter</a>&lt;'_&gt;) -&gt; <a href=\"https://doc.rust-lang.org/1.97.1/core/fmt/type.Result.html\">Result</a>"}} /></pre>
+
+### `impl<'de> Deserialize<'de> for McpAuthenticationConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;'de&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt; for <a href=\"enum-mcpauthenticationconfig.mdx\">McpAuthenticationConfig</a>"}} /></pre>
+
+#### `deserialize`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html#tymethod.deserialize\">deserialize</a>&lt;__D&gt;(__deserializer: __D) -&gt; <a href=\"https://doc.rust-lang.org/1.97.1/core/result/enum.Result.html\">Result</a>&lt;Self, __D::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserializer.html#associatedtype.Error\">Error</a>&gt;where\n    __D: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserializer.html\">Deserializer</a>&lt;'de&gt;,"}} /></pre>
+
+### `impl JsonSchema for McpAuthenticationConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl JsonSchema for <a href=\"enum-mcpauthenticationconfig.mdx\">McpAuthenticationConfig</a>"}} /></pre>
+
+#### `schema_name`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_name() -&gt; <a href=\"https://doc.rust-lang.org/1.97.1/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>&gt;"}} /></pre>
+
+#### `schema_id`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_id() -&gt; <a href=\"https://doc.rust-lang.org/1.97.1/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.str.html\">str</a>&gt;"}} /></pre>
+
+#### `json_schema`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn json_schema(generator: &amp;mut SchemaGenerator) -&gt; Schema"}} /></pre>
+
+#### `inline_schema`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn inline_schema() -&gt; <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+### `impl PartialEq for McpAuthenticationConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.97.1/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"enum-mcpauthenticationconfig.mdx\">McpAuthenticationConfig</a>"}} /></pre>
+
+#### `eq`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.97.1/core/cmp/trait.PartialEq.html#tymethod.eq\">eq</a>(&amp;self, other: &amp;<a href=\"enum-mcpauthenticationconfig.mdx\">McpAuthenticationConfig</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+#### `ne`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.97.1/core/cmp/trait.PartialEq.html#method.ne\">ne</a>(&amp;self, other: <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.reference.html\">&amp;Rhs</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+### `impl Serialize for McpAuthenticationConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"enum-mcpauthenticationconfig.mdx\">McpAuthenticationConfig</a>"}} /></pre>
+
+#### `serialize`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html#tymethod.serialize\">serialize</a>&lt;__S&gt;(&amp;self, __serializer: __S) -&gt; <a href=\"https://doc.rust-lang.org/1.97.1/core/result/enum.Result.html\">Result</a>&lt;__S::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html#associatedtype.Ok\">Ok</a>, __S::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html#associatedtype.Error\">Error</a>&gt;where\n    __S: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html\">Serializer</a>,"}} /></pre>
+
+### `impl StructuralPartialEq for McpAuthenticationConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.97.1/core/marker/trait.StructuralPartialEq.html\">StructuralPartialEq</a> for <a href=\"enum-mcpauthenticationconfig.mdx\">McpAuthenticationConfig</a>"}} /></pre>
