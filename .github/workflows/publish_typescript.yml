@@ -4,10 +4,26 @@
 name: Publish TypeScript package
 
 on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'The Git ref to check out; defaults to the triggering commit'
+        required: false
+        default: ''
+        type: string
+      ref_name:
+        description: 'The effective ref name; defaults to the triggering ref name'
+        required: false
+        default: ''
+        type: string
+      ref_type:
+        description: 'The effective ref type; defaults to the triggering ref type'
+        required: false
+        default: ''
+        type: string
   push:
     tags:
       - 'v*'
-      - 'v*-alpha.*'
 
 concurrency:
   group: publish-typescript
@@ -20,7 +36,7 @@ defaults:
 jobs:
   publish-typescript:
     name: Publish (npmjs.com)
-    if: ${{ github.ref_type == 'tag' }}
+    if: ${{ (inputs.ref_type || github.ref_type) == 'tag' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -35,6 +51,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
@@ -73,7 +90,7 @@ jobs:
       - name: Prepare release metadata
         id: release
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.ref_name || github.ref_name }}
         run: |
           set -euo pipefail
 

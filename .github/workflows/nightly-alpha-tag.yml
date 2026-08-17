@@ -85,3 +85,15 @@ jobs:
       ref_name: ${{ needs.tag-nightly-alpha.outputs.tag }}
       ref_type: tag
       skip_tests: true
+
+  publish-typescript:
+    name: TypeScript
+    needs: tag-nightly-alpha
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/publish_typescript.yml
+    with:
+      ref: refs/tags/${{ needs.tag-nightly-alpha.outputs.tag }}
+      ref_name: ${{ needs.tag-nightly-alpha.outputs.tag }}
+      ref_type: tag

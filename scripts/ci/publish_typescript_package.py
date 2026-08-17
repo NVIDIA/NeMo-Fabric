@@ -33,6 +33,7 @@ class PackageArtifact:
     version: str
     integrity: str
     filename: str
+    readme: str
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class PublishedState:
     version: str
     integrity: str
     dist_tag_version: str
+    readme: str
 
 
 RunNpm = Callable[[Sequence[str], Path], subprocess.CompletedProcess[str]]
@@ -102,6 +104,13 @@ def _pack_package(
     expected_version: str,
     run_npm: RunNpm,
 ) -> PackageArtifact:
+    try:
+        readme = (package_directory / "README.md").read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise PublicationError("Package README.md could not be read") from error
+    if not readme:
+        raise PublicationError("Package README.md is empty")
+
     result = run_npm(["pack", "--json", "--ignore-scripts"], package_directory)
     output = _require_output(result, action="npm pack")
     try:
@@ -112,18 +121,23 @@ def _pack_package(
             version=value["version"],
             integrity=value["integrity"],
             filename=value["filename"],
+            readme=readme,
         )
     except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
         raise PublicationError("npm pack returned an unexpected result") from error
 
-    if not all((artifact.name, artifact.version, artifact.integrity, artifact.filename)):
+    if not all(
+        (artifact.name, artifact.version, artifact.integrity, artifact.filename)
+    ):
         raise PublicationError("npm pack returned empty package metadata")
     if artifact.version != expected_version:
         raise PublicationError(
             f"Packed version {artifact.version} does not match release {expected_version}"
         )
     if Path(artifact.filename).name != artifact.filename:
-        raise PublicationError(f"npm pack returned an unsafe filename: {artifact.filename}")
+        raise PublicationError(
+            f"npm pack returned an unsafe filename: {artifact.filename}"
+        )
     if not (package_directory / artifact.filename).is_file():
         raise PublicationError(f"npm pack did not create {artifact.filename}")
     return artifact
@@ -162,10 +176,12 @@ def _published_state(
         artifact.name,
         f"dist-tags.{dist_tag}",
     )
+    readme = _view(package_directory, run_npm, package_version, "readme")
     return PublishedState(
         version=version,
         integrity=integrity or "",
         dist_tag_version=dist_tag_version or "",
+        readme=readme or "",
     )
 
 
@@ -178,6 +194,7 @@ def _state_matches(
         state.version == artifact.version
         and state.integrity == artifact.integrity
         and state.dist_tag_version == artifact.version
+        and state.readme == artifact.readme
     )
 
 
@@ -207,6 +224,10 @@ def _describe_conflict(
                 f"Published {dist_tag} dist-tag: {state.dist_tag_version or '<unset>'}",
             )
         )
+    if not state.readme:
+        details.append("Published README metadata is missing")
+    elif state.readme != artifact.readme:
+        details.append("Published README metadata does not match README.md")
     return "\n".join(details)
 
 
@@ -246,8 +267,19 @@ def publish_package(
             f"Refusing to move {dist_tag} backward from {current_dist_tag} to {version}"
         )
 
+    # A directory publish lets npm attach README content to the registry
+    # metadata; publishing the prepacked tarball leaves that field empty. Skip
+    # lifecycle scripts so the upload matches the artifact packed above.
     publish_result = run_npm(
-        ["publish", f"./{artifact.filename}", "--access", "public", "--tag", dist_tag],
+        [
+            "publish",
+            ".",
+            "--ignore-scripts",
+            "--access",
+            "public",
+            "--tag",
+            dist_tag,
+        ],
         package_directory,
     )
     if publish_result.stdout:
@@ -275,7 +307,9 @@ def publish_package(
             f"npm publish failed{f': {publish_detail}' if publish_detail else ''}; "
             f"registry verification also failed: {last_error}"
         )
-    raise PublicationError(f"npm publish completed, but verification failed: {last_error}")
+    raise PublicationError(
+        f"npm publish completed, but verification failed: {last_error}"
+    )
 
 
 def _parse_args() -> argparse.Namespace:

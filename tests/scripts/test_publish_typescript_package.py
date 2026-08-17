@@ -22,6 +22,7 @@ PACKAGE = "nemo-fabric-adapter-contract"
 VERSION = "0.2.0"
 INTEGRITY = "sha512-expected"
 TARBALL = "nvidia-nemo-fabric-adapter-contract-0.2.0.tgz"
+README = "# NVIDIA NeMo Fabric Adapter Contract for TypeScript"
 
 
 def _result(
@@ -60,9 +61,7 @@ def _pack_result(
 class NpmRunner:
     def __init__(
         self,
-        responses: Sequence[
-            tuple[Sequence[str], subprocess.CompletedProcess[str]]
-        ],
+        responses: Sequence[tuple[Sequence[str], subprocess.CompletedProcess[str]]],
     ) -> None:
         self.responses = list(responses)
 
@@ -86,6 +85,7 @@ def package_directory_fixture(tmp_path: Path) -> Path:
     package_directory = tmp_path / "package"
     package_directory.mkdir()
     (package_directory / TARBALL).write_bytes(b"package")
+    (package_directory / "README.md").write_text(f"{README}\n", encoding="utf-8")
     return package_directory
 
 
@@ -94,12 +94,14 @@ def _exact_view_responses(
     integrity: str = INTEGRITY,
     dist_tag: str = "latest",
     dist_tag_version: str = VERSION,
+    readme: str = README,
 ) -> list[tuple[list[str], subprocess.CompletedProcess[str]]]:
     package_version = f"{PACKAGE}@{VERSION}"
     return [
         (["view", package_version, "version"], _result(VERSION)),
         (["view", package_version, "dist.integrity"], _result(integrity)),
         (["view", PACKAGE, f"dist-tags.{dist_tag}"], _result(dist_tag_version)),
+        (["view", package_version, "readme"], _result(readme)),
     ]
 
 
@@ -171,8 +173,42 @@ def test_existing_conflicting_package_fails(
     runner.assert_finished()
 
 
+@pytest.mark.parametrize(
+    ("readme", "error"),
+    [
+        ("", "Published README metadata is missing"),
+        ("# Wrong package", "Published README metadata does not match README.md"),
+    ],
+)
+def test_existing_readme_metadata_must_match_package(
+    package_directory: Path,
+    readme: str,
+    error: str,
+):
+    runner = NpmRunner(
+        [
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
+            *_exact_view_responses(readme=readme),
+        ]
+    )
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match=error,
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+            sleep=lambda _: None,
+        )
+
+    runner.assert_finished()
+
+
 @pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next"])
-def test_absent_package_publishes_and_verifies(
+def test_absent_package_publishes_directory_and_verifies(
     package_directory: Path,
     dist_tag: str,
 ):
@@ -183,7 +219,15 @@ def test_absent_package_publishes_and_verifies(
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", PACKAGE, f"dist-tags.{dist_tag}"], _result("0.1.0")),
             (
-                ["publish", f"./{TARBALL}", "--access", "public", "--tag", dist_tag],
+                [
+                    "publish",
+                    ".",
+                    "--ignore-scripts",
+                    "--access",
+                    "public",
+                    "--tag",
+                    dist_tag,
+                ],
                 _result("published"),
             ),
             *_exact_view_responses(dist_tag=dist_tag),
@@ -264,7 +308,15 @@ def test_ambiguous_publish_failure_reconciles_registry_state(package_directory: 
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
             (
-                ["publish", f"./{TARBALL}", "--access", "public", "--tag", "latest"],
+                [
+                    "publish",
+                    ".",
+                    "--ignore-scripts",
+                    "--access",
+                    "public",
+                    "--tag",
+                    "latest",
+                ],
                 _result(returncode=1, stderr="network connection closed"),
             ),
             *_exact_view_responses(),
@@ -391,7 +443,15 @@ def test_visible_post_publish_conflict_fails_without_retry(package_directory: Pa
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
             (
-                ["publish", f"./{TARBALL}", "--access", "public", "--tag", "latest"],
+                [
+                    "publish",
+                    ".",
+                    "--ignore-scripts",
+                    "--access",
+                    "public",
+                    "--tag",
+                    "latest",
+                ],
                 _result(returncode=1, stderr="network connection closed"),
             ),
             *_exact_view_responses(integrity="sha512-conflict"),
@@ -423,7 +483,15 @@ def test_failed_publish_exhaustion_reports_both_failures(package_directory: Path
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
             (
-                ["publish", f"./{TARBALL}", "--access", "public", "--tag", "latest"],
+                [
+                    "publish",
+                    ".",
+                    "--ignore-scripts",
+                    "--access",
+                    "public",
+                    "--tag",
+                    "latest",
+                ],
                 _result(returncode=1, stderr="network connection closed"),
             ),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
