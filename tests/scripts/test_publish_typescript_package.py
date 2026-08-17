@@ -111,7 +111,7 @@ def test_invalid_readme_encoding_fails_closed(package_directory: Path):
 
     with pytest.raises(
         publish_typescript_package.PublicationError,
-        match="Package README.md could not be read",
+        match=r"Package README\.md could not be read",
     ):
         publish_typescript_package.publish_package(
             package_directory,
