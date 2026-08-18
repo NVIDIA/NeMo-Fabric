@@ -212,8 +212,9 @@ immutable.
 
 The bootstrap was published with `--tag next`. The registry also initialized
 `latest` to `0.0.0` because it was the package's first version and rejected
-removing that only `latest` tag. Leave both tags on the inert bootstrap: RC and
-beta releases move `next`, and the first stable release replaces `latest`.
+removing that only `latest` tag. Do not manually rewrite those bootstrap tags.
+Beta releases move `next`, RC releases move `rc`, and the first stable release
+replaces `latest`.
 
 Before the first supported TypeScript package release:
 
@@ -253,14 +254,14 @@ Before the first supported TypeScript package release:
    token publication. Then remove or revoke any local credentials used for the
    bootstrap.
 
-The workflow publishes stable versions with the `latest` dist-tag, beta and RC
-versions with `next`, and nightly alpha versions with `alpha`. Stable releases
-do not move either prerelease dist-tag. A retry skips only
+The workflow publishes stable versions with the `latest` dist-tag, beta
+versions with `next`, RC versions with `rc`, and nightly alpha versions with
+`alpha`. Stable releases do not move any prerelease dist-tag. A retry skips only
 when the immutable package version, packed artifact integrity, and expected
 dist-tag all match. If any of them differs, the workflow fails so a maintainer
 can inspect and repair the registry state explicitly. Publication also fails
-rather than moving `latest` or `next` backward when cutting a patch from an
-older release line.
+rather than moving `latest`, `next`, or `rc` backward when cutting a patch from
+an older release line.
 
 ## Cut An RC Tag
 
@@ -413,8 +414,8 @@ The release pipeline then:
    trusted publishing for stable, beta, and RC tags. Alpha tags are not
    published to crates.io.
 4. Publishes `nemo-fabric-adapter-contract` to npm through trusted publishing.
-   Stable releases use the `latest` dist-tag, beta and RC releases use `next`,
-   and nightly alpha releases use `alpha`.
+   Stable releases use the `latest` dist-tag, beta releases use `next`, RC
+   releases use `rc`, and nightly alpha releases use `alpha`.
 5. Publishes Fern documentation versions for stable, beta, and RC tags. Alpha
    tags do not publish a separate documentation version.
 

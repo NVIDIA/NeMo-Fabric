@@ -26,7 +26,6 @@ defaults:
 jobs:
   publish-typescript:
     name: Publish (npmjs.com)
-    if: ${{ github.event_name == 'workflow_call' || github.ref_type == 'tag' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -112,7 +111,8 @@ jobs:
 
           case "$version" in
             *-alpha*) dist_tag="alpha" ;;
-            *-beta*|*-rc*) dist_tag="next" ;;
+            *-beta*) dist_tag="next" ;;
+            *-rc*) dist_tag="rc" ;;
             *-*)
               echo "Unsupported npm prerelease: $version" >&2
               exit 1
