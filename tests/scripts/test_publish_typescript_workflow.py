@@ -57,8 +57,7 @@ def test_typescript_publisher_accepts_an_explicit_tag_ref():
     )
     release_metadata = steps["Prepare release metadata"]["run"]
     assert '*-alpha*) dist_tag="alpha"' in release_metadata
-    assert '*-beta*) dist_tag="next"' in release_metadata
-    assert '*-rc*) dist_tag="rc"' in release_metadata
+    assert '*-beta*|*-rc*) dist_tag="next"' in release_metadata
 
 
 def test_nightly_alpha_calls_typescript_publisher_for_created_tag():

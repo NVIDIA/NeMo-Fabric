@@ -124,7 +124,7 @@ def test_invalid_readme_encoding_fails_closed(package_directory: Path):
     runner.assert_finished()
 
 
-@pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next", "rc"])
+@pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next"])
 def test_existing_exact_package_is_an_idempotent_success(
     package_directory: Path,
     dist_tag: str,
@@ -151,7 +151,7 @@ def test_existing_exact_package_is_an_idempotent_success(
     ("dist_tag", "integrity", "dist_tag_version", "error"),
     [
         (dist_tag, integrity, dist_tag_version, error)
-        for dist_tag in ("alpha", "latest", "next", "rc")
+        for dist_tag in ("alpha", "latest", "next")
         for integrity, dist_tag_version, error in (
             ("", VERSION, "Published integrity is missing"),
             ("sha512-wrong", VERSION, "Expected integrity"),
@@ -226,7 +226,7 @@ def test_existing_readme_metadata_must_match_package(
     runner.assert_finished()
 
 
-@pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next", "rc"])
+@pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next"])
 def test_absent_package_publishes_directory_and_verifies(
     package_directory: Path,
     dist_tag: str,
@@ -290,7 +290,7 @@ def test_non_404_lookup_failure_fails_closed(package_directory: Path):
     runner.assert_finished()
 
 
-@pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next", "rc"])
+@pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next"])
 def test_dist_tag_cannot_move_backward(
     package_directory: Path,
     dist_tag: str,

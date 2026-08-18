@@ -240,7 +240,7 @@ def publish_package(
     sleep: Sleep = time.sleep,
     verification_attempts: int = 6,
 ) -> None:
-    if dist_tag not in {"alpha", "latest", "next", "rc"}:
+    if dist_tag not in {"alpha", "latest", "next"}:
         raise PublicationError(f"Unsupported npm dist-tag: {dist_tag}")
     if verification_attempts < 1:
         raise PublicationError("At least one registry verification attempt is required")
@@ -320,7 +320,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--version", required=True)
     parser.add_argument(
         "--dist-tag",
-        choices=("alpha", "latest", "next", "rc"),
+        choices=("alpha", "latest", "next"),
         required=True,
     )
     return parser.parse_args()

@@ -111,8 +111,7 @@ jobs:
 
           case "$version" in
             *-alpha*) dist_tag="alpha" ;;
-            *-beta*) dist_tag="next" ;;
-            *-rc*) dist_tag="rc" ;;
+            *-beta*|*-rc*) dist_tag="next" ;;
             *-*)
               echo "Unsupported npm prerelease: $version" >&2
               exit 1
