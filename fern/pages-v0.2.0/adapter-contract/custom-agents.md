@@ -3,128 +3,140 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 */}
 
-# Custom Agents
+# Choose a Custom-Agent Integration
 
-NVIDIA NeMo Fabric distinguishes reusable agent harnesses from custom agents.
-An agent harness is an opinionated, reusable execution layer that supplies
-agent behavior and integration points such as models, tools, MCP, skills,
-state, or delegation. Customizing a harness means selecting and configuring
-those supported components.
+An agent harness supplies a reusable execution model. Its users customize the
+harness through supported models, instructions, tools, MCP servers, skills,
+plugins, and settings.
 
-A custom agent is application-defined executable behavior built with a
-lower-level framework or target runtime. Its execution model cannot be known
-statically by NeMo Fabric. The shared adapter therefore resolves configuration,
-loads the selected entry point, constructs a target-native agent, and retains
-that agent for the NeMo Fabric runtime.
+A custom agent owns application-specific execution behavior. Its code defines
+the graph, state transitions, control flow, or other runtime semantics. NVIDIA
+NeMo Fabric cannot infer those semantics statically, so the integration must
+provide an unambiguous construction boundary.
 
-One shared adapter can support many custom agents built for the same framework.
-Each registered custom agent has an Adapter Target Descriptor that fixes its
-entry point and bounds its `workflow.settings`.
+Use either a shared framework adapter or a dedicated custom-agent adapter:
 
-## Workflow
-
-`workflow` is the `AgentConfig` construct that configures one custom agent or
-workflow. NeMo Fabric projects it from the selected Adapter Target Descriptor
-and the consumer's `WorkflowConfig`:
-
-- `workflow.entrypoint.kind` selects well-known resolution semantics.
-- `workflow.entrypoint.ref` identifies the factory within those semantics.
-- `workflow.settings` contains construction settings for this agent.
-
-Runtime/session identity comes from `RuntimeContext`, and per-invocation input
-comes from `AgentRunRequest`. Neither belongs in workflow settings.
-
-The Adapter Target Descriptor advertises the entry point and the settings
-schema the adapter supports. Invalid settings fail during planning.
-
-## Resolution Kinds
-
-The initial Python contract defines three resolution kinds. Each target record
-selects one kind, and the shared adapter implements its resolution semantics.
-
-| `kind` | Meaning of `ref` | Resolution |
-| --- | --- | --- |
-| `factory` | NeMo Fabric-defined agent intent, such as `fabric.agent.react` | The adapter maps the intent to a target-native factory. |
-| `python_entrypoint` | Name in the `nemo_fabric.agents` Python entry-point group | The adapter resolves an installed entry point with `importlib.metadata`. |
-| `python_module` | Importable dotted module name | The adapter imports the module and loads its `create_agent` factory. |
-
-`ref` is never a filesystem path. Resolution and module import occur in the
-task environment during `start`, not in the planning process.
-
-### NeMo Fabric Factory Intent
-
-Use a NeMo Fabric-defined factory intent for portable agent behavior:
-
-```yaml
-workflow:
-  entrypoint:
-    kind: factory
-    ref: fabric.agent.react
+```mermaid
+flowchart TB
+    Config["FabricConfig"] --> Choice{"Stable shared loading contract?"}
+    Choice -->|Yes| Target["Adapter Target Descriptor<br/>target ID + entry point + settings schema"]
+    Target --> Shared["Shared framework adapter"]
+    Shared --> AgentA["Custom agent A"]
+    Shared --> AgentB["Custom agent B"]
+    Choice -->|No| Dedicated["Dedicated custom-agent adapter"]
+    Dedicated --> AgentC["Application-owned custom agent"]
 ```
 
-NeMo Fabric owns the intent name and its portable semantics. Each adapter maps a
-supported intent to its target-native implementation. The NVIDIA NeMo Agent
-Toolkit reference adapter currently demonstrates this mode for
-`fabric.agent.react`.
+## Use a Shared Framework Adapter
 
-### Installed Python Entry Point
+Choose a shared adapter when a framework provides stable target loading,
+construction, invocation, and cleanup semantics. One adapter can then translate
+normalized configuration once and support many separately installed custom
+agents.
 
-Register a custom agent factory in the fixed Python entry-point group:
+Each custom agent publishes an Adapter Target Descriptor with:
 
-```toml
-[project.entry-points."nemo_fabric.agents"]
-"acme.agent.phishing" = "acme_agents.phishing:create_agent"
-```
+- A globally stable `id` selected by `FabricConfig.workflow.target_id`
+- An `adapter_id` that selects the shared adapter
+- An adapter-scoped `spec.entrypoint`
+- A closed `spec.settings_schema` for the agent's construction settings
 
-Select the registered factory by name:
-
-```yaml
-workflow:
-  entrypoint:
-    kind: python_entrypoint
-    ref: acme.agent.phishing
-```
-
-A missing or duplicate entry-point registration is a startup configuration
-error.
-
-### Installed Python Module
-
-An importable Python module exposes a `create_agent` factory:
+The consumer selects the registered target and provides settings:
 
 ```python
-# acme_agents/phishing.py
-def create_agent(context):
-    ...
+FabricConfig(
+    workflow=WorkflowConfig(
+        target_id="nvidia.examples.nat.email-phishing-analyzer",
+        settings={
+            "llm_name": "default",
+            "use_native_tool_calling": True,
+        },
+    ),
+    models={"default": ModelConfig(...)},
+)
 ```
 
-Select that module with the matching workflow entry point:
+Planning resolves the target before it resolves the adapter. It validates the
+settings, then projects the target-owned entry point and consumer settings into
+`AgentConfig.workflow`:
 
-```yaml
-workflow:
-  entrypoint:
-    kind: python_module
-    ref: acme_agents.phishing
+```python
+AgentWorkflowConfig(
+    entrypoint=AgentWorkflowEntrypointConfig(
+        kind="factory",
+        ref="fabric.agent.react",
+    ),
+    settings={
+        "llm_name": "default",
+        "use_native_tool_calling": True,
+    },
+)
 ```
 
-## Shared Adapter Responsibilities
+`entrypoint.kind` selects resolution semantics defined by that shared adapter.
+`entrypoint.ref` identifies the factory within those semantics. The v1alpha2
+contract does not define a global catalog of entry-point kinds and does not
+permit consumers to bypass target registration with a direct entry point.
 
-All resolution paths yield the adapter's internal factory abstraction. The
-shared adapter performs the following steps:
+The [NeMo Agent Toolkit reference adapter](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.3/external/nat)
+implements the current shared-adapter example. Its registered targets use
+`kind: factory` and `ref: fabric.agent.react`. The adapter then maps that
+portable intent to the NeMo Agent Toolkit ReAct workflow factory.
 
-1. Resolves normalized models, instructions, tools, MCP, skills, workflow
-   settings, and runtime context into target-native values.
-2. Resolves and calls the selected factory exactly once per NeMo Fabric runtime.
-3. Supplies an adapter-defined build context rather than raw `FabricConfig`.
-4. Retains the returned target-native agent for later invocations.
-5. Translates requests and results and owns shutdown.
+## Keep Workflow Settings Agent-Specific
 
-The custom agent factory assembles agent-specific behavior. It should not parse
-`FabricConfig` or reimplement normalized configuration mapping. This keeps one
-adapter reusable across custom agents and keeps consumer config independent of
-the target framework.
+`workflow` is the `AgentConfig` block for immutable custom-agent construction:
 
-`workflow.settings` can be an explicitly open compatibility object for an
-existing target, but such a mode cannot promise harness variation. Prefer a
-closed schema or bounded bindings that let the shared adapter map normalized
-models, tools, and MCP independently of the agent-specific settings.
+- `workflow.entrypoint` comes from the selected Adapter Target Descriptor.
+- `workflow.settings` comes from `FabricConfig.workflow.settings` after schema
+  validation.
+
+Runtime and invocation identity comes from `RuntimeContext`. Per-invocation
+input comes from `AgentRunRequest`. Neither belongs in workflow settings.
+
+The shared adapter owns translation of normalized models, instructions, tools,
+MCP servers, skills, and runtime behavior into target-native construction
+values. A custom-agent factory should receive native dependencies or an
+adapter-defined build context. It should not parse `FabricConfig` or implement
+the adapter's `AgentConfig` mapping again.
+
+An intentionally open workflow settings schema can preserve compatibility with
+an existing framework configuration, but NeMo Fabric cannot validate its fields
+or vary them portably. Use a closed schema and keep
+models, tools, MCP servers, and other normalized capabilities in their
+dedicated `AgentConfig` blocks.
+
+## Use a Dedicated Custom-Agent Adapter
+
+Choose a dedicated adapter when the agent does not fit a stable shared loading
+contract. Selecting the adapter already identifies how the application-owned
+agent is constructed, so the adapter does not need an artificial
+`workflow.entrypoint`.
+
+The dedicated adapter can still accept normalized models, instructions, MCP
+servers, tools, skills, and runtime limits. Its descriptor declares only the
+fields that this agent applies. `start` builds and retains the custom agent,
+`invoke` executes it, and `stop` releases its resources.
+
+The
+[LangGraph email-phishing analyzer](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.3/examples/langgraph_custom_agent)
+is the dedicated reference. The LangGraph application has no NeMo Fabric
+dependency; the adjacent adapter translates `AgentConfig`, owns the compiled
+graph lifecycle, and returns terminal JSON-compatible output.
+
+## Decide Before You Implement
+
+Use these questions to choose the boundary:
+
+- Can one adapter locate and construct multiple agents without agent-specific
+  implementation code?
+- Can the adapter define stable meanings for each target entry-point kind?
+- Can every target publish a bounded workflow settings schema?
+- Can the adapter translate normalized capabilities once for all targets?
+
+If all answers are yes, build a shared adapter and register targets separately.
+Otherwise, build a dedicated adapter and keep the target construction logic
+explicit.
+
+Refer to [Examples and References](examples.md) for the exact files that
+demonstrate both paths.

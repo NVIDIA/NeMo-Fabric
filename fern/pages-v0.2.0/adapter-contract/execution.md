@@ -3,198 +3,141 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 */}
 
-# Execution
+# Stage 3: Implement Execution
 
-NVIDIA NeMo Fabric exposes one consumer lifecycle and maps it onto an ordered
-adapter-target lifecycle. A NeMo Fabric runtime is the isolation and correlation
-boundary; it does not require a particular process, service, thread, or native
-harness-session topology.
+One NVIDIA NeMo Fabric runtime is a lifecycle, state-isolation, and correlation
+boundary. It does not require a particular process, service, thread, or native
+target session topology.
 
-## Lifecycle
+## Implement the Required Lifecycle
 
-The abstract lifecycle contract contains these operations:
+The minimum adapter implements these operations:
 
-| Operation | Requirement | Contract |
-| --- | --- | --- |
-| `start(AgentConfig, RuntimeContext)` | Required | Initialize one isolated adapter-target runtime. |
-| `invoke(AgentRunRequest, RuntimeContext)` | Preview, not negotiated | Future typed invocation boundary. The current binding uses its legacy request envelope and JSON-compatible output. |
-| `stop(runtime_id)` | Required | Attempt to release all runtime resources, including after partial or failed execution. |
-| `invoke_stream(...)` | NeMo Fabric-provided | Run ordinary `invoke` while NeMo Relay supplies correlated ATOF to the consumer. |
-| `invoke_openai_stream(...)` | Optional | Execute exactly one adapter invocation while emitting OpenAI Chat Completions chunks. The selected descriptor must declare `capabilities.streaming`. |
-| `cancel(...)` | Reserved optional surface | Request cancellation of an active invocation when a runtime binding implements it. |
-| `update(...)` | Reserved optional surface | Atomically apply declared updateable fields when a runtime binding implements it. |
+| Operation | Adapter Responsibility |
+| --- | --- |
+| `start` | Validate startup-only requirements, translate `AgentConfig`, and retain one isolated target runtime. |
+| `invoke` | Translate one `AgentRunRequest`, execute the retained target, and return one `AgentRunResult`. |
+| `stop` | Attempt to release every adapter-owned resource, including after partial startup or failed invocation. |
 
-The required ordering is one `start`, zero or more invocation operations, then
-one `stop`, regardless of whether an invocation uses `invoke`,
-`invoke_openai_stream`, or the future typed boundary. The minimum profile
-permits only one active invocation in a runtime. Adapters need not implement a
-queue or internal concurrency; consumers start independent runtimes for
-parallel work.
+The required order is one successful `start`, zero or more ordered `invoke`
+operations, and one `stop` attempt. The minimum profile permits one active
+invocation in a runtime. The adapter does not need a queue or internal
+concurrency; consumers start independent runtimes for parallel work.
 
-Each operation produces one terminal response. An invocation-level failure
-does not necessarily invalidate the runtime. A lifecycle or transport failure
-can make it unusable, after which NeMo Fabric proceeds to cleanup rather than
-replaying the request.
+Keep mutable target state inside the runtime instance. Do not share it between
+independent Fabric runtimes.
 
-## Runtime Context
+## Start From the Minimum Python Host
 
-NeMo Fabric creates `RuntimeContext`; consumers and adapters must treat its IDs
-as opaque correlation values.
+Python adapters can opt into `nemo-fabric-adapters-common` instead of
+implementing the persistent local-host binding. The following implementation
+shows the complete method surface:
+
+```python
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import AgentRunRequest
+from nemo_fabric_adapter_contract.models import AgentRunResult
+from nemo_fabric_adapter_contract.models import AgentRunStatus
+from nemo_fabric_adapter_contract.models import RuntimeContext
+from nemo_fabric_adapters.common import lifecycle
+
+
+class TargetRuntime:
+    def __init__(self):
+        self.target = None
+
+    async def start(self, payload):
+        config: AgentConfig = payload["config"]
+        target = await create_target(config)
+        self.target = target
+
+    async def invoke(
+        self,
+        request: AgentRunRequest,
+        context: RuntimeContext,
+    ) -> AgentRunResult:
+        native = await self.target.run(request.input)
+        return AgentRunResult(
+            status=AgentRunStatus.SUCCEEDED,
+            output={"response": native.text},
+        )
+
+    async def stop(self):
+        target, self.target = self.target, None
+        if target is not None:
+            await target.close()
+
+
+def main() -> None:
+    lifecycle.serve(TargetRuntime, config_loader=AgentConfig.from_mapping)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+The host creates one `TargetRuntime` per local host, validates the start config
+as `AgentConfig`, passes typed request and context objects to `invoke`, requires
+a typed terminal result, serializes lifecycle operations, reserves stdout for
+its wire protocol, and attempts cleanup on end of file. The common host is
+optional; an adapter can implement another supported binding directly.
+
+The target factory must release resources it creates if it fails before
+returning. Once the factory returns, retain the target immediately. Make
+`stop` idempotent, clear retained state even if cleanup fails, and keep it safe
+after a failed invocation. A no-op `stop` is valid for a thin remote-service
+adapter that owns no remote lifecycle, but it must still complete successfully.
+
+## Use RuntimeContext for Operation Context
+
+NeMo Fabric creates `RuntimeContext`. Treat every ID as an opaque correlation
+value:
 
 | Field | Purpose |
 | --- | --- |
 | `runtime_id` | Correlates all operations in one Fabric runtime. |
 | `invocation_id` | Identifies one invocation attempt. |
-| `request_id` | Correlates the caller's request through Fabric and the adapter. |
-| `environment` | Resolved workspace, artifact root, environment values, ownership, and provider context. |
-| `artifacts` | Artifacts visible when the operation begins. |
-| `telemetry` | Invocation telemetry context, including generated Relay config and environment when enabled. |
+| `request_id` | Correlates the caller's request through NeMo Fabric and the adapter. |
+| `environment` | Supplies the resolved workspace, artifact root, environment values, ownership, and provider context. |
+| `artifacts` | Lists artifacts visible when the operation begins. |
+| `telemetry` | Supplies invocation telemetry context, including generated Relay configuration when enabled. |
 
-Use the generated
-[`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.2/schemas/adapter-contract/runtime-context.schema.json)
-for the exact shape. Runtime/session identity belongs here, not in
-`AgentConfig.workflow`; caller task context belongs in the invocation request.
+Use the canonical
+[`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.3/schemas/adapter-contract/runtime-context.schema.json)
+for the exact shape. Runtime identity belongs in `RuntimeContext`, not in
+`AgentConfig.workflow`. Per-invocation task input belongs in the request, not in
+workflow settings.
 
-## Relay Streaming
+## Propagate Failures Safely
 
-`Runtime.invoke_stream()` is the primary Fabric streaming API. It exposes raw,
-invocation-correlated Agent Trajectory Observability Format (ATOF) records
-generated through NeMo Relay. NeMo Fabric owns stream ingestion, correlation,
-buffering, backpressure, and consumer stream lifecycle. The adapter continues
-to execute its ordinary `invoke` operation.
+Use a lifecycle failure when the adapter cannot satisfy `start`, `invoke`, or
+`stop`, including protocol and transport failures. A lifecycle failure can
+invalidate the runtime.
 
-The ATOF stream and terminal normalized result describe the same invocation,
-but the result is obtained separately. An empty stream can still have a valid
-terminal result. Stopping iteration or closing the consumer stream does not
+A target-level failure is an `AgentRunResult` with `status=FAILED` and an
+`AgentRunError`. Do not expose stack traces, credentials, complete environment
+values, HTTP authorization headers, or arbitrary user input in errors or logs.
+NeMo Fabric does not automatically replay an invocation after a transport
+failure.
+
+## Add Streaming Only When Needed
+
+`Runtime.invoke_stream()` is the primary normalized streaming API. It runs the
+ordinary adapter `invoke` operation while NeMo Relay exposes correlated ATOF to
+the consumer. NeMo Fabric owns ingestion, correlation, buffering,
+backpressure, and the consumer stream lifecycle.
+
+The event stream and terminal result describe the same invocation but are
+delivered separately. An empty stream can have a valid result, stream
+exhaustion does not imply success, and closing the consumer stream does not
 cancel the target invocation.
 
-The adapter reads Relay configuration and environment from
-`RuntimeContext.telemetry` or uses the optional common adapter helpers. It does
-not invent a second stream protocol.
+An adapter that needs native progressive output can implement the narrower
+[`invoke_openai_stream`](openai-streaming.md) capability. No other
+target-native event formats are part of v1alpha2.
 
-## Native OpenAI Streaming
+The descriptor also contains reserved `cancellation`, `updates`, and `service`
+capability flags. Do not claim them until the selected NeMo Fabric runtime
+binding exposes and tests the corresponding adapter operation.
 
-`Runtime.invoke_openai_stream()` exposes adapter-native progressive output for
-an adapter whose descriptor declares `capabilities.streaming`. An adapter that
-declares the capability must implement the optional operation. This capability
-is narrower than a generic native stream: the adapter emits only the declared
-`openai.chat_completions.chunk/v1` profile. Each mapping includes non-empty
-`id` and `model` strings, a nonnegative integer `created`, the exact
-`chat.completion.chunk` object discriminator, and structurally valid `choices`.
-OpenAI Responses API events, target-native event objects, Server-Sent Events
-framing, and terminal results are outside the progressive stream.
-
-One call executes exactly one adapter invocation. The stream can be empty, and
-its terminal normalized `RunResult` remains separate and authoritative. Ending
-iteration early does not cancel the invocation. The SDK drains the invocation
-when the consumer closes the stream so that the runtime can safely accept its
-next turn.
-
-`runtime.timeout_seconds` limits the total duration of the streamed invocation,
-from invocation start through terminal completion. It is not an idle or
-progress timeout, and receiving chunks does not reset it. If the deadline is
-exceeded, NeMo Fabric invalidates and terminates the local adapter host as
-required by the existing lifecycle timeout semantics; consumers must start a
-new runtime instead of reusing that host.
-
-NeMo Fabric owns the authenticated loopback HTTP transport, chunked NDJSON
-framing, correlation, validation, buffering, and consumer lifecycle. Adapters
-must not persist or log the bearer token. NeMo Fabric persists only redacted
-transport metadata for invocation auditing. The adapter host continues to
-reserve stdout for the single terminal lifecycle response.
-
-Bindings that implement the transport without the common Python host must
-read the sink from the generated
-[`openai-stream-invocation.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.2/schemas/adapter-contract/openai-stream-invocation.schema.json)
-payload and follow the generated
-[`openai-stream-record.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.2/schemas/adapter-contract/openai-stream-record.schema.json)
-envelope for monotonic chunk records and the explicit end record.
-
-The `fabric.openai_stream/v1alpha1` wire sequence is fixed:
-
-1. Open one connection to the sink's loopback host and port.
-2. Send `POST /openai-stream HTTP/1.1` with `Authorization: Bearer <token>`,
-   `Content-Type: application/x-ndjson`, `Transfer-Encoding: chunked`, and
-   `Expect: 100-continue`.
-3. Wait for HTTP `100 Continue` before executing the target invocation.
-4. Send zero or more `chunk` records, starting at sequence zero, followed by
-   exactly one `end` record at the next sequence. Encode each record as one
-   newline-terminated JSON value in the chunked request body.
-5. Send the zero-length HTTP chunk, wait for HTTP `200 OK`, then write the one
-   terminal lifecycle response to stdout. A rejection or incomplete end
-   sequence is a lifecycle transport failure, not a successful empty stream.
-
-The bearer token is single-use for that invocation. Do not retry or replay the
-target after a transport failure.
-
-Native OpenAI streaming and Relay streaming are independent. An adapter can
-support either, both, or neither. `Runtime.invoke_stream()` continues to execute
-ordinary `invoke` while exposing raw ATOF from NeMo Relay; it does not call
-`invoke_openai_stream`.
-
-## Current Python Host Binding
-
-`nemo-fabric-adapters-common` is optional. Python adapters can use its
-persistent line-oriented host instead of implementing the binding themselves:
-
-```python
-from nemo_fabric_adapter_contract.models import AgentConfig
-from nemo_fabric_adapters.common import lifecycle
-
-
-class ExampleRuntime:
-    async def start(self, payload):
-        config: AgentConfig = payload["config"]
-
-    async def invoke(self, payload):
-        request = payload["request"]
-        return {"answer": "..."}
-
-    async def invoke_openai_stream(self, payload, emit):
-        request = payload["request"]
-        await emit(
-            {
-                "id": "chunk-1",
-                "object": "chat.completion.chunk",
-                "created": 0,
-                "model": "example-model",
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {"content": "..."},
-                        "finish_reason": None,
-                    }
-                ],
-            }
-        )
-        return {"answer": "..."}
-
-    async def stop(self):
-        pass
-
-
-def main() -> None:
-    lifecycle.serve(ExampleRuntime, config_loader=AgentConfig.from_mapping)
-```
-
-The host validates the start `config` as `AgentConfig`, serializes operations,
-normalizes lifecycle failures, reserves stdout for its protocol, and attempts
-cleanup on EOF. For native OpenAI streaming, it validates and sends each chunk
-through the Fabric-owned transport before writing one terminal lifecycle
-response. The adapter remains responsible for target-specific validation,
-translation, state, and shutdown.
-
-The lifecycle table describes the typed adapter contract, not the Python method
-signatures. The common Python host passes one protocol payload to `start` and
-`invoke`: `payload["config"]` contains `AgentConfig` during `start`, while the
-protocol envelope carries `RuntimeContext` and runtime identity. It calls
-`stop()` after resolving the runtime identity from that envelope.
-
-The current invoke payload contains `RuntimeContext` plus northbound
-`RunRequest`, and accepts JSON-compatible output. The common host calls the
-optional native stream method as `async invoke_openai_stream(payload, emit)`;
-`payload` has the same adapter-visible invocation fields, without transport
-credentials, and `emit` accepts only OpenAI Chat Completions chunk mappings.
-`AgentRunRequest` and `AgentRunResult` are preview-only and are not part of the
-negotiated contract. Keep conversion at the edge of the adapter so adopting a
-future typed invoke boundary does not affect target lifecycle code.
+After the lifecycle works, [normalize its terminal outcomes](results.md).
