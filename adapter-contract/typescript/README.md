@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# NVIDIA NeMo Fabric Adapter Contract for TypeScript
+# NVIDIA NeMo Fabric Adapter Contract
 
 Dependency-free TypeScript types for implementing adapters against the NVIDIA
 NeMo Fabric adapter contract. The package is generated from the versioned JSON
