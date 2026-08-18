@@ -3,91 +3,99 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 */}
 
-# Results and Telemetry
+# Stage 4: Normalize Results and Telemetry
 
-**Preview status:** `AgentRunResult` is not part of the negotiated adapter
-contract yet. The current local-host transport treats it as ordinary JSON and
-does not interpret `status: failed`; adapters must use the current host error
-mechanism. The rest of this page defines the intended typed result boundary.
+Every target invocation that completes through the adapter boundary produces
+one terminal outcome. A lifecycle or transport failure can terminate the
+operation before an `AgentRunResult` exists. Keep target-specific parsing
+inside the adapter so consumers receive a stable NeMo Fabric `RunResult` and
+do not need to understand the target's native response objects.
 
-`AgentRunResult` is deliberately smaller than consumer-facing `RunResult`,
-which also contains NeMo Fabric-owned identity, correlation, lifecycle events,
-collected artifacts, and telemetry references.
+## Return AgentRunResult
 
-## AgentRunResult
+`invoke` returns one typed `AgentRunResult`. Translate the target's native
+outcome into the normalized status, output, usage, errors, and artifacts that
+apply:
 
-The result contains these adapter-facing fields:
+```python
+return AgentRunResult(
+    status=AgentRunStatus.SUCCEEDED,
+    output={"response": native.final_text},
+    usage=AgentUsage(
+        input_tokens=native.input_tokens,
+        output_tokens=native.output_tokens,
+    ),
+)
+```
 
-| Field | Requirement | Description |
+| Field | Requirement | Purpose |
 | --- | --- | --- |
-| `status` | Required | `succeeded`, `failed`, or `cancelled`. |
-| `output` | Required | Primary JSON-compatible output; it can be `null`. |
-| `error` | Required for `failed` | Stable code, safe message, retry guidance, and declared extensions. |
-| `usage` | Optional | Input, output, and total tokens plus cost in US dollars when known. |
-| `artifacts` | Optional | Target-produced artifact references relative to the runtime artifact root. |
-| `extensions` | Optional | Adapter-owned result data validated by the descriptor. |
+| `status` | Required | Reports `succeeded`, `failed`, or `cancelled`. |
+| `output` | Required | Carries the primary JSON-compatible output and can be `null`. |
+| `error` | Required for `failed` | Carries a stable code, safe message, retry guidance, and declared extensions. |
+| `usage` | Optional | Carries normalized input, output, and total token counts plus cost when known. |
+| `artifacts` | Optional | Carries target-produced artifact references relative to the runtime artifact root. |
+| `extensions` | Optional | Carries adapter-owned result data validated by the descriptor. |
 
-Use the generated
-[`AgentRunResult` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-run-result.schema.json)
-for exact fields and constraints.
+Use the canonical
+[`agent-run-result.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-run-result.schema.json)
+for the exact shape. A failed result contains an error; a successful result
+does not contain a non-null error. Status is explicit and is not inferred from
+arbitrary output fields.
 
-A failed result must contain `error`. A succeeded result can omit `error` or
-set it to `null`; it must not contain a non-null error. Do not infer status
-from arbitrary fields in `output`. Exactly one terminal result is produced for
-an invocation, and its status is immutable once returned.
+## Separate Failure Classes
 
-## Failure Classes
+Use these failure classes consistently:
 
-Failures fall into two classes:
+- A **lifecycle failure** means the adapter could not satisfy `start`,
+  `invoke`, or `stop`. It is reported at the relevant NeMo Fabric error stage
+  and can invalidate the runtime.
+- A **terminal target failure** means the target completed the invocation with
+  a failed outcome. Return `AgentRunResult` with
+  `status=AgentRunStatus.FAILED` and a safe, structured error.
 
-- A lifecycle failure means the adapter could not satisfy `start`, `invoke`, or
-  `stop`. It is surfaced at the relevant NeMo Fabric error stage and can
-  invalidate the runtime.
-- A terminal invocation failure means the target completed the invocation with
-  a failed or cancelled outcome. It remains a normalized result rather than a
-  lifecycle transport error.
-
-Set `retryable` only when retrying at the consumer boundary is safe. NeMo
-Fabric propagates retry guidance but does not automatically retry adapter
+Set retry guidance only when retrying at the consumer boundary is safe. NeMo
+Fabric propagates failure information but does not automatically retry adapter
 operations.
 
-## NeMo Fabric Enrichment
+## Keep Artifacts Inside the Runtime Root
 
-NeMo Fabric combines the adapter outcome with NeMo Fabric-owned context:
+Write target artifacts below the artifact root supplied through
+`RuntimeContext.environment`. Return relative artifact references; do not
+return arbitrary host filesystem paths. NeMo Fabric combines adapter-declared
+artifacts with its collected artifact manifest.
+
+## Let NeMo Fabric Enrich the Outcome
+
+NeMo Fabric combines `AgentRunResult` with runtime-owned information when it
+constructs the consumer-facing `RunResult`:
 
 | NeMo Fabric Adds | Source |
 | --- | --- |
-| Agent, harness, adapter, and runtime identity | Resolved plan and runtime handle |
-| Runtime, invocation, and request correlation | `RuntimeContext` |
-| NeMo Fabric lifecycle and progress events | Runtime orchestration |
-| Collected artifact manifest | NeMo Fabric and adapter artifact declarations |
-| Telemetry reference | Resolved telemetry plan and runtime telemetry context |
-| Error stage | The lifecycle boundary where a failure surfaced |
+| Adapter and runtime identity | Resolved plan and runtime handle. |
+| Runtime, invocation, and request correlation | `RuntimeContext`. |
+| Lifecycle stage and events | Runtime orchestration. |
+| Collected artifact manifest | NeMo Fabric and adapter artifact declarations. |
+| Telemetry reference | Resolved telemetry plan and runtime telemetry context. |
 
-Adapter extensions become namespaced adapter metadata only after validation.
-Do not duplicate NeMo Fabric-owned IDs or telemetry references inside arbitrary
-output.
+Do not duplicate NeMo Fabric-owned IDs, lifecycle events, or telemetry
+references inside arbitrary adapter output or extensions.
 
-## Streaming Results
+## Integrate Telemetry Without Changing the Result
 
-For Relay-backed streaming, raw ATOF records and the terminal result describe
-the same invocation. The result is authoritative and is returned separately
-from the event stream. Stream exhaustion does not imply success, and stopping
-stream consumption does not change the terminal status.
-
-## Telemetry Ownership
-
-Telemetry configuration and result references are NeMo Fabric-owned. The
-descriptor declares what the adapter can produce or forward. At invocation
-time the adapter receives the resolved `RuntimeTelemetryContext`, including
-whether Relay is enabled, an optional generated config path, environment
-values, and metadata.
+Telemetry configuration, correlation, and result references are NeMo
+Fabric-owned. The Adapter Descriptor declares which outputs the adapter can
+produce or forward. `RuntimeContext.telemetry` supplies the resolved
+invocation-level context, including generated Relay configuration when
+enabled.
 
 An adapter can initialize target-native telemetry or forward NeMo
-Fabric-provided Relay configuration, but it must not reinterpret correlation
-IDs or claim outputs it did not produce. Never log unredacted telemetry
-environment values.
+Fabric-provided Relay configuration. It must not reinterpret correlation IDs,
+claim outputs it did not produce, or log unredacted telemetry environment
+values.
 
-The typed result will be promoted in a future contract version when the host
-decodes and validates it. Until then, adapters should normalize target outcomes
-in one dedicated function without returning this preview envelope directly.
+Relay-backed ATOF records and the terminal result describe the same invocation
+but remain separate. Stream exhaustion does not imply success, and stopping
+stream consumption does not change the terminal outcome.
+
+After outcomes are safe and stable, [package and register the adapter](registration-and-discovery.md).

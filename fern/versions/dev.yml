@@ -26,20 +26,24 @@ navigation:
   contents:
   - page: Overview
     path: ../pages-dev/adapter-contract/README.md
+  - page: Custom-Agent Integrations
+    path: ../pages-dev/adapter-contract/custom-agents.md
   - page: Adapter Descriptor
     path: ../pages-dev/adapter-contract/adapter-descriptor.md
   - page: Normalized Configuration
     path: ../pages-dev/adapter-contract/normalized-configuration.md
   - page: Execution
     path: ../pages-dev/adapter-contract/execution.md
+  - page: Optional OpenAI Streaming
+    path: ../pages-dev/adapter-contract/openai-streaming.md
   - page: Results and Telemetry
     path: ../pages-dev/adapter-contract/results.md
   - page: Registration and Discovery
     path: ../pages-dev/adapter-contract/registration-and-discovery.md
-  - page: Custom Agents
-    path: ../pages-dev/adapter-contract/custom-agents.md
-  - page: Conformance
+  - page: Verify an Adapter
     path: ../pages-dev/adapter-contract/conformance.md
+  - page: Examples and References
+    path: ../pages-dev/adapter-contract/examples.md
 - section: Integrations
   contents:
   - section: Consumer Integrations

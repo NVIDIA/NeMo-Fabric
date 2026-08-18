@@ -115,7 +115,7 @@ Most application code works with four objects:
 | `FabricConfig` | Typed configuration for the harness, models, runtime, and capabilities. | Construct it from application config before planning or running. |
 | `RunPlan` | The canonical config and path context, selected adapter, and declared capabilities. | Inspect it before starting work when adapter selection or feature support matters. |
 | `Runtime` | The Python object for one logical, stateful harness execution. | Use it to send ordered invocations and stop the execution. Use it as an async context manager for cleanup. |
-| `RunResult` | The normalized outcome of one invocation. | Read its status, output, error, events, artifacts, and correlation IDs. |
+| `RunResult` | The normalized outcome of one invocation. | Read its status, output, error, usage, events, artifacts, and correlation IDs. |
 
 `Fabric` is a lightweight, reusable SDK facade. It resolves configuration,
 creates plans and runtimes, and provides a single-invocation convenience API,
@@ -716,6 +716,7 @@ Important fields:
 | `status` | Terminal invocation status such as success, failure, or cancellation. |
 | `output` | Harness output normalized to the configured output schema. |
 | `error` | Structured failure metadata when available. |
+| `usage` | Optional `RunUsage` with input, output, and total token counts, estimated cost in USD, and provider metadata. |
 | `artifacts` | Output files, logs, patches, native artifacts, and other materialized references. |
 | `telemetry` | References to NeMo Relay or other telemetry streams produced by the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
@@ -729,6 +730,17 @@ request. NeMo Fabric-generated values use type-specific prefixes such as `runtim
 `invocation-`, and `request-`; callers may provide their own `request_id`.
 Consumers should store and log each field separately and otherwise treat its
 value as opaque rather than parsing the identifier encoding.
+
+Usage is absent when the target does not report it. Read the typed values only
+when `usage` is available:
+
+```python
+if result.usage is not None:
+    print(result.usage.input_tokens)
+    print(result.usage.output_tokens)
+    print(result.usage.total_tokens)
+    print(result.usage.cost_usd)
+```
 
 If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial

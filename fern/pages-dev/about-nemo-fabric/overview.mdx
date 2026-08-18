@@ -1,22 +1,24 @@
 ---
 title: "NVIDIA NeMo Fabric Documentation"
 slug: "/about-nemo-fabric/overview"
-description: "Configure, plan, run, and observe agent harnesses through one typed execution contract."
+description: "Configure, plan, run, and observe agent harnesses and custom agents through one typed execution contract."
 template-library-version: "1.0.0"
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-NVIDIA NeMo Fabric is the harness-management layer that turns multiple agent runtimes
-into one configurable, observable execution surface. Applications use the same
-versioned config, lifecycle, result, artifact, and telemetry contracts whether
-the selected harness is [Hermes Agent](https://hermes-agent.nousresearch.com/docs/),
-[Codex SDK](https://openai.com/codex/), or a custom adapter.
+NVIDIA NeMo Fabric is the integration layer that turns agent harnesses and
+custom agents into one configurable, observable execution surface.
+Applications use the same versioned config, lifecycle, result, artifact, and
+telemetry contracts whether the selected Adapter Target is
+[Hermes Agent](https://hermes-agent.nousresearch.com/docs/),
+[Codex SDK](https://openai.com/codex/), a registered workflow behind a shared
+framework adapter, or a dedicated custom agent.
 
-NeMo Fabric owns the seam between an application and its harness. It resolves
-configuration, selects an adapter, drives the runtime lifecycle,
-and returns normalized evidence without leaking harness-specific control code
-into the caller.
+NeMo Fabric owns the seam between an application and its Adapter Target. It
+resolves configuration, selects an adapter, drives the runtime lifecycle, and
+returns normalized evidence without leaking target-specific control code into
+the caller.
 
 ## What NeMo Fabric Gives You
 
@@ -25,9 +27,9 @@ into the caller.
     Construct a complete, versioned `FabricConfig` in Python. Applications
     create variants with ordinary functions and typed copies.
   </Card>
-  <Card title="Harness-Neutral Execution">
-    Plan and invoke different harnesses through one Rust core, CLI, and Python
-    SDK instead of embedding harness launch logic in every consumer.
+  <Card title="Target-Neutral Execution">
+    Plan and invoke harnesses and custom agents through one Rust core, CLI, and
+    Python SDK instead of embedding target launch logic in every consumer.
   </Card>
   <Card title="Typed Lifecycle Contracts">
     Resolve configs, inspect capabilities, run single-invocation jobs, and hold
@@ -43,7 +45,7 @@ into the caller.
 ## Choose Your Interface
 
 Use the following table to choose the NeMo Fabric interface that best fits how
-your application works with harnesses:
+your application works with Adapter Targets:
 
 | Interface | Use it when | Start with |
 | --- | --- | --- |
@@ -68,7 +70,7 @@ NeMo Fabric Rust core
         |
         |  resolved adapter contract
         v
-Hermes Agent | Codex | custom harness
+Agent harness | shared framework target | dedicated custom agent
         |
         v
 RunResult + artifacts + events + telemetry references
@@ -85,6 +87,11 @@ RunResult + artifacts + events + telemetry references
    and call `Runtime.invoke_stream()`.
 5. **Consume evidence** from `RunResult`: output, structured failure details,
    artifacts, events, and telemetry references.
+
+Adapter authors can follow the
+[adapter contract overview](../adapter-contract/README.md) to choose a harness
+adapter, shared framework adapter, or dedicated custom-agent adapter
+and implement the minimum lifecycle.
 
 ## Learn More
 
