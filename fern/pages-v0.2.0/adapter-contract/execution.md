@@ -103,7 +103,7 @@ value:
 | `telemetry` | Supplies invocation telemetry context, including generated Relay configuration when enabled. |
 
 Use the canonical
-[`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.3/schemas/adapter-contract/runtime-context.schema.json)
+[`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0/schemas/adapter-contract/runtime-context.schema.json)
 for the exact shape. Runtime identity belongs in `RuntimeContext`, not in
 `AgentConfig.workflow`. Per-invocation task input belongs in the request, not in
 workflow settings.

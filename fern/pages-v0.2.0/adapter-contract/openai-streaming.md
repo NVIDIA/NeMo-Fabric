@@ -68,9 +68,9 @@ it calls the typed adapter method. Do not persist or log the bearer token, emit
 chunks on stdout, or add SSE framing.
 
 Bindings that do not use the common Python host read the sink from
-[`openai-stream-invocation.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.3/schemas/adapter-contract/openai-stream-invocation.schema.json)
+[`openai-stream-invocation.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0/schemas/adapter-contract/openai-stream-invocation.schema.json)
 and send records that satisfy
-[`openai-stream-record.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.3/schemas/adapter-contract/openai-stream-record.schema.json).
+[`openai-stream-record.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0/schemas/adapter-contract/openai-stream-record.schema.json).
 
 The `fabric.openai_stream/v1alpha1` wire sequence is:
 

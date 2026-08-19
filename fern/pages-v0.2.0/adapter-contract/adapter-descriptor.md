@@ -46,7 +46,7 @@ The primary descriptor fields are:
 | `target_types` | Declares registered target types a shared adapter can load. Omit it for a direct harness or dedicated-agent adapter. |
 
 Use the canonical
-[`adapter-descriptor.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.3/schemas/adapter-contract/adapter-descriptor.schema.json)
+[`adapter-descriptor.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0/schemas/adapter-contract/adapter-descriptor.schema.json)
 for exact fields, defaults, and constraints.
 
 ## Declare Accepted Configuration
@@ -167,7 +167,7 @@ Descriptor. It does not introduce another contract or schema version.
 not repeat its adapter-specific entry point.
 
 Use the canonical
-[`adapter-target-descriptor.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.3/schemas/adapter-contract/adapter-target-descriptor.schema.json)
+[`adapter-target-descriptor.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0/schemas/adapter-contract/adapter-target-descriptor.schema.json)
 for the complete target record.
 
 ## Keep Claims Exact

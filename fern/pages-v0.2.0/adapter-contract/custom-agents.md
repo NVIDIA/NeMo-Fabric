@@ -78,7 +78,7 @@ AgentWorkflowConfig(
 contract does not define a global catalog of entry-point kinds and does not
 permit consumers to bypass target registration with a direct entry point.
 
-The [NeMo Agent Toolkit reference adapter](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.3/external/nat)
+The [NeMo Agent Toolkit reference adapter](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0/external/nat)
 implements the current shared-adapter example. Its registered targets use
 `kind: factory` and `ref: fabric.agent.react`. The adapter then maps that
 portable intent to the NeMo Agent Toolkit ReAct workflow factory.
@@ -119,7 +119,7 @@ fields that this agent applies. `start` builds and retains the custom agent,
 `invoke` executes it, and `stop` releases its resources.
 
 The
-[LangGraph email-phishing analyzer](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.3/examples/langgraph_custom_agent)
+[LangGraph email-phishing analyzer](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0/examples/langgraph_custom_agent)
 is the dedicated reference. The LangGraph application has no NeMo Fabric
 dependency; the adjacent adapter translates `AgentConfig`, owns the compiled
 graph lifecycle, and returns terminal JSON-compatible output.

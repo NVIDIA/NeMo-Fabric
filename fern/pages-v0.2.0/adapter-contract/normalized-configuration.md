@@ -48,7 +48,7 @@ needs and applies it.
 | `extensions` | Adapter-owned data validated at a declared extension point. |
 
 Use the canonical
-[`agent-config.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.3/schemas/adapter-contract/agent-config.schema.json)
+[`agent-config.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0/schemas/adapter-contract/agent-config.schema.json)
 for exact fields and constraints. Python adapters can use the matching
 dependency-free dataclasses from `nemo_fabric_adapter_contract.models`.
 

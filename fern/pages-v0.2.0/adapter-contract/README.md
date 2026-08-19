@@ -51,9 +51,9 @@ Use the narrowest reusable adapter boundary that your target provides:
 
 | Integration Shape | Use It When | Adapter Reuse | Reference |
 | --- | --- | --- | --- |
-| Harness adapter | An opinionated harness supplies a stable construction and execution model. | One adapter supports many configurations of that harness. | [Hermes Agent](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.3/adapters/hermes); [mini-SWE-agent](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.3/adapters/mini-swe-agent) for the minimum surface |
-| Shared framework adapter | A framework can load multiple registered custom agents through stable entry-point semantics. | One adapter supports many separately installed targets. | [NeMo Agent Toolkit](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.3/external/nat) |
-| Dedicated custom-agent adapter | The application owns execution behavior that does not fit a reusable loading contract. | One adapter packages one custom agent or agent family. | [LangGraph email-phishing analyzer](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.3/examples/langgraph_custom_agent) |
+| Harness adapter | An opinionated harness supplies a stable construction and execution model. | One adapter supports many configurations of that harness. | [Hermes Agent](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0/adapters/hermes); [mini-SWE-agent](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0/adapters/mini-swe-agent) for the minimum surface |
+| Shared framework adapter | A framework can load multiple registered custom agents through stable entry-point semantics. | One adapter supports many separately installed targets. | [NeMo Agent Toolkit](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0/external/nat) |
+| Dedicated custom-agent adapter | The application owns execution behavior that does not fit a reusable loading contract. | One adapter packages one custom agent or agent family. | [LangGraph email-phishing analyzer](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0/examples/langgraph_custom_agent) |
 
 A custom agent does not automatically need a dedicated adapter. A shared
 adapter is appropriate when a framework has stable loading and invocation
@@ -109,13 +109,13 @@ The repository documentation and versioned schemas are the source of truth.
 Use examples to understand the boundary, but do not recreate types from an
 example:
 
-- [`schemas/adapter-contract/`](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0-rc.3/schemas/adapter-contract) contains the
+- [`schemas/adapter-contract/`](https://github.com/NVIDIA/NeMo-Fabric/tree/0.2.0/schemas/adapter-contract) contains the
   canonical JSON Schemas.
 - `nemo-fabric-adapter-contract` provides dependency-free Python dataclasses
   with optional Pydantic interoperability.
 - The TypeScript `nemo-fabric-adapter-contract` package provides generated
   compile-time types and bundles the JSON Schemas for runtime validation.
-- [`nemo-fabric-build-adapter`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0-rc.3/skills/nemo-fabric-build-adapter/SKILL.md)
+- [`nemo-fabric-build-adapter`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.2.0/skills/nemo-fabric-build-adapter/SKILL.md)
   is the public coding-agent skill for adapter authoring.
 - [Examples and References](examples.md) identifies the exact files to read for
   each integration shape.
