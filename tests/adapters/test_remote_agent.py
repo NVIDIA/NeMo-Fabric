@@ -41,14 +41,18 @@ def _context() -> RuntimeContext:
 
 
 @pytest.mark.parametrize(
-    "api_type",
+    ("api_type", "path"),
     [
-        pytest.param("openai-responses", id="openai-responses"),
-        pytest.param("openai-completions", id="openai-completions"),
-        pytest.param("anthropic-messages", id="anthropic-messages"),
+        pytest.param("openai-responses", "/responses", id="openai-responses"),
+        pytest.param(
+            "openai-completions", "/chat/completions", id="openai-completions"
+        ),
+        pytest.param("anthropic-messages", "/messages", id="anthropic-messages"),
     ],
 )
-async def test_remote_agent_invokes_supported_protocol(api_server: str, api_type: str):
+async def test_remote_agent_invokes_supported_protocol(
+    api_server: str, api_type: str, path: str
+):
     config = AgentConfig.from_mapping(
         {
             "harness": {
@@ -74,6 +78,7 @@ async def test_remote_agent_invokes_supported_protocol(api_server: str, api_type
             "base_dir": str(ROOT),
         }
     )
+    assert runtime._endpoint == f"{api_server}/v1{path}"
 
     result = await runtime.invoke(AgentRunRequest(input="Hello."), context)
     await runtime.stop()

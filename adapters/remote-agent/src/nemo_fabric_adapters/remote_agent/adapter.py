@@ -22,6 +22,11 @@ from nemo_fabric_adapters.common import utils as common_utils
 
 DEFAULT_API_TYPE = "openai-responses"
 DEFAULT_ANTHROPIC_MAX_TOKENS = 4096
+API_PATHS = {
+    "openai-responses": "/responses",
+    "openai-completions": "/chat/completions",
+    "anthropic-messages": "/messages",
+}
 
 
 class RemoteAgentError(RuntimeError):
@@ -46,6 +51,10 @@ def _base_url(value: str) -> str:
 
 def _relay_base_url(value: str) -> str:
     return _base_url(f"{value.rstrip('/')}/v1")
+
+
+def _api_url(base_url: str, api_type: str) -> str:
+    return f"{base_url.rstrip('/')}{API_PATHS[api_type]}"
 
 
 def _response_text(response: dict[str, Any]) -> str:
@@ -81,6 +90,7 @@ class RemoteAgentRuntime:
 
     def __init__(self) -> None:
         self._client: httpx.AsyncClient | None = None
+        self._endpoint: str | None = None
         self._config: contract.AgentConfig | None = None
         self._runtime_id: str | None = None
         self._api_type = DEFAULT_API_TYPE
@@ -114,11 +124,8 @@ class RemoteAgentRuntime:
             if self._api_type == "anthropic-messages":
                 headers["anthropic-version"] = "2023-06-01"
 
-            self._client = httpx.AsyncClient(
-                base_url=_base_url(base_url),
-                headers=headers,
-                timeout=None,
-            )
+            self._endpoint = _api_url(base_url, self._api_type)
+            self._client = httpx.AsyncClient(headers=headers, timeout=None)
             self._config = config
             self._runtime_id = context.runtime_id
         except Exception:
@@ -192,6 +199,7 @@ class RemoteAgentRuntime:
 
     async def stop(self) -> None:
         client, self._client = self._client, None
+        self._endpoint = None
         self._config = None
         self._runtime_id = None
         self._messages = []
@@ -225,7 +233,9 @@ class RemoteAgentRuntime:
             payload["instructions"] = config.instructions.system.content
         if model.temperature is not None:
             payload["temperature"] = model.temperature
-        async with self._client.stream("POST", "responses", json=payload) as response:
+        async with self._client.stream(
+            "POST", self._endpoint, json=payload
+        ) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "response.completed":
@@ -254,7 +264,7 @@ class RemoteAgentRuntime:
         payload: dict[str, Any] = {"model": model.model, "messages": messages}
         if model.temperature is not None:
             payload["temperature"] = model.temperature
-        response = await self._client.post("chat/completions", json=payload)
+        response = await self._client.post(self._endpoint, json=payload)
         response.raise_for_status()
         value = response.json()
         usage = value.get("usage", {})
@@ -285,7 +295,9 @@ class RemoteAgentRuntime:
             payload["temperature"] = model.temperature
         text = ""
         input_tokens = output_tokens = None
-        async with self._client.stream("POST", "messages", json=payload) as response:
+        async with self._client.stream(
+            "POST", self._endpoint, json=payload
+        ) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "message_start":
