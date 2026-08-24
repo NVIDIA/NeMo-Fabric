@@ -100,13 +100,33 @@ dependencies = [
     { name = "nemo-fabric-adapters-common" },
 ]
 
+[package.optional-dependencies]
+full = [
+    { name = "nemo-relay-cli-bin" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = "~=0.28" },
     { name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
+    { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },
 ]
 provides-extras = ["full"]
+
+[[package]]
+name = "nemo-relay-cli-bin"
+version = "0.7.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c5/c8/0ddaa75f3a6047d2e26c9604cc33b08aac52c52bf8d8edfc67d4553f4178/nemo_relay_cli_bin-0.7.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:73a12cf7556ff9df7aeab137ae393bcf8a16375b84d7f20ca980b7401647aaaf", size = 11363529, upload-time = "2026-08-14T14:40:26.275Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/d4/37663a8e2203d642e12db9d24386351e6e2bfb69bfa411f27e554a629897/nemo_relay_cli_bin-0.7.3-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:1821c95a23b6615834551bffb24f2ac40ccfcbd414da6c0f550bbfdb62d9d7ad", size = 11707631, upload-time = "2026-08-14T14:40:28.861Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/1b/096083dc567ec4ced22f51a473d1cb4f43e3458a79e88bf7a54be21321e9/nemo_relay_cli_bin-0.7.3-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:b3cb9d39695c2d09c8380a0e1e5e9e39bed66618c5b85affba7ec0cef0161893", size = 11756104, upload-time = "2026-08-14T14:40:31.356Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/b4/5d2f53dea87236dc4ca260061bcd5e47372ce6b6b1aff8b419df9bc5b1ce/nemo_relay_cli_bin-0.7.3-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:e8f0d804ebadf892e16d567a9d693d87f830d38dab6cf7badf5cd186ab4697d7", size = 11686305, upload-time = "2026-08-14T14:40:34.065Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/e4/f449fa586b72b612e26ab30dcc4ce0ebb0b9191c336512c7e1534825fa0f/nemo_relay_cli_bin-0.7.3-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:af187f9ce77c715f704fb044c1787384fc547ca0fd575e1289c8c33ad2db351b", size = 12342866, upload-time = "2026-08-14T14:40:36.736Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/ba/b965baa4920f58923bcc02ebcc613f675ba825d76aec485796a9d1908c04/nemo_relay_cli_bin-0.7.3-py3-none-win_amd64.whl", hash = "sha256:e69f3e7608575a2f91088f4ee61b516f3c66cb442532c0985f20b06736dcfa29", size = 9949847, upload-time = "2026-08-14T14:40:39.131Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/9f/69bf79f6816102cd696dd7a6051fe20b894ee50ce861e32f81b63adfc78b/nemo_relay_cli_bin-0.7.3-py3-none-win_arm64.whl", hash = "sha256:3cc4ba58ab1cc05bf39abcc6e3c26cc50f61bb08bbfba5c41affbf76869c5658", size = 9431754, upload-time = "2026-08-14T14:40:41.492Z" },
+]
 
 [[package]]
 name = "typing-extensions"

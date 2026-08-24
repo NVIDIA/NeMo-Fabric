@@ -11,5 +11,9 @@ SPDX-License-Identifier: Apache-2.0
 
 ![Diagram showing NeMo Fabric connecting applications, evaluation systems, and reinforcement learning rollouts to harnesses and custom agents, with results, artifacts, and telemetry as outputs.](https://raw.githubusercontent.com/NVIDIA/NeMo-Fabric/refs/heads/main/assets/fabric-hero.png)
 
-`nemo-fabric-adapters-remote-agent` provides a NeMo Fabric adapter for use communicating with remote agents over a network. 
+`nemo-fabric-adapters-remote-agent` provides the `nvidia.fabric.remote-agent`
+adapter for remote agents with OpenAI Responses, OpenAI Chat Completions, or
+Anthropic Messages HTTP APIs. It uses `httpx` for asynchronous requests.
 
+Install `nemo-fabric-adapters-remote-agent[full]` to enable optional NeMo Relay
+gateway-mode telemetry.

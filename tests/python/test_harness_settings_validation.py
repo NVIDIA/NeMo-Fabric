@@ -25,6 +25,9 @@ ADAPTER_DESCRIPTORS = {
         ROOT / "adapters" / "deepagents" / "deepagents.fabric-adapter.json"
     ),
     "nvidia.fabric.hermes": ROOT / "adapters" / "hermes" / "hermes.fabric-adapter.json",
+    "nvidia.fabric.remote-agent": (
+        ROOT / "adapters" / "remote-agent" / "remote-agent.fabric-adapter.json"
+    ),
 }
 
 
@@ -116,6 +119,14 @@ _config = partial(
             },
             id="hermes",
         ),
+        pytest.param(
+            "nvidia.fabric.remote-agent",
+            {
+                "base_url": "https://agents.example.test/v1",
+                "api_type": "anthropic-messages",
+            },
+            id="remote-agent",
+        ),
     ],
 )
 def test_repository_settings_are_validated_and_preserved(
@@ -135,7 +146,14 @@ def test_repository_settings_are_validated_and_preserved(
     )
 
 
-@pytest.mark.parametrize("adapter_id", ADAPTER_DESCRIPTORS)
+@pytest.mark.parametrize(
+    "adapter_id",
+    [
+        adapter_id
+        for adapter_id in ADAPTER_DESCRIPTORS
+        if adapter_id != "nvidia.fabric.remote-agent"
+    ],
+)
 def test_settings_schema_defaults_are_not_applied(
     tmp_path: Path,
     adapter_id: str,
@@ -146,6 +164,34 @@ def test_settings_schema_defaults_are_not_applied(
     )
 
     assert plan.config.harness.settings == {}
+
+
+def test_remote_agent_settings_schema_default_is_not_applied(tmp_path: Path):
+    plan = Fabric().plan(
+        _config(
+            {"base_url": "https://agents.example.test/v1"},
+            adapter_id="nvidia.fabric.remote-agent",
+        ),
+        base_dir=tmp_path,
+    )
+
+    assert plan.config.harness.settings == {
+        "base_url": "https://agents.example.test/v1"
+    }
+
+
+def test_remote_agent_rejects_unknown_api_type(tmp_path: Path):
+    with pytest.raises(FabricConfigError, match="harness.settings.api_type"):
+        Fabric().plan(
+            _config(
+                {
+                    "base_url": "https://agents.example.test/v1",
+                    "api_type": "unsupported",
+                },
+                adapter_id="nvidia.fabric.remote-agent",
+            ),
+            base_dir=tmp_path,
+        )
 
 
 @pytest.mark.parametrize(

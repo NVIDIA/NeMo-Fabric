@@ -1,0 +1,67 @@
+---
+title: "Use the Remote Agent Adapter"
+description: "Configure a remote OpenAI- or Anthropic-compatible agent for NVIDIA NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the `nvidia.fabric.remote-agent` adapter to call an agent service over HTTP
+or HTTPS. The service can implement OpenAI Responses, OpenAI Chat Completions,
+or Anthropic Messages.
+
+## Install the Adapter
+
+Install the runtime, adapter, and optional Relay gateway support together:
+
+```bash
+pip install "nemo-fabric[remote-agent]"
+```
+
+To install the adapter without the runtime, use:
+
+```bash
+pip install "nemo-fabric-adapters-remote-agent[full]"
+```
+
+The bare adapter package includes `httpx` for direct asynchronous HTTP calls.
+The `full` extra adds the NeMo Relay CLI required only for gateway-mode
+telemetry.
+
+## Configure the Adapter
+
+Set the remote API root, including its `/v1` path, in `HarnessConfig.settings`.
+`api_type` defaults to `openai-responses`.
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.remote-agent",
+    settings={
+        "base_url": "https://agent.example.com/v1",
+        "api_type": "openai-responses",
+    },
+)
+```
+
+Supported `api_type` values are `openai-responses`, `openai-completions`, and
+`anthropic-messages`. Planning rejects unknown settings and values outside this
+set.
+
+The adapter supports `models`, `models.temperature`, and
+`instructions.system`. Set `models.default.api_key_env` when the service
+requires a credential. The adapter sends it as a Bearer token for OpenAI APIs
+and as `x-api-key` for Anthropic Messages. For Anthropic Messages, you can set
+`models.default.settings.max_tokens`; when omitted, the adapter sends `4096`.
+
+The adapter does not support MCP, skills, tool policy, normalized streaming,
+or subagents. It keeps the completed user/assistant transcript for ordered
+invocations within a runtime.
+
+## Relay gateway mode
+
+Relay telemetry can run in gateway mode. When enabled, the adapter launches a
+runtime-owned `nemo-relay` process and routes calls through it. OpenAI API
+types use `base_url` as the gateway's OpenAI upstream. Anthropic Messages uses
+the same service host with the `/v1` suffix removed as the Anthropic upstream.
+Install the `full` extra before enabling Relay telemetry.

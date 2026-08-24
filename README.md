@@ -155,6 +155,7 @@ expressions install the components shown in each column:
 | [Hermes Agent](docs/integrations/harness/hermes.mdx) | Install Hermes Agent separately, then install `nemo-fabric[hermes-agent]` | Install Hermes Agent separately, then install `nemo-fabric-adapters-hermes` | `nemo-fabric-adapters-hermes` |
 | [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
 | [mini-SWE-agent](docs/integrations/harness/mini-swe-agent.mdx) | `nemo-fabric[mini-swe-agent]` | `nemo-fabric-adapters-mini-swe-agent[harness]` | `nemo-fabric-adapters-mini-swe-agent` |
+| [Remote Agent](docs/integrations/harness/remote-agent.mdx) | `nemo-fabric[remote-agent]` | `nemo-fabric-adapters-remote-agent[full]` | `nemo-fabric-adapters-remote-agent` |
 
 The `nemo-fabric` package always installs the runtime. For harnesses available
 as Python packages, the root package extras install the corresponding adapter

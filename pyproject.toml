@@ -28,6 +28,10 @@ mini-swe-agent = [
   "nemo-fabric[mini-swe-agent]",
 ]
 
+remote-agent = [
+  "nemo-fabric[remote-agent]",
+]
+
 harbor = [
   "nemo-fabric[harbor]",
 ]
