@@ -2523,6 +2523,24 @@ requires-dist = [
 provides-extras = ["harness", "full"]
 
 [[package]]
+name = "nemo-fabric-adapters-remote-agent"
+version = "0.3.0"
+source = { editable = "adapters/remote-agent" }
+dependencies = [
+    { name = "httpx" },
+    { name = "nemo-fabric-adapter-contract" },
+    { name = "nemo-fabric-adapters-common" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = "~=0.28" },
+    { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
+]
+provides-extras = ["full"]
+
+[[package]]
 name = "nemo-fabric-development"
 version = "0.0.0"
 source = { virtual = "." }
@@ -2561,6 +2579,7 @@ adapter-tests = [
     { name = "nemo-fabric-adapters-deepagents", extra = ["harness"] },
     { name = "nemo-fabric-adapters-hermes", extra = ["full"], marker = "python_full_version < '3.14'" },
     { name = "nemo-fabric-adapters-mini-swe-agent", extra = ["harness"] },
+    { name = "nemo-fabric-adapters-remote-agent" },
 ]
 adapters = [
     { name = "hermes-agent", marker = "python_full_version < '3.14'" },
@@ -2571,6 +2590,7 @@ adapters = [
     { name = "nemo-fabric-adapters-deepagents", extra = ["relay"] },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
     { name = "nemo-fabric-adapters-mini-swe-agent" },
+    { name = "nemo-fabric-adapters-remote-agent" },
 ]
 dev = [
     { name = "ipython" },
@@ -2632,6 +2652,7 @@ adapter-tests = [
     { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", extras = ["full"], marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
     { name = "nemo-fabric-adapters-mini-swe-agent", extras = ["harness"], editable = "adapters/mini-swe-agent" },
+    { name = "nemo-fabric-adapters-remote-agent", extras = ["full"], editable = "adapters/remote-agent" },
 ]
 adapters = [
     { name = "hermes-agent", marker = "python_full_version < '3.14'", editable = "external/hermes-agent" },
@@ -2642,6 +2663,7 @@ adapters = [
     { name = "nemo-fabric-adapters-deepagents", extras = ["relay"], editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
     { name = "nemo-fabric-adapters-mini-swe-agent", editable = "adapters/mini-swe-agent" },
+    { name = "nemo-fabric-adapters-remote-agent", editable = "adapters/remote-agent" },
 ]
 dev = [
     { name = "ipython", specifier = "~=8.20" },

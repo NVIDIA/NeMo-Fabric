@@ -1,0 +1,25 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.remote-agent",
+  "adapter_kind": "python",
+  "runner": {
+    "module": "nemo_fabric_adapters.remote_agent"
+  },
+  "settings_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "requirements": {},
+  "config": {
+    "accepts": []
+  },
+  "capabilities": {
+    "service": false,
+    "streaming": false,
+    "updates": false,
+    "cancellation": false
+  }
+}
+
