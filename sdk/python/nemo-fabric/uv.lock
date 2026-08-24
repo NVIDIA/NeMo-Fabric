@@ -1818,6 +1818,9 @@ mini-swe-agent = [
 relay = [
     { name = "nemo-relay" },
 ]
+remote-agent = [
+    { name = "nemo-fabric-adapters-remote-agent", extra = ["full"] },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1827,11 +1830,12 @@ requires-dist = [
     { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], marker = "extra == 'deepagents'", editable = "../../../adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "../../../adapters/hermes" },
     { name = "nemo-fabric-adapters-mini-swe-agent", extras = ["harness"], marker = "extra == 'mini-swe-agent'", editable = "../../../adapters/mini-swe-agent" },
+    { name = "nemo-fabric-adapters-remote-agent", extras = ["full"], marker = "extra == 'remote-agent'", editable = "../../../adapters/remote-agent" },
     { name = "nemo-fabric-runtime", editable = "../nemo-fabric-runtime" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.7.2,<0.8" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
 ]
-provides-extras = ["claude", "codex", "deepagents", "mini-swe-agent", "harbor", "hermes-agent", "relay"]
+provides-extras = ["claude", "codex", "deepagents", "mini-swe-agent", "remote-agent", "harbor", "hermes-agent", "relay"]
 
 [[package]]
 name = "nemo-fabric-adapter-contract"
@@ -1986,6 +1990,30 @@ requires-dist = [
     { name = "nemo-fabric-adapters-common", editable = "../../../adapters/common" },
 ]
 provides-extras = ["harness", "full"]
+
+[[package]]
+name = "nemo-fabric-adapters-remote-agent"
+version = "0.3.0"
+source = { editable = "../../../adapters/remote-agent" }
+dependencies = [
+    { name = "httpx" },
+    { name = "nemo-fabric-adapter-contract" },
+    { name = "nemo-fabric-adapters-common" },
+]
+
+[package.optional-dependencies]
+full = [
+    { name = "nemo-relay-cli-bin" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = "~=0.28" },
+    { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
+    { name = "nemo-fabric-adapters-common", editable = "../../../adapters/common" },
+    { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },
+]
+provides-extras = ["full"]
 
 [[package]]
 name = "nemo-fabric-runtime"
