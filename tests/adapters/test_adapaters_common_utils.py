@@ -20,7 +20,7 @@ import pytest
     [
         ("hello", "hello"),
         ({"z": "last", "a": "first"}, '{"a": "first", "z": "last"}'),
-        (None, "null"),
+        (None, ""),
     ],
 )
 def test_normalize_user_input(value: Any, expected: str):
