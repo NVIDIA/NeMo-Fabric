@@ -214,10 +214,13 @@ class RemoteAgentRuntime:
             try:
                 relay_gateway.stop_relay_gateway(process)
             except relay_gateway.RelayGatewayError as error:
+                metadata: dict[str, Any] = {}
+                if relay is not None:
+                    metadata["gateway_log_path"] = str(relay.gateway.log_path)
                 raise lifecycle.LifecycleError(
                     "remote_agent_relay_stop_failed",
                     "NeMo Relay gateway failed to stop",
-                    metadata={"gateway_log_path": str(relay.gateway.log_path)},
+                    metadata=metadata,
                 ) from error
 
     async def _invoke_responses(
