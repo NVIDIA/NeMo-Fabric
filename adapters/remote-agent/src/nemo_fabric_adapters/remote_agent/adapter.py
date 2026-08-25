@@ -2,20 +2,20 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""HTTP adapter for OpenAI- and Anthropic-compatible remote agents."""
+"""HTTP client adapter for OpenAI and Anthropic-compatible remote agents."""
 
 from __future__ import annotations
 
 import json
 import os
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import httpx
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common.relay_gateway import RelaySettings
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import utils as common_utils
 
@@ -27,18 +27,6 @@ API_PATHS = {
     "openai-completions": "/chat/completions",
     "anthropic-messages": "/messages",
 }
-
-
-class RemoteAgentError(RuntimeError):
-    """Remote agent setup or invocation failure."""
-
-
-@dataclass(frozen=True)
-class RelaySettings:
-    """Gateway and observability configuration for one runtime."""
-
-    gateway: relay_gateway.RelayGatewayLaunch
-    plugin_config: dict[str, Any]
 
 
 def _user_text(value: Any) -> str:
@@ -67,7 +55,7 @@ def _response_text(response: dict[str, Any]) -> str:
         )
         if text:
             return text
-    raise RemoteAgentError("remote agent response did not include output text")
+    raise RuntimeError("remote agent response did not include output text")
 
 
 async def _sse_events(response: httpx.Response):
@@ -168,7 +156,7 @@ class RemoteAgentRuntime:
                 "remote_agent_invalid_response",
                 "Remote agent returned an invalid response",
             ) from error
-        except RemoteAgentError as error:
+        except RuntimeError as error:
             raise lifecycle.LifecycleError(
                 "remote_agent_invalid_response",
                 "Remote agent returned an invalid response",
@@ -222,7 +210,7 @@ class RemoteAgentRuntime:
     ) -> tuple[str, contract.AgentUsage | None]:
         config = self._config
         if config is None:
-            raise RemoteAgentError("remote agent runtime is not configured")
+            raise RuntimeError("remote agent runtime is not configured")
         model = config.models["default"]
         payload: dict[str, Any] = {
             "model": model.model,
@@ -246,14 +234,14 @@ class RemoteAgentRuntime:
                         usage.get("output_tokens"),
                         usage.get("total_tokens"),
                     )
-        raise RemoteAgentError("remote agent response ended without completion")
+        raise RuntimeError("remote agent response ended without completion")
 
     async def _invoke_completions(
         self, user_text: str
     ) -> tuple[str, contract.AgentUsage | None]:
         config = self._config
         if config is None:
-            raise RemoteAgentError("remote agent runtime is not configured")
+            raise RuntimeError("remote agent runtime is not configured")
         model = config.models["default"]
         messages = list(self._messages)
         if config.instructions and config.instructions.system:
@@ -279,7 +267,7 @@ class RemoteAgentRuntime:
     ) -> tuple[str, contract.AgentUsage | None]:
         config = self._config
         if config is None:
-            raise RemoteAgentError("remote agent runtime is not configured")
+            raise RuntimeError("remote agent runtime is not configured")
         model = config.models["default"]
         payload: dict[str, Any] = {
             "model": model.model,
@@ -310,7 +298,7 @@ class RemoteAgentRuntime:
                     output_tokens = value["usage"].get("output_tokens")
                 elif event == "message_stop":
                     return text, _usage(input_tokens, output_tokens, None)
-        raise RemoteAgentError("remote agent response ended without completion")
+        raise RuntimeError("remote agent response ended without completion")
 
     def _prepare_relay(
         self,

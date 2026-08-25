@@ -674,7 +674,7 @@ def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
     relay_payload, tmp_path
 ):
     relay_payload["config"]["skills"]["paths"] = []
-    relay = adapter.ClaudeRelaySettings(
+    relay = adapter.RelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=tmp_path / "nemo-relay",
             config_path=tmp_path / "relay-config" / "config.toml",
@@ -996,7 +996,7 @@ def test_cleanup_mcp_config_removes_runtime_directory(tmp_path):
 async def test_claude_runtime_owns_one_relay_gateway_until_stop(
     relay_payload, monkeypatch, tmp_path
 ):
-    relay = adapter.ClaudeRelaySettings(
+    relay = adapter.RelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=tmp_path / "nemo-relay",
             config_path=tmp_path / "relay-config" / "config.toml",
@@ -1090,12 +1090,12 @@ def atif_plugin_config(output_directory: Path) -> dict[str, Any]:
 
 def relay_settings(
     tmp_path: Path, plugin_config: dict[str, Any]
-) -> adapter.ClaudeRelaySettings:
+) -> adapter.RelaySettings:
     executable = tmp_path / "nemo-relay"
     executable.touch()
     plugin_path = tmp_path / "relay-plugin"
     plugin_path.mkdir()
-    return adapter.ClaudeRelaySettings(
+    return adapter.RelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=executable,
             config_path=tmp_path / "relay-config" / "config.toml",
@@ -1109,7 +1109,7 @@ def relay_settings(
 
 
 def install_mock_relay(
-    monkeypatch: pytest.MonkeyPatch, relay: adapter.ClaudeRelaySettings
+    monkeypatch: pytest.MonkeyPatch, relay: adapter.RelaySettings
 ) -> tuple[MagicMock, MagicMock, MagicMock]:
     relay.gateway.log_path.parent.mkdir()
     relay.gateway.log_path.write_text("gateway started\n", encoding="utf-8")
@@ -1248,7 +1248,7 @@ async def test_relay_atif_timeout_fails_successful_turn_explicitly(
 async def test_runtime_stop_reports_relay_gateway_failure(
     relay_payload, monkeypatch, tmp_path
 ):
-    relay = adapter.ClaudeRelaySettings(
+    relay = adapter.RelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=tmp_path / "nemo-relay",
             config_path=tmp_path / "relay-config" / "config.toml",
@@ -1308,7 +1308,7 @@ async def test_runtime_stop_reports_relay_gateway_failure(
 async def test_runtime_stop_reports_relay_plugin_cleanup_failure(
     relay_payload, monkeypatch, tmp_path
 ):
-    relay = adapter.ClaudeRelaySettings(
+    relay = adapter.RelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=tmp_path / "nemo-relay",
             config_path=tmp_path / "relay-config" / "config.toml",
@@ -1381,7 +1381,7 @@ async def test_runtime_stop_reports_relay_plugin_cleanup_failure(
 async def test_runtime_stops_relay_after_sdk_failure_or_cancellation(
     relay_payload, monkeypatch, tmp_path, failure
 ):
-    relay = adapter.ClaudeRelaySettings(
+    relay = adapter.RelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=tmp_path / "nemo-relay",
             config_path=tmp_path / "relay-config" / "config.toml",
@@ -1478,7 +1478,7 @@ async def test_runtime_start_reports_relay_failure_without_raw_diagnostic(
 ):
     executable = tmp_path / "nemo-relay"
     executable.touch()
-    relay = adapter.ClaudeRelaySettings(
+    relay = adapter.RelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=executable,
             config_path=tmp_path / "relay-config" / "config.toml",

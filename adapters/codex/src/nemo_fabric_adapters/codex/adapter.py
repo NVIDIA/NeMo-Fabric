@@ -54,6 +54,7 @@ import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 import nemo_fabric_adapters.common.relay_artifacts as relay_artifacts
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common.relay_gateway import RelaySettings
 
 
 DEFAULT_TIMEOUT_SECONDS = 1800.0
@@ -109,14 +110,6 @@ INHERITED_ENV_NAMES = {
     "no_proxy",
 }
 LOGGER = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class CodexRelaySettings:
-    """Runtime-scoped Relay state consumed by the Codex SDK adapter."""
-
-    gateway: relay_gateway.RelayGatewayLaunch
-    plugin_config: dict[str, Any]
 
 
 class CodexAdapterError(Exception):
@@ -750,7 +743,7 @@ def prepare_codex_relay(
     config: AgentConfig,
     context: RuntimeContext,
     base_dir: str,
-) -> CodexRelaySettings | None:
+) -> RelaySettings | None:
     """Generate invocation-scoped Relay gateway configuration."""
 
     if context.telemetry is None or not context.telemetry.relay_enabled:
@@ -794,7 +787,7 @@ def prepare_codex_relay(
     base_url = _selected_model_config(config).base_url
     port = relay_gateway.find_available_tcp_port()
     bind = f"127.0.0.1:{port}"
-    return CodexRelaySettings(
+    return RelaySettings(
         gateway=relay_gateway.RelayGatewayLaunch(
             executable=executable,
             config_path=config_path,
@@ -810,7 +803,7 @@ def prepare_codex_relay(
 def thread_config(
     config: AgentConfig,
     context: RuntimeContext,
-    relay: CodexRelaySettings | None,
+    relay: RelaySettings | None,
 ) -> dict[str, Any]:
     """Build request-scoped Codex config without writing a user profile."""
 
@@ -867,7 +860,7 @@ def sdk_config(
     config: AgentConfig,
     context: RuntimeContext,
     base_dir: str,
-    relay: CodexRelaySettings | None,
+    relay: RelaySettings | None,
 ) -> CodexConfig:
     codex_bin = os.environ.get("FABRIC_TEST_CODEX_BIN")
     if codex_bin:
@@ -1116,7 +1109,7 @@ def _thread_options(
     config: AgentConfig,
     context: RuntimeContext,
     base_dir: str,
-    relay: CodexRelaySettings | None,
+    relay: RelaySettings | None,
 ) -> dict[str, Any]:
     settings = _settings(config)
     return {
@@ -1143,7 +1136,7 @@ async def _open_thread(
     context: RuntimeContext,
     base_dir: str,
     *,
-    relay: CodexRelaySettings | None,
+    relay: RelaySettings | None,
 ) -> Any:
     options = _thread_options(config, context, base_dir, relay)
     return await codex.thread_start(**options)
@@ -1184,7 +1177,7 @@ async def _invoke_thread(
 
 def _relay_output(
     output: dict[str, Any],
-    relay: CodexRelaySettings,
+    relay: RelaySettings,
     *,
     artifacts: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
@@ -1207,7 +1200,7 @@ def _relay_output(
 def _start_relay_gateway(
     context: RuntimeContext,
     base_dir: str,
-    relay: CodexRelaySettings | None,
+    relay: RelaySettings | None,
 ) -> subprocess.Popen[Any] | None:
     if relay is None:
         return None
@@ -1224,7 +1217,7 @@ def _start_relay_gateway(
 
 
 def _cleanup_relay(
-    relay: CodexRelaySettings | None,
+    relay: RelaySettings | None,
     process: subprocess.Popen[Any] | None,
 ) -> AdapterRelayError | None:
     if process is None:
@@ -1272,7 +1265,7 @@ class CodexRuntime:
         self._fabric_runtime_id: str | None = None
         self._client: AsyncCodex | None = None
         self._thread: Any = None
-        self._relay: CodexRelaySettings | None = None
+        self._relay: RelaySettings | None = None
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_authentication_checked = False
         self._unusable = False

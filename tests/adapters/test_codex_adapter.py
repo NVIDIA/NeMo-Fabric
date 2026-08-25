@@ -208,7 +208,7 @@ def atif_plugin_config(output_directory: Path) -> dict[str, Any]:
 
 
 def relay_settings(tmp_path: Path, plugin_config: dict[str, Any]):
-    return adapter.CodexRelaySettings(
+    return adapter.RelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=tmp_path / "nemo-relay",
             config_path=tmp_path / "relay" / "config.toml",
@@ -220,7 +220,7 @@ def relay_settings(tmp_path: Path, plugin_config: dict[str, Any]):
     )
 
 
-def install_mock_relay(monkeypatch, relay: adapter.CodexRelaySettings):
+def install_mock_relay(monkeypatch, relay: adapter.RelaySettings):
     monkeypatch.setattr(adapter, "prepare_codex_relay", MagicMock(return_value=relay))
     monkeypatch.setattr(
         adapter.relay_gateway,
@@ -1028,7 +1028,7 @@ async def test_persistent_runtime_owns_one_relay_gateway(
         url="http://127.0.0.1:43210",
         log_path=tmp_path / "relay" / "gateway.log",
     )
-    relay = adapter.CodexRelaySettings(
+    relay = adapter.RelaySettings(
         gateway=gateway,
         plugin_config={"version": 1, "components": []},
     )
@@ -1320,7 +1320,7 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
         url="http://127.0.0.1:43210",
         log_path=relay_config_path.parent / "gateway.log",
     )
-    relay = adapter.CodexRelaySettings(
+    relay = adapter.RelaySettings(
         gateway=gateway,
         plugin_config={"version": 1, "components": []},
     )
@@ -1392,7 +1392,7 @@ def test_relay_routes_custom_provider_through_gateway(codex_payload, tmp_path):
         log_path=tmp_path / "relay" / "gateway.log",
         openai_base_url="https://acme.example/v1",
     )
-    relay = adapter.CodexRelaySettings(
+    relay = adapter.RelaySettings(
         gateway=gateway,
         plugin_config={"version": 1, "components": []},
     )
@@ -1537,7 +1537,7 @@ def test_relay_stop_failure_is_reported_by_runtime_stop(
         url="http://127.0.0.1:43210",
         log_path=tmp_path / "relay" / "gateway.log",
     )
-    relay = adapter.CodexRelaySettings(
+    relay = adapter.RelaySettings(
         gateway=gateway,
         plugin_config={"version": 1, "components": []},
     )

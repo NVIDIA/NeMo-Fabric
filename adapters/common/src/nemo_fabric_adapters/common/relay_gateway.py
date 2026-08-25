@@ -43,6 +43,15 @@ class RelayGatewayLaunch:
 
 
 @dataclass(frozen=True)
+class RelaySettings:
+    """Relay gateway and plugin state owned by one adapter runtime."""
+
+    gateway: RelayGatewayLaunch
+    plugin_config: dict[str, Any]
+    plugin_path: Path | None = None
+
+
+@dataclass(frozen=True)
 class RelayCliContract:
     """Versioned external Relay CLI contract consumed by Fabric adapters."""
 
