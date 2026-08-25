@@ -322,7 +322,7 @@ class RemoteAgentRuntime:
         payload: dict[str, Any],
         base_url: str,
     ) -> RelaySettings | None:
-        if context.telemetry is None or not context.telemetry.relay_enabled:
+        if context.telemetry is None or not common_utils.relay_enabled(payload):
             return None
         base_dir = Path(common_utils.base_dir(payload)).resolve()
         command = os.environ.get("FABRIC_TEST_NEMO_RELAY_COMMAND", "nemo-relay")

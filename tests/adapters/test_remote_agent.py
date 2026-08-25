@@ -39,6 +39,30 @@ def _context() -> RuntimeContext:
     )
 
 
+def test_prepare_relay_uses_telemetry_plan_gate():
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {"base_url": "https://agents.example.test/v1"}},
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+        }
+    )
+    context = RuntimeContext.from_mapping(
+        {
+            **_context().to_mapping(),
+            "telemetry": {"relay_enabled": True},
+        }
+    )
+
+    relay = adapter.RemoteAgentRuntime()._prepare_relay(
+        config,
+        context,
+        {"telemetry_plan": {"relay_enabled": False}},
+        "https://agents.example.test/v1",
+    )
+
+    assert relay is None
+
+
 async def test_sse_events_flushes_unterminated_final_event():
     async def lines():
         yield "event: response.completed"
