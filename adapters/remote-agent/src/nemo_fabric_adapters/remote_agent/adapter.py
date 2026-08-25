@@ -102,7 +102,13 @@ class RemoteAgentRuntime:
             model = config.models["default"]
             headers: dict[str, str] = {}
             if model.api_key_env is not None:
-                credential = os.environ[model.api_key_env]
+                try:
+                    credential = os.environ[model.api_key_env]
+                except KeyError as e:
+                    raise lifecycle.LifecycleError(
+                        "remote_agent_missing_api_key",
+                        f"Remote agent API key environment variable {model.api_key_env} is not set",
+                    ) from e
                 if self._api_type == "anthropic-messages":
                     headers["x-api-key"] = credential
                 else:
@@ -122,7 +128,11 @@ class RemoteAgentRuntime:
             self._config = config
             self._runtime_id = context.runtime_id
         except Exception:
-            await self.stop()
+            try:
+                await self.stop()
+            except Exception: # preserve the original failure
+                pass
+            
             raise
 
     async def invoke(
