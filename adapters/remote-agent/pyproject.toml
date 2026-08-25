@@ -31,6 +31,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+relay = [
+  "nemo-relay>=0.7.2,<0.8",
+]
+
 full = [
   "nemo-relay-cli-bin>=0.7.2,<0.8",
 ]

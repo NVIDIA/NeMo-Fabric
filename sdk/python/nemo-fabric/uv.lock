@@ -2011,9 +2011,10 @@ requires-dist = [
     { name = "httpx", extras = ["http2"], specifier = "~=0.28" },
     { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "../../../adapters/common" },
+    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.7.2,<0.8" },
     { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },
 ]
-provides-extras = ["full"]
+provides-extras = ["relay", "full"]
 
 [[package]]
 name = "nemo-fabric-runtime"
