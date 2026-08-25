@@ -232,10 +232,14 @@ async def test_skill_selection(
     api_server, tmp_path, skill, default_skill, alternate_skill
 ):
     pytest.importorskip("deepagents")
-    from examples.code_review_agent import deepagents_config, with_relay
+    from examples.code_review_agent import (
+        deepagents_config,
+        with_relay,
+        with_skill_paths,
+    )
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
-    config = with_relay(deepagents_config())
+    config = with_relay(with_skill_paths(deepagents_config()))
     config.models["default"].model = "fabric-echo"
     config.models["default"].base_url = f"{api_server}/v1"
     config.environment = EnvironmentConfig(

@@ -1,0 +1,52 @@
+{
+  "name": "nemo-fabric-adapters-common",
+  "version": "0.3.0",
+  "description": "Shared TypeScript lifecycle host for NVIDIA NeMo Fabric adapters.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "pack:check": "npm run build && node ../scripts/check-package.mjs",
+    "prepack": "npm run build",
+    "test": "npm run clean && npm run build && node --test test/*.test.mjs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NVIDIA/NeMo-Fabric.git",
+    "directory": "adapters/typescript/common"
+  },
+  "bugs": {
+    "url": "https://github.com/NVIDIA/NeMo-Fabric/issues"
+  },
+  "homepage": "https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/common#readme",
+  "engines": {
+    "node": ">=20.18.3"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "nemo-fabric-adapter-contract": "0.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "typescript": "5.6.3"
+  }
+}

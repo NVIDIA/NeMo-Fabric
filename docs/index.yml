@@ -66,6 +66,8 @@ navigation:
             path: ./integrations/harness/deepagents.mdx
           - page: mini-SWE-agent
             path: ./integrations/harness/mini-swe-agent.mdx
+          - page: Pi
+            path: ./integrations/harness/pi.mdx
           - page: Remote Agent
             path: ./integrations/harness/remote-agent.mdx
   - section: Reference

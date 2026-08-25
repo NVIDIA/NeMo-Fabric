@@ -14,6 +14,13 @@ dedicated adapter.
 The adapter descriptor selected in `RunPlan` is authoritative for normalized
 configuration, its adapter-owned settings schema, and telemetry support.
 
+## Repository Layout
+
+Language-specific adapter packages and shared runtime utilities live under a
+language directory. TypeScript packages are under `adapters/typescript/`.
+Existing Python packages remain at the adapter root until they move together
+in a separate repository-organization change.
+
 ## Descriptor Discovery
 
 The Python SDK builds one descriptor registry from three sources:
@@ -31,7 +38,7 @@ provenance. Different records with the same ID fail as ambiguous; discovery
 does not merge fields or choose an override. Workflow entry points and settings
 schemas come from independently registered Adapter Target Descriptors.
 
-## Bundled Adapter Packages
+## Bundled Python Adapter Packages
 
 | Agent Harness | Adapter ID | Python Package | Supported Python |
 | --- | --- | --- | --- |
@@ -41,6 +48,17 @@ schemas come from independently registered Adapter Target Descriptors.
 | [Hermes Agent](hermes/README.md) | `nvidia.fabric.hermes` | `nemo-fabric-adapters-hermes` | 3.11-3.13 |
 | [mini-SWE-agent](mini-swe-agent/README.md) | `nvidia.fabric.mini-swe-agent` | `nemo-fabric-adapters-mini-swe-agent` | 3.11+ |
 | [Remote Agent](remote-agent/README.md) | `nvidia.fabric.remote-agent` | `nemo-fabric-adapters-remote-agent` | 3.11+ |
+
+## TypeScript Adapter Packages
+
+| Agent Harness | Adapter ID | npm Package | Supported Node.js |
+| --- | --- | --- | --- |
+| [Pi](typescript/pi/README.md) | `nvidia.fabric.pi` | `nemo-fabric-adapters-pi` | 22.19+ |
+
+Shared TypeScript lifecycle utilities live under
+[`typescript/common`](typescript/common/README.md).
+Refer to the [TypeScript adapter workspace guide](typescript/README.md) for
+build commands and dependency policy.
 
 ## Custom-Agent Adapter References
 
@@ -65,6 +83,7 @@ integration shape and implement the minimum lifecycle.
 | [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | Middleware enforces `tools.enabled` and `tools.blocked` across built-ins, MCP, and local delegation | Normalized through `langchain-mcp-adapters` | Normalized | Built-in, declarative, and Agent Protocol |
 | [Hermes Agent](hermes/README.md) | Configurable provider, model, and base URL | `tools.enabled` and `tools.blocked` map to Hermes native toolset selectors | Normalized | Normalized | Not exposed |
 | [mini-SWE-agent](mini-swe-agent/README.md) | Configured provider and model | Not exposed | Not exposed | Not exposed | Not exposed |
+| [Pi](typescript/pi/README.md) | One Pi-catalog provider and model with an optional base URL override | `tools.definitions`, `tools.enabled`, and `tools.blocked` cover built-ins, trusted local modules, and explicit extension tools | Not exposed | Normalized `skills.paths` | Not exposed |
 | [Remote Agent](remote-agent/README.md) | Configured remote HTTP API and model | Not exposed | Not exposed | Not exposed | Not exposed |
 
 "Normalized" means that the adapter accepts the corresponding `FabricConfig`
@@ -91,36 +110,37 @@ its harness. `No` means an explicitly configured value fails planning instead
 of being ignored. The following table groups provider-specific Relay subfields
 and additive extension maps because their support does not vary by adapter:
 
-| `FabricConfig` Field | Claude | Codex | Deep Agents | Hermes Agent | mini-SWE-agent | Remote Agent |
-| --- | --- | --- | --- | --- | --- | --- |
-| `schema_version` | Core | Core | Core | Core | Core | Core |
-| `metadata.name`, `.description` | Core | Core | Core | Core | Core | Core |
-| `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core | Core |
-| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema | Closed `base_url`, `api_type` schema |
-| `workflow.target_id`, `.settings` | No | No | No | No | No | No |
-| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | Configured provider | Configured provider |
-| `models.<role>.model` | Yes | Yes | Yes | Yes | Yes | Yes |
-| `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes | Yes |
-| `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | No; use `harness.settings.base_url` |
-| `models.<role>.temperature` | No | No | Yes | Yes | Yes | Yes |
-| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | `max_tokens` for Anthropic Messages |
-| `instructions.system` | Yes | Yes; base instructions | Yes | Yes | Yes | Yes |
-| `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core |
-| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core |
-| `runtime.max_turns` | Yes | No | No | Yes; iteration limit | Yes | No |
-| `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core | Core |
-| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core | Core |
-| `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
-| `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No | No |
-| `skills.paths` | Yes | Yes | Yes | Yes | No | No |
-| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | No |
-| `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No |
-| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | No | Yes |
-| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No |
-| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | Declared-provider pass-through |
-| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | No | Yes |
-| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | No | Yes |
-| Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics |
+| `FabricConfig` Field | Claude | Codex | Deep Agents | Hermes Agent | mini-SWE-agent | Pi | Remote Agent |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `schema_version` | Core | Core | Core | Core | Core | Core | Core |
+| `metadata.name`, `.description` | Core | Core | Core | Core | Core | Core | Core |
+| `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core | Core | Core |
+| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema | Closed local-extension schema | Closed `base_url`, `api_type` schema |
+| `workflow.target_id`, `.settings` | No | No | No | No | No | No | No |
+| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | Configured provider | Pi catalog provider | Configured provider |
+| `models.<role>.model` | Yes | Yes | Yes | Yes | Yes | Yes; must exist in the Pi catalog | Yes |
+| `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | Yes; known catalog models only | No; use `harness.settings.base_url` |
+| `models.<role>.temperature` | No | No | Yes | Yes | Yes | No | Yes |
+| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | `max_tokens` for Anthropic Messages |
+| `instructions.system` | Yes | Yes; base instructions | Yes | Yes | Yes | Yes; replaces Pi base instructions | Yes |
+| `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core | Core |
+| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core |
+| `runtime.max_turns` | Yes | No | No | Yes; iteration limit | Yes | No | No |
+| `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core | Core | Core |
+| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core | Core | Core |
+| `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
+| `tools.definitions` | No | No | No | No | No | Yes; trusted local module factories | No |
+| `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No | Yes | No |
+| `skills.paths` | Yes | Yes | Yes | Yes | No | Yes | No |
+| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | No | No |
+| `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No | No |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | No | No | Yes |
+| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No |
+| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No | Declared-provider pass-through |
+| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | No | No | Yes |
+| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | No | No | Yes |
+| Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Not accepted unless declared by the Pi descriptor | Preserved; no portable adapter semantics |
 
 The selected model role is `default`, or the sole configured role when no
 `default` exists. More than one role without `default` fails planning.
@@ -135,8 +155,8 @@ without creating a compatibility requirement.
 
 ## Runtime and Observability Compatibility
 
-All bundled adapters use one persistent Python adapter host with an ordered
-`start` → `invoke*` → `stop` protocol.
+All bundled adapters use a language-specific persistent adapter host with an
+ordered `start` → `invoke*` → `stop` protocol.
 
 NeMo Relay records raw events in Agent Trajectory Observability Format (ATOF)
 and produces normalized trajectories in Agent Trajectory Interchange Format
@@ -149,6 +169,7 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [LangChain Deep Agents](deepagents/README.md) | Compiled LangGraph agent, checkpointer, and thread ID | NeMo Relay Python SDK integration added when the agent is compiled | Creates a fresh Relay request scope and callback for each invocation | Closes the checkpointer; no gateway process | Not implemented |
 | [Hermes Agent](hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes Agent NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
 | [mini-SWE-agent](mini-swe-agent/README.md) | Conversation history | Not supported | Not applicable | Not applicable | Not implemented |
+| [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Not supported | Reuses the session and calls `prompt()` for ordered text input | Aborts work, emits extension shutdown, and disposes the session | Not implemented |
 | [Remote Agent](remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Runtime-owned NeMo Relay CLI gateway | Sends one HTTP request and retains the completed transcript | Closes the HTTP client and stops the gateway | Not implemented |
 
 Telemetry output names use the descriptor contract values. Claude, Codex,

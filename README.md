@@ -145,8 +145,8 @@ available notebooks.
 
 ## Bundled Harness Adapters
 
-NeMo Fabric provides the following harness integrations. The package
-expressions install the components shown in each column:
+NeMo Fabric provides the following harness integrations. Python-based harness
+integrations use the package expressions shown in each column:
 
 | Agent Harness | Runtime, Adapter, and Harness | Adapter and Harness | Adapter Only |
 | --- | --- | --- | --- |
@@ -168,6 +168,14 @@ then install either `nemo-fabric[hermes-agent]` for the runtime and adapter or
 forms for split environments or environments that already manage the harness.
 For `harness`, `full`, and Relay behavior, refer to the
 [installation guide](docs/getting-started/install.mdx).
+
+The [Pi adapter](docs/integrations/harness/pi.mdx) is distributed through npm
+instead of a Python package extra. Install `nemo-fabric` in the Python
+environment that owns the configuration, then install
+`nemo-fabric-adapters-pi` in the project where NeMo Fabric can discover its
+adapter descriptor. Install a compatible Pi SDK harness separately in that
+project; the adapter declares the Pi packages as optional peers so deployments
+control the harness version.
 
 Capabilities vary by harness. Review the
 [configuration compatibility matrix](adapters/README.md#configuration-compatibility)
@@ -273,7 +281,5 @@ harnesses and custom agents. Use these references to compare and build them:
   [OOAgents](https://github.com/NVIDIA-NeMo/labs-OO-Agents).
 - **Remote-agent thin-client adapter:** Add a thin-client adapter for invoking
   remotely hosted agents through the NeMo Fabric lifecycle.
-- **Pi coding harness:** Add a bundled adapter for the
-  [Pi coding harness](https://pi.dev/).
 - **Third-party adapter registry:** Extend installed and explicit descriptor
   discovery with a provider-backed registry and catalog experience.

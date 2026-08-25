@@ -280,11 +280,16 @@ clean:
         docs/node_modules \
         adapter-contract/typescript/node_modules \
         adapter-contract/typescript/dist \
+        adapters/typescript/node_modules \
+        adapters/typescript/common/dist \
+        adapters/typescript/pi/dist \
         adapters/*/build \
         adapters/*/dist \
         sdk/python/*/build \
         sdk/python/*/dist \
-        adapter-contract/typescript/*.tgz
+        adapter-contract/typescript/*.tgz \
+        adapters/typescript/common/*.tgz \
+        adapters/typescript/pi/*.tgz
     find . \
         \( -path './.venv' -o -path './.git' \) -prune -o \
         -type d \( \
@@ -320,9 +325,20 @@ build-python:
             --reinstall-package nemo-fabric-runtime
     fi
 
-# Install the TypeScript adapter contract dependencies from the lockfile.
-install-typescript:
+# Install the TypeScript adapter contract dependencies from its lockfile.
+install-typescript-contract:
     npm ci --prefix adapter-contract/typescript --ignore-scripts
+
+# Install the TypeScript adapter workspace dependencies from its lockfile.
+install-typescript-adapters:
+    npm ci --prefix adapters/typescript --workspaces --include-workspace-root --ignore-scripts
+
+# Install the Pi adapter and its pinned SDK harness for source development.
+install-typescript-pi: install-typescript-contract
+    npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-pi --include-workspace-root --ignore-scripts
+
+# Install every maintained TypeScript package.
+install-typescript: install-typescript-contract install-typescript-adapters
 
 # Install the Hermes Agent into the Fabric virtualenv for local development
 # and testing.
@@ -354,17 +370,19 @@ install-hermes-agent:
     git -C "$hermes_checkout" checkout --quiet --detach FETCH_HEAD
     uv sync --inexact --reinstall-package hermes-agent
 
-# Build the TypeScript adapter contract using the locked dependency set.
+# Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript
     npm run build --prefix adapter-contract/typescript
+    npm run build --prefix adapters/typescript
 
 # Generate the TypeScript adapter contract from the committed JSON Schemas.
 generate-typescript-contract: install-typescript
     npm run generate --prefix adapter-contract/typescript
 
-# Verify the TypeScript adapter contract package tarball.
+# Verify the TypeScript contract and adapter package tarballs.
 pack-typescript: install-typescript
     npm run pack:check --prefix adapter-contract/typescript
+    npm run pack:check --prefix adapters/typescript
 
 # Generate the JSON Schema files from the Rust configuration types.
 schemas:
@@ -462,8 +480,16 @@ test-rust:
     cargo test --workspace --locked
 
 # Run the TypeScript adapter contract checks using the locked dependency set.
-test-typescript: install-typescript
+test-typescript-contract: install-typescript-contract
     npm test --prefix adapter-contract/typescript
+
+# Run the TypeScript adapter checks using the locked dependency set.
+test-typescript-adapters: install-typescript
+    npm run build --prefix adapter-contract/typescript
+    npm test --prefix adapters/typescript
+
+# Run every maintained TypeScript package check.
+test-typescript: test-typescript-contract test-typescript-adapters
 
 # Run all Rust, Python, and TypeScript tests.
 test-all: test-rust test-python test-typescript

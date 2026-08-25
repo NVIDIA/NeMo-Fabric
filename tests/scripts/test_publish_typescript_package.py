@@ -86,7 +86,116 @@ def package_directory_fixture(tmp_path: Path) -> Path:
     package_directory.mkdir()
     (package_directory / TARBALL).write_bytes(b"package")
     (package_directory / "README.md").write_text(f"{README}\n", encoding="utf-8")
+    (package_directory / "package.json").write_text(
+        json.dumps(
+            {
+                "name": PACKAGE,
+                "version": VERSION,
+                "dependencies": {},
+            }
+        ),
+        encoding="utf-8",
+    )
     return package_directory
+
+
+def test_runtime_dependencies_are_preflighted_against_npm(
+    package_directory: Path,
+):
+    dependency = "nemo-fabric-adapters-common"
+    dependency_version = "0.3.0"
+    manifest = json.loads(
+        (package_directory / "package.json").read_text(encoding="utf-8")
+    )
+    manifest["dependencies"] = {dependency: dependency_version}
+    (package_directory / "package.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    runner = NpmRunner(
+        [
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
+            (
+                ["view", f"{dependency}@{dependency_version}", "version"],
+                _result(dependency_version),
+            ),
+            *_exact_view_responses(),
+        ]
+    )
+
+    publish_typescript_package.publish_package(
+        package_directory,
+        VERSION,
+        "latest",
+        run_npm=runner,
+        sleep=lambda _: None,
+    )
+
+    runner.assert_finished()
+
+
+def test_unpublished_runtime_dependency_blocks_publication(
+    package_directory: Path,
+):
+    dependency = "nemo-fabric-adapters-common"
+    dependency_version = "0.3.0"
+    manifest = json.loads(
+        (package_directory / "package.json").read_text(encoding="utf-8")
+    )
+    manifest["dependencies"] = {dependency: dependency_version}
+    (package_directory / "package.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    missing = _result(returncode=1, stderr="npm error code E404")
+    runner = NpmRunner(
+        [
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
+            (["view", f"{dependency}@{dependency_version}", "version"], missing),
+        ]
+    )
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match=(
+            "Required runtime dependency "
+            f"{dependency}@{dependency_version} is not published"
+        ),
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+            sleep=lambda _: None,
+        )
+
+    runner.assert_finished()
+
+
+def test_runtime_dependency_versions_must_be_exact(package_directory: Path):
+    manifest = json.loads(
+        (package_directory / "package.json").read_text(encoding="utf-8")
+    )
+    manifest["dependencies"] = {"nemo-fabric-adapters-common": "^0.3.0"}
+    (package_directory / "package.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    runner = NpmRunner(
+        [(["pack", "--json", "--ignore-scripts"], _pack_result())]
+    )
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match=r"must use an exact npm version, got \^0\.3\.0",
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+            sleep=lambda _: None,
+        )
+
+    runner.assert_finished()
 
 
 def _exact_view_responses(

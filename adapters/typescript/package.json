@@ -1,0 +1,26 @@
+{
+  "name": "nemo-fabric-typescript-adapters",
+  "version": "0.3.0",
+  "description": "TypeScript adapter workspace for NVIDIA NeMo Fabric.",
+  "license": "Apache-2.0",
+  "private": true,
+  "workspaces": [
+    "common",
+    "pi"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace nemo-fabric-adapters-common && npm run build --workspace nemo-fabric-adapters-pi",
+    "pack:check": "npm run pack:contents && npm run pack:install-check",
+    "pack:contents": "npm run pack:check --workspace nemo-fabric-adapters-common && npm run pack:check --workspace nemo-fabric-adapters-pi",
+    "pack:install-check": "node scripts/check-install.mjs",
+    "test": "npm run test:units && npm run test:dependencies && npm run pack:check",
+    "test:dependencies": "npm ls --all && npm audit --audit-level=high",
+    "test:units": "npm test --workspace nemo-fabric-adapters-common && npm test --workspace nemo-fabric-adapters-pi"
+  },
+  "devDependencies": {
+    "nemo-fabric-adapter-contract": "file:../../adapter-contract/typescript"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

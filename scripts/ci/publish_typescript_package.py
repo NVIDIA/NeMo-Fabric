@@ -19,6 +19,10 @@ VERSION_PATTERN = re.compile(
     r"(?:-(?P<label>alpha|beta|rc)(?:\.(?P<number>\d+))?)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
+EXACT_DEPENDENCY_VERSION_PATTERN = re.compile(
+    r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
 PRERELEASE_ORDER = {"alpha": 0, "beta": 1, "rc": 2}
 NPM_NOT_FOUND_MARKERS = ("E404", "404 Not Found")
 
@@ -159,6 +163,47 @@ def _view(
     )
 
 
+def _preflight_runtime_dependencies(
+    package_directory: Path,
+    run_npm: RunNpm,
+) -> None:
+    """Require every exact production dependency to exist in the npm registry."""
+    try:
+        manifest = json.loads(
+            (package_directory / "package.json").read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise PublicationError("Package package.json could not be read") from error
+    if not isinstance(manifest, dict):
+        raise PublicationError("Package package.json must contain an object")
+    dependencies = manifest.get("dependencies", {})
+    if not isinstance(dependencies, dict):
+        raise PublicationError("Package dependencies must be an object")
+
+    for name, version in sorted(dependencies.items()):
+        if not isinstance(name, str) or not isinstance(version, str):
+            raise PublicationError("Package dependencies must map names to versions")
+        if EXACT_DEPENDENCY_VERSION_PATTERN.fullmatch(version) is None:
+            raise PublicationError(
+                f"Runtime dependency {name} must use an exact npm version, got {version}"
+            )
+        published_version = _view(
+            package_directory,
+            run_npm,
+            f"{name}@{version}",
+            "version",
+        )
+        if published_version is None:
+            raise PublicationError(
+                f"Required runtime dependency {name}@{version} is not published"
+            )
+        if published_version != version:
+            raise PublicationError(
+                f"Required runtime dependency {name}@{version} resolved as "
+                f"{published_version}"
+            )
+
+
 def _published_state(
     package_directory: Path,
     artifact: PackageArtifact,
@@ -246,6 +291,7 @@ def publish_package(
         raise PublicationError("At least one registry verification attempt is required")
 
     artifact = _pack_package(package_directory, version, run_npm)
+    _preflight_runtime_dependencies(package_directory, run_npm)
     state = _published_state(package_directory, artifact, dist_tag, run_npm)
     if state is not None:
         if _state_matches(state, artifact):
@@ -314,7 +360,7 @@ def publish_package(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Publish and reconcile the TypeScript adapter-contract package"
+        description="Publish and reconcile a TypeScript package"
     )
     parser.add_argument("--package-directory", type=Path, required=True)
     parser.add_argument("--version", required=True)
