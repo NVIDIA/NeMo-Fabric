@@ -80,10 +80,13 @@ async def test_remote_agent_invokes_supported_protocol(
             "base_dir": str(ROOT),
         }
     )
-    assert runtime._endpoint == f"{api_server}/v1{path}"
 
-    result = await runtime.invoke(AgentRunRequest(input="Hello."), context)
-    await runtime.stop()
+    try:
+        assert runtime._endpoint == f"{api_server}/v1{path}"
+
+        result = await runtime.invoke(AgentRunRequest(input="Hello."), context)
+    finally:
+        await runtime.stop()
 
     captured = requests.get(f"{api_server}/_requests", timeout=5).json()
     assert result.status == "succeeded"
@@ -118,19 +121,22 @@ async def test_remote_agent_retains_transcript_and_reports_http_failure(
             "base_dir": str(ROOT),
         }
     )
-    await runtime.invoke(AgentRunRequest(input="First."), context)
-    await runtime.invoke(AgentRunRequest(input="Second."), context)
 
-    captured = requests.get(f"{api_server}/_requests", timeout=5).json()
-    assert [message["role"] for message in captured[-1]["input"]] == [
-        "user",
-        "assistant",
-        "user",
-    ]
+    try:
+        await runtime.invoke(AgentRunRequest(input="First."), context)
+        await runtime.invoke(AgentRunRequest(input="Second."), context)
 
-    requests.post(f"{api_server}/_scenario", json={"status_code": 503}, timeout=5)
-    result = await runtime.invoke(AgentRunRequest(input="Retry."), context)
-    await runtime.stop()
+        captured = requests.get(f"{api_server}/_requests", timeout=5).json()
+        assert [message["role"] for message in captured[-1]["input"]] == [
+            "user",
+            "assistant",
+            "user",
+        ]
+
+        requests.post(f"{api_server}/_scenario", json={"status_code": 503}, timeout=5)
+        result = await runtime.invoke(AgentRunRequest(input="Retry."), context)
+    finally:
+        await runtime.stop()
 
     assert result.status == "failed"
     assert result.error.code == "remote_agent_http_error"
