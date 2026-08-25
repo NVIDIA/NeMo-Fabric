@@ -1,0 +1,160 @@
+---
+title: "Use the Pi Adapter"
+description: "Install and configure the NVIDIA NeMo Fabric harness integration for Pi."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the NVIDIA NeMo Fabric `nvidia.fabric.pi` adapter to run tasks with the Pi
+SDK in a persistent Node.js process.
+
+## Install the Adapter
+
+Pi requires Node.js 22.19.0 or newer.
+
+### Install for Consumers
+
+Install the npm adapter in the project that owns the NeMo Fabric configuration,
+then install the compatible Pi SDK harness version selected by that project:
+
+```bash
+npm install nemo-fabric-adapters-pi
+npm install @earendil-works/pi-ai@^0.84.2 @earendil-works/pi-coding-agent@^0.84.2
+```
+
+The Pi packages are optional peers: installing `nemo-fabric-adapters-pi` alone
+does not install the harness. Starting the adapter without compatible Pi
+packages returns `pi_harness_unavailable`.
+
+### Install for Source Development
+
+For focused Pi development in the NeMo Fabric source tree, install the Pi
+adapter workspace and its pinned harness from the repository root:
+
+```bash
+just install-typescript-pi
+```
+
+To install and build all maintained TypeScript workspaces instead, run:
+
+```bash
+just build-typescript
+```
+
+The full build installs its own dependencies, so you do not need to run
+`just install-typescript-pi` first.
+
+## Configure the Adapter
+
+Select the Pi harness integration and point NeMo Fabric discovery at the
+adapter descriptor. The following example uses the descriptor from an installed
+npm package:
+
+```python
+from nemo_fabric import DiscoveryConfig, FabricConfig, HarnessConfig
+from nemo_fabric import MetadataConfig, ModelConfig, ToolsConfig
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="pi-review"),
+    discovery=DiscoveryConfig(
+        local_paths=[
+            "./node_modules/nemo-fabric-adapters-pi/pi.fabric-adapter.json"
+        ]
+    ),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.pi"),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
+        )
+    },
+    tools=ToolsConfig(enabled=["read"], blocked=[]),
+)
+```
+
+For a source build, set `discovery.local_paths` to
+`adapters/typescript/pi/pi.fabric-adapter.json` instead.
+
+The adapter supports one selected model from Pi's catalog, an optional base URL
+override, replacement system instructions, tool policy, explicit skill paths,
+and explicit local Pi extensions. Set `models.<role>.api_key_env` to the name of
+the environment variable that contains the provider credential.
+
+The provider and model pair must already exist in Pi's catalog. A base URL can
+override a known model endpoint, but it does not define a new provider.
+
+## Configure Skills and Extensions
+
+Add normalized skill paths with the Python SDK. NeMo Fabric resolves these
+paths from the `base_dir` passed to `plan()`, `doctor()`, or `run()`:
+
+```python
+config.add_skill_path("./skills/code-review")
+```
+
+Pi extensions are adapter-specific trusted code. Configure extension files
+relative to `environment.workspace`:
+
+```python
+config.harness.settings["extensions"] = ["extensions/review.ts"]
+```
+
+The adapter loads only the skill and extension paths in the configuration. It
+does not load ambient Pi resources from the user profile or workspace.
+
+## Configure a NeMo Fabric Tool Definition
+
+Pi accepts trusted local JavaScript and TypeScript tool factories. The
+normalized definition uses `kind: "module"`; `ref` is relative to the NeMo Fabric
+workspace and may include a named export after `#`.
+
+Create `tools/review-context.js` in the configured workspace:
+
+```javascript
+export function createTool({ name, settings }) {
+  return {
+    name,
+    label: "Review Context",
+    description: "Return configured context for a code review.",
+    parameters: { type: "object", properties: {} },
+    async execute() {
+      return {
+        content: [{ type: "text", text: JSON.stringify(settings) }],
+        details: {},
+      };
+    },
+  };
+}
+```
+
+Register and enable the tool:
+
+```python
+config.add_tool_definition(
+    "review_context",
+    kind="module",
+    ref="tools/review-context.js#createTool",
+    settings={"format": "brief"},
+)
+config.tools.enabled = ["read", "review_context"]
+```
+
+The factory receives `{ name, settings, workspace }` and returns a Pi
+`ToolDefinition` with the same name. Tool modules and explicit Pi extensions
+run as trusted code in the adapter process. The adapter rejects paths outside
+the workspace and duplicate names across built-ins, NeMo Fabric definitions,
+and extensions.
+
+## Understand the Runtime Lifecycle
+
+Each NeMo Fabric runtime owns one in-memory Pi session in a persistent Node.js
+adapter process. Ordered invocations reuse that session and its conversation
+history until the runtime stops. Start a new runtime to change the model,
+skills, extensions, custom tools, or workspace.
+
+## Current Limitations
+
+The current adapter does not expose Relay, MCP, streaming, caller-driven
+cancellation, or remote-service execution.

@@ -66,6 +66,8 @@ navigation:
       path: ../pages-dev/integrations/harness/deepagents.mdx
     - page: mini-SWE-agent
       path: ../pages-dev/integrations/harness/mini-swe-agent.mdx
+    - page: Pi
+      path: ../pages-dev/integrations/harness/pi.mdx
 - section: Reference
   contents:
   - section: API
