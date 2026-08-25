@@ -20,9 +20,6 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.remote_agent import adapter
 
 
-ROOT = Path(__file__).resolve().parents[2]
-
-
 def _context() -> RuntimeContext:
     return RuntimeContext.from_mapping(
         {
@@ -53,7 +50,7 @@ def _context() -> RuntimeContext:
     ],
 )
 async def test_remote_agent_invokes_supported_protocol(
-    api_server: str, api_type: str, path: str
+    api_server: str, api_type: str, path: str, repo_root: Path
 ):
     config = AgentConfig.from_mapping(
         {
@@ -77,7 +74,7 @@ async def test_remote_agent_invokes_supported_protocol(
         {
             "config": config,
             "runtime_context": context.to_mapping(),
-            "base_dir": str(ROOT),
+            "base_dir": str(repo_root),
         }
     )
 
@@ -105,6 +102,7 @@ async def test_remote_agent_invokes_supported_protocol(
 
 async def test_remote_agent_retains_transcript_and_reports_http_failure(
     api_server: str,
+    repo_root: Path,
 ):
     config = AgentConfig.from_mapping(
         {
@@ -118,7 +116,7 @@ async def test_remote_agent_retains_transcript_and_reports_http_failure(
         {
             "config": config,
             "runtime_context": context.to_mapping(),
-            "base_dir": str(ROOT),
+            "base_dir": str(repo_root),
         }
     )
 
@@ -143,7 +141,9 @@ async def test_remote_agent_retains_transcript_and_reports_http_failure(
     assert result.error.retryable is True
 
 
-async def test_remote_agent_enables_http2(monkeypatch: pytest.MonkeyPatch):
+async def test_remote_agent_enables_http2(
+    monkeypatch: pytest.MonkeyPatch, repo_root: Path
+):
     mock_client = MagicMock()
     mock_client.aclose = AsyncMock()
     mock_async_client = MagicMock(return_value=mock_client)
@@ -161,7 +161,7 @@ async def test_remote_agent_enables_http2(monkeypatch: pytest.MonkeyPatch):
         {
             "config": config,
             "runtime_context": context.to_mapping(),
-            "base_dir": str(ROOT),
+            "base_dir": str(repo_root),
         }
     )
     await runtime.stop()
@@ -169,11 +169,11 @@ async def test_remote_agent_enables_http2(monkeypatch: pytest.MonkeyPatch):
     assert mock_async_client.call_args.kwargs["http2"] is True
 
 
-def test_remote_agent_descriptor_and_module_entrypoint():
+def test_remote_agent_descriptor_and_module_entrypoint(repo_root: Path):
     descriptor = json.loads(
-        (ROOT / "adapters/remote-agent/remote-agent.fabric-adapter.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            repo_root / "adapters/remote-agent/remote-agent.fabric-adapter.json"
+        ).read_text(encoding="utf-8")
     )
     result = subprocess.run(
         [sys.executable, "-m", "nemo_fabric_adapters.remote_agent.adapter"],
