@@ -13,11 +13,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from nemo_fabric_adapter_contract.codec import JsonValue
+
 
 _FIELD_NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 
 
-def normalize_user_input(value: Any) -> str:
+def normalize_user_input(value: JsonValue) -> str:
     """Return user input as text, serializing structured values deterministically."""
 
     return value if isinstance(value, str) else json.dumps(value, sort_keys=True)
