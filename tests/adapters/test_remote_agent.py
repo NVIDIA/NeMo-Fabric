@@ -180,6 +180,7 @@ async def test_remote_agent_enables_http2(
         }
     )
     await runtime.stop()
+    mock_client.aclose.assert_awaited_once()
 
     assert mock_async_client.call_args.kwargs["http2"] is True
 
