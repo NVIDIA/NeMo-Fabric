@@ -109,7 +109,11 @@ class RemoteAgentRuntime:
                 headers["anthropic-version"] = "2023-06-01"
 
             self._endpoint = _api_url(base_url, self._api_type)
-            self._client = httpx.AsyncClient(headers=headers, timeout=None)
+            self._client = httpx.AsyncClient(
+                headers=headers,
+                http2=True,
+                timeout=None,
+            )
             self._config = config
             self._runtime_id = context.runtime_id
         except Exception:

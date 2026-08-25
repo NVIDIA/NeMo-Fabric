@@ -1106,8 +1106,8 @@ name = "h2"
 version = "4.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "hpack", marker = "python_full_version >= '3.12'" },
-    { name = "hyperframe", marker = "python_full_version >= '3.12'" },
+    { name = "hpack" },
+    { name = "hyperframe" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1d/17/afa56379f94ad0fe8defd37d6eb3f89a25404ffc71d4d848893d270325fc/h2-4.3.0.tar.gz", hash = "sha256:6c59efe4323fa18b47a632221a1888bd7fde6249819beda254aeca909f221bf1", size = 2152026, upload-time = "2025-08-23T18:12:19.778Z" }
 wheels = [
@@ -1436,7 +1436,7 @@ wheels = [
 
 [package.optional-dependencies]
 http2 = [
-    { name = "h2", marker = "python_full_version >= '3.12'" },
+    { name = "h2" },
 ]
 socks = [
     { name = "socksio", marker = "python_full_version < '3.14'" },
@@ -2531,7 +2531,7 @@ name = "nemo-fabric-adapters-remote-agent"
 version = "0.3.0"
 source = { editable = "adapters/remote-agent" }
 dependencies = [
-    { name = "httpx" },
+    { name = "httpx", extra = ["http2"] },
     { name = "nemo-fabric-adapter-contract" },
     { name = "nemo-fabric-adapters-common" },
 ]
@@ -2543,7 +2543,7 @@ full = [
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", specifier = "~=0.28" },
+    { name = "httpx", extras = ["http2"], specifier = "~=0.28" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },

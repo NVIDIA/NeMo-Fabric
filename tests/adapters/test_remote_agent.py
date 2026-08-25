@@ -9,6 +9,8 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 import requests
@@ -133,6 +135,32 @@ async def test_remote_agent_retains_transcript_and_reports_http_failure(
     assert result.status == "failed"
     assert result.error.code == "remote_agent_http_error"
     assert result.error.retryable is True
+
+
+async def test_remote_agent_enables_http2(monkeypatch: pytest.MonkeyPatch):
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_async_client = MagicMock(return_value=mock_client)
+    monkeypatch.setattr(adapter.httpx, "AsyncClient", mock_async_client)
+
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {"base_url": "https://agents.example.test/v1"}},
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+        }
+    )
+    context = _context()
+    runtime = adapter.RemoteAgentRuntime()
+    await runtime.start(
+        {
+            "config": config,
+            "runtime_context": context.to_mapping(),
+            "base_dir": str(ROOT),
+        }
+    )
+    await runtime.stop()
+
+    assert mock_async_client.call_args.kwargs["http2"] is True
 
 
 def test_remote_agent_descriptor_and_module_entrypoint():
