@@ -109,6 +109,9 @@ class RemoteAgentRuntime:
                 headers["anthropic-version"] = "2023-06-01"
 
             self._endpoint = _api_url(base_url, self._api_type)
+
+            # Attempt to negotiate HTTP/2, this will automatically fall-back
+            # to HTTP/1.1 if the server does not support it
             self._client = httpx.AsyncClient(
                 headers=headers,
                 http2=True,
