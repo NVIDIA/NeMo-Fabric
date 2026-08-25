@@ -1148,7 +1148,7 @@ wheels = [
 
 [[package]]
 name = "hermes-agent"
-version = "0.20.5"
+version = "0.20.1"
 source = { editable = "external/hermes-agent" }
 dependencies = [
     { name = "certifi", marker = "python_full_version < '3.14'" },
@@ -1249,16 +1249,13 @@ requires-dist = [
     { name = "honcho-ai", marker = "extra == 'honcho'", specifier = "==2.2.0" },
     { name = "httplib2", marker = "extra == 'google'", specifier = "==0.32.0" },
     { name = "httpx", extras = ["socks"], specifier = "==0.28.1" },
-    { name = "httpx2", marker = "extra == 'computer-use'", specifier = "==2.7.0" },
-    { name = "httpx2", marker = "extra == 'dev'", specifier = "==2.7.0" },
-    { name = "httpx2", marker = "extra == 'mcp'", specifier = "==2.7.0" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "lark-oapi", marker = "extra == 'feishu'", specifier = "==1.6.8" },
     { name = "markdown", specifier = "==3.10.2" },
     { name = "mautrix", extras = ["encryption"], marker = "extra == 'matrix'", specifier = "==0.21.1" },
-    { name = "mcp", marker = "extra == 'computer-use'", specifier = "==2.0.0" },
-    { name = "mcp", marker = "extra == 'dev'", specifier = "==2.0.0" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = "==2.0.0" },
+    { name = "mcp", marker = "extra == 'computer-use'", specifier = "==1.28.1" },
+    { name = "mcp", marker = "extra == 'dev'", specifier = "==1.28.1" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = "==1.28.1" },
     { name = "mem0ai", marker = "extra == 'mem0'", specifier = "==2.0.10" },
     { name = "microsoft-teams-apps", marker = "extra == 'teams'", specifier = "==2.0.13.4" },
     { name = "mistralai", marker = "extra == 'mistral'", specifier = "==2.4.8" },
