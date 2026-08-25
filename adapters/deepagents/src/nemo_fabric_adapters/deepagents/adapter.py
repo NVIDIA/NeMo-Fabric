@@ -609,9 +609,9 @@ class DeepAgentsRuntime:
                 "Deep Agents invocation does not match the active runtime",
             )
 
-        user_message = "" if request.input is None else request.input
-        if not isinstance(user_message, str):
-            user_message = json.dumps(user_message, sort_keys=True)
+        user_message = common_utils.normalize_user_input(
+            "" if request.input is None else request.input
+        )
         request_id = runtime_context.request_id
 
         resumed = self._completed_invocations > 0

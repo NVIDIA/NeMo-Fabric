@@ -1430,7 +1430,7 @@ def test_user_message_preserves_falsy_request_input(
 ):
     request = AgentRunRequest(input=request_input)
 
-    assert adapter._user_message(request.input) == expected_message
+    assert common_utils.normalize_user_input(request.input) == expected_message
 
 
 async def test_runtime_stop_waits_for_cancelled_invoke_worker(monkeypatch):

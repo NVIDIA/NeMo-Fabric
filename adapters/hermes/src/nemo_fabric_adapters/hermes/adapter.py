@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import json
 import logging
 import os
 import sys
@@ -40,10 +39,6 @@ from nemo_fabric_adapters.hermes import telemetry
 DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
 hermes_mcp_server_config = configuration.hermes_mcp_server_config
-
-
-def _user_message(value: Any) -> str:
-    return value if isinstance(value, str) else json.dumps(value, sort_keys=True)
 
 
 def main() -> None:
@@ -234,7 +229,7 @@ class HermesRuntime:
                 "Hermes invocation does not match the active runtime",
             )
 
-        user_message = _user_message(request.input)
+        user_message = common_utils.normalize_user_input(request.input)
         instructions = agent_config.instructions
         system_prompt = (
             instructions.system.content

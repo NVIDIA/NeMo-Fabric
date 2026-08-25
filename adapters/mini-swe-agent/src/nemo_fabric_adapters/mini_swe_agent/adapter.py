@@ -5,12 +5,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from typing import Any
 
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import utils as common_utils
 
 SYSTEM_TEMPLATE = "{{system_instruction}}"
 INSTANCE_TEMPLATE = """Solve this task in the current workspace:
@@ -141,8 +141,7 @@ class MiniSweAgentRuntime:
         context: contract.RuntimeContext,
     ) -> contract.AgentRunResult:
         del context
-        raw_task = request.input
-        task = raw_task if isinstance(raw_task, str) else json.dumps(raw_task)
+        task = common_utils.normalize_user_input(request.input)
         result = await asyncio.to_thread(
             self._agent.run, task, system_instruction=self._system_instruction
         )

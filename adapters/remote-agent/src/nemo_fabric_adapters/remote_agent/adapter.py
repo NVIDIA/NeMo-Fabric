@@ -29,10 +29,6 @@ API_PATHS = {
 }
 
 
-def _user_text(value: Any) -> str:
-    return value if isinstance(value, str) else json.dumps(value, sort_keys=True)
-
-
 def _base_url(value: str) -> str:
     return f"{value.rstrip('/')}/"
 
@@ -135,7 +131,7 @@ class RemoteAgentRuntime:
                 "Remote agent invocation does not match the active runtime",
             )
 
-        user_text = _user_text(request.input)
+        user_text = common_utils.normalize_user_input(request.input)
         try:
             if self._api_type == "openai-responses":
                 text, usage = await self._invoke_responses(user_text)

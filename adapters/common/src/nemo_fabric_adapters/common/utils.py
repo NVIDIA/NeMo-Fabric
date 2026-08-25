@@ -17,6 +17,12 @@ from typing import Any
 _FIELD_NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 
 
+def normalize_user_input(value: Any) -> str:
+    """Return user input as text, serializing structured values deterministically."""
+
+    return value if isinstance(value, str) else json.dumps(value, sort_keys=True)
+
+
 def validate_http_header(server_name: str, name: str, value: str) -> None:
     """Validate one HTTP header name and value."""
 

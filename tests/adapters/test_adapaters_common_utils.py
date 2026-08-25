@@ -16,6 +16,18 @@ import pytest
 
 
 @pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("hello", "hello"),
+        ({"z": "last", "a": "first"}, '{"a": "first", "z": "last"}'),
+        (None, "null"),
+    ],
+)
+def test_normalize_user_input(value: Any, expected: str):
+    assert common_utils.normalize_user_input(value) == expected
+
+
+@pytest.mark.parametrize(
     "name",
     [
         "",
