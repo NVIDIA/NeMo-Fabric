@@ -39,6 +39,21 @@ def _context() -> RuntimeContext:
     )
 
 
+async def test_sse_events_flushes_unterminated_final_event():
+    async def lines():
+        yield "event: response.completed"
+        yield 'data: {"response": {"id": "response-id"}}'
+
+    mock_response = MagicMock()
+    mock_response.aiter_lines.return_value = lines()
+
+    events = [event async for event in adapter._sse_events(mock_response)]
+
+    assert events == [
+        ("response.completed", {"response": {"id": "response-id"}})
+    ]
+
+
 @pytest.mark.parametrize(
     ("api_type", "path"),
     [

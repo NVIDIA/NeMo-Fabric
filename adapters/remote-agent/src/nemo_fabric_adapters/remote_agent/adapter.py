@@ -67,6 +67,8 @@ async def _sse_events(response: httpx.Response):
             event = line.removeprefix("event:").strip()
         elif line.startswith("data:"):
             data.append(line.removeprefix("data:").strip())
+    if data:
+        yield event, json.loads("\n".join(data))
 
 
 class RemoteAgentRuntime:
