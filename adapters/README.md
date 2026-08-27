@@ -135,11 +135,11 @@ and additive extension maps because their support does not vary by adapter:
 | `skills.paths` | Yes | Yes | Yes | Yes | No | Yes | No |
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | No | No |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No | No |
-| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | No | No | Yes |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | No | No | No |
 | `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No |
-| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No | Declared-provider pass-through |
-| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | No | No | Yes |
-| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | No | No | Yes |
+| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No | No |
+| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | No | No | No |
+| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | No | No | No |
 | Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Not accepted unless declared by the Pi descriptor | Preserved; no portable adapter semantics |
 
 The selected model role is `default`, or the sole configured role when no
@@ -170,11 +170,11 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [Hermes Agent](hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes Agent NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
 | [mini-SWE-agent](mini-swe-agent/README.md) | Conversation history | Not supported | Not applicable | Not applicable | Not implemented |
 | [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Not supported | Reuses the session and calls `prompt()` for ordered text input | Aborts work, emits extension shutdown, and disposes the session | Not implemented |
-| [Remote Agent](remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Runtime-owned NeMo Relay CLI gateway | Sends one HTTP request and retains the completed transcript | Closes the HTTP client and stops the gateway | Not implemented |
+| [Remote Agent](remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Not supported | Sends one HTTP request and retains the completed transcript | Closes the HTTP client | Not implemented |
 
-Telemetry output names use the descriptor contract values. Claude, Codex,
-Hermes Agent, and Remote Agent can emit NeMo Relay ATIF, OpenTelemetry, and
-OpenInference output. Deep Agents supports the same Relay outputs plus native
+Telemetry output names use the descriptor contract values. Claude, Codex, and
+Hermes Agent can emit NeMo Relay ATIF, OpenTelemetry, and OpenInference output.
+Deep Agents supports the same Relay outputs plus native
 OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry.
 mini-SWE-agent does not support telemetry output.
 

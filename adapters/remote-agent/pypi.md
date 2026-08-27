@@ -14,6 +14,3 @@ SPDX-License-Identifier: Apache-2.0
 `nemo-fabric-adapters-remote-agent` provides the `nvidia.fabric.remote-agent`
 adapter for remote agents with OpenAI Responses, OpenAI Chat Completions, or
 Anthropic Messages HTTP APIs. It uses `httpx` for asynchronous requests.
-
-Install `nemo-fabric-adapters-remote-agent[full]` to enable optional NeMo Relay
-gateway-mode telemetry.

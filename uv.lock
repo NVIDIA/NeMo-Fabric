@@ -2346,7 +2346,7 @@ relay = [
     { name = "nemo-relay" },
 ]
 remote-agent = [
-    { name = "nemo-fabric-adapters-remote-agent", extra = ["full"] },
+    { name = "nemo-fabric-adapters-remote-agent" },
 ]
 
 [package.metadata]
@@ -2536,20 +2536,13 @@ dependencies = [
     { name = "nemo-fabric-adapters-common" },
 ]
 
-[package.optional-dependencies]
-full = [
-    { name = "nemo-relay-cli-bin" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "httpx", extras = ["http2"], specifier = "~=0.28" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.7.2,<0.8" },
-    { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },
 ]
-provides-extras = ["relay", "full"]
+provides-extras = ["full"]
 
 [[package]]
 name = "nemo-fabric-development"
@@ -2593,7 +2586,7 @@ adapter-tests = [
     { name = "nemo-fabric-adapters-deepagents", extra = ["harness"] },
     { name = "nemo-fabric-adapters-hermes", extra = ["full"], marker = "python_full_version < '3.14'" },
     { name = "nemo-fabric-adapters-mini-swe-agent", extra = ["harness"] },
-    { name = "nemo-fabric-adapters-remote-agent", extra = ["full"] },
+    { name = "nemo-fabric-adapters-remote-agent" },
 ]
 adapters = [
     { name = "hermes-agent", marker = "python_full_version < '3.14'" },

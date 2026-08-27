@@ -39,30 +39,6 @@ def _context() -> RuntimeContext:
     )
 
 
-def test_prepare_relay_uses_telemetry_plan_gate():
-    config = AgentConfig.from_mapping(
-        {
-            "harness": {"settings": {"base_url": "https://agents.example.test/v1"}},
-            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
-        }
-    )
-    context = RuntimeContext.from_mapping(
-        {
-            **_context().to_mapping(),
-            "telemetry": {"relay_enabled": True},
-        }
-    )
-
-    relay = adapter.RemoteAgentRuntime()._prepare_relay(
-        config,
-        context,
-        {"telemetry_plan": {"relay_enabled": False}},
-        "https://agents.example.test/v1",
-    )
-
-    assert relay is None
-
-
 async def test_sse_events_flushes_unterminated_final_event():
     async def lines():
         yield "event: response.completed"
@@ -73,9 +49,7 @@ async def test_sse_events_flushes_unterminated_final_event():
 
     events = [event async for event in adapter._sse_events(mock_response)]
 
-    assert events == [
-        ("response.completed", {"response": {"id": "response-id"}})
-    ]
+    assert events == [("response.completed", {"response": {"id": "response-id"}})]
 
 
 @pytest.mark.parametrize(
@@ -209,47 +183,6 @@ async def test_remote_agent_enables_http2(
     assert mock_async_client.call_args.kwargs["http2"] is True
 
 
-@pytest.mark.parametrize("relay_present", [True, False])
-async def test_remote_agent_stop_reports_relay_failure_and_clears_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, relay_present: bool
-):
-    log_path = tmp_path / "relay.log"
-    relay = (
-        adapter.RelaySettings(
-            gateway=adapter.relay_gateway.RelayGatewayLaunch(
-                executable=tmp_path / "nemo-relay",
-                config_path=tmp_path / "relay.toml",
-                bind="127.0.0.1:43210",
-                url="http://127.0.0.1:43210",
-                log_path=log_path,
-            ),
-            plugin_config={},
-        )
-        if relay_present
-        else None
-    )
-    runtime = adapter.RemoteAgentRuntime()
-    runtime._relay = relay
-    runtime._gateway_process = MagicMock(spec=subprocess.Popen)
-    monkeypatch.setattr(
-        adapter.relay_gateway,
-        "stop_relay_gateway",
-        MagicMock(
-            side_effect=adapter.relay_gateway.RelayGatewayError("stop failed")
-        ),
-    )
-
-    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        await runtime.stop()
-
-    assert caught.value.code == "remote_agent_relay_stop_failed"
-    assert caught.value.metadata == (
-        {"gateway_log_path": str(log_path)} if relay_present else {}
-    )
-    assert runtime._gateway_process is None
-    assert runtime._relay is None
-
-
 def test_remote_agent_descriptor_and_module_entrypoint(repo_root: Path):
     descriptor = json.loads(
         (
@@ -268,4 +201,5 @@ def test_remote_agent_descriptor_and_module_entrypoint(repo_root: Path):
     assert descriptor["settings_schema"]["properties"]["api_type"]["default"] == (
         "openai-responses"
     )
+    assert "telemetry" not in descriptor
     assert result.returncode == 0, result.stderr

@@ -8,15 +8,11 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-from pathlib import Path
 from typing import Any
 
 import httpx
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import lifecycle
-from nemo_fabric_adapters.common.relay_gateway import RelaySettings
-from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import utils as common_utils
 
 
@@ -27,14 +23,6 @@ API_PATHS = {
     "openai-completions": "/chat/completions",
     "anthropic-messages": "/messages",
 }
-
-
-def _base_url(value: str) -> str:
-    return f"{value.rstrip('/')}/"
-
-
-def _relay_base_url(value: str) -> str:
-    return _base_url(f"{value.rstrip('/')}/v1")
 
 
 def _api_url(base_url: str, api_type: str) -> str:
@@ -81,8 +69,6 @@ class RemoteAgentRuntime:
         self._runtime_id: str | None = None
         self._api_type = DEFAULT_API_TYPE
         self._messages: list[dict[str, str]] = []
-        self._relay: RelaySettings | None = None
-        self._gateway_process: subprocess.Popen[Any] | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
@@ -90,50 +76,34 @@ class RemoteAgentRuntime:
         settings = config.harness.settings
         self._api_type = settings.get("api_type", DEFAULT_API_TYPE)
         base_url = settings["base_url"]
-        try:
-            self._relay = self._prepare_relay(config, context, payload, base_url)
-            if self._relay is not None:
-                self._gateway_process = relay_gateway.start_relay_gateway(
-                    launch=self._relay.gateway,
-                    cwd=Path(common_utils.base_dir(payload)),
-                )
-                base_url = _relay_base_url(self._relay.gateway.url)
-
-            model = config.models["default"]
-            headers: dict[str, str] = {}
-            if model.api_key_env is not None:
-                try:
-                    credential = os.environ[model.api_key_env]
-                except KeyError as e:
-                    raise lifecycle.LifecycleError(
-                        "remote_agent_missing_api_key",
-                        f"Remote agent API key environment variable {model.api_key_env} is not set",
-                    ) from e
-                if self._api_type == "anthropic-messages":
-                    headers["x-api-key"] = credential
-                else:
-                    headers["authorization"] = f"Bearer {credential}"
-            if self._api_type == "anthropic-messages":
-                headers["anthropic-version"] = "2023-06-01"
-
-            self._endpoint = _api_url(base_url, self._api_type)
-
-            # Attempt to negotiate HTTP/2, this will automatically fall-back
-            # to HTTP/1.1 if the server does not support it
-            self._client = httpx.AsyncClient(
-                headers=headers,
-                http2=True,
-                timeout=None,
-            )
-            self._config = config
-            self._runtime_id = context.runtime_id
-        except Exception:
+        model = config.models["default"]
+        headers: dict[str, str] = {}
+        if model.api_key_env is not None:
             try:
-                await self.stop()
-            except Exception: # preserve the original failure
-                pass
-            
-            raise
+                credential = os.environ[model.api_key_env]
+            except KeyError as e:
+                raise lifecycle.LifecycleError(
+                    "remote_agent_missing_api_key",
+                    f"Remote agent API key environment variable {model.api_key_env} is not set",
+                ) from e
+            if self._api_type == "anthropic-messages":
+                headers["x-api-key"] = credential
+            else:
+                headers["authorization"] = f"Bearer {credential}"
+        if self._api_type == "anthropic-messages":
+            headers["anthropic-version"] = "2023-06-01"
+
+        self._endpoint = _api_url(base_url, self._api_type)
+
+        # Attempt to negotiate HTTP/2, this will automatically fall back
+        # to HTTP/1.1 if the server does not support it.
+        self._client = httpx.AsyncClient(
+            headers=headers,
+            http2=True,
+            timeout=None,
+        )
+        self._config = config
+        self._runtime_id = context.runtime_id
 
     async def invoke(
         self,
@@ -183,20 +153,9 @@ class RemoteAgentRuntime:
                 {"role": "assistant", "content": text},
             ]
         )
-        output: dict[str, Any] = {"response": text}
-        if self._relay is not None:
-            output["relay_runtime"] = {
-                "enabled": True,
-                "emitter": "httpx/nemo-relay",
-                "gateway_url": self._relay.gateway.url,
-                "gateway_log_path": str(self._relay.gateway.log_path),
-            }
-            output["relay_artifacts"] = common_utils.collect_relay_artifacts(
-                self._relay.plugin_config
-            )
         return contract.AgentRunResult(
             status=contract.AgentRunStatus.SUCCEEDED,
-            output=output,
+            output={"response": text},
             usage=usage,
         )
 
@@ -208,20 +167,6 @@ class RemoteAgentRuntime:
         self._messages = []
         if client is not None:
             await client.aclose()
-        process, self._gateway_process = self._gateway_process, None
-        relay, self._relay = self._relay, None
-        if process is not None:
-            try:
-                relay_gateway.stop_relay_gateway(process)
-            except relay_gateway.RelayGatewayError as error:
-                metadata: dict[str, Any] = {}
-                if relay is not None:
-                    metadata["gateway_log_path"] = str(relay.gateway.log_path)
-                raise lifecycle.LifecycleError(
-                    "remote_agent_relay_stop_failed",
-                    "NeMo Relay gateway failed to stop",
-                    metadata=metadata,
-                ) from error
 
     async def _invoke_responses(
         self, user_text: str
@@ -318,69 +263,10 @@ class RemoteAgentRuntime:
                     return text, _usage(input_tokens, output_tokens, None)
         raise RuntimeError("remote agent response ended without completion")
 
-    def _prepare_relay(
-        self,
-        config: contract.AgentConfig,
-        context: contract.RuntimeContext,
-        payload: dict[str, Any],
-        base_url: str,
-    ) -> RelaySettings | None:
-        if context.telemetry is None or not common_utils.relay_enabled(payload):
-            return None
-        base_dir = Path(common_utils.base_dir(payload)).resolve()
-        command = os.environ.get("FABRIC_TEST_NEMO_RELAY_COMMAND", "nemo-relay")
-        try:
-            executable = relay_gateway.resolve_relay_command(base_dir, command)
-            relay_gateway.relay_cli_contract(executable)
-            plugin_config = common_utils.load_relay_plugin_config(
-                {
-                    "agent_name": common_utils.agent_name(payload),
-                    "base_dir": str(base_dir),
-                    "config": config.to_mapping(),
-                    "runtime_context": context.to_mapping(),
-                }
-            )
-            config_path, _plugin_config_path = common_utils.write_relay_configs(
-                relay_config={}, plugin_config=plugin_config
-            )
-        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
-            raise lifecycle.LifecycleError(
-                "remote_agent_relay_configuration_failed",
-                "NeMo Relay runtime configuration is unavailable",
-            ) from error
-        if config_path is None:
-            raise lifecycle.LifecycleError(
-                "remote_agent_relay_configuration_failed",
-                "NeMo Relay runtime configuration is unavailable",
-            )
-        port = relay_gateway.find_available_tcp_port()
-        upstream = base_url.rstrip("/")
-        return RelaySettings(
-            gateway=relay_gateway.RelayGatewayLaunch(
-                executable=executable,
-                config_path=config_path,
-                bind=f"127.0.0.1:{port}",
-                url=f"http://127.0.0.1:{port}",
-                log_path=config_path.parent / "gateway.log",
-                openai_base_url=(
-                    upstream if self._api_type != "anthropic-messages" else None
-                ),
-                anthropic_base_url=(
-                    upstream.removesuffix("/v1")
-                    if self._api_type == "anthropic-messages"
-                    else None
-                ),
-            ),
-            plugin_config=plugin_config,
-        )
-
     def _result_error(self, status_code: int) -> contract.AgentRunResult:
-        output: dict[str, Any] = {}
-        if self._relay is not None:
-            output["relay_runtime"] = {"enabled": True, "emitter": "httpx/nemo-relay"}
         return contract.AgentRunResult(
             status=contract.AgentRunStatus.FAILED,
-            output=output,
+            output={},
             error=contract.AgentRunError(
                 code="remote_agent_http_error",
                 message=f"Remote agent returned HTTP status {status_code}",

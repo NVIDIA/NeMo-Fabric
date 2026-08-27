@@ -10,15 +10,15 @@ an OpenAI Responses, OpenAI Chat Completions, or Anthropic Messages HTTP API.
 
 ## Install
 
-| Installation | Runtime | Adapter | Relay gateway |
-| --- | --- | --- | --- |
-| `pip install "nemo-fabric[remote-agent]"` | Yes | Yes | Yes |
-| `pip install "nemo-fabric-adapters-remote-agent[full]"` | No | Yes | Yes |
-| `pip install nemo-fabric-adapters-remote-agent` | No | Yes | No |
+| Installation | Runtime | Adapter |
+| --- | --- | --- |
+| `pip install "nemo-fabric[remote-agent]"` | Yes | Yes |
+| `pip install "nemo-fabric-adapters-remote-agent[full]"` | No | Yes |
+| `pip install nemo-fabric-adapters-remote-agent` | No | Yes |
 
 The bare package includes `httpx` and can communicate directly with a remote
-service. The `full` extra additionally installs the supported NeMo Relay CLI
-for gateway-mode telemetry.
+service. The `full` extra is equivalent to the bare package because the remote
+service is not installed in the adapter environment.
 
 ## Configuration
 
@@ -38,11 +38,3 @@ otherwise uses `4096`.
 This adapter does not expose MCP, skills, tool policy, streaming, or subagents.
 It retains the completed user/assistant transcript for ordered invocations in
 one runtime.
-
-## Relay gateway mode
-
-When Relay telemetry is enabled, the adapter starts a runtime-owned
-`nemo-relay` gateway. The gateway forwards OpenAI requests to `base_url`; for
-Anthropic Messages it uses the same host with the `/v1` suffix removed. This
-requires the package's `full` extra and the configured remote service must be
-reachable from the adapter process.
