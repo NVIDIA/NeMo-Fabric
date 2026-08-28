@@ -13,7 +13,7 @@ field.
 | Integration Shape | Start With | What It Demonstrates |
 | --- | --- | --- |
 | Harness adapter | [Hermes Agent descriptor](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/hermes/hermes.fabric-adapter.json) and [runtime](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/hermes/src/nemo_fabric_adapters/hermes/adapter.py) | A complete harness integration with normalized configuration, persistent state, and telemetry. |
-| Minimum-surface harness adapter | [mini-SWE-agent descriptor](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/mini-swe-agent/mini-swe-agent.fabric-adapter.json) and [runtime](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/mini-swe-agent/src/nemo_fabric_adapters/mini_swe_agent/adapter.py) | The required typed config boundary and `start`/`invoke`/`stop` with little optional behavior. |
+| Minimum-surface harness adapter | [mini-SWE-agent descriptor](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/mini-swe-agent/mini-swe-agent.fabric-adapter.json) and [runtime](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/mini-swe-agent/src/nemo_fabric_adapters/mini_swe_agent/adapter.py) | The required typed config boundary and `start`/`invoke`/`stop`, plus an optional subclass-based Relay integration. |
 | Shared framework adapter | [NeMo Agent Toolkit adapter descriptor](https://github.com/NVIDIA/NeMo-Fabric/blob/main/external/nat/nat.fabric-adapter.json), [runtime](https://github.com/NVIDIA/NeMo-Fabric/blob/main/external/nat/src/nemo_fabric_adapters/nat/adapter.py), and [targets](https://github.com/NVIDIA/NeMo-Fabric/tree/main/external/nat/targets) | One adapter plus independently registered calculator and email-phishing workflows. |
 | Dedicated custom-agent adapter | [LangGraph descriptor](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/langgraph_custom_agent/adapter/email-phishing.fabric-adapter.json) and [runtime](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/langgraph_custom_agent/adapter/runtime.py) | A custom graph with an adjacent adapter and no generic workflow loader. |
 
@@ -29,12 +29,14 @@ understand the required boundary at a glance. Its package contains:
 
 - A static Adapter Descriptor that accepts a small normalized config surface
 - One runtime class with `start`, `invoke`, and `stop`
+- One optional mini-SWE-agent subclass for Relay telemetry
 - The optional common Python lifecycle host
 - One package README with a complete consumer configuration
 
 The adapter retains the model, environment, agent, and conversation state in
-one runtime instance. It does not implement MCP, skills, telemetry, or native
-streaming, which keeps the required path visible.
+one runtime instance. It does not implement MCP, skills, or native streaming.
+When Relay is enabled, it selects an adapter-owned subclass that emits live
+invocation, step, LLM, and tool telemetry without changing the default path.
 
 ## Shared Adapter With Registered Custom Agents
 
