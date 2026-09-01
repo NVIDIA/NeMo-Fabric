@@ -310,8 +310,8 @@ class _InstructionConfig(_ConfigMapping):
         mode: str = "replace",
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
-        if mode != "replace":
-            raise FabricConfigError("instruction mode must be replace")
+        if not isinstance(mode, str) or mode not in {"replace", "append"}:
+            raise FabricConfigError("instruction mode must be replace or append")
         super().__init__(
             {
                 "content": _required_text(content, "instruction content"),

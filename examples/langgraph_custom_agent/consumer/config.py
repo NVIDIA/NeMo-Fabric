@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Literal
 
 from nemo_fabric import FabricConfig
 from nemo_fabric import DiscoveryConfig
@@ -87,12 +88,17 @@ def frontier_config(model: str = FRONTIER_DEFAULT_MODEL) -> FabricConfig:
     )
 
 
-def with_system_instruction(base: FabricConfig, content: str) -> FabricConfig:
+def with_system_instruction(
+    base: FabricConfig,
+    content: str,
+    *,
+    mode: Literal["replace", "append"] = "replace",
+) -> FabricConfig:
     """Return an independent config with a different normalized instruction."""
 
     config = base.model_copy(deep=True)
     config.instructions = InstructionsConfig(
-        system=InstructionConfig(content=content)
+        system=InstructionConfig(content=content, mode=mode)
     )
     return config
 

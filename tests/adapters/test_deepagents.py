@@ -12,6 +12,7 @@ integration test in ``tests/e2e/test_deepagents.py``.
 from __future__ import annotations
 
 import importlib.machinery
+import json
 import os
 import sys
 import types
@@ -34,6 +35,18 @@ from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_descriptor_declares_replace_system_instruction_mode():
+    descriptor = json.loads(
+        (ROOT / "adapters/deepagents/deepagents.fabric-adapter.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert descriptor["config"]["system_instruction_modes"] == ["replace"]
 
 
 def lifecycle_start_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1716,6 +1729,26 @@ async def test_stream_requests_subgraphs(tmp_path, make_payload, fake_sdks):
     # for usage aggregation.
     await invoke_once(make_payload(tmp_path))
     assert fake_sdks["subgraphs"] is True
+
+
+async def test_build_agent_kwargs_rejects_append_system_instruction(
+    tmp_path, make_payload
+):
+    payload = make_payload(tmp_path)
+    payload["config"]["instructions"]["system"]["mode"] = "append"
+    config = AgentConfig.from_mapping(payload["config"])
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.build_agent_kwargs(
+            config,
+            RuntimeContext.from_mapping(payload["runtime_context"]),
+            payload["base_dir"],
+            MagicMock(),
+            config.harness.settings,
+        )
+
+    assert caught.value.code == "unsupported_system_instruction_mode"
+    assert caught.value.metadata["field"] == "instructions.system.mode"
 
 
 @pytest.mark.usefixtures("use_real_langgraph")

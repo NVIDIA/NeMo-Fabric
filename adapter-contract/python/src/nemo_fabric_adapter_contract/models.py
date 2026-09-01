@@ -172,7 +172,7 @@ class AgentInstructionConfig(AgentContractBlock):
     """One normalized instruction value."""
 
     content: str
-    mode: Literal["replace"] = "replace"
+    mode: Literal["replace", "append"] = "replace"
 
     def _validate(self) -> None:
         _nonblank(self.content, "content")

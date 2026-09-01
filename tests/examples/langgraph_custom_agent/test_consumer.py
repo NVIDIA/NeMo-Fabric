@@ -48,6 +48,16 @@ def test_instruction_and_temperature_variants_do_not_mutate_their_input():
     assert temperature.models["default"].temperature == 0.4
 
 
+def test_system_instruction_variant_preserves_append_mode():
+    config = with_system_instruction(
+        public_config(),
+        "Explain only the strongest signal.",
+        mode="append",
+    )
+
+    assert config.instructions.system.mode == "append"
+
+
 def test_relay_variant_is_additive_and_independent():
     base = public_config()
 

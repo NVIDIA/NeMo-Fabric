@@ -49,15 +49,17 @@ fields the adapter applies:
     "instructions.system",
     "mcp",
     "mcp.tool_filters"
-  ]
+  ],
+  "system_instruction_modes": ["replace", "append"]
 }
 ```
 
 The minimum path configures only a model and instruction; MCP is an optional
 extension described below. NeMo Fabric projects configured values from
 `FabricConfig` into `AgentConfig`. The adapter resolves `models.default` into
-`ChatOpenAI`, applies the normalized system instruction, compiles one graph
-during `start`, and retains it for ordered invocations. The custom graph
+`ChatOpenAI`, replaces or appends the normalized system instruction as
+configured, compiles one graph during `start`, and retains it for ordered
+invocations. The custom graph
 receives native dependencies; it does not parse either NeMo Fabric
 configuration type.
 
@@ -87,7 +89,7 @@ Every variation returns an independent `FabricConfig`:
 | Variation | Consumer API or CLI | Southbound Effect |
 | --- | --- | --- |
 | Model | `--model` | `models.default.model` |
-| Instruction | `with_system_instruction(...)` or `--system-instruction` | `instructions.system` |
+| Instruction | `with_system_instruction(..., mode=...)`, `--system-instruction`, and `--system-instruction-mode` | `instructions.system` with `replace` or `append` |
 | Temperature | `with_temperature(...)` or `--temperature` | `models.default.temperature` |
 | stdio MCP | `with_url_inspector_mcp(...)` or `--mcp` | `mcp.servers` and per-server tool policy |
 

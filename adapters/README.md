@@ -121,7 +121,7 @@ and additive extension maps because their support does not vary by adapter:
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | Yes; known catalog models only |
 | `models.<role>.temperature` | No | No | Yes | Yes | Yes | No |
 | `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared |
-| `instructions.system` | Yes | Yes; base instructions | Yes | Yes | Yes | Yes; replaces Pi base instructions |
+| `instructions.system` | `replace`, `append` | `replace`; base instructions | `replace` | `replace` | `replace` | `replace`; Pi base instructions |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core |
 | `runtime.max_turns` | Yes | No | No | Yes; iteration limit | Yes | No |

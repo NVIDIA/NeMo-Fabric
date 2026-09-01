@@ -54,6 +54,9 @@ translation:
 - Set the current `contract_version`, a globally stable `adapter_id`,
   `adapter_kind`, and runner binding.
 - Declare only normalized `config.accepts` fields the implementation enforces.
+- When accepting `instructions.system`, declare the exact supported
+  `config.system_instruction_modes`. New descriptors must not rely on the
+  legacy omitted-value behavior, which means `replace` only.
 - Declare `mcp.auth.oauth2` or `mcp.auth.service_account` only when the adapter
   implements the corresponding MCP authentication mode.
 - Publish closed `settings_schema`, `model_schema`, `tool_definition_schema`,
@@ -105,7 +108,10 @@ Accept a validated `AgentConfig` and translate each declared field once at the
 adapter boundary:
 
 - Resolve named model roles into target-native model clients or settings.
-- Apply normalized instructions and runtime limits only when declared.
+- Apply normalized instructions and runtime limits only when declared. Validate
+  `instructions.system.mode` at the adapter startup boundary as well as during
+  planning; `replace` discards the harness default, while `append` preserves it
+  and adds the configured content after it.
 - Convert MCP servers, tool definitions, tool policy, and skills into native
   target constructs.
 - Resolve workflow entry points and construction settings during `start` in

@@ -12,6 +12,7 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 ```rust
 pub enum InstructionMode {
     Replace,
+    Append,
 }
 ```
 
@@ -24,6 +25,12 @@ How an instruction value is applied to the selected harness.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Replace"}} /></pre>
 
 Replace the harness default instruction value.
+
+### `Append`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Append"}} /></pre>
+
+Preserve the harness default and append this instruction after it.
 
 ## Trait Implementations
 

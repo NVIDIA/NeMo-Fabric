@@ -52,7 +52,8 @@ harness = HarnessConfig(
 ```
 
 The adapter supports `models`, `models.base_url`, `models.temperature`,
-`instructions.system`, `runtime.max_turns`, and `environment.workspace`. Set
+`instructions.system` with `replace` mode, `runtime.max_turns`, and
+`environment.workspace`. The adapter rejects `append` system instructions. Set
 `models.<role>.api_key_env` to the environment variable containing the
 model-provider credential.
 

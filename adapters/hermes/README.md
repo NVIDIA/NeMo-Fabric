@@ -47,7 +47,7 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 
 - selected model provider, model name, base URL, and temperature through
   `models`;
-- `instructions.system` and `runtime.max_turns`;
+- replacement `instructions.system` and `runtime.max_turns`;
 - workspace and explicit environment variables through `environment`;
 - invocation timeout through `runtime.timeout_seconds`;
 - NeMo Fabric skills as external skill directories for Hermes Agent;

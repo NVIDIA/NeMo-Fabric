@@ -53,6 +53,7 @@ def test_descriptor_freezes_the_custom_agent_contract_surface():
                 "mcp",
                 "mcp.tool_filters",
             ],
+            "system_instruction_modes": ["replace", "append"],
         },
         "telemetry": {
             "providers": {

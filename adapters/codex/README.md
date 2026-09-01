@@ -90,7 +90,8 @@ Use normalized `FabricConfig` fields for portable configuration:
 - `models` selects the Codex model. The native `openai` provider retains Codex
   authentication and endpoint discovery. Any other provider name must configure
   a Responses-compatible `base_url` and `api_key_env`.
-- `instructions.system` maps to Codex base instructions.
+- `instructions.system` supports `replace` and maps to Codex base instructions.
+  Codex rejects `append` during planning and direct adapter startup.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `environment.workspace` sets the working directory, and `environment.env`
   supplies explicit harness-visible variables.

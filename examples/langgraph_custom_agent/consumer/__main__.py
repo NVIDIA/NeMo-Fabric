@@ -25,6 +25,11 @@ async def main() -> None:
     parser.add_argument("--variant", choices=("public", "frontier"), default="public")
     parser.add_argument("--model")
     parser.add_argument("--system-instruction")
+    parser.add_argument(
+        "--system-instruction-mode",
+        choices=("replace", "append"),
+        default="replace",
+    )
     parser.add_argument("--temperature", type=float)
     parser.add_argument("--mcp", action="store_true")
     parser.add_argument("--relay", action="store_true")
@@ -42,7 +47,11 @@ async def main() -> None:
     config_factory = frontier_config if args.variant == "frontier" else public_config
     config = config_factory(args.model) if args.model else config_factory()
     if args.system_instruction:
-        config = with_system_instruction(config, args.system_instruction)
+        config = with_system_instruction(
+            config,
+            args.system_instruction,
+            mode=args.system_instruction_mode,
+        )
     if args.temperature is not None:
         config = with_temperature(config, args.temperature)
     if args.mcp:

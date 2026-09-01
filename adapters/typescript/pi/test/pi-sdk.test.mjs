@@ -7,7 +7,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { resolveCustomTools } from "../dist/pi-sdk.js";
+import { PiSdkSessionFactory, resolveCustomTools } from "../dist/pi-sdk.js";
+
+test("rejects append system instructions before loading the Pi harness", async () => {
+  const factory = new PiSdkSessionFactory();
+
+  await assert.rejects(
+    factory.create({
+      agentName: "pi-test",
+      baseDir: "/tmp",
+      config: {
+        instructions: {
+          system: {
+            content: "Follow repository policy.",
+            mode: "append",
+          },
+        },
+      },
+      runtimeContext: {},
+    }),
+    (error) =>
+      error.code === "unsupported_system_instruction_mode" &&
+      error.metadata.field === "instructions.system.mode",
+  );
+});
 
 test("resolves and executes a workspace TypeScript tool factory", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-tool-")));

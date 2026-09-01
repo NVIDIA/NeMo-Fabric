@@ -233,6 +233,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
                 "mcp",
                 "skills",
             ],
+            "system_instruction_modes": ["replace", "append"],
         },
         "telemetry": {
             "providers": {
@@ -379,6 +380,18 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     }
     assert "NEMO_RELAY_GATEWAY_URL" not in options.env
     assert "ANTHROPIC_BASE_URL" not in options.env
+
+
+def test_build_options_appends_to_claude_preset_system_prompt(claude_payload):
+    claude_payload["config"]["instructions"]["system"]["mode"] = "append"
+
+    options = build_options(claude_payload)
+
+    assert options.system_prompt == {
+        "type": "preset",
+        "preset": "claude_code",
+        "append": "Review carefully.",
+    }
 
 
 @pytest.mark.parametrize(

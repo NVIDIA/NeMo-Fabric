@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 
 import pytest
@@ -12,6 +13,9 @@ from langchain_openai import ChatOpenAI
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapters.common import lifecycle
 
+from examples.langgraph_custom_agent.adapter.configuration import (
+    DEFAULT_SYSTEM_INSTRUCTION,
+)
 from examples.langgraph_custom_agent.adapter.configuration import (
     MODEL_REQUEST_TIMEOUT_SECONDS,
 )
@@ -53,6 +57,18 @@ def test_resolver_applies_every_advertised_model_and_instruction_field(monkeypat
     assert dependencies.model.temperature == 0.2
     assert dependencies.model.request_timeout == MODEL_REQUEST_TIMEOUT_SECONDS
     assert dependencies.system_instruction == "Use the extracted signals."
+
+
+def test_resolver_appends_to_the_agent_default_instruction():
+    os.environ["TEST_NVIDIA_API_KEY"] = "test-key"
+    mapping = _config_mapping()
+    mapping["instructions"]["system"]["mode"] = "append"
+
+    dependencies = resolve_agent_dependencies(AgentConfig.from_mapping(mapping))
+
+    assert dependencies.system_instruction == (
+        f"{DEFAULT_SYSTEM_INSTRUCTION}\n\nUse the extracted signals."
+    )
 
 
 @pytest.mark.parametrize(

@@ -87,7 +87,8 @@
       "tools.blocked",
       "mcp",
       "skills"
-    ]
+    ],
+    "system_instruction_modes": ["replace", "append"]
   },
   "telemetry": {
     "providers": {

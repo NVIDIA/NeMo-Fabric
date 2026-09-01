@@ -45,7 +45,8 @@ def build_config() -> FabricConfig:
         },
         instructions=InstructionsConfig(
             system=InstructionConfig(
-                content="Use the calculator tools for arithmetic. Return a concise answer."
+                content="Use the calculator tools for arithmetic. Return a concise answer.",
+                mode="append",
             )
         ),
         runtime=RuntimeConfig(input_schema="text", output_schema="message"),

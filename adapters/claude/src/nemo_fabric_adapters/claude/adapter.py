@@ -40,6 +40,7 @@ from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
+from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
@@ -644,10 +645,22 @@ def build_options(
         )
     cli_path = os.environ.get("FABRIC_TEST_CLAUDE_CLI_PATH")
 
-    instructions = config.instructions
-    system_prompt = (
-        instructions.system.content if instructions and instructions.system else None
+    instruction = common_instructions.system_instruction(
+        config,
+        adapter="Claude",
+        supported_modes={"replace", "append"},
     )
+    system_prompt: Any = None
+    if instruction is not None:
+        system_prompt = (
+            instruction.content
+            if instruction.mode == "replace"
+            else {
+                "type": "preset",
+                "preset": "claude_code",
+                "append": instruction.content,
+            }
+        )
     enabled_tools = config.tools.enabled if config.tools is not None else None
     allowed_tools = (
         enabled_tools

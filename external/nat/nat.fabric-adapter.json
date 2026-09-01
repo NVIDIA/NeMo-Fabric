@@ -49,7 +49,8 @@
       "tools.blocked",
       "mcp",
       "mcp.tool_filters"
-    ]
+    ],
+    "system_instruction_modes": ["append"]
   },
   "capabilities": {
     "cancellation": false,

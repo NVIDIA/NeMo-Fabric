@@ -44,7 +44,8 @@
       "models.temperature",
       "instructions.system",
       "runtime.max_turns"
-    ]
+    ],
+    "system_instruction_modes": ["replace"]
   },
   "capabilities": {
     "service": false,
