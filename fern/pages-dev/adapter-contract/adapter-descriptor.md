@@ -62,7 +62,8 @@ system instructions, and a target-applied turn limit:
     "models.base_url",
     "instructions.system",
     "runtime.max_turns"
-  ]
+  ],
+  "system_instruction_modes": ["replace", "append"]
 }
 ```
 
@@ -73,6 +74,17 @@ schema enum for the exact accepted values.
 
 Planning rejects configured normalized behavior outside the declared surface.
 NeMo Fabric does not silently remove unsupported fields.
+
+When an adapter accepts `instructions.system`, declare the exact supported
+modes in `config.system_instruction_modes`. `replace` discards the harness
+default system instruction. `append` preserves the harness default and adds the
+configured content after it. New descriptors must declare the supported modes
+explicitly. For compatibility with descriptors created before mode discovery,
+an omitted `system_instruction_modes` value means `replace` only.
+
+Mode declarations must be nonempty, unique, and accompanied by
+`instructions.system` in `config.accepts`. Planning rejects an unsupported
+configured mode at `instructions.system.mode` before the adapter starts.
 
 ## Add Adapter-Owned Schemas
 

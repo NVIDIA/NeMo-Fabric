@@ -375,7 +375,7 @@ The model defines the following fields:
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
 | `content` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
-| `mode` | `Literal['replace']` | No | `'replace'` | — | — |
+| `mode` | `Literal['replace', 'append']` | No | `'replace'` | — | — |
 
 ---
 

@@ -65,8 +65,8 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.codex")
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, and telemetry. The Codex adapter does not support normalized
 `tools.enabled` or `tools.blocked` policy. Configure base instructions through
-`instructions.system`; the adapter passes that normalized value to the Codex
-SDK as `base_instructions`.
+`instructions.system` with `mode="replace"`; the adapter passes that normalized
+value to the Codex SDK as `base_instructions`. The adapter rejects `append`.
 
 The resolved Codex descriptor accepts the following Codex-specific
 `harness.settings` keys. All keys are optional:
