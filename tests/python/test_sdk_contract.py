@@ -642,6 +642,34 @@ def test_typed_config_serializes_normalized_execution_fields():
         ToolsConfig(enabled=["browser"], blocked=["browser"])
 
 
+@pytest.mark.parametrize("mode", ["replace", "append"])
+def test_instruction_modes_round_trip(mode: str):
+    instruction = InstructionConfig(content="Follow repository policy.", mode=mode)  # type: ignore[arg-type]
+
+    assert instruction.to_mapping() == {
+        "content": "Follow repository policy.",
+        "mode": mode,
+    }
+    raw = _plan()["config"]
+    raw["instructions"] = {
+        "system": {"content": "Follow repository policy.", "mode": mode}
+    }
+    snapshot = _FabricConfigSnapshot.from_mapping(raw)
+    assert snapshot.to_mapping()["instructions"]["system"]["mode"] == mode
+
+
+def test_instruction_rejects_unknown_mode():
+    with pytest.raises(ValidationError, match="replace.*append"):
+        InstructionConfig(content="Follow repository policy.", mode="prepend")  # type: ignore[arg-type]
+
+    raw = _plan()["config"]
+    raw["instructions"] = {
+        "system": {"content": "Follow repository policy.", "mode": "prepend"}
+    }
+    with pytest.raises(FabricConfigError, match="replace or append"):
+        _FabricConfigSnapshot.from_mapping(raw)
+
+
 @pytest.mark.parametrize("content", ["", " "])
 def test_instruction_content_must_be_non_empty(content: str):
     with pytest.raises(ValidationError):

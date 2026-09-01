@@ -12,6 +12,7 @@ from typing import Any
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 
 DEFAULT_SYSTEM_INSTRUCTION = (
@@ -91,10 +92,17 @@ def resolve_agent_dependencies(agent_config: AgentConfig) -> AgentDependencies:
         chat_model_options["temperature"] = model_config.temperature
 
     system_instruction = DEFAULT_SYSTEM_INSTRUCTION
-    if agent_config.instructions is not None:
-        system = agent_config.instructions.system
-        if system is not None:
-            system_instruction = system.content
+    instruction = common_instructions.system_instruction(
+        agent_config,
+        adapter="email-phishing",
+        supported_modes={"replace", "append"},
+    )
+    if instruction is not None:
+        system_instruction = (
+            instruction.content
+            if instruction.mode == "replace"
+            else f"{DEFAULT_SYSTEM_INSTRUCTION}\n\n{instruction.content}"
+        )
 
     return AgentDependencies(
         model=ChatOpenAI(**chat_model_options),

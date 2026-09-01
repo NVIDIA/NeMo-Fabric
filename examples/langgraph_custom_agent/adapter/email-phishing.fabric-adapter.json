@@ -14,7 +14,8 @@
       "instructions.system",
       "mcp",
       "mcp.tool_filters"
-    ]
+    ],
+    "system_instruction_modes": ["replace", "append"]
   },
   "telemetry": {
     "providers": {

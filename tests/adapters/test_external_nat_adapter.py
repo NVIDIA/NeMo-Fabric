@@ -119,7 +119,7 @@ def make_payload_fixture(tmp_path: Path):
         }
         if instruction is not None:
             config["instructions"] = {
-                "system": {"content": instruction, "mode": "replace"}
+                "system": {"content": instruction, "mode": "append"}
             }
         if tools is not None or definitions:
             config["tools"] = {**deepcopy(tools or {}), "definitions": definitions}
@@ -294,6 +294,7 @@ def test_descriptor_declares_exact_source_reference_contract():
         "mcp",
         "mcp.tool_filters",
     ]
+    assert descriptor["config"]["system_instruction_modes"] == ["append"]
     settings_schema = descriptor["settings_schema"]
     assert settings_schema["properties"] == {}
     assert "required" not in settings_schema
@@ -451,6 +452,17 @@ def test_system_instruction_rejects_duplicate_nat_instruction_source(make_payloa
         adapter.build_nat_config_mapping(payload["config"])
 
     assert error.value.code == "nat_system_instruction_conflict"
+
+
+def test_system_instruction_rejects_replace_mode(make_payload):
+    payload = make_payload(instruction="Portable instruction")
+    payload["config"].instructions.system.mode = "replace"
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        adapter.build_nat_config_mapping(payload["config"])
+
+    assert error.value.code == "unsupported_system_instruction_mode"
+    assert error.value.metadata["field"] == "instructions.system.mode"
 
 
 def test_react_agent_without_tool_names_defaults_to_empty_list(make_payload):

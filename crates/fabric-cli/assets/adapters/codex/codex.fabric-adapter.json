@@ -104,7 +104,8 @@
       "mcp",
       "mcp.auth.oauth2",
       "skills"
-    ]
+    ],
+    "system_instruction_modes": ["replace"]
   },
   "telemetry": {
     "providers": {

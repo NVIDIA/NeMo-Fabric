@@ -406,6 +406,20 @@ class PiSdkSessionHandle implements PiSessionHandle {
 
 export class PiSdkSessionFactory implements PiSessionFactory {
   async create(input: AdapterStartInput): Promise<PiSessionHandle> {
+    const systemInstruction = input.config.instructions?.system;
+    if (systemInstruction?.mode === "append") {
+      throw new LifecycleError(
+        "unsupported_system_instruction_mode",
+        "Pi does not support instructions.system.mode='append'; supported modes: replace",
+        {
+          metadata: {
+            field: "instructions.system.mode",
+            mode: systemInstruction.mode,
+            supported_modes: ["replace"],
+          },
+        },
+      );
+    }
     const pi = await loadPiSdk();
     let workspace: string;
     try {
@@ -442,7 +456,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       noPromptTemplates: true,
       noThemes: true,
       noContextFiles: true,
-      systemPrompt: input.config.instructions?.system?.content,
+      systemPrompt: systemInstruction?.content,
     });
     await resourceLoader.reload();
     const extensionErrors = resourceLoader.getExtensions().errors;

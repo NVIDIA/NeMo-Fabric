@@ -71,6 +71,9 @@ MCP servers, instructions, turn limit, tool policy, and telemetry. The
 resolved Claude descriptor accepts only these Claude-specific
 `harness.settings` keys:
 
+Claude supports both `replace` and `append` system instructions. `append`
+preserves the `claude_code` preset and adds the configured content after it.
+
 - `permission_mode`: `default`, `acceptEdits`, `bypassPermissions`, `plan`,
   `dontAsk`, or `auto`
 - `max_budget_usd`: a number greater than `0`

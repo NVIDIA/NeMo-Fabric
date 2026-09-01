@@ -849,6 +849,17 @@ def test_sdk_closes_when_skill_registration_is_unavailable(
     assert client.closed is True
 
 
+def test_thread_options_reject_append_system_instruction(codex_payload):
+    codex_payload["config"]["instructions"]["system"]["mode"] = "append"
+    config, context, base_dir = runtime_input(codex_payload)
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._thread_options(config, context, base_dir, None)
+
+    assert caught.value.code == "unsupported_system_instruction_mode"
+    assert caught.value.metadata["field"] == "instructions.system.mode"
+
+
 @pytest.mark.parametrize("transport", ["sse", "carrier-pigeon"])
 def test_sdk_rejects_unsupported_mcp_transport(codex_payload, mock_codex, transport):
     configure_mcp(
@@ -1693,6 +1704,7 @@ def test_descriptor_has_no_codex_binary_requirement():
         "mcp.auth.oauth2",
         "skills",
     ]
+    assert descriptor["config"]["system_instruction_modes"] == ["replace"]
     assert descriptor["model_schema"]["if"]["properties"]["provider"] == {
         "const": "openai"
     }

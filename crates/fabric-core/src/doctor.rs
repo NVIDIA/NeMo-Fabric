@@ -615,4 +615,47 @@ mod tests {
                 && check.message.contains("tools.enabled")
         }));
     }
+
+    #[test]
+    fn diagnoses_unsupported_system_instruction_mode_at_exact_field() {
+        let config: FabricConfig = serde_json::from_value(serde_json::json!({
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {"name": "append-incompatible-agent"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.codex",
+                "resolution": "preinstalled"
+            },
+            "instructions": {
+                "system": {
+                    "content": "Follow the repository review policy.",
+                    "mode": "append"
+                }
+            },
+            "runtime": {}
+        }))
+        .expect("typed config");
+        let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+        let strict_error =
+            resolve_run_plan_from_config(config.clone(), ResolveContext::new(&base_dir))
+                .expect_err("strict planning must reject append for Codex");
+        assert!(matches!(
+            strict_error,
+            FabricError::AdapterCompatibility { field, .. }
+                if field == "instructions.system.mode"
+        ));
+
+        let plan = resolve_diagnostic_plan_from_config(config, ResolveContext::new(base_dir))
+            .expect("diagnostic plan");
+        let report = doctor_plan(&plan);
+
+        assert_eq!(report.status, DoctorStatus::Fail);
+        assert!(report.checks.iter().any(|check| {
+            check.name == "config.unsupported"
+                && check.status == DoctorStatus::Fail
+                && check.metadata.get("field")
+                    == Some(&Value::String("instructions.system.mode".to_string()))
+                && check.message.contains("supported modes: replace")
+        }));
+    }
 }

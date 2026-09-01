@@ -50,6 +50,11 @@ Keep descriptor claims, implementation, focused tests, public documentation,
 catalog entries, and packaged metadata synchronized. Start with the narrowest
 truthful capability set.
 
+For `instructions.system`, keep `config.system_instruction_modes`, planning
+behavior, direct adapter validation, and target-native composition synchronized.
+New descriptors must declare their exact `replace` and `append` support rather
+than relying on the legacy omitted-value behavior.
+
 ## Repository Evidence
 
 In addition to the evidence required by the public skill, include:

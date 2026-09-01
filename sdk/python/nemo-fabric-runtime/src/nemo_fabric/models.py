@@ -171,7 +171,7 @@ class InstructionConfig(FabricBaseModel):
     """One portable instruction value."""
 
     content: str = Field(min_length=1, pattern=r"\S")
-    mode: Literal["replace"] = "replace"
+    mode: Literal["replace", "append"] = "replace"
 
     @field_validator("content")
     @classmethod

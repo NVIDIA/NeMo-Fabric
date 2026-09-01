@@ -243,6 +243,7 @@ def test_mini_swe_agent_descriptor_is_narrow_and_versioned():
             "instructions.system",
             "runtime.max_turns",
         ],
+        "system_instruction_modes": ["replace"],
     }
     assert descriptor["capabilities"] == {
         "service": False,
@@ -255,6 +256,20 @@ def test_mini_swe_agent_descriptor_is_narrow_and_versioned():
             "relay": {"outputs": ["atif", "otel", "openinference"]},
         }
     }
+
+
+async def test_runtime_start_rejects_append_system_instruction(mini_payload):
+    mini_payload["config"]["instructions"]["system"]["mode"] = "append"
+    start = {
+        **mini_payload,
+        "config": AgentConfig.from_mapping(mini_payload["config"]),
+    }
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.MiniSweAgentRuntime().start(start)
+
+    assert caught.value.code == "unsupported_system_instruction_mode"
+    assert caught.value.metadata["field"] == "instructions.system.mode"
 
 
 async def test_mini_swe_agent_maps_config_and_returns_normalized_output(

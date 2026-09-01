@@ -11,6 +11,7 @@ import os
 from typing import Any
 
 from nemo_fabric_adapter_contract import models as contract
+from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import utils as common_utils
 
@@ -49,6 +50,11 @@ class MiniSweAgentRuntime:
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
+        instruction = common_instructions.system_instruction(
+            config,
+            adapter="mini-SWE-agent",
+            supported_modes={"replace"},
+        )
         from minisweagent.environments.local import LocalEnvironment
         from minisweagent.models.litellm_model import LitellmModel
         from nemo_fabric_adapters.mini_swe_agent.agents import (
@@ -100,11 +106,7 @@ class MiniSweAgentRuntime:
         self._environment = LocalEnvironment(
             **(config.harness.settings if config.harness else {})
         )
-        self._system_instruction = (
-            config.instructions.system.content
-            if config.instructions and config.instructions.system
-            else ""
-        )
+        self._system_instruction = instruction.content if instruction else ""
         agent_kwargs: dict[str, Any] = {}
         if self._relay_enabled:
             agent_kwargs["relay_model_name"] = self._model.config.model_name

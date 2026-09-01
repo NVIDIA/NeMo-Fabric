@@ -321,6 +321,16 @@ mod tests {
         let schema = generate_schema(SchemaName::Agent).expect("schema generation");
 
         assert_eq!(
+            schema["$defs"]["InstructionMode"]["oneOf"]
+                .as_array()
+                .expect("instruction modes")
+                .iter()
+                .map(|mode| mode["const"].clone())
+                .collect::<Vec<_>>(),
+            vec![serde_json::json!("replace"), serde_json::json!("append")]
+        );
+
+        assert_eq!(
             schema["$defs"]["InstructionConfig"]["properties"]["content"]["minLength"],
             1
         );
@@ -422,6 +432,23 @@ mod tests {
             serde_json::json!(["object", "null"])
         );
         assert!(schema["properties"]["target_types"].is_object());
+        assert_eq!(
+            schema["$defs"]["InstructionMode"]["oneOf"]
+                .as_array()
+                .expect("instruction modes")
+                .iter()
+                .map(|mode| mode["const"].clone())
+                .collect::<Vec<_>>(),
+            vec![serde_json::json!("replace"), serde_json::json!("append")]
+        );
+        let system_instruction_modes =
+            &schema["$defs"]["AdapterConfigSupport"]["properties"]["system_instruction_modes"];
+        assert_eq!(system_instruction_modes["minItems"], 1);
+        assert_eq!(system_instruction_modes["uniqueItems"], true);
+        assert!(
+            system_instruction_modes["items"].is_object(),
+            "system instruction modes must constrain each item"
+        );
         assert_eq!(
             schema["properties"]["extension_schemas"]["propertyNames"]["enum"],
             serde_json::json!([

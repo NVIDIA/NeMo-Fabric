@@ -52,6 +52,7 @@ def test_pi_descriptor_declares_the_supported_surface():
         "tools.blocked",
         "skills",
     ]
+    assert descriptor["config"]["system_instruction_modes"] == ["replace"]
     assert descriptor["capabilities"] == {
         "streaming": False,
         "cancellation": False,

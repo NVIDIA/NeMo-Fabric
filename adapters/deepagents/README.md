@@ -52,7 +52,8 @@ NeMo Fabric maps the following into the harness:
 
 - The selected `models` role supplies `model`, `provider`, `api_key_env`,
   `base_url`, and `temperature`.
-- `instructions.system` becomes the Deep Agents `system_prompt`.
+- `instructions.system` supports `replace` and becomes the Deep Agents
+  `system_prompt`. Deep Agents rejects `append`.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`

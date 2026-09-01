@@ -49,6 +49,7 @@ from nemo_fabric_adapter_contract.models import McpAuthenticationConfig
 from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
+from nemo_fabric_adapters.common import instructions as common_instructions
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 import nemo_fabric_adapters.common.relay_artifacts as relay_artifacts
@@ -1119,13 +1120,14 @@ def _thread_options(
     relay: CodexRelaySettings | None,
 ) -> dict[str, Any]:
     settings = _settings(config)
+    instruction = common_instructions.system_instruction(
+        config,
+        adapter="Codex",
+        supported_modes={"replace"},
+    )
     return {
         "approval_mode": approval_mode(config),
-        "base_instructions": (
-            config.instructions.system.content
-            if config.instructions and config.instructions.system
-            else None
-        ),
+        "base_instructions": instruction.content if instruction else None,
         "config": thread_config(config, context, relay) or None,
         "cwd": str(resolve_cwd(context, base_dir)),
         "developer_instructions": _optional_string(settings, "developer_instructions"),

@@ -161,7 +161,7 @@ export interface AgentInstructionConfig {
   /**
    * How the instruction is applied.
    */
-  mode?: "replace";
+  mode?: "replace" | "append";
 }
 /**
  * Named MCP servers routed to an adapter target.

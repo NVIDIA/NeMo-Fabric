@@ -81,6 +81,24 @@ empty value can mean something different. For example,
 `tools.enabled: null` preserves the target's native selection, while
 `tools.enabled: []` explicitly selects no named tools.
 
+## Apply System Instructions Explicitly
+
+An omitted `instructions.system` value preserves the harness's native system
+instruction. When a system instruction is present, `mode` defaults to
+`replace` for compatibility:
+
+- `replace` replaces the harness's native system instruction with `content`.
+- `append` preserves the harness's native system instruction and adds `content`
+  after it.
+
+The selected Adapter Descriptor must accept `instructions.system`. When its
+`config.system_instruction_modes` capability list is present, the list must
+declare the selected mode. An omitted list preserves compatibility with legacy
+descriptors and supports `replace` only. Planning and `doctor(...)` reject
+unsupported modes at `instructions.system.mode`. Adapters must also validate
+the mode at their direct startup boundary so callers that host an adapter
+without NeMo Fabric planning receive the same fail-closed behavior.
+
 ## Keep Fabric-Owned Context Out of AgentConfig
 
 `AgentConfig` does not contain adapter selection, installation policy,
