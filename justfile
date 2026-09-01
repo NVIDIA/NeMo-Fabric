@@ -366,8 +366,11 @@ install-hermes-agent:
         echo "ERROR: Hermes Agent checkout has tracked changes: $hermes_checkout" >&2
         exit 1
     fi
-    git -C "$hermes_checkout" fetch --depth 1 origin "$hermes_commit"
-    git -C "$hermes_checkout" checkout --quiet --detach FETCH_HEAD
+    hermes_head="$(git -C "$hermes_checkout" rev-parse --verify HEAD 2>/dev/null || true)"
+    if [[ "$hermes_head" != "$hermes_commit" ]]; then
+        git -C "$hermes_checkout" fetch --depth 1 origin "$hermes_commit"
+        git -C "$hermes_checkout" checkout --quiet --detach FETCH_HEAD
+    fi
     uv sync --inexact --reinstall-package hermes-agent
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
