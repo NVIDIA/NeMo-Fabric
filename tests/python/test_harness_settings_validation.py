@@ -124,6 +124,8 @@ _config = partial(
             {
                 "base_url": "https://agents.example.test/v1",
                 "api_type": "anthropic-messages",
+                "connect_timeout_seconds": 5,
+                "read_timeout_seconds": 120,
             },
             id="remote-agent",
         ),
@@ -187,6 +189,21 @@ def test_remote_agent_rejects_unknown_api_type(tmp_path: Path):
                 {
                     "base_url": "https://agents.example.test/v1",
                     "api_type": "unsupported",
+                },
+                adapter_id="nvidia.fabric.remote-agent",
+            ),
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.parametrize("setting", ["connect_timeout_seconds", "read_timeout_seconds"])
+def test_remote_agent_rejects_nonpositive_timeout(tmp_path: Path, setting: str):
+    with pytest.raises(FabricConfigError, match=f"harness.settings.{setting}"):
+        Fabric().plan(
+            _config(
+                {
+                    "base_url": "https://agents.example.test/v1",
+                    setting: 0,
                 },
                 adapter_id="nvidia.fabric.remote-agent",
             ),

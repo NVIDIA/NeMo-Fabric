@@ -45,7 +45,7 @@ pip install nemo-fabric-adapters-deepagents
 ```
 
 The bare adapter package does not install the NeMo Fabric runtime or harness. Use
-`deepagents>=0.6.12,<0.7.0`, `langchain>=1.3,<2.0`, and
+`deepagents>=0.6.12,<0.8.0`, `langchain>=1.3,<2.0`, and
 `langgraph>=1.2,<2.0`, the constraints supported by this release.
 
 If the existing compatible Deep Agents stack and NeMo Fabric runtime share an
@@ -71,7 +71,8 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.langchain.deepagents")
 ```
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
-MCP servers, blocked tools, and telemetry. Use
+MCP servers, replacement system instructions, blocked tools, and telemetry.
+The adapter rejects `append` system instructions. Use
 `harness.settings.deepagents` to configure the JSON-serializable Deep
 Agents-native `interrupt_on` and `subagents` options:
 

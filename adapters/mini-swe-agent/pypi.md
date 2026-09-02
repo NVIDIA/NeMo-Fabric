@@ -16,12 +16,18 @@ adapter contract into mini-SWE-agent's native shell-only execution loop.
 
 The following table shows which components each installation provides:
 
-| Installation | Runtime | Adapter | Harness |
-| --- | --- | --- | --- |
-| `pip install "nemo-fabric[mini-swe-agent]"` | Yes | Yes | Yes |
-| `pip install "nemo-fabric-adapters-mini-swe-agent[harness]"` | No | Yes | Yes |
-| `pip install "nemo-fabric-adapters-mini-swe-agent[full]"` | No | Yes | Yes |
-| `pip install nemo-fabric-adapters-mini-swe-agent` | No | Yes | No |
+| Installation | Runtime | Adapter | Harness | Relay Python |
+| --- | --- | --- | --- | --- |
+| `pip install "nemo-fabric[mini-swe-agent]"` | Yes | Yes | Yes | No |
+| `pip install "nemo-fabric[mini-swe-agent,relay]"` | Yes | Yes | Yes | Yes |
+| `pip install "nemo-fabric-adapters-mini-swe-agent[harness]"` | No | Yes | Yes | No |
+| `pip install "nemo-fabric-adapters-mini-swe-agent[relay]"` | No | Yes | No | Yes |
+| `pip install "nemo-fabric-adapters-mini-swe-agent[full]"` | No | Yes | Yes | Yes |
+| `pip install nemo-fabric-adapters-mini-swe-agent` | No | Yes | No | No |
+
+The optional Relay integration emits live model, tool, step, and invocation
+telemetry and supports Relay-backed ATOF streaming. It does not enable native
+OpenAI token streaming.
 
 For configuration and behavior, see the
 [mini-SWE-agent adapter README](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/mini-swe-agent/README.md).

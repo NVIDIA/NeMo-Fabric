@@ -25,8 +25,9 @@ pip install "nemo-fabric-adapters-mini-swe-agent[harness]"
 ```
 
 The `harness` and `full` extras install the latest compatible mini-SWE-agent
-2.x release. To use an environment-managed compatible package, install the
-bare adapter:
+2.x release. The `full` extra also installs the NeMo Relay Python package
+without the NeMo Relay CLI. To use an environment-managed compatible package,
+install the bare adapter:
 
 ```bash
 pip install nemo-fabric-adapters-mini-swe-agent
@@ -51,7 +52,8 @@ harness = HarnessConfig(
 ```
 
 The adapter supports `models`, `models.base_url`, `models.temperature`,
-`instructions.system`, `runtime.max_turns`, and `environment.workspace`. Set
+`instructions.system` with `replace` mode, `runtime.max_turns`, and
+`environment.workspace`. The adapter rejects `append` system instructions. Set
 `models.<role>.api_key_env` to the environment variable containing the
 model-provider credential.
 
@@ -59,8 +61,8 @@ model-provider credential.
 `harness.settings.timeout` to set the maximum duration of one command; the
 default is `30` seconds.
 
-This adapter does not support MCP, skills, tool policy, streaming, or telemetry
-output.
+This adapter does not support MCP, skills, tool policy, or native OpenAI
+streaming.
 
 ## Run a Task
 
@@ -102,3 +104,51 @@ result = asyncio.run(main())
 ```
 
 The result includes the submitted final output and API-call usage.
+
+## Continue a Task Across Invocations
+
+Use one runtime to retain mini-SWE-agent conversation history across ordered
+invocations:
+
+```python
+async with await Fabric().start_runtime(
+    config,
+    base_dir="/workspace",
+) as runtime:
+    first = await runtime.invoke(
+        input="Inspect calculator.py and identify the bug."
+    )
+    second = await runtime.invoke(input="Fix it and run the tests.")
+```
+
+Before the second model call, the adapter removes the previous terminal `exit`
+message and appends the new input as a user message. Earlier system, user,
+assistant, and `bash` tool observation messages remain in the model context,
+including command output. History lasts only for the same runtime and is
+discarded when the runtime stops. The adapter does not currently truncate or
+summarize retained history.
+
+## Stream Relay Telemetry
+
+Install the runtime, mini-SWE-agent harness, and NeMo Relay Python package in
+one environment:
+
+```bash
+pip install "nemo-fabric[mini-swe-agent,relay]"
+```
+
+Enable Relay on the configuration:
+
+```python
+config.enable_relay()
+```
+
+For a Relay-enabled runtime, the adapter selects a Relay-specific
+mini-SWE-agent subclass that emits invocation, step, model, and bash-action
+events. Relay is not imported and the subclass is not used when Relay is
+disabled.
+
+Use `Fabric.start_runtime(config, streaming=True)` and
+`Runtime.invoke_stream()` to receive correlated ATOF records while ordinary
+adapter `invoke()` runs. This Relay-backed stream is independent of native
+OpenAI streaming; `capabilities.streaming` remains `false`.

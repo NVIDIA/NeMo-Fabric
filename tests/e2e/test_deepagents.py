@@ -59,7 +59,7 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
 ):
     pytest.importorskip("deepagents")
     from examples.code_review_agent import deepagents_config, with_relay
-    from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
+    from nemo_fabric import EnvironmentConfig, Fabric, RunRequest, RuntimeConfig
 
     config = with_relay(deepagents_config())
     config.models["default"].base_url = f"{api_server}/v1"
@@ -81,17 +81,28 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
             base_dir=tmp_path,
             streaming=True,
         ) as runtime:
-            first_stream = runtime.invoke_stream(input="first")
+            first_request = RunRequest(input="first", request_id=str(uuid.uuid4()))
+            first_stream = runtime.invoke_stream(request=first_request)
             first_records = [record async for record in first_stream]
             first = await first_stream.result()
 
-            second_stream = runtime.invoke_stream(input="second")
+            second_request = RunRequest(input="second", request_id=str(uuid.uuid4()))
+            second_stream = runtime.invoke_stream(request=second_request)
             second_records = [record async for record in second_stream]
             second = await second_stream.result()
 
     results = (first.to_mapping(), second.to_mapping())
     assert first_records
     assert second_records
+    for request, records in (
+        (first_request, first_records),
+        (second_request, second_records),
+    ):
+        assert any(
+            record.get("metadata", {}).get("nemo_fabric_request_id")
+            == request.request_id
+            for record in records
+        ), records
     assert first["status"] == second["status"] == "succeeded", results
     assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
     assert first["output"]["thread_id"] == second["output"]["thread_id"], results

@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/NVIDIA/NeMo-Fabric/discussions
+    about: Ask usage and integration questions in GitHub Discussions.
+  - name: Report a security vulnerability
+    url: https://www.nvidia.com/object/submit-security-vulnerability.html
+    about: Use NVIDIA PSIRT instead of opening a public GitHub issue.

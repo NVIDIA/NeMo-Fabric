@@ -18,6 +18,7 @@ import os
 from contextlib import AsyncExitStack
 from typing import Any
 
+from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -231,8 +232,12 @@ def _is_react_agent(workflow: dict[str, Any]) -> bool:
 def _apply_system_instruction(
     config: dict[str, Any], agent_config: AgentConfig
 ) -> None:
-    instruction = agent_config.instructions
-    if instruction is None or instruction.system is None:
+    instruction = common_instructions.system_instruction(
+        agent_config,
+        adapter="NeMo Agent Toolkit",
+        supported_modes={"append"},
+    )
+    if instruction is None:
         return
 
     workflow = config["workflow"]
@@ -251,7 +256,7 @@ def _apply_system_instruction(
                 "workflow.settings.additional_instructions",
             ],
         )
-    workflow["additional_instructions"] = instruction.system.content
+    workflow["additional_instructions"] = instruction.content
 
 
 def _string_list(value: Any, field: str, *, optional: bool = False) -> list[str] | None:

@@ -134,6 +134,30 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "mcp.auth.oauth2",
         "skills",
     ]
+    assert descriptor["config"]["system_instruction_modes"] == ["replace"]
+
+
+async def test_runtime_start_rejects_append_system_instruction(tmp_path: Path):
+    payload = {
+        "base_dir": str(tmp_path),
+        "config": _agent_config(
+            {
+                "instructions": {
+                    "system": {
+                        "content": "Follow repository policy.",
+                        "mode": "append",
+                    }
+                }
+            }
+        ),
+        "runtime_context": {},
+    }
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.HermesRuntime().start(payload)
+
+    assert caught.value.code == "unsupported_system_instruction_mode"
+    assert caught.value.metadata["field"] == "instructions.system.mode"
 
 
 def test_write_hermes_relay_plugin_config_passes_through_v3(

@@ -94,6 +94,25 @@ def test_agent_config_block_omits_empty_extensions():
     assert AgentConfig().to_mapping() == {}
 
 
+@pytest.mark.parametrize("mode", ["replace", "append"])
+def test_agent_instruction_modes_round_trip(mode: str):
+    instruction = AgentInstructionConfig.from_mapping(
+        {"content": "Follow repository policy.", "mode": mode}
+    )
+
+    assert instruction.to_mapping() == {
+        "content": "Follow repository policy.",
+        "mode": mode,
+    }
+
+
+def test_agent_instruction_rejects_unknown_mode():
+    with pytest.raises(ContractValidationError, match="mode"):
+        AgentInstructionConfig.from_mapping(
+            {"content": "Follow repository policy.", "mode": "prepend"}
+        )
+
+
 def test_agent_config_blocks_reject_implicit_and_non_json_extensions():
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         AgentConfig(implicit_extension=True)  # type: ignore[call-arg]

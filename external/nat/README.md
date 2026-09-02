@@ -25,7 +25,7 @@ installed NeMo Agent Toolkit components.
 | `AgentConfig` field | NeMo Agent Toolkit configuration |
 | --- | --- |
 | `models.<role>` | `llms.<role>`; every NeMo Fabric model-role name is preserved |
-| `instructions.system` | Built-in `react_agent` workflow `additional_instructions`; other workflow types reject this field in the initial adapter |
+| `instructions.system` | `append` only; maps to the built-in `react_agent` workflow `additional_instructions`. Other modes and workflow types are rejected. |
 | `workflow.entrypoint.kind=factory` | Resolve a NeMo Fabric-defined agent intent |
 | `workflow.entrypoint.ref=fabric.agent.react` | NeMo Agent Toolkit `react_agent` workflow factory |
 | `workflow.settings` | Remaining `workflow` component fields |
@@ -33,6 +33,13 @@ installed NeMo Agent Toolkit components.
 | `tools.definitions.<name>` with `kind=function_group` | NeMo Agent Toolkit `function_groups.<name>`; `ref` becomes `_type` |
 | `mcp.servers.<name>` | Generated `mcp_client` function group named `<name>` |
 | `tools.enabled`, `tools.blocked` | Effective native NeMo Agent Toolkit workflow tool selection |
+
+Configurations that set `instructions.system` must now select `mode="append"`
+explicitly. Earlier adapter versions accepted an omitted mode while mapping the
+instruction to additive `additional_instructions`; requiring the explicit mode
+removes that ambiguity. The adapter rejects the contract default, `replace`,
+because the built-in `react_agent` workflow does not expose a native replacement
+seam.
 
 The adapter loads installed `nat.components` entry points before validating the
 generated configuration with NeMo Agent Toolkit. A custom function or function

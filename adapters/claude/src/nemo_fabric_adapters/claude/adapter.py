@@ -40,12 +40,12 @@ from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
+from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
 from nemo_fabric_adapters.common import utils as common_utils
-from nemo_fabric_adapters.common.relay_gateway import RelaySettings
 
 LOGGER = logging.getLogger(__name__)
 
@@ -103,6 +103,15 @@ MCP_HEADER_ENVIRONMENT_VARIABLE = re.compile(
     r"|\$([A-Za-z_][A-Za-z0-9_]*)"
     r"|%([A-Za-z_][A-Za-z0-9_]*)%"
 )
+
+
+@dataclass(frozen=True)
+class ClaudeRelaySettings:
+    """Relay gateway and Claude plugin settings owned by one adapter run."""
+
+    gateway: relay_gateway.RelayGatewayLaunch
+    plugin_config: dict[str, Any]
+    plugin_path: Path
 
 
 @dataclass(frozen=True)
@@ -499,7 +508,7 @@ def prepare_claude_relay(
     model: AgentModelConfig,
     runtime_context: RuntimeContext,
     base_dir: str,
-) -> RelaySettings | None:
+) -> ClaudeRelaySettings | None:
     """Generate Relay gateway and Claude hook configuration."""
 
     if runtime_context.telemetry is None or not runtime_context.telemetry.relay_enabled:
@@ -566,7 +575,7 @@ def prepare_claude_relay(
             "claude_relay_configuration_failed",
             "Claude Relay hook configuration could not be generated",
         ) from error
-    return RelaySettings(
+    return ClaudeRelaySettings(
         gateway=gateway,
         plugin_config=plugin_config,
         plugin_path=plugin_path,
@@ -615,7 +624,7 @@ def build_options(
     runtime_context: RuntimeContext,
     base_dir: str,
     *,
-    relay: RelaySettings | None = None,
+    relay: ClaudeRelaySettings | None = None,
 ) -> ClaudeAgentOptions:
     settings = _settings(config)
     model = _selected_model_config(config)
@@ -636,10 +645,22 @@ def build_options(
         )
     cli_path = os.environ.get("FABRIC_TEST_CLAUDE_CLI_PATH")
 
-    instructions = config.instructions
-    system_prompt = (
-        instructions.system.content if instructions and instructions.system else None
+    instruction = common_instructions.system_instruction(
+        config,
+        adapter="Claude",
+        supported_modes={"replace", "append"},
     )
+    system_prompt: Any = None
+    if instruction is not None:
+        system_prompt = (
+            instruction.content
+            if instruction.mode == "replace"
+            else {
+                "type": "preset",
+                "preset": "claude_code",
+                "append": instruction.content,
+            }
+        )
     enabled_tools = config.tools.enabled if config.tools is not None else None
     allowed_tools = (
         enabled_tools
@@ -880,7 +901,7 @@ def child_environment(
 
 def _relay_output(
     output: dict[str, Any],
-    relay: RelaySettings,
+    relay: ClaudeRelaySettings,
     *,
     artifacts: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
@@ -903,7 +924,7 @@ def _relay_output(
 def _start_relay_gateway(
     runtime_context: RuntimeContext,
     base_dir: str,
-    relay: RelaySettings | None,
+    relay: ClaudeRelaySettings | None,
 ) -> subprocess.Popen[Any] | None:
     if relay is None:
         return None
@@ -921,7 +942,7 @@ def _start_relay_gateway(
 
 
 def _cleanup_relay(
-    relay: RelaySettings | None,
+    relay: ClaudeRelaySettings | None,
     gateway_process: subprocess.Popen[Any] | None,
 ) -> AdapterRelayError | None:
     cleanup_error: AdapterRelayError | None = None
@@ -988,7 +1009,7 @@ class ClaudeRuntime:
         self._fabric_runtime_id: str | None = None
         self._claude_session_id: str | None = None
         self._client: ClaudeSDKClient | None = None
-        self._relay: RelaySettings | None = None
+        self._relay: ClaudeRelaySettings | None = None
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_config_path: Path | None = None
         self._unusable = False

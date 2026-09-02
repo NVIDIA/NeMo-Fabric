@@ -208,7 +208,7 @@ def atif_plugin_config(output_directory: Path) -> dict[str, Any]:
 
 
 def relay_settings(tmp_path: Path, plugin_config: dict[str, Any]):
-    return adapter.RelaySettings(
+    return adapter.CodexRelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=tmp_path / "nemo-relay",
             config_path=tmp_path / "relay" / "config.toml",
@@ -220,7 +220,7 @@ def relay_settings(tmp_path: Path, plugin_config: dict[str, Any]):
     )
 
 
-def install_mock_relay(monkeypatch, relay: adapter.RelaySettings):
+def install_mock_relay(monkeypatch, relay: adapter.CodexRelaySettings):
     monkeypatch.setattr(adapter, "prepare_codex_relay", MagicMock(return_value=relay))
     monkeypatch.setattr(
         adapter.relay_gateway,
@@ -849,6 +849,17 @@ def test_sdk_closes_when_skill_registration_is_unavailable(
     assert client.closed is True
 
 
+def test_thread_options_reject_append_system_instruction(codex_payload):
+    codex_payload["config"]["instructions"]["system"]["mode"] = "append"
+    config, context, base_dir = runtime_input(codex_payload)
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._thread_options(config, context, base_dir, None)
+
+    assert caught.value.code == "unsupported_system_instruction_mode"
+    assert caught.value.metadata["field"] == "instructions.system.mode"
+
+
 @pytest.mark.parametrize("transport", ["sse", "carrier-pigeon"])
 def test_sdk_rejects_unsupported_mcp_transport(codex_payload, mock_codex, transport):
     configure_mcp(
@@ -1028,7 +1039,7 @@ async def test_persistent_runtime_owns_one_relay_gateway(
         url="http://127.0.0.1:43210",
         log_path=tmp_path / "relay" / "gateway.log",
     )
-    relay = adapter.RelaySettings(
+    relay = adapter.CodexRelaySettings(
         gateway=gateway,
         plugin_config={"version": 1, "components": []},
     )
@@ -1320,7 +1331,7 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
         url="http://127.0.0.1:43210",
         log_path=relay_config_path.parent / "gateway.log",
     )
-    relay = adapter.RelaySettings(
+    relay = adapter.CodexRelaySettings(
         gateway=gateway,
         plugin_config={"version": 1, "components": []},
     )
@@ -1392,7 +1403,7 @@ def test_relay_routes_custom_provider_through_gateway(codex_payload, tmp_path):
         log_path=tmp_path / "relay" / "gateway.log",
         openai_base_url="https://acme.example/v1",
     )
-    relay = adapter.RelaySettings(
+    relay = adapter.CodexRelaySettings(
         gateway=gateway,
         plugin_config={"version": 1, "components": []},
     )
@@ -1537,7 +1548,7 @@ def test_relay_stop_failure_is_reported_by_runtime_stop(
         url="http://127.0.0.1:43210",
         log_path=tmp_path / "relay" / "gateway.log",
     )
-    relay = adapter.RelaySettings(
+    relay = adapter.CodexRelaySettings(
         gateway=gateway,
         plugin_config={"version": 1, "components": []},
     )
@@ -1693,6 +1704,7 @@ def test_descriptor_has_no_codex_binary_requirement():
         "mcp.auth.oauth2",
         "skills",
     ]
+    assert descriptor["config"]["system_instruction_modes"] == ["replace"]
     assert descriptor["model_schema"]["if"]["properties"]["provider"] == {
         "const": "openai"
     }

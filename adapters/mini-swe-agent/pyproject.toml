@@ -33,8 +33,12 @@ dependencies = [
 harness = [
   "mini-swe-agent>=2.0,<3",
 ]
+relay = [
+  "nemo-relay>=0.7.2,<0.8",
+]
 full = [
   "mini-swe-agent>=2.0,<3",
+  "nemo-relay>=0.7.2,<0.8",
 ]
 
 [project.urls]

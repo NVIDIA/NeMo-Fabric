@@ -81,6 +81,11 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+Omit `instructions.system` to preserve the harness's native system instruction.
+When present, `InstructionConfig.mode` defaults to `replace`. Use `append` only
+with an adapter whose descriptor advertises that mode; planning rejects other
+combinations before the runtime starts.
+
 Use `base_dir` to resolve relative paths in an in-memory config. Before running
 in a new environment, call `plan(...)` to inspect adapter selection and
 `doctor(...)` to check runtime requirements.
@@ -181,7 +186,7 @@ by adapter:
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.temperature` | No | No | Yes | Yes | Yes |
 | `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared |
-| `instructions.system` | Yes | Yes; maps to Codex base instructions | Yes | Yes | Yes |
+| `instructions.system` | `replace`, `append` | `replace`; maps to Codex base instructions | `replace` | `replace` | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core |
 | `runtime.max_turns` | Yes | No | No | Yes; maps to Hermes iterations | Yes |
@@ -194,11 +199,11 @@ by adapter:
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No |
 | `mcp.servers.<name>.allowed_tools`, `.blocked_tools` | No | No | No | No | No |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No |
-| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | No |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes |
 | `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No |
-| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No |
-| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | No |
-| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | No |
+| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through |
+| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes |
+| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes |
 | Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics |
 
 Model selection is deterministic: the `default` role wins; otherwise a single

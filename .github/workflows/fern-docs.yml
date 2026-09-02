@@ -71,6 +71,14 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Checkout Hermes Agent
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: f80f453ae0679347e38abc917c7f94f717bf96c5
+          path: source-checkout/external/hermes-agent
+          persist-credentials: false
+
       - name: Install just
         uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
         with:

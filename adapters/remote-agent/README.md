@@ -13,12 +13,11 @@ an OpenAI Responses, OpenAI Chat Completions, or Anthropic Messages HTTP API.
 | Installation | Runtime | Adapter |
 | --- | --- | --- |
 | `pip install "nemo-fabric[remote-agent]"` | Yes | Yes |
-| `pip install "nemo-fabric-adapters-remote-agent[full]"` | No | Yes |
+| `pip install "nemo-fabric-adapters-remote-agent[harness]"` | No | Yes |
 | `pip install nemo-fabric-adapters-remote-agent` | No | Yes |
 
-The bare package includes `httpx` and can communicate directly with a remote
-service. The `full` extra is equivalent to the bare package because the remote
-service is not installed in the adapter environment.
+The bare, `harness`, and `full` installations contain the same adapter and HTTP
+client. They do not install the independently deployed remote service.
 
 ## Configuration
 
@@ -29,12 +28,15 @@ includes `/v1`; `api_type` defaults to `openai-responses`.
 | --- | --- |
 | `base_url` | HTTP(S) API root, such as `https://agent.example.com/v1` |
 | `api_type` | `openai-responses`, `openai-completions`, or `anthropic-messages` |
+| `connect_timeout_seconds` | Connection timeout; defaults to `10` |
+| `read_timeout_seconds` | Timeout between response bytes; defaults to `600` |
 
-The adapter accepts `models`, `models.temperature`, and `instructions.system`.
+The adapter accepts `models`, `models.temperature`, and replacement
+`instructions.system` values.
 Set `models.default.api_key_env` when the service requires a credential. For
 Anthropic Messages, optionally set `models.default.settings.max_tokens`; it
 otherwise uses `4096`.
 
-This adapter does not expose MCP, skills, tool policy, streaming, or subagents.
-It retains the completed user/assistant transcript for ordered invocations in
-one runtime.
+This adapter exposes terminal invocation only. It does not expose MCP, skills,
+tool policy, Relay telemetry, streaming, or subagents. It retains the completed
+user/assistant transcript for ordered invocations in one runtime.

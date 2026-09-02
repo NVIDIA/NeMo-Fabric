@@ -1,0 +1,102 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Enhancement
+description: Propose a focused improvement to existing NeMo Fabric behavior.
+title: "[Enhancement]: "
+type: Enhancement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve NeMo Fabric. Describe the user or maintainer problem before proposing implementation details.
+
+  - type: dropdown
+    id: affected_area
+    attributes:
+      label: Affected area
+      description: Select every area that would be affected by this enhancement.
+      multiple: true
+      options:
+        - Rust core or runtime
+        - Python SDK or binding
+        - Experimentation CLI
+        - Adapter contract
+        - Harness adapter
+        - Consumer integration
+        - NeMo Relay integration or streaming
+        - Schemas or configuration
+        - Installation or packaging
+        - Documentation or examples
+        - Build, CI, or release
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: Describe the limitation, friction, or opportunity this enhancement addresses.
+      placeholder: Today, users cannot...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed enhancement
+      description: Describe the behavior or capability you would like NeMo Fabric to provide.
+      placeholder: Add support for...
+    validations:
+      required: true
+
+  - type: textarea
+    id: compatibility_impact
+    attributes:
+      label: Public contract and compatibility impact
+      description: Describe effects on Rust, Python, schemas, adapter contracts, harness adapters, and consumer integrations. Enter N/A if there is no public compatibility impact.
+      placeholder: |
+        - Rust API:
+        - Python API:
+        - Schemas or adapter contract:
+        - Harness or consumer integrations:
+        - Backward compatibility:
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe alternatives, current workarounds, or reasons not to make the change. Enter N/A if none.
+      placeholder: Alternatives include...
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: List the conditions that should be true when the enhancement is complete.
+      placeholder: |
+        - Users can...
+        - Tests cover...
+        - Documentation explains...
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Add examples, references, prototypes, or other relevant context.
+
+  - type: checkboxes
+    id: duplicate_check
+    attributes:
+      label: Duplicate check
+      options:
+        - label: I searched the existing issues and did not find a duplicate.
+          required: true

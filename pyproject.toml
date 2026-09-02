@@ -55,8 +55,10 @@ adapters = [
   "nemo-fabric-adapters-deepagents[relay]",
   "nemo-fabric-adapters-hermes; python_version < '3.14'",
   "hermes-agent==0.20.1; python_version < '3.14'",
-  "nemo-fabric-adapters-mini-swe-agent",
-  "nemo-fabric-adapters-remote-agent",
+  # Install the mini-SWE-agent adapter with Relay so focused adapter tests cover
+  # its optional subclass-based telemetry integration.
+  "nemo-fabric-adapters-mini-swe-agent[relay]",
+  "nemo-fabric-adapters-remote-agent[harness]",
 ]
 
 adapter-tests = [

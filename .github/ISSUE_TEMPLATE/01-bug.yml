@@ -1,0 +1,128 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Bug
+description: Report a reproducible defect in NeMo Fabric.
+title: "[Bug]: "
+type: Bug
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a NeMo Fabric bug.
+
+        Do not include credentials, tokens, private data, or other secrets. Report potential security vulnerabilities through [NVIDIA PSIRT](https://www.nvidia.com/object/submit-security-vulnerability.html), not through a public GitHub issue.
+
+  - type: dropdown
+    id: affected_area
+    attributes:
+      label: Affected area
+      description: Select every area that appears related to the defect.
+      multiple: true
+      options:
+        - Rust core or runtime
+        - Python SDK or binding
+        - Experimentation CLI
+        - Adapter contract
+        - Harness adapter
+        - Consumer integration
+        - NeMo Relay integration or streaming
+        - Schemas or configuration
+        - Installation or packaging
+        - Documentation or examples
+        - Build, CI, or release
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: NeMo Fabric version
+      description: Provide the released version or source commit where the defect occurs.
+      placeholder: "For example: 0.3.0 or commit abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation_method
+    attributes:
+      label: Installation method
+      description: How did you install or run NeMo Fabric?
+      options:
+        - PyPI package
+        - Source checkout
+        - Prebuilt wheel or artifact
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_behavior
+    attributes:
+      label: Current behavior
+      description: Describe what happened, including any error messages or incorrect output.
+      placeholder: NeMo Fabric currently...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+      description: Describe what you expected to happen.
+      placeholder: I expected NeMo Fabric to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps_to_reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest complete reproduction you can. Include commands, configuration, and code snippets when useful.
+      placeholder: |
+        1. Install ...
+        2. Configure ...
+        3. Run ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include relevant platform, language, harness, adapter, and installation details. Enter N/A for items that do not apply.
+      placeholder: |
+        - OS and architecture:
+        - Python version:
+        - Rust version:
+        - Harness and version:
+        - Adapter and version:
+        - Install or build command:
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or artifacts
+      description: Paste relevant logs, traces, or diagnostic output. Remove credentials, tokens, private data, and other secrets.
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and workaround
+      description: Explain who is affected and whether a workaround exists. Enter N/A if not applicable.
+      placeholder: This affects...
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: duplicate_check
+    attributes:
+      label: Duplicate check
+      options:
+        - label: I searched the existing issues and did not find a duplicate.
+          required: true

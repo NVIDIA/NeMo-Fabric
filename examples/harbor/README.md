@@ -16,6 +16,7 @@ you want to exercise.
 | Walkthrough | What it demonstrates |
 | --- | --- |
 | [Calculator walkthrough](calculator/README.md) | Validate the complete integration and Harbor reward with a deterministic, credential-free smoke test, then optionally run the same task with the LLM-backed Hermes Agent or Claude harness. |
+| [NVIDIA-labs Object Oriented Agents (NOOA) BenchAgent walkthrough](nooa_bench/README.md) | Run a benchmark-native custom agent through `FabricAgent`, verify the Harbor reward and Relay artifacts, and progress to a real SWE-Bench task. |
 | [SWE-Bench walkthrough](swebench/README.md) | Run Hermes Agent and Claude experiments with skills, MCP servers, tool policy, Relay telemetry, and SWE-Bench verification. |
 
 The calculator's scripted run is useful for validating a new checkout or
@@ -75,6 +76,8 @@ version `0.3.0`.
 | Claude task without Relay | `nemo-fabric[claude]==0.3.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
 | Claude task with Relay | `nemo-fabric[claude]==0.3.0` plus a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
 | Hermes Agent task with Relay | Task image with Hermes Agent, `nemo-fabric==0.3.0`, `nemo-fabric-adapters-hermes==0.3.0`, and `nemo-relay>=0.7.2,<0.8` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
+| NOOA BenchAgent task | Task image with NOOA core, `nooa-bench`, `nemo-fabric==0.3.0`, and the BenchAgent adapter source | NeMo Fabric runner, BenchAgent, and its source-only adapter |
+| NOOA BenchAgent task with Relay | Baseline task dependencies plus `nemo-relay>=0.7.2,<0.8` | Optional Relay telemetry for the same BenchAgent task |
 
 The `nemo-fabric` package installs the runtime. The `relay` extra installs the
 NeMo Relay Python package, not the CLI required by Claude.
@@ -144,5 +147,6 @@ uv run --extra harbor python -c \
 ```
 
 The final command must print a path under `$HOME/harbor-tmp`. Keep this shell
-open and continue with either the [calculator](calculator/README.md) or
+open and continue with the [calculator](calculator/README.md),
+[NOOA BenchAgent](nooa_bench/README.md), or
 [SWE-Bench](swebench/README.md) guide.

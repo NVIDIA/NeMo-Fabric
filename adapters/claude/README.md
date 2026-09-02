@@ -84,7 +84,9 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 - `models` selects the Claude model. The native `anthropic` provider retains
   Claude authentication and endpoint discovery. Any other provider name must
   configure an Anthropic Messages-compatible `base_url` and `api_key_env`.
-- `instructions.system` supplies the Claude system instructions.
+- `instructions.system` supports `replace` and `append`. `replace` supplies the
+  complete Claude system prompt. `append` preserves the `claude_code` preset and
+  adds the configured content after it.
 - `runtime.max_turns` sets the Claude turn limit.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `environment.workspace` sets the Claude working directory, and

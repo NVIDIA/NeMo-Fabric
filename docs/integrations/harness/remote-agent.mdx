@@ -20,12 +20,11 @@ pip install "nemo-fabric[remote-agent]"
 To install the adapter without the runtime, use:
 
 ```bash
-pip install "nemo-fabric-adapters-remote-agent[full]"
+pip install "nemo-fabric-adapters-remote-agent[harness]"
 ```
 
-The bare adapter package includes `httpx` for direct asynchronous HTTP calls.
-The `full` extra is equivalent to the bare package because the remote service
-is not installed in the adapter environment.
+The bare, `harness`, and `full` installations contain the same adapter and HTTP
+client. They do not install the independently deployed remote service.
 
 ## Configure the Adapter
 
@@ -40,6 +39,8 @@ harness = HarnessConfig(
     settings={
         "base_url": "https://agent.example.com/v1",
         "api_type": "openai-responses",
+        "connect_timeout_seconds": 10,
+        "read_timeout_seconds": 600,
     },
 )
 ```
@@ -48,12 +49,14 @@ Supported `api_type` values are `openai-responses`, `openai-completions`, and
 `anthropic-messages`. Planning rejects unknown settings and values outside this
 set.
 
-The adapter supports `models`, `models.temperature`, and
-`instructions.system`. Set `models.default.api_key_env` when the service
+The adapter supports `models`, `models.temperature`, and replacement
+`instructions.system` values. Set `models.default.api_key_env` when the service
 requires a credential. The adapter sends it as a Bearer token for OpenAI APIs
 and as `x-api-key` for Anthropic Messages. For Anthropic Messages, you can set
 `models.default.settings.max_tokens`; when omitted, the adapter sends `4096`.
+The connect timeout defaults to 10 seconds, and the timeout between response
+bytes defaults to 600 seconds.
 
-The adapter does not support MCP, skills, tool policy, normalized streaming,
-or subagents. It keeps the completed user/assistant transcript for ordered
-invocations within a runtime.
+The adapter exposes terminal invocation only. It does not support MCP, skills,
+tool policy, Relay telemetry, streaming, or subagents. It keeps the completed
+user/assistant transcript for ordered invocations within a runtime.

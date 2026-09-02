@@ -26,12 +26,13 @@ GitHub Releases.
 
 ## Published Surfaces
 
-The release pipeline publishes these package surfaces from a tag push:
+The release process publishes these package surfaces from canonical and
+package-specific tag pushes:
 
 | Ecosystem | Published Surface |
 |---|---|
 | crates.io | `nemo-fabric-core`, `nemo-fabric-cli` |
-| npm | `nemo-fabric-adapter-contract` |
+| npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-pi` |
 | GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, and `nemo-fabric-adapters-hermes` wheel artifacts |
 | Fern | The documentation site |
 
@@ -50,10 +51,10 @@ NeMo Fabric versions are anchored on the workspace SemVer in the repository root
   dependency pins and must stay aligned with the same release version. The
   root `pyproject.toml` is a private development coordinator and remains at
   `0.0.0`.
-- `adapter-contract/typescript/package.json` and its lockfile carry the npm
-  adapter-contract package version and must stay aligned with the same release
-  version. The package version is independent of the
-  `fabric.adapter/v1alpha2` wire contract version.
+- The TypeScript contract, Common adapter support package, Pi adapter, private
+  adapter workspace, exact internal dependency pins, and their lockfiles all
+  use the canonical NeMo Fabric release version. The package version is independent
+  of the `fabric.adapter/v1alpha2` wire contract version.
 - The `nemo-fabric-runtime` Python package version is derived at packaging time.
   `sdk/python/nemo-fabric-runtime/pyproject.toml` stays
   `dynamic = ["version"]` in the repository, and Maturin derives the version
@@ -160,8 +161,8 @@ The helper updates:
    [`adapter-contract/python/pyproject.toml`](adapter-contract/python/pyproject.toml),
    every `adapters/**/pyproject.toml`, and their internal dependency pins to
    the same release version.
-4. [`adapter-contract/typescript/package.json`](adapter-contract/typescript/package.json)
-   and its npm lockfile.
+4. The TypeScript contract and adapter package manifests, their exact internal
+   dependency pins, and both npm lockfiles.
 5. [`Cargo.lock`](Cargo.lock), [`uv.lock`](uv.lock), and every Python project
    lockfile.
 
@@ -203,12 +204,16 @@ you are not committing them.
 
 ## Bootstrap npm Trusted Publishing
 
-The npm package must exist before npm can bind it to a GitHub trusted publisher.
-`nemo-fabric-adapter-contract@0.0.0` was published once as an inert registry
-bootstrap. It contains only the package metadata, README, and Apache-2.0
-license; the first supported contract release must be published by the trusted
-GitHub Actions workflow. Do not publish or tag `0.0.0` again. npm versions are
-immutable.
+An npm package must exist before npm can bind it to a GitHub trusted publisher.
+The following packages were published once at `0.0.0` as inert registry
+bootstraps:
+
+- `nemo-fabric-adapter-contract`
+- `nemo-fabric-adapters-common`
+- `nemo-fabric-adapters-pi`
+
+The first supported versions must be published by the trusted GitHub Actions
+workflows. Do not publish or tag `0.0.0` again. npm versions are immutable.
 
 The bootstrap was published with `--tag next`. The registry also initialized
 `latest` to `0.0.0` because it was the package's first version and rejected
@@ -221,46 +226,61 @@ Before the first supported TypeScript package release:
    administration does not depend on the bootstrap publisher's account:
 
    ```bash
-   npm owner add <second-nvidia-maintainer> nemo-fabric-adapter-contract
+   for package in \
+     nemo-fabric-adapter-contract \
+     nemo-fabric-adapters-common \
+     nemo-fabric-adapters-pi; do
+     npm owner add <second-nvidia-maintainer> "$package"
+   done
    ```
 
    npm sends each new maintainer an email invitation. The maintainer must accept
    it before access is granted. Verify every expected account appears in
-   `npm owner ls nemo-fabric-adapter-contract` before the release. Maintainers
-   must use account-level two-factor authentication.
+   `npm owner ls <package-name>` before the release. Maintainers must use
+   account-level two-factor authentication.
 2. Create and protect the GitHub `npmjs` environment. Require the release
    approvers who should authorize registry publication, and restrict deployment
-   tags to `v*`. Nightly alpha tags use the `v0.1.0-alpha.YYYYMMDD` format and
-   are included by this rule.
-3. After `publish_typescript.yml` is present on the default branch, configure
-   the package's single trusted publisher in npm with these exact,
-   case-sensitive values:
+   tags to canonical release tags matching `v*` and adapter publication tags
+   matching `npm/nemo-fabric-adapters-*/v*`.
+3. Configure each package's single trusted publisher in npm with the common
+   values below and the package-specific workflow filename shown in the table.
+   The values are case-sensitive.
 
    - Organization or user: `NVIDIA`
    - Repository: `NeMo-Fabric`
-   - Workflow filename: `publish_typescript.yml`
    - Environment: `npmjs`
    - Allowed action: `npm publish`
 
-4. Cut the first genuine release tag and approve the `npmjs` environment when
-   prompted. The workflow tests, packs, and publishes that release through OIDC;
-   do not manually pre-publish the release version. On a retry, the workflow
-   exits without republishing only when its repack has byte-identical integrity
-   and the expected dist-tag is exact. A mismatch fails closed because npm
-   versions are immutable; do not overwrite or weaken the check.
-5. Confirm the release's provenance on npm.
+   | Package | Workflow filename |
+   |---|---|
+   | `nemo-fabric-adapter-contract` | `publish_typescript.yml` |
+   | `nemo-fabric-adapters-common` | `publish_typescript.yml` |
+   | `nemo-fabric-adapters-pi` | `publish_typescript.yml` |
+
+4. Cut the canonical release tag first. After the contract version is visible
+   on npm, create the Common adapter tag at the same commit. After Common is
+   visible, create the Pi adapter tag at that commit. Release coordination is
+   responsible for keeping these tags aligned; the publishing workflow does not
+   compare adapter tags with the canonical tag.
+5. Approve the `npmjs` environment when prompted. The workflows test, pack, and
+   publish through OIDC; do not manually pre-publish a supported version. On a
+   retry, a workflow exits without republishing only when its repack has
+   byte-identical integrity and the expected dist-tag is exact. A mismatch fails
+   closed because npm versions are immutable; do not overwrite or weaken the
+   check.
+6. Confirm each release's provenance on npm.
    In the npm package settings, require two-factor authentication and disallow
    token publication. Then remove or revoke any local credentials used for the
    bootstrap.
 
-The workflow publishes stable versions with the `latest` dist-tag, beta and RC
-versions with `next`, and nightly alpha versions with `alpha`. Stable releases
-do not move either prerelease dist-tag. A retry skips only
-when the immutable package version, packed artifact integrity, and expected
-dist-tag all match. If any of them differs, the workflow fails so a maintainer
-can inspect and repair the registry state explicitly. Publication also fails
-rather than moving `latest` or `next` backward when cutting a patch from an
-older release line.
+The workflows publish stable versions with the `latest` dist-tag and beta and
+RC versions with `next`. Alpha versions are validated but are not published to
+the public npm registry. Stable releases do not move the prerelease dist-tag. A
+retry skips only when the immutable package version, packed artifact integrity,
+and expected dist-tag all match. If any of them differs, the workflow fails so
+a maintainer can inspect and repair the registry state explicitly. Publication
+also fails rather than moving `latest` or `next` backward when cutting a patch
+from an older release line.
 
 ## Cut An RC Tag
 
@@ -390,16 +410,46 @@ test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "${RELEASE_SHA}"
 git push upstream "refs/tags/${RELEASE_TAG}"
 ```
 
+## Publish the TypeScript Adapter Packages
 
-## What CI Does On A Tag Push
+After the canonical beta, RC, or stable tag publishes the contract package,
+publish the bundled adapter packages in dependency order. Every package tag
+must use the canonical release version and point to the canonical tag's commit.
 
-Pushing a valid tag triggers :
+```bash
+export NPM_CONFIG_REGISTRY=https://registry.npmjs.org
+RELEASE_SHA="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+
+npm view "nemo-fabric-adapter-contract@${RELEASE_VERSION}" version
+
+for package in nemo-fabric-adapters-common nemo-fabric-adapters-pi; do
+  package_tag="npm/${package}/v${RELEASE_VERSION}"
+  git tag -s -a \
+    -m "${package} ${RELEASE_VERSION}" \
+    "$package_tag" \
+    "$RELEASE_SHA"
+  test "$(git rev-parse "${package_tag}^{commit}")" = "$RELEASE_SHA"
+  git push upstream "refs/tags/${package_tag}"
+
+  # Wait for this publication to finish before advancing to its dependent.
+  npm view "${package}@${RELEASE_VERSION}" version
+done
+```
+
+Do not create npm package tags for alpha versions. The nightly workflow runs
+the TypeScript tests against the alpha tag without publishing to npm.
+
+
+## What CI Does on a Tag Push
+
+Pushing a valid canonical or npm package tag triggers:
 
 | Workflow | Trigger |
 |---|---|
 | [`.github/workflows/ci_python.yml`](.github/workflows/ci_python.yml) | For all tags including alpha |
 | [`.github/workflows/publish_rust.yml`](.github/workflows/publish_rust.yml) | For RC, beta and release tags |
-| [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml) | For all release tags, including nightly alpha |
+| [`.github/workflows/ci_typescript.yml`](.github/workflows/ci_typescript.yml) | For nightly alpha tags and normal pull request/main validation |
+| [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml) | For contract, Common, and Pi beta, RC, and stable tags |
 | [`.github/workflows/fern-docs.yml`](.github/workflows/fern-docs.yml) | For RC, beta and release tags |
 
 The release pipeline then:
@@ -412,9 +462,10 @@ The release pipeline then:
 3. Publishes `nemo-fabric-core` and `nemo-fabric-cli` to crates.io through
    trusted publishing for stable, beta, and RC tags. Alpha tags are not
    published to crates.io.
-4. Publishes `nemo-fabric-adapter-contract` to npm through trusted publishing.
-   Stable releases use the `latest` dist-tag, beta and RC releases use `next`,
-   and nightly alpha releases use `alpha`.
+4. Publishes `nemo-fabric-adapter-contract` to npm from the canonical tag, then
+   publishes Common and Pi when their package tags are pushed in dependency
+   order. Stable releases use the `latest` dist-tag and beta and RC releases use
+   `next`. Alpha tags validate the packages without publishing them.
 5. Publishes Fern documentation versions for stable, beta, and RC tags. Alpha
    tags do not publish a separate documentation version.
 
@@ -427,8 +478,9 @@ The workflow boundary is split intentionally:
 - [`.github/workflows/publish_rust.yml`](.github/workflows/publish_rust.yml)
   owns crates.io publication decisions and credentials.
 - [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml)
-  owns npm publication decisions and requests a short-lived npm credential
-  through GitHub OIDC. It does not receive an npm write token.
+  owns contract, Common, and Pi npm publication decisions. It requests a
+  short-lived credential through GitHub OIDC and does not receive an npm write
+  token.
 
 
 ## Publish The GitHub Release Entry
@@ -466,24 +518,30 @@ After the release is live, verify:
    - [`nemo-fabric-adapters-codex`](https://pypi.nvidia.com/nemo-fabric-adapters-codex/)
    - [`nemo-fabric-adapters-deepagents`](https://pypi.nvidia.com/nemo-fabric-adapters-deepagents/)
    - [`nemo-fabric-adapters-hermes`](https://pypi.nvidia.com/nemo-fabric-adapters-hermes/)
-4. The TypeScript contract package is visible on npm with the expected version,
-   dist-tag, and provenance:
+4. The TypeScript contract, Common, and Pi packages are visible on npm with the
+   expected version, dist-tag, and provenance:
 
    ```bash
    (
      set -euo pipefail
      npmjs_registry="https://registry.npmjs.org/"
-     npm view "nemo-fabric-adapter-contract@<release-version>" version \
-       --registry="$npmjs_registry"
-     npm view "nemo-fabric-adapter-contract" dist-tags \
-       --registry="$npmjs_registry"
+     for package in \
+       nemo-fabric-adapter-contract \
+       nemo-fabric-adapters-common \
+       nemo-fabric-adapters-pi; do
+       npm view "${package}@<release-version>" version \
+         --registry="$npmjs_registry"
+       npm view "$package" dist-tags --registry="$npmjs_registry"
+     done
      verification_dir="$(mktemp -d)"
      trap 'rm -rf "$verification_dir"' EXIT
      cd "$verification_dir"
      npm init --yes --registry="$npmjs_registry"
      npm install --ignore-scripts --save-exact \
        --registry="$npmjs_registry" \
-       "nemo-fabric-adapter-contract@<release-version>"
+       "nemo-fabric-adapter-contract@<release-version>" \
+       "nemo-fabric-adapters-common@<release-version>" \
+       "nemo-fabric-adapters-pi@<release-version>"
      npm audit signatures --registry="$npmjs_registry"
    )
    ```

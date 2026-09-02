@@ -28,6 +28,7 @@ from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
+from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import telemetry
@@ -82,6 +83,11 @@ class HermesRuntime:
                     "hermes_invalid_config",
                     "Hermes requires a validated AgentConfig",
                 )
+            common_instructions.system_instruction(
+                agent_config,
+                adapter="Hermes",
+                supported_modes={"replace"},
+            )
             runtime_context = RuntimeContext.from_mapping(
                 payload.get("runtime_context")
             )

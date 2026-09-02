@@ -86,14 +86,11 @@ jobs:
       ref_type: tag
       skip_tests: true
 
-  publish-typescript:
+  typescript-ci:
     name: TypeScript
     needs: tag-nightly-alpha
     permissions:
-      # The called workflow checks out the newly created tag.
       contents: read
-      # The called workflow uses npm trusted publishing through GitHub OIDC.
-      id-token: write
-    uses: ./.github/workflows/publish_typescript.yml
+    uses: ./.github/workflows/ci_typescript.yml
     with:
       ref: refs/tags/${{ needs.tag-nightly-alpha.outputs.tag }}

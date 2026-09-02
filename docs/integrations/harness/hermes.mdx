@@ -57,7 +57,8 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.hermes")
 ```
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
-MCP servers, instructions, turn limit, native tool selectors, and telemetry.
+MCP servers, replacement system instructions, turn limit, native tool
+selectors, and telemetry. The adapter rejects `append` system instructions.
 
 The Hermes descriptor validates the following `harness.settings` fields:
 

@@ -87,6 +87,18 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "system_instruction_modes": {
+          "description": "Exact system-instruction modes supported by this adapter.\n\nAn omitted value preserves compatibility with descriptors that predate\nmode discovery and means `replace` when `instructions.system` is accepted.",
+          "items": {
+            "$ref": "#/$defs/InstructionMode"
+          },
+          "minItems": 1,
+          "type": [
+            "array",
+            "null"
+          ],
+          "uniqueItems": true
         }
       },
       "type": "object"
@@ -208,6 +220,21 @@
         }
       },
       "type": "object"
+    },
+    "InstructionMode": {
+      "description": "How an instruction value is applied to the selected harness.",
+      "oneOf": [
+        {
+          "const": "replace",
+          "description": "Replace the harness default instruction value.",
+          "type": "string"
+        },
+        {
+          "const": "append",
+          "description": "Preserve the harness default and append this instruction after it.",
+          "type": "string"
+        }
+      ]
     },
     "RuntimeCapabilities": {
       "description": "Lifecycle behavior implemented by a resolved runtime path.",

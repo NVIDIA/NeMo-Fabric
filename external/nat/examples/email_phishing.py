@@ -57,7 +57,8 @@ def build_config() -> FabricConfig:
         },
         instructions=InstructionsConfig(
             system=InstructionConfig(
-                content='State whether the email is "phishing" or "benign" and explain why.'
+                content='State whether the email is "phishing" or "benign" and explain why.',
+                mode="append",
             )
         ),
         tools=tools,

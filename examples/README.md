@@ -64,7 +64,9 @@ skills, MCP servers, tool policy, and telemetry—into the final `FabricConfig`.
 The walkthroughs include:
 
 - a calculator walkthrough with a deterministic, credential-free integration
-  smoke test and optional LLM-backed Hermes Agent and Claude runs; and
+  smoke test and optional LLM-backed Hermes Agent and Claude runs;
+- an NVIDIA-labs Object Oriented Agents (NOOA) BenchAgent walkthrough with
+  Harbor reward, Relay ATOF/ATIF verification, and a real SWE-Bench task; and
 - a SWE-Bench workflow for running Hermes Agent and Claude, comparing capability
   variations, inspecting Relay telemetry, and verifying real coding tasks.
 

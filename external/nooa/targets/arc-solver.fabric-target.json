@@ -1,0 +1,23 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "type": "workflow",
+  "id": "nvidia.nooa.arc-solver",
+  "adapter_id": "nvidia.fabric.nooa",
+  "spec": {
+    "entrypoint": {
+      "kind": "interactive_agent_factory",
+      "ref": "nemo_fabric_adapters.nooa.targets.arc_solver:create_agent"
+    },
+    "settings_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "reflect_every": {"type": "integer", "minimum": 1},
+        "visual": {"type": "string", "enum": ["off", "only", "additive"]},
+        "png_scale": {"type": "integer", "minimum": 1},
+        "max_actions_per_turn": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    }
+  }
+}

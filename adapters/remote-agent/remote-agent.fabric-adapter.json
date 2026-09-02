@@ -25,6 +25,18 @@
         ],
         "default": "openai-responses",
         "description": "Remote agent API protocol."
+      },
+      "connect_timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 10,
+        "description": "Timeout in seconds for connecting to the remote agent."
+      },
+      "read_timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 600,
+        "description": "Timeout in seconds between response bytes from the remote agent."
       }
     },
     "required": ["base_url"],
@@ -55,7 +67,8 @@
       "models",
       "models.temperature",
       "instructions.system"
-    ]
+    ],
+    "system_instruction_modes": ["replace"]
   },
   "capabilities": {
     "service": false,

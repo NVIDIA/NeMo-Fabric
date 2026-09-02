@@ -129,10 +129,14 @@ class _RecordingScope:
 
     def __init__(self) -> None:
         self.opened: list[str] = []
+        self.parent_uuids: list[str] = []
+        self.metadata: list[object] = []
 
     @contextlib.contextmanager
     def scope(self, name: str, scope_type: object, **kwargs: object):
         self.opened.append(name)
+        self.parent_uuids.append(str(nemo_relay.scope.get_handle().uuid))
+        self.metadata.append(kwargs.get("metadata"))
         with nemo_relay.scope.scope(name, scope_type, **kwargs):
             yield
 
@@ -143,6 +147,32 @@ class _NoopPlugin:
     @contextlib.asynccontextmanager
     async def plugin(self, config: object):
         yield {"diagnostics": [], "runtime_diagnostics": []}
+
+
+async def test_uuid_request_id_seeds_real_relay_parent(monkeypatch):
+    async def fake_invoke(agent, user_message, thread_id, callbacks=None):
+        return {"messages": []}, [], []
+
+    monkeypatch.setattr(adapter, "invoke_compiled_agent", fake_invoke)
+
+    baseline = nemo_relay.scope.get_handle()
+    recording_scope = _RecordingScope()
+    runtime = adapter.DeepAgentsRuntime()
+    runtime._agent = object()
+    runtime._relay_plugin = _NoopPlugin()
+    runtime._relay_plugin_config = {}
+    runtime._relay_scope = recording_scope
+    runtime._relay_scope_type = nemo_relay.ScopeType
+    runtime._callback_handler_type = NemoRelayCallbackHandler
+    request_id = "018f47a4-3af7-7d94-8e61-9f0f89b5d312"
+
+    outcome = await runtime._invoke_with_telemetry("hello", request_id)
+
+    assert outcome.error is None
+    assert outcome.telemetry_error is None
+    assert recording_scope.parent_uuids == [request_id]
+    assert recording_scope.metadata == [{"nemo_fabric_request_id": request_id}]
+    assert nemo_relay.scope.get_handle().uuid == baseline.uuid
 
 
 async def test_a_poisoned_runtime_quarantines_its_next_turn(monkeypatch):
@@ -187,3 +217,4 @@ async def test_a_poisoned_runtime_quarantines_its_next_turn(monkeypatch):
     assert second.telemetry_error == runtime._telemetry_quarantine
     assert "not at the top of the stack" not in second.telemetry_error
     assert recording_scope.opened == ["deepagents-request"]
+    assert recording_scope.metadata == [{"nemo_fabric_request_id": "request-1"}]

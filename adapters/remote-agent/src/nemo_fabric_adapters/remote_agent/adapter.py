@@ -7,17 +7,22 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 from nemo_fabric_adapter_contract import models as contract
+from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import utils as common_utils
 
 
 DEFAULT_API_TYPE = "openai-responses"
 DEFAULT_ANTHROPIC_MAX_TOKENS = 4096
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
+DEFAULT_READ_TIMEOUT_SECONDS = 600.0
 API_PATHS = {
     "openai-responses": "/responses",
     "openai-completions": "/chat/completions",
@@ -27,6 +32,34 @@ API_PATHS = {
 
 def _api_url(base_url: str, api_type: str) -> str:
     return f"{base_url.rstrip('/')}{API_PATHS[api_type]}"
+
+
+def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
+    model = config.models.get("default")
+    if model is None and len(config.models) == 1:
+        model = next(iter(config.models.values()))
+    if model is None:
+        raise lifecycle.LifecycleError(
+            "remote_agent_missing_model",
+            "Remote Agent requires a default model or exactly one model",
+        )
+    return model
+
+
+def _timeout_setting(settings: dict[str, Any], name: str, default: float) -> float:
+    value = settings.get(name, default)
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise lifecycle.LifecycleError(
+            "remote_agent_invalid_configuration",
+            f"Remote Agent {name} must be a positive finite number",
+            metadata={"field": f"harness.settings.{name}"},
+        )
+    return float(value)
 
 
 def _response_text(response: dict[str, Any]) -> str:
@@ -42,7 +75,9 @@ def _response_text(response: dict[str, Any]) -> str:
     raise RuntimeError("remote agent response did not include output text")
 
 
-async def _sse_events(response: httpx.Response):
+async def _sse_events(
+    response: httpx.Response,
+) -> AsyncIterator[tuple[str, dict[str, Any]]]:
     event = "message"
     data: list[str] = []
     async for line in response.aiter_lines():
@@ -60,7 +95,7 @@ async def _sse_events(response: httpx.Response):
 
 
 class RemoteAgentRuntime:
-    """One HTTP client and transcript owned by a Fabric runtime."""
+    """One HTTP client and transcript owned by a NeMo Fabric runtime."""
 
     def __init__(self) -> None:
         self._client: httpx.AsyncClient | None = None
@@ -73,10 +108,29 @@ class RemoteAgentRuntime:
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
         context = contract.RuntimeContext.from_mapping(payload["runtime_context"])
-        settings = config.harness.settings
+        settings = config.harness.settings if config.harness is not None else {}
         self._api_type = settings.get("api_type", DEFAULT_API_TYPE)
-        base_url = settings["base_url"]
-        model = config.models["default"]
+        if self._api_type not in API_PATHS:
+            raise lifecycle.LifecycleError(
+                "remote_agent_invalid_configuration",
+                "Remote Agent api_type is not supported",
+                metadata={"field": "harness.settings.api_type"},
+            )
+        base_url = settings.get("base_url")
+        if not isinstance(base_url, str) or not base_url.startswith(
+            ("http://", "https://")
+        ):
+            raise lifecycle.LifecycleError(
+                "remote_agent_invalid_configuration",
+                "Remote Agent base_url must use HTTP or HTTPS",
+                metadata={"field": "harness.settings.base_url"},
+            )
+        common_instructions.system_instruction(
+            config,
+            adapter="Remote Agent",
+            supported_modes={"replace"},
+        )
+        model = _selected_model(config)
         headers: dict[str, str] = {}
         if model.api_key_env is not None:
             try:
@@ -94,13 +148,28 @@ class RemoteAgentRuntime:
             headers["anthropic-version"] = "2023-06-01"
 
         self._endpoint = _api_url(base_url, self._api_type)
+        connect_timeout = _timeout_setting(
+            settings,
+            "connect_timeout_seconds",
+            DEFAULT_CONNECT_TIMEOUT_SECONDS,
+        )
+        read_timeout = _timeout_setting(
+            settings,
+            "read_timeout_seconds",
+            DEFAULT_READ_TIMEOUT_SECONDS,
+        )
 
         # Attempt to negotiate HTTP/2, this will automatically fall back
         # to HTTP/1.1 if the server does not support it.
         self._client = httpx.AsyncClient(
             headers=headers,
             http2=True,
-            timeout=None,
+            timeout=httpx.Timeout(
+                connect=connect_timeout,
+                read=read_timeout,
+                write=read_timeout,
+                pool=connect_timeout,
+            ),
         )
         self._config = config
         self._runtime_id = context.runtime_id
@@ -174,7 +243,7 @@ class RemoteAgentRuntime:
         config = self._config
         if config is None:
             raise RuntimeError("remote agent runtime is not configured")
-        model = config.models["default"]
+        model = _selected_model(config)
         payload: dict[str, Any] = {
             "model": model.model,
             "input": [*self._messages, {"role": "user", "content": user_text}],
@@ -205,7 +274,7 @@ class RemoteAgentRuntime:
         config = self._config
         if config is None:
             raise RuntimeError("remote agent runtime is not configured")
-        model = config.models["default"]
+        model = _selected_model(config)
         messages = list(self._messages)
         if config.instructions and config.instructions.system:
             messages.insert(
@@ -231,7 +300,7 @@ class RemoteAgentRuntime:
         config = self._config
         if config is None:
             raise RuntimeError("remote agent runtime is not configured")
-        model = config.models["default"]
+        model = _selected_model(config)
         payload: dict[str, Any] = {
             "model": model.model,
             "messages": [*self._messages, {"role": "user", "content": user_text}],

@@ -12,8 +12,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
-import requests
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import RuntimeContext
@@ -98,7 +98,8 @@ async def test_remote_agent_invokes_supported_protocol(
     finally:
         await runtime.stop()
 
-    captured = requests.get(f"{api_server}/_requests", timeout=5).json()
+    async with httpx.AsyncClient() as control_client:
+        captured = (await control_client.get(f"{api_server}/_requests")).json()
     assert result.status == "succeeded"
     expected_text = (
         "echo user_count=1 latest=Hello."
@@ -137,14 +138,18 @@ async def test_remote_agent_retains_transcript_and_reports_http_failure(
         await runtime.invoke(AgentRunRequest(input="First."), context)
         await runtime.invoke(AgentRunRequest(input="Second."), context)
 
-        captured = requests.get(f"{api_server}/_requests", timeout=5).json()
+        async with httpx.AsyncClient() as control_client:
+            captured = (await control_client.get(f"{api_server}/_requests")).json()
         assert [message["role"] for message in captured[-1]["input"]] == [
             "user",
             "assistant",
             "user",
         ]
 
-        requests.post(f"{api_server}/_scenario", json={"status_code": 503}, timeout=5)
+        async with httpx.AsyncClient() as control_client:
+            await control_client.post(
+                f"{api_server}/_scenario", json={"status_code": 503}
+            )
         result = await runtime.invoke(AgentRunRequest(input="Retry."), context)
     finally:
         await runtime.stop()
@@ -154,7 +159,7 @@ async def test_remote_agent_retains_transcript_and_reports_http_failure(
     assert result.error.retryable is True
 
 
-async def test_remote_agent_enables_http2(
+async def test_remote_agent_configures_http_client(
     monkeypatch: pytest.MonkeyPatch, repo_root: Path
 ):
     mock_client = MagicMock()
@@ -164,7 +169,13 @@ async def test_remote_agent_enables_http2(
 
     config = AgentConfig.from_mapping(
         {
-            "harness": {"settings": {"base_url": "https://agents.example.test/v1"}},
+            "harness": {
+                "settings": {
+                    "base_url": "https://agents.example.test/v1",
+                    "connect_timeout_seconds": 2.5,
+                    "read_timeout_seconds": 30,
+                }
+            },
             "models": {"default": {"provider": "test", "model": "fabric-echo"}},
         }
     )
@@ -181,6 +192,82 @@ async def test_remote_agent_enables_http2(
     mock_client.aclose.assert_awaited_once()
 
     assert mock_async_client.call_args.kwargs["http2"] is True
+    timeout = mock_async_client.call_args.kwargs["timeout"]
+    assert timeout.connect == 2.5
+    assert timeout.read == 30
+    assert timeout.write == 30
+    assert timeout.pool == 2.5
+
+
+async def test_remote_agent_maps_timeout_and_closes_client(
+    monkeypatch: pytest.MonkeyPatch, repo_root: Path
+):
+    request = httpx.Request("POST", "https://agents.example.test/v1/chat/completions")
+    mock_client = MagicMock()
+    mock_client.post = AsyncMock(
+        side_effect=httpx.ReadTimeout("remote agent timed out", request=request)
+    )
+    mock_client.aclose = AsyncMock()
+    monkeypatch.setattr(
+        adapter.httpx, "AsyncClient", MagicMock(return_value=mock_client)
+    )
+
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {
+                "settings": {
+                    "base_url": "https://agents.example.test/v1",
+                    "api_type": "openai-completions",
+                }
+            },
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+        }
+    )
+    context = _context()
+    runtime = adapter.RemoteAgentRuntime()
+    await runtime.start(
+        {
+            "config": config,
+            "runtime_context": context.to_mapping(),
+            "base_dir": str(repo_root),
+        }
+    )
+
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.invoke(AgentRunRequest(input="Hello."), context)
+    finally:
+        await runtime.stop()
+
+    assert caught.value.code == "remote_agent_transport_failed"
+    assert caught.value.retryable is True
+    mock_client.aclose.assert_awaited_once()
+
+
+async def test_remote_agent_rejects_append_system_instruction(repo_root: Path):
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {"base_url": "https://agents.example.test/v1"}},
+            "instructions": {
+                "system": {"content": "Additional guidance.", "mode": "append"}
+            },
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+        }
+    )
+    context = _context()
+    runtime = adapter.RemoteAgentRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(
+            {
+                "config": config,
+                "runtime_context": context.to_mapping(),
+                "base_dir": str(repo_root),
+            }
+        )
+
+    assert caught.value.code == "unsupported_system_instruction_mode"
+    assert caught.value.metadata["field"] == "instructions.system.mode"
 
 
 def test_remote_agent_descriptor_and_module_entrypoint(repo_root: Path):
@@ -201,5 +288,7 @@ def test_remote_agent_descriptor_and_module_entrypoint(repo_root: Path):
     assert descriptor["settings_schema"]["properties"]["api_type"]["default"] == (
         "openai-responses"
     )
+    assert descriptor["config"]["system_instruction_modes"] == ["replace"]
+    assert descriptor["capabilities"]["streaming"] is False
     assert "telemetry" not in descriptor
     assert result.returncode == 0, result.stderr

@@ -1,0 +1,104 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Documentation
+description: Report missing, incorrect, confusing, or outdated NeMo Fabric documentation.
+title: "[Documentation]: "
+type: Documentation
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to improve the NeMo Fabric documentation.
+
+  - type: dropdown
+    id: request_type
+    attributes:
+      label: Request type
+      options:
+        - Missing documentation
+        - Incorrect documentation
+        - Confusing documentation
+        - Outdated documentation
+    validations:
+      required: true
+
+  - type: dropdown
+    id: documentation_area
+    attributes:
+      label: Documentation area
+      description: Select every documentation area that applies.
+      multiple: true
+      options:
+        - README
+        - Documentation site
+        - Getting started or installation
+        - Python SDK or API reference
+        - Rust API reference
+        - Experimentation CLI
+        - Adapter contract
+        - Harness integration
+        - Consumer integration
+        - Examples or tutorials
+        - Contributor or release documentation
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Documentation problem
+      description: Describe what is missing, incorrect, confusing, or outdated.
+      placeholder: The current documentation...
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected_pages
+    attributes:
+      label: Affected pages or files
+      description: Link to pages or list repository paths. Enter N/A if you are not sure.
+      placeholder: |
+        - https://...
+        - docs/... or README.md
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_change
+    attributes:
+      label: Proposed documentation change
+      description: Describe the change that would resolve the issue.
+      placeholder: Update the documentation to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: audience
+    attributes:
+      label: Audience and use case
+      description: Describe who needs this documentation and what they are trying to do.
+      placeholder: This helps users who...
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: List the conditions that should be true when the documentation issue is resolved.
+      placeholder: |
+        - The documentation explains...
+        - The example demonstrates...
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: duplicate_check
+    attributes:
+      label: Duplicate check
+      options:
+        - label: I searched the existing issues and did not find a duplicate.
+          required: true

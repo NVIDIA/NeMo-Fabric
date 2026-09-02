@@ -22,7 +22,7 @@ The following table shows which components each installation provides:
 | `pip install "nemo-fabric-adapters-deepagents[relay]"` | No | Yes | No | Yes |
 | `pip install nemo-fabric-adapters-deepagents` | No | Yes | No | No |
 
-For an environment-managed stack, use `deepagents>=0.6.12,<0.7.0`,
+For an environment-managed stack, use `deepagents>=0.6.12,<0.8.0`,
 `langchain>=1.3,<2.0`, and `langgraph>=1.2,<2.0`. For split runtime and adapter
 environments, configure `ADAPTER_PYTHON` and use matching NeMo Fabric release
 versions. Refer to the
@@ -52,7 +52,8 @@ NeMo Fabric maps the following into the harness:
 
 - The selected `models` role supplies `model`, `provider`, `api_key_env`,
   `base_url`, and `temperature`.
-- `instructions.system` becomes the Deep Agents `system_prompt`.
+- `instructions.system` supports `replace` and becomes the Deep Agents
+  `system_prompt`. Deep Agents rejects `append`.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`

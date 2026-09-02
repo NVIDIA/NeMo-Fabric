@@ -19,6 +19,7 @@ from examples.code_review_agent import claude_config
 from examples.code_review_agent import codex_config
 from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import hermes_config
+from examples.code_review_agent import nooa_config
 from examples.code_review_agent import pi_config
 from examples.code_review_agent import with_github_mcp
 from examples.code_review_agent import with_native_otel
@@ -38,9 +39,10 @@ def test_variant_builders_return_independent_complete_configs():
     codex = codex_config()
     claude = claude_config()
     deepagents = deepagents_config()
+    nooa = nooa_config()
     pi = pi_config()
 
-    for config in (base, hermes, codex, claude, deepagents, pi):
+    for config in (base, hermes, codex, claude, deepagents, nooa, pi):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
@@ -79,6 +81,10 @@ def test_variant_builders_return_independent_complete_configs():
     assert deepagents.instructions == pi.instructions
     assert deepagents.environment.workspace == pi.environment.workspace
     assert deepagents.tools is None
+    assert nooa.harness is None
+    assert nooa.workflow is not None
+    assert nooa.workflow.target_id == "nvidia.nooa.coding-agent"
+    assert nooa.skills is not None
     assert base.mcp is None
     assert base.skills is not None
     skill_path = BASE_DIR / base.skills.paths[0]
@@ -218,6 +224,14 @@ def test_variants_plan_from_complete_configs():
         assert "github" in github_plan["capability_plan"]["native"]["mcp_servers"]
         assert "mcp_servers" not in github_plan["capability_plan"]["unsupported"]
 
+    nooa_plan = client.plan(nooa_config(), base_dir=BASE_DIR)
+    assert nooa_plan.base_dir == BASE_DIR
+    assert nooa_plan.agent_name == "code-review-agent"
+    assert nooa_plan.adapter.adapter_id == "nvidia.fabric.nooa"
+    assert nooa_plan.config.workflow.target_id == "nvidia.nooa.coding-agent"
+    nooa_github_plan = client.plan(with_github_mcp(nooa_config()), base_dir=BASE_DIR)
+    assert "github" in nooa_github_plan["capability_plan"]["native"]["mcp_servers"]
+
 
 def test_example_entrypoint_plans_without_starting_a_runtime():
     variants = (
@@ -225,6 +239,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         ("codex", "nvidia.fabric.codex"),
         ("claude", "nvidia.fabric.claude"),
         ("deepagents", "nvidia.fabric.langchain.deepagents"),
+        ("nooa", "nvidia.fabric.nooa"),
         ("pi", "nvidia.fabric.pi"),
     )
     cases = tuple(
@@ -364,6 +379,34 @@ def test_pi_variant_rejects_relay_before_planning():
     assert "Pi adapter does not support Relay yet" in completed.stderr
 
 
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        (["--stream"], "--stream requires --relay"),
+        (
+            ["--relay", "--stream", "--plan"],
+            "--stream cannot be combined with --plan",
+        ),
+    ],
+)
+def test_example_entrypoint_rejects_invalid_stream_options(options, message):
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            *options,
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert message in completed.stderr
+
+
 async def test_example_entrypoint_shows_response_after_normalized_output(
     monkeypatch,
     capsys,
@@ -389,3 +432,63 @@ async def test_example_entrypoint_shows_response_after_normalized_output(
     assert json.loads("\n".join(lines[:-1])) == {
         "output": {"response": "visible response"}
     }
+
+
+async def test_example_entrypoint_streams_relay_records_and_terminal_result(
+    monkeypatch,
+    capsys,
+):
+    result = MagicMock()
+    result.output = RunOutput.from_mapping({"response": "streamed response"})
+    result.error = None
+    result.to_mapping.return_value = {
+        "status": "succeeded",
+        "output": result.output.to_mapping(),
+    }
+
+    stream = MagicMock(name="runtime_stream")
+    stream.__aiter__.return_value = iter(
+        [
+            {"type": "scope_start", "request_id": "request-1"},
+            {"type": "scope_end", "request_id": "request-1"},
+        ]
+    )
+    stream.result = AsyncMock(return_value=result)
+    runtime = MagicMock()
+    runtime.invoke_stream.return_value = stream
+    runtime_context = MagicMock(name="runtime_context")
+    runtime_context.__aenter__ = AsyncMock(return_value=runtime)
+    runtime_context.__aexit__ = AsyncMock(return_value=None)
+
+    mock_fabric = MagicMock()
+    mock_fabric.start_runtime = AsyncMock(return_value=runtime_context)
+    monkeypatch.setattr(main_module, "Fabric", lambda: mock_fabric)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "code_review_agent",
+            "--variant",
+            "nooa",
+            "--relay",
+            "--stream",
+            "--show-output",
+            "--input",
+            "review this",
+        ],
+    )
+
+    await main_module.main()
+
+    captured = capsys.readouterr()
+    lines = captured.out.splitlines()
+    assert captured.err == ""
+    assert lines[-1] == "streamed response"
+    payload = json.loads("\n".join(lines[:-1]))
+    assert len(payload["atof_records"]) == 2
+    assert payload["result"]["status"] == "succeeded"
+    mock_fabric.start_runtime.assert_awaited_once()
+    assert mock_fabric.start_runtime.call_args.kwargs["streaming"] is True
+    runtime.invoke_stream.assert_called_once_with(input="review this")
+    stream.result.assert_awaited_once_with()
+    runtime_context.__aexit__.assert_awaited_once()

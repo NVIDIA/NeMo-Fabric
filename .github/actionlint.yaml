@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+paths:
+  .github/workflows/publish_typescript.yml:
+    ignore:
+      # GitHub supports concurrency.queue, but actionlint v1.7.12 does not yet
+      # recognize it: https://github.com/rhysd/actionlint/issues/657
+      - 'unexpected key "queue" for "concurrency" section'

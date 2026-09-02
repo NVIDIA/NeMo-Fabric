@@ -386,6 +386,11 @@
           "const": "replace",
           "description": "Replace the harness default instruction value.",
           "type": "string"
+        },
+        {
+          "const": "append",
+          "description": "Preserve the harness default and append this instruction after it.",
+          "type": "string"
         }
       ]
     },

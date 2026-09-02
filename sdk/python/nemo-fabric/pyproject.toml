@@ -67,7 +67,7 @@ mini-swe-agent = [
 ]
 
 remote-agent = [
-  "nemo-fabric-adapters-remote-agent[full] == 0.3.0",
+  "nemo-fabric-adapters-remote-agent[harness] == 0.3.0",
 ]
 
 harbor = [

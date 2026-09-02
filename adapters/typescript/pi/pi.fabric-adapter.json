@@ -18,7 +18,8 @@
       "tools.enabled",
       "tools.blocked",
       "skills"
-    ]
+    ],
+    "system_instruction_modes": ["replace"]
   },
   "settings_schema": {
     "type": "object",
