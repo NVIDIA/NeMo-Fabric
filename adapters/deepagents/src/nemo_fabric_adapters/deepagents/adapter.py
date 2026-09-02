@@ -24,6 +24,7 @@ from typing import NamedTuple
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
+from langgraph.errors import GraphRecursionError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
@@ -684,7 +685,7 @@ class DeepAgentsRuntime:
             output=output,
             error=(
                 AgentRunError(
-                    code="deepagents_invocation_failed",
+                    code=outcome.error_code or "deepagents_invocation_failed",
                     message=str(reported_error or "Deep Agents invocation failed"),
                 )
                 if failed
@@ -774,6 +775,11 @@ class DeepAgentsRuntime:
                 user_message,
                 self._thread_id,
                 callbacks=callbacks,
+            )
+        except GraphRecursionError:
+            return TurnOutcome(
+                error="Deep Agents reached its graph recursion limit.",
+                error_code="deepagents_recursion_limit_reached",
             )
         except Exception as exc:  # normalized adapter failure
             return TurnOutcome(error=_error_text(exc))
@@ -925,6 +931,7 @@ class TurnOutcome(NamedTuple):
     events: list[dict[str, Any]] | None = None
     turn_messages: list[dict[str, Any]] | None = None
     error: str | None = None
+    error_code: str | None = None
     telemetry_error: str | None = None
 
 

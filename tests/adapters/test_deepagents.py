@@ -124,9 +124,15 @@ def fake_sdks_fixture(monkeypatch):
     def build_agent(**kwargs):
         recorder["create_kwargs"] = kwargs
 
-        async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
+        async def stream(
+            agent_name, inputs, config=None, *, stream_mode=None, subgraphs=False
+        ):
             if "stream_error" in recorder:
                 raise recorder["stream_error"]
+            recorder["astream_agent"] = agent_name
+            recorder["astream_recursion_limit"] = recorder.get(
+                "bound_recursion_limit" if agent_name == "bound" else "original_recursion_limit"
+            )
             recorder["config"] = config
             recorder["subgraphs"] = subgraphs
             recorder["checkpointer"] = kwargs.get("checkpointer")
@@ -143,9 +149,39 @@ def fake_sdks_fixture(monkeypatch):
             yield ((), "values", {"messages": [{"role": "user", "content": user}, ai]})
 
         agent = MagicMock()
+        bound_agent = MagicMock()
+
+        async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
+            async for item in stream(
+                "original",
+                inputs,
+                config,
+                stream_mode=stream_mode,
+                subgraphs=subgraphs,
+            ):
+                yield item
+
+        async def bound_astream(
+            inputs, config=None, *, stream_mode=None, subgraphs=False
+        ):
+            async for item in stream(
+                "bound",
+                inputs,
+                config,
+                stream_mode=stream_mode,
+                subgraphs=subgraphs,
+            ):
+                yield item
+
+        def with_config(config):
+            recorder["bound_recursion_limit"] = config["recursion_limit"]
+            return bound_agent
+
         agent.astream = astream
-        agent.with_config.return_value = agent
+        agent.with_config.side_effect = with_config
+        bound_agent.astream = bound_astream
         recorder["agent"] = agent
+        recorder["bound_agent"] = bound_agent
         return agent
 
     deepagents_mod = types.ModuleType("deepagents")
@@ -1373,7 +1409,10 @@ async def test_invoke_compiled_agent_wires_callbacks_into_run_config(fake_sdks):
 
     agent = create_deep_agent(model=object())
     await adapter.invoke_compiled_agent(
-        agent, "hello", "thread-1", callbacks=["cb-a", "cb-b"]
+        agent,
+        "hello",
+        "thread-1",
+        callbacks=["cb-a", "cb-b"],
     )
 
     config = fake_sdks["config"]
@@ -1430,6 +1469,8 @@ async def test_max_turns_configures_langgraph_recursion_limit(
 
     assert result["failed"] is False
     fake_sdks["agent"].with_config.assert_called_once_with({"recursion_limit": 7})
+    assert fake_sdks["astream_agent"] == "bound"
+    assert fake_sdks["astream_recursion_limit"] == 7
 
 
 async def test_omitted_max_turns_preserves_deepagents_default(
@@ -1439,19 +1480,21 @@ async def test_omitted_max_turns_preserves_deepagents_default(
 
     assert result["failed"] is False
     fake_sdks["agent"].with_config.assert_not_called()
+    assert fake_sdks["astream_agent"] == "original"
+    assert fake_sdks["astream_recursion_limit"] is None
 
 
 async def test_recursion_limit_failure_is_normalized(
     tmp_path, make_payload, fake_sdks
 ):
-    fake_sdks["stream_error"] = GraphRecursionError("recursion limit reached")
+    fake_sdks["stream_error"] = GraphRecursionError("internal limit details")
 
     result = await invoke_once(make_payload(tmp_path))
 
     assert result["failed"] is True
     assert result["error"] == {
-        "code": "deepagents_invocation_failed",
-        "message": "GraphRecursionError: recursion limit reached",
+        "code": "deepagents_recursion_limit_reached",
+        "message": "Deep Agents reached its graph recursion limit.",
         "retryable": False,
     }
 
