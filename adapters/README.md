@@ -126,7 +126,7 @@ and additive extension maps because their support does not vary by adapter:
 | `instructions.system` | `replace`, `append` | `replace`; base instructions | `replace` | `replace` | `replace` | `replace`; Pi base instructions | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core |
-| `runtime.max_turns` | Yes | No | No | Yes; iteration limit | Yes | No | No |
+| `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; iteration limit | Yes | No | No |
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core | Core | Core |
 | `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core | Core | Core |
 | `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
