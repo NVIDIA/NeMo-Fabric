@@ -103,6 +103,9 @@ harness = HarnessConfig(
 
 The descriptor closes both `harness.settings` and its nested `deepagents`
 object, so planning rejects unknown settings before runtime start.
+`runtime.max_turns` maps directly to LangGraph's `recursion_limit`. LangGraph
+counts graph supersteps rather than model calls or tool calls. When
+`runtime.max_turns` is omitted, the adapter keeps the Deep Agents default.
 `interrupt_on` maps tool names to booleans or an object with
 `allowed_decisions`; supported decisions are `approve`, `edit`, `reject`, and
 `respond`. The object can also contain a static `description` and an
@@ -122,7 +125,9 @@ because a local tools policy cannot gate remote tools.
 Each NeMo Fabric runtime compiles one Deep Agents graph and retains its
 checkpointer and LangGraph thread across ordered invocations. The built-in
 subagent inherits the parent run's model, tools, skills, workspace, telemetry,
-and permissions.
+permissions, and recursion limit. Declarative subagents run in the same local
+graph. Agent Protocol subagents run in a separate service and manage their own
+recursion limit.
 
 NeMo Relay provides the SDK-native observability integration for this adapter.
 Native OpenTelemetry and OpenInference exporters are also available through the

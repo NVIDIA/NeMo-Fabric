@@ -171,6 +171,10 @@ def selected_model_config(config: AgentConfig) -> AgentModelConfig:
     )
 
 
+def _max_turns(config: AgentConfig) -> int | None:
+    return config.runtime.max_turns if config.runtime is not None else None
+
+
 def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | None]:
     """Build a LangChain chat model from Fabric model config.
 
@@ -560,9 +564,13 @@ class DeepAgentsRuntime:
 
             from deepagents import create_deep_agent
 
-            self._agent = create_deep_agent(
+            agent = create_deep_agent(
                 **_supported_kwargs(create_deep_agent, agent_kwargs)
             )
+            max_turns = _max_turns(agent_config)
+            if max_turns is not None:
+                agent = agent.with_config({"recursion_limit": max_turns})
+            self._agent = agent
             self._start_payload = payload
             self._started = True
         except BaseException:

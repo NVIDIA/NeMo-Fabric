@@ -5138,25 +5138,42 @@ mod tests {
 
     #[test]
     fn unsupported_normalized_scalar_reports_adapter_config_incompatibility() {
-        for adapter_id in ["nvidia.fabric.codex", "nvidia.fabric.langchain.deepagents"] {
-            let mut config = typed_config(adapter_id);
-            config.runtime.max_turns = Some(3);
+        let adapter_id = "nvidia.fabric.codex";
+        let mut config = typed_config(adapter_id);
+        config.runtime.max_turns = Some(3);
 
-            let error = resolve_run_plan_from_config(
-                config,
-                ResolveContext::new("/tmp/fabric-incompatible"),
-            )
-            .expect_err("adapter does not advertise max_turns");
+        let error =
+            resolve_run_plan_from_config(config, ResolveContext::new("/tmp/fabric-incompatible"))
+                .expect_err("adapter does not advertise max_turns");
 
-            assert!(matches!(
-                error,
-                FabricError::AdapterCompatibility {
-                    adapter_id: actual,
-                    field,
-                    ..
-                } if actual == adapter_id && field == "runtime.max_turns"
-            ));
-        }
+        assert!(matches!(
+            error,
+            FabricError::AdapterCompatibility {
+                adapter_id: actual,
+                field,
+                ..
+            } if actual == adapter_id && field == "runtime.max_turns"
+        ));
+    }
+
+    #[test]
+    fn deepagents_max_turns_projects_to_agent_config() {
+        let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+        config.runtime.max_turns = Some(3);
+
+        let plan = resolve_run_plan_from_config(
+            config,
+            ResolveContext::new("/tmp/fabric-deepagents-max-turns"),
+        )
+        .expect("Deep Agents advertises max_turns");
+
+        assert_eq!(
+            plan.agent_config
+                .runtime
+                .expect("projected runtime config")
+                .max_turns,
+            Some(3)
+        );
     }
 
     #[test]

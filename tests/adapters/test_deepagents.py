@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+from langgraph.errors import GraphRecursionError
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
@@ -39,7 +40,7 @@ from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_descriptor_declares_replace_system_instruction_mode():
+def test_descriptor_declares_supported_normalized_config():
     descriptor = json.loads(
         (ROOT / "adapters/deepagents/deepagents.fabric-adapter.json").read_text(
             encoding="utf-8"
@@ -47,6 +48,7 @@ def test_descriptor_declares_replace_system_instruction_mode():
     )
 
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
+    assert "runtime.max_turns" in descriptor["config"]["accepts"]
 
 
 def lifecycle_start_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -123,6 +125,8 @@ def fake_sdks_fixture(monkeypatch):
         recorder["create_kwargs"] = kwargs
 
         async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
+            if "stream_error" in recorder:
+                raise recorder["stream_error"]
             recorder["config"] = config
             recorder["subgraphs"] = subgraphs
             recorder["checkpointer"] = kwargs.get("checkpointer")
@@ -140,6 +144,8 @@ def fake_sdks_fixture(monkeypatch):
 
         agent = MagicMock()
         agent.astream = astream
+        agent.with_config.return_value = agent
+        recorder["agent"] = agent
         return agent
 
     deepagents_mod = types.ModuleType("deepagents")
@@ -1412,6 +1418,42 @@ async def test_checkpointer_closed_on_success_and_failure(
             lifecycle_start_payload(make_payload(tmp_path))
         )
     assert fake_sdks["saver_exits"] == 2
+
+
+async def test_max_turns_configures_langgraph_recursion_limit(
+    tmp_path, make_payload, fake_sdks
+):
+    payload = make_payload(tmp_path)
+    payload["config"]["runtime"] = {"max_turns": 7}
+
+    result = await invoke_once(payload)
+
+    assert result["failed"] is False
+    fake_sdks["agent"].with_config.assert_called_once_with({"recursion_limit": 7})
+
+
+async def test_omitted_max_turns_preserves_deepagents_default(
+    tmp_path, make_payload, fake_sdks
+):
+    result = await invoke_once(make_payload(tmp_path))
+
+    assert result["failed"] is False
+    fake_sdks["agent"].with_config.assert_not_called()
+
+
+async def test_recursion_limit_failure_is_normalized(
+    tmp_path, make_payload, fake_sdks
+):
+    fake_sdks["stream_error"] = GraphRecursionError("recursion limit reached")
+
+    result = await invoke_once(make_payload(tmp_path))
+
+    assert result["failed"] is True
+    assert result["error"] == {
+        "code": "deepagents_invocation_failed",
+        "message": "GraphRecursionError: recursion limit reached",
+        "retryable": False,
+    }
 
 
 async def test_mcp_servers_become_adapter_tools(

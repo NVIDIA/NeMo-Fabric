@@ -168,6 +168,7 @@
       "models.base_url",
       "models.temperature",
       "instructions.system",
+      "runtime.max_turns",
       "tools.enabled",
       "tools.blocked",
       "mcp",
