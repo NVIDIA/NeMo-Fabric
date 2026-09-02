@@ -104,8 +104,8 @@ harness = HarnessConfig(
 The descriptor closes both `harness.settings` and its nested `deepagents`
 object, so planning rejects unknown settings before runtime start.
 `runtime.max_turns=10` configures LangGraph with `recursion_limit=10`. This is
-a graph-superstep budget, not a promise of ten model responses or tool calls;
-one interaction can consume multiple supersteps. When `runtime.max_turns` is
+a graph-superstep budget, not a promise of ten model responses or tool calls.
+One interaction can consume multiple supersteps. When `runtime.max_turns` is
 omitted, the adapter keeps the Deep Agents default.
 `interrupt_on` maps tool names to booleans or an object with
 `allowed_decisions`; supported decisions are `approve`, `edit`, `reject`, and
