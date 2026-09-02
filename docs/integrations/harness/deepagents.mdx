@@ -128,7 +128,7 @@ checkpointer and LangGraph thread across ordered invocations. The built-in and
 caller-defined declarative subagents are separate locally compiled graphs
 invoked through the `task` tool. They inherit the parent run's model, tools,
 skills, workspace, telemetry, and permissions. `runtime.max_turns` configures
-only the main local graph; declarative subagent graphs retain their Deep Agents
+only the main local graph, while declarative subagent graphs retain their Deep Agents
 limits. Agent Protocol subagents run in a separate service and manage their
 own recursion limit.
 
