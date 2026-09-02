@@ -57,8 +57,8 @@ NeMo Fabric maps the following into the harness:
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `runtime.max_turns=10` configures LangGraph with `recursion_limit=10`. This
   is a graph-superstep budget, not a promise of ten model responses or tool
-  calls; one interaction can consume multiple supersteps. Omitting the field
-  preserves the Deep Agents default.
+  calls. One interaction can consume multiple supersteps. Omit the field
+  to preserve the Deep Agents default.
 - `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
   confines the agent to the workspace: absolute paths and `..` cannot escape
