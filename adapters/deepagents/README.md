@@ -55,9 +55,10 @@ NeMo Fabric maps the following into the harness:
 - `instructions.system` supports `replace` and becomes the Deep Agents
   `system_prompt`. Deep Agents rejects `append`.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
-- `runtime.max_turns` maps directly to LangGraph's `recursion_limit`, which
-  counts graph supersteps rather than model calls or tool calls. Omitting the
-  field preserves the Deep Agents default.
+- `runtime.max_turns=10` configures LangGraph with `recursion_limit=10`. This
+  is a graph-superstep budget, not a promise of ten model responses or tool
+  calls; one interaction can consume multiple supersteps. Omitting the field
+  preserves the Deep Agents default.
 - `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
   confines the agent to the workspace: absolute paths and `..` cannot escape
@@ -132,14 +133,16 @@ subagent **inherits** the parent run's model, tools, skills, workspace,
 telemetry, and permissions. When a normalized tools policy is configured,
 NeMo Fabric supplies an explicitly gated `general-purpose` subagent so
 delegation cannot broaden capabilities beyond the parent. Caller-defined
-declarative subagents run through the same local graph. Agent Protocol
-subagents run asynchronously on their configured server. Precompiled
+declarative subagents are separate locally compiled graphs invoked through the
+`task` tool. Agent Protocol subagents run asynchronously on their configured
+server. Precompiled
 subagents are not exposed through the public NeMo Fabric SDK because their
 `runnable` objects cannot cross the JSON configuration boundary.
 
-The configured `runtime.max_turns` limit applies to the local graph and its
-declarative subagents. Agent Protocol subagents manage their own recursion
-limit in the remote service.
+The configured `runtime.max_turns` limit applies as `recursion_limit` to the
+main local graph. Declarative subagent graphs retain their Deep Agents limits,
+and Agent Protocol subagents manage their own recursion limit in the remote
+service.
 
 The normalized result includes the final response, buffered messages and
 per-step events, LangGraph thread id, token usage (and cost when the provider
