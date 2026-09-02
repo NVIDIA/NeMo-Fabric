@@ -17833,7 +17833,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## fast-uri - 3.1.5
+## fast-uri - 3.1.7
 **Repository URL**: https://github.com/fastify/fast-uri
 **License Type(s)**: BSD-3-Clause
 ### License: https://spdx.org/licenses/BSD-3-Clause.html
