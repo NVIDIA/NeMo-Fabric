@@ -11,7 +11,7 @@ resolution-markers = [
 [[package]]
 name = "nemo-fabric-adapter-contract"
 version = "0.3.0"
-source = { editable = "../../adapter-contract/python" }
+source = { editable = "../../../adapter-contract/python" }
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" }]
@@ -26,4 +26,4 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract/python" }]
+requires-dist = [{ name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" }]

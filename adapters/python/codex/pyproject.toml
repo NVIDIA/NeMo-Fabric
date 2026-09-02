@@ -54,5 +54,5 @@ include = ["nemo_fabric_adapters.codex*"]
 "share/nemo-fabric/adapters/codex" = ["codex.fabric-adapter.json"]
 
 [tool.uv.sources]
-nemo-fabric-adapter-contract = { path = "../../adapter-contract/python", editable = true }
+nemo-fabric-adapter-contract = { path = "../../../adapter-contract/python", editable = true }
 nemo-fabric-adapters-common = { path = "../common", editable = true }

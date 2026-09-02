@@ -15,11 +15,11 @@ ENV PATH=/root/.cargo/bin:$PATH
 
 COPY vendor/nemo-fabric /opt/nemo-fabric
 RUN pip install --no-cache-dir \
-        -e /opt/nemo-fabric/python \
-        -e /opt/nemo-fabric/adapters/common \
-        -e /opt/nemo-fabric/adapters/claude \
-        -e /opt/nemo-fabric/adapters/hermes \
-        -e "/opt/nemo-fabric[claude,hermes-agent,relay]"
+        -e /opt/nemo-fabric/sdk/python/nemo-fabric-runtime \
+        -e /opt/nemo-fabric/adapters/python/common \
+        -e /opt/nemo-fabric/adapters/python/claude \
+        -e /opt/nemo-fabric/adapters/python/hermes \
+        -e "/opt/nemo-fabric/sdk/python/nemo-fabric[claude,hermes-agent,relay]"
 
 COPY calculator.py /app/calculator.py
 COPY fabric /opt/fabric-calculator

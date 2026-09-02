@@ -8,9 +8,9 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nemo-fabric-adapters-remote-agent"
+name = "nemo-fabric-adapters-deepagents"
 version = "0.3.0"
-description = "Remote agent adapter for NeMo Fabric"
+description = "LangChain Deep Agents adapter for NeMo Fabric"
 authors = [
   { name = "NVIDIA Corporation" },
 ]
@@ -27,12 +27,30 @@ requires-python = ">=3.11"
 dependencies = [
   "nemo-fabric-adapter-contract == 0.3.0",
   "nemo-fabric-adapters-common == 0.3.0",
-  "httpx[http2]~=0.28",
+  "langchain-mcp-adapters>=0.1,<0.3.0",
+  "langchain-openai>=0.3",
+  # Requires 3.x: the 2.x line is incompatible with the langgraph core deepagents
+  # pulls (AsyncSqliteSaver fails with 'Connection has no attribute is_alive').
+  "langgraph-checkpoint-sqlite>=3.0,<4.0",
 ]
 
 [project.optional-dependencies]
-harness = []
-full = []
+harness = [
+  "deepagents>=0.6.12,<0.8.0",
+  "langchain>=1.3,<2.0",
+  "langgraph>=1.2,<2.0",
+]
+relay = [
+  "nemo-relay>=0.7.2,<0.8",
+]
+full = [
+  "deepagents>=0.6.12,<0.8.0",
+  "langchain>=1.3,<2.0",
+  "langgraph>=1.2,<2.0",
+  # Fabric owns the compatible harness range above. Relay's deepagents extra
+  # carries its own harness constraint and would narrow this range.
+  "nemo-relay>=0.7.2,<0.8",
+]
 
 [project.urls]
 Repository = "https://github.com/NVIDIA/NeMo-Fabric"
@@ -42,11 +60,11 @@ Documentation = "https://docs.nvidia.com/nemo/fabric"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["nemo_fabric_adapters.remote_agent*"]
+include = ["nemo_fabric_adapters.deepagents*"]
 
 [tool.setuptools.data-files]
-"share/nemo-fabric/adapters/remote-agent" = ["remote-agent.fabric-adapter.json"]
+"share/nemo-fabric/adapters/deepagents" = ["deepagents.fabric-adapter.json"]
 
 [tool.uv.sources]
-nemo-fabric-adapter-contract = { path = "../../adapter-contract/python", editable = true }
+nemo-fabric-adapter-contract = { path = "../../../adapter-contract/python", editable = true }
 nemo-fabric-adapters-common = { path = "../common", editable = true }

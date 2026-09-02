@@ -91,11 +91,6 @@ def public_paths(commits_to_report: tuple[Commit, ...]) -> tuple[str, ...]:
     package_paths = {
         "Cargo.toml",
         "crates/fabric-python/Cargo.toml",
-        "adapters/claude/pyproject.toml",
-        "adapters/codex/pyproject.toml",
-        "adapters/common/pyproject.toml",
-        "adapters/deepagents/pyproject.toml",
-        "adapters/hermes/pyproject.toml",
         "sdk/python/nemo-fabric/pyproject.toml",
         "sdk/python/nemo-fabric-runtime/pyproject.toml",
         "adapter-contract/python/pyproject.toml",
@@ -111,6 +106,10 @@ def public_paths(commits_to_report: tuple[Commit, ...]) -> tuple[str, ...]:
                 or path.startswith("docs/")
                 or path.endswith("/README.md")
                 or path.endswith("/pypi.md")
+                or (
+                    path.startswith("adapters/python/")
+                    and path.endswith("/pyproject.toml")
+                )
                 or path in package_paths
             }
         )

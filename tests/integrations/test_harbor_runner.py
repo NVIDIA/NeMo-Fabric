@@ -286,8 +286,10 @@ def test_claude_calculator_run_uses_current_adapter_contract():
     assert config.runtime.timeout_seconds == 600
     assert config.models["default"].provider == "anthropic"
     dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
-    assert "-e /opt/nemo-fabric/adapters/claude" in dockerfile
-    assert "-e /opt/nemo-fabric/adapters/hermes" in dockerfile
+    assert "-e /opt/nemo-fabric/adapters/python/claude" in dockerfile
+    assert "-e /opt/nemo-fabric/adapters/python/hermes" in dockerfile
+    assert "-e /opt/nemo-fabric/sdk/python/nemo-fabric-runtime" in dockerfile
+    assert '-e "/opt/nemo-fabric/sdk/python/nemo-fabric[' in dockerfile
     assert "nemo-fabric[claude,hermes-agent,relay]" in dockerfile
     assert "@openai/codex" not in dockerfile
 
@@ -537,10 +539,10 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     # TODO: Remove the bundled copies and these equality checks after Fabric
     # discovers adapter descriptors directly from source checkouts and wheels.
     assert (SWEBENCH_ROOT / "adapters/hermes/hermes.fabric-adapter.json").read_text() == (
-        ROOT / "adapters/hermes/hermes.fabric-adapter.json"
+        ROOT / "adapters/python/hermes/hermes.fabric-adapter.json"
     ).read_text()
     assert (SWEBENCH_ROOT / "adapters/claude/claude.fabric-adapter.json").read_text() == (
-        ROOT / "adapters/claude/claude.fabric-adapter.json"
+        ROOT / "adapters/python/claude/claude.fabric-adapter.json"
     ).read_text()
     hermes_descriptor = json.loads(
         (SWEBENCH_ROOT / "adapters/hermes/hermes.fabric-adapter.json").read_text()

@@ -124,13 +124,13 @@ hermes-agent = { path = "external/hermes-agent", editable = true, marker = "pyth
 nemo-fabric = { path = "sdk/python/nemo-fabric", editable = true }
 nemo-fabric-runtime = { path = "sdk/python/nemo-fabric-runtime", editable = true }
 nemo-fabric-adapter-contract = { path = "adapter-contract/python", editable = true }
-nemo-fabric-adapters-common = { path = "adapters/common", editable = true }
-nemo-fabric-adapters-claude = { path = "adapters/claude", editable = true }
-nemo-fabric-adapters-codex = { path = "adapters/codex", editable = true }
-nemo-fabric-adapters-deepagents = { path = "adapters/deepagents", editable = true }
-nemo-fabric-adapters-hermes = { path = "adapters/hermes", editable = true }
-nemo-fabric-adapters-mini-swe-agent = { path = "adapters/mini-swe-agent", editable = true }
-nemo-fabric-adapters-remote-agent = { path = "adapters/remote-agent", editable = true }
+nemo-fabric-adapters-common = { path = "adapters/python/common", editable = true }
+nemo-fabric-adapters-claude = { path = "adapters/python/claude", editable = true }
+nemo-fabric-adapters-codex = { path = "adapters/python/codex", editable = true }
+nemo-fabric-adapters-deepagents = { path = "adapters/python/deepagents", editable = true }
+nemo-fabric-adapters-hermes = { path = "adapters/python/hermes", editable = true }
+nemo-fabric-adapters-mini-swe-agent = { path = "adapters/python/mini-swe-agent", editable = true }
+nemo-fabric-adapters-remote-agent = { path = "adapters/python/remote-agent", editable = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

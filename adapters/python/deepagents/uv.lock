@@ -837,7 +837,7 @@ wheels = [
 [[package]]
 name = "nemo-fabric-adapter-contract"
 version = "0.3.0"
-source = { editable = "../../adapter-contract/python" }
+source = { editable = "../../../adapter-contract/python" }
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" }]
@@ -852,7 +852,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract/python" }]
+requires-dist = [{ name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" }]
 
 [[package]]
 name = "nemo-fabric-adapters-deepagents"
@@ -893,7 +893,7 @@ requires-dist = [
     { name = "langgraph", marker = "extra == 'full'", specifier = ">=1.2,<2.0" },
     { name = "langgraph", marker = "extra == 'harness'", specifier = ">=1.2,<2.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0,<4.0" },
-    { name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract/python" },
+    { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
     { name = "nemo-relay", marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.7.2,<0.8" },

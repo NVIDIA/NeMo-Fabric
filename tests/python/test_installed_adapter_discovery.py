@@ -132,7 +132,7 @@ def installed_claude_wheel_fixture(
             "--wheel",
             "--out-dir",
             str(wheelhouse),
-            str(ROOT / "adapters" / "claude"),
+            str(ROOT / "adapters" / "python" / "claude"),
         ],
         check=True,
     )
@@ -299,7 +299,7 @@ def test_installed_claude_wheel_supplies_metadata_and_settings_schema(
     assert Path(installed[0]["path"]).samefile(descriptor)
     assert plan.config.harness.settings == settings
     canonical_descriptor = json.loads(
-        (ROOT / "adapters/claude/claude.fabric-adapter.json").read_text(
+        (ROOT / "adapters/python/claude/claude.fabric-adapter.json").read_text(
             encoding="utf-8"
         )
     )
@@ -322,5 +322,8 @@ def test_installed_claude_wheel_supplies_metadata_and_settings_schema(
             base_dir=tmp_path / "invalid-agent",
         )
     message = str(caught.value)
-    assert str((ROOT / "adapters/claude/claude.fabric-adapter.json").resolve()) in message
+    assert (
+        str((ROOT / "adapters/python/claude/claude.fabric-adapter.json").resolve())
+        in message
+    )
     assert "harness.settings.unknown" in message

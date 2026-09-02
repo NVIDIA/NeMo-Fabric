@@ -51,7 +51,7 @@ Use the narrowest reusable adapter boundary that your target provides:
 
 | Integration Shape | Use It When | Adapter Reuse | Reference |
 | --- | --- | --- | --- |
-| Harness adapter | An opinionated harness supplies a stable construction and execution model. | One adapter supports many configurations of that harness. | [Hermes Agent](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/hermes); [mini-SWE-agent](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/mini-swe-agent) for the minimum surface |
+| Harness adapter | An opinionated harness supplies a stable construction and execution model. | One adapter supports many configurations of that harness. | [Hermes Agent](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/hermes); [mini-SWE-agent](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/mini-swe-agent) for the minimum surface |
 | Shared framework adapter | A framework can load multiple registered custom agents through stable entry-point semantics. | One adapter supports many separately installed targets. | [NeMo Agent Toolkit](https://github.com/NVIDIA/NeMo-Fabric/tree/main/external/nat) |
 | Dedicated custom-agent adapter | The application owns execution behavior that does not fit a reusable loading contract. | One adapter packages one custom agent or agent family. | [LangGraph email-phishing analyzer](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/langgraph_custom_agent) |
 

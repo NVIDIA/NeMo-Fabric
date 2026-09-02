@@ -30,4 +30,4 @@ telemetry and supports Relay-backed ATOF streaming. It does not enable native
 OpenAI token streaming.
 
 For configuration and behavior, see the
-[mini-SWE-agent adapter README](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/mini-swe-agent/README.md).
+[mini-SWE-agent adapter README](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/mini-swe-agent/README.md).

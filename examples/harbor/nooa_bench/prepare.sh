@@ -28,7 +28,7 @@ mkdir -p "$wheelhouse" "$adapter_source" "$oo_agents_source" "$bundle/adapters"
 
 uv build --wheel --out-dir "$wheelhouse" "$repo_root/sdk/python/nemo-fabric"
 uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapter-contract/python"
-uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapters/common"
+uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapters/python/common"
 (
     cd "$repo_root/sdk/python/nemo-fabric-runtime"
     uvx --from 'maturin[zig]>=1.9.3,<2.0' maturin build \

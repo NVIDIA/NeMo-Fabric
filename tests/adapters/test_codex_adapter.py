@@ -1687,6 +1687,7 @@ def test_descriptor_has_no_codex_binary_requirement():
         (
             Path(__file__).parents[2]
             / "adapters"
+            / "python"
             / "codex"
             / "codex.fabric-adapter.json"
         ).read_text(encoding="utf-8")

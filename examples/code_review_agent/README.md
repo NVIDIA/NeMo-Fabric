@@ -151,18 +151,18 @@ Hermes supports the example's skills, MCP, and Relay configurations.
 
 ### Codex (`codex`)
 
-Install and authenticate the [Codex adapter](../../adapters/codex/README.md).
+Install and authenticate the [Codex adapter](../../adapters/python/codex/README.md).
 This variant uses GPT-5.4.
 
 ### Claude (`claude`)
 
-Install the [Claude adapter requirements](../../adapters/claude/README.md) and
+Install the [Claude adapter requirements](../../adapters/python/claude/README.md) and
 set `ANTHROPIC_API_KEY`.
 
 ### Deep Agents (`deepagents`)
 
 Install the
-[Deep Agents adapter requirements](../../adapters/deepagents/README.md). This
+[Deep Agents adapter requirements](../../adapters/python/deepagents/README.md). This
 variant uses the `NVIDIA_API_KEY` configured for the default demo.
 
 ### NVIDIA-labs Object Oriented Agents (NOOA) CodingAgent (`nooa`)

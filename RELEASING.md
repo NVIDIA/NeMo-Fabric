@@ -47,7 +47,7 @@ NeMo Fabric versions are anchored on the workspace SemVer in the repository root
   `nemo-fabric-core` must stay aligned with that same version.
 - `sdk/python/nemo-fabric/pyproject.toml`,
   `adapter-contract/python/pyproject.toml`, and every
-  `adapters/**/pyproject.toml` carry the Python package versions and internal
+  `adapters/python/*/pyproject.toml` carry the Python package versions and internal
   dependency pins and must stay aligned with the same release version. The
   root `pyproject.toml` is a private development coordinator and remains at
   `0.0.0`.
@@ -159,7 +159,7 @@ The helper updates:
    `nemo-fabric-core`.
 3. [`sdk/python/nemo-fabric/pyproject.toml`](sdk/python/nemo-fabric/pyproject.toml),
    [`adapter-contract/python/pyproject.toml`](adapter-contract/python/pyproject.toml),
-   every `adapters/**/pyproject.toml`, and their internal dependency pins to
+   every `adapters/python/*/pyproject.toml`, and their internal dependency pins to
    the same release version.
 4. The TypeScript contract and adapter package manifests, their exact internal
    dependency pins, and both npm lockfiles.

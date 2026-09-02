@@ -17,7 +17,8 @@ import set_python_project_versions  # noqa: E402
 def test_set_python_project_versions_updates_internal_pins_with_extras(
     tmp_path: Path,
 ):
-    (tmp_path / "adapters" / "claude").mkdir(parents=True)
+    (tmp_path / "adapters" / "python" / "claude").mkdir(parents=True)
+    (tmp_path / "adapters" / "typescript" / "pi").mkdir(parents=True)
     (tmp_path / "adapter-contract" / "python").mkdir(parents=True)
     (tmp_path / "sdk" / "python" / "nemo-fabric").mkdir(parents=True)
     (tmp_path / "sdk" / "python" / "nemo-fabric-runtime").mkdir()
@@ -54,7 +55,7 @@ hermes-agent = [
 """,
         encoding="utf-8",
     )
-    (tmp_path / "adapters" / "claude" / "pyproject.toml").write_text(
+    (tmp_path / "adapters" / "python" / "claude" / "pyproject.toml").write_text(
         """\
 [project]
 name = "nemo-fabric-adapters-claude"
@@ -63,6 +64,11 @@ dependencies = [
   "nemo-fabric-adapters-common == 0.2.0",
 ]
 """,
+        encoding="utf-8",
+    )
+    typescript_decoy = tmp_path / "adapters" / "typescript" / "pi" / "pyproject.toml"
+    typescript_decoy.write_text(
+        '[project]\nname = "typescript-build-helper"\n',
         encoding="utf-8",
     )
     (tmp_path / "adapter-contract" / "python" / "pyproject.toml").write_text(
@@ -89,7 +95,7 @@ dynamic = ["version"]
 
     sdk_project = tomllib.loads(sdk_path.read_text(encoding="utf-8"))["project"]
     adapter_project = tomllib.loads(
-        (tmp_path / "adapters" / "claude" / "pyproject.toml").read_text(
+        (tmp_path / "adapters" / "python" / "claude" / "pyproject.toml").read_text(
             encoding="utf-8"
         )
     )["project"]
@@ -111,6 +117,9 @@ dynamic = ["version"]
     assert adapter_project["dependencies"] == [
         "nemo-fabric-adapters-common == 0.2.0rc5"
     ]
+    assert typescript_decoy.read_text(encoding="utf-8") == (
+        '[project]\nname = "typescript-build-helper"\n'
+    )
     assert contract_project["version"] == "0.2.0rc5"
     assert tomllib.loads(runtime_path.read_text(encoding="utf-8"))["project"][
         "dynamic"

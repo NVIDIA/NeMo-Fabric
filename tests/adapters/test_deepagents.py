@@ -42,7 +42,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_descriptor_declares_supported_normalized_config():
     descriptor = json.loads(
-        (ROOT / "adapters/deepagents/deepagents.fabric-adapter.json").read_text(
+        (ROOT / "adapters/python/deepagents/deepagents.fabric-adapter.json").read_text(
             encoding="utf-8"
         )
     )

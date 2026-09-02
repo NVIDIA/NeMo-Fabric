@@ -109,7 +109,7 @@ wheels = [
 [[package]]
 name = "nemo-fabric-adapter-contract"
 version = "0.3.0"
-source = { editable = "../../adapter-contract/python" }
+source = { editable = "../../../adapter-contract/python" }
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" }]
@@ -124,7 +124,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract/python" }]
+requires-dist = [{ name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" }]
 
 [[package]]
 name = "nemo-fabric-adapters-remote-agent"
@@ -139,7 +139,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", extras = ["http2"], specifier = "~=0.28" },
-    { name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract/python" },
+    { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
 ]
 provides-extras = ["harness", "full"]

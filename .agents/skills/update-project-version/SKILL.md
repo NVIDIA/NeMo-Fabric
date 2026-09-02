@@ -33,7 +33,7 @@ pre-release or build-metadata variants used during packaging.
   literal `project.version` in every one of these files:
   - `sdk/python/nemo-fabric/pyproject.toml`
   - `adapter-contract/python/pyproject.toml`
-  - `adapters/**/pyproject.toml`
+  - `adapters/python/*/pyproject.toml`
 - Keep internal Python package requirement pins aligned with the Python release
   version:
   - The unconditional `nemo-fabric-runtime == <version>` dependency in the
@@ -77,8 +77,8 @@ If editing the helper code, keep these contracts aligned:
   `nemo-fabric-core` workspace dependency, then verify every `nemo-fabric-*` workspace
   package through Cargo metadata.
 - `set_python_project_versions` must update the published SDK metapackage,
-  Python adapter contract, every adapter `pyproject.toml` discovered
-  recursively under `adapters/`, and all internal exact-version pins while
+  Python adapter contract, every adapter `pyproject.toml` discovered under
+  `adapters/python/`, and all internal exact-version pins while
   rejecting a static version in
   `sdk/python/nemo-fabric-runtime/pyproject.toml`.
 - `set_typescript_project_version` must update the package manifest and both
@@ -91,7 +91,7 @@ If editing the helper code, keep these contracts aligned:
 - Inspect Cargo version fields:
   `rg -n '^version =|nemo-fabric-core = \{ path = .*version =' Cargo.toml`
 - Inspect explicit Python versions and internal pins:
-  `rg -n '^version =|nemo-fabric-[a-z-]+(?:\[[^]]+\])? == ' pyproject.toml sdk adapter-contract/python adapters --glob 'pyproject.toml'`
+  `rg -n '^version =|nemo-fabric-[a-z-]+(?:\[[^]]+\])? == ' pyproject.toml sdk adapter-contract/python adapters/python --glob 'pyproject.toml'`
 - Confirm the runtime remains dynamic:
   `rg -n 'dynamic = \["version"\]' sdk/python/nemo-fabric-runtime/pyproject.toml`
 - Inspect the TypeScript package and lockfile root versions:
@@ -126,8 +126,8 @@ If editing the helper code, keep these contracts aligned:
 - `sdk/python/nemo-fabric-runtime/uv.lock`
 - `adapter-contract/python/pyproject.toml`
 - `adapter-contract/python/uv.lock`
-- `adapters/**/pyproject.toml`
-- `adapters/**/uv.lock`
+- `adapters/python/*/pyproject.toml`
+- `adapters/python/*/uv.lock`
 - `adapter-contract/typescript/package.json`
 - `adapter-contract/typescript/package-lock.json`
 - `justfile`

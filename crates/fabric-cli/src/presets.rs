@@ -407,7 +407,7 @@ mod tests {
     #[test]
     fn packaged_descriptors_match_repository_adapters() {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let repository_adapters = manifest_dir.join("../../adapters");
+        let repository_adapters = manifest_dir.join("../../adapters/python");
         if !repository_adapters.is_dir() {
             return;
         }

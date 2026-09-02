@@ -273,7 +273,7 @@ async def test_remote_agent_rejects_append_system_instruction(repo_root: Path):
 def test_remote_agent_descriptor_and_module_entrypoint(repo_root: Path):
     descriptor = json.loads(
         (
-            repo_root / "adapters/remote-agent/remote-agent.fabric-adapter.json"
+            repo_root / "adapters/python/remote-agent/remote-agent.fabric-adapter.json"
         ).read_text(encoding="utf-8")
     )
     result = subprocess.run(

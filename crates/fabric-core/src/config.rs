@@ -4659,7 +4659,7 @@ mod tests {
 
     #[test]
     fn agent_config_projects_only_harness_native_mcp_servers() {
-        let path = repository_root().join("adapters/hermes/hermes.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/hermes/hermes.fabric-adapter.json");
         let descriptor = load_adapter_descriptor(&path).expect("Hermes descriptor");
         let resolved = resolved_adapter(path.clone(), descriptor);
         let mut config = typed_config("nvidia.fabric.hermes");
@@ -4874,7 +4874,8 @@ mod tests {
 
     #[test]
     fn resolved_descriptors_reject_empty_provenance() {
-        let adapter_path = repository_root().join("adapters/hermes/hermes.fabric-adapter.json");
+        let adapter_path =
+            repository_root().join("adapters/python/hermes/hermes.fabric-adapter.json");
         let descriptor = load_adapter_descriptor(&adapter_path).expect("Hermes descriptor");
         let mut adapter = serde_json::to_value(resolved_adapter(adapter_path, descriptor))
             .expect("resolved adapter JSON");
@@ -5083,7 +5084,7 @@ mod tests {
 
     #[test]
     fn legacy_descriptor_instruction_claim_is_replace_only() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         descriptor.config.system_instruction_modes = None;
         let mut config = typed_config("nvidia.fabric.claude");
@@ -5252,7 +5253,7 @@ mod tests {
                 extensions: BTreeMap::new(),
             },
         );
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         descriptor
             .config
@@ -5316,8 +5317,8 @@ mod tests {
                 },
             );
             let path = repository_root().join(match adapter_id {
-                "nvidia.fabric.claude" => "adapters/claude/claude.fabric-adapter.json",
-                "nvidia.fabric.codex" => "adapters/codex/codex.fabric-adapter.json",
+                "nvidia.fabric.claude" => "adapters/python/claude/claude.fabric-adapter.json",
+                "nvidia.fabric.codex" => "adapters/python/codex/codex.fabric-adapter.json",
                 _ => unreachable!("test adapter"),
             });
             let descriptor = load_adapter_descriptor(&path).expect("adapter descriptor");
@@ -5569,7 +5570,7 @@ mod tests {
 
     #[test]
     fn mcp_tool_filters_survive_capability_planning() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         descriptor
             .config
@@ -5769,7 +5770,7 @@ mod tests {
     #[test]
     fn loads_and_validates_json_adapter_descriptor() {
         let descriptor = load_adapter_descriptor(
-            repository_root().join("adapters/hermes/hermes.fabric-adapter.json"),
+            repository_root().join("adapters/python/hermes/hermes.fabric-adapter.json"),
         )
         .expect("adapter descriptor");
 
@@ -5779,7 +5780,7 @@ mod tests {
 
     #[test]
     fn rejects_removed_adapter_descriptor_fields() {
-        let path = repository_root().join("adapters/hermes/hermes.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/hermes/hermes.fabric-adapter.json");
         let descriptor = load_adapter_descriptor(&path).expect("adapter descriptor");
 
         for field in ["harness", "workflow_schema"] {
@@ -5799,7 +5800,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_system_instruction_mode_claims() {
-        let path = repository_root().join("adapters/hermes/hermes.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/hermes/hermes.fabric-adapter.json");
         let descriptor = load_adapter_descriptor(&path).expect("Hermes descriptor");
 
         let mut without_acceptance = descriptor.clone();
@@ -5889,7 +5890,7 @@ mod tests {
 
     #[test]
     fn validates_workflow_against_resolved_target_schema() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let resolved = resolved_workflow_target(path.clone(), Some(workflow_settings_schema()));
         let mut config = typed_config("nvidia.fabric.claude");
         config.workflow = Some(typed_workflow());
@@ -5921,7 +5922,7 @@ mod tests {
 
     #[test]
     fn validates_and_projects_normalized_tool_definitions() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         descriptor
             .config
@@ -6016,7 +6017,7 @@ mod tests {
 
     #[test]
     fn adapter_extensions_are_fail_closed_and_schema_validated() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         let resolved = resolved_adapter(path.clone(), descriptor.clone());
         let mut config = typed_config("nvidia.fabric.claude");
@@ -6071,7 +6072,7 @@ mod tests {
 
     #[test]
     fn invocation_extensions_are_fail_closed_and_schema_validated() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         let request = AgentRunRequest {
             input: serde_json::json!("review"),
@@ -6135,7 +6136,7 @@ mod tests {
 
     #[test]
     fn workflow_settings_are_fail_closed() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let resolved = resolved_workflow_target(path, None);
         let mut config = typed_config("nvidia.fabric.claude");
         config.workflow = Some(typed_workflow());
@@ -6178,7 +6179,7 @@ mod tests {
 
     #[test]
     fn validates_empty_settings_against_a_present_schema() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         descriptor.settings_schema = Some(
             serde_json::json!({
@@ -6228,7 +6229,7 @@ mod tests {
 
     #[test]
     fn reports_item_path_after_prefix_items() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         descriptor.settings_schema = Some(
             serde_json::json!({
@@ -6320,7 +6321,7 @@ mod tests {
                     settings_path,
                     ..
                 } if adapter_id == "nvidia.fabric.claude"
-                    && descriptor_path.ends_with("adapters/claude/claude.fabric-adapter.json")
+                    && descriptor_path.ends_with("adapters/python/claude/claude.fabric-adapter.json")
                     && settings_path == expected_path
             ));
         }
@@ -6385,7 +6386,7 @@ mod tests {
 
     #[test]
     fn adapter_settings_schema_root_type_must_allow_objects() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let valid_descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
 
         for root_type in ["string", "array"] {
@@ -6415,7 +6416,7 @@ mod tests {
 
     #[test]
     fn adapter_model_schema_must_be_valid_and_allow_objects() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let valid_descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
 
         for (schema, expected) in [
@@ -6446,7 +6447,7 @@ mod tests {
 
     #[test]
     fn adapter_target_settings_schema_must_be_valid_and_allow_objects() {
-        let path = repository_root().join("adapters/claude/claude.fabric-adapter.json");
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
 
         for (schema, expected) in [
             (

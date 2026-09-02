@@ -19,14 +19,24 @@ from nemo_fabric import FabricConfigError
 
 ROOT = Path(__file__).resolve().parents[2]
 ADAPTER_DESCRIPTORS = {
-    "nvidia.fabric.claude": ROOT / "adapters" / "claude" / "claude.fabric-adapter.json",
-    "nvidia.fabric.codex": ROOT / "adapters" / "codex" / "codex.fabric-adapter.json",
-    "nvidia.fabric.langchain.deepagents": (
-        ROOT / "adapters" / "deepagents" / "deepagents.fabric-adapter.json"
+    "nvidia.fabric.claude": (
+        ROOT / "adapters" / "python" / "claude" / "claude.fabric-adapter.json"
     ),
-    "nvidia.fabric.hermes": ROOT / "adapters" / "hermes" / "hermes.fabric-adapter.json",
+    "nvidia.fabric.codex": (
+        ROOT / "adapters" / "python" / "codex" / "codex.fabric-adapter.json"
+    ),
+    "nvidia.fabric.langchain.deepagents": (
+        ROOT / "adapters" / "python" / "deepagents" / "deepagents.fabric-adapter.json"
+    ),
+    "nvidia.fabric.hermes": (
+        ROOT / "adapters" / "python" / "hermes" / "hermes.fabric-adapter.json"
+    ),
     "nvidia.fabric.remote-agent": (
-        ROOT / "adapters" / "remote-agent" / "remote-agent.fabric-adapter.json"
+        ROOT
+        / "adapters"
+        / "python"
+        / "remote-agent"
+        / "remote-agent.fabric-adapter.json"
     ),
 }
 

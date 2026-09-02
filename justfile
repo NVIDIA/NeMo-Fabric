@@ -12,9 +12,9 @@ ref_name := ""
 # Linux wheel artifacts target this minimum glibc version for compatibility.
 linux_glibc_version := "2.17"
 
-python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes adapters/mini-swe-agent adapters/remote-agent"
+python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/remote-agent"
 
-python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes adapters/mini-swe-agent adapters/remote-agent"
+python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/remote-agent"
 
 bash_helpers := '''
 set -euo pipefail
@@ -283,8 +283,8 @@ clean:
         adapters/typescript/node_modules \
         adapters/typescript/common/dist \
         adapters/typescript/pi/dist \
-        adapters/*/build \
-        adapters/*/dist \
+        adapters/python/*/build \
+        adapters/python/*/dist \
         sdk/python/*/build \
         sdk/python/*/dist \
         adapter-contract/typescript/*.tgz \

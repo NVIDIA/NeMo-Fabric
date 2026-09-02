@@ -27,9 +27,11 @@ the validation matrix, and `prepare-pr` for review handoff.
 
 Follow these repository-specific requirements after applying the public skill:
 
-1. Place the adapter under `adapters/<name>/` with `LICENSE -> ../../LICENSE`,
-   `README.md`, `<name>.fabric-adapter.json`, language-native package and lock
-   files, a source entry point, and focused tests.
+1. Place a Python adapter under `adapters/python/<name>/` with
+   `LICENSE -> ../../../LICENSE`, `README.md`,
+   `<name>.fabric-adapter.json`, Python package and lock files, a source entry
+   point, and focused tests. Place TypeScript packages under
+   `adapters/typescript/<name>/` and wire them into that npm workspace.
 2. Give each Python leaf adapter a small base installation, a `harness` extra
    for package-installable target packages, and a `full` extra for
    package-installable integrations. The Hermes adapter is the sole source-only
@@ -88,5 +90,5 @@ git diff --check
 - Descriptor schema: `schemas/adapter-contract/adapter-descriptor.schema.json`.
 - Repository packaging: root `pyproject.toml`, `justfile`, adapter catalogs,
   and CI workflows.
-- Shared first-party host patterns: `adapters/common/` and the closest adapter
-  with the same target boundary.
+- Shared first-party Python host patterns: `adapters/python/common/` and the
+  closest adapter with the same target boundary.
