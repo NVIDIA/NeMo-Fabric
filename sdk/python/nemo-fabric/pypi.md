@@ -67,7 +67,7 @@ pip install "nemo-fabric[deepagents]"
 pip install "nemo-fabric[mini-swe-agent]"
 ```
 
-Hermes Agent 0.20 and later is not installable from PyPI. For this reason the Hermes Agent adapter does not provide a `harness` extra.Follow the
+Hermes Agent 0.20 and later is not installable from PyPI. For this reason the Hermes Agent adapter does not provide a `harness` extra. Follow the
 [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
 then install `nemo-fabric` and `nemo-fabric-adapters-hermes` into the Python
 environment that runs Hermes Agent.
