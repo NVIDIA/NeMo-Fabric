@@ -1364,7 +1364,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     }
     payload["config"] = _agent_config(
         {
-            "harness": {"settings": {}},
+            "harness": {"settings": {"max_tokens": 1024}},
             "instructions": {"system": {"content": "system", "mode": "replace"}},
             "runtime": {"max_turns": None},
             "tools": {"enabled": []},
