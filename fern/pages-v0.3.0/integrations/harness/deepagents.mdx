@@ -1,0 +1,141 @@
+---
+title: "Use the LangChain Deep Agents Adapter"
+description: "Install and configure the NeMo Fabric harness integration for LangChain Deep Agents."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+The NVIDIA NeMo Fabric `nvidia.fabric.langchain.deepagents` adapter runs
+LangChain Deep Agents in the persistent NeMo Fabric Python adapter host. The
+adapter maps normalized NeMo Fabric configuration into the model, tools,
+skills, Model Context Protocol (MCP) servers, workspace, and telemetry.
+
+## Install the Adapter
+
+To install the NeMo Fabric runtime, adapter, and supported LangChain Deep Agents
+dependencies in one environment:
+
+```bash
+pip install "nemo-fabric[deepagents]"
+```
+
+To install the adapter and supported Deep Agents stack without the NeMo Fabric
+runtime, use the adapter package's `harness` extra:
+
+```bash
+pip install "nemo-fabric-adapters-deepagents[harness]"
+```
+
+The adapter package also provides `relay` and `full` extras. Use `relay` when
+the environment already manages the Deep Agents stack. Use `full` to install
+the stack and NeMo Relay Python package together.
+
+To install the runtime, adapter, supported Deep Agents stack, and NeMo Relay
+Python package in one environment:
+
+```bash
+pip install "nemo-fabric[deepagents,relay]"
+```
+
+If the environment already manages a compatible Deep Agents stack, install only
+the adapter:
+
+```bash
+pip install nemo-fabric-adapters-deepagents
+```
+
+The bare adapter package does not install the NeMo Fabric runtime or harness. Use
+`deepagents>=0.6.12,<0.8.0`, `langchain>=1.3,<2.0`, and
+`langgraph>=1.2,<2.0`, the constraints supported by this release.
+
+If the existing compatible Deep Agents stack and NeMo Fabric runtime share an
+environment, install the runtime and bare adapter together:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-deepagents
+```
+
+For separate environments, set `ADAPTER_PYTHON` in the runtime environment to
+the adapter environment's Python interpreter. Use
+matching NeMo Fabric release versions for the runtime and adapter package
+unless a different pairing has been explicitly validated.
+
+## Configure the Adapter
+
+Select the LangChain Deep Agents harness integration in `HarnessConfig`:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(adapter_id="nvidia.fabric.langchain.deepagents")
+```
+
+Use normalized `FabricConfig` fields to configure the model, workspace, skills,
+MCP servers, replacement system instructions, blocked tools, and telemetry.
+The adapter rejects `append` system instructions. Use
+`harness.settings.deepagents` to configure the JSON-serializable Deep
+Agents-native `interrupt_on` and `subagents` options:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.langchain.deepagents",
+    settings={
+        "deepagents": {
+            "interrupt_on": {
+                "write_file": {
+                    "allowed_decisions": ["approve", "edit", "reject"],
+                    "description": "Review this file write.",
+                }
+            },
+            "subagents": [
+                {
+                    "name": "researcher",
+                    "description": "Researches the workspace before implementation.",
+                    "system_prompt": "Investigate the request and return concise findings.",
+                }
+            ],
+        }
+    },
+)
+```
+
+The descriptor closes both `harness.settings` and its nested `deepagents`
+object, so planning rejects unknown settings before runtime start.
+`runtime.max_turns=10` configures LangGraph with `recursion_limit=10`. This is
+a graph-superstep budget, not a promise of ten model responses or tool calls.
+One interaction can consume multiple supersteps. When `runtime.max_turns` is
+omitted, the adapter keeps the Deep Agents default.
+`interrupt_on` maps tool names to booleans or an object with
+`allowed_decisions`; supported decisions are `approve`, `edit`, `reject`, and
+`respond`. The object can also contain a static `description` and an
+`args_schema` JSON Schema.
+
+`subagents` accepts declarative synchronous subagents and Agent Protocol
+asynchronous subagents. A declarative subagent requires `name`, `description`,
+and `system_prompt`. An asynchronous subagent requires `name`, `description`,
+and `graph_id`. Refer to the adapter guide for the supported optional fields.
+Python middleware, permission objects, Python tool objects, and precompiled
+subagents cannot cross the JSON configuration boundary. NeMo Fabric rejects an
+asynchronous subagent when `tools.enabled` or `tools.blocked` is configured
+because a local tools policy cannot gate remote tools.
+
+## Understand the Runtime Lifecycle
+
+Each NeMo Fabric runtime compiles one Deep Agents graph and retains its
+checkpointer and LangGraph thread across ordered invocations. The built-in and
+caller-defined declarative subagents are separate locally compiled graphs
+invoked through the `task` tool. They inherit the parent run's model, tools,
+skills, workspace, telemetry, and permissions. `runtime.max_turns` configures
+only the main local graph, while declarative subagent graphs retain their Deep Agents
+limits. Agent Protocol subagents run in a separate service and manage their
+own recursion limit.
+
+NeMo Relay provides the SDK-native observability integration for this adapter.
+Native OpenTelemetry and OpenInference exporters are also available through the
+model provider configuration.
+
+For the complete configuration, subagent, lifecycle, and telemetry reference,
+refer to the
+[LangChain Deep Agents adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-beta.1/adapters/python/deepagents).

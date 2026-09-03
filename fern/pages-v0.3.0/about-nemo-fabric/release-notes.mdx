@@ -1,0 +1,97 @@
+---
+title: "Release Notes"
+description: "Review the current NVIDIA NeMo Fabric release status and find the official release history."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+This page summarizes the current documentation-visible release state. GitHub
+Releases remain the source of truth for complete release history and
+tag-specific notes.
+
+## Current Release
+
+NVIDIA NeMo Fabric 0.2 expands the execution contract from bundled agent
+harnesses to shared framework adapters and dedicated custom-agent adapters.
+Applications, evaluation systems, and rollout infrastructure can use the same
+configuration, lifecycle, result, artifact, and telemetry APIs across these
+Adapter Targets.
+
+For release artifacts and the complete PR-by-PR history, refer to
+[GitHub Releases](https://github.com/NVIDIA/NeMo-Fabric/releases).
+
+## Release Highlights
+
+### Public v1alpha2 Adapter Contract
+
+The v1alpha2 contract makes the southbound adapter boundary independently
+consumable. This release publishes canonical JSON Schemas, dependency-free
+Python dataclasses with optional Pydantic interoperability, generated
+TypeScript types, maintained repository documentation, and a public
+adapter-authoring skill.
+
+Adapters receive projected `AgentConfig`; northbound `FabricConfig` does not
+cross the supported adapter boundary. Each invocation receives typed
+`AgentRunRequest` and `RuntimeContext` values and returns one typed
+`AgentRunResult`; NeMo Fabric validates and enriches that result for consumers.
+
+### Harness and Custom-Agent Integration Patterns
+
+The adapter contract now documents three integration shapes:
+
+- one shared adapter for many configurations of an opinionated harness;
+- one shared framework adapter for separately registered custom agents; and
+- one dedicated adapter for an application-owned custom agent.
+
+The compact [mini-SWE-agent adapter](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-beta.1/adapters/python/mini-swe-agent)
+demonstrates the required lifecycle. The source-only NVIDIA NeMo Agent Toolkit
+reference demonstrates one shared adapter for calculator and email-phishing
+targets. The [LangGraph email-phishing example](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-beta.1/examples/langgraph_custom_agent)
+demonstrates a dedicated custom-agent adapter with separate consumer, adapter,
+and agent code.
+
+### Target-Driven Discovery
+
+Adapter Target Descriptors let a target package select its shared adapter and
+publish its adapter-scoped entry point and workflow settings schema. Consumers
+select a registered target with `workflow.target_id`; NeMo Fabric discovers
+metadata, validates compatibility, and projects the resolved entry point into
+`AgentConfig` before loading adapter code.
+
+NeMo Fabric discovers descriptors bundled with the runtime, installed below
+the shared package-data root, or listed explicitly in
+`FabricConfig.discovery.local_paths`. Conflicting records with the same ID fail
+planning instead of silently overriding one another.
+
+### Expanded Configuration and Streaming
+
+The normalized contract adds named tool and tool-group definitions, per-server
+MCP tool filters, and MCP OAuth 2.0 and service-account authentication metadata.
+Adapters advertise only the normalized fields and authentication modes they
+apply, and unsupported configured behavior fails planning.
+
+Native OpenAI Chat Completions streaming is available to adapters that declare
+and implement the optional capability. Relay-backed Agent Trajectory
+Observability Format (ATOF) streaming remains the primary normalized streaming
+API and does not require another adapter method. This release also updates
+NVIDIA NeMo Relay integration to 0.7.
+
+### Bundled Adapter Alignment
+
+Claude Code, Codex, Hermes Agent, LangChain Deep Agents, and mini-SWE-agent use
+the v1alpha2 descriptor, configuration, request, context, and result boundary.
+Each adapter publishes its supported configuration, settings schemas, runtime
+requirements, telemetry outputs, and optional capabilities for planning and
+diagnostics.
+
+## Current Limitations
+
+The current release has the following limitations:
+
+- Provider-backed third-party adapter registries and remotely hosted adapter
+  services are not included.
+- The automated adapter conformance suite is not included. Adapter authors can
+  use the maintained verification checklist for the required profile and
+  declared capabilities.
+- Cancellation, live updates, and service lifecycle flags are reserved until a
+  runtime binding exposes and tests the corresponding adapter operations.

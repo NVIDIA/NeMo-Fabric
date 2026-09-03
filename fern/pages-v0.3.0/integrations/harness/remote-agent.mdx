@@ -1,0 +1,62 @@
+---
+title: "Use the Remote Agent Adapter"
+description: "Configure a remote OpenAI- or Anthropic-compatible agent for NVIDIA NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the `nvidia.fabric.remote-agent` adapter to call an agent service over HTTP
+or HTTPS. The service can implement OpenAI Responses, OpenAI Chat Completions,
+or Anthropic Messages.
+
+## Install the Adapter
+
+Install the runtime and adapter together:
+
+```bash
+pip install "nemo-fabric[remote-agent]"
+```
+
+To install the adapter without the runtime, use:
+
+```bash
+pip install "nemo-fabric-adapters-remote-agent[harness]"
+```
+
+The bare, `harness`, and `full` installations contain the same adapter and HTTP
+client. They do not install the independently deployed remote service.
+
+## Configure the Adapter
+
+Set the remote API root, including its `/v1` path, in `HarnessConfig.settings`.
+`api_type` defaults to `openai-responses`.
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.remote-agent",
+    settings={
+        "base_url": "https://agent.example.com/v1",
+        "api_type": "openai-responses",
+        "connect_timeout_seconds": 10,
+        "read_timeout_seconds": 600,
+    },
+)
+```
+
+Supported `api_type` values are `openai-responses`, `openai-completions`, and
+`anthropic-messages`. Planning rejects unknown settings and values outside this
+set.
+
+The adapter supports `models`, `models.temperature`, and replacement
+`instructions.system` values. Set `models.default.api_key_env` when the service
+requires a credential. The adapter sends it as a Bearer token for OpenAI APIs
+and as `x-api-key` for Anthropic Messages. For Anthropic Messages, you can set
+`models.default.settings.max_tokens`; when omitted, the adapter sends `4096`.
+The connect timeout defaults to 10 seconds, and the timeout between response
+bytes defaults to 600 seconds.
+
+The adapter exposes terminal invocation only. It does not support MCP, skills,
+tool policy, Relay telemetry, streaming, or subagents. It keeps the completed
+user/assistant transcript for ordered invocations within a runtime.
