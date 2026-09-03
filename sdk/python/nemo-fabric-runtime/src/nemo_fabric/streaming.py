@@ -11,6 +11,9 @@ import os
 import warnings
 from collections.abc import Coroutine
 from contextlib import suppress
+# Temp do not commit
+from datetime import datetime
+# end-temp
 from typing import Any
 
 from nemo_fabric.models import (
@@ -30,6 +33,26 @@ _QUEUE_MAXSIZE = 1024
 _READ_SIZE = 64 * 1024
 _STREAMING_HOST_ENV = "NEMO_FABRIC_STREAMING_HOST"
 _STREAM_SINK_NAME = "nemo-fabric-stream"
+
+# Temp do not commit
+_TEMP_RELAY_EVENTS_LOG_PATH = "/tmp/relay_events.log"
+
+
+def _append_temp_relay_events_log(content: str) -> None:
+    with open(_TEMP_RELAY_EVENTS_LOG_PATH, "a", encoding="utf-8") as log_file:
+        log_file.write(content)
+
+
+def _format_temp_relay_json_document(document: bytes | bytearray) -> str:
+    raw_document = bytes(document).strip()
+    try:
+        parsed_document = json.loads(raw_document)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return raw_document.decode("utf-8", errors="replace") + "\n"
+    return json.dumps(parsed_document, indent=2, ensure_ascii=False) + "\n"
+
+
+# end-temp
 
 
 class _RecordTooLarge(ValueError):
@@ -292,6 +315,11 @@ class _AtofStreamListener:
         )
         socket = self._server.sockets[0]
         self._bound_port = int(socket.getsockname()[1])
+        # Temp do not commit
+        _append_temp_relay_events_log(
+            f"* Startup - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
+        # end-temp
         return self
 
     def begin_stream(
@@ -398,6 +426,10 @@ class _AtofStreamListener:
         is_atof_connection = False
         is_chunked = False
         chunked_body_completed = False
+        buffer = bytearray()
+        # Temp do not commit
+        relay_event_log_started = False
+        # end-temp
         try:
             request = await reader.readuntil(b"\r\n\r\n")
             request_line, *header_lines = request[:-4].split(b"\r\n")
@@ -406,6 +438,18 @@ class _AtofStreamListener:
             if method != "POST" or target.split("?", 1)[0] != "/atof":
                 await _write_response(writer, 404, "Not Found")
                 return
+            # Temp do not commit
+            formatted_headers = "\n".join(
+                line.decode("ascii") for line in header_lines
+            )
+            _append_temp_relay_events_log(
+                "**********************\n"
+                "Headers:\n"
+                f"{formatted_headers}\n\n"
+                "Body:\n"
+            )
+            relay_event_log_started = True
+            # end-temp
             is_atof_connection = True
             self._active_atof_connections += 1
             if self._accepting:
@@ -414,7 +458,6 @@ class _AtofStreamListener:
                 writer.write(b"HTTP/1.1 100 Continue\r\n\r\n")
                 await writer.drain()
 
-            buffer = bytearray()
             is_chunked = "chunked" in headers.get("transfer-encoding", "").lower()
             if is_chunked:
                 await self._read_chunked(reader, buffer)
@@ -441,6 +484,14 @@ class _AtofStreamListener:
         except asyncio.CancelledError:
             raise
         finally:
+            # Temp do not commit
+            if relay_event_log_started:
+                if buffer:
+                    _append_temp_relay_events_log(
+                        _format_temp_relay_json_document(buffer)
+                    )
+                _append_temp_relay_events_log("**********************\n")
+            # end-temp
             if is_atof_connection:
                 self._active_atof_connections -= 1
                 if is_chunked and not chunked_body_completed and self._accepting:
@@ -501,6 +552,11 @@ class _AtofStreamListener:
                 raise _RecordTooLarge
             line = bytes(buffer[:newline])
             del buffer[: newline + 1]
+            # Temp do not commit
+            _append_temp_relay_events_log(
+                _format_temp_relay_json_document(line)
+            )
+            # end-temp
             await self._emit(line)
 
     async def _emit(self, line: bytes | bytearray) -> None:
