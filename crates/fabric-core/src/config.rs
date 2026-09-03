@@ -4700,6 +4700,60 @@ mod tests {
     }
 
     #[test]
+    fn hermes_model_extensions_are_validated_and_projected() {
+        let mut config = config_with_model("nvidia.fabric.hermes", "nvidia");
+        let model = config.models.get_mut("default").expect("default model");
+        model
+            .extensions
+            .insert("top_p".to_string(), serde_json::json!(0.85));
+        model
+            .extensions
+            .insert("max_tokens".to_string(), serde_json::json!(768));
+
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect("Hermes model extensions");
+        let model = plan
+            .agent_config
+            .models
+            .get("default")
+            .expect("projected default model");
+
+        assert_eq!(
+            model.extensions.get("top_p"),
+            Some(&serde_json::json!(0.85))
+        );
+        assert_eq!(
+            model.extensions.get("max_tokens"),
+            Some(&serde_json::json!(768))
+        );
+    }
+
+    #[test]
+    fn hermes_model_extensions_reject_invalid_sampling_values() {
+        let mut config = config_with_model("nvidia.fabric.hermes", "nvidia");
+        config
+            .models
+            .get_mut("default")
+            .expect("default model")
+            .extensions
+            .insert("top_p".to_string(), serde_json::json!(1.1));
+
+        let error = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect_err("top_p above one");
+
+        assert!(
+            matches!(
+                error,
+                FabricError::InvalidAdapterExtension {
+                    ref extension_path,
+                    ..
+                } if extension_path == "models.default.top_p"
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[test]
     fn mcp_service_account_authentication_requires_adapter_support() {
         let mut config = typed_config("nvidia.fabric.langchain.deepagents");
         config.skills = None;

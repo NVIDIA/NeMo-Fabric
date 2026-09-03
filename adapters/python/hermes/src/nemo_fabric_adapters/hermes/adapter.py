@@ -175,6 +175,15 @@ class HermesRuntime:
                 if max_iterations is None:
                     max_iterations = DEFAULT_MAX_ITERATIONS
                 temperature = model_config.temperature
+                top_p = model_config.extensions.get("top_p")
+                request_overrides = {
+                    name: value
+                    for name, value in (
+                        ("temperature", temperature),
+                        ("top_p", top_p),
+                    )
+                    if value is not None
+                }
                 self._agent = AIAgent(
                     **filter_supported_kwargs(
                         AIAgent,
@@ -192,12 +201,11 @@ class HermesRuntime:
                         save_trajectories=bool(
                             self._settings.get("save_trajectories", False)
                         ),
-                        max_tokens=self._settings.get("max_tokens", 512),
-                        request_overrides=(
-                            {"temperature": temperature}
-                            if temperature is not None
-                            else None
+                        max_tokens=model_config.extensions.get(
+                            "max_tokens",
+                            self._settings.get("max_tokens", 512),
                         ),
+                        request_overrides=request_overrides or None,
                         reasoning_config=self._settings.get(
                             "reasoning_config", {"effort": "none"}
                         ),
