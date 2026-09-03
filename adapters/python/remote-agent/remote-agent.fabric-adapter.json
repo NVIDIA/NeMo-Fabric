@@ -37,6 +37,11 @@
         "exclusiveMinimum": 0,
         "default": 600,
         "description": "Timeout in seconds between response bytes from the remote agent."
+      },
+      "relay_streaming": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the remote service accepts NeMo Fabric request correlation metadata and publishes ATOF to the configured Relay stream sink."
       }
     },
     "required": ["base_url"],
@@ -75,5 +80,13 @@
     "streaming": false,
     "updates": false,
     "cancellation": false
+  },
+  "telemetry": {
+    "providers": {
+      "relay": {
+        "outputs": ["atof"],
+        "integration_modes": ["remote_service"]
+      }
+    }
   }
 }

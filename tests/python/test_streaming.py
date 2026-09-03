@@ -264,6 +264,73 @@ async def test_start_runtime_uses_streaming_host_environment_variable(
     await runtime.stop()
 
 
+async def test_start_runtime_binds_configured_reserved_stream_sink(
+    native_client: Fabric,
+    mock_native: MagicMock,
+    unused_tcp_port: int,
+):
+    config = _config(relay=True)
+    stream_url = f"http://127.0.0.1:{unused_tcp_port}/atof"
+    config.relay.observability.atof.sinks.append(
+        RelayAtofStreamSinkConfig(
+            name="nemo-fabric-stream",
+            url=stream_url,
+            transport="ndjson",
+        )
+    )
+
+    runtime = await native_client.start_runtime(config, streaming=True)
+
+    planned = json.loads(mock_native.plan_config.call_args.args[0])
+    sinks = planned["relay"]["observability"]["atof"]["sinks"]
+    assert [sink["name"] for sink in sinks] == [
+        "user-stream",
+        "nemo-fabric-stream",
+    ]
+    assert sinks[-1]["url"] == stream_url
+    record = {
+        "kind": "scope",
+        "scope_category": "start",
+        "uuid": "configured-endpoint",
+        "metadata": {"nemo_fabric_request_id": "request-configured"},
+    }
+    request = RunRequest(
+        input="configured endpoint",
+        request_id="request-configured",
+    )
+    stream = runtime.invoke_stream(request=request)
+    await _post_content_length(stream_url, [record])
+
+    assert [item async for item in stream] == [record]
+    assert (await stream.result()).status == "succeeded"
+    await runtime.stop()
+
+
+@pytest.mark.parametrize(
+    "stream_url",
+    [
+        "https://127.0.0.1:43123/atof",
+        "http://127.0.0.1/atof",
+        "http://127.0.0.1:43123/events",
+    ],
+)
+async def test_start_runtime_rejects_invalid_configured_stream_sink(
+    native_client: Fabric,
+    stream_url: str,
+):
+    config = _config(relay=True)
+    config.relay.observability.atof.sinks.append(
+        RelayAtofStreamSinkConfig(
+            name="nemo-fabric-stream",
+            url=stream_url,
+            transport="ndjson",
+        )
+    )
+
+    with pytest.raises(FabricConfigError, match="nemo-fabric-stream"):
+        await native_client.start_runtime(config, streaming=True)
+
+
 async def test_start_runtime_without_streaming_preserves_disabled_atof(
     native_client: Fabric,
     mock_native: MagicMock,

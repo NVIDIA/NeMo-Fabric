@@ -117,7 +117,7 @@ and additive extension maps because their support does not vary by adapter:
 | `schema_version` | Core | Core | Core | Core | Core | Core | Core |
 | `metadata.name`, `.description` | Core | Core | Core | Core | Core | Core | Core |
 | `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core | Core | Core |
-| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema | Closed local-extension schema | Closed `base_url`, `api_type`, and transport-timeout schema |
+| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema | Closed local-extension schema | Closed `base_url`, `api_type`, transport-timeout, and `relay_streaming` schema |
 | `workflow.target_id`, `.settings` | No | No | No | No | No | No | No |
 | `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | Configured provider | Pi catalog provider | Configured provider |
 | `models.<role>.model` | Yes | Yes | Yes | Yes | Yes | Yes; must exist in the Pi catalog | Yes |
@@ -137,11 +137,11 @@ and additive extension maps because their support does not vary by adapter:
 | `skills.paths` | Yes | Yes | Yes | Yes | No | Yes | No |
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | No | No |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No | No |
-| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | No | No |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | No | Yes; enables the configured ATOF collector |
 | `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No |
 | `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No |
-| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | No | No |
-| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | No | No |
+| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | No | Fabric binds the reserved stream sink; config is not sent to the remote service |
+| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | No | Not sent to the remote service |
 | Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Not accepted unless declared by the Pi descriptor | Preserved; no portable adapter semantics |
 
 The selected model role is `default`, or the sole configured role when no
@@ -172,12 +172,15 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [Hermes Agent](python/hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes Agent NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | Conversation history | Adapter-owned subclass with NeMo Relay Python SDK scopes | Creates a fresh Relay plugin and request scope, emits step, model, and bash-action telemetry, and collects artifacts | Clears the agent and Relay state | Not implemented |
 | [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Not supported | Reuses the session and calls `prompt()` for ordered text input | Aborts work, emits extension shutdown, and disposes the session | Not implemented |
-| [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Not supported | Sends one HTTP request and retains the completed transcript | Closes the HTTP client | Not implemented |
+| [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a configured ATOF collector that Fabric binds | Maps the request ID into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |
 
 Telemetry output names use the descriptor contract values. Claude, Codex,
 Hermes Agent, and mini-SWE-agent can emit NeMo Relay ATIF, OpenTelemetry, and
 OpenInference output. Deep Agents supports the same Relay outputs plus native
-OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry.
+OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry. The
+Remote Agent adapter maps the request ID into the remote API body. The
+independently instrumented service publishes correlated ATOF to the collector
+URL shared by its Relay configuration and `FabricConfig`.
 
 Shared lifecycle, Relay gateway, hook, and payload helpers are documented in
 the [adapter utilities guide](python/common/README.md).

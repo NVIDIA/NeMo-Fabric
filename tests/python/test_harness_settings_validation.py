@@ -221,6 +221,25 @@ def test_remote_agent_rejects_nonpositive_timeout(tmp_path: Path, setting: str):
         )
 
 
+def test_remote_agent_accepts_relay_atof_for_invoke_stream(tmp_path: Path):
+    config = _config(
+        {
+            "base_url": "https://agents.example.test/v1",
+            "relay_streaming": True,
+        },
+        adapter_id="nvidia.fabric.remote-agent",
+    ).enable_relay()
+
+    plan = Fabric().plan(config, base_dir=tmp_path)
+
+    assert plan["telemetry_plan"]["relay_enabled"] is True
+    assert plan["telemetry_plan"]["providers"] == ["relay"]
+    assert plan["telemetry_plan"]["adapter_outputs"] == ["atof"]
+    assert (
+        plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"] is False
+    )
+
+
 @pytest.mark.parametrize(
     ("adapter_id", "settings", "settings_path"),
     [
