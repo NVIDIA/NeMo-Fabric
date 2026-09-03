@@ -41,7 +41,7 @@ The primary descriptor fields are:
 | `telemetry` | Declares telemetry outputs and integration modes the adapter produces or forwards. |
 | `target_types` | Declares registered target types a shared adapter can load. Omit it for a direct harness or dedicated-agent adapter. |
 
-<Note title="Keep claims exact">
+<Note title="Keep Claims Exact">
 Declare only behavior implemented through the adapter boundary. A target's
 native cancellation or streaming feature does not become a NeMo Fabric
 capability until the adapter binding implements the corresponding contract.
