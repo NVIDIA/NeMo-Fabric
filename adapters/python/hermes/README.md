@@ -60,9 +60,11 @@ Tool selectors are Hermes toolset names because that is the native policy
 surface Hermes exposes. The descriptor validates the following
 `harness.settings` fields:
 
-The adapter also validates `top_p` (from 0 through 1) and positive
-`max_tokens` values as model extensions. A model-level `max_tokens` overrides
-the harness-level default for the selected model role.
+During run-plan resolution, NeMo Fabric Core validates the `top_p` (from 0
+through 1) and positive `max_tokens` model extensions against the Hermes
+descriptor before runtime startup. Hermes reads these prevalidated values from
+`AgentConfig`. A model-level `max_tokens` overrides the harness-level default
+for the selected model role.
 
 | Setting | Type | Default | Description |
 | --- | --- | --- | --- |

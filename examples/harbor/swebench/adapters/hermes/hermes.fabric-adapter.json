@@ -61,6 +61,24 @@
     "additionalProperties": false
   },
   "extension_schemas": {
+    "model": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "top_p": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Nucleus sampling probability passed to the model provider."
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum number of tokens for responses from this model role."
+        }
+      },
+      "additionalProperties": false
+    },
     "run_error": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",

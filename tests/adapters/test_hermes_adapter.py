@@ -116,6 +116,7 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
 
 
 def test_descriptor_uses_the_typed_agent_config_contract():
+    """The Hermes descriptor declares its typed config and model extensions."""
     descriptor_path = (
         Path(__file__).parents[2]
         / "adapters"
@@ -1290,6 +1291,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     monkeypatch,
     tmp_path: Path,
 ):
+    """A persistent Hermes runtime applies model extensions and reuses state."""
     mock_session_db = MagicMock(spec=SessionDB)
     mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
 
