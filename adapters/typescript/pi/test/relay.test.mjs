@@ -3,15 +3,17 @@
 
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
+  collectAtifArtifacts,
   collectRelayArtifacts,
   encodeToml,
   loadRelayPluginConfig,
+  normalizeRelayOutputDirs,
   prepareRelayAtifMatchers,
   validateRelayObservabilityV3,
   writeRelayConfigs,
@@ -285,7 +287,11 @@ endpoint = "http://127.0.0.1:4320/v1/traces"
   }
   assert.equal(encodeToml({ sample_rate: 0.5 }), "sample_rate = 0.5\n");
   assert.equal(encodeToml({ negative_zero: -0 }), "negative_zero = -0.0\n");
-  assert.throws(() => encodeToml({ unsafe_integer: 2 ** 70 }), /outside JavaScript's safe range/);
+  assert.equal(
+    encodeToml({ exact_integer: 2 ** 53, large_integer: 1e20 }),
+    "exact_integer = 9007199254740992\nlarge_integer = 100000000000000000000\n",
+  );
+  assert.throws(() => encodeToml({ exponential_integer: 2 ** 70 }), /requires exponent notation/);
   assert.throws(() => encodeToml({ unsupported: null }), /unsupported by the local TOML encoder/);
 });
 
@@ -402,6 +408,35 @@ test("ignores disabled ATIF components when using prepared matchers", async () =
   assert.equal(expectsLocalAtif(pluginConfig, matchers), false);
 });
 
+test("skips disabled components during output normalization and artifact collection", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-disabled-")));
+  try {
+    const disabledConfig = observability({
+      atof: { enabled: true, sinks: [{ type: "file" }] },
+      atif: { enabled: true },
+    });
+    disabledConfig.components[0].enabled = false;
+    const before = structuredClone(disabledConfig);
+    await normalizeRelayOutputDirs(disabledConfig, startInput(root));
+    assert.deepEqual(disabledConfig, before);
+
+    const path = join(root, "events.atof.jsonl");
+    await writeFile(path, "{}\n", "utf8");
+    const pluginConfig = observability({
+      atof: { enabled: true, sinks: [{ type: "file", output_directory: root, filename: "events.atof.jsonl" }] },
+    });
+    pluginConfig.components.push({
+      kind: "observability",
+      enabled: false,
+      config: structuredClone(pluginConfig.components[0].config),
+    });
+
+    assert.deepEqual(await collectRelayArtifacts(pluginConfig), [{ kind: "atof", path }]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("does not make nested ATIF directory races strict", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-atif-nested-")));
   const nested = join(root, "nested");
@@ -412,11 +447,18 @@ test("does not make nested ATIF directory races strict", async () => {
       atif: { enabled: true, output_directory: root, filename_template: "nested/{session_id}.json" },
     });
     const matchers = await prepareRelayAtifMatchers(pluginConfig);
-    await chmod(blocked, 0o000);
+    let injected = false;
+    const readDirectory = async (directory, options) => {
+      if (directory === blocked) {
+        injected = true;
+        throw Object.assign(new Error("injected nested readdir failure"), { code: "EACCES" });
+      }
+      return readdir(directory, options);
+    };
 
-    assert.deepEqual(await snapshotAtifFiles(pluginConfig, matchers), new Map());
+    assert.deepEqual(await collectAtifArtifacts(matchers, { readDirectory, strict: true }), []);
+    assert.equal(injected, true);
   } finally {
-    await chmod(blocked, 0o700).catch(() => {});
     await rm(root, { recursive: true, force: true });
   }
 });

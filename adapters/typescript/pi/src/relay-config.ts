@@ -6,6 +6,7 @@
 // normalizes local artifact paths, and writes the explicit TOML files consumed
 // by the Relay gateway.
 
+import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -30,6 +31,8 @@ export interface RelayAtifMatcher {
   recursive: boolean;
   template: string;
 }
+
+type ReadDirectory = (directory: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
 
 const OTEL_ENDPOINT_TYPES = new Set(["full", "gen_ai", "openinference"]);
 const LEGACY_FLAT_OTEL_FIELDS = new Set([
@@ -146,7 +149,12 @@ export async function normalizeRelayOutputDirs(
   const runtimeId = input.runtimeContext.runtime_id;
 
   for (const component of components(pluginConfig)) {
-    if (!isRecord(component) || component.kind !== "observability" || !isRecord(component.config)) {
+    if (
+      !isRecord(component) ||
+      component.kind !== "observability" ||
+      component.enabled === false ||
+      !isRecord(component.config)
+    ) {
       continue;
     }
     const config = component.config;
@@ -238,13 +246,14 @@ function tomlScalar(value: unknown): string {
     return value ? "true" : "false";
   }
   if (typeof value === "number" && Number.isFinite(value)) {
-    if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
-      throw new Error("NeMo Relay configuration contains an integer outside JavaScript's safe range");
-    }
     if (Object.is(value, -0)) {
       return "-0.0";
     }
-    return String(value);
+    const rendered = String(value);
+    if (Number.isInteger(value) && /[eE]/u.test(rendered)) {
+      throw new Error("NeMo Relay configuration contains an integer that requires exponent notation");
+    }
+    return rendered;
   }
   if (Array.isArray(value) && value.every((item) => !isRecord(item))) {
     return `[${value.map(tomlScalar).join(", ")}]`;
@@ -424,12 +433,16 @@ export async function prepareRelayAtifMatchers(pluginConfig: RelayPluginConfig):
   return matchers;
 }
 
-async function matchingAtifFiles(matcher: RelayAtifMatcher, strict = false): Promise<string[]> {
+async function matchingAtifFiles(
+  matcher: RelayAtifMatcher,
+  strict = false,
+  readDirectory: ReadDirectory = readdir,
+): Promise<string[]> {
   const files: string[] = [];
   const visit = async (directory: string, root: boolean): Promise<void> => {
     let entries;
     try {
-      entries = await readdir(directory, { withFileTypes: true });
+      entries = await readDirectory(directory, { withFileTypes: true });
     } catch (error) {
       if (strict && root) {
         throw error;
@@ -458,14 +471,14 @@ async function matchingAtifFiles(matcher: RelayAtifMatcher, strict = false): Pro
 
 export async function collectAtifArtifacts(
   matchers: RelayAtifMatcher[],
-  options: { localOnly?: boolean; strict?: boolean } = {},
+  options: { localOnly?: boolean; readDirectory?: ReadDirectory; strict?: boolean } = {},
 ): Promise<RelayArtifact[]> {
   const artifacts: RelayArtifact[] = [];
   for (const matcher of matchers) {
     if (options.localOnly === true && !matcher.local) {
       continue;
     }
-    for (const path of await matchingAtifFiles(matcher, options.strict)) {
+    for (const path of await matchingAtifFiles(matcher, options.strict, options.readDirectory)) {
       artifacts.push({ kind: "atif", path });
     }
   }
@@ -478,7 +491,12 @@ export async function collectRelayArtifacts(
 ): Promise<RelayArtifact[]> {
   const artifacts: RelayArtifact[] = [];
   for (const component of components(pluginConfig)) {
-    if (!isRecord(component) || component.kind !== "observability" || !isRecord(component.config)) {
+    if (
+      !isRecord(component) ||
+      component.kind !== "observability" ||
+      component.enabled === false ||
+      !isRecord(component.config)
+    ) {
       continue;
     }
     const atof = component.config.atof;

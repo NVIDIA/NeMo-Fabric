@@ -15,7 +15,7 @@ import {
   snapshotAtifFiles,
   waitForFinalizedAtif,
 } from "./relay-artifacts.js";
-import { collectRelayArtifacts, type RelayArtifact } from "./relay-config.js";
+import { collectRelayArtifacts, type RelayArtifact, type RelayAtifMatcher } from "./relay-config.js";
 import type { PiRelayRuntime } from "./relay.js";
 
 export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | string;
@@ -103,36 +103,53 @@ export class PiAdapterRuntime implements AdapterRuntime {
 
     const relay = this.session.relay;
     let atifBefore: AtifSnapshot | undefined;
+    let usableAtifMatchers: RelayAtifMatcher[] = relay?.atifMatchers ?? [];
     let atifSnapshotFailed = false;
     if (relay !== undefined && expectsLocalAtif(relay.pluginConfig, relay.atifMatchers)) {
-      try {
-        atifBefore = await snapshotAtifFiles(relay.pluginConfig, relay.atifMatchers);
-      } catch (error) {
-        atifSnapshotFailed = true;
-        const detail = error instanceof Error ? `: ${error.message}` : "";
-        process.stderr.write(`NeMo Relay ATIF artifact snapshot failed${detail}\n`);
+      atifBefore = new Map();
+      const failedMatchers = new Set<RelayAtifMatcher>();
+      for (const matcher of relay.atifMatchers.filter((candidate) => candidate.local)) {
+        try {
+          const snapshot = await snapshotAtifFiles(relay.pluginConfig, [matcher]);
+          for (const [path, fingerprint] of snapshot) {
+            atifBefore.set(path, fingerprint);
+          }
+        } catch (error) {
+          atifSnapshotFailed = true;
+          failedMatchers.add(matcher);
+          const detail = error instanceof Error ? `: ${error.message}` : "";
+          process.stderr.write(`NeMo Relay ATIF artifact snapshot failed${detail}\n`);
+        }
       }
+      usableAtifMatchers = relay.atifMatchers.filter((matcher) => !failedMatchers.has(matcher));
     }
     const outcome = await this.session.prompt(request.input);
     let relayArtifacts: RelayArtifact[] | undefined;
-    if (relay !== undefined && atifSnapshotFailed) {
-      relayArtifacts = await collectNonAtifArtifacts(relay);
-    } else if (outcome.accepted && relay !== undefined && atifBefore !== undefined) {
+    if (
+      outcome.accepted &&
+      relay !== undefined &&
+      atifBefore !== undefined &&
+      usableAtifMatchers.some((matcher) => matcher.local)
+    ) {
       try {
         const finalized = await waitForFinalizedAtif(relay.pluginConfig, atifBefore, {
-          matchers: relay.atifMatchers,
+          matchers: usableAtifMatchers,
         });
         if (finalized === undefined) {
           process.stderr.write(
             `NeMo Relay did not finalize an ATIF artifact within ${ATIF_FINALIZATION_TIMEOUT_MS} ms\n`,
           );
           relayArtifacts = await collectNonAtifArtifacts(relay);
+        } else if (atifSnapshotFailed) {
+          relayArtifacts = await collectRelayArtifacts(relay.pluginConfig, usableAtifMatchers);
         }
       } catch (error) {
         const detail = error instanceof Error ? `: ${error.message}` : "";
         process.stderr.write(`NeMo Relay ATIF artifact finalization check failed${detail}\n`);
         relayArtifacts = await collectNonAtifArtifacts(relay);
       }
+    } else if (relay !== undefined && atifSnapshotFailed) {
+      relayArtifacts = await collectRelayArtifacts(relay.pluginConfig, usableAtifMatchers);
     }
     if (!outcome.accepted) {
       return withRelayOutput(
@@ -193,8 +210,9 @@ export class PiAdapterRuntime implements AdapterRuntime {
         failure ??= error;
       }
       if (failure !== undefined) {
-        // Retain the handle so a host retry can reach Relay cleanup that failed;
-        // repeated Pi session teardown is guarded by the session handle itself.
+        this.unusable = true;
+        // Retain the handle so a host retry can reach Relay cleanup that failed,
+        // but prevent another invocation from reaching a disposed Pi session.
         throw failure;
       }
       this.session = undefined;

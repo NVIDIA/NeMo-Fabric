@@ -472,3 +472,78 @@ test("reports Relay extension tool conflicts as Pi tool collisions", async () =>
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("includes Pi flag conflict diagnostics in extension errors", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-flag-collision-")));
+  const userExtensionPath = join(workspace, "user-extension.js");
+  const relayExtensionPath = join(workspace, "relay-extension.js");
+  const extensionSource = `export default function (pi) {
+  pi.registerFlag("duplicate-flag", {
+    description: "A duplicate test flag",
+    type: "boolean",
+    default: false
+  });
+}
+`;
+  await Promise.all([
+    writeFile(userExtensionPath, extensionSource, "utf8"),
+    writeFile(relayExtensionPath, extensionSource, "utf8"),
+  ]);
+  let relayStopped = false;
+  const factory = new PiSdkSessionFactory({
+    async start() {
+      return {
+        extensionPath: relayExtensionPath,
+        pluginConfig: { version: 1, components: [] },
+        atifMatchers: [],
+        async output() {
+          return {};
+        },
+        async stop() {
+          relayStopped = true;
+        },
+      };
+    },
+  });
+  try {
+    await assert.rejects(
+      factory.create({
+        agentName: "pi-relay-test",
+        baseDir: workspace,
+        config: {
+          harness: { settings: { extensions: ["user-extension.js"] } },
+          models: {
+            default: {
+              api_key_env: "TEST_API_KEY",
+              model: "gpt-4.1-mini",
+              provider: "openai",
+            },
+          },
+          tools: { enabled: [] },
+        },
+        runtimeContext: {
+          artifacts: {},
+          environment: {
+            control_location: "external_control",
+            env: { TEST_API_KEY: "not-a-real-key" },
+            environment_id: "environment-1",
+            ownership: "caller_owned",
+            provider: "local",
+            workspace,
+          },
+          invocation_id: "start",
+          request_id: "request-start",
+          runtime_id: "runtime-1",
+          telemetry: { relay_enabled: true },
+        },
+      }),
+      (error) =>
+        error.code === "pi_extension_load_failed" &&
+        error.message.includes("conflict") &&
+        error.metadata.extension_error.includes('Flag "--duplicate-flag" conflicts with'),
+    );
+    assert.equal(relayStopped, true);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

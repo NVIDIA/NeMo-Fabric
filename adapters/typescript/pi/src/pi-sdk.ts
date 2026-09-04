@@ -535,9 +535,16 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         );
       }
       if (extensionErrors.length > 0) {
-        throw new LifecycleError("pi_extension_load_failed", "One or more configured Pi extensions failed to load", {
-          metadata: { count: extensionErrors.length },
-        });
+        throw new LifecycleError(
+          "pi_extension_load_failed",
+          "One or more configured Pi extensions failed to load or conflict",
+          {
+            metadata: {
+              count: extensionErrors.length,
+              extension_error: extensionErrors.map((error) => error.error).join("; "),
+            },
+          },
+        );
       }
       const skillDiagnostics = resourceLoader.getSkills().diagnostics;
       const blockingSkillDiagnostics = skillDiagnostics.filter(
