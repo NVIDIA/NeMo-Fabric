@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -284,6 +284,8 @@ endpoint = "http://127.0.0.1:4320/v1/traces"
     assert.equal(encodeToml(observability(config)), expected);
   }
   assert.equal(encodeToml({ sample_rate: 0.5 }), "sample_rate = 0.5\n");
+  assert.equal(encodeToml({ negative_zero: -0 }), "negative_zero = -0.0\n");
+  assert.throws(() => encodeToml({ unsafe_integer: 2 ** 70 }), /outside JavaScript's safe range/);
   assert.throws(() => encodeToml({ unsupported: null }), /unsupported by the local TOML encoder/);
 });
 
@@ -362,11 +364,12 @@ test("collects ATIF templates with directory, metadata, or no placeholders", asy
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-atif-templates-")));
   try {
     const cases = [
-      ["nested/trajectory-{session_id}.json", "nested/trajectory-s1.json"],
-      ["{metadata.workflow_id}-trajectory-{session_id}.json", "wf1-trajectory-s1.json"],
-      ["fixed.atif.json", "fixed.atif.json"],
+      ["nested/trajectory-{session_id}.json", "nested/trajectory-s1.json", true],
+      ["{metadata.workflow_id}-trajectory-{session_id}.json", "wf1-trajectory-s1.json", false],
+      ["{metadata.run:-a/b}/{session_id}.atif.json", "a/b/sess-1.atif.json", true],
+      ["fixed.atif.json", "fixed.atif.json", false],
     ];
-    for (const [template, filename] of cases) {
+    for (const [template, filename, recursive] of cases) {
       const directory = join(root, template.replaceAll(/[^A-Za-z0-9]/g, "-"));
       const path = join(directory, filename);
       await mkdir(join(path, ".."), { recursive: true });
@@ -375,10 +378,45 @@ test("collects ATIF templates with directory, metadata, or no placeholders", asy
         atif: { enabled: true, output_directory: directory, filename_template: template },
       });
       const matchers = await prepareRelayAtifMatchers(pluginConfig);
+      assert.equal(matchers[0].recursive, recursive);
       assert.equal(expectsLocalAtif(pluginConfig, matchers), true);
       assert.deepEqual(await collectRelayArtifacts(pluginConfig, matchers), [{ kind: "atif", path }]);
     }
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ignores disabled ATIF components when using prepared matchers", async () => {
+  const pluginConfig = observability({
+    atif: {
+      enabled: true,
+      output_directory: "/directory-that-must-not-be-resolved",
+      filename_template: "trajectory-{session_id}.atif.json",
+    },
+  });
+  pluginConfig.components[0].enabled = false;
+
+  const matchers = await prepareRelayAtifMatchers(pluginConfig);
+  assert.deepEqual(matchers, []);
+  assert.equal(expectsLocalAtif(pluginConfig, matchers), false);
+});
+
+test("does not make nested ATIF directory races strict", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-atif-nested-")));
+  const nested = join(root, "nested");
+  const blocked = join(nested, "blocked");
+  try {
+    await mkdir(blocked, { recursive: true });
+    const pluginConfig = observability({
+      atif: { enabled: true, output_directory: root, filename_template: "nested/{session_id}.json" },
+    });
+    const matchers = await prepareRelayAtifMatchers(pluginConfig);
+    await chmod(blocked, 0o000);
+
+    assert.deepEqual(await snapshotAtifFiles(pluginConfig, matchers), new Map());
+  } finally {
+    await chmod(blocked, 0o700).catch(() => {});
     await rm(root, { recursive: true, force: true });
   }
 });

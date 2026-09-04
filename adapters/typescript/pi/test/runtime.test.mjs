@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { prepareRelayAtifMatchers } from "../dist/relay-config.js";
 import { PiAdapterRuntime } from "../dist/runtime.js";
 
 function startInput() {
@@ -289,6 +290,73 @@ test(
     }
   },
 );
+
+test("an ATIF snapshot failure preserves the prompt and excludes ATIF", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-snapshot-failure-")));
+  const atifDir = join(root, "atif");
+  const atofDir = join(root, "atof");
+  try {
+    await mkdir(atifDir);
+    await mkdir(atofDir);
+    const atofPath = join(atofDir, "events.atof.jsonl");
+    await writeFile(atofPath, "{}\n", "utf8");
+    const pluginConfig = {
+      version: 1,
+      components: [
+        {
+          kind: "observability",
+          config: {
+            atof: {
+              enabled: true,
+              sinks: [{ type: "file", output_directory: atofDir, filename: "events.atof.jsonl" }],
+            },
+            atif: {
+              enabled: true,
+              output_directory: atifDir,
+              filename_template: "trajectory-{session_id}.atif.json",
+            },
+          },
+        },
+      ],
+    };
+    const atifMatchers = await prepareRelayAtifMatchers(pluginConfig);
+    let promptCount = 0;
+    const relay = {
+      pluginConfig,
+      atifMatchers,
+      async output(artifacts) {
+        return { relay_artifacts: artifacts ?? [{ kind: "atif", path: "unexpected" }] };
+      },
+      async stop() {},
+    };
+    const runtime = new PiAdapterRuntime({
+      async create() {
+        return {
+          relay,
+          async prompt() {
+            promptCount += 1;
+            return { accepted: true, text: "ok", stopReason: "stop" };
+          },
+          async stop() {},
+        };
+      },
+    });
+
+    await runtime.start(startInput());
+    await rm(atifDir, { recursive: true, force: true });
+    const first = await runtime.invoke({ input: "first" }, context);
+    const second = await runtime.invoke({ input: "second" }, context);
+
+    assert.equal(first.status, "succeeded");
+    assert.equal(second.status, "succeeded");
+    assert.equal(promptCount, 2);
+    assert.deepEqual(first.output.relay_artifacts, [{ kind: "atof", path: atofPath }]);
+    assert.deepEqual(second.output.relay_artifacts, [{ kind: "atof", path: atofPath }]);
+    await runtime.stop();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("still stops Relay when Pi session shutdown fails", async () => {
   let sessionStopAttempts = 0;

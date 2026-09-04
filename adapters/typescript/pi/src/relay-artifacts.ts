@@ -146,7 +146,10 @@ export async function waitForFinalizedAtif(
   const startedAt = performance.now();
   const matchers = options.matchers ?? (await prepareRelayAtifMatchers(pluginConfig));
   const localMatchers = matchers.filter((matcher) => matcher.local);
-  const directories = [...new Set(localMatchers.map((matcher) => matcher.directory))];
+  const directories = new Map<string, boolean>();
+  for (const matcher of localMatchers) {
+    directories.set(matcher.directory, (directories.get(matcher.directory) ?? false) || matcher.recursive);
+  }
   const watchers: FSWatcher[] = [];
   try {
     return await new Promise((resolvePromise, reject) => {
@@ -178,8 +181,8 @@ export async function waitForFinalizedAtif(
       };
       const timer = setTimeout(() => finish(), timeoutMs);
       try {
-        for (const directory of directories) {
-          const watcher = watch(directory, { persistent: false, recursive: true }, (_event, filename) => {
+        for (const [directory, recursive] of directories) {
+          const watcher = watch(directory, { persistent: false, recursive }, (_event, filename) => {
             if (filename === null) {
               void finalizedAtifPath(pluginConfig, before, matchers).then(
                 (changed) => {

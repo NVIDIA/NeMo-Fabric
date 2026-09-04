@@ -10,7 +10,6 @@ import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type {
   AgentSession,
-  DefaultResourceLoader,
   ExtensionCommandContextActions,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -235,12 +234,6 @@ export async function resolveCustomTools(
   return tools;
 }
 
-function extensionToolNames(resourceLoader: DefaultResourceLoader): string[] {
-  return resourceLoader
-    .getExtensions()
-    .extensions.flatMap((extension) => Array.from(extension.tools.keys()));
-}
-
 function rejectToolCollisions(customTools: ToolDefinition[], configuredExtensionTools: string[]): void {
   const customNames = new Set(customTools.map((tool) => tool.name));
   const seenExtensionNames = new Set<string>();
@@ -256,10 +249,19 @@ function rejectToolCollisions(customTools: ToolDefinition[], configuredExtension
 
 function relayExtensionLoadErrors(
   errors: Array<{ path: string; error: string }>,
+  extensions: Array<{ path: string; resolvedPath?: string }>,
   relay: PiRelayRuntime | undefined,
   workspace: string,
 ): Array<{ path: string; error: string }> {
   if (relay === undefined) {
+    return [];
+  }
+  const loaded = extensions.some((extension) =>
+    [extension.path, extension.resolvedPath].some(
+      (path) => path !== undefined && resolve(workspace, path) === relay.extensionPath,
+    ),
+  );
+  if (loaded) {
     return [];
   }
   return errors.filter((error) => {
@@ -513,8 +515,13 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         systemPrompt: systemInstruction?.content,
       });
       await resourceLoader.reload();
-      const extensionErrors = resourceLoader.getExtensions().errors;
-      const relayErrors = relayExtensionLoadErrors(extensionErrors, relay, workspace);
+      const extensionResult = resourceLoader.getExtensions();
+      rejectToolCollisions(
+        customTools,
+        extensionResult.extensions.flatMap((extension) => [...extension.tools.keys()]),
+      );
+      const extensionErrors = extensionResult.errors;
+      const relayErrors = relayExtensionLoadErrors(extensionErrors, extensionResult.extensions, relay, workspace);
       if (relayErrors.length > 0) {
         throw new LifecycleError(
           "pi_relay_extension_load_failed",
@@ -532,7 +539,6 @@ export class PiSdkSessionFactory implements PiSessionFactory {
           metadata: { count: extensionErrors.length },
         });
       }
-      rejectToolCollisions(customTools, extensionToolNames(resourceLoader));
       const skillDiagnostics = resourceLoader.getSkills().diagnostics;
       const blockingSkillDiagnostics = skillDiagnostics.filter(
         (diagnostic) => diagnostic.type === "error" || diagnostic.type === "collision",

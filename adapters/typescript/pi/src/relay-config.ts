@@ -27,6 +27,7 @@ export interface RelayAtifMatcher {
   directory: string;
   local: boolean;
   pattern: RegExp;
+  recursive: boolean;
   template: string;
 }
 
@@ -237,6 +238,12 @@ function tomlScalar(value: unknown): string {
     return value ? "true" : "false";
   }
   if (typeof value === "number" && Number.isFinite(value)) {
+    if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
+      throw new Error("NeMo Relay configuration contains an integer outside JavaScript's safe range");
+    }
+    if (Object.is(value, -0)) {
+      return "-0.0";
+    }
     return String(value);
   }
   if (Array.isArray(value) && value.every((item) => !isRecord(item))) {
@@ -354,15 +361,27 @@ async function directoryEntries(directory: string): Promise<string[]> {
   }
 }
 
-function templatePattern(template: string): RegExp {
+function escapePattern(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function placeholderPattern(placeholder: string): string {
+  const expression = placeholder.slice(1, -1);
+  const fallbackIndex = expression.indexOf(":-");
+  if (fallbackIndex < 0) {
+    return "[^/]+";
+  }
+  const fallback = expression.slice(fallbackIndex + 2).replaceAll("\\", "/");
+  return fallback.includes("/") ? `(?:[^/]+|${escapePattern(fallback)})` : "[^/]+";
+}
+
+function templatePattern(template: string): { pattern: RegExp; recursive: boolean } {
   const normalized = template.replaceAll("\\", "/");
   const parts = normalized.split(/(\{[^{}]+\})/u);
   const pattern = parts
-    .map((part) =>
-      /^\{[^{}]+\}$/u.test(part) ? "[^/]+" : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-    )
+    .map((part) => (/^\{[^{}]+\}$/u.test(part) ? placeholderPattern(part) : escapePattern(part)))
     .join("");
-  return new RegExp(`^${pattern}$`, "u");
+  return { pattern: new RegExp(`^${pattern}$`, "u"), recursive: normalized.includes("/") };
 }
 
 export function matchesRelayAtifPath(matcher: RelayAtifMatcher, path: string): boolean {
@@ -373,7 +392,12 @@ export function matchesRelayAtifPath(matcher: RelayAtifMatcher, path: string): b
 export async function prepareRelayAtifMatchers(pluginConfig: RelayPluginConfig): Promise<RelayAtifMatcher[]> {
   const matchers: RelayAtifMatcher[] = [];
   for (const component of components(pluginConfig)) {
-    if (!isRecord(component) || component.kind !== "observability" || !isRecord(component.config)) {
+    if (
+      !isRecord(component) ||
+      component.kind !== "observability" ||
+      component.enabled === false ||
+      !isRecord(component.config)
+    ) {
       continue;
     }
     const atif = component.config.atif;
@@ -388,10 +412,12 @@ export async function prepareRelayAtifMatchers(pluginConfig: RelayPluginConfig):
     if (directory === undefined) {
       throw new Error("NeMo Relay ATIF output directory could not be prepared");
     }
+    const { pattern, recursive } = templatePattern(template);
     matchers.push({
       directory,
       local: !Array.isArray(atif.storage) || atif.storage.length === 0,
-      pattern: templatePattern(template),
+      pattern,
+      recursive,
       template,
     });
   }
@@ -400,12 +426,12 @@ export async function prepareRelayAtifMatchers(pluginConfig: RelayPluginConfig):
 
 async function matchingAtifFiles(matcher: RelayAtifMatcher, strict = false): Promise<string[]> {
   const files: string[] = [];
-  const visit = async (directory: string): Promise<void> => {
+  const visit = async (directory: string, root: boolean): Promise<void> => {
     let entries;
     try {
       entries = await readdir(directory, { withFileTypes: true });
     } catch (error) {
-      if (strict) {
+      if (strict && root) {
         throw error;
       }
       return;
@@ -413,7 +439,9 @@ async function matchingAtifFiles(matcher: RelayAtifMatcher, strict = false): Pro
     for (const entry of entries) {
       const path = join(directory, entry.name);
       if (entry.isDirectory()) {
-        await visit(path);
+        if (matcher.recursive) {
+          await visit(path, false);
+        }
         continue;
       }
       if (matchesRelayAtifPath(matcher, path)) {
@@ -424,7 +452,7 @@ async function matchingAtifFiles(matcher: RelayAtifMatcher, strict = false): Pro
       }
     }
   };
-  await visit(matcher.directory);
+  await visit(matcher.directory, true);
   return files;
 }
 

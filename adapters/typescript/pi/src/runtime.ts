@@ -103,12 +103,21 @@ export class PiAdapterRuntime implements AdapterRuntime {
 
     const relay = this.session.relay;
     let atifBefore: AtifSnapshot | undefined;
+    let atifSnapshotFailed = false;
     if (relay !== undefined && expectsLocalAtif(relay.pluginConfig, relay.atifMatchers)) {
-      atifBefore = await snapshotAtifFiles(relay.pluginConfig, relay.atifMatchers);
+      try {
+        atifBefore = await snapshotAtifFiles(relay.pluginConfig, relay.atifMatchers);
+      } catch (error) {
+        atifSnapshotFailed = true;
+        const detail = error instanceof Error ? `: ${error.message}` : "";
+        process.stderr.write(`NeMo Relay ATIF artifact snapshot failed${detail}\n`);
+      }
     }
     const outcome = await this.session.prompt(request.input);
     let relayArtifacts: RelayArtifact[] | undefined;
-    if (outcome.accepted && relay !== undefined && atifBefore !== undefined) {
+    if (relay !== undefined && atifSnapshotFailed) {
+      relayArtifacts = await collectNonAtifArtifacts(relay);
+    } else if (outcome.accepted && relay !== undefined && atifBefore !== undefined) {
       try {
         const finalized = await waitForFinalizedAtif(relay.pluginConfig, atifBefore, {
           matchers: relay.atifMatchers,
@@ -184,6 +193,8 @@ export class PiAdapterRuntime implements AdapterRuntime {
         failure ??= error;
       }
       if (failure !== undefined) {
+        // Retain the handle so a host retry can reach Relay cleanup that failed;
+        // repeated Pi session teardown is guarded by the session handle itself.
         throw failure;
       }
       this.session = undefined;
