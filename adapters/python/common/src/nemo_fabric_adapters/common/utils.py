@@ -549,7 +549,11 @@ def normalize_relay_output_dirs(
     base = Path(base_dir(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
     for component in plugin_config.get("components", []):
-        if not isinstance(component, dict) or component.get("kind") != "observability":
+        if (
+            not isinstance(component, dict)
+            or component.get("kind") != "observability"
+            or component.get("enabled") is False
+        ):
             continue
         config = component["config"]
 
@@ -627,7 +631,11 @@ def _artifact_glob(directory: Path, pattern: str) -> list[Path]:
 def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str]]:
     artifacts: list[dict[str, str]] = []
     for component in plugin_config.get("components", []):
-        if component.get("kind") != "observability":
+        if (
+            not isinstance(component, dict)
+            or component.get("kind") != "observability"
+            or component.get("enabled") is False
+        ):
             continue
         config = component.get("config") or {}
         atof = config.get("atof")
@@ -682,8 +690,18 @@ def write_relay_configs(
 
         config_path = Path(config_path)
         config_dir = config_path.parent / "relay-config"
+        enabled_plugin_config = None
         if plugin_config is not None:
-            validate_relay_observability_v3(plugin_config)
+            enabled_plugin_config = {
+                **plugin_config,
+                "components": [
+                    component
+                    for component in plugin_config.get("components", [])
+                    if not isinstance(component, dict)
+                    or component.get("enabled") is not False
+                ],
+            }
+            validate_relay_observability_v3(enabled_plugin_config)
         config_dir.mkdir(parents=True, exist_ok=True)
         relay_config_path = None
         plugin_config_path = None
@@ -692,10 +710,10 @@ def write_relay_configs(
             relay_config_path = config_dir / "config.toml"
             relay_config_path.write_text(tomli_w.dumps(relay_config), encoding="utf-8")
 
-        if plugin_config is not None:
+        if enabled_plugin_config is not None:
             plugin_config_path = config_dir / "plugins.toml"
             plugin_config_path.write_text(
-                tomli_w.dumps(plugin_config),
+                tomli_w.dumps(enabled_plugin_config),
                 encoding="utf-8",
             )
 

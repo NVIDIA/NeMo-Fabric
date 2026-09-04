@@ -35,6 +35,8 @@ export interface RelayAtifMatcher {
 type ReadDirectory = (directory: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
 
 const OTEL_ENDPOINT_TYPES = new Set(["full", "gen_ai", "openinference"]);
+const TOML_INTEGER_MIN = -(1n << 63n);
+const TOML_INTEGER_MAX = (1n << 63n) - 1n;
 const LEGACY_FLAT_OTEL_FIELDS = new Set([
   "attribute_mappings",
   "capture_content",
@@ -249,11 +251,14 @@ function tomlScalar(value: unknown): string {
     if (Object.is(value, -0)) {
       return "-0.0";
     }
-    const rendered = String(value);
-    if (Number.isInteger(value) && /[eE]/u.test(rendered)) {
-      throw new Error("NeMo Relay configuration contains an integer that requires exponent notation");
+    if (Number.isInteger(value)) {
+      const integer = BigInt(value);
+      if (integer < TOML_INTEGER_MIN || integer > TOML_INTEGER_MAX) {
+        throw new Error("NeMo Relay configuration contains an integer outside TOML's signed 64-bit range");
+      }
+      return integer.toString();
     }
-    return rendered;
+    return String(value);
   }
   if (Array.isArray(value) && value.every((item) => !isRecord(item))) {
     return `[${value.map(tomlScalar).join(", ")}]`;
@@ -313,14 +318,20 @@ export async function writeRelayConfigs(pluginConfig: RelayPluginConfig): Promis
   if (!runtimeConfigPath) {
     throw new Error("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled");
   }
-  validateRelayObservabilityV3(pluginConfig);
+  const enabledPluginConfig = {
+    ...pluginConfig,
+    components: components(pluginConfig).filter(
+      (component) => !isRecord(component) || component.enabled !== false,
+    ),
+  };
+  validateRelayObservabilityV3(enabledPluginConfig);
   const configDir = join(dirname(runtimeConfigPath), "relay-config");
   const configPath = join(configDir, "config.toml");
   const pluginConfigPath = join(configDir, "plugins.toml");
   await mkdir(configDir, { recursive: true });
   await Promise.all([
     writeFile(configPath, encodeToml({}), "utf8"),
-    writeFile(pluginConfigPath, encodeToml(pluginConfig), "utf8"),
+    writeFile(pluginConfigPath, encodeToml(enabledPluginConfig), "utf8"),
   ]);
   return { configPath, pluginConfigPath };
 }

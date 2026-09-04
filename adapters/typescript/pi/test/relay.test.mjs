@@ -288,10 +288,15 @@ endpoint = "http://127.0.0.1:4320/v1/traces"
   assert.equal(encodeToml({ sample_rate: 0.5 }), "sample_rate = 0.5\n");
   assert.equal(encodeToml({ negative_zero: -0 }), "negative_zero = -0.0\n");
   assert.equal(
-    encodeToml({ exact_integer: 2 ** 53, large_integer: 1e20 }),
-    "exact_integer = 9007199254740992\nlarge_integer = 100000000000000000000\n",
+    encodeToml({ ten_quadrillion: 1e16, exact_integer: 2 ** 53, power_of_two: 2 ** 60 }),
+    "ten_quadrillion = 10000000000000000\n" +
+      "exact_integer = 9007199254740992\n" +
+      "power_of_two = 1152921504606846976\n",
   );
-  assert.throws(() => encodeToml({ exponential_integer: 2 ** 70 }), /requires exponent notation/);
+  assert.equal(encodeToml({ minimum_i64: -(2 ** 63) }), "minimum_i64 = -9223372036854775808\n");
+  for (const value of [1e20, 2 ** 63]) {
+    assert.throws(() => encodeToml({ out_of_range: value }), /outside TOML's signed 64-bit range/);
+  }
   assert.throws(() => encodeToml({ unsupported: null }), /unsupported by the local TOML encoder/);
 });
 
@@ -410,6 +415,7 @@ test("ignores disabled ATIF components when using prepared matchers", async () =
 
 test("skips disabled components during output normalization and artifact collection", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-disabled-")));
+  const previousConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;
   try {
     const disabledConfig = observability({
       atof: { enabled: true, sinks: [{ type: "file" }] },
@@ -432,7 +438,17 @@ test("skips disabled components during output normalization and artifact collect
     });
 
     assert.deepEqual(await collectRelayArtifacts(pluginConfig), [{ kind: "atof", path }]);
+    process.env.FABRIC_RELAY_CONFIG_PATH = join(root, "runtime.json");
+    const { pluginConfigPath } = await writeRelayConfigs(pluginConfig);
+    const toml = await readFile(pluginConfigPath, "utf8");
+    assert.equal(toml.match(/\[\[components\]\]/gu)?.length, 1);
+    assert.doesNotMatch(toml, /enabled = false/u);
   } finally {
+    if (previousConfigPath === undefined) {
+      delete process.env.FABRIC_RELAY_CONFIG_PATH;
+    } else {
+      process.env.FABRIC_RELAY_CONFIG_PATH = previousConfigPath;
+    }
     await rm(root, { recursive: true, force: true });
   }
 });

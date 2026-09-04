@@ -542,6 +542,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
             metadata: {
               count: extensionErrors.length,
               extension_error: extensionErrors.map((error) => error.error).join("; "),
+              extension_paths: extensionErrors.map((error) => error.path),
             },
           },
         );

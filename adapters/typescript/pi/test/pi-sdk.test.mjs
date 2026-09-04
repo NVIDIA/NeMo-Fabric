@@ -540,7 +540,8 @@ test("includes Pi flag conflict diagnostics in extension errors", async () => {
       (error) =>
         error.code === "pi_extension_load_failed" &&
         error.message.includes("conflict") &&
-        error.metadata.extension_error.includes('Flag "--duplicate-flag" conflicts with'),
+        error.metadata.extension_error.includes('Flag "--duplicate-flag" conflicts with') &&
+        error.metadata.extension_paths.includes(relayExtensionPath),
     );
     assert.equal(relayStopped, true);
   } finally {

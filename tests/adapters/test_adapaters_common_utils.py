@@ -722,6 +722,51 @@ def test_collect_relay_artifacts(tmp_path: Path):
     ]
 
 
+def test_relay_artifacts_skip_disabled_components(tmp_path: Path):
+    artifact_dir = tmp_path / "disabled"
+    artifact_dir.mkdir()
+    (artifact_dir / "events.atof.jsonl").write_text("{}", encoding="utf-8")
+    (artifact_dir / "trajectory-1.atif.json").write_text("{}", encoding="utf-8")
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": False,
+                "config": {
+                    "atof": {
+                        "enabled": True,
+                        "sinks": [
+                            {
+                                "type": "file",
+                                "output_directory": str(artifact_dir),
+                                "filename": "events.atof.jsonl",
+                            }
+                        ],
+                    },
+                    "atif": {
+                        "enabled": True,
+                        "output_directory": str(artifact_dir),
+                        "filename_template": "trajectory-{session_id}.atif.json",
+                    },
+                },
+            }
+        ],
+    }
+    original = json.loads(json.dumps(plugin_config))
+
+    common_utils.normalize_relay_output_dirs(
+        plugin_config,
+        {
+            "base_dir": str(tmp_path),
+            "runtime_context": {"runtime_id": "runtime-current"},
+        },
+    )
+
+    assert plugin_config == original
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
 @pytest.mark.parametrize("filename_template", [None, "", 123])
 def test_collect_relay_artifacts_requires_valid_atif_filename_template(
     tmp_path: Path,
@@ -1567,6 +1612,34 @@ def test_write_relay_configs_preserves_v3_plugin_config_exactly(tmp_path: Path):
     assert plugin_path is not None
     with plugin_path.open("rb") as stream:
         assert tomllib.load(stream) == original
+    assert plugin_config == original
+
+
+def test_write_relay_configs_omits_disabled_components(tmp_path: Path):
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
+    enabled = {
+        "kind": "observability",
+        "enabled": True,
+        "config": {"version": 3, "atif": {"enabled": False}},
+    }
+    plugin_config = {
+        "version": 1,
+        "components": [
+            enabled,
+            {
+                "kind": "observability",
+                "enabled": False,
+                "config": {"version": 3, "atif": {"enabled": False}},
+            },
+        ],
+    }
+    original = json.loads(json.dumps(plugin_config))
+
+    _, plugin_path = common_utils.write_relay_configs(plugin_config=plugin_config)
+
+    assert plugin_path is not None
+    with plugin_path.open("rb") as stream:
+        assert tomllib.load(stream) == {"version": 1, "components": [enabled]}
     assert plugin_config == original
 
 
