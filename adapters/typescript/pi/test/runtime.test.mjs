@@ -360,67 +360,6 @@ test("an ATIF snapshot failure preserves the prompt and excludes ATIF", async ()
   }
 });
 
-test("an ATIF snapshot failure excludes only the failed matcher", async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-partial-snapshot-")));
-  const missingAtifDir = join(root, "missing");
-  const healthyAtifDir = join(root, "healthy");
-  try {
-    await mkdir(missingAtifDir);
-    await mkdir(healthyAtifDir);
-    const pluginConfig = {
-      version: 1,
-      components: [missingAtifDir, healthyAtifDir].map((outputDirectory) => ({
-        kind: "observability",
-        config: {
-          atif: {
-            enabled: true,
-            output_directory: outputDirectory,
-            filename_template: "trajectory-{session_id}.atif.json",
-          },
-        },
-      })),
-    };
-    const atifMatchers = await prepareRelayAtifMatchers(pluginConfig);
-    const healthyPath = join(healthyAtifDir, "trajectory-session-1.atif.json");
-    let promptCount = 0;
-    const relay = {
-      pluginConfig,
-      atifMatchers,
-      async output(artifacts) {
-        return { relay_artifacts: artifacts ?? [{ kind: "atif", path: "unexpected" }] };
-      },
-      async stop() {},
-    };
-    const runtime = new PiAdapterRuntime({
-      async create() {
-        return {
-          relay,
-          async prompt() {
-            promptCount += 1;
-            await writeFile(healthyPath, JSON.stringify({ promptCount }), "utf8");
-            return { accepted: true, text: "ok", stopReason: "stop" };
-          },
-          async stop() {},
-        };
-      },
-    });
-
-    await runtime.start(startInput());
-    await rm(missingAtifDir, { recursive: true, force: true });
-    const first = await runtime.invoke({ input: "first" }, context);
-    const second = await runtime.invoke({ input: "second" }, context);
-
-    assert.equal(first.status, "succeeded");
-    assert.equal(second.status, "succeeded");
-    assert.equal(promptCount, 2);
-    assert.deepEqual(first.output.relay_artifacts, [{ kind: "atif", path: healthyPath }]);
-    assert.deepEqual(second.output.relay_artifacts, [{ kind: "atif", path: healthyPath }]);
-    await runtime.stop();
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
 test("still stops Relay when Pi session shutdown fails", async () => {
   let sessionStopAttempts = 0;
   let relayStopAttempts = 0;
@@ -456,6 +395,42 @@ test("still stops Relay when Pi session shutdown fails", async () => {
   await runtime.stop();
   assert.equal(sessionStopAttempts, 2);
   assert.equal(relayStopAttempts, 2);
+});
+
+test("preserves both Pi session and Relay shutdown failures", async () => {
+  const sessionFailure = new Error("session shutdown failed");
+  const relayFailure = new Error("gateway shutdown failed");
+  const runtime = new PiAdapterRuntime({
+    async create() {
+      return {
+        relay: {
+          pluginConfig: { version: 1, components: [] },
+          async output() {
+            return {};
+          },
+          async stop() {
+            throw relayFailure;
+          },
+        },
+        async prompt() {
+          return { accepted: true, text: "ok" };
+        },
+        async stop() {
+          throw sessionFailure;
+        },
+      };
+    },
+  });
+  await runtime.start(startInput());
+
+  await assert.rejects(
+    runtime.stop(),
+    (error) =>
+      error instanceof AggregateError &&
+      error.message === "Pi session and NeMo Relay cleanup failed" &&
+      error.errors[0] === sessionFailure &&
+      error.errors[1] === relayFailure,
+  );
 });
 
 test("retries Relay cleanup when gateway shutdown fails", async () => {

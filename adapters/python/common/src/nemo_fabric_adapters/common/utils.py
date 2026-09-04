@@ -421,6 +421,15 @@ def dump_yaml(value: dict[str, Any]) -> str:
         return json.dumps(value, indent=2, sort_keys=False) + "\n"
 
 
+def _relay_components(plugin_config: dict[str, Any]) -> list[Any]:
+    components = plugin_config.get("components")
+    if components is None:
+        return []
+    if not isinstance(components, list):
+        raise ValueError("NeMo Relay plugin components must be a list")
+    return components
+
+
 def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
     """Validate Fabric's Relay observability schema boundary without mutation."""
 
@@ -442,8 +451,16 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
         "timeout_millis",
         "transport",
     }
-    for component in plugin_config.get("components") or []:
-        if not isinstance(component, dict) or component.get("kind") != "observability":
+    seen_kinds: set[str] = set()
+    for component in _relay_components(plugin_config):
+        if not isinstance(component, dict) or component.get("enabled") is False:
+            continue
+        kind = component.get("kind")
+        if isinstance(kind, str):
+            if kind in seen_kinds:
+                raise ValueError(f"duplicate NeMo Relay plugin component kind {kind!r}")
+            seen_kinds.add(kind)
+        if kind != "observability":
             continue
         config = component.get("config")
         if not isinstance(config, dict):
@@ -548,7 +565,7 @@ def normalize_relay_output_dirs(
 
     base = Path(base_dir(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
-    for component in plugin_config.get("components", []):
+    for component in _relay_components(plugin_config):
         if (
             not isinstance(component, dict)
             or component.get("kind") != "observability"
@@ -630,7 +647,7 @@ def _artifact_glob(directory: Path, pattern: str) -> list[Path]:
 
 def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str]]:
     artifacts: list[dict[str, str]] = []
-    for component in plugin_config.get("components", []):
+    for component in _relay_components(plugin_config):
         if (
             not isinstance(component, dict)
             or component.get("kind") != "observability"
@@ -696,7 +713,7 @@ def write_relay_configs(
                 **plugin_config,
                 "components": [
                     component
-                    for component in plugin_config.get("components", [])
+                    for component in _relay_components(plugin_config)
                     if not isinstance(component, dict)
                     or component.get("enabled") is not False
                 ],

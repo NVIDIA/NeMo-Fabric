@@ -15,7 +15,7 @@ import {
   snapshotAtifFiles,
   waitForFinalizedAtif,
 } from "./relay-artifacts.js";
-import { collectRelayArtifacts, type RelayArtifact, type RelayAtifMatcher } from "./relay-config.js";
+import { collectRelayArtifacts, type RelayArtifact } from "./relay-config.js";
 import type { PiRelayRuntime } from "./relay.js";
 
 export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | string;
@@ -103,25 +103,18 @@ export class PiAdapterRuntime implements AdapterRuntime {
 
     const relay = this.session.relay;
     let atifBefore: AtifSnapshot | undefined;
-    let usableAtifMatchers: RelayAtifMatcher[] = relay?.atifMatchers ?? [];
+    let usableAtifMatchers = relay?.atifMatchers ?? [];
     let atifSnapshotFailed = false;
     if (relay !== undefined && expectsLocalAtif(relay.pluginConfig, relay.atifMatchers)) {
-      atifBefore = new Map();
-      const failedMatchers = new Set<RelayAtifMatcher>();
-      for (const matcher of relay.atifMatchers.filter((candidate) => candidate.local)) {
-        try {
-          const snapshot = await snapshotAtifFiles(relay.pluginConfig, [matcher]);
-          for (const [path, fingerprint] of snapshot) {
-            atifBefore.set(path, fingerprint);
-          }
-        } catch (error) {
-          atifSnapshotFailed = true;
-          failedMatchers.add(matcher);
-          const detail = error instanceof Error ? `: ${error.message}` : "";
-          process.stderr.write(`NeMo Relay ATIF artifact snapshot failed${detail}\n`);
-        }
+      try {
+        atifBefore = await snapshotAtifFiles(relay.pluginConfig, relay.atifMatchers);
+      } catch (error) {
+        atifBefore = new Map();
+        atifSnapshotFailed = true;
+        usableAtifMatchers = [];
+        const detail = error instanceof Error ? `: ${error.message}` : "";
+        process.stderr.write(`NeMo Relay ATIF artifact snapshot failed${detail}\n`);
       }
-      usableAtifMatchers = relay.atifMatchers.filter((matcher) => !failedMatchers.has(matcher));
     }
     const outcome = await this.session.prompt(request.input);
     let relayArtifacts: RelayArtifact[] | undefined;
@@ -207,7 +200,10 @@ export class PiAdapterRuntime implements AdapterRuntime {
       try {
         await session.relay?.stop();
       } catch (error) {
-        failure ??= error;
+        failure =
+          failure === undefined
+            ? error
+            : new AggregateError([failure, error], "Pi session and NeMo Relay cleanup failed");
       }
       if (failure !== undefined) {
         this.unusable = true;

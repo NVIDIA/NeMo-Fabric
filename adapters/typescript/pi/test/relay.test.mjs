@@ -323,6 +323,20 @@ test("rejects removed and malformed Relay OpenTelemetry shapes", () => {
   );
 });
 
+test("rejects duplicate enabled Relay component kinds", () => {
+  const pluginConfig = observability({});
+  pluginConfig.components.push({
+    kind: "observability",
+    enabled: true,
+    config: { version: 3 },
+  });
+
+  assert.throws(
+    () => validateRelayObservabilityV3(pluginConfig),
+    /duplicate NeMo Relay plugin component kind "observability"/,
+  );
+});
+
 test("waits for an atomically finalized ATIF artifact and collects Relay files", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-artifacts-")));
   try {
@@ -352,16 +366,19 @@ test("waits for an atomically finalized ATIF artifact and collects Relay files",
     const before = await snapshotAtifFiles(pluginConfig, matchers);
     const path = join(atifDir, "trajectory-session-1.atif.json");
     const temporaryPath = join(atifDir, ".trajectory-session-1.atif.json.tmp");
-    setTimeout(() => void rename(temporaryPath, path), 10);
     await writeFile(temporaryPath, '{"session_id":"session-1"}', "utf8");
+    const finalize = new Promise((resolveFinalize, rejectFinalize) => {
+      setTimeout(() => void rename(temporaryPath, path).then(resolveFinalize, rejectFinalize), 10);
+    });
 
-    assert.equal(
-      await waitForFinalizedAtif(pluginConfig, before, {
+    const [finalized] = await Promise.all([
+      waitForFinalizedAtif(pluginConfig, before, {
         matchers,
         timeoutMs: 500,
       }),
-      path,
-    );
+      finalize,
+    ]);
+    assert.equal(finalized, path);
     assert.deepEqual(await collectRelayArtifacts(pluginConfig), [
       { kind: "atif", path },
       { kind: "atof", path: join(atofDir, "events.atof.jsonl") },
@@ -443,6 +460,77 @@ test("skips disabled components during output normalization and artifact collect
     const toml = await readFile(pluginConfigPath, "utf8");
     assert.equal(toml.match(/\[\[components\]\]/gu)?.length, 1);
     assert.doesNotMatch(toml, /enabled = false/u);
+  } finally {
+    if (previousConfigPath === undefined) {
+      delete process.env.FABRIC_RELAY_CONFIG_PATH;
+    } else {
+      process.env.FABRIC_RELAY_CONFIG_PATH = previousConfigPath;
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ignores disabled observability validation shapes at load time", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-disabled-validation-")));
+  const previousConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;
+  try {
+    const configPath = join(root, "runtime.json");
+    process.env.FABRIC_RELAY_CONFIG_PATH = configPath;
+    for (const component of [
+      { kind: "observability", enabled: false },
+      { kind: "observability", enabled: false, config: { version: 2 } },
+      {
+        kind: "observability",
+        enabled: false,
+        config: { version: 3, opentelemetry: { endpoint: "http://localhost:4318/v1/traces" } },
+      },
+      { kind: "observability", enabled: false, config: { version: 3, openinference: {} } },
+    ]) {
+      const expected = { version: 1, components: [component] };
+      await writeFile(configPath, JSON.stringify({ relay: { config: expected } }), "utf8");
+      assert.deepEqual(await loadRelayPluginConfig(startInput(root)), expected);
+    }
+  } finally {
+    if (previousConfigPath === undefined) {
+      delete process.env.FABRIC_RELAY_CONFIG_PATH;
+    } else {
+      process.env.FABRIC_RELAY_CONFIG_PATH = previousConfigPath;
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("writes the complete enabled Relay plugin document without mutation", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-write-config-")));
+  const previousConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;
+  try {
+    process.env.FABRIC_RELAY_CONFIG_PATH = join(root, "runtime.json");
+    const pluginConfig = {
+      version: 1,
+      policy: { unknown_component: "warn" },
+      components: [
+        {
+          kind: "observability",
+          enabled: true,
+          config: { version: 3, atif: { enabled: false } },
+        },
+        {
+          kind: "model_pricing",
+          enabled: true,
+          config: { version: 2, currency: "USD" },
+        },
+      ],
+    };
+    const original = structuredClone(pluginConfig);
+
+    const { pluginConfigPath } = await writeRelayConfigs(pluginConfig);
+    const toml = await readFile(pluginConfigPath, "utf8");
+
+    assert.match(toml, /\[policy\]\nunknown_component = "warn"/u);
+    assert.equal(toml.match(/\[\[components\]\]/gu)?.length, 2);
+    assert.match(toml, /kind = "model_pricing"/u);
+    assert.match(toml, /currency = "USD"/u);
+    assert.deepEqual(pluginConfig, original);
   } finally {
     if (previousConfigPath === undefined) {
       delete process.env.FABRIC_RELAY_CONFIG_PATH;
@@ -760,7 +848,7 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
       }).start(input, model),
       (error) =>
         error.code === "pi_relay_unavailable" &&
-        error.message.includes("nemo-relay-cli-bin>=0.9.0") &&
+        error.message.includes("matching source checkout") &&
         error.metadata.relay_error === "missing",
     );
     await assert.rejects(

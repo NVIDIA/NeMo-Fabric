@@ -187,8 +187,10 @@ This variant adds an explicit `read` tool to the default code-review skill and
 uses `NVIDIA_API_KEY`. Pi does not currently support MCP, so do not use a
 configuration created by `with_github_mcp`.
 
-For Relay telemetry, install `nemo-relay-cli-bin>=0.9.0,<0.10.0` and pass the
-Relay Pi extension path explicitly:
+For Relay telemetry, build and install the CLI from a matching NeMo Relay 0.9
+source checkout as described in the
+[Pi adapter instructions](../../adapters/typescript/pi/README.md#install-nemo-relay),
+and pass the Relay Pi extension path explicitly:
 
 ```bash
 .venv/bin/python -m examples.code_review_agent \

@@ -200,14 +200,19 @@ one or more `RelayOpenTelemetryEndpointConfig` entries.
 
 Claude and Codex harness extras install their compatible CLI binary without the
 Relay Python package. Pi requires a newer CLI because Pi support begins in
-Relay 0.9. Install the range required by the selected adapter:
+Relay 0.9. Install the published range for Claude and Codex:
 
 ```bash
-# Claude and Codex
 pip install "nemo-relay-cli-bin>=0.7.2,<0.8"
+```
 
-# Pi
-pip install "nemo-relay-cli-bin>=0.9.0,<0.10.0"
+The Relay 0.9 CLI is not yet published to PyPI. For Pi, clone a matching NeMo
+Relay 0.9 source checkout and install the CLI from that checkout:
+
+```bash
+git clone https://github.com/NVIDIA/NeMo-Relay.git
+cd NeMo-Relay
+cargo install --path crates/cli --locked
 ```
 
 An environment has one `nemo-relay` executable on `PATH`, so the current Claude
@@ -215,14 +220,13 @@ and Codex range cannot coexist with the Pi range in the same environment. Use
 separate adapter environments or install the range required for the adapter
 that you run.
 
-On Linux and macOS, install the pinned CLI with the shell installer:
+On Linux and macOS, you can also install the pinned Claude and Codex CLI with
+the shell installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
   NEMO_RELAY_VERSION=0.7.2 sh -s --
 ```
-
-Set `NEMO_RELAY_VERSION=0.9.0` instead for Pi.
 
 On Windows, install the pinned CLI with PowerShell:
 

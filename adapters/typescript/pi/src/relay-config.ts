@@ -71,8 +71,19 @@ function components(pluginConfig: RelayPluginConfig): unknown[] {
 }
 
 export function validateRelayObservabilityV3(pluginConfig: RelayPluginConfig): void {
+  const seenKinds = new Set<string>();
   for (const component of components(pluginConfig)) {
-    if (!isRecord(component) || component.kind !== "observability") {
+    if (!isRecord(component) || component.enabled === false) {
+      continue;
+    }
+    const kind = component.kind;
+    if (typeof kind === "string") {
+      if (seenKinds.has(kind)) {
+        throw new Error(`duplicate NeMo Relay plugin component kind ${JSON.stringify(kind)}`);
+      }
+      seenKinds.add(kind);
+    }
+    if (kind !== "observability") {
       continue;
     }
     const config = component.config;

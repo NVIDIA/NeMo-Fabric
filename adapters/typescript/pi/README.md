@@ -69,11 +69,14 @@ The full build installs its own dependencies, so you do not need to run
 
 ### Install NeMo Relay
 
-Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.10.0` on `PATH`. Install the
-CLI binary separately from the npm adapter:
+Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.10.0` on `PATH`. The Relay
+0.9 CLI is not yet published to PyPI. Clone a matching NeMo Relay 0.9 source
+checkout and install the CLI separately from the npm adapter:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.9.0,<0.10.0"
+git clone https://github.com/NVIDIA/NeMo-Relay.git
+cd NeMo-Relay
+cargo install --path crates/cli --locked
 ```
 
 The adapter does not bundle the Relay Pi extension. Obtain the extension from
