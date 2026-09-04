@@ -10,6 +10,9 @@ import json
 import math
 import os
 from collections.abc import AsyncIterator
+# Temp do not commit
+from datetime import datetime
+# end-temp
 from typing import Any
 
 import httpx
@@ -29,6 +32,48 @@ API_PATHS = {
     "anthropic-messages": "/messages",
 }
 FABRIC_REQUEST_ID_METADATA = "nemo_fabric_request_id"
+
+
+# Temp do not commit
+_TEMP_ADAPTER_REQUESTS_LOG_PATH = "/tmp/adapter_reqs.log"
+
+
+def _append_temp_adapter_requests_log(content: str) -> None:
+    with open(_TEMP_ADAPTER_REQUESTS_LOG_PATH, "a", encoding="utf-8") as log_file:
+        log_file.write(content)
+
+
+async def _log_temp_http_request(request: httpx.Request) -> None:
+    query_items = request.url.params.multi_items()
+    query_section = ""
+    if query_items:
+        query_lines = "\n".join(f"{name}: {value}" for name, value in query_items)
+        query_section = f"\nQuery Args:\n{query_lines}\n"
+
+    header_lines = "\n".join(
+        f"{name}: {value}" for name, value in request.headers.multi_items()
+    )
+    raw_payload = request.content
+    try:
+        payload = json.dumps(
+            json.loads(raw_payload),
+            indent=2,
+            ensure_ascii=False,
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        payload = raw_payload.decode("utf-8", errors="replace")
+
+    _append_temp_adapter_requests_log(
+        "**********************\n"
+        f"URL:\n{request.url}\n"
+        f"{query_section}\n"
+        f"Headers:\n{header_lines}\n\n"
+        f"Payload:\n{payload}\n"
+        "**********************\n"
+    )
+
+
+# end-temp
 
 
 def _api_url(base_url: str, api_type: str) -> str:
@@ -193,7 +238,15 @@ class RemoteAgentRuntime:
                 write=read_timeout,
                 pool=connect_timeout,
             ),
+            # Temp do not commit
+            event_hooks={"request": [_log_temp_http_request]},
+            # end-temp
         )
+        # Temp do not commit
+        _append_temp_adapter_requests_log(
+            f"* Startup - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
+        # end-temp
         self._config = config
         self._runtime_id = context.runtime_id
         self._relay_streaming = relay_streaming
