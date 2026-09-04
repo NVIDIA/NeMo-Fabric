@@ -162,7 +162,8 @@ class AtofCollector:
         *,
         queue_maxsize: int = _QUEUE_MAXSIZE,
         queue_max_bytes: int = _QUEUE_MAX_BYTES,
-    ) -> None:
+    ):
+        # Consider moving these to a database allowing for multiple workers
         self.request_uuids: dict[RequestId, set[ScopeUuid]] = {}
         self.uuid_to_request: dict[ScopeUuid, RequestId] = {}
         self.request_messages: dict[RequestId, _AtofRecordQueue] = {}
