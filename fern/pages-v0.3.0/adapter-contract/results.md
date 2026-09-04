@@ -38,7 +38,7 @@ return AgentRunResult(
 | `extensions` | Optional | Carries adapter-owned result data validated by the descriptor. |
 
 Use the canonical
-[`agent-run-result.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-beta.1/schemas/adapter-contract/agent-run-result.schema.json)
+[`agent-run-result.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-beta.2/schemas/adapter-contract/agent-run-result.schema.json)
 for the exact shape. A failed result contains an error; a successful result
 does not contain a non-null error. Status is explicit and is not inferred from
 arbitrary output fields.
