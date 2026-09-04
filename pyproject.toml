@@ -20,6 +20,10 @@ codex = [
   "nemo-fabric[codex]",
 ]
 
+collector = [
+  "nemo-fabric-collector",
+]
+
 deepagents = [
   "nemo-fabric[deepagents]",
 ]
@@ -59,6 +63,10 @@ adapters = [
   # its optional subclass-based telemetry integration.
   "nemo-fabric-adapters-mini-swe-agent[relay]",
   "nemo-fabric-adapters-remote-agent[harness]",
+]
+
+collector = [
+  "nemo-fabric-collector",
 ]
 
 adapter-tests = [
@@ -114,7 +122,7 @@ test = [
 
 [tool.uv]
 package = false
-default-groups = ["adapters", "dev", "test"]
+default-groups = ["adapters", "collector", "dev", "test"]
 # Hermes v0.20.1 imports the top-level registration_lifecycle module but omits
 # it from setuptools' py-modules, so standard editable installs cannot import it.
 config-settings-package = { "hermes-agent" = { editable_mode = "compat" } }
@@ -122,6 +130,7 @@ config-settings-package = { "hermes-agent" = { editable_mode = "compat" } }
 [tool.uv.sources]
 hermes-agent = { path = "external/hermes-agent", editable = true, marker = "python_version < '3.14'" }
 nemo-fabric = { path = "sdk/python/nemo-fabric", editable = true }
+nemo-fabric-collector = { path = "sdk/python/collector", editable = true }
 nemo-fabric-runtime = { path = "sdk/python/nemo-fabric-runtime", editable = true }
 nemo-fabric-adapter-contract = { path = "adapter-contract/python", editable = true }
 nemo-fabric-adapters-common = { path = "adapters/python/common", editable = true }
