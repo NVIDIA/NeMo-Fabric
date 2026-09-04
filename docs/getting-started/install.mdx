@@ -249,7 +249,7 @@ range required by the adapter. When Relay is enabled with
 supervise the CLI gateway automatically.
 
 The Pi adapter also requires a user-supplied path to the Relay Pi extension
-from a matching 0.9 source checkout. Set
+from the same Relay source revision pinned above. Set
 `harness.settings.relay_extension_path` to the extension file or package
 directory; relative paths resolve from `environment.workspace`. Relay-enabled
 Pi configurations must also set `runtime.artifacts` so NeMo Fabric can provide
