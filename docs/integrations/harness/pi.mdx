@@ -44,6 +44,20 @@ just build-typescript
 The full build installs its own dependencies, so you do not need to run
 `just install-typescript-pi` first.
 
+### Install NeMo Relay
+
+Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.10.0` on `PATH`. Install the
+CLI binary separately from the npm adapter:
+
+```bash
+pip install "nemo-relay-cli-bin>=0.9.0,<0.10.0"
+```
+
+The adapter does not bundle the Relay Pi extension. Obtain the extension from
+a matching NeMo Relay 0.9 source checkout, such as
+[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/main/crates/cli/assets/pi-extension),
+and configure its path as described in the next section.
+
 ## Configure the Adapter
 
 Select the Pi harness integration and point NeMo Fabric discovery at the
@@ -104,6 +118,35 @@ config.harness.settings["extensions"] = ["extensions/review.ts"]
 The adapter loads only the skill and extension paths in the configuration. It
 does not load ambient Pi resources from the user profile or workspace.
 
+## Configure NeMo Relay
+
+Enable Relay with the standard NeMo Fabric configuration and provide the Relay
+Pi extension as an adapter setting:
+
+```python
+config.enable_relay(output_dir="./artifacts/relay")
+config.harness.settings["relay_extension_path"] = (
+    "/path/to/NeMo-Relay/crates/cli/assets/pi-extension"
+)
+```
+
+The extension path can be absolute or relative to the `base_dir` passed to
+`plan()`, `doctor()`, or `run()`. It can identify a JavaScript or TypeScript
+file or a Pi extension package directory. Unlike user-configured Pi extensions,
+the Relay extension does not need to be inside `environment.workspace`.
+
+When the runtime starts, the adapter validates the Relay 0.9 CLI, writes an
+explicit `plugins.toml`, starts a loopback gateway, and loads the extension into
+the isolated Pi session. The result includes `relay_runtime` and
+`relay_artifacts` in `output`. The gateway can produce ATOF, ATIF,
+OpenTelemetry, and OpenInference output from the Relay observability
+configuration.
+
+Session, turn, and tool telemetry does not depend on model redirection. Model
+telemetry is available only when Relay supports the selected model API and the
+gateway upstream matches the model endpoint. A skipped redirect is recorded as
+a `model_redirect` mark with the reason.
+
 ## Configure a NeMo Fabric Tool Definition
 
 Pi accepts trusted local JavaScript and TypeScript tool factories. The
@@ -156,5 +199,12 @@ skills, extensions, custom tools, or workspace.
 
 ## Current Limitations
 
-The current adapter does not expose Relay, MCP, streaming, caller-driven
-cancellation, or remote-service execution.
+The current adapter does not expose MCP, native OpenAI streaming, caller-driven
+cancellation, or remote-service execution. Relay-backed
+`Runtime.invoke_stream()` correlation is not yet supported for Pi. Enabling a
+third-party extension can add extension-defined skills, prompts, or themes even
+though ambient Pi resources remain disabled; the Relay extension does not add
+those resources.
+
+The Relay Pi hook route is available only on the loopback gateway and does not
+authenticate hook posts. Treat the loopback port as a local trust boundary.

@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { PiAdapterRuntime } from "../dist/runtime.js";
@@ -174,4 +177,138 @@ test("stop is safe before start and idempotent after start", async () => {
   await runtime.stop();
   await runtime.stop();
   assert.equal(stopCount, 1);
+});
+
+test("adds Relay details to results and stops the Pi session before the gateway", async () => {
+  const order = [];
+  const relay = {
+    pluginConfig: { version: 1, components: [] },
+    async output() {
+      return {
+        relay_runtime: { enabled: true, gateway_url: "http://127.0.0.1:41000" },
+        relay_artifacts: [],
+      };
+    },
+    async stop() {
+      order.push("relay");
+    },
+  };
+  const runtime = new PiAdapterRuntime({
+    async create() {
+      return {
+        relay,
+        async prompt() {
+          return { accepted: true, text: "ok", stopReason: "stop" };
+        },
+        async stop() {
+          order.push("session");
+        },
+      };
+    },
+  });
+
+  await runtime.start(startInput());
+  const result = await runtime.invoke({ input: "trace me" }, context);
+  await runtime.stop();
+
+  assert.deepEqual(result, {
+    status: "succeeded",
+    output: {
+      response: "ok",
+      relay_runtime: { enabled: true, gateway_url: "http://127.0.0.1:41000" },
+      relay_artifacts: [],
+    },
+  });
+  assert.deepEqual(order, ["session", "relay"]);
+});
+
+test(
+  "an ATIF finalization timeout returns no artifacts without poisoning the runtime",
+  { timeout: 10_000 },
+  async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-timeout-")));
+    const atifDir = join(root, "atif");
+    await mkdir(atifDir);
+    let promptCount = 0;
+    const relay = {
+      pluginConfig: {
+        version: 1,
+        components: [
+          {
+            kind: "observability",
+            config: {
+              atif: {
+                enabled: true,
+                output_directory: atifDir,
+                filename_template: "trajectory-{session_id}.atif.json",
+              },
+            },
+          },
+        ],
+      },
+      async output(artifacts) {
+        return {
+          relay_artifacts: artifacts ?? [{ kind: "atif", path: "unexpected" }],
+        };
+      },
+      async stop() {},
+    };
+    const runtime = new PiAdapterRuntime({
+      async create() {
+        return {
+          relay,
+          async prompt() {
+            promptCount += 1;
+            return { accepted: true, text: "ok", stopReason: "stop" };
+          },
+          async stop() {},
+        };
+      },
+    });
+
+    try {
+      await runtime.start(startInput());
+      const timedOut = await runtime.invoke({ input: "trace me" }, context);
+      assert.deepEqual(timedOut.output.relay_artifacts, []);
+
+      relay.pluginConfig.components = [];
+      const next = await runtime.invoke({ input: "still usable" }, context);
+      assert.equal(next.status, "succeeded");
+      assert.equal(promptCount, 2);
+    } finally {
+      await runtime.stop();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test("still stops Relay when Pi session shutdown fails", async () => {
+  let relayStopped = false;
+  const sessionFailure = new Error("session shutdown failed");
+  const runtime = new PiAdapterRuntime({
+    async create() {
+      return {
+        relay: {
+          pluginConfig: { version: 1, components: [] },
+          async output() {
+            return {};
+          },
+          async stop() {
+            relayStopped = true;
+          },
+        },
+        async prompt() {
+          return { accepted: true, text: "ok" };
+        },
+        async stop() {
+          throw sessionFailure;
+        },
+      };
+    },
+  });
+  await runtime.start(startInput());
+
+  await assert.rejects(runtime.stop(), sessionFailure);
+  assert.equal(relayStopped, true);
+  await runtime.stop();
 });

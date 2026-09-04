@@ -212,6 +212,15 @@ apply this pattern to an external Relay gateway or an upstream integration that
 creates an isolated scope context unless its boundary accepts a per-turn
 propagation context.
 
+For a harness-native extension that posts lifecycle hooks to an external Relay
+gateway, keep the gateway runtime-scoped. The adapter owns the CLI version
+contract, explicit plugin configuration, loopback bind, health check, extension
+configuration, and shutdown ordering. Load the extension through an
+adapter-owned path without weakening ambient-extension isolation. Let the
+extension emit the harness lifecycle and drain its shutdown hook before the
+adapter stops the gateway. Preserve Relay ATOF stream sinks without rewriting
+their URLs or transport settings.
+
 ## Handle Custom Agents
 
 For a shared framework adapter, select the registered target with

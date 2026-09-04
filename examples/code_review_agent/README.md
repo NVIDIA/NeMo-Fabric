@@ -128,9 +128,9 @@ harness supports.
 
 Codex and Claude omit the default code-review skill; add
 `--skill-path ./skills/code-review` to retain it. For Relay, Codex and Claude
-require the NeMo Relay CLI, while Hermes Agent and Deep Agents use the Relay
-Python package. Additional requirements appear in the corresponding
-subsections.
+require the NeMo Relay 0.7 CLI, Pi requires the NeMo Relay 0.9 CLI and its Pi
+extension, and Hermes Agent and Deep Agents use the Relay Python package.
+Additional requirements appear in the corresponding subsections.
 
 For example, after installing Deep Agents, this command keeps the default skill
 and Relay configuration while changing the harness:
@@ -184,5 +184,19 @@ Install Node.js 22.19 or later, and follow the
 initial `just build-all` command builds the Pi adapter.
 
 This variant adds an explicit `read` tool to the default code-review skill and
-uses `NVIDIA_API_KEY`. Pi does not currently support Relay or MCP, so do not
-use `--relay` or a configuration created by `with_github_mcp`.
+uses `NVIDIA_API_KEY`. Pi does not currently support MCP, so do not use a
+configuration created by `with_github_mcp`.
+
+For Relay telemetry, install `nemo-relay-cli-bin>=0.9.0,<0.10.0` and pass the
+Relay Pi extension path explicitly:
+
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --variant pi \
+  --relay \
+  --pi-relay-extension-path /path/to/NeMo-Relay/crates/cli/assets/pi-extension \
+  --input "Review calculator.py"
+```
+
+The Pi variant does not yet support Relay-backed streaming, so do not add
+`--stream`.

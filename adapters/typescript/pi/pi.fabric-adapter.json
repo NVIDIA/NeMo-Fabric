@@ -31,7 +31,8 @@
           "minLength": 1
         },
         "uniqueItems": true
-      }
+      },
+      "relay_extension_path": {"type": "string", "minLength": 1}
     },
     "additionalProperties": false
   },
@@ -60,6 +61,13 @@
     },
     "required": ["kind", "ref"],
     "additionalProperties": false
+  },
+  "telemetry": {
+    "providers": {
+      "relay": {
+        "outputs": ["atif", "otel", "openinference"]
+      }
+    }
   },
   "capabilities": {
     "streaming": false,

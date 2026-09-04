@@ -149,7 +149,7 @@ ways:
 - [NeMo Relay CLI](https://crates.io/crates/nemo-relay-cli)
 
 The required integration depends on the agent harness. Relay-enabled runs with
-the Claude and Codex adapters require the
+the Claude, Codex, and Pi adapters require the
 [`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli).
 
 #### NeMo Relay Python Package
@@ -181,9 +181,9 @@ package, but neither installs Hermes Agent. Claude and Codex do not provide a
 `relay` extra because their adapters launch the external CLI instead of
 importing this Python package.
 
-NeMo Fabric requires `nemo-relay>=0.7.2,<0.8`. For Python-backed Relay
-integrations, NeMo Fabric does not merge user or workspace `plugins.toml`
-files with its runtime-owned configuration. Remove or relocate a user
+Python-backed Relay integrations require `nemo-relay>=0.7.2,<0.8`. NeMo Fabric
+does not merge user or workspace `plugins.toml` files with its runtime-owned
+configuration. Remove or relocate a user
 `plugins.toml` or the nearest `.nemo-relay/plugins.toml` before starting a
 Relay-enabled Deep Agents, Hermes Agent, or mini-SWE-agent runtime. System
 configuration in `/etc/nemo-relay/plugins.toml` remains administrator
@@ -198,12 +198,22 @@ one or more `RelayOpenTelemetryEndpointConfig` entries.
 
 #### NeMo Relay CLI
 
-Claude and Codex harness extras install the compatible CLI binary without the
-Relay Python package. To install the CLI independently of an adapter, run:
+Claude and Codex harness extras install their compatible CLI binary without the
+Relay Python package. Pi requires a newer CLI because Pi support begins in
+Relay 0.9. Install the range required by the selected adapter:
 
 ```bash
+# Claude and Codex
 pip install "nemo-relay-cli-bin>=0.7.2,<0.8"
+
+# Pi
+pip install "nemo-relay-cli-bin>=0.9.0,<0.10.0"
 ```
+
+An environment has one `nemo-relay` executable on `PATH`, so the current Claude
+and Codex range cannot coexist with the Pi range in the same environment. Use
+separate adapter environments or install the range required for the adapter
+that you run.
 
 On Linux and macOS, install the pinned CLI with the shell installer:
 
@@ -212,6 +222,8 @@ curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
   NEMO_RELAY_VERSION=0.7.2 sh -s --
 ```
 
+Set `NEMO_RELAY_VERSION=0.9.0` instead for Pi.
+
 On Windows, install the pinned CLI with PowerShell:
 
 ```powershell
@@ -219,16 +231,27 @@ $env:NEMO_RELAY_VERSION = "0.7.2"
 irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
 ```
 
+Set `$env:NEMO_RELAY_VERSION = "0.9.0"` instead for Pi.
+
 If `cargo-binstall` is available, install the pinned CLI with Cargo:
 
 ```bash
 cargo binstall nemo-relay-cli --version 0.7.2
 ```
 
-After installation, run `nemo-relay --version` and confirm the version is in
-the `>=0.7.2,<0.8` range. When Relay is enabled with
-`FabricConfig.enable_relay(...)`, the Claude and Codex adapters start and
+Use `--version 0.9.0` instead for Pi.
+
+After installation, run `nemo-relay --version` and confirm the version is in the
+range required by the adapter. When Relay is enabled with
+`FabricConfig.enable_relay(...)`, the Claude, Codex, and Pi adapters start and
 supervise the CLI gateway automatically.
+
+The Pi adapter also requires a user-supplied path to the Relay Pi extension
+from a matching 0.9 source checkout. Set
+`harness.settings.relay_extension_path` to the extension file or package
+directory. Refer to the [Pi adapter guide](../integrations/harness/pi.mdx) for
+the complete configuration. Relay-backed `Runtime.invoke_stream()` correlation
+is not yet supported for Pi.
 
 ## Source Installation Method
 

@@ -5,8 +5,18 @@
 // to a PiSessionHandle and normalized results while keeping SDK construction
 // behind a factory for focused lifecycle testing.
 
-import type { AgentRunRequest, AgentRunResult, RuntimeContext } from "nemo-fabric-adapter-contract";
+import type { AgentRunRequest, AgentRunResult, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
+
+import {
+  ATIF_FINALIZATION_TIMEOUT_MS,
+  type AtifSnapshot,
+  expectsLocalAtif,
+  snapshotAtifFiles,
+  waitForFinalizedAtif,
+} from "./relay-artifacts.js";
+import type { RelayArtifact } from "./relay-config.js";
+import type { PiRelayRuntime } from "./relay.js";
 
 export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | string;
 
@@ -19,6 +29,7 @@ export interface PiPromptOutcome {
 }
 
 export interface PiSessionHandle {
+  readonly relay?: PiRelayRuntime;
   prompt(text: string): Promise<PiPromptOutcome>;
   stop(): Promise<void>;
 }
@@ -32,6 +43,24 @@ function failed(code: string, message: string): AgentRunResult {
     status: "failed",
     output: null,
     error: { code, message, retryable: false },
+  };
+}
+
+async function withRelayOutput(
+  result: AgentRunResult,
+  relay: PiRelayRuntime | undefined,
+  artifacts?: RelayArtifact[],
+): Promise<AgentRunResult> {
+  if (relay === undefined) {
+    return result;
+  }
+  const current: JsonObject =
+    typeof result.output === "object" && result.output !== null && !Array.isArray(result.output)
+      ? (result.output as JsonObject)
+      : {};
+  return {
+    ...result,
+    output: { ...current, ...(await relay.output(artifacts)) },
   };
 }
 
@@ -60,36 +89,79 @@ export class PiAdapterRuntime implements AdapterRuntime {
       throw new LifecycleError("pi_runtime_unusable", "Pi adapter runtime cannot accept another invocation");
     }
     if (typeof request.input !== "string") {
-      return failed("pi_unsupported_input", "The Pi adapter accepts only plain-text input");
+      return withRelayOutput(
+        failed("pi_unsupported_input", "The Pi adapter accepts only plain-text input"),
+        this.session.relay,
+      );
     }
 
+    const relay = this.session.relay;
+    let atifBefore: AtifSnapshot | undefined;
+    if (relay !== undefined && expectsLocalAtif(relay.pluginConfig)) {
+      try {
+        atifBefore = await snapshotAtifFiles(relay.pluginConfig);
+      } catch {
+        process.stderr.write("NeMo Relay ATIF artifact snapshot failed\n");
+      }
+    }
     const outcome = await this.session.prompt(request.input);
+    let relayArtifacts: RelayArtifact[] | undefined;
+    if (outcome.accepted && relay !== undefined && atifBefore !== undefined) {
+      try {
+        const finalized = await waitForFinalizedAtif(relay.pluginConfig, atifBefore);
+        if (finalized === undefined) {
+          process.stderr.write(
+            `NeMo Relay did not finalize an ATIF artifact within ${ATIF_FINALIZATION_TIMEOUT_MS} ms\n`,
+          );
+          relayArtifacts = [];
+        }
+      } catch {
+        process.stderr.write("NeMo Relay ATIF artifact finalization check failed\n");
+        relayArtifacts = [];
+      }
+    }
     if (!outcome.accepted) {
-      return failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run");
+      return withRelayOutput(
+        failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"),
+        relay,
+        relayArtifacts,
+      );
     }
     if (outcome.shutdownRequested || outcome.stopReason === "aborted") {
       if (outcome.shutdownRequested) {
         this.unusable = true;
       }
-      return {
-        status: "cancelled",
-        output: null,
-        error: {
-          code: outcome.shutdownRequested ? "pi_extension_shutdown" : "pi_aborted",
-          message: outcome.shutdownRequested
-            ? "A Pi extension requested adapter shutdown"
-            : "The Pi invocation was aborted",
-          retryable: false,
+      return withRelayOutput(
+        {
+          status: "cancelled",
+          output: null,
+          error: {
+            code: outcome.shutdownRequested ? "pi_extension_shutdown" : "pi_aborted",
+            message: outcome.shutdownRequested
+              ? "A Pi extension requested adapter shutdown"
+              : "The Pi invocation was aborted",
+            retryable: false,
+          },
         },
-      };
+        relay,
+        relayArtifacts,
+      );
     }
     if (outcome.stopReason === "error") {
-      return failed("pi_model_error", outcome.errorMessage || "The Pi model invocation failed");
+      return withRelayOutput(
+        failed("pi_model_error", outcome.errorMessage || "The Pi model invocation failed"),
+        relay,
+        relayArtifacts,
+      );
     }
     if (outcome.text === undefined || outcome.text.length === 0) {
-      return failed("pi_no_assistant_response", "Pi completed without a final assistant text response");
+      return withRelayOutput(
+        failed("pi_no_assistant_response", "Pi completed without a final assistant text response"),
+        relay,
+        relayArtifacts,
+      );
     }
-    return { status: "succeeded", output: { response: outcome.text } };
+    return withRelayOutput({ status: "succeeded", output: { response: outcome.text } }, relay, relayArtifacts);
   }
 
   async stop(): Promise<void> {
@@ -97,7 +169,20 @@ export class PiAdapterRuntime implements AdapterRuntime {
     this.session = undefined;
     this.unusable = false;
     if (session !== undefined) {
-      await session.stop();
+      let failure: unknown;
+      try {
+        await session.stop();
+      } catch (error) {
+        failure = error;
+      }
+      try {
+        await session.relay?.stop();
+      } catch (error) {
+        failure ??= error;
+      }
+      if (failure !== undefined) {
+        throw failure;
+      }
     }
   }
 }
