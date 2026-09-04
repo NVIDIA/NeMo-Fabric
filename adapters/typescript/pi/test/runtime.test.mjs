@@ -227,7 +227,6 @@ test("adds Relay details to results and stops the Pi session before the gateway"
 
 test(
   "an ATIF finalization timeout preserves ATOF without poisoning the runtime",
-  { timeout: 10_000 },
   async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-timeout-")));
     const atifDir = join(root, "atif");
@@ -265,18 +264,21 @@ test(
       async stop() {},
     };
     relay.atifMatchers = await prepareRelayAtifMatchers(relay.pluginConfig);
-    const runtime = new PiAdapterRuntime({
-      async create() {
-        return {
-          relay,
-          async prompt() {
-            promptCount += 1;
-            return { accepted: true, text: "ok", stopReason: "stop" };
-          },
-          async stop() {},
-        };
+    const runtime = new PiAdapterRuntime(
+      {
+        async create() {
+          return {
+            relay,
+            async prompt() {
+              promptCount += 1;
+              return { accepted: true, text: "ok", stopReason: "stop" };
+            },
+            async stop() {},
+          };
+        },
       },
-    });
+      { atifFinalizationTimeoutMs: 25 },
+    );
 
     try {
       await runtime.start(startInput());
@@ -439,6 +441,42 @@ test("preserves both Pi session and Relay shutdown failures", async () => {
       error.metadata.gateway_log_path === "/tmp/gateway.log" &&
       error.metadata.relay_error === "gateway still running" &&
       error.metadata.session_error === "session shutdown failed",
+  );
+});
+
+test("preserves non-lifecycle cleanup failures in an AggregateError", async () => {
+  const sessionFailure = new Error("session shutdown failed");
+  const relayFailure = new Error("gateway shutdown failed");
+  const runtime = new PiAdapterRuntime({
+    async create() {
+      return {
+        relay: {
+          pluginConfig: { version: 1, components: [] },
+          async output() {
+            return {};
+          },
+          async stop() {
+            throw relayFailure;
+          },
+        },
+        async prompt() {
+          return { accepted: true, text: "ok" };
+        },
+        async stop() {
+          throw sessionFailure;
+        },
+      };
+    },
+  });
+  await runtime.start(startInput());
+
+  await assert.rejects(
+    runtime.stop(),
+    (error) =>
+      error instanceof AggregateError &&
+      error.message === "Pi session and NeMo Relay cleanup failed" &&
+      error.errors[0] === sessionFailure &&
+      error.errors[1] === relayFailure,
   );
 });
 

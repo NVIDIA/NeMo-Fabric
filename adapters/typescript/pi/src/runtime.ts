@@ -38,6 +38,10 @@ export interface PiSessionFactory {
   create(input: AdapterStartInput): Promise<PiSessionHandle>;
 }
 
+export interface PiAdapterRuntimeOptions {
+  atifFinalizationTimeoutMs?: number;
+}
+
 function failed(code: string, message: string): AgentRunResult {
   return {
     status: "failed",
@@ -72,11 +76,13 @@ async function collectNonAtifArtifacts(relay: PiRelayRuntime): Promise<RelayArti
 
 export class PiAdapterRuntime implements AdapterRuntime {
   private readonly factory: PiSessionFactory;
+  private readonly atifFinalizationTimeoutMs: number;
   private session?: PiSessionHandle;
   private unusable = false;
 
-  constructor(factory: PiSessionFactory) {
+  constructor(factory: PiSessionFactory, options: PiAdapterRuntimeOptions = {}) {
     this.factory = factory;
+    this.atifFinalizationTimeoutMs = options.atifFinalizationTimeoutMs ?? ATIF_FINALIZATION_TIMEOUT_MS;
   }
 
   async start(input: AdapterStartInput): Promise<void> {
@@ -127,10 +133,11 @@ export class PiAdapterRuntime implements AdapterRuntime {
       try {
         const finalized = await waitForFinalizedAtif(relay.pluginConfig, atifBefore, {
           matchers: usableAtifMatchers,
+          timeoutMs: this.atifFinalizationTimeoutMs,
         });
         if (finalized === undefined) {
           process.stderr.write(
-            `NeMo Relay did not finalize an ATIF artifact within ${ATIF_FINALIZATION_TIMEOUT_MS} ms\n`,
+            `NeMo Relay did not finalize an ATIF artifact within ${this.atifFinalizationTimeoutMs} ms\n`,
           );
           relayArtifacts = await collectNonAtifArtifacts(relay);
         }

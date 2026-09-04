@@ -323,7 +323,8 @@ test("rejects removed and malformed Relay OpenTelemetry shapes", () => {
   );
 });
 
-test("rejects duplicate enabled Relay component kinds", () => {
+test("checks duplicate enabled Relay component kinds only when writing plugin configuration", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-duplicate-kind-")));
   const pluginConfig = observability({});
   pluginConfig.components.push({
     kind: "observability",
@@ -331,10 +332,33 @@ test("rejects duplicate enabled Relay component kinds", () => {
     config: { version: 3 },
   });
 
-  assert.throws(
-    () => validateRelayObservabilityV3(pluginConfig),
-    /duplicate NeMo Relay plugin component kind "observability"/,
-  );
+  validateRelayObservabilityV3(pluginConfig);
+
+  const previous = process.env.FABRIC_RELAY_CONFIG_PATH;
+  process.env.FABRIC_RELAY_CONFIG_PATH = join(root, "relay.json");
+  try {
+    await assert.rejects(
+      writeRelayConfigs(pluginConfig),
+      /duplicate NeMo Relay plugin component kind 'observability'/,
+    );
+
+    pluginConfig.components[0].config.version = 2;
+    assert.throws(
+      () => validateRelayObservabilityV3(pluginConfig),
+      /unsupported NeMo Relay observability config version 2/,
+    );
+    await assert.rejects(
+      writeRelayConfigs(pluginConfig),
+      /unsupported NeMo Relay observability config version 2/,
+    );
+  } finally {
+    if (previous === undefined) {
+      delete process.env.FABRIC_RELAY_CONFIG_PATH;
+    } else {
+      process.env.FABRIC_RELAY_CONFIG_PATH = previous;
+    }
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("waits for an atomically finalized ATIF artifact and collects Relay files", async () => {

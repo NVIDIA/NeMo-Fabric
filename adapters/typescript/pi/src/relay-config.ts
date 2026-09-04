@@ -71,18 +71,11 @@ function components(pluginConfig: RelayPluginConfig): unknown[] {
 }
 
 export function validateRelayObservabilityV3(pluginConfig: RelayPluginConfig): void {
-  const seenKinds = new Set<string>();
   for (const component of components(pluginConfig)) {
     if (!isRecord(component) || component.enabled === false) {
       continue;
     }
     const kind = component.kind;
-    if (typeof kind === "string") {
-      if (seenKinds.has(kind)) {
-        throw new Error(`duplicate NeMo Relay plugin component kind ${JSON.stringify(kind)}`);
-      }
-      seenKinds.add(kind);
-    }
     if (kind !== "observability") {
       continue;
     }
@@ -144,6 +137,23 @@ export function validateRelayObservabilityV3(pluginConfig: RelayPluginConfig): v
         );
       }
     }
+  }
+}
+
+function validateUniqueRelayComponentKinds(pluginConfig: RelayPluginConfig): void {
+  const seenKinds = new Set<string>();
+  for (const component of components(pluginConfig)) {
+    if (!isRecord(component)) {
+      continue;
+    }
+    const kind = component.kind;
+    if (typeof kind !== "string") {
+      continue;
+    }
+    if (seenKinds.has(kind)) {
+      throw new Error(`duplicate NeMo Relay plugin component kind '${kind}'`);
+    }
+    seenKinds.add(kind);
   }
 }
 
@@ -336,6 +346,7 @@ export async function writeRelayConfigs(pluginConfig: RelayPluginConfig): Promis
     ),
   };
   validateRelayObservabilityV3(enabledPluginConfig);
+  validateUniqueRelayComponentKinds(enabledPluginConfig);
   const configDir = join(dirname(runtimeConfigPath), "relay-config");
   const configPath = join(configDir, "config.toml");
   const pluginConfigPath = join(configDir, "plugins.toml");
