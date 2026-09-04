@@ -1,0 +1,166 @@
+diff --git a/agent/relay_runtime.py b/agent/relay_runtime.py
+index 3dbbd397..9560d429 100644
+--- a/agent/relay_runtime.py
++++ b/agent/relay_runtime.py
+@@ -1419,6 +1419,7 @@ class RelaySessionCoordinator:
+         *,
+         turn_id: str,
+         task_id: str,
++        metadata: dict[str, Any] | None = None,
+     ) -> RelayTurnContext:
+         if lease.released:
+             raise RuntimeError("Hermes Relay conversation lease is released")
+@@ -1467,6 +1468,14 @@ class RelaySessionCoordinator:
+                     "Hermes Relay segment rotation failed", exc_info=True
+                 )
+             try:
++                turn_metadata = {
++                    RUNTIME_SCHEMA_KEY: RUNTIME_SCHEMA_VERSION,
++                    RUNTIME_INSTANCE_KEY: lease.host.runtime_id,
++                    "hermes.execution_surface": lease.platform or "unknown",
++                }
++                request_id = (metadata or {}).get("nemo_fabric_request_id")
++                if isinstance(request_id, str) and request_id:
++                    turn_metadata["nemo_fabric_request_id"] = request_id
+                 turn.handle = lease.host.run_in_session(
+                     lease.session,
+                     lease.host.relay.scope.push,
+@@ -1474,11 +1483,7 @@ class RelaySessionCoordinator:
+                     lease.host.relay.ScopeType.Function,
+                     handle=lease.session.handle,
+                     input={},
+-                    metadata={
+-                        RUNTIME_SCHEMA_KEY: RUNTIME_SCHEMA_VERSION,
+-                        RUNTIME_INSTANCE_KEY: lease.host.runtime_id,
+-                        "hermes.execution_surface": lease.platform or "unknown",
+-                    },
++                    metadata=turn_metadata,
+                     timeout=_SCOPE_OP_TIMEOUT,
+                 )
+             except Exception:
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index 567d5b9b..7ae7b1c4 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -532,6 +532,19 @@ def _request_agent_overrides(
+     return overrides
+ 
+ 
++def _request_relay_metadata(body: Any) -> Dict[str, str]:
++    """Extract allowlisted Relay metadata from an OpenAI request body."""
++    if not isinstance(body, dict):
++        return {}
++    metadata = body.get("metadata")
++    if not isinstance(metadata, dict):
++        return {}
++    request_id = metadata.get("nemo_fabric_request_id")
++    if not isinstance(request_id, str) or not request_id:
++        return {}
++    return {"nemo_fabric_request_id": request_id}
++
++
+ def _is_compressed_summary_message(message: Any) -> bool:
+     """Recognize every model-side compaction carrier shape.
+ 
+@@ -5054,6 +5067,7 @@ class APIServerAdapter(BasePlatformAdapter):
+             body = await request.json()
+         except (json.JSONDecodeError, Exception):
+             return web.json_response(_openai_error("Invalid JSON in request body"), status=400)
++        relay_metadata = _request_relay_metadata(body)
+ 
+         messages = body.get("messages")
+         if not messages or not isinstance(messages, list):
+@@ -5273,6 +5287,7 @@ class APIServerAdapter(BasePlatformAdapter):
+                 tool_complete_callback=_on_tool_complete,
+                 agent_ref=agent_ref,
+                 gateway_session_key=gateway_session_key,
++                relay_metadata=relay_metadata,
+                 **agent_overrides,
+                 route=route,
+             ))
+@@ -5294,6 +5309,7 @@ class APIServerAdapter(BasePlatformAdapter):
+                 ephemeral_system_prompt=system_prompt,
+                 session_id=session_id,
+                 gateway_session_key=gateway_session_key,
++                relay_metadata=relay_metadata,
+                 **agent_overrides,
+                 route=route,
+             )
+@@ -6242,6 +6258,7 @@ class APIServerAdapter(BasePlatformAdapter):
+                 {"error": {"message": "Invalid JSON in request body", "type": "invalid_request_error"}},
+                 status=400,
+             )
++        relay_metadata = _request_relay_metadata(body)
+ 
+         raw_input = body.get("input")
+         if raw_input is None:
+@@ -6402,6 +6419,7 @@ class APIServerAdapter(BasePlatformAdapter):
+                 tool_complete_callback=_on_tool_complete,
+                 agent_ref=agent_ref,
+                 gateway_session_key=gateway_session_key,
++                relay_metadata=relay_metadata,
+                 **agent_overrides,
+                 route=route,
+             ))
+@@ -6437,6 +6455,7 @@ class APIServerAdapter(BasePlatformAdapter):
+                 ephemeral_system_prompt=instructions,
+                 session_id=session_id,
+                 gateway_session_key=gateway_session_key,
++                relay_metadata=relay_metadata,
+                 **agent_overrides,
+                 route=route,
+             )
+@@ -7265,6 +7284,7 @@ class APIServerAdapter(BasePlatformAdapter):
+         requested_runtime: Optional[Dict[str, Any]] = None,
+         route_source: str = "global",
+         confirmed_runtime_lock: bool = False,
++        relay_metadata: Optional[Dict[str, str]] = None,
+     ) -> tuple:
+         """
+         Create an agent and run a conversation in a thread executor.
+@@ -7355,11 +7375,14 @@ class APIServerAdapter(BasePlatformAdapter):
+                     # ``agent_ref``, and only /v1/runs has a run_id, so neither
+                     # is a usable hook for the rest.
+                     self._shutdown_interruptible_agents[id(agent)] = agent
+-                    result = agent.run_conversation(
++                    conversation_kwargs = dict(
+                         user_message=user_message,
+                         conversation_history=conversation_history,
+                         task_id=effective_task_id,
+                     )
++                    if relay_metadata:
++                        conversation_kwargs["relay_metadata"] = relay_metadata
++                    result = agent.run_conversation(**conversation_kwargs)
+                     usage = {
+                         "input_tokens": getattr(agent, "session_prompt_tokens", 0) or 0,
+                         "output_tokens": getattr(agent, "session_completion_tokens", 0) or 0,
+diff --git a/run_agent.py b/run_agent.py
+index 9f145bad..359a43a0 100644
+--- a/run_agent.py
++++ b/run_agent.py
+@@ -8699,6 +8699,7 @@ class AIAgent:
+         persist_user_display_kind: Optional[str] = None,
+         persist_user_display_metadata: Optional[Dict[str, Any]] = None,
+         moa_config: Optional[dict[str, Any]] = None,
++        relay_metadata: Optional[Dict[str, str]] = None,
+     ) -> Dict[str, Any]:
+         """Forwarder — see ``agent.conversation_loop.run_conversation``."""
+         # A review deliberately shares this agent's session_id for prompt-cache
+@@ -9022,10 +9023,14 @@ class AIAgent:
+                 parent_session_id=relay_parent_session_id,
+                 model=str(getattr(self, "model", None) or ""),
+             )
++            relay_turn_kwargs: Dict[str, Any] = {
++                "turn_id": relay_turn_id,
++                "task_id": effective_task_id,
++            }
++            if relay_metadata:
++                relay_turn_kwargs["metadata"] = relay_metadata
+             relay_turn = relay_runtime.SESSION_COORDINATOR.begin_turn(
+-                relay_lease,
+-                turn_id=relay_turn_id,
+-                task_id=effective_task_id,
++                relay_lease, **relay_turn_kwargs
+             )
+             # Keep existing tests and external relay-runtime shims that return
+             # a minimal turn object compatible with the new opt-out flag.
