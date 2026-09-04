@@ -722,6 +722,51 @@ def test_collect_relay_artifacts(tmp_path: Path):
     ]
 
 
+def test_relay_artifacts_skip_disabled_components(tmp_path: Path):
+    artifact_dir = tmp_path / "disabled"
+    artifact_dir.mkdir()
+    (artifact_dir / "events.atof.jsonl").write_text("{}", encoding="utf-8")
+    (artifact_dir / "trajectory-1.atif.json").write_text("{}", encoding="utf-8")
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": False,
+                "config": {
+                    "atof": {
+                        "enabled": True,
+                        "sinks": [
+                            {
+                                "type": "file",
+                                "output_directory": str(artifact_dir),
+                                "filename": "events.atof.jsonl",
+                            }
+                        ],
+                    },
+                    "atif": {
+                        "enabled": True,
+                        "output_directory": str(artifact_dir),
+                        "filename_template": "trajectory-{session_id}.atif.json",
+                    },
+                },
+            }
+        ],
+    }
+    original = json.loads(json.dumps(plugin_config))
+
+    common_utils.normalize_relay_output_dirs(
+        plugin_config,
+        {
+            "base_dir": str(tmp_path),
+            "runtime_context": {"runtime_id": "runtime-current"},
+        },
+    )
+
+    assert plugin_config == original
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
 @pytest.mark.parametrize("filename_template", [None, "", 123])
 def test_collect_relay_artifacts_requires_valid_atif_filename_template(
     tmp_path: Path,
@@ -1196,7 +1241,6 @@ def test_validate_relay_observability_v3_matches_relay_implicit_version():
     [
         (1, True),
         (2, True),
-        (2, False),
         (4, True),
         (True, True),
         (False, True),
@@ -1395,7 +1439,7 @@ def test_validate_relay_observability_v3_requires_object_config(config: object):
         "components": [
             {
                 "kind": "observability",
-                "enabled": False,
+                "enabled": True,
                 "config": config,
             }
         ],
@@ -1443,7 +1487,55 @@ def test_validate_relay_observability_v3_rejects_legacy_exporter_shapes(config):
         common_utils.validate_relay_observability_v3(plugin_config)
 
 
-def test_normalize_relay_output_dirs_validates_all_components_before_mutation(
+@pytest.mark.parametrize(
+    "component",
+    [
+        {"kind": "observability", "enabled": False},
+        {
+            "kind": "observability",
+            "enabled": False,
+            "config": {"version": 2},
+        },
+        {
+            "kind": "observability",
+            "enabled": False,
+            "config": {
+                "version": 3,
+                "opentelemetry": {"endpoint": "http://localhost:4318/v1/traces"},
+            },
+        },
+        {
+            "kind": "observability",
+            "enabled": False,
+            "config": {"version": 3, "openinference": {}},
+        },
+    ],
+)
+def test_load_relay_plugin_config_ignores_disabled_observability_shapes(
+    tmp_path: Path,
+    component: dict[str, object],
+):
+    config_path = tmp_path / "relay.json"
+    expected = {"version": 1, "components": [component]}
+    config_path.write_text(
+        json.dumps({"relay": {"config": expected}}),
+        encoding="utf-8",
+    )
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(config_path)
+
+    assert (
+        common_utils.load_relay_plugin_config(
+            {
+                "base_dir": str(tmp_path),
+                "runtime_context": {"runtime_id": "runtime-current"},
+            }
+        )
+        == expected
+    )
+    assert not (tmp_path / "artifacts").exists()
+
+
+def test_normalize_relay_output_dirs_validates_enabled_components_before_mutation(
     tmp_path: Path,
 ):
     plugin_config = {
@@ -1453,7 +1545,7 @@ def test_normalize_relay_output_dirs_validates_all_components_before_mutation(
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 2,
                     "atof": {
                         "enabled": True,
                         "sinks": [
@@ -1464,15 +1556,7 @@ def test_normalize_relay_output_dirs_validates_all_components_before_mutation(
                         ],
                     },
                 },
-            },
-            {
-                "kind": "observability",
-                "enabled": False,
-                "config": {
-                    "version": 2,
-                    "atif": {"enabled": True},
-                },
-            },
+            }
         ],
     }
     original = json.loads(json.dumps(plugin_config))
@@ -1567,6 +1651,92 @@ def test_write_relay_configs_preserves_v3_plugin_config_exactly(tmp_path: Path):
     assert plugin_path is not None
     with plugin_path.open("rb") as stream:
         assert tomllib.load(stream) == original
+    assert plugin_config == original
+
+
+def test_validate_relay_observability_v3_allows_duplicate_dynamic_worker_kinds():
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "my_worker",
+                "enabled": True,
+                "config": {"worker": "first"},
+            },
+            {
+                "kind": "my_worker",
+                "enabled": True,
+                "config": {"worker": "second"},
+            },
+        ],
+    }
+
+    common_utils.validate_relay_observability_v3(plugin_config)
+
+
+def test_write_relay_configs_rejects_duplicate_enabled_kinds(tmp_path: Path):
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "nested" / "relay.json")
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {"version": 3},
+            },
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {"version": 3},
+            },
+        ],
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="duplicate NeMo Relay plugin component kind 'observability'",
+    ):
+        common_utils.write_relay_configs(plugin_config=plugin_config)
+
+    assert not (tmp_path / "nested" / "relay-config").exists()
+
+
+def test_write_relay_configs_rejects_non_list_components(tmp_path: Path):
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "nested" / "relay.json")
+
+    with pytest.raises(ValueError, match="plugin components must be a list"):
+        common_utils.write_relay_configs(
+            plugin_config={"version": 1, "components": "abc"}
+        )
+
+    assert not (tmp_path / "nested" / "relay-config").exists()
+
+
+def test_write_relay_configs_omits_disabled_components(tmp_path: Path):
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
+    enabled = {
+        "kind": "observability",
+        "enabled": True,
+        "config": {"version": 3, "atif": {"enabled": False}},
+    }
+    plugin_config = {
+        "version": 1,
+        "components": [
+            enabled,
+            {
+                "kind": "observability",
+                "enabled": False,
+                "config": {"version": 3, "atif": {"enabled": False}},
+            },
+        ],
+    }
+    original = json.loads(json.dumps(plugin_config))
+
+    _, plugin_path = common_utils.write_relay_configs(plugin_config=plugin_config)
+
+    assert plugin_path is not None
+    with plugin_path.open("rb") as stream:
+        assert tomllib.load(stream) == {"version": 1, "components": [enabled]}
     assert plugin_config == original
 
 

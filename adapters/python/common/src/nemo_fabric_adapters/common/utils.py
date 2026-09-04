@@ -421,6 +421,15 @@ def dump_yaml(value: dict[str, Any]) -> str:
         return json.dumps(value, indent=2, sort_keys=False) + "\n"
 
 
+def _relay_components(plugin_config: dict[str, Any]) -> list[Any]:
+    components = plugin_config.get("components")
+    if components is None:
+        return []
+    if not isinstance(components, list):
+        raise ValueError("NeMo Relay plugin components must be a list")
+    return components
+
+
 def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
     """Validate Fabric's Relay observability schema boundary without mutation."""
 
@@ -442,8 +451,11 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
         "timeout_millis",
         "transport",
     }
-    for component in plugin_config.get("components") or []:
-        if not isinstance(component, dict) or component.get("kind") != "observability":
+    for component in _relay_components(plugin_config):
+        if not isinstance(component, dict) or component.get("enabled") is False:
+            continue
+        kind = component.get("kind")
+        if kind != "observability":
             continue
         config = component.get("config")
         if not isinstance(config, dict):
@@ -512,6 +524,19 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
                 )
 
 
+def _validate_unique_relay_component_kinds(plugin_config: dict[str, Any]) -> None:
+    seen_kinds: set[str] = set()
+    for component in _relay_components(plugin_config):
+        if not isinstance(component, dict):
+            continue
+        kind = component.get("kind")
+        if not isinstance(kind, str):
+            continue
+        if kind in seen_kinds:
+            raise ValueError(f"duplicate NeMo Relay plugin component kind {kind!r}")
+        seen_kinds.add(kind)
+
+
 def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
     config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
     if not config_path:
@@ -548,8 +573,12 @@ def normalize_relay_output_dirs(
 
     base = Path(base_dir(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
-    for component in plugin_config.get("components", []):
-        if not isinstance(component, dict) or component.get("kind") != "observability":
+    for component in _relay_components(plugin_config):
+        if (
+            not isinstance(component, dict)
+            or component.get("kind") != "observability"
+            or component.get("enabled") is False
+        ):
             continue
         config = component["config"]
 
@@ -626,8 +655,12 @@ def _artifact_glob(directory: Path, pattern: str) -> list[Path]:
 
 def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str]]:
     artifacts: list[dict[str, str]] = []
-    for component in plugin_config.get("components", []):
-        if component.get("kind") != "observability":
+    for component in _relay_components(plugin_config):
+        if (
+            not isinstance(component, dict)
+            or component.get("kind") != "observability"
+            or component.get("enabled") is False
+        ):
             continue
         config = component.get("config") or {}
         atof = config.get("atof")
@@ -682,8 +715,19 @@ def write_relay_configs(
 
         config_path = Path(config_path)
         config_dir = config_path.parent / "relay-config"
+        enabled_plugin_config = None
         if plugin_config is not None:
-            validate_relay_observability_v3(plugin_config)
+            enabled_plugin_config = {
+                **plugin_config,
+                "components": [
+                    component
+                    for component in _relay_components(plugin_config)
+                    if not isinstance(component, dict)
+                    or component.get("enabled") is not False
+                ],
+            }
+            validate_relay_observability_v3(enabled_plugin_config)
+            _validate_unique_relay_component_kinds(enabled_plugin_config)
         config_dir.mkdir(parents=True, exist_ok=True)
         relay_config_path = None
         plugin_config_path = None
@@ -692,10 +736,10 @@ def write_relay_configs(
             relay_config_path = config_dir / "config.toml"
             relay_config_path.write_text(tomli_w.dumps(relay_config), encoding="utf-8")
 
-        if plugin_config is not None:
+        if enabled_plugin_config is not None:
             plugin_config_path = config_dir / "plugins.toml"
             plugin_config_path.write_text(
-                tomli_w.dumps(plugin_config),
+                tomli_w.dumps(enabled_plugin_config),
                 encoding="utf-8",
             )
 

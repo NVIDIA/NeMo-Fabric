@@ -22,8 +22,10 @@ The adapter supports:
 - Explicit local `.ts` or `.js` extension files contained by the NeMo Fabric
   workspace
 - Slash commands registered by those explicit extensions
+- NeMo Relay 0.9 telemetry through a runtime-owned gateway and an explicitly
+  configured Relay Pi extension
 - Ordered plain-text invocations with a `{ "response": "..." }` terminal
-  output
+  output, Relay runtime details, and collected ATOF and ATIF artifacts
 
 Ambient Pi settings, context files, packages, extensions, skills, prompts,
 themes, model files, credentials, and session files are disabled. Explicitly
@@ -65,6 +67,24 @@ just build-typescript
 The full build installs its own dependencies, so you do not need to run
 `just install-typescript-pi` first.
 
+### Install NeMo Relay
+
+Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.10.0` on `PATH`. The Relay
+0.9 CLI is not yet published to PyPI. Clone a matching NeMo Relay 0.9 source
+checkout and install the CLI separately from the npm adapter:
+
+```bash
+git clone https://github.com/NVIDIA/NeMo-Relay.git
+cd NeMo-Relay
+git checkout 30b684dbb09231ee956d40abad9af253596a81ad
+cargo install --path crates/cli --locked
+```
+
+The adapter does not bundle the Relay Pi extension. Obtain the extension from
+that same source revision, such as
+[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/30b684dbb09231ee956d40abad9af253596a81ad/crates/cli/assets/pi-extension),
+and configure its path as described in the next section.
+
 ## Configure the Adapter
 
 The npm package includes its adapter descriptor as `pi.fabric-adapter.json`.
@@ -84,6 +104,45 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.pi")
 
 For a source build, set `discovery.local_paths` to
 `adapters/typescript/pi/pi.fabric-adapter.json` instead.
+
+## Configure NeMo Relay
+
+Enable Relay with the standard NeMo Fabric configuration and provide the Relay
+Pi extension as an adapter setting:
+
+```python
+config.runtime.artifacts = "./artifacts/pi"
+config.enable_relay(output_dir="./artifacts/relay")
+config.harness.settings["relay_extension_path"] = (
+    "/path/to/NeMo-Relay/crates/cli/assets/pi-extension"
+)
+```
+
+Relay requires `runtime.artifacts` so NeMo Fabric can create the runtime-owned
+configuration passed to the adapter. The extension path can be absolute or
+relative to `environment.workspace`. It can identify a JavaScript or TypeScript
+file or a Pi extension package directory. Unlike user-configured Pi extensions,
+the Relay extension does not need to remain inside `environment.workspace` when
+an absolute path is used.
+
+When the runtime starts, the adapter validates the Relay 0.9 CLI, writes an
+explicit `plugins.toml`, starts a loopback gateway, and loads the extension into
+the isolated Pi session. The result includes `relay_runtime` and
+`relay_artifacts` in `output`. The gateway can produce ATOF, ATIF,
+OpenTelemetry, and OpenInference output from the Relay observability
+configuration.
+
+The adapter waits up to five seconds for a local ATIF trajectory to finalize.
+If it does not finalize, the invocation result remains usable, a warning is
+written to the adapter log, and `relay_artifacts` omits ATIF entries while
+retaining any ATOF files that were written. The runtime remains available for
+subsequent turns.
+
+Session, turn, and tool telemetry does not depend on model redirection. Model
+telemetry is available only when Relay supports the selected model API and the
+gateway upstream matches the model endpoint. A skipped redirect is recorded as
+a `model_redirect` mark with the reason. Relay-backed
+`Runtime.invoke_stream()` correlation is not yet supported for Pi.
 
 ## Custom Tool Modules
 
@@ -125,7 +184,18 @@ TypeScript packages, inspect the plan from the repository root:
 
 Refer to the
 [code-review example](../../../examples/code_review_agent/README.md) for the
-live NVIDIA-backed run command. Relay and MCP are not currently supported.
+live NVIDIA-backed run command. For a Relay-enabled Pi run, pass the extension
+path explicitly:
+
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --variant pi \
+  --relay \
+  --pi-relay-extension-path /path/to/NeMo-Relay/crates/cli/assets/pi-extension \
+  --input "Review calculator.py"
+```
+
+MCP is not currently supported. Do not combine the Pi variant with `--stream`.
 
 ## Dependency Rationale
 

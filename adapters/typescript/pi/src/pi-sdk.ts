@@ -10,7 +10,6 @@ import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type {
   AgentSession,
-  DefaultResourceLoader,
   ExtensionCommandContextActions,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -18,6 +17,7 @@ import { createJiti } from "jiti/static";
 import type { AgentConfig, AgentModelConfig, AgentToolDefinition, JsonObject } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
+import { PiRelayFactory, type PiRelayControllerFactory, type PiRelayRuntime } from "./relay.js";
 import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runtime.js";
 
 interface PiHarnessSettings {
@@ -234,12 +234,6 @@ export async function resolveCustomTools(
   return tools;
 }
 
-function extensionToolNames(resourceLoader: DefaultResourceLoader): string[] {
-  return resourceLoader
-    .getExtensions()
-    .extensions.flatMap((extension) => Array.from(extension.tools.keys()));
-}
-
 function rejectToolCollisions(customTools: ToolDefinition[], configuredExtensionTools: string[]): void {
   const customNames = new Set(customTools.map((tool) => tool.name));
   const seenExtensionNames = new Set<string>();
@@ -251,6 +245,29 @@ function rejectToolCollisions(customTools: ToolDefinition[], configuredExtension
     }
     seenExtensionNames.add(name);
   }
+}
+
+function relayExtensionLoadErrors(
+  errors: Array<{ path: string; error: string }>,
+  extensions: Array<{ path: string; resolvedPath?: string }>,
+  relay: PiRelayRuntime | undefined,
+  workspace: string,
+): Array<{ path: string; error: string }> {
+  if (relay === undefined) {
+    return [];
+  }
+  const loaded = extensions.some((extension) =>
+    [extension.path, extension.resolvedPath].some(
+      (path) => path !== undefined && resolve(workspace, path) === relay.extensionPath,
+    ),
+  );
+  if (loaded) {
+    return [];
+  }
+  return errors.filter((error) => {
+    const path = resolve(workspace, error.path);
+    return path === relay.extensionPath || containedBy(relay.extensionPath, path);
+  });
 }
 
 async function resolveExtensionPaths(workspace: string, configured: string[]): Promise<string[]> {
@@ -338,13 +355,15 @@ function unsupportedSessionAction(name: string): never {
 }
 
 class PiSdkSessionHandle implements PiSessionHandle {
+  readonly relay?: PiRelayRuntime;
   private readonly session: AgentSession;
   private readonly state: { shutdownRequested: boolean };
   private stopped = false;
 
-  constructor(session: AgentSession, state: { shutdownRequested: boolean }) {
+  constructor(session: AgentSession, state: { shutdownRequested: boolean }, relay?: PiRelayRuntime) {
     this.session = session;
     this.state = state;
+    this.relay = relay;
   }
 
   async prompt(text: string): Promise<PiPromptOutcome> {
@@ -405,6 +424,12 @@ class PiSdkSessionHandle implements PiSessionHandle {
 }
 
 export class PiSdkSessionFactory implements PiSessionFactory {
+  private readonly relayFactory: PiRelayControllerFactory;
+
+  constructor(relayFactory: PiRelayControllerFactory = new PiRelayFactory()) {
+    this.relayFactory = relayFactory;
+  }
+
   async create(input: AdapterStartInput): Promise<PiSessionHandle> {
     const systemInstruction = input.config.instructions?.system;
     if (systemInstruction?.mode === "append") {
@@ -444,41 +469,6 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     const extensionPaths = await resolveExtensionPaths(workspace, harnessSettings(input.config).extensions);
     const skillPaths = await resolveSkillPaths(input.baseDir, input.config.skills?.paths ?? []);
     const customTools = await resolveCustomTools(workspace, input.config.tools?.definitions ?? {});
-    const agentDir = join(workspace, ".fabric-pi");
-    const resourceLoader = new pi.DefaultResourceLoader({
-      cwd: workspace,
-      agentDir,
-      settingsManager: settings,
-      additionalExtensionPaths: extensionPaths,
-      additionalSkillPaths: skillPaths,
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-      noContextFiles: true,
-      systemPrompt: systemInstruction?.content,
-    });
-    await resourceLoader.reload();
-    const extensionErrors = resourceLoader.getExtensions().errors;
-    if (extensionErrors.length > 0) {
-      throw new LifecycleError("pi_extension_load_failed", "One or more configured Pi extensions failed to load", {
-        metadata: { count: extensionErrors.length },
-      });
-    }
-    rejectToolCollisions(customTools, extensionToolNames(resourceLoader));
-    const skillDiagnostics = resourceLoader.getSkills().diagnostics;
-    const blockingSkillDiagnostics = skillDiagnostics.filter(
-      (diagnostic) => diagnostic.type === "error" || diagnostic.type === "collision",
-    );
-    for (const diagnostic of skillDiagnostics.filter((entry) => entry.type === "warning")) {
-      process.stderr.write(`Pi skill warning: ${diagnostic.message}\n`);
-    }
-    if (blockingSkillDiagnostics.length > 0) {
-      throw new LifecycleError("pi_skill_load_failed", "One or more configured NeMo Fabric skills failed to load", {
-        metadata: { count: blockingSkillDiagnostics.length },
-      });
-    }
-
     const credentials = new pi.InMemoryCredentialStore();
     const modelRuntime = await pi.ModelRuntime.create({
       credentials,
@@ -487,28 +477,105 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       refreshOnCreate: false,
     });
     await modelRuntime.setRuntimeApiKey(selected.provider, apiKey);
+    const relayEnabled = input.runtimeContext.telemetry?.relay_enabled === true;
+    if (relayEnabled && selected.base_url) {
+      // Configure the provider before Relay loads so its provider-wide redirect
+      // sees a consistent catalog instead of one overlaid selected model.
+      modelRuntime.registerProvider(selected.provider, {
+        baseUrl: selected.base_url,
+      });
+    }
     const catalogModel = modelRuntime.getModel(selected.provider, selected.model);
     if (catalogModel === undefined) {
       throw new LifecycleError("pi_model_unknown", "The selected provider and model are not present in Pi's catalog");
     }
-    const model = selected.base_url ? { ...catalogModel, baseUrl: selected.base_url } : catalogModel;
-    const enabled = input.config.tools?.enabled;
-    const blocked = input.config.tools?.blocked ?? [];
-    const state = { shutdownRequested: false };
-    const { session } = await pi.createAgentSession({
-      cwd: workspace,
-      agentDir,
-      model,
-      modelRuntime,
-      resourceLoader,
-      sessionManager: pi.SessionManager.inMemory(workspace),
-      settingsManager: settings,
-      customTools,
-      tools: enabled === null ? undefined : enabled,
-      excludeTools: blocked,
-    });
-    const handle = new PiSdkSessionHandle(session, state);
+    const model = !relayEnabled && selected.base_url ? { ...catalogModel, baseUrl: selected.base_url } : catalogModel;
+    let relay: PiRelayRuntime | undefined;
+    let handle: PiSdkSessionHandle | undefined;
     try {
+      relay = await this.relayFactory.start(input, {
+        api: model.api,
+        baseUrl: model.baseUrl,
+      });
+      if (relay !== undefined && !extensionPaths.includes(relay.extensionPath)) {
+        extensionPaths.push(relay.extensionPath);
+      }
+      const agentDir = join(workspace, ".fabric-pi");
+      const resourceLoader = new pi.DefaultResourceLoader({
+        cwd: workspace,
+        agentDir,
+        settingsManager: settings,
+        additionalExtensionPaths: extensionPaths,
+        additionalSkillPaths: skillPaths,
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        noContextFiles: true,
+        systemPrompt: systemInstruction?.content,
+      });
+      await resourceLoader.reload();
+      const extensionResult = resourceLoader.getExtensions();
+      rejectToolCollisions(
+        customTools,
+        extensionResult.extensions.flatMap((extension) => [...extension.tools.keys()]),
+      );
+      const extensionErrors = extensionResult.errors;
+      const relayErrors = relayExtensionLoadErrors(extensionErrors, extensionResult.extensions, relay, workspace);
+      if (relayErrors.length > 0) {
+        throw new LifecycleError(
+          "pi_relay_extension_load_failed",
+          "The configured NeMo Relay Pi extension failed to load; use an extension from the matching NeMo Relay 0.9 release",
+          {
+            metadata: {
+              count: relayErrors.length,
+              relay_error: relayErrors.map((error) => error.error).join("; "),
+            },
+          },
+        );
+      }
+      if (extensionErrors.length > 0) {
+        throw new LifecycleError(
+          "pi_extension_load_failed",
+          "One or more configured Pi extensions failed to load or conflict",
+          {
+            metadata: {
+              count: extensionErrors.length,
+              extension_error: extensionErrors.map((error) => error.error).join("; "),
+              extension_paths: extensionErrors.map((error) => error.path),
+            },
+          },
+        );
+      }
+      const skillDiagnostics = resourceLoader.getSkills().diagnostics;
+      const blockingSkillDiagnostics = skillDiagnostics.filter(
+        (diagnostic) => diagnostic.type === "error" || diagnostic.type === "collision",
+      );
+      for (const diagnostic of skillDiagnostics.filter((entry) => entry.type === "warning")) {
+        process.stderr.write(`Pi skill warning: ${diagnostic.message}\n`);
+      }
+      if (blockingSkillDiagnostics.length > 0) {
+        throw new LifecycleError("pi_skill_load_failed", "One or more configured NeMo Fabric skills failed to load", {
+          metadata: { count: blockingSkillDiagnostics.length },
+        });
+      }
+
+      const enabled = input.config.tools?.enabled;
+      const blocked = input.config.tools?.blocked ?? [];
+      const state = { shutdownRequested: false };
+      const { session } = await pi.createAgentSession({
+        cwd: workspace,
+        agentDir,
+        model,
+        modelRuntime,
+        resourceLoader,
+        sessionManager: pi.SessionManager.inMemory(workspace),
+        settingsManager: settings,
+        customTools,
+        tools: enabled === null ? undefined : enabled,
+        excludeTools: blocked,
+      });
+      handle = new PiSdkSessionHandle(session, state, relay);
       const blockedNames = new Set(blocked);
       const availableNames = new Set(session.getAllTools().map((tool) => tool.name));
       const missing = (enabled ?? []).filter((name) => !blockedNames.has(name) && !availableNames.has(name));
@@ -540,13 +607,16 @@ export class PiSdkSessionFactory implements PiSessionFactory {
           process.stderr.write("Pi extension handler failed\n");
         },
       });
+      // bindExtensions emits session_start; emitting it here would create a
+      // duplicate Relay session scope.
       return handle;
     } catch (error) {
-      try {
-        await handle.stop();
-      } catch {
+      await handle?.stop().catch(() => {
         process.stderr.write("Pi session cleanup failed after adapter startup error\n");
-      }
+      });
+      await relay?.stop().catch(() => {
+        process.stderr.write("NeMo Relay cleanup failed after Pi adapter startup error\n");
+      });
       throw error;
     }
   }

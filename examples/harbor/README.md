@@ -75,12 +75,18 @@ version `0.3.0`.
 | Harbor host | `nemo-fabric[harbor]==0.3.0` | Harbor CLI, `FabricAgent`, and typed `FabricConfig` construction |
 | Claude task without Relay | `nemo-fabric[claude]==0.3.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
 | Claude task with Relay | `nemo-fabric[claude]==0.3.0` plus a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
+| Pi task with Relay | `nemo-fabric==0.3.0`, `nemo-fabric-adapters-pi@0.3.0`, a compatible Pi SDK harness, a NeMo Relay CLI in the `>=0.9.0,<0.10.0` range on `PATH`, and the matching Relay Pi extension | NeMo Fabric runner, Pi adapter and harness, and the adapter-managed Relay gateway and extension |
 | Hermes Agent task with Relay | Task image with Hermes Agent, `nemo-fabric==0.3.0`, `nemo-fabric-adapters-hermes==0.3.0`, and `nemo-relay>=0.7.2,<0.8` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
 | NOOA BenchAgent task | Task image with NOOA core, `nooa-bench`, `nemo-fabric==0.3.0`, and the BenchAgent adapter source | NeMo Fabric runner, BenchAgent, and its source-only adapter |
 | NOOA BenchAgent task with Relay | Baseline task dependencies plus `nemo-relay>=0.7.2,<0.8` | Optional Relay telemetry for the same BenchAgent task |
 
 The `nemo-fabric` package installs the runtime. The `relay` extra installs the
 NeMo Relay Python package, not the CLI required by Claude.
+Pi Relay configurations must set `runtime.artifacts` and
+`harness.settings.relay_extension_path`; relative extension paths resolve from
+the task's `environment.workspace`. The Pi adapter does not currently support
+Relay-backed `Runtime.invoke_stream()`.
+
 Hermes Agent 0.20 and later is no longer installable from PyPI. Prepare Hermes
 Agent task images by following the
 [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),

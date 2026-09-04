@@ -31,6 +31,11 @@
           "minLength": 1
         },
         "uniqueItems": true
+      },
+      "relay_extension_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9 Pi extension"
       }
     },
     "additionalProperties": false
@@ -60,6 +65,13 @@
     },
     "required": ["kind", "ref"],
     "additionalProperties": false
+  },
+  "telemetry": {
+    "providers": {
+      "relay": {
+        "outputs": ["atif", "otel", "openinference"]
+      }
+    }
   },
   "capabilities": {
     "streaming": false,
