@@ -28,20 +28,22 @@ navigation:
     path: ../pages-dev/adapter-contract/README.md
   - page: Custom-Agent Integrations
     path: ../pages-dev/adapter-contract/custom-agents.md
-  - page: Adapter Descriptor
-    path: ../pages-dev/adapter-contract/adapter-descriptor.md
-  - page: Normalized Configuration
-    path: ../pages-dev/adapter-contract/normalized-configuration.md
-  - page: Execution
-    path: ../pages-dev/adapter-contract/execution.md
+  - section: Tutorials
+    contents:
+    - page: Describe Adapter
+      path: ../pages-dev/adapter-contract/tutorials/adapter-descriptor.md
+    - page: Map Normalized Configuration
+      path: ../pages-dev/adapter-contract/tutorials/normalized-configuration.md
+    - page: Implement Execution
+      path: ../pages-dev/adapter-contract/tutorials/execution.md
+    - page: Normalize Results and Telemetry
+      path: ../pages-dev/adapter-contract/tutorials/results.md
+    - page: Register and Discover Adapter
+      path: ../pages-dev/adapter-contract/tutorials/registration-and-discovery.md
+    - page: Verify Adapter
+      path: ../pages-dev/adapter-contract/tutorials/conformance.md
   - page: Optional OpenAI Streaming
     path: ../pages-dev/adapter-contract/openai-streaming.md
-  - page: Results and Telemetry
-    path: ../pages-dev/adapter-contract/results.md
-  - page: Registration and Discovery
-    path: ../pages-dev/adapter-contract/registration-and-discovery.md
-  - page: Verify an Adapter
-    path: ../pages-dev/adapter-contract/conformance.md
   - page: Examples and References
     path: ../pages-dev/adapter-contract/examples.md
 - section: Integrations

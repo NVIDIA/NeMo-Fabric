@@ -102,5 +102,6 @@ Across all examples, keep these ownership boundaries intact:
 
 Use the
 [`schemas/adapter-contract/` directory](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas/adapter-contract)
-for exact southbound wire shapes and [Stage 1](adapter-descriptor.md) to begin
+for exact southbound wire shapes and
+[Stage 1: Describe the Adapter](tutorials/adapter-descriptor.md) to begin
 your own descriptor.
