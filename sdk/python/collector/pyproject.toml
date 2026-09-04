@@ -19,5 +19,8 @@ dependencies = [
   "uvicorn~=0.49",
 ]
 
-[tool.setuptools]
-packages = []
+[project.scripts]
+nemo-fabric-collector = "nemo_fabric_collector.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
