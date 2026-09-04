@@ -11,7 +11,39 @@ operation before an `AgentRunResult` exists. Keep target-specific parsing
 inside the adapter so consumers receive a stable NeMo Fabric `RunResult` and
 do not need to understand the target's native response objects.
 
-## Return AgentRunResult
+## Prerequisites
+
+Before you start, complete the following:
+
+1. Complete [Stage 3: Implement execution](execution.md) so the `invoke`
+   operation can return a terminal outcome.
+2. Identify the target's native response, usage, and error objects you will
+   translate.
+3. Keep the canonical
+   [`agent-run-result.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-run-result.schema.json)
+   open for the exact result shape.
+
+## Concepts Overview
+
+NeMo Fabric combines `AgentRunResult` with runtime-owned information when it
+constructs the consumer-facing `RunResult`:
+
+| NeMo Fabric Adds | Source |
+| --- | --- |
+| Adapter and runtime identity | Resolved plan and runtime handle. |
+| Runtime, invocation, and request correlation | `RuntimeContext`. |
+| Lifecycle stage and events | Runtime orchestration. |
+| Collected artifact manifest | NeMo Fabric and adapter artifact declarations. |
+| Telemetry reference | Resolved telemetry plan and runtime telemetry context. |
+
+Do not duplicate NeMo Fabric-owned IDs, lifecycle events, or telemetry
+references inside arbitrary adapter output or extensions.
+
+## To Normalize Results and Telemetry
+
+Work through each step in order, verifying your progress at each checkpoint.
+
+### 1. Return AgentRunResult
 
 `invoke` returns one typed `AgentRunResult`. Translate the target's native
 outcome into the normalized status, output, usage, errors, and artifacts that
@@ -43,7 +75,10 @@ for the exact shape. A failed result contains an error; a successful result
 does not contain a non-null error. Status is explicit and is not inferred from
 arbitrary output fields.
 
-## Separate Failure Classes
+**Success Check**: `invoke` returns one typed `AgentRunResult` whose explicit
+status matches the presence or absence of an error.
+
+### 2. Separate Failure Classes
 
 Use these failure classes consistently:
 
@@ -58,30 +93,20 @@ Set retry guidance only when retrying at the consumer boundary is safe. NeMo
 Fabric propagates failure information but does not automatically retry adapter
 operations.
 
-## Keep Artifacts Inside the Runtime Root
+**Success Check**: A target failure returns a `FAILED` result while a lifecycle
+failure is reported at its NeMo Fabric error stage.
+
+### 3. Keep Artifacts Inside the Runtime Root
 
 Write target artifacts below the artifact root supplied through
 `RuntimeContext.environment`. Return relative artifact references; do not
 return arbitrary host filesystem paths. NeMo Fabric combines adapter-declared
 artifacts with its collected artifact manifest.
 
-## Let NeMo Fabric Enrich the Outcome
+**Success Check**: Returned artifact references are relative to the runtime
+artifact root, with no absolute host paths.
 
-NeMo Fabric combines `AgentRunResult` with runtime-owned information when it
-constructs the consumer-facing `RunResult`:
-
-| NeMo Fabric Adds | Source |
-| --- | --- |
-| Adapter and runtime identity | Resolved plan and runtime handle. |
-| Runtime, invocation, and request correlation | `RuntimeContext`. |
-| Lifecycle stage and events | Runtime orchestration. |
-| Collected artifact manifest | NeMo Fabric and adapter artifact declarations. |
-| Telemetry reference | Resolved telemetry plan and runtime telemetry context. |
-
-Do not duplicate NeMo Fabric-owned IDs, lifecycle events, or telemetry
-references inside arbitrary adapter output or extensions.
-
-## Integrate Telemetry Without Changing the Result
+### 4. Integrate Telemetry Without Changing the Result
 
 Telemetry configuration, correlation, and result references are NeMo
 Fabric-owned. The Adapter Descriptor declares which outputs the adapter can
@@ -98,4 +123,32 @@ Relay-backed ATOF records and the terminal result describe the same invocation
 but remain separate. Stream exhaustion does not imply success, and stopping
 stream consumption does not change the terminal outcome.
 
-After outcomes are safe and stable, [package and register the adapter](registration-and-discovery.md).
+**Success Check**: Telemetry integration reuses NeMo Fabric correlation without
+altering the terminal result or logging unredacted telemetry values.
+
+## Summary
+
+In this tutorial, you have:
+
+- Returned one typed `AgentRunResult` with an explicit, error-consistent status.
+- Separated lifecycle failures from terminal target failures.
+- Kept artifacts inside the runtime artifact root as relative references.
+- Integrated telemetry without changing the terminal result or leaking secrets.
+
+## Next Steps
+
+With outcomes safe and stable, continue through the adapter authoring stages:
+
+<CardGroup cols={2}>
+
+<Card title="Register and discover the adapter" href="registration-and-discovery.md">
+
+Continue to Stage 5 and package and register the adapter.
+</Card>
+
+<Card title="AgentRunResult schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-run-result.schema.json">
+
+Review the canonical schema for the exact result shape.
+</Card>
+
+</CardGroup>
