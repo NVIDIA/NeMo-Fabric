@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,11 +12,17 @@ import {
   collectRelayArtifacts,
   encodeToml,
   loadRelayPluginConfig,
+  prepareRelayAtifMatchers,
   validateRelayObservabilityV3,
   writeRelayConfigs,
 } from "../dist/relay-config.js";
 import { expectsLocalAtif, snapshotAtifFiles, waitForFinalizedAtif } from "../dist/relay-artifacts.js";
-import { relayCliContract, startRelayGateway, stopRelayGateway } from "../dist/relay-gateway.js";
+import {
+  relayCliContract,
+  startRelayGateway,
+  stopRelayGateway,
+  waitForRelayGateway,
+} from "../dist/relay-gateway.js";
 import { PiRelayFactory, resolveRelayExtensionPath } from "../dist/relay.js";
 
 function startInput(baseDir, options = {}) {
@@ -44,7 +50,7 @@ function startInput(baseDir, options = {}) {
         environment_id: "environment-1",
         ownership: "caller_owned",
         provider: "local",
-        workspace: baseDir,
+        workspace: options.workspace ?? baseDir,
       },
       invocation_id: "start",
       request_id: "request-start",
@@ -277,7 +283,7 @@ endpoint = "http://127.0.0.1:4320/v1/traces"
   for (const [config, expected] of snapshots) {
     assert.equal(encodeToml(observability(config)), expected);
   }
-  assert.throws(() => encodeToml({ unsupported: 1.5 }), /unsupported by the local TOML encoder/);
+  assert.equal(encodeToml({ sample_rate: 0.5 }), "sample_rate = 0.5\n");
   assert.throws(() => encodeToml({ unsupported: null }), /unsupported by the local TOML encoder/);
 });
 
@@ -304,7 +310,7 @@ test("rejects removed and malformed Relay OpenTelemetry shapes", () => {
   );
 });
 
-test("waits for a complete changed ATIF artifact and collects Relay files", async () => {
+test("waits for an atomically finalized ATIF artifact and collects Relay files", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-artifacts-")));
   try {
     const atifDir = join(root, "atif");
@@ -329,15 +335,17 @@ test("waits for a complete changed ATIF artifact and collects Relay files", asyn
         filename_template: "trajectory-{session_id}.atif.json",
       },
     });
-    const before = await snapshotAtifFiles(pluginConfig);
+    const matchers = await prepareRelayAtifMatchers(pluginConfig);
+    const before = await snapshotAtifFiles(pluginConfig, matchers);
     const path = join(atifDir, "trajectory-session-1.atif.json");
-    await writeFile(path, "{", "utf8");
-    setTimeout(() => void writeFile(path, '{"session_id":"session-1"}', "utf8"), 10);
+    const temporaryPath = join(atifDir, ".trajectory-session-1.atif.json.tmp");
+    setTimeout(() => void rename(temporaryPath, path), 10);
+    await writeFile(temporaryPath, '{"session_id":"session-1"}', "utf8");
 
     assert.equal(
       await waitForFinalizedAtif(pluginConfig, before, {
+        matchers,
         timeoutMs: 500,
-        pollIntervalMs: 5,
       }),
       path,
     );
@@ -345,6 +353,45 @@ test("waits for a complete changed ATIF artifact and collects Relay files", asyn
       { kind: "atif", path },
       { kind: "atof", path: join(atofDir, "events.atof.jsonl") },
     ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("collects ATIF templates with directory, metadata, or no placeholders", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-atif-templates-")));
+  try {
+    const cases = [
+      ["nested/trajectory-{session_id}.json", "nested/trajectory-s1.json"],
+      ["{metadata.workflow_id}-trajectory-{session_id}.json", "wf1-trajectory-s1.json"],
+      ["fixed.atif.json", "fixed.atif.json"],
+    ];
+    for (const [template, filename] of cases) {
+      const directory = join(root, template.replaceAll(/[^A-Za-z0-9]/g, "-"));
+      const path = join(directory, filename);
+      await mkdir(join(path, ".."), { recursive: true });
+      await writeFile(path, "{}\n", "utf8");
+      const pluginConfig = observability({
+        atif: { enabled: true, output_directory: directory, filename_template: template },
+      });
+      const matchers = await prepareRelayAtifMatchers(pluginConfig);
+      assert.equal(expectsLocalAtif(pluginConfig, matchers), true);
+      assert.deepEqual(await collectRelayArtifacts(pluginConfig, matchers), [{ kind: "atif", path }]);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("does not swallow ATIF snapshot directory failures", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-atif-snapshot-")));
+  try {
+    const pluginConfig = observability({
+      atif: { enabled: true, output_directory: root, filename_template: "trajectory-{session_id}.json" },
+    });
+    const matchers = await prepareRelayAtifMatchers(pluginConfig);
+    await rm(root, { recursive: true, force: true });
+    await assert.rejects(snapshotAtifFiles(pluginConfig, matchers), /ENOENT/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -375,7 +422,7 @@ test("skips local ATIF waiting for remote-storage configurations", () => {
   assert.equal(expectsLocalAtif(observability({ atif: { enabled: false } })), false);
 });
 
-test("launches a detached gateway with an isolated log and exact upstream arguments", async () => {
+test("launches a foreground-group gateway with an isolated log and exact upstream arguments", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-gateway-")));
   try {
     const configPath = join(root, "config.toml");
@@ -384,6 +431,8 @@ test("launches a detached gateway with an isolated log and exact upstream argume
     const mockChild = new MockChild();
     let spawnCall;
     let healthUrl;
+    let healthOptions;
+    let bodyCancelled = false;
     const child = await startRelayGateway(
       {
         executable: "/opt/bin/nemo-relay",
@@ -400,15 +449,25 @@ test("launches a detached gateway with an isolated log and exact upstream argume
           queueMicrotask(() => mockChild.emit("spawn"));
           return mockChild;
         },
-        async fetch(url) {
+        async fetch(url, options) {
           healthUrl = url;
-          return new Response(null, { status: 200 });
+          healthOptions = options;
+          return {
+            ok: true,
+            body: {
+              async cancel() {
+                bodyCancelled = true;
+              },
+            },
+          };
         },
       },
     );
 
     assert.equal(child, mockChild);
     assert.equal(healthUrl, "http://127.0.0.1:41000/healthz");
+    assert.equal(healthOptions.method, "HEAD");
+    assert.equal(bodyCancelled, true);
     assert.equal(spawnCall.command, "/opt/bin/nemo-relay");
     assert.deepEqual(spawnCall.args, [
       "--config",
@@ -419,12 +478,37 @@ test("launches a detached gateway with an isolated log and exact upstream argume
       "https://api.openai.com/v1",
     ]);
     assert.equal(spawnCall.options.cwd, root);
-    assert.equal(spawnCall.options.detached, true);
+    assert.equal(spawnCall.options.detached, undefined);
     assert.equal(spawnCall.options.stdio[0], "ignore");
     assert.equal(spawnCall.options.stdio[1], spawnCall.options.stdio[2]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("drains unsuccessful and successful Relay health responses", async () => {
+  const child = new MockChild();
+  const cancelled = [];
+  const methods = [];
+  let attempts = 0;
+  await waitForRelayGateway(child, "http://127.0.0.1:41000/healthz", {
+    pollIntervalMs: 1,
+    timeoutMs: 100,
+    async fetch(_url, options) {
+      methods.push(options.method);
+      const current = attempts++;
+      return {
+        ok: current > 0,
+        body: {
+          async cancel() {
+            cancelled.push(current);
+          },
+        },
+      };
+    },
+  });
+  assert.deepEqual(methods, ["HEAD", "HEAD"]);
+  assert.deepEqual(cancelled, [0, 1]);
 });
 
 test("escalates gateway shutdown from terminate to kill and is safe after exit", async () => {
@@ -444,15 +528,27 @@ test("escalates gateway shutdown from terminate to kill and is safe after exit",
   assert.deepEqual(mockChild.signals, ["SIGTERM", "SIGKILL"]);
 });
 
-test("validates Relay extension paths without workspace containment", async () => {
+test("resolves relative Relay extension paths from the workspace without containment", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-extension-")));
   try {
+    const workspace = join(root, "workspace");
+    const relativeExtension = join(workspace, "vendor", "relay-extension");
     const extensionDir = join(root, "outside-workspace", "nemo-relay");
+    await mkdir(relativeExtension, { recursive: true });
     await mkdir(extensionDir, { recursive: true });
     assert.equal(await resolveRelayExtensionPath(startInput(root, { extensionPath: extensionDir })), extensionDir);
+    assert.equal(
+      await resolveRelayExtensionPath(
+        startInput(root, { extensionPath: "vendor/relay-extension", workspace }),
+      ),
+      relativeExtension,
+    );
     await assert.rejects(
-      resolveRelayExtensionPath(startInput(root, { extensionPath: "missing" })),
-      (error) => error.code === "pi_relay_extension_not_found" && error.message.includes("relay_extension_path"),
+      resolveRelayExtensionPath(startInput(root, { extensionPath: "missing", workspace })),
+      (error) =>
+        error.code === "pi_relay_extension_not_found" &&
+        error.message.includes("relay_extension_path") &&
+        error.metadata.relay_error.includes("ENOENT"),
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -485,7 +581,7 @@ test("keeps non-Relay startup inert and restores Relay extension environment on 
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://ambient.invalid");
 
     const mockChild = new MockChild();
-    let stopped = false;
+    let stopAttempts = 0;
     const factory = new PiRelayFactory({
       async resolveCommand() {
         return "/opt/bin/nemo-relay";
@@ -510,7 +606,10 @@ test("keeps non-Relay startup inert and restores Relay extension environment on 
       },
       async stopGateway(child) {
         assert.equal(child, mockChild);
-        stopped = true;
+        stopAttempts += 1;
+        if (stopAttempts === 1) {
+          throw new Error("gateway still running");
+        }
       },
     });
     const runtime = await factory.start(startInput(root, { extensionPath }), {
@@ -520,9 +619,14 @@ test("keeps non-Relay startup inert and restores Relay extension environment on 
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://127.0.0.1:41001");
     assert.equal(process.env.NEMO_RELAY_PI_OPENAI_UPSTREAM, "https://api.openai.com/v1");
     assert.equal(process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM, undefined);
+    await assert.rejects(
+      runtime.stop(),
+      (error) => error.code === "pi_relay_stop_failed" && error.metadata.relay_error === "gateway still running",
+    );
+    assert.equal(stopAttempts, 1);
     await runtime.stop();
     await runtime.stop();
-    assert.equal(stopped, true);
+    assert.equal(stopAttempts, 2);
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://ambient.invalid");
     assert.equal(process.env.NEMO_RELAY_PI_OPENAI_UPSTREAM, undefined);
     assert.equal(process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM, "https://ambient.invalid");
@@ -558,7 +662,10 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
           throw new Error("missing");
         },
       }).start(input, model),
-      (error) => error.code === "pi_relay_unavailable" && error.message.includes("nemo-relay-cli-bin>=0.9.0"),
+      (error) =>
+        error.code === "pi_relay_unavailable" &&
+        error.message.includes("nemo-relay-cli-bin>=0.9.0") &&
+        error.metadata.relay_error === "missing",
     );
     await assert.rejects(
       new PiRelayFactory({
@@ -569,7 +676,7 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
           throw new Error("old");
         },
       }).start(input, model),
-      (error) => error.code === "pi_relay_incompatible",
+      (error) => error.code === "pi_relay_incompatible" && error.metadata.relay_error === "old",
     );
     await assert.rejects(
       new PiRelayFactory({
@@ -580,10 +687,13 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
           return { version: [0, 9, 0] };
         },
         async loadPluginConfig() {
-          throw new Error("FABRIC_RELAY_CONFIG_PATH is required");
+          throw new Error("unsupported NeMo Relay observability config version 2; expected version 3");
         },
       }).start(input, model),
-      (error) => error.code === "pi_relay_configuration_failed" && error.message.includes("artifact root"),
+      (error) =>
+        error.code === "pi_relay_configuration_failed" &&
+        error.message === "NeMo Relay runtime configuration could not be prepared" &&
+        error.metadata.relay_error.includes("version 2"),
     );
     await assert.rejects(
       new PiRelayFactory({
@@ -609,7 +719,10 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
           throw new Error("not ready");
         },
       }).start(input, model),
-      (error) => error.code === "pi_relay_start_failed" && error.metadata.gateway_log_path.endsWith("gateway.log"),
+      (error) =>
+        error.code === "pi_relay_start_failed" &&
+        error.metadata.gateway_log_path.endsWith("gateway.log") &&
+        error.metadata.relay_error === "not ready",
     );
     await assert.rejects(
       new PiRelayFactory({
@@ -632,7 +745,10 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
           throw new Error("cannot bind");
         },
       }).start(input, model),
-      (error) => error.code === "pi_relay_start_failed" && error.metadata.gateway_log_path.endsWith("gateway.log"),
+      (error) =>
+        error.code === "pi_relay_start_failed" &&
+        error.metadata.gateway_log_path.endsWith("gateway.log") &&
+        error.metadata.relay_error === "cannot bind",
     );
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -124,16 +124,19 @@ Enable Relay with the standard NeMo Fabric configuration and provide the Relay
 Pi extension as an adapter setting:
 
 ```python
+config.runtime.artifacts = "./artifacts/pi"
 config.enable_relay(output_dir="./artifacts/relay")
 config.harness.settings["relay_extension_path"] = (
     "/path/to/NeMo-Relay/crates/cli/assets/pi-extension"
 )
 ```
 
-The extension path can be absolute or relative to the `base_dir` passed to
-`plan()`, `doctor()`, or `run()`. It can identify a JavaScript or TypeScript
+Relay requires `runtime.artifacts` so NeMo Fabric can create the runtime-owned
+configuration passed to the adapter. The extension path can be absolute or
+relative to `environment.workspace`. It can identify a JavaScript or TypeScript
 file or a Pi extension package directory. Unlike user-configured Pi extensions,
-the Relay extension does not need to be inside `environment.workspace`.
+the Relay extension does not need to remain inside `environment.workspace` when
+an absolute path is used.
 
 When the runtime starts, the adapter validates the Relay 0.9 CLI, writes an
 explicit `plugins.toml`, starts a loopback gateway, and loads the extension into
@@ -141,6 +144,12 @@ the isolated Pi session. The result includes `relay_runtime` and
 `relay_artifacts` in `output`. The gateway can produce ATOF, ATIF,
 OpenTelemetry, and OpenInference output from the Relay observability
 configuration.
+
+The adapter waits up to five seconds for a local ATIF trajectory to finalize.
+If it does not finalize, the invocation result remains usable, a warning is
+written to the adapter log, and `relay_artifacts` omits ATIF entries while
+retaining any ATOF files that were written. The runtime remains available for
+subsequent turns.
 
 Session, turn, and tool telemetry does not depend on model redirection. Model
 telemetry is available only when Relay supports the selected model API and the

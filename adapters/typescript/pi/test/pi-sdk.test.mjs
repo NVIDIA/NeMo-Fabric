@@ -335,3 +335,66 @@ test("loads the Relay extension explicitly and drains session shutdown before ga
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("reports an adapter-injected Relay extension load failure separately", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-extension-error-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default {\n", "utf8");
+  let relayStopped = false;
+  const factory = new PiSdkSessionFactory({
+    async start() {
+      return {
+        extensionPath,
+        pluginConfig: { version: 1, components: [] },
+        atifMatchers: [],
+        async output() {
+          return {};
+        },
+        async stop() {
+          relayStopped = true;
+        },
+      };
+    },
+  });
+  try {
+    await assert.rejects(
+      factory.create({
+        agentName: "pi-relay-test",
+        baseDir: workspace,
+        config: {
+          harness: { settings: { relay_extension_path: extensionPath } },
+          models: {
+            default: {
+              api_key_env: "TEST_API_KEY",
+              model: "gpt-4.1-mini",
+              provider: "openai",
+            },
+          },
+          tools: { enabled: [] },
+        },
+        runtimeContext: {
+          artifacts: {},
+          environment: {
+            control_location: "external_control",
+            env: { TEST_API_KEY: "not-a-real-key" },
+            environment_id: "environment-1",
+            ownership: "caller_owned",
+            provider: "local",
+            workspace,
+          },
+          invocation_id: "start",
+          request_id: "request-start",
+          runtime_id: "runtime-1",
+          telemetry: { relay_enabled: true },
+        },
+      }),
+      (error) =>
+        error.code === "pi_relay_extension_load_failed" &&
+        error.message.includes("matching NeMo Relay 0.9 release") &&
+        error.metadata.relay_error.length > 0,
+    );
+    assert.equal(relayStopped, true);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

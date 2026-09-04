@@ -249,9 +249,12 @@ supervise the CLI gateway automatically.
 The Pi adapter also requires a user-supplied path to the Relay Pi extension
 from a matching 0.9 source checkout. Set
 `harness.settings.relay_extension_path` to the extension file or package
-directory. Refer to the [Pi adapter guide](../integrations/harness/pi.mdx) for
-the complete configuration. Relay-backed `Runtime.invoke_stream()` correlation
-is not yet supported for Pi.
+directory; relative paths resolve from `environment.workspace`. Relay-enabled
+Pi configurations must also set `runtime.artifacts` so NeMo Fabric can provide
+the adapter-owned Relay configuration. Refer to the
+[Pi adapter guide](../integrations/harness/pi.mdx) for the complete
+configuration. Relay-backed `Runtime.invoke_stream()` correlation is not yet
+supported for Pi.
 
 ## Source Installation Method
 

@@ -32,7 +32,11 @@
         },
         "uniqueItems": true
       },
-      "relay_extension_path": {"type": "string", "minLength": 1}
+      "relay_extension_path": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9 Pi extension"
+      }
     },
     "additionalProperties": false
   },

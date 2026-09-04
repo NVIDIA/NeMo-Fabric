@@ -1,13 +1,21 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFile, stat } from "node:fs/promises";
+import { watch, type FSWatcher } from "node:fs";
+import { realpath, stat } from "node:fs/promises";
+import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { collectRelayArtifacts, type RelayPluginConfig } from "./relay-config.js";
+import {
+  collectAtifArtifacts,
+  matchesRelayAtifPath,
+  prepareRelayAtifMatchers,
+  type RelayAtifMatcher,
+  type RelayPluginConfig,
+} from "./relay-config.js";
 
 export const ATIF_FINALIZATION_TIMEOUT_MS = 5_000;
-export const ATIF_POLL_INTERVAL_MS = 50;
+export const ATIF_FALLBACK_POLL_INTERVAL_MS = 50;
 
 export type AtifSnapshot = Map<string, string>;
 
@@ -19,7 +27,10 @@ function pluginComponents(pluginConfig: RelayPluginConfig): unknown[] {
   return Array.isArray(pluginConfig.components) ? pluginConfig.components : [];
 }
 
-export function expectsLocalAtif(pluginConfig: RelayPluginConfig): boolean {
+export function expectsLocalAtif(pluginConfig: RelayPluginConfig, matchers?: RelayAtifMatcher[]): boolean {
+  if (matchers !== undefined) {
+    return matchers.some((matcher) => matcher.local);
+  }
   for (const component of pluginComponents(pluginConfig)) {
     if (
       !isRecord(component) ||
@@ -41,17 +52,21 @@ async function fingerprint(path: string): Promise<string | undefined> {
   try {
     const value = await stat(path, { bigint: true });
     return `${value.dev}:${value.ino}:${value.size}:${value.mtimeNs}`;
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (isRecord(error) && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
   }
 }
 
-export async function snapshotAtifFiles(pluginConfig: RelayPluginConfig): Promise<AtifSnapshot> {
+export async function snapshotAtifFiles(
+  pluginConfig: RelayPluginConfig,
+  matchers?: RelayAtifMatcher[],
+): Promise<AtifSnapshot> {
   const snapshot: AtifSnapshot = new Map();
-  for (const artifact of await collectRelayArtifacts(pluginConfig)) {
-    if (artifact.kind !== "atif") {
-      continue;
-    }
+  const prepared = matchers ?? (await prepareRelayAtifMatchers(pluginConfig));
+  for (const artifact of await collectAtifArtifacts(prepared, { localOnly: true, strict: true })) {
     const value = await fingerprint(artifact.path);
     if (value !== undefined) {
       snapshot.set(artifact.path, value);
@@ -60,34 +75,57 @@ export async function snapshotAtifFiles(pluginConfig: RelayPluginConfig): Promis
   return snapshot;
 }
 
-async function finalizedAtifPath(pluginConfig: RelayPluginConfig, before: AtifSnapshot): Promise<string | undefined> {
-  const current = await snapshotAtifFiles(pluginConfig);
+async function finalizedAtifPath(
+  pluginConfig: RelayPluginConfig,
+  before: AtifSnapshot,
+  matchers?: RelayAtifMatcher[],
+): Promise<string | undefined> {
+  const current = await snapshotAtifFiles(pluginConfig, matchers);
   for (const path of [...current.keys()].sort()) {
     if (before.get(path) === current.get(path)) {
       continue;
     }
-    try {
-      const document: unknown = JSON.parse(await readFile(path, "utf8"));
-      if (isRecord(document)) {
-        return path;
-      }
-    } catch {
-      // Relay writes directly to the final path, so retry partial JSON.
-    }
+    return path;
   }
   return undefined;
 }
 
-export async function waitForFinalizedAtif(
+async function changedAtifPath(
+  path: string,
+  matchers: RelayAtifMatcher[],
+  before: AtifSnapshot,
+): Promise<string | undefined> {
+  let candidate: string;
+  try {
+    candidate = await realpath(path);
+  } catch (error) {
+    if (isRecord(error) && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+  if (!matchers.some((matcher) => matcher.local && matchesRelayAtifPath(matcher, candidate))) {
+    return undefined;
+  }
+  const current = await fingerprint(candidate);
+  return current !== undefined && before.get(candidate) !== current ? candidate : undefined;
+}
+
+class AtifWatchUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("NeMo Relay ATIF artifact watching is unavailable", { cause });
+  }
+}
+
+async function pollForFinalizedAtif(
   pluginConfig: RelayPluginConfig,
   before: AtifSnapshot,
-  options: { timeoutMs?: number; pollIntervalMs?: number } = {},
+  matchers: RelayAtifMatcher[],
+  timeoutMs: number,
 ): Promise<string | undefined> {
-  const timeoutMs = options.timeoutMs ?? ATIF_FINALIZATION_TIMEOUT_MS;
-  const pollIntervalMs = options.pollIntervalMs ?? ATIF_POLL_INTERVAL_MS;
   const deadline = performance.now() + timeoutMs;
   while (true) {
-    const path = await finalizedAtifPath(pluginConfig, before);
+    const path = await finalizedAtifPath(pluginConfig, before, matchers);
     if (path !== undefined) {
       return path;
     }
@@ -95,6 +133,91 @@ export async function waitForFinalizedAtif(
     if (remaining <= 0) {
       return undefined;
     }
-    await delay(Math.min(pollIntervalMs, remaining));
+    await delay(Math.min(ATIF_FALLBACK_POLL_INTERVAL_MS, remaining));
+  }
+}
+
+export async function waitForFinalizedAtif(
+  pluginConfig: RelayPluginConfig,
+  before: AtifSnapshot,
+  options: { matchers?: RelayAtifMatcher[]; timeoutMs?: number } = {},
+): Promise<string | undefined> {
+  const timeoutMs = options.timeoutMs ?? ATIF_FINALIZATION_TIMEOUT_MS;
+  const startedAt = performance.now();
+  const matchers = options.matchers ?? (await prepareRelayAtifMatchers(pluginConfig));
+  const localMatchers = matchers.filter((matcher) => matcher.local);
+  const directories = [...new Set(localMatchers.map((matcher) => matcher.directory))];
+  const watchers: FSWatcher[] = [];
+  try {
+    return await new Promise((resolvePromise, reject) => {
+      let complete = false;
+      const finish = (error?: unknown, path?: string): void => {
+        if (complete) {
+          return;
+        }
+        complete = true;
+        clearTimeout(timer);
+        for (const watcher of watchers) {
+          watcher.close();
+        }
+        if (error !== undefined) {
+          reject(error);
+        } else {
+          resolvePromise(path);
+        }
+      };
+      const check = (path: string): void => {
+        void changedAtifPath(path, localMatchers, before).then(
+          (changed) => {
+            if (changed !== undefined) {
+              finish(undefined, changed);
+            }
+          },
+          (error: unknown) => finish(error),
+        );
+      };
+      const timer = setTimeout(() => finish(), timeoutMs);
+      try {
+        for (const directory of directories) {
+          const watcher = watch(directory, { persistent: false, recursive: true }, (_event, filename) => {
+            if (filename === null) {
+              void finalizedAtifPath(pluginConfig, before, matchers).then(
+                (changed) => {
+                  if (changed !== undefined) {
+                    finish(undefined, changed);
+                  }
+                },
+                (error: unknown) => finish(error),
+              );
+            } else {
+              check(resolve(directory, filename));
+            }
+          });
+          watcher.once("error", (error) => finish(new AtifWatchUnavailableError(error)));
+          watchers.push(watcher);
+        }
+      } catch (error) {
+        finish(new AtifWatchUnavailableError(error));
+        return;
+      }
+      void finalizedAtifPath(pluginConfig, before, matchers).then(
+        (changed) => {
+          if (changed !== undefined) {
+            finish(undefined, changed);
+          }
+        },
+        (error: unknown) => finish(error),
+      );
+    });
+  } catch (error) {
+    if (!(error instanceof AtifWatchUnavailableError)) {
+      throw error;
+    }
+    return pollForFinalizedAtif(
+      pluginConfig,
+      before,
+      matchers,
+      Math.max(0, timeoutMs - (performance.now() - startedAt)),
+    );
   }
 }

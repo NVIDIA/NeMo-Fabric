@@ -61,6 +61,10 @@ def test_pi_descriptor_declares_the_supported_surface():
     assert descriptor["settings_schema"]["properties"]["relay_extension_path"] == {
         "type": "string",
         "minLength": 1,
+        "description": (
+            "Absolute path or environment.workspace-relative path to the "
+            "NeMo Relay 0.9 Pi extension"
+        ),
     }
     assert descriptor["telemetry"] == {
         "providers": {

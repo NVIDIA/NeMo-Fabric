@@ -23,6 +23,13 @@ export interface RelayArtifact {
   path: string;
 }
 
+export interface RelayAtifMatcher {
+  directory: string;
+  local: boolean;
+  pattern: RegExp;
+  template: string;
+}
+
 const OTEL_ENDPOINT_TYPES = new Set(["full", "gen_ai", "openinference"]);
 const LEGACY_FLAT_OTEL_FIELDS = new Set([
   "attribute_mappings",
@@ -229,7 +236,7 @@ function tomlScalar(value: unknown): string {
   if (typeof value === "boolean") {
     return value ? "true" : "false";
   }
-  if (typeof value === "number" && Number.isSafeInteger(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return String(value);
   }
   if (Array.isArray(value) && value.every((item) => !isRecord(item))) {
@@ -242,16 +249,13 @@ function isScalar(value: unknown): boolean {
   return (
     typeof value === "string" ||
     typeof value === "boolean" ||
-    (typeof value === "number" && Number.isSafeInteger(value)) ||
+    (typeof value === "number" && Number.isFinite(value)) ||
     (Array.isArray(value) && (value.length === 0 || value.every((item) => !isRecord(item))))
   );
 }
 
 function emitTomlTable(lines: string[], value: Record<string, unknown>, path: string[]): void {
   for (const [key, item] of Object.entries(value)) {
-    if (item === null || item === undefined) {
-      continue;
-    }
     if (isScalar(item)) {
       lines.push(`${tomlKey(key)} = ${tomlScalar(item)}`);
     }
@@ -351,13 +355,99 @@ async function directoryEntries(directory: string): Promise<string[]> {
 }
 
 function templatePattern(template: string): RegExp {
-  const escaped = template
-    .split("{session_id}")
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  return new RegExp(`^${escaped.join(".*")}$`);
+  const normalized = template.replaceAll("\\", "/");
+  const parts = normalized.split(/(\{[^{}]+\})/u);
+  const pattern = parts
+    .map((part) =>
+      /^\{[^{}]+\}$/u.test(part) ? "[^/]+" : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    )
+    .join("");
+  return new RegExp(`^${pattern}$`, "u");
 }
 
-export async function collectRelayArtifacts(pluginConfig: RelayPluginConfig): Promise<RelayArtifact[]> {
+export function matchesRelayAtifPath(matcher: RelayAtifMatcher, path: string): boolean {
+  const name = relative(matcher.directory, path).split(sep).join("/");
+  return name !== ".." && !name.startsWith("../") && !isAbsolute(name) && matcher.pattern.test(name);
+}
+
+export async function prepareRelayAtifMatchers(pluginConfig: RelayPluginConfig): Promise<RelayAtifMatcher[]> {
+  const matchers: RelayAtifMatcher[] = [];
+  for (const component of components(pluginConfig)) {
+    if (!isRecord(component) || component.kind !== "observability" || !isRecord(component.config)) {
+      continue;
+    }
+    const atif = component.config.atif;
+    if (!isRecord(atif) || atif.enabled !== true) {
+      continue;
+    }
+    const template = atif.filename_template;
+    if (typeof template !== "string" || template.length === 0) {
+      continue;
+    }
+    const directory = await artifactDirectory(atif.output_directory);
+    if (directory === undefined) {
+      throw new Error("NeMo Relay ATIF output directory could not be prepared");
+    }
+    matchers.push({
+      directory,
+      local: !Array.isArray(atif.storage) || atif.storage.length === 0,
+      pattern: templatePattern(template),
+      template,
+    });
+  }
+  return matchers;
+}
+
+async function matchingAtifFiles(matcher: RelayAtifMatcher, strict = false): Promise<string[]> {
+  const files: string[] = [];
+  const visit = async (directory: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if (strict) {
+        throw error;
+      }
+      return;
+    }
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+        continue;
+      }
+      if (matchesRelayAtifPath(matcher, path)) {
+        const artifact = await artifactFile(path, matcher.directory);
+        if (artifact !== undefined) {
+          files.push(artifact);
+        }
+      }
+    }
+  };
+  await visit(matcher.directory);
+  return files;
+}
+
+export async function collectAtifArtifacts(
+  matchers: RelayAtifMatcher[],
+  options: { localOnly?: boolean; strict?: boolean } = {},
+): Promise<RelayArtifact[]> {
+  const artifacts: RelayArtifact[] = [];
+  for (const matcher of matchers) {
+    if (options.localOnly === true && !matcher.local) {
+      continue;
+    }
+    for (const path of await matchingAtifFiles(matcher, options.strict)) {
+      artifacts.push({ kind: "atif", path });
+    }
+  }
+  return artifacts.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+export async function collectRelayArtifacts(
+  pluginConfig: RelayPluginConfig,
+  atifMatchers?: RelayAtifMatcher[],
+): Promise<RelayArtifact[]> {
   const artifacts: RelayArtifact[] = [];
   for (const component of components(pluginConfig)) {
     if (!isRecord(component) || component.kind !== "observability" || !isRecord(component.config)) {
@@ -385,29 +475,8 @@ export async function collectRelayArtifacts(pluginConfig: RelayPluginConfig): Pr
         }
       }
     }
-    const atif = component.config.atif;
-    if (!isRecord(atif) || atif.enabled !== true) {
-      continue;
-    }
-    const directory = await artifactDirectory(atif.output_directory);
-    const template = atif.filename_template;
-    if (
-      directory === undefined ||
-      typeof template !== "string" ||
-      basename(template) !== template ||
-      !template.includes("{session_id}")
-    ) {
-      continue;
-    }
-    const pattern = templatePattern(template);
-    for (const entry of await directoryEntries(directory)) {
-      if (pattern.test(entry)) {
-        const path = await existingLocalFile(directory, entry);
-        if (path !== undefined) {
-          artifacts.push({ kind: "atif", path });
-        }
-      }
-    }
   }
+  const matchers = atifMatchers ?? (await prepareRelayAtifMatchers(pluginConfig).catch(() => []));
+  artifacts.push(...(await collectAtifArtifacts(matchers)));
   return artifacts.sort((left, right) => left.path.localeCompare(right.path));
 }

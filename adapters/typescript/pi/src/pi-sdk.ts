@@ -254,6 +254,20 @@ function rejectToolCollisions(customTools: ToolDefinition[], configuredExtension
   }
 }
 
+function relayExtensionLoadErrors(
+  errors: Array<{ path: string; error: string }>,
+  relay: PiRelayRuntime | undefined,
+  workspace: string,
+): Array<{ path: string; error: string }> {
+  if (relay === undefined) {
+    return [];
+  }
+  return errors.filter((error) => {
+    const path = resolve(workspace, error.path);
+    return path === relay.extensionPath || containedBy(relay.extensionPath, path);
+  });
+}
+
 async function resolveExtensionPaths(workspace: string, configured: string[]): Promise<string[]> {
   const resolved: string[] = [];
   for (const entry of configured) {
@@ -500,6 +514,19 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       });
       await resourceLoader.reload();
       const extensionErrors = resourceLoader.getExtensions().errors;
+      const relayErrors = relayExtensionLoadErrors(extensionErrors, relay, workspace);
+      if (relayErrors.length > 0) {
+        throw new LifecycleError(
+          "pi_relay_extension_load_failed",
+          "The configured NeMo Relay Pi extension failed to load; use an extension from the matching NeMo Relay 0.9 release",
+          {
+            metadata: {
+              count: relayErrors.length,
+              relay_error: relayErrors.map((error) => error.error).join("; "),
+            },
+          },
+        );
+      }
       if (extensionErrors.length > 0) {
         throw new LifecycleError("pi_extension_load_failed", "One or more configured Pi extensions failed to load", {
           metadata: { count: extensionErrors.length },

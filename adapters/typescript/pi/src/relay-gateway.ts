@@ -155,9 +155,12 @@ export async function waitForRelayGateway(
     }
     try {
       const response = await fetchRequest(healthUrl, {
+        method: "HEAD",
         signal: AbortSignal.timeout(1_000),
       });
-      if (response.ok) {
+      const ready = response.ok;
+      await response.body?.cancel();
+      if (ready) {
         return;
       }
     } catch {
@@ -250,7 +253,6 @@ export async function startRelayGateway(
   try {
     child = (options.spawn ?? spawn)(launch.executable, args, {
       cwd,
-      detached: true,
       env: { ...process.env },
       stdio: ["ignore", log.fd, log.fd],
     });

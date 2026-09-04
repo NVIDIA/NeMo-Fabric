@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -223,12 +223,16 @@ test("adds Relay details to results and stops the Pi session before the gateway"
 });
 
 test(
-  "an ATIF finalization timeout returns no artifacts without poisoning the runtime",
+  "an ATIF finalization timeout preserves ATOF without poisoning the runtime",
   { timeout: 10_000 },
   async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-timeout-")));
     const atifDir = join(root, "atif");
+    const atofDir = join(root, "atof");
     await mkdir(atifDir);
+    await mkdir(atofDir);
+    const atofPath = join(atofDir, "events.atof.jsonl");
+    await writeFile(atofPath, "{}\n", "utf8");
     let promptCount = 0;
     const relay = {
       pluginConfig: {
@@ -237,6 +241,10 @@ test(
           {
             kind: "observability",
             config: {
+              atof: {
+                enabled: true,
+                sinks: [{ type: "file", output_directory: atofDir, filename: "events.atof.jsonl" }],
+              },
               atif: {
                 enabled: true,
                 output_directory: atifDir,
@@ -269,7 +277,7 @@ test(
     try {
       await runtime.start(startInput());
       const timedOut = await runtime.invoke({ input: "trace me" }, context);
-      assert.deepEqual(timedOut.output.relay_artifacts, []);
+      assert.deepEqual(timedOut.output.relay_artifacts, [{ kind: "atof", path: atofPath }]);
 
       relay.pluginConfig.components = [];
       const next = await runtime.invoke({ input: "still usable" }, context);
@@ -283,7 +291,8 @@ test(
 );
 
 test("still stops Relay when Pi session shutdown fails", async () => {
-  let relayStopped = false;
+  let sessionStopAttempts = 0;
+  let relayStopAttempts = 0;
   const sessionFailure = new Error("session shutdown failed");
   const runtime = new PiAdapterRuntime({
     async create() {
@@ -294,14 +303,17 @@ test("still stops Relay when Pi session shutdown fails", async () => {
             return {};
           },
           async stop() {
-            relayStopped = true;
+            relayStopAttempts += 1;
           },
         },
         async prompt() {
           return { accepted: true, text: "ok" };
         },
         async stop() {
-          throw sessionFailure;
+          sessionStopAttempts += 1;
+          if (sessionStopAttempts === 1) {
+            throw sessionFailure;
+          }
         },
       };
     },
@@ -309,6 +321,45 @@ test("still stops Relay when Pi session shutdown fails", async () => {
   await runtime.start(startInput());
 
   await assert.rejects(runtime.stop(), sessionFailure);
-  assert.equal(relayStopped, true);
+  assert.equal(relayStopAttempts, 1);
   await runtime.stop();
+  assert.equal(sessionStopAttempts, 2);
+  assert.equal(relayStopAttempts, 2);
+});
+
+test("retries Relay cleanup when gateway shutdown fails", async () => {
+  let sessionStopAttempts = 0;
+  let relayStopAttempts = 0;
+  const relayFailure = new Error("gateway shutdown failed");
+  const runtime = new PiAdapterRuntime({
+    async create() {
+      return {
+        relay: {
+          pluginConfig: { version: 1, components: [] },
+          async output() {
+            return {};
+          },
+          async stop() {
+            relayStopAttempts += 1;
+            if (relayStopAttempts === 1) {
+              throw relayFailure;
+            }
+          },
+        },
+        async prompt() {
+          return { accepted: true, text: "ok" };
+        },
+        async stop() {
+          sessionStopAttempts += 1;
+        },
+      };
+    },
+  });
+  await runtime.start(startInput());
+
+  await assert.rejects(runtime.stop(), relayFailure);
+  await runtime.stop();
+  await runtime.stop();
+  assert.equal(sessionStopAttempts, 2);
+  assert.equal(relayStopAttempts, 2);
 });

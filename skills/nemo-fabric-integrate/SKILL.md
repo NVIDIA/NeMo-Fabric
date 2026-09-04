@@ -70,6 +70,12 @@ runtime assumptions but never installs harnesses or credentials at run time.
   not install Hermes Agent. Claude and Codex do not provide `relay`; their
   `harness` and `full` extras install the supported `nemo-relay` CLI alongside
   the harness SDK.
+- The npm-distributed Pi adapter requires a separately installed compatible Pi
+  SDK harness. Relay-enabled Pi runs require a `nemo-relay` CLI in the
+  `>=0.9.0,<0.10.0` range, `runtime.artifacts`, and
+  `harness.settings.relay_extension_path`. Relative Relay extension paths
+  resolve from `environment.workspace`. The current Claude and Codex Relay CLI
+  range cannot coexist with Pi's range in one environment.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise
@@ -221,7 +227,9 @@ Pick the smallest lifecycle the consumer needs:
   completing its chunked request body because yielded records can be incomplete.
   The `streaming=True` flag does not enable NeMo Relay by itself. Without
   `streaming=True`, startup leaves the NeMo Relay configuration unchanged and
-  does not inject the SDK-owned ATOF stream sink.
+  does not inject the SDK-owned ATOF stream sink. This lifecycle requires an
+  adapter whose descriptor declares `capabilities.streaming`; the Pi adapter
+  currently does not support it.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
