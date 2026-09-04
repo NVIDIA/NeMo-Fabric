@@ -370,7 +370,9 @@ def _authorize(request: Request, token: str | None) -> Response | None:
     if (
         len(parts) == 2
         and parts[0].lower() == "bearer"
-        and secrets.compare_digest(parts[1].encode(), token.encode())
+        and parts[1].isascii()
+        # Use constant-time comparison to prevent timing attacks
+        and secrets.compare_digest(parts[1], token)
     ):
         return None
     return JSONResponse(

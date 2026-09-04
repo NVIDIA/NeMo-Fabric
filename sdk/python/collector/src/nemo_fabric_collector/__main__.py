@@ -95,6 +95,8 @@ def _token_from_environment(
 
     if not token:
         parser.error(f"{option} names an unset or empty environment variable")
+    if not token.isascii():
+        parser.error(f"{option} must reference an ASCII token")
     if len(token) < _MIN_TOKEN_LENGTH:
         parser.error(
             f"{option} must reference a token containing at least "
