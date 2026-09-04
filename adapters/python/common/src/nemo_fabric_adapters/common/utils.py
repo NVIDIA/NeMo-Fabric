@@ -451,15 +451,10 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
         "timeout_millis",
         "transport",
     }
-    seen_kinds: set[str] = set()
     for component in _relay_components(plugin_config):
         if not isinstance(component, dict) or component.get("enabled") is False:
             continue
         kind = component.get("kind")
-        if isinstance(kind, str):
-            if kind in seen_kinds:
-                raise ValueError(f"duplicate NeMo Relay plugin component kind {kind!r}")
-            seen_kinds.add(kind)
         if kind != "observability":
             continue
         config = component.get("config")
@@ -527,6 +522,19 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
                     "NeMo Relay OpenTelemetry endpoint must be a non-empty "
                     f"string for opentelemetry.endpoints[{index}]"
                 )
+
+
+def _validate_unique_relay_component_kinds(plugin_config: dict[str, Any]) -> None:
+    seen_kinds: set[str] = set()
+    for component in _relay_components(plugin_config):
+        if not isinstance(component, dict):
+            continue
+        kind = component.get("kind")
+        if not isinstance(kind, str):
+            continue
+        if kind in seen_kinds:
+            raise ValueError(f"duplicate NeMo Relay plugin component kind {kind!r}")
+        seen_kinds.add(kind)
 
 
 def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -719,6 +727,7 @@ def write_relay_configs(
                 ],
             }
             validate_relay_observability_v3(enabled_plugin_config)
+            _validate_unique_relay_component_kinds(enabled_plugin_config)
         config_dir.mkdir(parents=True, exist_ok=True)
         relay_config_path = None
         plugin_config_path = None

@@ -212,6 +212,7 @@ Relay 0.9 source checkout and install the CLI from that checkout:
 ```bash
 git clone https://github.com/NVIDIA/NeMo-Relay.git
 cd NeMo-Relay
+git checkout 30b684dbb09231ee956d40abad9af253596a81ad
 cargo install --path crates/cli --locked
 ```
 
@@ -228,22 +229,19 @@ curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
   NEMO_RELAY_VERSION=0.7.2 sh -s --
 ```
 
-On Windows, install the pinned CLI with PowerShell:
+On Windows, install the pinned Claude and Codex CLI with PowerShell:
 
 ```powershell
 $env:NEMO_RELAY_VERSION = "0.7.2"
 irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
 ```
 
-Set `$env:NEMO_RELAY_VERSION = "0.9.0"` instead for Pi.
-
-If `cargo-binstall` is available, install the pinned CLI with Cargo:
+If `cargo-binstall` is available, install the pinned Claude and Codex CLI with
+Cargo:
 
 ```bash
 cargo binstall nemo-relay-cli --version 0.7.2
 ```
-
-Use `--version 0.9.0` instead for Pi.
 
 After installation, run `nemo-relay --version` and confirm the version is in the
 range required by the adapter. When Relay is enabled with

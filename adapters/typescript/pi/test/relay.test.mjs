@@ -848,7 +848,7 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
       }).start(input, model),
       (error) =>
         error.code === "pi_relay_unavailable" &&
-        error.message.includes("matching source checkout") &&
+        error.message.includes("30b684dbb09231ee956d40abad9af253596a81ad") &&
         error.metadata.relay_error === "missing",
     );
     await assert.rejects(

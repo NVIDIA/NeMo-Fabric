@@ -133,8 +133,6 @@ export class PiAdapterRuntime implements AdapterRuntime {
             `NeMo Relay did not finalize an ATIF artifact within ${ATIF_FINALIZATION_TIMEOUT_MS} ms\n`,
           );
           relayArtifacts = await collectNonAtifArtifacts(relay);
-        } else if (atifSnapshotFailed) {
-          relayArtifacts = await collectRelayArtifacts(relay.pluginConfig, usableAtifMatchers);
         }
       } catch (error) {
         const detail = error instanceof Error ? `: ${error.message}` : "";
@@ -200,10 +198,19 @@ export class PiAdapterRuntime implements AdapterRuntime {
       try {
         await session.relay?.stop();
       } catch (error) {
-        failure =
-          failure === undefined
-            ? error
-            : new AggregateError([failure, error], "Pi session and NeMo Relay cleanup failed");
+        if (failure === undefined) {
+          failure = error;
+        } else if (error instanceof LifecycleError) {
+          failure = new LifecycleError(error.code, "Pi session and NeMo Relay cleanup failed", {
+            retryable: error.retryable,
+            metadata: {
+              ...error.metadata,
+              session_error: failure instanceof Error ? failure.message : String(failure),
+            },
+          });
+        } else {
+          failure = new AggregateError([failure, error], "Pi session and NeMo Relay cleanup failed");
+        }
       }
       if (failure !== undefined) {
         this.unusable = true;

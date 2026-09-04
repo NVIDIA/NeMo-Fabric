@@ -76,12 +76,13 @@ checkout and install the CLI separately from the npm adapter:
 ```bash
 git clone https://github.com/NVIDIA/NeMo-Relay.git
 cd NeMo-Relay
+git checkout 30b684dbb09231ee956d40abad9af253596a81ad
 cargo install --path crates/cli --locked
 ```
 
 The adapter does not bundle the Relay Pi extension. Obtain the extension from
-a matching NeMo Relay 0.9 source checkout, such as
-[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/main/crates/cli/assets/pi-extension),
+that same source revision, such as
+[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/30b684dbb09231ee956d40abad9af253596a81ad/crates/cli/assets/pi-extension),
 and configure its path as described in the next section.
 
 ## Configure the Adapter

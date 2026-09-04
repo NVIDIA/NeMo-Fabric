@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { LifecycleError } from "nemo-fabric-adapters-common";
+
 import { prepareRelayAtifMatchers } from "../dist/relay-config.js";
 import { PiAdapterRuntime } from "../dist/runtime.js";
 
@@ -399,7 +401,12 @@ test("still stops Relay when Pi session shutdown fails", async () => {
 
 test("preserves both Pi session and Relay shutdown failures", async () => {
   const sessionFailure = new Error("session shutdown failed");
-  const relayFailure = new Error("gateway shutdown failed");
+  const relayFailure = new LifecycleError("pi_relay_stop_failed", "gateway shutdown failed", {
+    metadata: {
+      gateway_log_path: "/tmp/gateway.log",
+      relay_error: "gateway still running",
+    },
+  });
   const runtime = new PiAdapterRuntime({
     async create() {
       return {
@@ -426,10 +433,12 @@ test("preserves both Pi session and Relay shutdown failures", async () => {
   await assert.rejects(
     runtime.stop(),
     (error) =>
-      error instanceof AggregateError &&
+      error instanceof LifecycleError &&
+      error.code === "pi_relay_stop_failed" &&
       error.message === "Pi session and NeMo Relay cleanup failed" &&
-      error.errors[0] === sessionFailure &&
-      error.errors[1] === relayFailure,
+      error.metadata.gateway_log_path === "/tmp/gateway.log" &&
+      error.metadata.relay_error === "gateway still running" &&
+      error.metadata.session_error === "session shutdown failed",
   );
 });
 

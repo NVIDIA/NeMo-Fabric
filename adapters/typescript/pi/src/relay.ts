@@ -27,7 +27,8 @@ import {
 } from "./relay-gateway.js";
 
 const RELAY_INSTALL_COMMAND =
-  "Build and install the NeMo Relay 0.9 CLI from a matching source checkout with " +
+  "Build and install the NeMo Relay 0.9 CLI from source revision " +
+  "30b684dbb09231ee956d40abad9af253596a81ad with " +
   "cargo install --path crates/cli --locked, then ensure nemo-relay is on PATH";
 const RELAY_EXTENSION_REMEDIATION =
   "set harness.settings.relay_extension_path to the NeMo Relay 0.9 Pi extension file or package directory";

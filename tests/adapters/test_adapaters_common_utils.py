@@ -1654,7 +1654,28 @@ def test_write_relay_configs_preserves_v3_plugin_config_exactly(tmp_path: Path):
     assert plugin_config == original
 
 
-def test_validate_relay_observability_v3_rejects_duplicate_enabled_kinds():
+def test_validate_relay_observability_v3_allows_duplicate_dynamic_worker_kinds():
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "my_worker",
+                "enabled": True,
+                "config": {"worker": "first"},
+            },
+            {
+                "kind": "my_worker",
+                "enabled": True,
+                "config": {"worker": "second"},
+            },
+        ],
+    }
+
+    common_utils.validate_relay_observability_v3(plugin_config)
+
+
+def test_write_relay_configs_rejects_duplicate_enabled_kinds(tmp_path: Path):
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "nested" / "relay.json")
     plugin_config = {
         "version": 1,
         "components": [
@@ -1675,7 +1696,9 @@ def test_validate_relay_observability_v3_rejects_duplicate_enabled_kinds():
         ValueError,
         match="duplicate NeMo Relay plugin component kind 'observability'",
     ):
-        common_utils.validate_relay_observability_v3(plugin_config)
+        common_utils.write_relay_configs(plugin_config=plugin_config)
+
+    assert not (tmp_path / "nested" / "relay-config").exists()
 
 
 def test_write_relay_configs_rejects_non_list_components(tmp_path: Path):
