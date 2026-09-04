@@ -27,6 +27,7 @@ from nemo_fabric.runtime import (
 )
 from nemo_fabric.streaming import (
     _AtofStreamListener,
+    _configured_stream_listener,
     _relay_enabled,
     _with_stream_sink,
 )
@@ -195,15 +196,15 @@ class Fabric:
 
         Each call starts a new logical runtime. Runtime-scoped overrides are
         recursively merged below invocation-scoped overrides. Set
-        ``streaming=True`` with NVIDIA NeMo Relay enabled to provision the SDK-owned
-        ATOF endpoint used by ``Runtime.invoke_stream()``.
+        ``streaming=True`` with NVIDIA NeMo Relay enabled to bind the configured
+        or SDK-generated ATOF endpoint used by ``Runtime.invoke_stream()``.
 
         Args:
             config: Complete typed ``FabricConfig``.
             base_dir: Base directory for resolving relative paths.
             overrides: JSON-compatible overrides applied to every invocation
                 in the runtime unless superseded by invocation overrides.
-            streaming: Whether to provision NeMo Relay ATOF streaming for
+            streaming: Whether to bind NeMo Relay ATOF streaming for
                 ``Runtime.invoke_stream()``.
 
         Returns:
@@ -224,9 +225,14 @@ class Fabric:
         if streaming and not _relay_enabled(config):
             raise FabricConfigError("streaming requires Relay telemetry to be enabled")
         if streaming:
+            stream_listener = _configured_stream_listener(config)
             try:
-                stream_listener = await _AtofStreamListener().start()
-                runtime_config = _with_stream_sink(config, stream_listener.url)
+                if stream_listener is None:
+                    stream_listener = _AtofStreamListener()
+                    await stream_listener.start()
+                    runtime_config = _with_stream_sink(config, stream_listener.url)
+                else:
+                    await stream_listener.start()
             except Exception as error:
                 if stream_listener is not None:
                     await stream_listener.close()

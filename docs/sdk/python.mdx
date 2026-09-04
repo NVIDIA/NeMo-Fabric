@@ -621,7 +621,8 @@ Streaming has the following v0.1 constraints:
   and pass `streaming=True` to `start_runtime(...)`. The `streaming=True` flag
   does not enable NeMo Relay by itself; without NeMo Relay telemetry,
   `start_runtime(...)` raises `FabricConfigError`. With both settings, the SDK
-  binds its HTTP listener and injects the reserved ATOF stream sink.
+  binds the configured `nemo-fabric-stream` HTTP collector, or injects an
+  ephemeral sink and binds it when no reserved sink is configured.
 - The default `streaming=False` leaves the existing NeMo Relay configuration
   unchanged; it neither enables nor disables ATOF. It also avoids the additional
   listener HTTP and JSON parsing cost for runtimes that use only ATIF,
@@ -645,30 +646,36 @@ Streaming has the following v0.1 constraints:
 - Reconstruct nested and parallel work with `uuid` and `parent_uuid`. Stream
   order alone does not define the Deep Agents scope tree.
 - The listener correlates records to one NeMo Relay scope tree. Deep Agents and
-  Hermes roots carry the NeMo Fabric request ID. For Claude and Codex, the SDK
-  matches NeMo Relay turn scopes by their role and 1-based turn index. Records
-  outside the matched root and its descendants are discarded, so delayed
-  records from another turn do not enter the active stream. If the gateway
-  turn sequence does not align with the NeMo Fabric invocation sequence, the SDK
-  yields no uncorrelated records and emits a `RuntimeWarning` after natural
-  stream exhaustion. A short drain window only collects late records from the
-  matched tree; it does not define turn ownership.
+  Hermes roots carry the NeMo Fabric request ID. With `relay_streaming: true`,
+  Remote Agent services receive that ID as
+  `metadata.nemo_fabric_request_id` in the mapped request body and must carry it
+  into their Relay turn metadata. For Claude and Codex, the SDK matches NeMo
+  Relay turn scopes by their role and 1-based turn
+  index. Records outside the matched root and its descendants are discarded,
+  so delayed records from another turn do not enter the active stream. If the
+  gateway turn sequence does not align with the NeMo Fabric invocation
+  sequence, the SDK yields no uncorrelated records and emits a `RuntimeWarning`
+  after natural stream exhaustion. A short drain window only collects late
+  records from the matched tree; it does not define turn ownership.
 - The SDK listener binds to the address in `NEMO_FABRIC_STREAMING_HOST`, which
-  defaults to `127.0.0.1`. Override it when a Claude or Codex gateway must reach
-  the SDK through another network interface. Because the listener accepts ATOF
-  HTTP posts, restrict access to the configured interface. If async iteration
-  reaches the post-turn drain timeout without a NeMo Relay connection, or if
-  NeMo Relay sends data but no record matches the active turn, the SDK emits
-  one `RuntimeWarning` for that failure mode. It also warns if a NeMo Relay
-  upload terminates before completing its chunked request body because the
-  yielded stream can be incomplete. A caller that only awaits
-  `stream.result()` still receives the terminal result and does not run this
-  warning check.
+  defaults to `127.0.0.1`. Override it when a Claude or Codex gateway, or a
+  Remote Agent service, must reach the SDK through another network interface.
+  Because the listener accepts ATOF HTTP posts, restrict access to the
+  configured interface. If async iteration reaches the post-turn drain timeout
+  without a NeMo Relay connection, or if NeMo Relay sends data but no record
+  matches the active turn, the SDK emits one `RuntimeWarning` for that failure
+  mode. It also warns if a NeMo Relay upload terminates before completing its
+  chunked request body because the yielded stream can be incomplete. A caller
+  that only awaits `stream.result()` still receives the terminal result and
+  does not run this warning check.
 
 Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and
 require a release in the `>=0.7.2,<0.8` range. Their adapter `harness` and
 `full` extras install the supported CLI. Hermes Agent and Deep Agents use their
-in-process NeMo Relay integrations.
+in-process NeMo Relay integrations. Remote Agent services own their Relay
+installation and publish to the same configured `nemo-fabric-stream` collector
+URL that Fabric binds; the local adapter does not install or start Relay for
+the service. One collector URL can be bound by only one runtime at a time.
 
 ## Application-Owned Parallelism
 

@@ -12,7 +12,9 @@ import warnings
 from collections.abc import Coroutine
 from contextlib import suppress
 from typing import Any
+from urllib.parse import urlsplit
 
+from nemo_fabric.errors import FabricConfigError
 from nemo_fabric.models import (
     FabricConfig,
     RelayAtofConfig,
@@ -340,8 +342,8 @@ class _AtofStreamListener:
             self._warned_unconnected = True
             warnings.warn(
                 "No Relay ATOF connection reached the SDK listener. "
-                "Relay-backed streaming yielded no records. Claude and Codex "
-                f"gateways must be able to reach {self._host}.",
+                "Relay-backed streaming yielded no records. The Relay producer "
+                f"must be able to reach {self._host}.",
                 RuntimeWarning,
                 stacklevel=3,
             )
@@ -621,6 +623,58 @@ def _sink_name(
 ) -> str | None:
     name = sink.get("name") if isinstance(sink, dict) else getattr(sink, "name", None)
     return name if isinstance(name, str) else None
+
+
+def _configured_stream_listener(config: FabricConfig) -> _AtofStreamListener | None:
+    relay = config.relay
+    observability = relay.observability if isinstance(relay, RelayConfig) else None
+    atof = (
+        observability.atof
+        if isinstance(observability, RelayObservabilityConfig)
+        else None
+    )
+    if not isinstance(atof, RelayAtofConfig) or not atof.enabled:
+        return None
+    matches = [
+        sink for sink in atof.sinks or () if _sink_name(sink) == _STREAM_SINK_NAME
+    ]
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise FabricConfigError(
+            "Relay streaming requires exactly one nemo-fabric-stream sink"
+        )
+    sink = matches[0]
+    if not isinstance(sink, RelayAtofStreamSinkConfig):
+        raise FabricConfigError(
+            "Relay sink nemo-fabric-stream must be a stream sink"
+        )
+    if sink.transport not in {"http_post", "ndjson"}:
+        raise FabricConfigError(
+            "Relay sink nemo-fabric-stream must use http_post or ndjson"
+        )
+    try:
+        parsed = urlsplit(sink.url)
+        port = parsed.port
+    except ValueError as error:
+        raise FabricConfigError(
+            "Relay sink nemo-fabric-stream has an invalid URL"
+        ) from error
+    if (
+        parsed.scheme != "http"
+        or not parsed.hostname
+        or port is None
+        or parsed.path != "/atof"
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise FabricConfigError(
+            "Relay sink nemo-fabric-stream must use "
+            "http://<host>:<port>/atof without credentials, query, or fragment"
+        )
+    return _AtofStreamListener(host=parsed.hostname, port=port)
 
 
 def _with_stream_sink(config: FabricConfig, url: str) -> FabricConfig:
