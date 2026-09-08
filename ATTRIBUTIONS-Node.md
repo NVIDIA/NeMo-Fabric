@@ -19812,7 +19812,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## js-yaml - 4.3.1
+## js-yaml - 4.3.2
 **Repository URL**: https://github.com/nodeca/js-yaml
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
