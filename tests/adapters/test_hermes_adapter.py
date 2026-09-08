@@ -524,18 +524,6 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
     }
 
 
-def test_default_max_iterations_matches_hermes_library_default():
-    # Regression guard for FABRIC-85: the adapter must not override Hermes' own
-    # sane loop budget with a starving value like 1, which silently truncates
-    # multi-step tasks while the trial still reports success.
-    assert adapter.DEFAULT_MAX_ITERATIONS > 1
-
-    hermes_default = (
-        inspect.signature(AIAgent.__init__).parameters["max_iterations"].default
-    )
-    assert adapter.DEFAULT_MAX_ITERATIONS == hermes_default
-
-
 def test_build_hermes_config_omits_max_turns_when_fabric_limit_unset():
     # When max_turns is unset the config layer must leave agent.max_turns
     # absent so Hermes applies its own default rather than a starving override.

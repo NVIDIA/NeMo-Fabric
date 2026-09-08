@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import json
 
 import pytest
 
@@ -65,6 +66,21 @@ async def test_queue_rejects_record_larger_than_byte_limit():
         await queue.put({"uuid": "large"})
 
 
+async def test_queue_applies_byte_budget_backpressure():
+    record = {"uuid": "record", "payload": "x" * 16}
+    record_size = len(json.dumps(record).encode())
+    queue = _AtofRecordQueue(maxsize=10, max_bytes=record_size)
+    await queue.put(record)
+
+    blocked_put = asyncio.create_task(queue.put(record))
+    await asyncio.sleep(0)
+    assert not blocked_put.done()
+
+    assert await queue.get() == record
+    await blocked_put
+    assert await queue.get() == record
+
+
 async def test_collector_routes_only_scope_descendants():
     collector = AtofCollector()
     request_id = RequestId("request-1")
@@ -106,6 +122,18 @@ async def test_collector_routes_only_scope_descendants():
         ScopeUuid("root-1"),
         ScopeUuid("scope-2"),
     }
+
+
+async def test_standalone_collector_routes_records_without_request_metadata():
+    collector = AtofCollector(standalone=True)
+    request_id = RequestId("request-1")
+    record = {"kind": "scope", "scope_category": "start", "uuid": "root-1"}
+    await collector.register(request_id)
+
+    await collector.route(record, byte_size=1)
+
+    queue = collector.request_messages[request_id]
+    assert await queue.get() == record
 
 
 async def test_scope_end_routes_by_its_own_uuid():

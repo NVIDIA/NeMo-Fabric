@@ -102,7 +102,14 @@ async def test_hermes_persistent_host_with_relay(
     atof_records = [
         json.loads(line) for line in atof_path.read_text(encoding="utf-8").splitlines()
     ]
-    assert sum(record["name"] == "hermes.session.end" for record in atof_records) == 2
+    assert (
+        sum(
+            record["name"] == "hermes.session"
+            and record.get("scope_category") == "end"
+            for record in atof_records
+        )
+        == 2
+    )
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
@@ -448,7 +455,9 @@ class TestHermesE2E:
         record_kinds = {
             (record["name"], record.get("scope_category")) for record in atof_records
         }
-        assert record_kinds.issuperset({("nvidia", "start"), ("nvidia", "end")})
+        assert record_kinds.issuperset(
+            {("hermes.logical_llm_call", "start"), ("hermes.logical_llm_call", "end")}
+        )
 
         session_scopes = [
             record

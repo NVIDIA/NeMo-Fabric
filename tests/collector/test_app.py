@@ -227,3 +227,40 @@ async def test_atof_rejects_oversized_record(collector_client: httpx.AsyncClient
     )
 
     assert response.status_code == 413
+
+
+async def test_atof_accepts_record_larger_than_default_read_limits(
+    collector_client: httpx.AsyncClient,
+):
+    control_headers = {"Authorization": f"Bearer {CONTROL_TOKEN}"}
+    publish_headers = {"Authorization": f"Bearer {PUBLISH_TOKEN}"}
+    record = {
+        "kind": "scope",
+        "scope_category": "start",
+        "uuid": "large",
+        "payload": "x" * (600 * 1024),
+        "metadata": {"nemo_fabric_request_id": "request-1"},
+    }
+    registered = await collector_client.post(
+        "/v1/register",
+        headers=control_headers,
+        json={"request_id": "request-1"},
+    )
+    published = await collector_client.post(
+        "/v1/atof",
+        headers=publish_headers,
+        content=json.dumps(record),
+    )
+    deregistered = await collector_client.delete(
+        "/v1/deregister-request/request-1",
+        headers=control_headers,
+    )
+    streamed = await collector_client.get(
+        "/v1/stream/request-1",
+        headers=control_headers,
+    )
+
+    assert registered.status_code == 201
+    assert published.status_code == 200
+    assert deregistered.status_code == 204
+    assert [json.loads(line) for line in streamed.text.splitlines()] == [record]

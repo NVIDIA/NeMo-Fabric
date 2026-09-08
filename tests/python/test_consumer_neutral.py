@@ -35,17 +35,26 @@ SDK_ROOT = (
 PYPROJECT = ROOT_DIR / "sdk" / "python" / "nemo-fabric-runtime" / "pyproject.toml"
 ALLOWED = set(sys.stdlib_module_names) | {
     "nemo_fabric",
+    "httpx",
     "pydantic",
     "typing_extensions",
     "__future__",
 }
-EXPECTED_DEPENDENCIES = ["pydantic>=2.12,<3", "typing-extensions>=4.12"]
+OPTIONAL_LAZY_IMPORTS = {
+    "client.py": {"nemo_fabric_collector"},
+}
+EXPECTED_DEPENDENCIES = [
+    "httpx~=0.28",
+    "pydantic>=2.12,<3",
+    "typing-extensions>=4.12",
+]
 # Consumer/harness packages that must never leak into a plain ``import nemo_fabric``.
 CONSUMER_SPECIFIC = [
     "harbor",
     "hermes",
     "relay",
     "nemo_relay",
+    "nemo_fabric_collector",
     "nemo_fabric_adapters",
     "nemo_fabric_test_adapters",
 ]
@@ -75,10 +84,11 @@ def core_imports_only_allowed_dependencies() -> None:
 
     offenders: dict[str, list[str]] = {}
     for path in core:
+        allowed_imports = ALLOWED | OPTIONAL_LAZY_IMPORTS.get(path.name, set())
         bad = sorted(
             root
             for root in _top_level_imports(ast.parse(path.read_text()))
-            if root not in ALLOWED
+            if root not in allowed_imports
         )
         if bad:
             offenders[path.name] = bad

@@ -36,6 +36,7 @@ from nemo_fabric import (
     Runtime,
     RuntimeConfig,
 )
+from nemo_fabric_collector import serve_collector
 
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
@@ -145,84 +146,84 @@ async def test_remote_agent_streams_two_correlated_hermes_invocations(
     unused_tcp_port_factory,
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
-    collector_url = f"http://127.0.0.1:{unused_tcp_port_factory()}/atof"
     remote_port = unused_tcp_port_factory()
-
-    remote_config = FabricConfig(
-        metadata=MetadataConfig(name="remote-agent-streaming-e2e"),
-        harness=HarnessConfig(
-            adapter_id="nvidia.fabric.remote-agent",
-            resolution="preinstalled",
-            settings={
-                "base_url": f"http://127.0.0.1:{remote_port}/v1",
-                "api_type": "openai-completions",
-                "relay_streaming": True,
-            },
-        ),
-        models={"default": ModelConfig(provider="test", model="fabric-echo")},
-        runtime=RuntimeConfig(
-            input_schema="text",
-            output_schema="message",
-            artifacts=tmp_path / "remote-artifacts",
-        ),
-        environment=EnvironmentConfig(
-            provider="local",
-            workspace=tmp_path,
-            artifacts=tmp_path / "remote-artifacts",
-        ),
-    ).enable_relay(
-        observability=RelayObservabilityConfig(
-            atof=RelayAtofConfig(
-                enabled=True,
-                sinks=[_stream_sink(collector_url)],
+    async with serve_collector(standalone=True) as collector_url:
+        remote_config = FabricConfig(
+            metadata=MetadataConfig(name="remote-agent-streaming-e2e"),
+            harness=HarnessConfig(
+                adapter_id="nvidia.fabric.remote-agent",
+                resolution="preinstalled",
+                settings={
+                    "base_url": f"http://127.0.0.1:{remote_port}/v1",
+                    "api_type": "openai-completions",
+                    "relay_streaming": True,
+                },
+            ),
+            models={"default": ModelConfig(provider="test", model="fabric-echo")},
+            runtime=RuntimeConfig(
+                input_schema="text",
+                output_schema="message",
+                artifacts=tmp_path / "remote-artifacts",
+            ),
+            environment=EnvironmentConfig(
+                provider="local",
+                workspace=tmp_path,
+                artifacts=tmp_path / "remote-artifacts",
+            ),
+        ).enable_relay(
+            observability=RelayObservabilityConfig(
+                atof=RelayAtofConfig(
+                    enabled=True,
+                    sinks=[_stream_sink(collector_url)],
+                )
             )
         )
-    )
 
-    remote_hermes_config = with_relay(hermes_config())
-    remote_hermes_config.models["default"].base_url = f"{api_server}/v1"
-    assert remote_hermes_config.relay is not None
-    assert remote_hermes_config.relay.observability is not None
-    assert remote_hermes_config.relay.observability.atof is not None
-    assert remote_hermes_config.relay.observability.atof.sinks is not None
-    remote_hermes_config.relay.observability.atof.sinks.append(
-        _stream_sink(collector_url)
-    )
+        remote_hermes_config = with_relay(hermes_config())
+        remote_hermes_config.models["default"].base_url = f"{api_server}/v1"
+        assert remote_hermes_config.relay is not None
+        assert remote_hermes_config.relay.observability is not None
+        assert remote_hermes_config.relay.observability.atof is not None
+        assert remote_hermes_config.relay.observability.atof.sinks is not None
+        remote_hermes_config.relay.observability.atof.sinks.append(
+            _stream_sink(collector_url)
+        )
 
-    request_ids = ["remote-request-1", "remote-request-2"]
-    received_request_ids: list[str] = []
-    records_by_request: dict[str, list[dict[str, object]]] = {}
-    results = []
-    runtime_loop = asyncio.get_running_loop()
+        request_ids = ["remote-request-1", "remote-request-2"]
+        received_request_ids: list[str] = []
+        records_by_request: dict[str, list[dict[str, object]]] = {}
+        results = []
+        runtime_loop = asyncio.get_running_loop()
 
-    # The independently deployed service is already running before Fabric binds
-    # the ATOF listener, matching the expected production startup order.
-    async with await Fabric().start_runtime(
-        remote_hermes_config,
-        base_dir=code_review_agent_dir,
-    ) as hermes_runtime:
-        with _remote_hermes_server(
-            port=remote_port,
-            runtime=hermes_runtime,
-            runtime_loop=runtime_loop,
-            received_request_ids=received_request_ids,
-        ):
-            async with await Fabric().start_runtime(
-                remote_config,
-                base_dir=repo_root,
-                streaming=True,
-            ) as remote_runtime:
-                for index, request_id in enumerate(request_ids, start=1):
-                    stream = remote_runtime.invoke_stream(
-                        request=RunRequest(
-                            input=f"remote turn {index}",
-                            request_id=request_id,
+        async with await Fabric().start_runtime(
+            remote_hermes_config,
+            base_dir=code_review_agent_dir,
+            streaming=True,
+            launch_collector=False,
+        ) as hermes_runtime:
+            with _remote_hermes_server(
+                port=remote_port,
+                runtime=hermes_runtime,
+                runtime_loop=runtime_loop,
+                received_request_ids=received_request_ids,
+            ):
+                async with await Fabric().start_runtime(
+                    remote_config,
+                    base_dir=repo_root,
+                    streaming=True,
+                    launch_collector=False,
+                ) as remote_runtime:
+                    for index, request_id in enumerate(request_ids, start=1):
+                        stream = remote_runtime.invoke_stream(
+                            request=RunRequest(
+                                input=f"remote turn {index}",
+                                request_id=request_id,
+                            )
                         )
-                    )
-                    records_by_request[request_id] = [
-                        record async for record in stream
-                    ]
-                    results.append(await stream.result())
+                        records_by_request[request_id] = [
+                            record async for record in stream
+                        ]
+                        results.append(await stream.result())
 
     assert received_request_ids == request_ids
     assert all(result.status == "succeeded" for result in results), [

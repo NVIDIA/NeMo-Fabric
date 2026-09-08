@@ -402,7 +402,7 @@ def test_remote_agent_descriptor_and_module_entrypoint(repo_root: Path):
         "openai-responses"
     )
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
-    assert descriptor["capabilities"]["streaming"] is False
+    assert descriptor["capabilities"]["streaming"] is True
     assert descriptor["telemetry"]["providers"]["relay"] == {
         "outputs": ["atof"],
         "integration_modes": ["remote_service"],
