@@ -24,7 +24,7 @@ from nemo_fabric.errors import (
 )
 from nemo_fabric.models import RunRequest
 from nemo_fabric.openai_streaming import OpenAIInvokeStream
-from nemo_fabric.streaming import InvokeStream, _AtofStreamListener
+from nemo_fabric.streaming import InvokeStream
 from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
 
 
@@ -69,7 +69,6 @@ class Runtime:
         plan: RunPlan | Mapping[str, Any],
         runtime: RuntimeHandle | Mapping[str, Any],
         overrides: Mapping[str, Any] | None = None,
-        stream_listener: _AtofStreamListener | None = None,
         collector_client: _AtofCollectorClient | None = None,
         release_collector: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
@@ -86,7 +85,6 @@ class Runtime:
         self._status = RuntimeStatus.ACTIVE
         self._current_task: asyncio.Task[Any] | None = None
         self._current_stream: _RuntimeStream | None = None
-        self._stream_listener = stream_listener
         self._collector_client = collector_client
         self._release_collector = release_collector
         self._registered_requests: set[str] = set()
@@ -490,15 +488,11 @@ class Runtime:
 
     async def _close_streaming_resources(self) -> None:
         try:
-            if self._stream_listener is not None:
-                await self._stream_listener.close()
+            if self._collector_client is not None:
+                await self._collector_client.aclose()
         finally:
-            try:
-                if self._collector_client is not None:
-                    await self._collector_client.aclose()
-            finally:
-                if self._release_collector is not None:
-                    await self._release_collector()
+            if self._release_collector is not None:
+                await self._release_collector()
 
     def _absorb(self, result: RunResult) -> None:
         self._invocations.append(
