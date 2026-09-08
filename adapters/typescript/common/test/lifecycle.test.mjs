@@ -78,6 +78,7 @@ test("serves two ordered invocations and stops one runtime", async () => {
     },
     async stop() {
       calls.push(["stop"]);
+      return { finalized: true };
     },
   };
 
@@ -94,6 +95,7 @@ test("serves two ordered invocations and stops one runtime", async () => {
   ]);
   assert.equal(responses.length, 4);
   assert.equal(responses[2].outcome.output.output.response, "two");
+  assert.deepEqual(responses[3].outcome.output, { finalized: true });
 });
 
 test("rejects invalid typed configuration before adapter startup", async () => {

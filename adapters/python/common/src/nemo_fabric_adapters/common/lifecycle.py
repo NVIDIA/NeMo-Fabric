@@ -40,8 +40,8 @@ class AdapterRuntime(Protocol):
     ) -> AgentRunResult:
         """Execute one invocation against the initialized runtime."""
 
-    async def stop(self) -> None:
-        """Release all resources owned by the runtime."""
+    async def stop(self) -> Mapping[str, Any] | None:
+        """Release runtime resources and return optional final output."""
 
 
 RuntimeFactory = Callable[[], AdapterRuntime]
@@ -668,10 +668,10 @@ async def _handle_stop(
     runtime: AdapterRuntime,
 ) -> dict[str, Any]:
     try:
-        await _adapter_call("stop", runtime.stop)
+        output = await _adapter_call("stop", runtime.stop)
     finally:
         state.clear()
-    return _response("stop")
+    return _response("stop", output=output)
 
 
 async def _dispatch(

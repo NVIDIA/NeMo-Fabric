@@ -1706,6 +1706,7 @@ class NativeRecorder:
         self.config_base_dir_calls: list[str | None] = []
         self.stopped = 0
         self.fail_invoke = False
+        self.stop_result: Any = []
 
     def plan_config(
         self,
@@ -1760,7 +1761,7 @@ class NativeRecorder:
 
     def stop_runtime(self, plan_json: str, runtime_json: str) -> str:
         self.stopped += 1
-        return json.dumps([])
+        return json.dumps(self.stop_result)
 
 
 class NativeClient(Fabric):
@@ -2134,6 +2135,28 @@ async def test_typed_source_accepts_run_request_and_returns_result():
         "context": {"job_id": "job-1"},
         "overrides": {"max_iterations": 1},
     }
+
+
+async def test_one_shot_run_merges_runtime_stop_artifacts():
+    native = NativeRecorder()
+    native.stop_result = {
+        "artifacts": {
+            "root": "/tmp/artifacts",
+            "artifacts": [
+                {
+                    "name": "relay_atif",
+                    "kind": "atif",
+                    "path": "/tmp/artifacts/trajectory-runtime.atif.json",
+                    "media_type": "application/json",
+                }
+            ],
+        },
+        "events": [],
+    }
+
+    result = await NativeClient(native).run(_fabric_config(), input="hello")
+
+    assert [artifact.kind for artifact in result.artifacts.artifacts] == ["atif"]
 
 
 async def test_native_runtime_errors_use_typed_exception_and_stop_runtime():

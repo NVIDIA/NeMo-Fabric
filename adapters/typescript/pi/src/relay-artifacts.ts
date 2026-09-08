@@ -14,7 +14,8 @@ import {
   type RelayPluginConfig,
 } from "./relay-config.js";
 
-export const ATIF_FINALIZATION_TIMEOUT_MS = 5_000;
+// Leave most of the host's 10-second stop budget to gateway termination.
+export const ATIF_FINALIZATION_TIMEOUT_MS = 1_000;
 export const ATIF_FALLBACK_POLL_INTERVAL_MS = 50;
 
 export type AtifSnapshot = Map<string, string>;

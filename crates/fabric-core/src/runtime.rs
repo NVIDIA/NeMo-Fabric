@@ -141,6 +141,18 @@ pub struct RunResult {
     pub metadata: BTreeMap<String, Value>,
 }
 
+/// Artifacts and events finalized while stopping a runtime.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeStopResult {
+    /// Runtime-scoped artifacts finalized during shutdown.
+    #[serde(default)]
+    pub artifacts: ArtifactManifest,
+    /// Lifecycle events emitted during shutdown.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<FabricEvent>,
+}
+
 /// Runtime completion status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -701,7 +713,7 @@ trait RuntimeAdapter {
         request: RunRequest,
         transport: OpenAiStreamTransport,
     ) -> Result<RunResult>;
-    fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>>;
+    fn stop(&self, runtime: &RuntimeHandle) -> Result<RuntimeStopResult>;
 }
 
 struct LocalHostAdapter;
@@ -735,7 +747,10 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
         }
     };
     match stop_runtime(plan, &runtime) {
-        Ok(events) => result.events.extend(events),
+        Ok(stopped) => {
+            merge_artifact_manifests(&mut result.artifacts, stopped.artifacts);
+            result.events.extend(stopped.events);
+        }
         Err(error) if result.status == RunStatus::Succeeded => {
             result.status = RunStatus::Failed;
             result.error = Some(ErrorInfo {
@@ -931,7 +946,7 @@ fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
 }
 
 /// Stop or detach from a harness runtime.
-pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<RuntimeStopResult> {
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
         return LocalHostAdapter.stop(runtime);
@@ -1205,9 +1220,12 @@ impl RuntimeAdapter for LocalHostAdapter {
         run_local_host_openai_stream_adapter(plan, runtime, request, transport)
     }
 
-    fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+    fn stop(&self, runtime: &RuntimeHandle) -> Result<RuntimeStopResult> {
         let Some(host) = local_hosts().remove(&runtime.runtime_id) else {
-            return Ok(vec![local_host_stop_event(runtime, true, false)]);
+            return Ok(RuntimeStopResult {
+                artifacts: ArtifactManifest::default(),
+                events: vec![local_host_stop_event(runtime, true, false)],
+            });
         };
         let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
         let request =
@@ -1228,9 +1246,7 @@ impl RuntimeAdapter for LocalHostAdapter {
             Err(FabricError::AdapterLifecycleOperation { code, .. })
                 if code == "host_crashed"
         );
-        if !host_crashed {
-            result?;
-        }
+        let output = if host_crashed { Value::Null } else { result? };
         termination.map_err(|source| {
             lifecycle_error(
                 AdapterLifecycleOperation::Stop,
@@ -1249,13 +1265,18 @@ impl RuntimeAdapter for LocalHostAdapter {
                 "",
             )
         })?;
+        let mut artifacts = host.artifacts.clone();
+        promote_relay_artifacts_to_manifest(&output, &mut artifacts);
 
         #[cfg(test)]
         TEST_STOPPED_AGENTS
             .lock()
             .expect("stop tracker")
             .push(runtime.agent_name.clone());
-        Ok(vec![local_host_stop_event(runtime, false, host_crashed)])
+        Ok(RuntimeStopResult {
+            artifacts,
+            events: vec![local_host_stop_event(runtime, false, host_crashed)],
+        })
     }
 }
 
@@ -2570,6 +2591,23 @@ fn unique_artifact_name(manifest: &ArtifactManifest, base: &str) -> String {
     }
 }
 
+fn merge_artifact_manifests(target: &mut ArtifactManifest, source: ArtifactManifest) {
+    if target.root.is_none() {
+        target.root = source.root;
+    }
+    for mut artifact in source.artifacts {
+        if target
+            .artifacts
+            .iter()
+            .any(|existing| existing.path == artifact.path)
+        {
+            continue;
+        }
+        artifact.name = unique_artifact_name(target, &artifact.name);
+        target.artifacts.push(artifact);
+    }
+}
+
 fn process_command_args(plan: &RunPlan, settings: &ProcessAdapterSettings) -> Vec<String> {
     let mut args = Vec::new();
     if let Some(script) = settings.script.as_ref() {
@@ -3178,7 +3216,20 @@ for line in sys.stdin:
         if MODE == "stop_failure":
             response("stop", error=failure("stop", "fake_stop", "stop rejected"))
             sys.exit(18)
-        response("stop")
+        if MODE == "stop_artifacts":
+            artifact = os.path.join(
+                os.environ["FABRIC_ARTIFACTS"],
+                "relay",
+                "trajectory-runtime.atif.json",
+            )
+            os.makedirs(os.path.dirname(artifact), exist_ok=True)
+            with open(artifact, "w", encoding="utf-8") as stream:
+                json.dump({"session_id": "runtime"}, stream)
+            response("stop", output={
+                "relay_artifacts": [{"kind": "atif", "path": artifact}],
+            })
+        else:
+            response("stop")
         break
 "#,
         )
@@ -3410,8 +3461,46 @@ for line in sys.stdin:
 
         let first_stop = stop_runtime(&plan, &runtime).expect("first stop");
         let second_stop = stop_runtime(&plan, &runtime).expect("idempotent stop");
-        assert_eq!(first_stop[0].metadata["already_stopped"], false);
-        assert_eq!(second_stop[0].metadata["already_stopped"], true);
+        assert_eq!(first_stop.events[0].metadata["already_stopped"], false);
+        assert_eq!(second_stop.events[0].metadata["already_stopped"], true);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn stop_promotes_runtime_scoped_relay_artifacts() {
+        let (root, plan) = local_host_plan_with_relay("stop_artifacts", true);
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let invocation = invoke_runtime(&plan, &runtime, RunRequest::text("one turn"))
+            .expect("invoke local host");
+        assert!(
+            invocation
+                .artifacts
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.kind != "atif")
+        );
+
+        let stopped = stop_runtime(&plan, &runtime).expect("stop local host");
+        let atif = stopped
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == "atif")
+            .expect("runtime ATIF artifact");
+        assert_eq!(atif.name, "relay_atif");
+        assert_eq!(atif.media_type.as_deref(), Some("application/json"));
+        assert!(atif.path.exists());
+
+        let one_shot = run_plan(&plan, RunRequest::text("one turn")).expect("run plan");
+        assert!(
+            one_shot
+                .artifacts
+                .artifacts
+                .iter()
+                .any(|artifact| artifact.kind == "atif")
+        );
 
         let _ = fs::remove_dir_all(root);
     }
@@ -3698,7 +3787,7 @@ for line in sys.stdin:
             FabricError::AdapterLifecycleOperation { code, .. } if code == "host_unavailable"
         ));
         let stopped = stop_runtime(&plan, &runtime).expect("stop after timeout is idempotent");
-        assert_eq!(stopped[0].metadata["already_stopped"], true);
+        assert_eq!(stopped.events[0].metadata["already_stopped"], true);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -3948,7 +4037,7 @@ for line in sys.stdin:
         ));
         assert!(!local_hosts().contains_key(&runtime.runtime_id));
         let stopped = stop_runtime(&plan, &runtime).expect("stop after timeout is idempotent");
-        assert_eq!(stopped[0].metadata["already_stopped"], true);
+        assert_eq!(stopped.events[0].metadata["already_stopped"], true);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -4183,7 +4272,7 @@ for line in sys.stdin:
         assert!(second.to_string().contains("host_crashed"), "{second}");
 
         let stopped = stop_runtime(&plan, &runtime).expect("crashed host cleanup");
-        assert_eq!(stopped[0].metadata["host_crashed"], true);
+        assert_eq!(stopped.events[0].metadata["host_crashed"], true);
         stop_runtime(&plan, &runtime).expect("cleanup remains idempotent");
 
         let _ = fs::remove_dir_all(root);
@@ -4197,7 +4286,7 @@ for line in sys.stdin:
         let error = stop_runtime(&plan, &runtime).expect_err("stop must fail");
         assert!(error.to_string().contains("fake_stop"), "{error}");
         let retry = stop_runtime(&plan, &runtime).expect("cleanup retry is idempotent");
-        assert_eq!(retry[0].metadata["already_stopped"], true);
+        assert_eq!(retry.events[0].metadata["already_stopped"], true);
 
         let _ = fs::remove_dir_all(root);
     }

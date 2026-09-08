@@ -54,6 +54,12 @@ Runtime-scoped overrides are recursively merged with invocation overrides; invoc
 
 ---
 
+### <kbd>property</kbd> artifacts
+
+Return runtime-scoped artifacts finalized during shutdown.
+
+---
+
 ### <kbd>property</kbd> handle
 
 Return a detached snapshot of the runtime handle.
@@ -186,12 +192,17 @@ Start one turn and stream raw NeMo Relay ATOF records as they arrive.
 ### <kbd>method</kbd> `stop`
 
 ```python
-async def stop() -> None
+async def stop() -> RuntimeStopResult
 ```
 
-Destroy an idle runtime exactly once.
+Destroy an idle runtime and return shutdown artifacts and events.
 
-Repeated calls after a successful stop are no-ops. A failed runtime may still be stopped so its resources are released.
+Repeated calls after a successful stop return the same detached result. A failed runtime may still be stopped so its resources are released.
+
+
+
+**Returns:**
+  Runtime-scoped artifacts finalized during shutdown and stop events.
 
 
 

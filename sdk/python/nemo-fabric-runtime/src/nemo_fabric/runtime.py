@@ -24,7 +24,13 @@ from nemo_fabric.errors import (
 from nemo_fabric.models import RunRequest
 from nemo_fabric.openai_streaming import OpenAIInvokeStream
 from nemo_fabric.streaming import InvokeStream, _AtofStreamListener
-from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
+from nemo_fabric.types import (
+    ArtifactManifest,
+    RunPlan,
+    RunResult,
+    RuntimeHandle,
+    RuntimeStopResult,
+)
 
 
 class RuntimeStatus(str, Enum):
@@ -85,6 +91,7 @@ class Runtime:
         self._current_stream: _RuntimeStream | None = None
         self._stream_listener = stream_listener
         self._closing = False
+        self._stop_result = RuntimeStopResult.from_mapping({})
 
     @property
     def status(self) -> RuntimeStatus:
@@ -103,6 +110,12 @@ class Runtime:
         """Return copied request, runtime, and invocation IDs for completed turns."""
 
         return deepcopy(self._invocations)
+
+    @property
+    def artifacts(self) -> ArtifactManifest:
+        """Return runtime-scoped artifacts finalized during shutdown."""
+
+        return ArtifactManifest.from_mapping(self._stop_result.artifacts.to_mapping())
 
     @property
     def handle(self) -> RuntimeHandle:
@@ -224,26 +237,33 @@ class Runtime:
                     except Exception:
                         pass
                 stopped = False
+                stop_result: RuntimeStopResult | None = None
 
                 def stop_after_cancel() -> Any:
-                    nonlocal stopped
-                    result = json.loads(
-                        native.stop_runtime(
-                            json.dumps(self._plan.to_mapping()),
-                            json.dumps(self._runtime.to_mapping()),
+                    nonlocal stop_result, stopped
+                    stop_result = _decode_runtime_stop_result(
+                        json.loads(
+                            native.stop_runtime(
+                                json.dumps(self._plan.to_mapping()),
+                                json.dumps(self._runtime.to_mapping()),
+                            )
                         )
                     )
                     stopped = True
-                    return result
+                    return stop_result
 
                 try:
                     await _call_blocking(stop_after_cancel)
                 except asyncio.CancelledError:
+                    if stop_result is not None:
+                        self._stop_result = stop_result
                     self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
                     raise
                 except Exception:
                     self._status = RuntimeStatus.FAILED
                 else:
+                    assert stop_result is not None
+                    self._stop_result = stop_result
                     self._status = RuntimeStatus.STOPPED
                 raise
             except FabricError:
@@ -365,11 +385,14 @@ class Runtime:
         if self._current_task is not None:
             raise FabricStateError("runtime is already running an invocation")
 
-    async def stop(self) -> None:
-        """Destroy an idle runtime exactly once.
+    async def stop(self) -> RuntimeStopResult:
+        """Destroy an idle runtime and return shutdown artifacts and events.
 
-        Repeated calls after a successful stop are no-ops. A failed runtime may
-        still be stopped so its resources are released.
+        Repeated calls after a successful stop return the same detached result.
+        A failed runtime may still be stopped so its resources are released.
+
+        Returns:
+            Runtime-scoped artifacts finalized during shutdown and stop events.
 
         Raises:
             FabricStateError: If the runtime is already stopping or has an
@@ -379,7 +402,7 @@ class Runtime:
         """
 
         if self._status is RuntimeStatus.STOPPED:
-            return
+            return RuntimeStopResult.from_mapping(self._stop_result.to_mapping())
         if self._current_stream is not None and not self._current_stream._finalized:
             if not self._current_stream._task.done():
                 raise FabricStateError(
@@ -393,22 +416,27 @@ class Runtime:
             raise FabricStateError("runtime shutdown is already in progress")
         self._closing = True
         stopped = False
+        stop_result: RuntimeStopResult | None = None
         try:
             native = self._client._require_native_module("stop")
 
             def stop() -> Any:
-                nonlocal stopped
-                result = json.loads(
-                    native.stop_runtime(
-                        json.dumps(self._plan.to_mapping()),
-                        json.dumps(self._runtime.to_mapping()),
+                nonlocal stop_result, stopped
+                stop_result = _decode_runtime_stop_result(
+                    json.loads(
+                        native.stop_runtime(
+                            json.dumps(self._plan.to_mapping()),
+                            json.dumps(self._runtime.to_mapping()),
+                        )
                     )
                 )
                 stopped = True
-                return result
+                return stop_result
 
             await _call_blocking(stop)
         except asyncio.CancelledError:
+            if stop_result is not None:
+                self._stop_result = stop_result
             self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
             raise
         except FabricError:
@@ -418,11 +446,14 @@ class Runtime:
             self._status = RuntimeStatus.FAILED
             raise FabricRuntimeError(str(error), stage="stop") from error
         else:
+            assert stop_result is not None
+            self._stop_result = stop_result
             self._status = RuntimeStatus.STOPPED
         finally:
             self._closing = False
             if self._stream_listener is not None:
                 await self._stream_listener.close()
+        return RuntimeStopResult.from_mapping(self._stop_result.to_mapping())
 
     def _absorb(self, result: RunResult) -> None:
         self._invocations.append(
@@ -518,6 +549,50 @@ def _run_request_payload(
     return payload
 
 
+def _decode_runtime_stop_result(value: Any) -> RuntimeStopResult:
+    if isinstance(value, list):
+        # Accept native extensions from before runtime-scoped stop artifacts.
+        value = {"artifacts": {"artifacts": []}, "events": value}
+    if not isinstance(value, Mapping):
+        raise FabricRuntimeError(
+            "native runtime stop returned an invalid result", stage="stop"
+        )
+    return RuntimeStopResult.from_mapping(value)
+
+
+def _merge_runtime_artifacts(
+    result: dict[str, Any], stop_result: RuntimeStopResult
+) -> None:
+    source = stop_result.artifacts.to_mapping()
+    target = result.setdefault("artifacts", {"artifacts": []})
+    if not isinstance(target, dict):
+        return
+    if target.get("root") is None and source.get("root") is not None:
+        target["root"] = source["root"]
+    entries = target.setdefault("artifacts", [])
+    if not isinstance(entries, list):
+        return
+    existing_paths = {
+        entry.get("path") for entry in entries if isinstance(entry, dict)
+    }
+    existing_names = {
+        entry.get("name") for entry in entries if isinstance(entry, dict)
+    }
+    for artifact in source.get("artifacts", []):
+        if not isinstance(artifact, dict) or artifact.get("path") in existing_paths:
+            continue
+        artifact = deepcopy(artifact)
+        base = artifact.get("name")
+        if isinstance(base, str) and base in existing_names:
+            index = 2
+            while f"{base}_{index}" in existing_names:
+                index += 1
+            artifact["name"] = f"{base}_{index}"
+        entries.append(artifact)
+        existing_paths.add(artifact.get("path"))
+        existing_names.add(artifact.get("name"))
+
+
 async def _run_native_lifecycle(
     native: Any,
     plan: Mapping[str, Any],
@@ -540,7 +615,9 @@ async def _run_native_lifecycle(
             return result
         finally:
             try:
-                stop_events = json.loads(native.stop_runtime(plan_json, runtime_json))
+                stopped = _decode_runtime_stop_result(
+                    json.loads(native.stop_runtime(plan_json, runtime_json))
+                )
             except Exception as error:
                 if invoke_error is None:
                     if result is None:
@@ -553,9 +630,12 @@ async def _run_native_lifecycle(
                             "message": str(error) or "runtime shutdown failed",
                             "retryable": False,
                         }
-                stop_events = []
-            if result is not None and isinstance(stop_events, list):
-                result.setdefault("events", []).extend(stop_events)
+                stopped = RuntimeStopResult.from_mapping({})
+            if result is not None:
+                _merge_runtime_artifacts(result, stopped)
+                result.setdefault("events", []).extend(
+                    event.to_mapping() for event in stopped.events
+                )
 
     try:
         return await _call_blocking(run)

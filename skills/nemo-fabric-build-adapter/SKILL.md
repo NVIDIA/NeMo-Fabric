@@ -135,6 +135,10 @@ one `stop` for each NeMo Fabric runtime.
 - Accept `AgentRunRequest` and `RuntimeContext`, then return one
   `AgentRunResult` from `invoke`.
 - Make `stop` safe after partial startup and failed invocation.
+- Return a JSON mapping from `stop` when runtime-scoped output finalizes during
+  shutdown. Put NeMo Relay runtime data and artifact paths under
+  `relay_runtime` and `relay_artifacts` so NeMo Fabric can promote them into the
+  runtime stop artifact manifest.
 - Isolate mutable state between independent runtimes.
 - If the descriptor declares `capabilities.streaming`, implement
   `async invoke_openai_stream(request, context, emit)`. Execute the target exactly once,
@@ -211,6 +215,17 @@ The helper uses a UUID request ID as Relay's propagated root and always returns
 apply this pattern to an external Relay gateway or an upstream integration that
 creates an isolated scope context unless its boundary accepts a per-turn
 propagation context.
+
+For a harness-native extension that posts lifecycle hooks to an external Relay
+gateway, keep the gateway runtime-scoped. The adapter owns the CLI version
+contract, explicit plugin configuration, loopback bind, health check, extension
+configuration, and shutdown ordering. Load the extension through an
+adapter-owned path without weakening ambient-extension isolation. Let the
+extension emit the harness lifecycle and drain its shutdown hook before the
+adapter stops the gateway. Preserve Relay ATOF stream sinks without rewriting
+their URLs or transport settings. If a session-scoped ATIF file finalizes only
+during shutdown, collect it after the shutdown hook drains and before gateway
+termination instead of delaying each invocation.
 
 ## Handle Custom Agents
 

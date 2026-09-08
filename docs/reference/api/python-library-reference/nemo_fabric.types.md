@@ -841,6 +841,84 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `RuntimeStopResult`
+
+Artifacts and events finalized while stopping a runtime.
+
+
+
+**Attributes:**
+
+ - <b>`artifacts`</b>:  Runtime-scoped artifact manifest finalized during shutdown.
+ - <b>`events`</b>:  Ordered lifecycle events emitted during shutdown.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `artifacts` | `ArtifactManifest` |
+| `events` | `Sequence[FabricEvent]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
 ## <kbd>class</kbd> `RuntimeHandle`
 
 Opaque identity and binding for one started runtime.

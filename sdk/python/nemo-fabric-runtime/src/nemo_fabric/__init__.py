@@ -59,6 +59,7 @@ from nemo_fabric.types import RunResult
 from nemo_fabric.types import RunUsage
 from nemo_fabric.types import RuntimeCapabilities
 from nemo_fabric.types import RuntimeHandle
+from nemo_fabric.types import RuntimeStopResult
 from nemo_fabric.types import TelemetryRef
 
 __all__ = [
@@ -109,6 +110,7 @@ __all__ = [
     "RunUsage",
     "RuntimeCapabilities",
     "RuntimeHandle",
+    "RuntimeStopResult",
     "RuntimeConfig",
     "Runtime",
     "RuntimeStatus",

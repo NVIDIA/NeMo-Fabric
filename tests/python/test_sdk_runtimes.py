@@ -8,7 +8,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from nemo_fabric import Fabric, FabricStateError, RunRequest, RunResult, Runtime, RuntimeStatus
+from nemo_fabric import (
+    Fabric,
+    FabricStateError,
+    RunRequest,
+    RunResult,
+    Runtime,
+    RuntimeStatus,
+    RuntimeStopResult,
+)
 
 
 def _plan() -> dict[str, Any]:
@@ -107,7 +115,22 @@ class MockNative:
 
     def stop_runtime(self, plan_json: str, runtime_json: str) -> str:
         self.stopped += 1
-        return "[]"
+        return json.dumps(
+            {
+                "artifacts": {
+                    "root": "/tmp/artifacts",
+                    "artifacts": [
+                        {
+                            "name": "relay_atif",
+                            "kind": "atif",
+                            "path": "/tmp/artifacts/trajectory-runtime.atif.json",
+                            "media_type": "application/json",
+                        }
+                    ],
+                },
+                "events": [],
+            }
+        )
 
 
 class NativeClient(Fabric):
@@ -155,9 +178,14 @@ async def runtime_lifecycle() -> None:
     result = await runtime.invoke(input="hello")
     assert result.status == "succeeded"
     assert result.events and all(event.kind == "log" for event in result.events)
+    assert runtime.artifacts.artifacts == ()
 
-    await runtime.stop()
-    await runtime.stop()
+    stopped = await runtime.stop()
+    repeated = await runtime.stop()
+    assert isinstance(stopped, RuntimeStopResult)
+    assert stopped.artifacts.artifacts[0].kind == "atif"
+    assert runtime.artifacts == stopped.artifacts
+    assert repeated == stopped
     assert runtime.status is RuntimeStatus.STOPPED
     assert native.stopped == 1
     try:

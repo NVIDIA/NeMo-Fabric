@@ -16,8 +16,9 @@ pip install nemo-fabric-runtime
 The package exposes the `nemo_fabric` Python module for typed agent
 configuration, validation, run planning, runtime lifecycle management,
 normalized results, artifacts, diagnostics, and telemetry references.
+`Runtime.stop()` returns runtime-scoped artifacts and lifecycle events that
+finalize during shutdown.
 
 Refer to the [NeMo Fabric documentation](https://docs.nvidia.com/nemo/fabric)
 for installation and usage guidance. Source code is available in the
 [NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/nemo-fabric/).
-

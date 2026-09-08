@@ -133,19 +133,21 @@ an absolute path is used.
 
 When the runtime starts, the adapter validates the Relay 0.9 CLI, writes an
 explicit `plugins.toml`, starts a loopback gateway, and loads the extension into
-the isolated Pi session. The result includes `relay_runtime` and
-`relay_artifacts` in `output`. The gateway can produce ATOF, ATIF,
+the isolated Pi session. Invocation output includes `relay_runtime` and any
+available ATOF paths in `relay_artifacts`. The gateway can produce ATOF, ATIF,
 OpenTelemetry, and OpenInference output from the Relay observability
 configuration.
 
-Local ATIF trajectories are finalized only after the Pi session closes and are
-therefore not included in `relay_artifacts`; the adapter's five-second
-per-invocation wait expires and logs a warning. After runtime shutdown, retrieve
-the finalized file directly from the ATIF output directory. For the
-configuration above and the default filename template, it is written to
-`./artifacts/relay/<runtime_id>/trajectory-<session_id>.atif.json`. Invocation
-results remain usable, retain any ATOF files, and do not prevent subsequent
-turns.
+ATIF trajectories are scoped to the Pi session and finalize during runtime
+shutdown, after the extension drains `session_shutdown` and before the adapter
+terminates the Relay gateway. The stop lifecycle output reports finalized ATIF
+and ATOF paths; NeMo Fabric promotes them into the runtime stop artifact
+manifest. One-shot runs merge that manifest into `RunResult.artifacts`.
+
+The adapter budgets up to one second for a local ATIF file to appear during
+shutdown. If it does not finalize, a warning is written to the adapter log and
+the stop manifest omits ATIF while retaining any ATOF files. This wait is gated
+by local ATIF output; remote ATIF storage does not delay shutdown.
 
 Session, turn, and tool telemetry does not depend on model redirection. Model
 telemetry is available only when Relay supports the selected model API and the

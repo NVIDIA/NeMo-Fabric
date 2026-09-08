@@ -225,94 +225,176 @@ test("adds Relay details to results and stops the Pi session before the gateway"
   assert.deepEqual(order, ["session", "relay"]);
 });
 
-test(
-  "an ATIF finalization timeout preserves ATOF without poisoning the runtime",
-  async (t) => {
-    const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-timeout-")));
-    const atifDir = join(root, "atif");
-    const atofDir = join(root, "atof");
-    await mkdir(atifDir);
-    await mkdir(atofDir);
-    const atofPath = join(atofDir, "events.atof.jsonl");
-    await writeFile(atofPath, "{}\n", "utf8");
-    let promptCount = 0;
-    const relay = {
-      pluginConfig: {
-        version: 1,
-        components: [
-          {
-            kind: "observability",
-            config: {
-              atof: {
-                enabled: true,
-                sinks: [{ type: "file", output_directory: atofDir, filename: "events.atof.jsonl" }],
-              },
-              atif: {
-                enabled: true,
-                output_directory: atifDir,
-                filename_template: "trajectory-{session_id}.atif.json",
-              },
+test("collects session-scoped ATIF after session shutdown and before Relay termination", async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-finalized-")));
+  const atifDir = join(root, "atif");
+  const atofDir = join(root, "atof");
+  await mkdir(atifDir);
+  await mkdir(atofDir);
+  const atofPath = join(atofDir, "events.atof.jsonl");
+  const atifPath = join(atifDir, "trajectory-session-1.atif.json");
+  await writeFile(atofPath, "{}\n", "utf8");
+  await writeFile(join(atifDir, "trajectory-stale.atif.json"), '{"session_id":"stale"}\n', "utf8");
+  const order = [];
+  const relay = {
+    pluginConfig: {
+      version: 1,
+      components: [
+        {
+          kind: "observability",
+          config: {
+            atof: {
+              enabled: true,
+              sinks: [{ type: "file", output_directory: atofDir, filename: "events.atof.jsonl" }],
+            },
+            atif: {
+              enabled: true,
+              output_directory: atifDir,
+              filename_template: "trajectory-{session_id}.atif.json",
             },
           },
-        ],
-      },
-      async output(artifacts) {
-        return {
-          relay_artifacts: artifacts ?? [{ kind: "atif", path: "unexpected" }],
-        };
-      },
-      async stop() {},
-    };
-    relay.atifMatchers = await prepareRelayAtifMatchers(relay.pluginConfig);
-    const factory = {
-      async create() {
-        return {
-          relay,
-          async prompt() {
-            promptCount += 1;
-            return { accepted: true, text: "ok", stopReason: "stop" };
+        },
+      ],
+    },
+    async output(artifacts) {
+      if (artifacts.some((artifact) => artifact.kind === "atif")) {
+        order.push("consume");
+      }
+      return { relay_artifacts: artifacts };
+    },
+    async stop() {
+      order.push("terminate");
+    },
+  };
+  relay.atifMatchers = await prepareRelayAtifMatchers(relay.pluginConfig);
+  const factory = {
+    async create() {
+      return {
+        relay,
+        async prompt() {
+          return { accepted: true, text: "ok", stopReason: "stop" };
+        },
+        async stop() {
+          order.push("session_shutdown");
+          await writeFile(atifPath, '{"session_id":"session-1"}\n', "utf8");
+        },
+      };
+    },
+  };
+  assert.equal(new PiAdapterRuntime(factory).atifFinalizationTimeoutMs, 1_000);
+  for (const invalidTimeout of [Number.NaN, Infinity, -1]) {
+    assert.equal(
+      new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: invalidTimeout }).atifFinalizationTimeoutMs,
+      1_000,
+    );
+  }
+  assert.equal(new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: 5_000 }).atifFinalizationTimeoutMs, 1_000);
+  assert.equal(new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: 0 }).atifFinalizationTimeoutMs, 0);
+
+  let stderr = "";
+  t.mock.method(process.stderr, "write", (chunk) => {
+    stderr += String(chunk);
+    return true;
+  });
+  try {
+    const runtime = new PiAdapterRuntime(factory);
+    await runtime.start(startInput());
+    const startedAt = performance.now();
+    const invocation = await runtime.invoke({ input: "trace me" }, context);
+    assert.ok(performance.now() - startedAt < 500, "invoke should not wait for session-scoped ATIF");
+    assert.deepEqual(invocation.output.relay_artifacts, [{ kind: "atof", path: atofPath }]);
+
+    const stopped = await runtime.stop();
+    assert.deepEqual(stopped.relay_artifacts, [
+      { kind: "atif", path: atifPath },
+      { kind: "atof", path: atofPath },
+    ]);
+    assert.deepEqual(order, ["session_shutdown", "consume", "terminate"]);
+    assert.equal(stderr, "");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an ATIF finalization timeout at stop preserves per-invoke ATOF", async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-timeout-")));
+  const atifDir = join(root, "atif");
+  const atofDir = join(root, "atof");
+  await mkdir(atifDir);
+  await mkdir(atofDir);
+  const atofPath = join(atofDir, "events.atof.jsonl");
+  await writeFile(atofPath, "{}\n", "utf8");
+  let promptCount = 0;
+  const relay = {
+    pluginConfig: {
+      version: 1,
+      components: [
+        {
+          kind: "observability",
+          config: {
+            atof: {
+              enabled: true,
+              sinks: [{ type: "file", output_directory: atofDir, filename: "events.atof.jsonl" }],
+            },
+            atif: {
+              enabled: true,
+              output_directory: atifDir,
+              filename_template: "trajectory-{session_id}.atif.json",
+            },
           },
-          async stop() {},
-        };
-      },
-    };
-    assert.equal(new PiAdapterRuntime(factory).atifFinalizationTimeoutMs, 5_000);
-    for (const invalidTimeout of [Number.NaN, Infinity, -1]) {
-      assert.equal(
-        new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: invalidTimeout }).atifFinalizationTimeoutMs,
-        5_000,
-      );
-    }
-    assert.equal(new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: 0 }).atifFinalizationTimeoutMs, 0);
+        },
+      ],
+    },
+    async output(artifacts) {
+      return {
+        relay_artifacts: artifacts ?? [{ kind: "atif", path: "unexpected" }],
+      };
+    },
+    async stop() {},
+  };
+  relay.atifMatchers = await prepareRelayAtifMatchers(relay.pluginConfig);
+  const factory = {
+    async create() {
+      return {
+        relay,
+        async prompt() {
+          promptCount += 1;
+          return { accepted: true, text: "ok", stopReason: "stop" };
+        },
+        async stop() {},
+      };
+    },
+  };
+  const runtime = new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: 25 });
+  let stderr = "";
+  t.mock.method(process.stderr, "write", (chunk) => {
+    stderr += String(chunk);
+    return true;
+  });
 
-    const runtime = new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: 25 });
-    let stderr = "";
-    t.mock.method(process.stderr, "write", (chunk) => {
-      stderr += String(chunk);
-      return true;
-    });
+  try {
+    await runtime.start(startInput());
+    const startedAt = performance.now();
+    const timedOut = await runtime.invoke({ input: "trace me" }, context);
+    assert.ok(performance.now() - startedAt < 500, "invoke should not wait for session-scoped ATIF");
+    assert.equal(stderr, "");
+    assert.deepEqual(timedOut.output.relay_artifacts, [{ kind: "atof", path: atofPath }]);
 
-    try {
-      await runtime.start(startInput());
-      const startedAt = performance.now();
-      const timedOut = await runtime.invoke({ input: "trace me" }, context);
-      assert.ok(performance.now() - startedAt < 1_000, "configured timeout should reach ATIF finalization");
-      assert.equal(stderr, "NeMo Relay did not finalize an ATIF artifact within 25 ms\n");
-      assert.deepEqual(timedOut.output.relay_artifacts, [{ kind: "atof", path: atofPath }]);
+    const next = await runtime.invoke({ input: "still usable" }, context);
+    assert.equal(next.status, "succeeded");
+    assert.equal(promptCount, 2);
+    const stopStartedAt = performance.now();
+    const stopped = await runtime.stop();
+    assert.ok(performance.now() - stopStartedAt < 500, "configured timeout should bound shutdown waiting");
+    assert.deepEqual(stopped.relay_artifacts, [{ kind: "atof", path: atofPath }]);
+    assert.equal(stderr, "NeMo Relay did not finalize an ATIF artifact within 25 ms after session shutdown\n");
+  } finally {
+    await runtime.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
-      relay.pluginConfig.components = [];
-      relay.atifMatchers = [];
-      const next = await runtime.invoke({ input: "still usable" }, context);
-      assert.equal(next.status, "succeeded");
-      assert.equal(promptCount, 2);
-    } finally {
-      await runtime.stop();
-      await rm(root, { recursive: true, force: true });
-    }
-  },
-);
-
-test("an ATIF snapshot failure preserves the prompt and excludes ATIF", async () => {
+test("an ATIF snapshot failure preserves the prompt and excludes ATIF", async (t) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-snapshot-failure-")));
   const atifDir = join(root, "atif");
   const atofDir = join(root, "atof");
@@ -362,6 +444,11 @@ test("an ATIF snapshot failure preserves the prompt and excludes ATIF", async ()
         };
       },
     });
+    let stderr = "";
+    t.mock.method(process.stderr, "write", (chunk) => {
+      stderr += String(chunk);
+      return true;
+    });
 
     await runtime.start(startInput());
     await rm(atifDir, { recursive: true, force: true });
@@ -373,7 +460,9 @@ test("an ATIF snapshot failure preserves the prompt and excludes ATIF", async ()
     assert.equal(promptCount, 2);
     assert.deepEqual(first.output.relay_artifacts, [{ kind: "atof", path: atofPath }]);
     assert.deepEqual(second.output.relay_artifacts, [{ kind: "atof", path: atofPath }]);
-    await runtime.stop();
+    const stopped = await runtime.stop();
+    assert.deepEqual(stopped.relay_artifacts, [{ kind: "atof", path: atofPath }]);
+    assert.match(stderr, /^NeMo Relay ATIF artifact snapshot failed:/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
