@@ -551,5 +551,3 @@ def create_app(
     application.state.control_token = control_token
     return application
 
-
-app = create_app()
