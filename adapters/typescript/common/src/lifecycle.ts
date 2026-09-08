@@ -31,7 +31,7 @@ export interface AdapterStartInput {
 export interface AdapterRuntime {
   start(input: AdapterStartInput): Promise<void>;
   invoke(request: AgentRunRequest, context: RuntimeContext): Promise<AgentRunResult>;
-  stop(): Promise<void>;
+  stop(): Promise<JsonObject | void>;
 }
 
 export type AdapterRuntimeFactory = () => AdapterRuntime | Promise<AdapterRuntime>;
@@ -292,11 +292,11 @@ async function dispatch(
 
   if (request.operation === "stop") {
     const active = state.runtime;
-    await callAdapter("stop", () => active.stop());
+    const output = await callAdapter("stop", () => active.stop());
     state.runtime = undefined;
     state.runtimeId = undefined;
     state.failed = false;
-    return success("stop");
+    return success("stop", output ?? null);
   }
 
   if (state.failed) {

@@ -163,15 +163,15 @@ fn invoke_openai_stream(
     to_json(&result)
 }
 
-/// Stop a previously started runtime and return FabricEvent list JSON.
+/// Stop a previously started runtime and return RuntimeStopResult JSON.
 #[pyfunction]
 fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyResult<String> {
     let plan = parse_run_plan(plan_json)?;
     let runtime = parse_runtime_handle(runtime_json)?;
-    let events = py
+    let result = py
         .detach(|| nemo_fabric_core::stop_runtime(&plan, &runtime))
         .map_err(to_py_error)?;
-    to_json(&events)
+    to_json(&result)
 }
 
 #[pymodule]

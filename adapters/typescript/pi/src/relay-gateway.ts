@@ -192,6 +192,7 @@ export async function stopRelayGateway(child: ChildProcess, timeoutMs = RELAY_ST
   if (processExited(child)) {
     return;
   }
+  const deadline = performance.now() + timeoutMs;
   try {
     child.kill("SIGTERM");
   } catch (error) {
@@ -202,7 +203,7 @@ export async function stopRelayGateway(child: ChildProcess, timeoutMs = RELAY_ST
       cause: error,
     });
   }
-  if (await waitForExit(child, timeoutMs)) {
+  if (await waitForExit(child, Math.max(0, deadline - performance.now()))) {
     return;
   }
   try {
@@ -215,7 +216,7 @@ export async function stopRelayGateway(child: ChildProcess, timeoutMs = RELAY_ST
       cause: error,
     });
   }
-  if (!(await waitForExit(child, timeoutMs))) {
+  if (!(await waitForExit(child, Math.max(0, deadline - performance.now())))) {
     throw new RelayGatewayError("NeMo Relay gateway did not stop after kill");
   }
 }
