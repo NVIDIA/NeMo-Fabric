@@ -230,8 +230,9 @@ Pick the smallest lifecycle the consumer needs:
   The `streaming=True` flag does not enable NeMo Relay by itself. Without
   `streaming=True`, startup leaves the NeMo Relay configuration unchanged and
   does not inject the SDK-owned ATOF stream sink. This lifecycle requires an
-  adapter whose descriptor declares `capabilities.streaming`; the Pi adapter
-  currently does not support it.
+  adapter that can correlate NeMo Relay records with a NeMo Fabric invocation.
+  The Pi adapter does not support it because the required turn correlation is
+  unavailable.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,

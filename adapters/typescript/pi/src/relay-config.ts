@@ -244,7 +244,14 @@ export async function loadRelayPluginConfig(input: AdapterStartInput): Promise<R
   if (!configPath) {
     throw new Error("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled");
   }
-  const wrapper: unknown = JSON.parse(await readFile(configPath, "utf8"));
+  const wrapper: unknown = JSON.parse(await readFile(configPath, "utf8"), (_key: string, value: unknown) => {
+    if (typeof value === "number" && Number.isInteger(value) && !Number.isSafeInteger(value)) {
+      throw new Error(
+        "NeMo Fabric Relay runtime configuration contains an integer outside JavaScript's safe integer range",
+      );
+    }
+    return value;
+  });
   if (!isRecord(wrapper)) {
     throw new Error("NeMo Fabric Relay runtime configuration must be an object");
   }

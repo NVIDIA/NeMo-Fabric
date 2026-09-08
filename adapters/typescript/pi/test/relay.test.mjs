@@ -171,6 +171,32 @@ test("normalizes file outputs without mutating a Relay stream sink", async () =>
   }
 });
 
+test("rejects unsafe integers while loading Relay plugin configuration", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-unsafe-integer-")));
+  const previousConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;
+  try {
+    const runtimeConfigPath = join(root, "relay-config.json");
+    await writeFile(
+      runtimeConfigPath,
+      '{"relay":{"config":{"version":1,"policy":{"sequence":9007199254740993},"components":[]}}}',
+      "utf8",
+    );
+    process.env.FABRIC_RELAY_CONFIG_PATH = runtimeConfigPath;
+
+    await assert.rejects(
+      loadRelayPluginConfig(startInput(root)),
+      /integer outside JavaScript's safe integer range/,
+    );
+  } finally {
+    if (previousConfigPath === undefined) {
+      delete process.env.FABRIC_RELAY_CONFIG_PATH;
+    } else {
+      process.env.FABRIC_RELAY_CONFIG_PATH = previousConfigPath;
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("encodes ATOF, ATIF, OTEL, and OpenInference Relay plugin snapshots", () => {
   const snapshots = [
     [

@@ -25,7 +25,7 @@ The adapter supports:
 - NeMo Relay 0.9 telemetry through a runtime-owned gateway and an explicitly
   configured Relay Pi extension
 - Ordered plain-text invocations with a `{ "response": "..." }` terminal
-  output, Relay runtime details, and collected ATOF and ATIF artifacts
+  output, Relay runtime details, and collected ATOF artifacts
 
 Ambient Pi settings, context files, packages, extensions, skills, prompts,
 themes, model files, credentials, and session files are disabled. Explicitly
@@ -142,11 +142,14 @@ the isolated Pi session. The result includes `relay_runtime` and
 OpenTelemetry, and OpenInference output from the Relay observability
 configuration.
 
-The adapter waits up to five seconds for a local ATIF trajectory to finalize.
-If it does not finalize, the invocation result remains usable, a warning is
-written to the adapter log, and `relay_artifacts` omits ATIF entries while
-retaining any ATOF files that were written. The runtime remains available for
-subsequent turns.
+Local ATIF trajectories are finalized only after the Pi session closes and are
+therefore not included in `relay_artifacts`; the adapter's five-second
+per-invocation wait expires and logs a warning. After runtime shutdown, retrieve
+the finalized file directly from the ATIF output directory. For the
+configuration above and the default filename template, it is written to
+`./artifacts/relay/<runtime_id>/trajectory-<session_id>.atif.json`. Invocation
+results remain usable, retain any ATOF files, and do not prevent subsequent
+turns.
 
 Session, turn, and tool telemetry does not depend on model redirection. Model
 telemetry is available only when Relay supports the selected model API and the
