@@ -17,7 +17,12 @@ import { createJiti } from "jiti/static";
 import type { AgentConfig, AgentModelConfig, AgentToolDefinition, JsonObject } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
-import { PiRelayFactory, type PiRelayControllerFactory, type PiRelayRuntime } from "./relay.js";
+import {
+  PiRelayFactory,
+  RELAY_SOURCE_REVISION,
+  type PiRelayControllerFactory,
+  type PiRelayRuntime,
+} from "./relay.js";
 import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runtime.js";
 
 interface PiHarnessSettings {
@@ -525,7 +530,8 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       if (relayErrors.length > 0) {
         throw new LifecycleError(
           "pi_relay_extension_load_failed",
-          "The configured NeMo Relay Pi extension failed to load; use an extension from the matching NeMo Relay 0.9 release",
+          "The configured NeMo Relay Pi extension failed to load; use the Pi extension from " +
+            `NeMo Relay source revision ${RELAY_SOURCE_REVISION}`,
           {
             metadata: {
               count: relayErrors.length,

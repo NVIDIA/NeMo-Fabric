@@ -82,7 +82,11 @@ export class PiAdapterRuntime implements AdapterRuntime {
 
   constructor(factory: PiSessionFactory, options: PiAdapterRuntimeOptions = {}) {
     this.factory = factory;
-    this.atifFinalizationTimeoutMs = options.atifFinalizationTimeoutMs ?? ATIF_FINALIZATION_TIMEOUT_MS;
+    const configuredTimeout = options.atifFinalizationTimeoutMs;
+    this.atifFinalizationTimeoutMs =
+      configuredTimeout !== undefined && Number.isFinite(configuredTimeout) && configuredTimeout >= 0
+        ? configuredTimeout
+        : ATIF_FINALIZATION_TIMEOUT_MS;
   }
 
   async start(input: AdapterStartInput): Promise<void> {

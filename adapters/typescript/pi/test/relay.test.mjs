@@ -152,7 +152,7 @@ test("normalizes file outputs without mutating a Relay stream sink", async () =>
     assert.equal(config.atif.output_directory, join(root, "artifacts", "relay", "runtime-1"));
     assert.equal(config.atif.filename_template, "trajectory-{session_id}.atif.json");
     assert.equal(config.atif.agent_name, "pi-relay-test");
-    assert.equal(config.atif.model_name, "gpt-4.1-mini");
+    assert.equal(config.atif.model_name, undefined);
 
     const paths = await writeRelayConfigs(pluginConfig);
     assert.equal(paths.configPath, join(root, "relay-config", "config.toml"));
@@ -351,6 +351,21 @@ test("checks duplicate enabled Relay component kinds only when writing plugin co
       writeRelayConfigs(pluginConfig),
       /unsupported NeMo Relay observability config version 2/,
     );
+
+    for (const [kind, expected] of [
+      ["my_worker", "'my_worker'"],
+      ["my'worker", '"my\'worker"'],
+      ['my"worker', `'my"worker'`],
+      [`my'"worker`, `'my\\'"worker'`],
+      ["my\\worker", "'my\\\\worker'"],
+      ["my\nworker", "'my\\nworker'"],
+    ]) {
+      await assert.rejects(
+        writeRelayConfigs({ version: 1, components: [{ kind }, { kind }] }),
+        (error) => error.message === `duplicate NeMo Relay plugin component kind ${expected}`,
+      );
+    }
+    await assert.rejects(readdir(join(root, "relay-config")), (error) => error.code === "ENOENT");
   } finally {
     if (previous === undefined) {
       delete process.env.FABRIC_RELAY_CONFIG_PATH;
@@ -771,9 +786,13 @@ test("keeps non-Relay startup inert and restores Relay extension environment on 
     gateway: process.env.NEMO_RELAY_PI_GATEWAY_URL,
     openai: process.env.NEMO_RELAY_PI_OPENAI_UPSTREAM,
     anthropic: process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM,
+    relayCommand: process.env.FABRIC_NEMO_RELAY_COMMAND,
+    testRelayCommand: process.env.FABRIC_TEST_NEMO_RELAY_COMMAND,
   };
   process.env.NEMO_RELAY_PI_GATEWAY_URL = "http://ambient.invalid";
   process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM = "https://ambient.invalid";
+  process.env.FABRIC_NEMO_RELAY_COMMAND = "/opt/relay-0.9/bin/nemo-relay";
+  process.env.FABRIC_TEST_NEMO_RELAY_COMMAND = "/opt/test/bin/nemo-relay";
   try {
     const unexpected = () => {
       throw new Error("Relay dependency called for non-Relay start");
@@ -791,7 +810,9 @@ test("keeps non-Relay startup inert and restores Relay extension environment on 
     const mockChild = new MockChild();
     let stopAttempts = 0;
     const factory = new PiRelayFactory({
-      async resolveCommand() {
+      async resolveCommand(baseDir, command) {
+        assert.equal(baseDir, root);
+        assert.equal(command, "/opt/relay-0.9/bin/nemo-relay");
         return "/opt/bin/nemo-relay";
       },
       async checkContract() {
@@ -843,6 +864,8 @@ test("keeps non-Relay startup inert and restores Relay extension environment on 
       ["NEMO_RELAY_PI_GATEWAY_URL", previous.gateway],
       ["NEMO_RELAY_PI_OPENAI_UPSTREAM", previous.openai],
       ["NEMO_RELAY_PI_ANTHROPIC_UPSTREAM", previous.anthropic],
+      ["FABRIC_NEMO_RELAY_COMMAND", previous.relayCommand],
+      ["FABRIC_TEST_NEMO_RELAY_COMMAND", previous.testRelayCommand],
     ]) {
       if (value === undefined) {
         delete process.env[name];

@@ -74,8 +74,10 @@ runtime assumptions but never installs harnesses or credentials at run time.
   SDK harness. Relay-enabled Pi runs require a `nemo-relay` CLI in the
   `>=0.9.0,<0.10.0` range, `runtime.artifacts`, and
   `harness.settings.relay_extension_path`. Relative Relay extension paths
-  resolve from `environment.workspace`. The current Claude and Codex Relay CLI
-  range cannot coexist with Pi's range in one environment.
+  resolve from `environment.workspace`. Set `FABRIC_NEMO_RELAY_COMMAND` to an
+  absolute path when `PATH` resolves to another Relay version. The current
+  Claude and Codex Relay CLI packages cannot coexist with Pi's range in one
+  environment.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise

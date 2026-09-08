@@ -227,7 +227,7 @@ test("adds Relay details to results and stops the Pi session before the gateway"
 
 test(
   "an ATIF finalization timeout preserves ATOF without poisoning the runtime",
-  async () => {
+  async (t) => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-timeout-")));
     const atifDir = join(root, "atif");
     const atofDir = join(root, "atof");
@@ -264,25 +264,40 @@ test(
       async stop() {},
     };
     relay.atifMatchers = await prepareRelayAtifMatchers(relay.pluginConfig);
-    const runtime = new PiAdapterRuntime(
-      {
-        async create() {
-          return {
-            relay,
-            async prompt() {
-              promptCount += 1;
-              return { accepted: true, text: "ok", stopReason: "stop" };
-            },
-            async stop() {},
-          };
-        },
+    const factory = {
+      async create() {
+        return {
+          relay,
+          async prompt() {
+            promptCount += 1;
+            return { accepted: true, text: "ok", stopReason: "stop" };
+          },
+          async stop() {},
+        };
       },
-      { atifFinalizationTimeoutMs: 25 },
-    );
+    };
+    assert.equal(new PiAdapterRuntime(factory).atifFinalizationTimeoutMs, 5_000);
+    for (const invalidTimeout of [Number.NaN, Infinity, -1]) {
+      assert.equal(
+        new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: invalidTimeout }).atifFinalizationTimeoutMs,
+        5_000,
+      );
+    }
+    assert.equal(new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: 0 }).atifFinalizationTimeoutMs, 0);
+
+    const runtime = new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: 25 });
+    let stderr = "";
+    t.mock.method(process.stderr, "write", (chunk) => {
+      stderr += String(chunk);
+      return true;
+    });
 
     try {
       await runtime.start(startInput());
+      const startedAt = performance.now();
       const timedOut = await runtime.invoke({ input: "trace me" }, context);
+      assert.ok(performance.now() - startedAt < 1_000, "configured timeout should reach ATIF finalization");
+      assert.equal(stderr, "NeMo Relay did not finalize an ATIF artifact within 25 ms\n");
       assert.deepEqual(timedOut.output.relay_artifacts, [{ kind: "atof", path: atofPath }]);
 
       relay.pluginConfig.components = [];

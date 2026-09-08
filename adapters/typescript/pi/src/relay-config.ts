@@ -151,16 +151,34 @@ function validateUniqueRelayComponentKinds(pluginConfig: RelayPluginConfig): voi
       continue;
     }
     if (seenKinds.has(kind)) {
-      throw new Error(`duplicate NeMo Relay plugin component kind '${kind}'`);
+      throw new Error(`duplicate NeMo Relay plugin component kind ${pythonStringRepr(kind)}`);
     }
     seenKinds.add(kind);
   }
 }
 
-function selectedModelName(input: AdapterStartInput): string {
-  const models = input.config.models ?? {};
-  const entries = Object.values(models);
-  return models.default?.model ?? (entries.length === 1 ? entries[0]?.model : undefined) ?? "unknown";
+function pythonStringRepr(value: string): string {
+  const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
+  let escaped = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (character === "\\") {
+      escaped += "\\\\";
+    } else if (character === "\t") {
+      escaped += "\\t";
+    } else if (character === "\n") {
+      escaped += "\\n";
+    } else if (character === "\r") {
+      escaped += "\\r";
+    } else if (character === quote) {
+      escaped += `\\${character}`;
+    } else if (codePoint !== undefined && (codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f))) {
+      escaped += `\\x${codePoint.toString(16).padStart(2, "0")}`;
+    } else {
+      escaped += character;
+    }
+  }
+  return `${quote}${escaped}${quote}`;
 }
 
 export async function normalizeRelayOutputDirs(
@@ -218,7 +236,6 @@ export async function normalizeRelayOutputDirs(
     await mkdir(outputDirectory, { recursive: true });
     atif.filename_template ??= "trajectory-{session_id}.atif.json";
     atif.agent_name ??= input.agentName;
-    atif.model_name ??= selectedModelName(input);
   }
 }
 
