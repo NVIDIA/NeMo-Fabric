@@ -221,21 +221,6 @@ and Codex range cannot coexist with the Pi range in the same environment. Use
 separate adapter environments or install the range required for the adapter
 that you run.
 
-On Linux and macOS, you can also install the pinned Claude and Codex CLI with
-the shell installer:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
-  NEMO_RELAY_VERSION=0.7.2 sh -s --
-```
-
-On Windows, install the pinned Claude and Codex CLI with PowerShell:
-
-```powershell
-$env:NEMO_RELAY_VERSION = "0.7.2"
-irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
-```
-
 If `cargo-binstall` is available, install the pinned Claude and Codex CLI with
 Cargo:
 
