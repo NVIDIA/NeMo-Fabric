@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import json
 import os
-from collections.abc import Mapping
+from collections.abc import AsyncGenerator, Mapping
+from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
 import httpx
@@ -16,7 +18,7 @@ from nemo_fabric.models import RelayAtofStreamSinkConfig
 
 
 class _AtofCollectorClient:
-    """Register and deregister requests to an ATOF collector."""
+    """Register, stream, and deregister requests with an ATOF collector."""
 
     def __init__(
         self,
@@ -32,6 +34,7 @@ class _AtofCollectorClient:
             headers=client_headers,
             timeout=timeout_seconds,
         )
+        self._stream_timeout = httpx.Timeout(timeout_seconds, read=None)
 
     @classmethod
     def from_sink(cls, sink: RelayAtofStreamSinkConfig) -> _AtofCollectorClient:
@@ -94,6 +97,52 @@ class _AtofCollectorClient:
             expected_status=204,
             params={"remove_queue": "true" if remove_queue else "false"},
         )
+
+    async def stream(
+        self,
+        request_id: str,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        encoded_request_id = quote(request_id, safe="")
+        method = "GET"
+        path = f"/v1/stream/{encoded_request_id}"
+        try:
+            async with self._client.stream(
+                method,
+                f"{self.base_url}{path}",
+                headers={"Accept": "application/x-ndjson"},
+                timeout=self._stream_timeout,
+            ) as response:
+                if response.status_code != 200:
+                    raise FabricRuntimeError(
+                        f"ATOF collector returned HTTP {response.status_code} for "
+                        f"{method} {path}; expected HTTP 200",
+                        stage="invoke",
+                        code="collector_request_failed",
+                    )
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError as error:
+                        raise FabricRuntimeError(
+                            "ATOF collector returned invalid NDJSON",
+                            stage="invoke",
+                            code="collector_request_failed",
+                        ) from error
+                    if not isinstance(record, dict):
+                        raise FabricRuntimeError(
+                            "ATOF collector returned a non-object NDJSON record",
+                            stage="invoke",
+                            code="collector_request_failed",
+                        )
+                    yield record
+        except httpx.RequestError as error:
+            raise FabricRuntimeError(
+                f"ATOF collector stream failed: {error}",
+                stage="invoke",
+                code="collector_request_failed",
+            ) from error
 
     async def aclose(self) -> None:
         if not self._client.is_closed:

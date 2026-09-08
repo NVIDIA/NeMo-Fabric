@@ -124,7 +124,7 @@ class Runtime:
     def supports_streaming(self) -> bool:
         """Return whether NVIDIA NeMo Relay ATOF streaming is enabled."""
 
-        return self._stream_listener is not None
+        return self._collector_client is not None
 
     @property
     def supports_openai_streaming(self) -> bool:
@@ -286,9 +286,9 @@ class Runtime:
             FabricStateError: If another turn or stream is active.
         """
 
-        if self._stream_listener is None:
+        if self._collector_client is None:
             raise FabricCapabilityError(
-                "streaming requires Relay telemetry and "
+                "streaming requires a configured standalone ATOF collector and "
                 "start_runtime(..., streaming=True)",
                 stage="invoke",
                 code="streaming_unavailable",
@@ -298,11 +298,12 @@ class Runtime:
         self._ensure_invocable()
         payload = _run_request_payload(input=input, request=request)
         request_id = payload["request_id"]
+        registration_ready = asyncio.Event()
         stream = InvokeStream(
-            self._invoke_registered_payload(payload),
-            self._stream_listener,
+            self._invoke_registered_payload(payload, registration_ready),
+            self._collector_client,
             request_id=request_id,
-            turn_index=len(self._invocations) + 1,
+            registration_ready=registration_ready,
             on_finalize=lambda: self._deregister_request(
                 request_id,
                 remove_queue=True,
@@ -314,9 +315,11 @@ class Runtime:
     async def _invoke_registered_payload(
         self,
         payload: dict[str, Any],
+        registration_ready: asyncio.Event,
     ) -> RunResult:
         request_id = payload["request_id"]
         await self._register_request(request_id)
+        registration_ready.set()
         try:
             result = await self._invoke_payload(payload)
         except BaseException as error:

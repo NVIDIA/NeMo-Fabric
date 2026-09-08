@@ -240,7 +240,6 @@ class Fabric:
             stream_sink = _configured_stream_sink(config)
             if stream_sink is not None:
                 collector_client = _AtofCollectorClient.from_sink(stream_sink)
-                stream_listener = _AtofStreamListener()
                 runtime_config = config.model_copy(deep=True)
                 runtime_stream_sink = _configured_stream_sink(runtime_config)
                 if runtime_stream_sink is not None:
