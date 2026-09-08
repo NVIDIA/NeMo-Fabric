@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
+from nemo_fabric._collector_client import _AtofCollectorClient
 from nemo_fabric.errors import (
     FabricCapabilityError,
     FabricConfigError,
@@ -69,6 +70,7 @@ class Runtime:
         runtime: RuntimeHandle | Mapping[str, Any],
         overrides: Mapping[str, Any] | None = None,
         stream_listener: _AtofStreamListener | None = None,
+        collector_client: _AtofCollectorClient | None = None,
     ) -> None:
         """lazydocs: ignore"""
 
@@ -84,6 +86,8 @@ class Runtime:
         self._current_task: asyncio.Task[Any] | None = None
         self._current_stream: _RuntimeStream | None = None
         self._stream_listener = stream_listener
+        self._collector_client = collector_client
+        self._registered_requests: set[str] = set()
         self._closing = False
 
     @property
@@ -293,14 +297,64 @@ class Runtime:
         self._ensure_no_active_stream()
         self._ensure_invocable()
         payload = _run_request_payload(input=input, request=request)
+        request_id = payload["request_id"]
         stream = InvokeStream(
-            self._invoke_payload(payload),
+            self._invoke_registered_payload(payload),
             self._stream_listener,
-            request_id=payload["request_id"],
+            request_id=request_id,
             turn_index=len(self._invocations) + 1,
+            on_finalize=lambda: self._deregister_request(
+                request_id,
+                remove_queue=True,
+            ),
         )
         self._current_stream = stream
         return stream
+
+    async def _invoke_registered_payload(
+        self,
+        payload: dict[str, Any],
+    ) -> RunResult:
+        request_id = payload["request_id"]
+        await self._register_request(request_id)
+        try:
+            result = await self._invoke_payload(payload)
+        except BaseException as error:
+            try:
+                await self._deregister_request(request_id, remove_queue=False)
+            except Exception as cleanup_error:
+                error.add_note(
+                    f"ATOF collector deregistration failed: {cleanup_error}"
+                )
+            raise
+        await self._deregister_request(request_id, remove_queue=False)
+        return result
+
+    async def _register_request(self, request_id: str) -> None:
+        if self._collector_client is None:
+            return
+        await _call_blocking(lambda: self._collector_client.register(request_id))
+        self._registered_requests.add(request_id)
+
+    async def _deregister_request(
+        self,
+        request_id: str,
+        *,
+        remove_queue: bool,
+    ) -> None:
+        if (
+            self._collector_client is None
+            or request_id not in self._registered_requests
+        ):
+            return
+        await _call_blocking(
+            lambda: self._collector_client.deregister(
+                request_id,
+                remove_queue=remove_queue,
+            )
+        )
+        if remove_queue:
+            self._registered_requests.discard(request_id)
 
     def invoke_openai_stream(
         self,
@@ -421,8 +475,15 @@ class Runtime:
             self._status = RuntimeStatus.STOPPED
         finally:
             self._closing = False
-            if self._stream_listener is not None:
-                await self._stream_listener.close()
+            try:
+                await self._deregister_requests()
+            finally:
+                if self._stream_listener is not None:
+                    await self._stream_listener.close()
+
+    async def _deregister_requests(self) -> None:
+        for request_id in tuple(self._registered_requests):
+            await self._deregister_request(request_id, remove_queue=True)
 
     def _absorb(self, result: RunResult) -> None:
         self._invocations.append(

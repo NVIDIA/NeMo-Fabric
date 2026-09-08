@@ -11,6 +11,8 @@ import json
 import os
 from collections.abc import Mapping
 from typing import Any
+
+from nemo_fabric._collector_client import _AtofCollectorClient
 from nemo_fabric.errors import (
     FabricConfigError,
     FabricError,
@@ -27,7 +29,7 @@ from nemo_fabric.runtime import (
 )
 from nemo_fabric.streaming import (
     _AtofStreamListener,
-    _configured_stream_listener,
+    _configured_stream_sink,
     _relay_enabled,
     _with_stream_sink,
 )
@@ -221,18 +223,32 @@ class Fabric:
 
         runtime_overrides = _json_mapping(overrides, "runtime overrides")
         stream_listener: _AtofStreamListener | None = None
+        collector_client: _AtofCollectorClient | None = None
         runtime_config = config
         if streaming and not _relay_enabled(config):
             raise FabricConfigError("streaming requires Relay telemetry to be enabled")
         if streaming:
-            stream_listener = _configured_stream_listener(config)
+            stream_sink = _configured_stream_sink(config)
+            if stream_sink is not None:
+                collector_client = _AtofCollectorClient.from_sink(stream_sink)
+                stream_listener = _AtofStreamListener()
+                runtime_config = config.model_copy(deep=True)
+                runtime_stream_sink = _configured_stream_sink(runtime_config)
+                if runtime_stream_sink is not None:
+                    runtime_stream_sink.url = (
+                        f"{collector_client.base_url}/v1/atof"
+                    )
             try:
-                if stream_listener is None:
-                    stream_listener = _AtofStreamListener()
-                    await stream_listener.start()
-                    runtime_config = _with_stream_sink(config, stream_listener.url)
-                else:
-                    await stream_listener.start()
+                if collector_client is None:
+                    if stream_listener is None:
+                        stream_listener = _AtofStreamListener()
+                        await stream_listener.start()
+                        runtime_config = _with_stream_sink(
+                            config,
+                            stream_listener.url,
+                        )
+                    else:
+                        await stream_listener.start()
             except Exception as error:
                 if stream_listener is not None:
                     await stream_listener.close()
@@ -292,6 +308,7 @@ class Fabric:
             runtime=runtime,
             overrides=runtime_overrides,
             stream_listener=stream_listener,
+            collector_client=collector_client,
         )
 
     def _native_module(self) -> Any | None:

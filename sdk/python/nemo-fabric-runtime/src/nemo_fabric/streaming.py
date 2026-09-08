@@ -9,7 +9,7 @@ import asyncio
 import json
 import os
 import warnings
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
 # Temp do not commit
 from datetime import datetime
@@ -140,6 +140,7 @@ class InvokeStream:
         *,
         request_id: str | None = None,
         turn_index: int | None = None,
+        on_finalize: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """lazydocs: ignore"""
 
@@ -147,6 +148,7 @@ class InvokeStream:
         self._closed = False
         self._finalized = False
         self._pending_record: dict[str, Any] | None = None
+        self._on_finalize = on_finalize
         listener.begin_stream(request_id=request_id, turn_index=turn_index)
         try:
             self._task = asyncio.create_task(invoke)
@@ -253,7 +255,11 @@ class InvokeStream:
                 break
         self._pending_record = None
         self._listener.end_stream()
-        self._finalized = True
+        try:
+            if self._on_finalize is not None:
+                await self._on_finalize()
+        finally:
+            self._finalized = True
         if invocation_completed and warn_if_unavailable:
             self._listener.warn_if_unavailable()
 
@@ -682,6 +688,37 @@ def _sink_name(
 
 
 def _configured_stream_listener(config: FabricConfig) -> _AtofStreamListener | None:
+    # TODO: Determine if this is still needed
+    sink = _configured_stream_sink(config)
+    if sink is None:
+        return None
+    try:
+        parsed = urlsplit(sink.url)
+        port = parsed.port
+    except ValueError as error:
+        raise FabricConfigError(
+            "Relay sink nemo-fabric-stream has an invalid URL"
+        ) from error
+    if (
+        parsed.scheme != "http"
+        or not parsed.hostname
+        or port is None
+        or parsed.path != "/atof"
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise FabricConfigError(
+            "Relay sink nemo-fabric-stream must use "
+            "http://<host>:<port>/atof without credentials, query, or fragment"
+        )
+    return _AtofStreamListener(host=parsed.hostname, port=port)
+
+
+def _configured_stream_sink(
+    config: FabricConfig,
+) -> RelayAtofStreamSinkConfig | None:
     relay = config.relay
     observability = relay.observability if isinstance(relay, RelayConfig) else None
     atof = (
@@ -709,28 +746,7 @@ def _configured_stream_listener(config: FabricConfig) -> _AtofStreamListener | N
         raise FabricConfigError(
             "Relay sink nemo-fabric-stream must use http_post or ndjson"
         )
-    try:
-        parsed = urlsplit(sink.url)
-        port = parsed.port
-    except ValueError as error:
-        raise FabricConfigError(
-            "Relay sink nemo-fabric-stream has an invalid URL"
-        ) from error
-    if (
-        parsed.scheme != "http"
-        or not parsed.hostname
-        or port is None
-        or parsed.path != "/atof"
-        or parsed.query
-        or parsed.fragment
-        or parsed.username
-        or parsed.password
-    ):
-        raise FabricConfigError(
-            "Relay sink nemo-fabric-stream must use "
-            "http://<host>:<port>/atof without credentials, query, or fragment"
-        )
-    return _AtofStreamListener(host=parsed.hostname, port=port)
+    return sink
 
 
 def _with_stream_sink(config: FabricConfig, url: str) -> FabricConfig:
