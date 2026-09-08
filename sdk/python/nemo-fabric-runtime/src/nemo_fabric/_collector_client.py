@@ -35,7 +35,7 @@ class _AtofCollectorClient:
             )
         try:
             parsed = urlsplit(sink.url)
-            parsed.port
+            parsed.port  # Trigger port number validation if given
         except ValueError as error:
             raise FabricConfigError(
                 "Relay sink nemo-fabric-stream has an invalid URL"
