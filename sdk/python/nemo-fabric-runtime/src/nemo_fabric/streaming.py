@@ -48,6 +48,7 @@ class InvokeStream:
         self._registration_ready = registration_ready
         self._records: AsyncGenerator[dict[str, Any], None] | None = None
         self._next_record_task: asyncio.Task[dict[str, Any]] | None = None
+        self._pending_record: dict[str, Any] | None = None
         self._closed = False
         self._finalized = False
         self._on_finalize = on_finalize
@@ -140,6 +141,10 @@ class InvokeStream:
         return self._records
 
     async def _next_record(self) -> dict[str, Any]:
+        if self._pending_record is not None:
+            record = self._pending_record
+            self._pending_record = None
+            return record
         if self._next_record_task is None:
             self._next_record_task = asyncio.create_task(
                 anext(self._records_iterator())
@@ -147,6 +152,10 @@ class InvokeStream:
         task = self._next_record_task
         try:
             return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.done() and not task.cancelled():
+                self._pending_record = task.result()
+            raise
         finally:
             if task.done():
                 self._next_record_task = None

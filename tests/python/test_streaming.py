@@ -521,20 +521,15 @@ async def test_cancelled_anext_retains_record_consumed_during_cancellation():
         registration_ready=registration_ready,
     )
     record = {"uuid": "first"}
+    records.put_nowait(record)
+    shield = asyncio.shield
 
-    async def cancel_after_getter_completes(
-        tasks: set[asyncio.Task[Any]],
-        *,
-        return_when: str,
-    ) -> None:
-        assert return_when == asyncio.FIRST_COMPLETED
-        getter = next(task for task in tasks if task is not stream._task)
-        records.put_nowait(record)
-        assert await getter == record
+    async def cancel_after_record_is_read(task: asyncio.Future[dict[str, Any]]):
+        assert await shield(task) == record
         raise asyncio.CancelledError
 
     with (
-        patch.object(asyncio, "wait", new=cancel_after_getter_completes),
+        patch.object(asyncio, "shield", new=cancel_after_record_is_read),
         pytest.raises(asyncio.CancelledError),
     ):
         await stream.__anext__()
