@@ -146,11 +146,13 @@ sequenceDiagram
     participant Hermes as Hermes + Remote Relay
     participant Collector as Fabric ATOF Collector
 
-    Note over Fabric,Collector: Startup<br/>Both configs use the same collector URL<br/>Fabric binds the ATOF endpoint
+    Note over Fabric,Collector: Startup<br/>The external collector is running<br/>Both configs use its base URL
 
     rect rgb(239, 246, 255)
         Note over App,Collector: Invocation 1<br/>request ID = req-1
         App->>Fabric: invoke_stream(req-1)
+        Fabric->>Collector: Register req-1
+        Collector-->>Fabric: Ready
         Fabric->>API: POST invoke<br/>metadata.nemo_fabric_request_id = req-1
         API->>Hermes: Map req-1 to task_id and invoke
         Hermes-->>Collector: ATOF NDJSON<br/>hermes.turn.start(task_id=req-1)
@@ -166,6 +168,8 @@ sequenceDiagram
     rect rgb(240, 251, 243)
         Note over App,Collector: Invocation 2<br/>request ID = req-2
         App->>Fabric: invoke_stream(req-2)
+        Fabric->>Collector: Register req-2
+        Collector-->>Fabric: Ready
         Fabric->>API: POST invoke<br/>metadata.nemo_fabric_request_id = req-2
         API->>Hermes: Map req-2 to task_id and invoke
         Hermes--xCollector: Delayed req-1 record
@@ -183,14 +187,13 @@ sequenceDiagram
 
 Invocations on one runtime are serialized. The consumer must use a unique
 request ID for each turn and fully consume or close one stream before starting
-the next. The remote service can start before the Fabric runtime, but the Fabric
-listener must be running before the first invocation.
+the next. The remote service can start before the Fabric runtime, but the
+externally managed collector must be running before the first invocation.
 
 Multiple Fabric runtimes can use `invoke` against the same remote agent, subject
-to the remote service's concurrency and session-isolation behavior. With the
-single remote sink shown above, only one Fabric runtime can use `invoke_stream`
-at a time because only one runtime can bind the configured listener URL. This
-configuration does not support parallel `invoke_stream` runtimes.
+to the remote service's concurrency and session-isolation behavior. Multiple
+runtimes can also use `invoke_stream` through the same collector when every
+request ID is unique.
 
 The adapter retains the completed user/assistant transcript for ordered
 invocations in one runtime.

@@ -26,6 +26,17 @@ Every lifecycle method accepts a complete, typed ``FabricConfig`` plus an option
 See the Getting Started overview for runnable single-invocation, typed-config, and multi-turn examples.
 
 
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__() -> None
+```
+
+
+
+
+
+
 
 
 ---
@@ -153,12 +164,13 @@ async def start_runtime(
     base_dir: str | os.PathLike[str] | None = None,
     overrides: Mapping[str, Any] | None = None,
     streaming: bool = False,
+    launch_collector: bool | None = None,
 ) -> Runtime
 ```
 
 Start a stateful runtime for one or more ordered invocations.
 
-Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. Set ``streaming=True`` with NVIDIA NeMo Relay enabled to bind the configured or SDK-generated ATOF endpoint used by ``Runtime.invoke_stream()``.
+Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. With NVIDIA NeMo Relay enabled, ``streaming=True`` uses collector-backed streaming. By default, streaming starts an embedded collector. Set ``launch_collector=False`` to use an externally managed collector.
 
 
 
@@ -167,7 +179,8 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
  - <b>`config`</b>:  Complete typed ``FabricConfig``.
  - <b>`base_dir`</b>:  Base directory for resolving relative paths.
  - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the runtime unless superseded by invocation overrides.
- - <b>`streaming`</b>:  Whether to bind NeMo Relay ATOF streaming for  ``Runtime.invoke_stream()``.
+ - <b>`streaming`</b>:  Whether to enable collector-backed NeMo Relay ATOF  streaming for ``Runtime.invoke_stream()``.
+ - <b>`launch_collector`</b>:  Whether to launch an embedded collector. ``None``  defaults to ``True`` when streaming is enabled. ``False`` uses  an externally managed collector. This argument cannot be set  unless ``streaming=True``.
 
 
 
@@ -178,7 +191,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
 
 **Raises:**
 
- - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid, or streaming  is requested without NeMo Relay enabled.
+ - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid, streaming is  requested without NeMo Relay enabled, ``launch_collector`` is  set without streaming, or an external collector has no sink.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
  - <b>`FabricRuntimeError`</b>:  If runtime startup fails.
 
