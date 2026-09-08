@@ -4,5 +4,6 @@
 """Standalone collector for NVIDIA NeMo Fabric ATOF records."""
 
 from nemo_fabric_collector.app import app, create_app
+from nemo_fabric_collector.server import serve_collector
 
-__all__ = ["app", "create_app"]
+__all__ = ["app", "create_app", "serve_collector"]

@@ -49,23 +49,23 @@ follows:
 Relay-backed streaming has two sides:
 
 - **Receiver — Fabric runtime:**
-  `start_runtime(..., streaming=True)` opens the HTTP endpoint at
-  `collector_url`. The reserved `nemo-fabric-stream` entry in `FabricConfig`
-  supplies the address that Fabric binds.
+  `start_runtime(..., streaming=True)` connects to the independently running
+  collector at `collector_url`. The reserved `nemo-fabric-stream` entry in
+  `FabricConfig` supplies the collector base URL.
 - **Publisher — remote deployment:** The independently started remote service
   owns its Relay installation. Its Relay stream sink posts NDJSON ATOF records
-  to the Fabric listener. Fabric does not start or configure the remote Relay
+  to the collector. Fabric does not start or configure the remote Relay
   installation or its sink.
 
-Both sides must be configured with the same URL; the adapter does not send the
-listener URL to the remote service. For correlation, the adapter puts the Fabric
-request ID in `metadata.nemo_fabric_request_id` in the invoke request body. The
-remote endpoint must use it as the request ID for its Relay-instrumented runtime.
-For Hermes, map it to `RunRequest.request_id`, as shown below. The adapter sends
-no correlation headers.
+Both sides must use the same collector; the adapter does not send the collector
+URL to the remote service. For correlation, the adapter puts the Fabric request
+ID in `metadata.nemo_fabric_request_id` in the invoke request body. The remote
+endpoint must use it as the request ID for its Relay-instrumented runtime. For
+Hermes, map it to `RunRequest.request_id`, as shown below. The adapter sends no
+correlation headers.
 
 ```python
-collector_url = "http://fabric-host:43123/atof"
+collector_url = "http://fabric-host:43123"
 
 config = FabricConfig(
     metadata=MetadataConfig(name="remote-agent"),
@@ -117,7 +117,7 @@ atof:
   sinks:
     - type: stream
       name: nemo-fabric-stream
-      url: http://fabric-host:43123/atof
+      url: http://fabric-host:43123/v1/atof
       transport: ndjson
 ```
 

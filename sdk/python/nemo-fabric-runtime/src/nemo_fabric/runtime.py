@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import deepcopy
 from enum import Enum
 from typing import Any, Protocol
@@ -71,6 +71,7 @@ class Runtime:
         overrides: Mapping[str, Any] | None = None,
         stream_listener: _AtofStreamListener | None = None,
         collector_client: _AtofCollectorClient | None = None,
+        release_collector: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """lazydocs: ignore"""
 
@@ -87,6 +88,7 @@ class Runtime:
         self._current_stream: _RuntimeStream | None = None
         self._stream_listener = stream_listener
         self._collector_client = collector_client
+        self._release_collector = release_collector
         self._registered_requests: set[str] = set()
         self._closing = False
 
@@ -491,8 +493,12 @@ class Runtime:
             if self._stream_listener is not None:
                 await self._stream_listener.close()
         finally:
-            if self._collector_client is not None:
-                await self._collector_client.aclose()
+            try:
+                if self._collector_client is not None:
+                    await self._collector_client.aclose()
+            finally:
+                if self._release_collector is not None:
+                    await self._release_collector()
 
     def _absorb(self, result: RunResult) -> None:
         self._invocations.append(
