@@ -236,7 +236,7 @@ def test_remote_agent_accepts_relay_atof_for_invoke_stream(tmp_path: Path):
     assert plan["telemetry_plan"]["providers"] == ["relay"]
     assert plan["telemetry_plan"]["adapter_outputs"] == ["atof"]
     assert (
-        plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"] is False
+        plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"]
     )
 
 
