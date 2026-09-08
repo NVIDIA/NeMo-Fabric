@@ -1804,6 +1804,9 @@ claude = [
 codex = [
     { name = "nemo-fabric-adapters-codex", extra = ["harness"] },
 ]
+collector = [
+    { name = "nemo-fabric-collector" },
+]
 deepagents = [
     { name = "nemo-fabric-adapters-deepagents", extra = ["harness"] },
 ]
@@ -1833,11 +1836,12 @@ requires-dist = [
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "../../../adapters/python/hermes" },
     { name = "nemo-fabric-adapters-mini-swe-agent", extras = ["harness"], marker = "extra == 'mini-swe-agent'", editable = "../../../adapters/python/mini-swe-agent" },
     { name = "nemo-fabric-adapters-remote-agent", extras = ["harness"], marker = "extra == 'remote-agent'", editable = "../../../adapters/python/remote-agent" },
+    { name = "nemo-fabric-collector", marker = "extra == 'collector'", editable = "../collector" },
     { name = "nemo-fabric-runtime", editable = "../nemo-fabric-runtime" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.7.2,<0.8" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
 ]
-provides-extras = ["claude", "codex", "deepagents", "mini-swe-agent", "remote-agent", "harbor", "hermes-agent", "relay"]
+provides-extras = ["claude", "codex", "collector", "deepagents", "mini-swe-agent", "remote-agent", "harbor", "hermes-agent", "relay"]
 
 [[package]]
 name = "nemo-fabric-adapter-contract"
@@ -2014,15 +2018,32 @@ requires-dist = [
 provides-extras = ["harness", "full"]
 
 [[package]]
+name = "nemo-fabric-collector"
+version = "0.3.0"
+source = { editable = "../collector" }
+dependencies = [
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "starlette", specifier = ">=0.46" },
+    { name = "uvicorn", specifier = "~=0.49" },
+]
+
+[[package]]
 name = "nemo-fabric-runtime"
 source = { editable = "../nemo-fabric-runtime" }
 dependencies = [
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = "~=0.28" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "typing-extensions", specifier = ">=4.12" },
 ]
@@ -3683,8 +3704,8 @@ name = "uvicorn"
 version = "0.52.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "click", marker = "python_full_version >= '3.12' or sys_platform != 'emscripten'" },
-    { name = "h11", marker = "python_full_version >= '3.12' or sys_platform != 'emscripten'" },
+    { name = "click" },
+    { name = "h11" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/2e/28/64ca011edf31c715b4fad359c587ea52391aaffa125065695590241ff617/uvicorn-0.52.3.tar.gz", hash = "sha256:18857b9e6579300be55c91c0a1cfd37d9a2cf0cabea33b88275f199eb73b8b58", size = 100621, upload-time = "2026-08-13T16:50:02.899Z" }
 wheels = [

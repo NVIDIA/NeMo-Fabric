@@ -5,26 +5,33 @@
 
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
-from http.client import HTTPException
-from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+
+import httpx
 
 from nemo_fabric.errors import FabricConfigError, FabricRuntimeError
 from nemo_fabric.models import RelayAtofStreamSinkConfig
 
 
-@dataclass(frozen=True)
 class _AtofCollectorClient:
     """Register and deregister requests to an ATOF collector."""
 
-    base_url: str
-    timeout_seconds: float
-    headers: Mapping[str, str]
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        timeout_seconds: float,
+        headers: Mapping[str, str],
+    ) -> None:
+        self.base_url = base_url
+        client_headers = dict(headers)
+        client_headers.setdefault("Accept", "application/json")
+        self._client = httpx.AsyncClient(
+            headers=client_headers,
+            timeout=timeout_seconds,
+        )
 
     @classmethod
     def from_sink(cls, sink: RelayAtofStreamSinkConfig) -> _AtofCollectorClient:
@@ -71,64 +78,53 @@ class _AtofCollectorClient:
             headers=headers,
         )
 
-    def register(self, request_id: str) -> None:
-        payload = json.dumps({"request_id": request_id}).encode()
-        self._request(
+    async def register(self, request_id: str) -> None:
+        await self._request(
             "POST",
             "/v1/register",
             expected_status=201,
-            body=payload,
-            content_type="application/json",
+            json={"request_id": request_id},
         )
 
-    def deregister(self, request_id: str, *, remove_queue: bool) -> None:
+    async def deregister(self, request_id: str, *, remove_queue: bool) -> None:
         encoded_request_id = quote(request_id, safe="")
-        query_value = "true" if remove_queue else "false"
-        self._request(
+        await self._request(
             "DELETE",
-            f"/v1/deregister-request/{encoded_request_id}"
-            f"?remove_queue={query_value}",
+            f"/v1/deregister-request/{encoded_request_id}",
             expected_status=204,
+            params={"remove_queue": "true" if remove_queue else "false"},
         )
 
-    def _request(
+    async def aclose(self) -> None:
+        if not self._client.is_closed:
+            await self._client.aclose()
+
+    async def _request(
         self,
         method: str,
         path: str,
         *,
         expected_status: int,
-        body: bytes | None = None,
-        content_type: str | None = None,
+        json: Mapping[str, object] | None = None,
+        params: Mapping[str, str] | None = None,
     ) -> None:
-        headers = dict(self.headers)
-        headers.setdefault("Accept", "application/json")
-        if content_type is not None:
-            headers["Content-Type"] = content_type
-        request = Request(
-            f"{self.base_url}{path}",
-            data=body,
-            headers=headers,
-            method=method,
-        )
         try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
-                status = response.status
-        except HTTPError as error:
-            raise FabricRuntimeError(
-                f"ATOF collector returned HTTP {error.code} for {method} {path}",
-                stage="invoke",
-                code="collector_request_failed",
-            ) from error
-        except (HTTPException, OSError, URLError) as error:
+            response = await self._client.request(
+                method,
+                f"{self.base_url}{path}",
+                json=json,
+                params=params,
+            )
+        except httpx.RequestError as error:
             raise FabricRuntimeError(
                 f"ATOF collector request failed: {error}",
                 stage="invoke",
                 code="collector_request_failed",
             ) from error
-        if status != expected_status:
+        if response.status_code != expected_status:
             raise FabricRuntimeError(
-                f"ATOF collector returned HTTP {status} for {method} {path}; "
-                f"expected HTTP {expected_status}",
+                f"ATOF collector returned HTTP {response.status_code} for "
+                f"{method} {path}; expected HTTP {expected_status}",
                 stage="invoke",
                 code="collector_request_failed",
             )

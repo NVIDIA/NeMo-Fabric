@@ -333,7 +333,7 @@ class Runtime:
     async def _register_request(self, request_id: str) -> None:
         if self._collector_client is None:
             return
-        await _call_blocking(lambda: self._collector_client.register(request_id))
+        await self._collector_client.register(request_id)
         self._registered_requests.add(request_id)
 
     async def _deregister_request(
@@ -347,11 +347,9 @@ class Runtime:
             or request_id not in self._registered_requests
         ):
             return
-        await _call_blocking(
-            lambda: self._collector_client.deregister(
-                request_id,
-                remove_queue=remove_queue,
-            )
+        await self._collector_client.deregister(
+            request_id,
+            remove_queue=remove_queue,
         )
         if remove_queue:
             self._registered_requests.discard(request_id)
@@ -433,6 +431,7 @@ class Runtime:
         """
 
         if self._status is RuntimeStatus.STOPPED:
+            await self._close_streaming_resources()
             return
         if self._current_stream is not None and not self._current_stream._finalized:
             if not self._current_stream._task.done():
@@ -478,12 +477,19 @@ class Runtime:
             try:
                 await self._deregister_requests()
             finally:
-                if self._stream_listener is not None:
-                    await self._stream_listener.close()
+                await self._close_streaming_resources()
 
     async def _deregister_requests(self) -> None:
         for request_id in tuple(self._registered_requests):
             await self._deregister_request(request_id, remove_queue=True)
+
+    async def _close_streaming_resources(self) -> None:
+        try:
+            if self._stream_listener is not None:
+                await self._stream_listener.close()
+        finally:
+            if self._collector_client is not None:
+                await self._collector_client.aclose()
 
     def _absorb(self, result: RunResult) -> None:
         self._invocations.append(
@@ -516,8 +522,7 @@ class Runtime:
                 raise
             exc.add_note(f"runtime cleanup failed: {cleanup_error}")
         finally:
-            if self._stream_listener is not None:
-                await self._stream_listener.close()
+            await self._close_streaming_resources()
 
 
 def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:

@@ -225,6 +225,15 @@ class Fabric:
         stream_listener: _AtofStreamListener | None = None
         collector_client: _AtofCollectorClient | None = None
         runtime_config = config
+
+        async def close_streaming_resources() -> None:
+            try:
+                if stream_listener is not None:
+                    await stream_listener.close()
+            finally:
+                if collector_client is not None:
+                    await collector_client.aclose()
+
         if streaming and not _relay_enabled(config):
             raise FabricConfigError("streaming requires Relay telemetry to be enabled")
         if streaming:
@@ -250,8 +259,7 @@ class Fabric:
                     else:
                         await stream_listener.start()
             except Exception as error:
-                if stream_listener is not None:
-                    await stream_listener.close()
+                await close_streaming_resources()
                 raise FabricRuntimeError(
                     str(error),
                     stage="start",
@@ -264,8 +272,7 @@ class Fabric:
             )
             native = self._require_native_module("start_runtime")
         except BaseException:
-            if stream_listener is not None:
-                await stream_listener.close()
+            await close_streaming_resources()
             raise
         started_runtime: dict[str, Any] | None = None
 
@@ -291,16 +298,13 @@ class Fabric:
                     )
                 except Exception:
                     pass
-            if stream_listener is not None:
-                await stream_listener.close()
+            await close_streaming_resources()
             raise
         except FabricError:
-            if stream_listener is not None:
-                await stream_listener.close()
+            await close_streaming_resources()
             raise
         except Exception as error:
-            if stream_listener is not None:
-                await stream_listener.close()
+            await close_streaming_resources()
             raise FabricRuntimeError(str(error), stage="start") from error
         return Runtime(
             client=self,
