@@ -49,9 +49,9 @@ follows:
 Relay-backed streaming has two sides:
 
 - **Receiver — Fabric runtime:**
-  `start_runtime(..., streaming=True)` connects to the independently running
-  collector at `collector_url`. The reserved `nemo-fabric-stream` entry in
-  `FabricConfig` supplies the collector base URL.
+  `start_runtime(..., streaming=True, launch_collector=False)` connects to the
+  independently running collector at `collector_url`. The reserved
+  `nemo-fabric-stream` entry in `FabricConfig` supplies the collector base URL.
 - **Publisher — remote deployment:** The independently started remote service
   owns its Relay installation. Its Relay stream sink posts NDJSON ATOF records
   to the collector. Fabric does not start or configure the remote Relay
@@ -95,7 +95,11 @@ config = FabricConfig(
     )
 )
 
-async with await Fabric().start_runtime(config, streaming=True) as runtime:
+async with await Fabric().start_runtime(
+    config,
+    streaming=True,
+    launch_collector=False,
+) as runtime:
     for request_id, prompt in (
         ("req-1", "First request"),
         ("req-2", "Second request"),

@@ -44,8 +44,6 @@ try:
 except ImportError:
     _native = None
 
-_REMOTE_ADAPTER_ID = "nvidia.fabric.remote-agent"
-
 
 class Fabric:
     """Primary Python entrypoint for NeMo Fabric.
@@ -201,14 +199,15 @@ class Fabric:
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
         streaming: bool = False,
+        launch_collector: bool | None = None,
     ) -> Runtime:
         """Start a stateful runtime for one or more ordered invocations.
 
         Each call starts a new logical runtime. Runtime-scoped overrides are
         recursively merged below invocation-scoped overrides. With NVIDIA NeMo
-        Relay enabled, ``streaming=True`` starts an embedded
-        collector for local adapters. The remote-agent adapter instead uses its
-        configured collector endpoint.
+        Relay enabled, ``streaming=True`` uses collector-backed streaming.
+        By default, streaming starts an embedded collector. Set
+        ``launch_collector=False`` to use an externally managed collector.
 
         Args:
             config: Complete typed ``FabricConfig``.
@@ -217,6 +216,10 @@ class Fabric:
                 in the runtime unless superseded by invocation overrides.
             streaming: Whether to enable collector-backed NeMo Relay ATOF
                 streaming for ``Runtime.invoke_stream()``.
+            launch_collector: Whether to launch an embedded collector. ``None``
+                defaults to ``True`` when streaming is enabled. ``False`` uses
+                an externally managed collector. This argument cannot be set
+                unless ``streaming=True``.
 
         Returns:
             An active ``Runtime``. Use it as an asynchronous context
@@ -224,8 +227,8 @@ class Fabric:
 
         Raises:
             FabricConfigError: If inputs or overrides are invalid, streaming is
-                requested without NeMo Relay enabled, or remote-agent streaming
-                has no collector sink.
+                requested without NeMo Relay enabled, ``launch_collector`` is
+                set without streaming, or an external collector has no sink.
             FabricNativeUnavailableError: If the native extension is not
                 installed.
             FabricRuntimeError: If runtime startup fails.
@@ -244,18 +247,13 @@ class Fabric:
                 if release_collector is not None:
                     await release_collector()
 
+        if launch_collector is not None and not streaming:
+            raise FabricConfigError("launch_collector requires streaming=True")
         if streaming and not _relay_enabled(config):
             raise FabricConfigError("streaming requires Relay telemetry to be enabled")
         if streaming:
             try:
-                if _is_remote_adapter(config):
-                    stream_sink = _configured_stream_sink(config)
-                    if stream_sink is None:
-                        raise FabricConfigError(
-                            "remote-agent streaming requires a configured "
-                            "nemo-fabric-stream collector sink"
-                        )
-                else:
+                if launch_collector is not False:
                     collector_base_url, release_collector = (
                         await self._acquire_collector()
                     )
@@ -263,6 +261,13 @@ class Fabric:
                     stream_sink = _configured_stream_sink(runtime_config)
                     if stream_sink is None:
                         raise RuntimeError("failed to configure the ATOF collector")
+                else:
+                    stream_sink = _configured_stream_sink(config)
+                    if stream_sink is None:
+                        raise FabricConfigError(
+                            "external collector streaming requires a configured "
+                            "nemo-fabric-stream collector sink"
+                        )
                 collector_client = _AtofCollectorClient.from_sink(stream_sink)
                 if runtime_config is config:
                     runtime_config = config.model_copy(deep=True)
@@ -408,13 +413,6 @@ def _config_json(config: FabricConfig) -> str:
             )
         raise FabricConfigError("config must be a FabricConfig")
     return json.dumps(config.to_mapping())
-
-
-def _is_remote_adapter(config: FabricConfig) -> bool:
-    return (
-        config.harness is not None
-        and config.harness.adapter_id == _REMOTE_ADAPTER_ID
-    )
 
 
 def _base_dir_arg(base_dir: str | os.PathLike[str] | None) -> str | None:
