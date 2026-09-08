@@ -354,7 +354,7 @@ class Fabric:
                 stack = AsyncExitStack()
                 try:
                     base_url = await stack.enter_async_context(
-                        serve_collector(host="127.0.0.1", port=0)
+                        serve_collector(host="127.0.0.1", port=0, standalone=True)
                     )
                 except BaseException:
                     await stack.aclose()

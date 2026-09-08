@@ -162,6 +162,7 @@ class AtofCollector:
         *,
         queue_maxsize: int = _QUEUE_MAXSIZE,
         queue_max_bytes: int = _QUEUE_MAX_BYTES,
+        standalone: bool = False,
     ):
         # Consider moving these to a database allowing for multiple workers
         self.request_uuids: dict[RequestId, set[ScopeUuid]] = {}
@@ -171,6 +172,7 @@ class AtofCollector:
         self.state_lock = asyncio.Lock()
         self._queue_maxsize = queue_maxsize
         self._queue_max_bytes = queue_max_bytes
+        self._standalone = standalone
 
     async def register(self, request_id: RequestId) -> bool:
         async with self.state_lock:
@@ -278,6 +280,10 @@ class AtofCollector:
                 )
 
     def _route_request(self, record: dict[str, Any]) -> RequestId | None:
+        if self._standalone:
+            assert len(self.request_uuids) == 1
+            return next(iter(self.request_uuids))
+
         uuid = _record_uuid(record)
         if uuid is None:
             return None
@@ -522,8 +528,9 @@ def create_app(
     *,
     publish_token: str | None = None,
     control_token: str | None = None,
+    standalone: bool = False,
 ) -> Starlette:
-    collector = collector or AtofCollector()
+    collector = collector or AtofCollector(standalone=standalone)
 
     @asynccontextmanager
     async def lifespan(_: Starlette) -> AsyncIterator[None]:
@@ -550,4 +557,3 @@ def create_app(
     application.state.publish_token = publish_token
     application.state.control_token = control_token
     return application
-

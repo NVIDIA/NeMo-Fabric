@@ -28,10 +28,11 @@ async def serve_collector(
     *,
     host: str = "127.0.0.1",
     port: int = 0,
+    standalone: bool = False,
 ) -> AsyncIterator[str]:
     """Run a collector until the asynchronous context exits."""
 
-    application = create_app()
+    application = create_app(standalone=standalone)
     config = uvicorn.Config(
         application,
         host=host,
