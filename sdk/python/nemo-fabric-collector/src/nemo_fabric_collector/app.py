@@ -309,6 +309,9 @@ class AtofCollector:
 
     def _route_request(self, record: dict[str, Any]) -> RequestId | None:
         if self._standalone:
+            if len(self.request_uuids) == 0:
+                return None
+
             return next(iter(self.request_uuids))
 
         uuid = _record_uuid(record)
