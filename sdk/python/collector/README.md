@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 Standalone service for collecting and routing NVIDIA NeMo Relay records to
 NVIDIA NeMo Fabric runtimes.
 
-Embed the collector in an asynchronous Python application with:
+Adding the collector to an asynchronous Python application can be done as follows.
 
 ```python
 from nemo_fabric_collector import serve_collector
