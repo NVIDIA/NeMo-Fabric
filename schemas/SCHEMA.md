@@ -25,6 +25,7 @@ schemas/
 ├── sdk/                       # Northbound SDK and runtime contract
 │   ├── agent.schema.json
 │   ├── run-plan.schema.json
+│   ├── runtime-stop-result.schema.json
 │   └── ...
 └── adapter-contract/          # Southbound adapter-facing contract
     ├── adapter-descriptor.schema.json
@@ -124,6 +125,8 @@ descriptor schema.
 ### Results, Artifacts, and Diagnostics
 
 - `sdk/run-result`: normalized consumer-facing invocation result.
+- `sdk/runtime-stop-result`: runtime-scoped artifacts, lifecycle events, and an
+  optional structured shutdown error returned by `Runtime.stop()`.
 - `sdk/artifact-manifest`: normalized artifact references.
 - `sdk/error-info`: structured runtime or adapter error metadata.
 - `sdk/fabric-event`: NeMo Fabric lifecycle or progress event.

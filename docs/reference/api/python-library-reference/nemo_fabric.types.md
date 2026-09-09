@@ -843,7 +843,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 ## <kbd>class</kbd> `RuntimeStopResult`
 
-Artifacts and events finalized while stopping a runtime.
+Artifacts, events, and diagnostics finalized while stopping a runtime.
 
 
 
@@ -851,6 +851,7 @@ Artifacts and events finalized while stopping a runtime.
 
  - <b>`artifacts`</b>:  Runtime-scoped artifact manifest finalized during shutdown.
  - <b>`events`</b>:  Ordered lifecycle events emitted during shutdown.
+ - <b>`error`</b>:  Structured shutdown failure, when cleanup completed with an error.
 
 
 
@@ -862,6 +863,7 @@ The mapping exposes the following typed fields:
 | --- | --- |
 | `artifacts` | `ArtifactManifest` |
 | `events` | `Sequence[FabricEvent]` |
+| `error` | `ErrorInfo \| None` |
 
 ### <kbd>method</kbd> `__init__`
 

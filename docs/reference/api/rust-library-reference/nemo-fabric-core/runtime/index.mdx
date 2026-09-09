@@ -2,7 +2,7 @@
 title: "Module runtime"
 sidebar-title: "runtime"
 description: "Runtime invocation helpers."
-position: 125
+position: 126
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -31,7 +31,7 @@ Runtime invocation helpers.
 - [RunUsage](struct-runusage.mdx): Normalized invocation usage exposed to NeMo Fabric consumers.
 - [RuntimeContext](struct-runtimecontext.mdx): Context generated for one invocation of a started runtime.
 - [RuntimeHandle](struct-runtimehandle.mdx): Active or resumable harness runtime.
-- [RuntimeStopResult](struct-runtimestopresult.mdx): Artifacts and events finalized while stopping a runtime.
+- [RuntimeStopResult](struct-runtimestopresult.mdx): Artifacts, events, and diagnostics finalized while stopping a runtime.
 - [RuntimeTelemetryContext](struct-runtimetelemetrycontext.mdx): Runtime telemetry config passed to adapters.
 - [TelemetryRef](struct-telemetryref.mdx): Reference to telemetry emitted by Relay or another configured telemetry path.
 
@@ -49,6 +49,7 @@ Runtime invocation helpers.
 
 - [invoke_openai_stream](fn-invoke-openai-stream.mdx): Invoke a started harness runtime and pass through native OpenAI chat-completion chunks.
 - [invoke_runtime](fn-invoke-runtime.mdx): Invoke a started harness runtime.
+- [merge_runtime_stop_result](fn-merge-runtime-stop-result.mdx): Merge runtime-scoped shutdown output into an invocation result.
 - [prepare_environment](fn-prepare-environment.mdx): Resolve or attach to the execution environment context for a run plan.
 - [run_plan](fn-run-plan.mdx): Invoke a NeMo Fabric run plan.
 - [start_runtime](fn-start-runtime.mdx): Start or connect to a harness runtime.

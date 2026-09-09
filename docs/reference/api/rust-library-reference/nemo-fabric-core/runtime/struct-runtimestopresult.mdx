@@ -1,7 +1,7 @@
 ---
 title: "Struct Runtime Stop Result"
 sidebar-title: "RuntimeStopResult"
-description: "Artifacts and events finalized while stopping a runtime."
+description: "Artifacts, events, and diagnostics finalized while stopping a runtime."
 position: 19
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -9,9 +9,9 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeStopResult &#123;\n    pub artifacts: <a href=\"struct-artifactmanifest.mdx\">ArtifactManifest</a>,\n    pub events: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-fabricevent.mdx\">FabricEvent</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeStopResult &#123;\n    pub artifacts: <a href=\"struct-artifactmanifest.mdx\">ArtifactManifest</a>,\n    pub events: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-fabricevent.mdx\">FabricEvent</a>&gt;,\n    pub error: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-errorinfo.mdx\">ErrorInfo</a>&gt;,\n&#125;"}} /></pre>
 
-Artifacts and events finalized while stopping a runtime.
+Artifacts, events, and diagnostics finalized while stopping a runtime.
 
 ## Fields
 
@@ -22,6 +22,10 @@ Runtime-scoped artifacts finalized during shutdown.
 ### `events: Vec<FabricEvent>`
 
 Lifecycle events emitted during shutdown.
+
+### `error: Option<ErrorInfo>`
+
+Structured shutdown failure, when cleanup completed with an error.
 
 ## Trait Implementations
 

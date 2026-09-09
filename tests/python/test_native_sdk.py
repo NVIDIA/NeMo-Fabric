@@ -27,6 +27,53 @@ async def test_native_sdk(hermes_shim_agent_dir: Path):
     await smoke(Fabric(), hermes_shim_agent_dir)
 
 
+async def test_runtime_stop_artifacts_cross_native_boundary(
+    hermes_shim_agent_dir: Path,
+    tmp_path: Path,
+):
+    config = hermes_shim_config()
+    config.harness.settings["mode"] = "stop_artifacts"
+    config.runtime.artifacts = str(tmp_path / "artifacts")
+    client = Fabric()
+    runtime = await client.start_runtime(config, base_dir=hermes_shim_agent_dir)
+
+    invocation = await runtime.invoke(input="explicit stop")
+    stopped = await runtime.stop()
+
+    assert all(artifact.kind != "atif" for artifact in invocation.artifacts.artifacts)
+    assert [artifact.kind for artifact in stopped.artifacts.artifacts] == ["atif"]
+    assert stopped.artifacts.artifacts[0].path.is_file()
+    assert await runtime.stop() == stopped
+
+    python_result = await client.run(
+        config,
+        base_dir=hermes_shim_agent_dir,
+        input="python lifecycle",
+    )
+    native_result = json.loads(
+        native.run_config(
+            json.dumps(config.model_dump(mode="json", exclude_none=True)),
+            str(hermes_shim_agent_dir),
+            "rust lifecycle",
+            None,
+            None,
+            None,
+        )
+    )
+
+    def artifact_contract(result):
+        if hasattr(result, "to_mapping"):
+            result = result.to_mapping()
+        artifacts = result["artifacts"]["artifacts"]
+        return [
+            (artifact["name"], artifact["kind"], artifact.get("media_type"))
+            for artifact in artifacts
+        ]
+
+    assert artifact_contract(python_result) == artifact_contract(native_result)
+    assert any(artifact.kind == "atif" for artifact in python_result.artifacts.artifacts)
+
+
 async def test_adapter_python_selects_python_adapter_interpreter(
     hermes_shim_agent_dir: Path,
 ):

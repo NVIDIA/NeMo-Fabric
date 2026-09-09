@@ -1,0 +1,204 @@
+{
+  "$defs": {
+    "ArtifactManifest": {
+      "additionalProperties": false,
+      "description": "Manifest of run artifacts.",
+      "properties": {
+        "artifacts": {
+          "description": "Artifact entries.",
+          "items": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "type": "array"
+        },
+        "root": {
+          "description": "Artifact root directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ArtifactRef": {
+      "additionalProperties": false,
+      "description": "Reference to one artifact.",
+      "properties": {
+        "kind": {
+          "description": "Artifact kind.",
+          "type": "string"
+        },
+        "media_type": {
+          "description": "Optional media type.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Artifact-specific metadata preserved across the Rust and Python SDK boundary.",
+          "type": "object"
+        },
+        "name": {
+          "description": "Logical artifact name.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Artifact path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "path"
+      ],
+      "type": "object"
+    },
+    "ErrorInfo": {
+      "description": "Normalized error metadata.",
+      "properties": {
+        "code": {
+          "description": "Stable error code.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable error message.",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Adapter or runtime metadata useful for diagnostics.",
+          "type": "object"
+        },
+        "retryable": {
+          "default": false,
+          "description": "Whether NeMo Fabric considers this failure safe for a consumer-level retry.",
+          "type": "boolean"
+        },
+        "stage": {
+          "$ref": "#/$defs/ErrorStage",
+          "description": "NeMo Fabric lifecycle stage where the failure surfaced."
+        }
+      },
+      "required": [
+        "stage",
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ErrorStage": {
+      "description": "NeMo Fabric lifecycle stage associated with an error.",
+      "oneOf": [
+        {
+          "const": "config",
+          "description": "Configuration resolution failed.",
+          "type": "string"
+        },
+        {
+          "const": "plan",
+          "description": "Effective config planning failed.",
+          "type": "string"
+        },
+        {
+          "const": "prepare",
+          "description": "Environment preparation failed.",
+          "type": "string"
+        },
+        {
+          "const": "start",
+          "description": "Runtime start/connect failed.",
+          "type": "string"
+        },
+        {
+          "const": "invoke",
+          "description": "Runtime invocation failed.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "Runtime stop/detach failed.",
+          "type": "string"
+        },
+        {
+          "const": "release",
+          "description": "Environment release failed.",
+          "type": "string"
+        },
+        {
+          "const": "artifact",
+          "description": "Artifact collection or writing failed.",
+          "type": "string"
+        }
+      ]
+    },
+    "FabricEvent": {
+      "description": "NeMo Fabric lifecycle or progress event.",
+      "properties": {
+        "event_id": {
+          "description": "Event id.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Event kind.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Event message.",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Event metadata.",
+          "type": "object"
+        },
+        "timestamp_millis": {
+          "description": "Unix timestamp in milliseconds.",
+          "format": "uint128",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "timestamp_millis",
+        "kind",
+        "message"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Artifacts, events, and diagnostics finalized while stopping a runtime.",
+  "properties": {
+    "artifacts": {
+      "$ref": "#/$defs/ArtifactManifest",
+      "default": {},
+      "description": "Runtime-scoped artifacts finalized during shutdown."
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ErrorInfo"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Structured shutdown failure, when cleanup completed with an error."
+    },
+    "events": {
+      "description": "Lifecycle events emitted during shutdown.",
+      "items": {
+        "$ref": "#/$defs/FabricEvent"
+      },
+      "type": "array"
+    }
+  },
+  "title": "RuntimeStopResult",
+  "type": "object"
+}

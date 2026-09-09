@@ -1,0 +1,16 @@
+---
+title: "Function merge_runtime_stop_result"
+sidebar-title: "merge_runtime_stop_result"
+description: "Merge runtime-scoped shutdown output into an invocation result."
+position: 31
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn merge_runtime_stop_result(\n    result: &amp;mut <a href=\"struct-runresult.mdx\">RunResult</a>,\n    stopped: <a href=\"struct-runtimestopresult.mdx\">RuntimeStopResult</a>,\n)"}} /></pre>
+
+Merge runtime-scoped shutdown output into an invocation result.
+
+Invocation status and error fields remain authoritative. A shutdown error is appended as a diagnostic event so cleanup failures do not reclassify a completed invocation or discard its output and artifacts.

@@ -70,7 +70,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`types.RunUsage`](./nemo_fabric.types.md#class-runusage): Normalized invocation usage reported by an adapter target.
 - [`types.RuntimeCapabilities`](./nemo_fabric.types.md#class-runtimecapabilities): Operations declared by the resolved runtime and adapter.
 - [`types.RuntimeHandle`](./nemo_fabric.types.md#class-runtimehandle): Opaque identity and binding for one started runtime.
-- [`types.RuntimeStopResult`](./nemo_fabric.types.md#class-runtimestopresult): Artifacts and events finalized while stopping a runtime.
+- [`types.RuntimeStopResult`](./nemo_fabric.types.md#class-runtimestopresult): Artifacts, events, and diagnostics finalized while stopping a runtime.
 - [`types.TelemetryRef`](./nemo_fabric.types.md#class-telemetryref): Reference to external or persisted telemetry for a run.
 - [`errors.FabricCapabilityError`](./nemo_fabric.errors.md#class-fabriccapabilityerror): Operation rejected by resolved runtime capabilities or implementation status.
 - [`errors.FabricConfigError`](./nemo_fabric.errors.md#class-fabricconfigerror): Invalid SDK input, request shape, factory, or resolved config.

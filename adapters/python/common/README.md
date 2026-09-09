@@ -59,10 +59,12 @@ lifecycle.serve(AdapterRuntime, config_loader=AgentConfig.from_mapping)
 ```
 
 `stop` can return a JSON mapping for runtime-scoped output that finalizes during
-shutdown. Put NeMo Relay runtime data and finalized artifact paths under
-`relay_runtime` and `relay_artifacts`; NeMo Fabric promotes those paths into the
-runtime stop artifact manifest. Returning `None` preserves an empty stop
-output.
+shutdown. Put finalized NeMo Relay artifact paths under `relay_artifacts`; NeMo
+Fabric promotes those paths into the runtime stop artifact manifest. Other
+adapter output fields are not surfaced. If cleanup fails after artifacts are
+collected, return structured `ErrorInfo` under `runtime_stop_error` so callers
+retain both the artifacts and the failure. Returning `None` preserves an empty
+stop output.
 
 If the adapter descriptor declares `capabilities.streaming`, the runtime must
 also implement native OpenAI Chat Completions streaming:
