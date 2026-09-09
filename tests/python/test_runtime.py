@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import threading
+from contextlib import AsyncExitStack
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -372,6 +373,22 @@ async def test_stop_is_idempotent_and_blocks_future_invokes(mock_native: MagicMo
     assert mock_native.stop_runtime.call_count == 1
     with pytest.raises(FabricStateError, match="stopped"):
         await runtime.invoke(input="hello")
+
+
+async def test_stop_closes_runtime_owned_collector(mock_native: MagicMock):
+    mock_collector = MagicMock(spec=AsyncExitStack)
+    client = Fabric()
+    client._native_module = lambda: mock_native  # type: ignore[method-assign]
+    runtime = Runtime(
+        client=client,
+        plan=_plan(),
+        runtime=_runtime(),
+        collector=mock_collector,
+    )
+
+    await runtime.stop()
+
+    mock_collector.aclose.assert_awaited_once()
 
 
 async def test_stop_rejects_in_flight_turn(

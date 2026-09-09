@@ -192,9 +192,30 @@ async def test_start_runtime_injects_stream_sink_without_mutating_config(
     assert sinks[1]["transport"] == "ndjson"
     assert sinks[1]["url"].startswith("http://127.0.0.1:")
     assert runtime.supports_streaming is True
+    assert runtime._collector is not None
     assert len(config.relay.observability.atof.sinks) == 1
 
     await runtime.stop()
+
+
+async def test_start_runtime_creates_runtime_owned_collectors(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    first = await native_client.start_runtime(_config(relay=True), streaming=True)
+    second = await native_client.start_runtime(_config(relay=True), streaming=True)
+    try:
+        first_plan, second_plan = (
+            json.loads(call.args[0]) for call in mock_native.plan_config.call_args_list
+        )
+        first_sink = first_plan["relay"]["observability"]["atof"]["sinks"][-1]
+        second_sink = second_plan["relay"]["observability"]["atof"]["sinks"][-1]
+
+        assert first._collector is not second._collector
+        assert first_sink["url"] != second_sink["url"]
+    finally:
+        await first.stop()
+        await second.stop()
 
 
 async def test_start_runtime_without_streaming_preserves_disabled_atof(

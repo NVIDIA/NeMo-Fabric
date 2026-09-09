@@ -8,7 +8,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from contextlib import AsyncExitStack
 from copy import deepcopy
 from enum import Enum
 from typing import Any, Protocol
@@ -73,8 +74,8 @@ class Runtime:
         plan: RunPlan | Mapping[str, Any],
         runtime: RuntimeHandle | Mapping[str, Any],
         overrides: Mapping[str, Any] | None = None,
+        collector: AsyncExitStack | None = None,
         collector_client: _AtofCollectorClient | None = None,
-        release_collector: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """lazydocs: ignore"""
 
@@ -89,8 +90,8 @@ class Runtime:
         self._status = RuntimeStatus.ACTIVE
         self._current_task: asyncio.Task[Any] | None = None
         self._current_stream: _RuntimeStream | None = None
+        self._collector = collector
         self._collector_client = collector_client
-        self._release_collector = release_collector
         self._registered_requests: set[str] = set()
         self._closing = False
 
@@ -514,8 +515,8 @@ class Runtime:
             if self._collector_client is not None:
                 await self._collector_client.aclose()
         finally:
-            if self._release_collector is not None:
-                await self._release_collector()
+            if self._collector is not None:
+                await self._collector.aclose()
 
     def _absorb(self, result: RunResult) -> None:
         self._invocations.append(

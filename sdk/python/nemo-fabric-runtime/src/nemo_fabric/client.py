@@ -9,7 +9,7 @@ import asyncio
 import importlib
 import json
 import os
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from typing import Any
 
@@ -63,10 +63,7 @@ class Fabric:
     """
 
     def __init__(self) -> None:
-        self._collector_lock = asyncio.Lock()
-        self._collector_stack: AsyncExitStack | None = None
-        self._collector_base_url: str | None = None
-        self._collector_users = 0
+        pass
 
     def plan(
         self,
@@ -235,8 +232,8 @@ class Fabric:
         """
 
         runtime_overrides = _json_mapping(overrides, "runtime overrides")
+        collector: AsyncExitStack | None = None
         collector_client: _AtofCollectorClient | None = None
-        release_collector: Callable[[], Awaitable[None]] | None = None
         runtime_config = config
 
         async def close_streaming_resources() -> None:
@@ -244,8 +241,8 @@ class Fabric:
                 if collector_client is not None:
                     await collector_client.aclose()
             finally:
-                if release_collector is not None:
-                    await release_collector()
+                if collector is not None:
+                    await collector.aclose()
 
         if launch_collector is not None and not streaming:
             raise FabricConfigError("launch_collector requires streaming=True")
@@ -254,8 +251,16 @@ class Fabric:
         if streaming:
             try:
                 if launch_collector is not False:
-                    collector_base_url, release_collector = (
-                        await self._acquire_collector()
+                    try:
+                        from nemo_fabric_collector import serve_collector
+                    except ImportError as error:
+                        raise FabricConfigError(
+                            "local adapter streaming requires the collector; "
+                            "install nemo-fabric[streaming]"
+                        ) from error
+                    collector = AsyncExitStack()
+                    collector_base_url = await collector.enter_async_context(
+                        serve_collector(host="127.0.0.1", port=0, standalone=True)
                     )
                     runtime_config = _with_stream_sink(config, collector_base_url)
                     stream_sink = _configured_stream_sink(runtime_config)
@@ -335,60 +340,9 @@ class Fabric:
             plan=plan,
             runtime=runtime,
             overrides=runtime_overrides,
+            collector=collector,
             collector_client=collector_client,
-            release_collector=release_collector,
         )
-
-    async def _acquire_collector(
-        self,
-    ) -> tuple[str, Callable[[], Awaitable[None]]]:
-        async with self._collector_lock:
-            if self._collector_stack is None:
-                try:
-                    from nemo_fabric_collector import serve_collector
-                except ImportError as error:
-                    raise FabricConfigError(
-                        "local adapter streaming requires the collector; "
-                        "install nemo-fabric[streaming]"
-                    ) from error
-                stack = AsyncExitStack()
-                try:
-                    base_url = await stack.enter_async_context(
-                        serve_collector(host="127.0.0.1", port=0, standalone=True)
-                    )
-                except BaseException:
-                    await stack.aclose()
-                    raise
-                self._collector_stack = stack
-                self._collector_base_url = base_url
-            base_url = self._collector_base_url
-            if base_url is None:
-                raise RuntimeError("ATOF collector did not provide a base URL")
-            self._collector_users += 1
-
-        released = False
-
-        async def release() -> None:
-            nonlocal released
-            if released:
-                return
-            released = True
-            await self._release_collector()
-
-        return base_url, release
-
-    async def _release_collector(self) -> None:
-        stack: AsyncExitStack | None = None
-        async with self._collector_lock:
-            if self._collector_users == 0:
-                return
-            self._collector_users -= 1
-            if self._collector_users == 0:
-                stack = self._collector_stack
-                self._collector_stack = None
-                self._collector_base_url = None
-        if stack is not None:
-            await stack.aclose()
 
     def _native_module(self) -> Any | None:
         return _native
