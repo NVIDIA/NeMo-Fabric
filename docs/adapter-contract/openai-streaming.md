@@ -91,4 +91,4 @@ after that failure. Each encoded record is limited to 1 MiB.
 Verify empty and multi-chunk streams, invalid and oversized records, early
 consumer close, the explicit end record, a separate terminal value, and
 exactly one target invocation. Then continue with
-[terminal outcomes](results.md).
+[terminal outcomes](tutorials/results.md).

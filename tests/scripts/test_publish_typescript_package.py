@@ -43,6 +43,7 @@ def _pack_result(
     *,
     version: str = VERSION,
     filename: str = TARBALL,
+    files: Sequence[str] = ("README.md",),
 ) -> subprocess.CompletedProcess[str]:
     return _result(
         json.dumps(
@@ -52,6 +53,7 @@ def _pack_result(
                     "version": version,
                     "integrity": INTEGRITY,
                     "filename": filename,
+                    "files": [{"path": path} for path in files],
                 }
             ]
         )
@@ -179,9 +181,7 @@ def test_runtime_dependency_versions_must_be_exact(package_directory: Path):
     (package_directory / "package.json").write_text(
         json.dumps(manifest), encoding="utf-8"
     )
-    runner = NpmRunner(
-        [(["pack", "--json", "--ignore-scripts"], _pack_result())]
-    )
+    runner = NpmRunner([(["pack", "--json", "--ignore-scripts"], _pack_result())])
 
     with pytest.raises(
         publish_typescript_package.PublicationError,
@@ -203,14 +203,12 @@ def _exact_view_responses(
     integrity: str = INTEGRITY,
     dist_tag: str = "latest",
     dist_tag_version: str = VERSION,
-    readme: str = README,
 ) -> list[tuple[list[str], subprocess.CompletedProcess[str]]]:
     package_version = f"{PACKAGE}@{VERSION}"
     return [
         (["view", package_version, "version"], _result(VERSION)),
         (["view", package_version, "dist.integrity"], _result(integrity)),
         (["view", PACKAGE, f"dist-tags.{dist_tag}"], _result(dist_tag_version)),
-        (["view", package_version, "readme"], _result(readme)),
     ]
 
 
@@ -234,7 +232,7 @@ def test_invalid_readme_encoding_fails_closed(package_directory: Path):
 
 
 @pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next"])
-def test_existing_exact_package_is_an_idempotent_success(
+def test_existing_exact_package_without_registry_readme_is_idempotent_success(
     package_directory: Path,
     dist_tag: str,
 ):
@@ -301,28 +299,19 @@ def test_existing_conflicting_package_fails(
     runner.assert_finished()
 
 
-@pytest.mark.parametrize(
-    ("readme", "error"),
-    [
-        ("", "Published README metadata is missing"),
-        ("# Wrong package", "Published README metadata does not match README.md"),
-    ],
-)
-def test_existing_readme_metadata_must_match_package(
-    package_directory: Path,
-    readme: str,
-    error: str,
-):
+def test_packed_artifact_must_include_readme(package_directory: Path):
     runner = NpmRunner(
         [
-            (["pack", "--json", "--ignore-scripts"], _pack_result()),
-            *_exact_view_responses(readme=readme),
+            (
+                ["pack", "--json", "--ignore-scripts"],
+                _pack_result(files=()),
+            ),
         ]
     )
 
     with pytest.raises(
         publish_typescript_package.PublicationError,
-        match=error,
+        match=r"Packed artifact is missing README\.md",
     ):
         publish_typescript_package.publish_package(
             package_directory,

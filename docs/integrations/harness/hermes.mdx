@@ -60,6 +60,13 @@ Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, replacement system instructions, turn limit, native tool
 selectors, and telemetry. The adapter rejects `append` system instructions.
 
+During run-plan resolution, NeMo Fabric Core validates the
+`models.<role>.top_p` (from 0 through 1) and positive
+`models.<role>.max_tokens` extensions against the Hermes descriptor before
+runtime startup. Hermes reads these prevalidated values from `AgentConfig`. A
+model-level `max_tokens` overrides the harness-level default for the selected
+model role.
+
 The Hermes descriptor validates the following `harness.settings` fields:
 
 | Setting | Type | Default | Description |

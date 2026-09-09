@@ -9,7 +9,19 @@ One NVIDIA NeMo Fabric runtime is a lifecycle, state-isolation, and correlation
 boundary. It does not require a particular process, service, thread, or native
 target session topology.
 
-## Implement the Required Lifecycle
+## Prerequisites
+
+Before you start, complete the following:
+
+1. Complete [Stage 2: Map the normalized configuration](normalized-configuration.md)
+   so the adapter can translate `AgentConfig` into a target runtime.
+2. Choose whether to build on `nemo-fabric-adapters-common` or implement a
+   supported binding directly.
+3. Keep the canonical
+   [`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/runtime-context.schema.json)
+   open for the exact operation-context shape.
+
+## Concepts Overview
 
 The minimum adapter implements these operations:
 
@@ -27,7 +39,11 @@ concurrency; consumers start independent runtimes for parallel work.
 Keep mutable target state inside the runtime instance. Do not share it between
 independent Fabric runtimes.
 
-## Start From the Minimum Python Host
+## To Implement Execution
+
+Work through each step in order, verifying your progress at each checkpoint.
+
+### 1. Start From the Minimum Python Host
 
 Python adapters can opt into `nemo-fabric-adapters-common` instead of
 implementing the persistent local-host binding. The following implementation
@@ -98,7 +114,10 @@ returning. Once the factory returns, retain the target immediately. Make
 after a failed invocation. A no-op `stop` is valid for a thin remote-service
 adapter that owns no remote lifecycle, but it must still complete successfully.
 
-## Use RuntimeContext for Operation Context
+**Success Check**: One successful `start` retains an isolated target, and `stop`
+completes even after partial startup or a failed invocation.
+
+### 2. Use RuntimeContext for Operation Context
 
 NeMo Fabric creates `RuntimeContext`. Treat every ID as an opaque correlation
 value:
@@ -118,7 +137,10 @@ for the exact shape. Runtime identity belongs in `RuntimeContext`, not in
 `AgentConfig.workflow`. Per-invocation task input belongs in the request, not in
 workflow settings.
 
-## Propagate Failures Safely
+**Success Check**: The adapter reads correlation and environment context from
+`RuntimeContext` and treats every ID as opaque.
+
+### 3. Propagate Failures Safely
 
 Use a lifecycle failure when the adapter cannot satisfy `start`, `invoke`, or
 `stop`, including protocol and transport failures. A lifecycle failure can
@@ -130,7 +152,10 @@ values, HTTP authorization headers, or arbitrary user input in errors or logs.
 NeMo Fabric does not automatically replay an invocation after a transport
 failure.
 
-## Add Streaming Only When Needed
+**Success Check**: Lifecycle failures and terminal target failures are
+distinct, and no error or log exposes secrets or raw user input.
+
+### 4. Add Streaming Only When Needed
 
 `Runtime.invoke_stream()` is the primary normalized streaming API. It runs the
 ordinary adapter `invoke` operation while NeMo Relay exposes correlated ATOF to
@@ -143,11 +168,48 @@ exhaustion does not imply success, and closing the consumer stream does not
 cancel the target invocation.
 
 An adapter that needs native progressive output can implement the narrower
-[`invoke_openai_stream`](openai-streaming.md) capability. No other
+[`invoke_openai_stream`](../openai-streaming.md) capability. No other
 target-native event formats are part of v1alpha2.
 
 The descriptor also contains reserved `cancellation`, `updates`, and `service`
 capability flags. Do not claim them until the selected NeMo Fabric runtime
 binding exposes and tests the corresponding adapter operation.
 
-After the lifecycle works, [normalize its terminal outcomes](results.md).
+**Success Check**: Ordinary `invoke` still returns one terminal result, and
+native streaming is added only through the declared `invoke_openai_stream`
+capability.
+
+## Summary
+
+In this tutorial, you have:
+
+- Implemented the required `start`, `invoke`, and `stop` lifecycle with isolated
+  target state.
+- Read operation context and correlation IDs from `RuntimeContext`.
+- Separated lifecycle failures from terminal target failures without exposing
+  secrets.
+- Added native streaming only where the declared capability requires it.
+
+## Next Steps
+
+With the lifecycle working, continue through the adapter authoring stages:
+
+<CardGroup cols={2}>
+
+<Card title="Normalize results and telemetry" href="results.md">
+
+Continue to Stage 4 and normalize the lifecycle's terminal outcomes.
+</Card>
+
+<Card title="RuntimeContext schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/runtime-context.schema.json">
+
+Review the canonical schema for the exact operation-context shape.
+</Card>
+
+<Card title="Optional OpenAI Streaming" href="../openai-streaming.md">
+
+Add the narrower native OpenAI streaming capability when the target needs
+progressive output.
+</Card>
+
+</CardGroup>

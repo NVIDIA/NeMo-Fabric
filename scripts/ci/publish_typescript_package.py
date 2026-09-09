@@ -37,7 +37,6 @@ class PackageArtifact:
     version: str
     integrity: str
     filename: str
-    readme: str
 
 
 @dataclass(frozen=True)
@@ -45,7 +44,6 @@ class PublishedState:
     version: str
     integrity: str
     dist_tag_version: str
-    readme: str
 
 
 RunNpm = Callable[[Sequence[str], Path], subprocess.CompletedProcess[str]]
@@ -120,12 +118,16 @@ def _pack_package(
     try:
         values = json.loads(output)
         value = values[0] if len(values) == 1 else None
+        packed_files = {
+            entry["path"]
+            for entry in value["files"]
+            if isinstance(entry, dict) and isinstance(entry.get("path"), str)
+        }
         artifact = PackageArtifact(
             name=value["name"],
             version=value["version"],
             integrity=value["integrity"],
             filename=value["filename"],
-            readme=readme,
         )
     except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
         raise PublicationError("npm pack returned an unexpected result") from error
@@ -144,6 +146,8 @@ def _pack_package(
         )
     if not (package_directory / artifact.filename).is_file():
         raise PublicationError(f"npm pack did not create {artifact.filename}")
+    if "README.md" not in packed_files:
+        raise PublicationError("Packed artifact is missing README.md")
     return artifact
 
 
@@ -221,12 +225,12 @@ def _published_state(
         artifact.name,
         f"dist-tags.{dist_tag}",
     )
-    readme = _view(package_directory, run_npm, package_version, "readme")
+    # npm does not consistently expose version-scoped README metadata. The
+    # packed-file check above and dist.integrity verify the published README.
     return PublishedState(
         version=version,
         integrity=integrity or "",
         dist_tag_version=dist_tag_version or "",
-        readme=readme or "",
     )
 
 
@@ -239,7 +243,6 @@ def _state_matches(
         state.version == artifact.version
         and state.integrity == artifact.integrity
         and state.dist_tag_version == artifact.version
-        and state.readme == artifact.readme
     )
 
 
@@ -269,10 +272,6 @@ def _describe_conflict(
                 f"Published {dist_tag} dist-tag: {state.dist_tag_version or '<unset>'}",
             )
         )
-    if not state.readme:
-        details.append("Published README metadata is missing")
-    elif state.readme != artifact.readme:
-        details.append("Published README metadata does not match README.md")
     return "\n".join(details)
 
 
@@ -313,9 +312,8 @@ def publish_package(
             f"Refusing to move {dist_tag} backward from {current_dist_tag} to {version}"
         )
 
-    # A directory publish lets npm attach README content to the registry
-    # metadata; publishing the prepacked tarball leaves that field empty. Skip
-    # lifecycle scripts so the upload matches the artifact packed above.
+    # Publish the directory so npm uses the package contents validated above.
+    # Skip lifecycle scripts so the upload matches the artifact packed above.
     publish_result = run_npm(
         [
             "publish",

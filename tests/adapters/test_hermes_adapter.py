@@ -116,6 +116,7 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
 
 
 def test_descriptor_uses_the_typed_agent_config_contract():
+    """The Hermes descriptor declares its typed config and model extensions."""
     descriptor_path = (
         Path(__file__).parents[2]
         / "adapters"
@@ -138,6 +139,19 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "mcp.auth.oauth2",
         "skills",
     ]
+    assert descriptor["extension_schemas"]["model"]["properties"] == {
+        "top_p": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Nucleus sampling probability passed to the model provider.",
+        },
+        "max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum number of tokens for responses from this model role.",
+        },
+    }
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
 
 
@@ -1265,6 +1279,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     monkeypatch,
     tmp_path: Path,
 ):
+    """A persistent Hermes runtime applies model extensions and reuses state."""
     mock_session_db = MagicMock(spec=SessionDB)
     mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
 
@@ -1337,7 +1352,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     }
     payload["config"] = _agent_config(
         {
-            "harness": {"settings": {}},
+            "harness": {"settings": {"max_tokens": 1024}},
             "instructions": {"system": {"content": "system", "mode": "replace"}},
             "runtime": {"max_turns": None},
             "tools": {"enabled": []},
@@ -1347,6 +1362,10 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
                     "model": "test-model",
                     "api_key_env": "TEST_API_KEY",
                     "temperature": 0.2,
+                    "extensions": {
+                        "top_p": 0.85,
+                        "max_tokens": 768,
+                    },
                 }
             },
         }
@@ -1391,8 +1410,8 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         skip_context_files=True,
         skip_memory=True,
         save_trajectories=False,
-        max_tokens=512,
-        request_overrides={"temperature": 0.2},
+        max_tokens=768,
+        request_overrides={"temperature": 0.2, "top_p": 0.85},
         reasoning_config={"effort": "none"},
         platform="fabric",
         session_id="runtime-fabric-123",

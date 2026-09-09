@@ -45,8 +45,8 @@ includes the NeMo Relay Python package.
 
 The adapter receives a normalized payload from NeMo Fabric and materializes a native Hermes Agent configuration for:
 
-- selected model provider, model name, base URL, and temperature through
-  `models`;
+- selected model provider, model name, base URL, temperature, `top_p`, and
+  per-model `max_tokens` through `models`;
 - replacement `instructions.system` and `runtime.max_turns`;
 - workspace and explicit environment variables through `environment`;
 - invocation timeout through `runtime.timeout_seconds`;
@@ -57,8 +57,16 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 - optional NeMo Relay telemetry plugin configuration.
 
 Tool selectors are Hermes toolset names because that is the native policy
-surface Hermes exposes. The descriptor validates the following
-`harness.settings` fields:
+surface Hermes exposes.
+
+During run-plan resolution, NeMo Fabric Core validates the
+`models.<role>.top_p` (from 0 through 1) and positive
+`models.<role>.max_tokens` extensions against the Hermes descriptor before
+runtime startup. Hermes reads these prevalidated values from `AgentConfig`. A
+model-level `max_tokens` overrides the harness-level default for the selected
+model role.
+
+The descriptor validates the following `harness.settings` fields:
 
 | Setting | Type | Default | Description |
 | --- | --- | --- | --- |

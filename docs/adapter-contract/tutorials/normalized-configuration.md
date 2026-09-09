@@ -12,6 +12,22 @@ configuration that the selected adapter declared into `AgentConfig`.
 Adapters consume `AgentConfig`. They do not parse `FabricConfig` or
 consumer-owned planning fields.
 
+## Prerequisites
+
+Before you start, complete the following:
+
+1. Complete [Stage 1: Describe the adapter](adapter-descriptor.md) so the
+   descriptor declares, through `config.accepts`, the fields this stage
+   projects.
+2. Identify which `AgentConfig` blocks your adapter needs and applies.
+3. Keep the canonical
+   [`agent-config.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-config.schema.json)
+   open for exact fields and constraints.
+
+## Concepts Overview
+
+Planning resolves consumer intent into the adapter-facing `AgentConfig`:
+
 ```mermaid
 flowchart TB
     FabricConfig["FabricConfig<br/>consumer intent"]
@@ -30,8 +46,6 @@ flowchart TB
 
 The smallest valid `AgentConfig` is empty. Add a block only when the adapter
 needs and applies it.
-
-## Understand the Blocks
 
 `AgentConfig` contains these adapter-facing blocks:
 
@@ -52,7 +66,11 @@ Use the canonical
 for exact fields and constraints. Python adapters can use the matching
 dependency-free dataclasses from `nemo_fabric_adapter_contract.models`.
 
-## Project Only Supported Fields
+## To Map the Normalized Configuration
+
+Work through each step in order, verifying your progress at each checkpoint.
+
+### 1. Project Only Supported Fields
 
 The Adapter Descriptor, capability plan, and optional Adapter Target Descriptor
 control projection. Planning applies these rules:
@@ -81,7 +99,10 @@ empty value can mean something different. For example,
 `tools.enabled: null` preserves the target's native selection, while
 `tools.enabled: []` explicitly selects no named tools.
 
-## Apply System Instructions Explicitly
+**Success Check**: A configured field the descriptor does not accept fails
+planning with a field path and reason instead of being silently dropped.
+
+### 2. Apply System Instructions Explicitly
 
 An omitted `instructions.system` value preserves the harness's native system
 instruction. When a system instruction is present, `mode` defaults to
@@ -99,7 +120,10 @@ unsupported modes at `instructions.system.mode`. Adapters must also validate
 the mode at their direct startup boundary so callers that host an adapter
 without NeMo Fabric planning receive the same fail-closed behavior.
 
-## Keep Fabric-Owned Context Out of AgentConfig
+**Success Check**: An unsupported `instructions.system.mode` is rejected both
+during planning and at the adapter's direct startup boundary.
+
+### 3. Keep Fabric-Owned Context Out of AgentConfig
 
 `AgentConfig` does not contain adapter selection, installation policy,
 environment ownership, invocation deadlines, artifact manifests, or planning
@@ -112,7 +136,10 @@ Credential fields contain environment-variable names, not resolved secret
 values. Environment values can be available in
 `RuntimeContext.environment.env`. Never persist or log the unredacted context.
 
-## Translate Once at the Boundary
+**Success Check**: `AgentConfig` carries no adapter selection, deadlines,
+artifact manifests, or resolved secret values.
+
+### 4. Translate Once at the Boundary
 
 Keep translation in a small adapter-owned function. The following
 representative code assumes the adapter's documented consumer configuration
@@ -141,7 +168,10 @@ The descriptor must accept every field used by this translation. Do not read
 undeclared values defensively or fall back to parsing the original
 `FabricConfig`.
 
-## Use Extensions Deliberately
+**Success Check**: The translation reads only descriptor-accepted fields and
+never falls back to parsing `FabricConfig`.
+
+### 5. Use Extensions Deliberately
 
 Use an extension only when a normalized field cannot express the behavior:
 
@@ -157,7 +187,10 @@ Do not use an extension to disguise an unsupported normalized field. An
 extension is adapter-specific unless multiple adapters intentionally implement
 the same namespaced contract.
 
-## Split Static and Startup Validation
+**Success Check**: Each extension value is validated against a declared
+extension-point schema and rejected when the point is not declared.
+
+### 6. Split Static and Startup Validation
 
 Planning validates static shape and compatibility without executing adapter
 code. During `start`, the adapter validates only requirements that depend on
@@ -165,4 +198,36 @@ the target environment, such as imports, installed factories, executable
 presence, credential availability, and service reachability. Report the
 failing requirement or configuration field without exposing secret values.
 
-After the mapping is defined, [implement the required lifecycle](execution.md).
+**Success Check**: Planning validates static shape without running adapter
+code, while environment-dependent checks run during `start`.
+
+## Summary
+
+In this tutorial, you have:
+
+- Projected only descriptor-accepted fields into `AgentConfig`.
+- Applied system instructions with explicit, validated modes.
+- Kept Fabric-owned context and resolved secrets out of `AgentConfig`.
+- Translated configuration once at the adapter boundary.
+- Used extensions only where a normalized field cannot express the behavior.
+- Split static planning validation from environment-dependent startup checks.
+
+## Next Steps
+
+With configuration mapping defined, continue through the adapter authoring
+stages:
+
+<CardGroup cols={2}>
+
+<Card title="Implement execution" href="execution.md">
+
+Continue to Stage 3 and implement the required `start`, `invoke`, and `stop`
+lifecycle.
+</Card>
+
+<Card title="AgentConfig schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-config.schema.json">
+
+Review the canonical schema for exact fields and constraints.
+</Card>
+
+</CardGroup>
