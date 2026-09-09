@@ -91,7 +91,7 @@ wheels = [
 [[package]]
 name = "nemo-fabric-collector"
 version = "0.3.0"
-source = { editable = "../collector" }
+source = { editable = "../nemo-fabric-collector" }
 dependencies = [
     { name = "starlette" },
     { name = "uvicorn" },
@@ -120,7 +120,7 @@ streaming = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = "~=0.28" },
-    { name = "nemo-fabric-collector", marker = "extra == 'streaming'", editable = "../collector" },
+    { name = "nemo-fabric-collector", marker = "extra == 'streaming'", editable = "../nemo-fabric-collector" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "typing-extensions", specifier = ">=4.12" },
 ]

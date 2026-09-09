@@ -2618,7 +2618,7 @@ provides-extras = ["harness", "full"]
 [[package]]
 name = "nemo-fabric-collector"
 version = "0.3.0"
-source = { editable = "sdk/python/collector" }
+source = { editable = "sdk/python/nemo-fabric-collector" }
 dependencies = [
     { name = "starlette", version = "1.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "starlette", version = "1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
@@ -2767,7 +2767,7 @@ adapters = [
     { name = "nemo-fabric-adapters-mini-swe-agent", extras = ["relay"], editable = "adapters/python/mini-swe-agent" },
     { name = "nemo-fabric-adapters-remote-agent", extras = ["harness"], editable = "adapters/python/remote-agent" },
 ]
-collector = [{ name = "nemo-fabric-collector", editable = "sdk/python/collector" }]
+collector = [{ name = "nemo-fabric-collector", editable = "sdk/python/nemo-fabric-collector" }]
 dev = [
     { name = "ipython", specifier = "~=8.20" },
     { name = "pip-licenses", specifier = ">=5,<6" },
@@ -2823,7 +2823,7 @@ streaming = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = "~=0.28" },
-    { name = "nemo-fabric-collector", marker = "extra == 'streaming'", editable = "sdk/python/collector" },
+    { name = "nemo-fabric-collector", marker = "extra == 'streaming'", editable = "sdk/python/nemo-fabric-collector" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "typing-extensions", specifier = ">=4.12" },
 ]

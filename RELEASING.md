@@ -46,7 +46,7 @@ NeMo Fabric versions are anchored on the workspace SemVer in the repository root
 - The root `Cargo.toml` `workspace.dependencies` entry for
   `nemo-fabric-core` must stay aligned with that same version.
 - `sdk/python/nemo-fabric/pyproject.toml`,
-  `sdk/python/collector/pyproject.toml`,
+  `sdk/python/nemo-fabric-collector/pyproject.toml`,
   `adapter-contract/python/pyproject.toml`, and every
   `adapters/python/*/pyproject.toml` carry the Python package versions and internal
   dependency pins and must stay aligned with the same release version. The

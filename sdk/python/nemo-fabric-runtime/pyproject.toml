@@ -46,4 +46,4 @@ module-name = "nemo_fabric._native"
 features = ["pyo3/extension-module"]
 
 [tool.uv.sources]
-nemo-fabric-collector = { path = "../collector", editable = true }
+nemo-fabric-collector = { path = "../nemo-fabric-collector", editable = true }
