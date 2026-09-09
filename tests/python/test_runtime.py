@@ -325,6 +325,77 @@ async def test_deregister_requests_attempts_all_registered_requests(
     assert caught.value.exceptions == (first_error, third_error)
 
 
+async def test_cancelled_registration_is_deregistered_during_shutdown(
+    mock_native: MagicMock,
+):
+    registration_committed = asyncio.Event()
+    wait_for_response = asyncio.Event()
+    collector_registrations: set[str] = set()
+
+    async def register(request_id: str) -> None:
+        collector_registrations.add(request_id)
+        registration_committed.set()
+        await wait_for_response.wait()
+
+    async def deregister(request_id: str, *, remove_queue: bool) -> None:
+        assert remove_queue is True
+        collector_registrations.discard(request_id)
+
+    mock_collector = MagicMock()
+    mock_collector.register = AsyncMock(side_effect=register)
+    mock_collector.deregister = AsyncMock(side_effect=deregister)
+    mock_collector.aclose = AsyncMock()
+    runtime = _runtime_wrapper(mock_native)
+    runtime._collector_client = mock_collector
+
+    registration = asyncio.create_task(runtime._register_request("request-1"))
+    await registration_committed.wait()
+    registration.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await registration
+
+    assert runtime._registered_requests == {"request-1"}
+    assert collector_registrations == {"request-1"}
+
+    await runtime.stop()
+
+    assert runtime._registered_requests == set()
+    assert collector_registrations == set()
+    mock_collector.deregister.assert_awaited_once_with(
+        "request-1",
+        remove_queue=True,
+    )
+
+
+async def test_failed_registration_remains_tracked_until_cleanup_succeeds(
+    mock_native: MagicMock,
+):
+    registration_error = FabricRuntimeError("collector response lost")
+    mock_collector = MagicMock()
+    mock_collector.register = AsyncMock(side_effect=registration_error)
+    mock_collector.deregister = AsyncMock(
+        side_effect=RuntimeError("collector unavailable")
+    )
+    runtime = _runtime_wrapper(mock_native)
+    runtime._collector_client = mock_collector
+
+    with pytest.raises(FabricRuntimeError) as caught:
+        await runtime._register_request("request-1")
+
+    assert caught.value is registration_error
+    assert runtime._registered_requests == {"request-1"}
+
+    with pytest.raises(ExceptionGroup, match="deregistration failed"):
+        await runtime._deregister_requests()
+
+    assert runtime._registered_requests == {"request-1"}
+
+    mock_collector.deregister.side_effect = None
+    await runtime._deregister_requests()
+
+    assert runtime._registered_requests == set()
+
+
 async def test_runtime_preserves_non_mapping_message_values(mock_native: MagicMock):
     result = json.loads(
         mock_native.invoke_runtime.side_effect(

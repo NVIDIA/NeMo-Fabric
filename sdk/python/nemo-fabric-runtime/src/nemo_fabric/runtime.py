@@ -341,8 +341,10 @@ class Runtime:
     async def _register_request(self, request_id: str) -> None:
         if self._collector_client is None:
             return
-        await self._collector_client.register(request_id)
+        # Registration can commit even if the response is lost or this task is
+        # cancelled, so record the cleanup obligation before sending the request.
         self._registered_requests.add(request_id)
+        await self._collector_client.register(request_id)
 
     async def _deregister_request(
         self,
