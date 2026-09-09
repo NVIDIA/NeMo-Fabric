@@ -60,9 +60,7 @@ Relay-backed streaming has two sides:
 Both sides must use the same collector; the adapter does not send the collector
 URL to the remote service. For correlation, the adapter puts the Fabric request
 ID in `metadata.nemo_fabric_request_id` in the invoke request body. The remote
-endpoint must use it as the request ID for its Relay-instrumented runtime. For
-Hermes, map it to `RunRequest.request_id`, as shown below. The adapter sends no
-correlation headers.
+endpoint must add this request ID to the Relay span metadata.
 
 ```python
 collector_url = "http://fabric-host:43123"
