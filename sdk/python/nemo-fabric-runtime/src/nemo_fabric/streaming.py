@@ -23,6 +23,7 @@ from nemo_fabric.models import (
 from nemo_fabric.types import RunResult
 
 _STREAM_SINK_NAME = "nemo-fabric-stream"
+_FINALIZE_DRAIN_TIMEOUT_SECONDS = 3.0
 
 
 class InvokeStream:
@@ -109,9 +110,12 @@ class InvokeStream:
             stream_error: Exception | None = None
             if await self._wait_for_registration():
                 try:
-                    while True:
-                        await self._next_record()
+                    async with asyncio.timeout(_FINALIZE_DRAIN_TIMEOUT_SECONDS):
+                        while True:
+                            await self._next_record()
                 except StopAsyncIteration:
+                    pass
+                except TimeoutError:
                     pass
                 except Exception as error:
                     stream_error = error

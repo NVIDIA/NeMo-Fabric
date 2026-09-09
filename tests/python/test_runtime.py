@@ -9,7 +9,7 @@ import asyncio
 import json
 import threading
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -258,6 +258,43 @@ async def test_failed_cleanup_does_not_mask_invoke_failure(mock_native: MagicMoc
     assert runtime.status is RuntimeStatus.FAILED
     assert caught.value.__notes__ == ["runtime cleanup failed: stop failed"]
     mock_native.stop_runtime.assert_called_once()
+
+
+async def test_stop_suppresses_collector_deregistration_failure(
+    mock_native: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = _runtime_wrapper(mock_native)
+    mock_deregister = AsyncMock(side_effect=RuntimeError("collector unavailable"))
+    mock_close = AsyncMock()
+    monkeypatch.setattr(runtime, "_deregister_requests", mock_deregister)
+    monkeypatch.setattr(runtime, "_close_streaming_resources", mock_close)
+
+    await runtime.stop()
+
+    assert runtime.status is RuntimeStatus.STOPPED
+    mock_native.stop_runtime.assert_called_once()
+    mock_deregister.assert_awaited_once()
+    mock_close.assert_awaited_once()
+
+
+async def test_stop_preserves_native_failure_when_collector_deregistration_fails(
+    mock_native: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    mock_native.stop_runtime.side_effect = RuntimeError("native stop failed")
+    runtime = _runtime_wrapper(mock_native)
+    mock_deregister = AsyncMock(side_effect=RuntimeError("collector unavailable"))
+    mock_close = AsyncMock()
+    monkeypatch.setattr(runtime, "_deregister_requests", mock_deregister)
+    monkeypatch.setattr(runtime, "_close_streaming_resources", mock_close)
+
+    with pytest.raises(FabricRuntimeError, match="native stop failed") as caught:
+        await runtime.stop()
+
+    assert caught.value.__notes__ == ["runtime cleanup failed: collector unavailable"]
+    mock_deregister.assert_awaited_once()
+    mock_close.assert_awaited_once()
 
 
 async def test_runtime_preserves_non_mapping_message_values(mock_native: MagicMock):

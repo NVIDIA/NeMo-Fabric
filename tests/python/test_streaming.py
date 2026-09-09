@@ -9,7 +9,7 @@ import asyncio
 import json
 import threading
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import urlsplit
 
 import pytest
@@ -32,6 +32,7 @@ from nemo_fabric import (
     RunResult,
 )
 from nemo_fabric import client as client_mod
+from nemo_fabric import streaming as streaming_mod
 from nemo_fabric.streaming import _with_stream_sink
 
 
@@ -421,6 +422,68 @@ async def test_context_manager_finalizes_unconsumed_stream(
         stream = runtime.invoke_stream(input="hello")
 
     assert (await stream.result()).status == "succeeded"
+
+
+async def test_aclose_bounds_collector_drain_when_stream_never_terminates(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    never = asyncio.Event()
+    registration_ready = asyncio.Event()
+    registration_ready.set()
+    mock_collector = MagicMock()
+
+    async def collector_records(_: str):
+        await never.wait()
+        yield {"uuid": "unreachable"}
+
+    async def invoke() -> RunResult:
+        return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
+
+    mock_collector.stream.side_effect = collector_records
+    monkeypatch.setattr(streaming_mod, "_FINALIZE_DRAIN_TIMEOUT_SECONDS", 0.01)
+    stream = InvokeStream(
+        invoke(),
+        mock_collector,
+        request_id="request-1",
+        registration_ready=registration_ready,
+    )
+
+    await asyncio.wait_for(stream.aclose(), timeout=0.1)
+
+    assert stream._finalized
+
+
+async def test_aclose_finalizes_when_collector_deregistration_fails(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    never = asyncio.Event()
+    registration_ready = asyncio.Event()
+    registration_ready.set()
+    mock_collector = MagicMock()
+    mock_finalize = AsyncMock(side_effect=RuntimeError("deregister failed"))
+
+    async def collector_records(_: str):
+        await never.wait()
+        yield {"uuid": "unreachable"}
+
+    async def invoke() -> RunResult:
+        return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
+
+    mock_collector.stream.side_effect = collector_records
+    monkeypatch.setattr(streaming_mod, "_FINALIZE_DRAIN_TIMEOUT_SECONDS", 0.01)
+    stream = InvokeStream(
+        invoke(),
+        mock_collector,
+        request_id="request-1",
+        registration_ready=registration_ready,
+        on_finalize=mock_finalize,
+    )
+
+    with pytest.raises(RuntimeError, match="deregister failed"):
+        await asyncio.wait_for(stream.aclose(), timeout=0.1)
+
+    assert stream._finalized
+    mock_finalize.assert_awaited_once()
 
 
 async def test_cancelled_aclose_keeps_turn_active_and_result_awaitable(

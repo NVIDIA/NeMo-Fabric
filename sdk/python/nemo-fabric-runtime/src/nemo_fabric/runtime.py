@@ -449,6 +449,7 @@ class Runtime:
             raise FabricStateError("runtime shutdown is already in progress")
         self._closing = True
         stopped = False
+        stop_error: BaseException | None = None
         try:
             native = self._client._require_native_module("stop")
 
@@ -464,21 +465,27 @@ class Runtime:
                 return result
 
             await _call_blocking(stop)
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as error:
             self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
+            stop_error = error
             raise
-        except FabricError:
+        except FabricError as error:
             self._status = RuntimeStatus.FAILED
+            stop_error = error
             raise
         except Exception as error:
             self._status = RuntimeStatus.FAILED
-            raise FabricRuntimeError(str(error), stage="stop") from error
+            stop_error = FabricRuntimeError(str(error), stage="stop")
+            raise stop_error from error
         else:
             self._status = RuntimeStatus.STOPPED
         finally:
             self._closing = False
             try:
                 await self._deregister_requests()
+            except Exception as cleanup_error:
+                if stop_error is not None:
+                    stop_error.add_note(f"runtime cleanup failed: {cleanup_error}")
             finally:
                 await self._close_streaming_resources()
 
