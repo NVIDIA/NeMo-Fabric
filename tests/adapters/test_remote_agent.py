@@ -162,7 +162,7 @@ async def test_remote_agent_retains_transcript_and_reports_http_failure(
 
 @pytest.mark.parametrize(
     "api_type",
-    ["openai-responses", "openai-completions", "anthropic-messages"],
+    ["openai-responses", "openai-completions"],
 )
 async def test_remote_agent_maps_relay_request_id_metadata(
     api_server: str,
@@ -270,6 +270,36 @@ async def test_remote_agent_rejects_mismatched_relay_streaming_configuration(
         )
 
     assert caught.value.code == "remote_agent_invalid_relay_configuration"
+
+
+async def test_remote_agent_rejects_anthropic_messages_relay_streaming(
+    repo_root: Path,
+):
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {
+                "settings": {
+                    "base_url": "https://agents.example.test/v1",
+                    "api_type": "anthropic-messages",
+                    "relay_streaming": True,
+                }
+            },
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+        }
+    )
+    runtime = adapter.RemoteAgentRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(
+            {
+                "config": config,
+                "runtime_context": _context(relay=True).to_mapping(),
+                "base_dir": str(repo_root),
+            }
+        )
+
+    assert caught.value.code == "remote_agent_invalid_relay_configuration"
+    assert caught.value.metadata == {"field": "harness.settings.api_type"}
 
 
 async def test_remote_agent_configures_http_client(

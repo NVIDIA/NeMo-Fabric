@@ -30,7 +30,7 @@ includes `/v1`; `api_type` defaults to `openai-responses`.
 | `api_type` | `openai-responses`, `openai-completions`, or `anthropic-messages` |
 | `connect_timeout_seconds` | Connection timeout; defaults to `10` |
 | `read_timeout_seconds` | Timeout between response bytes; defaults to `600` |
-| `relay_streaming` | Opt in to request-ID correlation with a Relay-instrumented remote service; defaults to `false` |
+| `relay_streaming` | Opt in to request-ID correlation with a Relay-instrumented remote service. Supported only by `openai-responses` and `openai-completions`; defaults to `false`. |
 
 The adapter accepts `models`, `models.temperature`, and replacement
 `instructions.system` values.

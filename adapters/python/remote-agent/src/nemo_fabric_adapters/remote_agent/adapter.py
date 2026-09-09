@@ -152,7 +152,13 @@ class RemoteAgentRuntime:
             adapter="Remote Agent",
             supported_modes={"replace"},
         )
-        relay_streaming = _relay_streaming_enabled(settings, context)
+        self._relay_streaming = _relay_streaming_enabled(settings, context)
+        if self._relay_streaming is True and self._api_type == "anthropic-messages":
+            raise lifecycle.LifecycleError(
+                "remote_agent_invalid_relay_configuration",
+                "Remote Agent relay_streaming supports only openai-responses and openai-completions",
+                metadata={"field": "harness.settings.api_type"},
+            )
         model = _selected_model(config)
         headers: dict[str, str] = {}
         if model.api_key_env is not None:
@@ -196,7 +202,6 @@ class RemoteAgentRuntime:
         )
         self._config = config
         self._runtime_id = context.runtime_id
-        self._relay_streaming = relay_streaming
 
     async def invoke(
         self,
