@@ -358,6 +358,7 @@ install-hermes-agent:
     hermes_commit="29112bef099274229cadff79cdff7bf7b99c4b77"
     hermes_checkout="$REPO_ROOT/external/hermes-agent"
     hermes_patch="$REPO_ROOT/adapters/python/hermes/metadata-propagate.patch"
+    hermes_diff_pathspec=()
 
     if [[ ! -f "$hermes_patch" ]]; then
         echo "ERROR: Hermes Agent patch not found: $hermes_patch" >&2
@@ -373,9 +374,14 @@ install-hermes-agent:
         git init --quiet "$hermes_checkout"
         git -C "$hermes_checkout" remote add origin https://github.com/NousResearch/hermes-agent.git
     fi
+    # This revision contains two contributor metadata paths that differ only by
+    # case. Ignore the resulting false modification on case-insensitive filesystems.
+    if [[ "$(git -C "$hermes_checkout" config --bool core.ignorecase)" == "true" ]]; then
+        hermes_diff_pathspec=(-- . ":(exclude)contributors/emails/agent@Agents-Mac-mini.local")
+    fi
     hermes_head="$(git -C "$hermes_checkout" rev-parse --verify HEAD 2>/dev/null || true)"
     if [[ "$hermes_head" != "$hermes_commit" ]]; then
-        if [[ -n "$hermes_head" ]] && { ! git -C "$hermes_checkout" diff --quiet || ! git -C "$hermes_checkout" diff --cached --quiet; }; then
+        if [[ -n "$hermes_head" ]] && { ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}" || ! git -C "$hermes_checkout" diff --cached --quiet; }; then
             echo "ERROR: Hermes Agent checkout has tracked changes at an unpinned revision: $hermes_checkout" >&2
             exit 1
         fi
@@ -386,7 +392,7 @@ install-hermes-agent:
         echo "ERROR: Hermes Agent checkout has staged changes: $hermes_checkout" >&2
         exit 1
     fi
-    if git -C "$hermes_checkout" diff --quiet; then
+    if git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
         if ! git -C "$hermes_checkout" apply --check "$hermes_patch"; then
             echo "ERROR: Hermes Agent patch does not apply to $hermes_commit" >&2
             exit 1
@@ -409,7 +415,7 @@ install-hermes-agent:
         fi
         git -C "$hermes_checkout" apply --reverse "$hermes_patch"
         patch_reversed=true
-        if ! git -C "$hermes_checkout" diff --quiet; then
+        if ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
             echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
             exit 1
         fi
