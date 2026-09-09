@@ -660,7 +660,7 @@ class RelayAtifConfig(FabricBaseModel):
     enabled: bool = False
     agent_name: str = "NeMo Relay"
     agent_version: str | None = None
-    model_name: str = "unknown"
+    model_name: str | None = None
     tool_definitions: list[dict[str, Any]] | None = None
     extra: dict[str, Any] | None = None
     output_directory: str | Path | None = None

@@ -112,7 +112,7 @@ test("accepts only stable NeMo Relay 0.9 CLI versions", async () => {
   );
 });
 
-test("normalizes file outputs without mutating a Relay stream sink", async () => {
+test("normalizes a core-authored Relay plugin document without mutating a stream sink", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-config-")));
   const previousConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;
   try {
@@ -123,7 +123,6 @@ test("normalizes file outputs without mutating a Relay stream sink", async () =>
       url: "http://127.0.0.1:4319/atof",
       transport: "ndjson",
       timeout_millis: 3000,
-      headers: {},
       header_env: { authorization: "RELAY_AUTHORIZATION" },
     };
     await writeFile(
@@ -131,12 +130,27 @@ test("normalizes file outputs without mutating a Relay stream sink", async () =>
       JSON.stringify({
         relay: {
           config: {
-            version: 3,
-            atof: {
-              enabled: true,
-              sinks: [{ type: "file", output_directory: "relay-atof" }, streamSink],
-            },
-            atif: { enabled: true },
+            version: 1,
+            components: [
+              {
+                kind: "observability",
+                enabled: true,
+                config: {
+                  version: 3,
+                  atof: {
+                    enabled: true,
+                    sinks: [{ type: "file", output_directory: "relay-atof", mode: "overwrite" }, streamSink],
+                  },
+                  atif: {
+                    enabled: true,
+                    agent_name: "NeMo Relay",
+                    model_name: "gpt-4.1-mini",
+                    filename_template: "nemo-relay-atif-{session_id}.json",
+                  },
+                  enable_full_payloads: false,
+                },
+              },
+            ],
           },
         },
       }),
@@ -150,9 +164,9 @@ test("normalizes file outputs without mutating a Relay stream sink", async () =>
     assert.equal(config.atof.sinks[0].output_directory, join(root, "relay-atof", "runtime-1"));
     assert.equal(config.atof.sinks[0].filename, "events.atof.jsonl");
     assert.equal(config.atif.output_directory, join(root, "artifacts", "relay", "runtime-1"));
-    assert.equal(config.atif.filename_template, "trajectory-{session_id}.atif.json");
-    assert.equal(config.atif.agent_name, "pi-relay-test");
-    assert.equal(config.atif.model_name, undefined);
+    assert.equal(config.atif.filename_template, "nemo-relay-atif-{session_id}.json");
+    assert.equal(config.atif.agent_name, "NeMo Relay");
+    assert.equal(config.atif.model_name, "gpt-4.1-mini");
 
     const paths = await writeRelayConfigs(pluginConfig);
     assert.equal(paths.configPath, join(root, "relay-config", "config.toml"));

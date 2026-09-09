@@ -420,6 +420,11 @@ relay_config.enable_relay(
 )
 ```
 
+`RelayAtifConfig.model_name` is an optional ATIF-only override. When you omit
+it, NeMo Fabric writes the selected `default` model, or the only configured
+model, into the Relay plugin configuration. Set it explicitly only when the
+trajectory must use a different model label.
+
 Additional NeMo Relay plugin components can be supplied generically with
 `RelayComponentConfig` when their component package is available in the runtime
 environment.

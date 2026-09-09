@@ -16,6 +16,8 @@ from nemo_fabric import FabricConfigError
 from nemo_fabric import HarnessConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
+from nemo_fabric import RelayAtifConfig
+from nemo_fabric import RelayObservabilityConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 DESCRIPTOR = ROOT / "adapters/typescript/pi/pi.fabric-adapter.json"
@@ -144,6 +146,26 @@ def test_pi_descriptor_plans_relay_telemetry():
         "relay_output_dir": "./artifacts/relay",
         "adapter_outputs": ["atif", "openinference", "otel"],
     }
+
+
+@pytest.mark.parametrize(
+    ("model_name", "expected"),
+    [(None, "gpt-4.1-mini"), ("trajectory-model", "trajectory-model")],
+)
+def test_pi_relay_atif_uses_selected_model_unless_overridden(
+    model_name: str | None, expected: str
+):
+    adapter_config = config()
+    adapter_config.enable_relay(
+        observability=RelayObservabilityConfig(
+            atif=RelayAtifConfig(enabled=True, model_name=model_name)
+        )
+    )
+
+    plan = Fabric().plan(adapter_config, base_dir=ROOT)
+
+    relay_config = plan.telemetry_plan["relay_config"]
+    assert relay_config["components"][0]["config"]["atif"]["model_name"] == expected
 
 
 def test_pi_descriptor_rejects_relay_when_support_is_not_declared(tmp_path: Path):
