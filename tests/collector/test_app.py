@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from nemo_fabric_collector.app import create_app
+from nemo_fabric_collector.app import AtofCollector, create_app
 
 PUBLISH_TOKEN = "p" * 32
 CONTROL_TOKEN = "c" * 32
@@ -120,6 +120,28 @@ async def test_register_rejects_invalid_and_duplicate_request_ids(
     assert duplicate.status_code == 409
 
 
+async def test_standalone_register_rejects_second_request_id():
+    collector = AtofCollector(standalone=True)
+    application = create_app(collector)
+    transport = httpx.ASGITransport(app=application)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://collector.test",
+    ) as client:
+        created = await client.post("/v1/register", json={"request_id": "request-1"})
+        duplicate = await client.post(
+            "/v1/register",
+            json={"request_id": "request-2"},
+        )
+    await collector.close()
+
+    assert created.status_code == 201
+    assert duplicate.status_code == 409
+    assert duplicate.json() == {
+        "detail": "standalone collector already has a registered request"
+    }
+
+
 async def test_atof_records_are_routed_and_streamed_as_ndjson(
     collector_client: httpx.AsyncClient,
 ):
@@ -171,6 +193,47 @@ async def test_atof_records_are_routed_and_streamed_as_ndjson(
         headers=control_headers,
     )
     assert missing.status_code == 404
+
+
+async def test_atof_drops_overflowed_records_without_blocking():
+    collector = AtofCollector(queue_maxsize=1, queue_max_bytes=1024)
+    application = create_app(
+        collector,
+        publish_token=PUBLISH_TOKEN,
+        control_token=CONTROL_TOKEN,
+    )
+    root = {
+        "kind": "scope",
+        "scope_category": "start",
+        "uuid": "root-1",
+        "metadata": {"nemo_fabric_request_id": "request-1"},
+    }
+    child = {"kind": "mark", "uuid": "mark-1", "parent_uuid": "root-1"}
+    transport = httpx.ASGITransport(app=application)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://collector.test",
+    ) as client:
+        registered = await client.post(
+            "/v1/register",
+            headers={"Authorization": f"Bearer {CONTROL_TOKEN}"},
+            json={"request_id": "request-1"},
+        )
+        attached = await collector.attach_stream("request-1")
+        assert attached is not None
+        queue, token = attached
+        await collector.detach_stream("request-1", queue, token)
+        published = await client.post(
+            "/v1/atof",
+            headers={"Authorization": f"Bearer {PUBLISH_TOKEN}"},
+            content=b"\n".join(json.dumps(record).encode() for record in (root, child)),
+        )
+    queued = await queue.get()
+    await collector.close()
+
+    assert registered.status_code == 201
+    assert published.status_code == 200
+    assert queued == root
 
 
 async def test_deregister_remove_queue_discards_records(

@@ -11,6 +11,7 @@ from nemo_fabric_collector.app import (
     RequestId,
     ScopeUuid,
     _AtofQueueClosed,
+    _AtofQueueFull,
     _AtofRecordQueue,
     _RecordTooLarge,
     _StreamAlreadyAttached,
@@ -48,7 +49,7 @@ async def test_queue_discard_close_clears_records():
 
 
 async def test_queue_close_wakes_blocked_producer():
-    queue = _AtofRecordQueue(maxsize=1, max_bytes=100)
+    queue = _AtofRecordQueue(maxsize=1, max_bytes=100, put_timeout=1)
     await queue.put({"uuid": "first"})
     blocked_put = asyncio.create_task(queue.put({"uuid": "second"}))
     await asyncio.sleep(0)
@@ -69,7 +70,7 @@ async def test_queue_rejects_record_larger_than_byte_limit():
 async def test_queue_applies_byte_budget_backpressure():
     record = {"uuid": "record", "payload": "x" * 16}
     record_size = len(json.dumps(record).encode())
-    queue = _AtofRecordQueue(maxsize=10, max_bytes=record_size)
+    queue = _AtofRecordQueue(maxsize=10, max_bytes=record_size, put_timeout=1)
     await queue.put(record)
 
     blocked_put = asyncio.create_task(queue.put(record))
@@ -79,6 +80,17 @@ async def test_queue_applies_byte_budget_backpressure():
     assert await queue.get() == record
     await blocked_put
     assert await queue.get() == record
+
+
+async def test_queue_drops_record_when_full_without_waiting():
+    queue = _AtofRecordQueue(maxsize=1, max_bytes=100)
+    first = {"uuid": "first"}
+    await queue.put(first)
+
+    with pytest.raises(_AtofQueueFull):
+        await queue.put({"uuid": "second"})
+
+    assert await queue.get() == first
 
 
 async def test_collector_routes_only_scope_descendants():
@@ -220,12 +232,21 @@ async def test_collector_rejects_duplicate_registration_and_stream():
     collector = AtofCollector()
     request_id = RequestId("request-1")
 
-    assert await collector.register(request_id)
-    assert not await collector.register(request_id)
+    await collector.register(request_id)
+    with pytest.raises(RuntimeError, match="already registered"):
+        await collector.register(request_id)
     attached = await collector.attach_stream(request_id)
     assert attached is not None
     with pytest.raises(_StreamAlreadyAttached):
         await collector.attach_stream(request_id)
+
+
+async def test_standalone_collector_rejects_second_registration():
+    collector = AtofCollector(standalone=True)
+    await collector.register(RequestId("request-1"))
+
+    with pytest.raises(RuntimeError, match="standalone collector"):
+        await collector.register(RequestId("request-2"))
 
 
 async def test_collector_close_wakes_waiting_consumer():

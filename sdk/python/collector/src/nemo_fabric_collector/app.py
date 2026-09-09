@@ -31,9 +31,14 @@ ScopeUuid = NewType("ScopeUuid", str)
 _MAX_RECORD_BYTES = 1024 * 1024
 _QUEUE_MAX_BYTES = 16 * 1024 * 1024
 _QUEUE_MAXSIZE = 1024
+_QUEUE_PUT_TIMEOUT_SECONDS = 0.0
 
 
 class _RecordTooLarge(ValueError):
+    pass
+
+
+class _AtofQueueFull(Exception):
     pass
 
 
@@ -67,10 +72,17 @@ class _AtofQueueClosed(Exception):
 
 
 class _AtofRecordQueue:
-    def __init__(self, *, maxsize: int, max_bytes: int) -> None:
+    def __init__(
+        self,
+        *,
+        maxsize: int,
+        max_bytes: int,
+        put_timeout: float = _QUEUE_PUT_TIMEOUT_SECONDS,
+    ) -> None:
         self._records: deque[tuple[dict[str, Any], int]] = deque()
         self._maxsize = maxsize
         self._max_bytes = max_bytes
+        self._put_timeout = put_timeout
         self._queued_bytes = 0
         self._closed = False
         self._drain_on_close = False
@@ -107,7 +119,10 @@ class _AtofRecordQueue:
                 self._changed.set()
                 return
             self._changed.clear()
-            await self._changed.wait()
+            try:
+                await asyncio.wait_for(self._changed.wait(), self._put_timeout)
+            except TimeoutError:
+                raise _AtofQueueFull from None
 
     async def get(self) -> dict[str, Any]:
         while True:
@@ -174,17 +189,24 @@ class AtofCollector:
         self._queue_max_bytes = queue_max_bytes
         self._standalone = standalone
 
-    async def register(self, request_id: RequestId) -> bool:
+    async def register(self, request_id: RequestId) -> None:
         async with self.state_lock:
             if request_id in self.request_states:
-                return False
+                raise RuntimeError(
+                    f"request_id {request_id!r} is already registered"
+                )
+
+            if self._standalone and self.request_uuids:
+                raise RuntimeError(
+                    "standalone collector already has a registered request"
+                )
+
             self.request_uuids[request_id] = set()
             self.request_messages[request_id] = _AtofRecordQueue(
                 maxsize=self._queue_maxsize,
                 max_bytes=self._queue_max_bytes,
             )
             self.request_states[request_id] = _RequestState()
-            return True
 
     async def attach_stream(
         self,
@@ -263,7 +285,10 @@ class AtofCollector:
             return
         try:
             await queue.put(record, byte_size=byte_size)
-        except _AtofQueueClosed:
+        except (_AtofQueueClosed, _AtofQueueFull):
+            # Preserve the successful publisher response for a partially
+            # processed NDJSON payload rather than causing a retry that could
+            # duplicate records already enqueued from that payload.
             pass
 
     async def close(self) -> None:
@@ -281,7 +306,6 @@ class AtofCollector:
 
     def _route_request(self, record: dict[str, Any]) -> RequestId | None:
         if self._standalone:
-            assert len(self.request_uuids) == 1
             return next(iter(self.request_uuids))
 
         uuid = _record_uuid(record)
@@ -403,8 +427,10 @@ async def register(request: Request) -> Response:
     request_id = _request_id(payload)
     if request_id is None:
         return _error_response(400, "request_id must be a non-empty string")
-    if not await _collector(request).register(request_id):
-        return _error_response(409, "request_id is already registered")
+    try:
+        await _collector(request).register(request_id)
+    except Exception as error:
+        return _error_response(409, str(error))
     return JSONResponse(
         {"request_id": request_id, "status": "ready"},
         status_code=201,
