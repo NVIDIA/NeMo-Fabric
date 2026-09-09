@@ -154,6 +154,8 @@ class RemoteAgentRuntime:
         )
         self._relay_streaming = _relay_streaming_enabled(settings, context)
         if self._relay_streaming is True and self._api_type == "anthropic-messages":
+            # According to a strict reading of https://platform.claude.com/docs/en/api/messages#metadata.user_id
+            # It appears that `user_id` is the only metadata field
             raise lifecycle.LifecycleError(
                 "remote_agent_invalid_relay_configuration",
                 "Remote Agent relay_streaming supports only openai-responses and openai-completions",
