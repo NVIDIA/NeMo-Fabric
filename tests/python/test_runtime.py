@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -260,9 +261,10 @@ async def test_failed_cleanup_does_not_mask_invoke_failure(mock_native: MagicMoc
     mock_native.stop_runtime.assert_called_once()
 
 
-async def test_stop_suppresses_collector_deregistration_failure(
+async def test_stop_logs_collector_deregistration_failure(
     mock_native: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ):
     runtime = _runtime_wrapper(mock_native)
     mock_deregister = AsyncMock(side_effect=RuntimeError("collector unavailable"))
@@ -270,9 +272,11 @@ async def test_stop_suppresses_collector_deregistration_failure(
     monkeypatch.setattr(runtime, "_deregister_requests", mock_deregister)
     monkeypatch.setattr(runtime, "_close_streaming_resources", mock_close)
 
-    await runtime.stop()
+    with caplog.at_level(logging.WARNING, logger=runtime_mod.logger.name):
+        await runtime.stop()
 
     assert runtime.status is RuntimeStatus.STOPPED
+    assert "ATOF collector deregistration failed during runtime shutdown" in caplog.text
     mock_native.stop_runtime.assert_called_once()
     mock_deregister.assert_awaited_once()
     mock_close.assert_awaited_once()
@@ -295,6 +299,29 @@ async def test_stop_preserves_native_failure_when_collector_deregistration_fails
     assert caught.value.__notes__ == ["runtime cleanup failed: collector unavailable"]
     mock_deregister.assert_awaited_once()
     mock_close.assert_awaited_once()
+
+
+async def test_deregister_requests_attempts_all_registered_requests(
+    mock_native: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = _runtime_wrapper(mock_native)
+    runtime._registered_requests = {"request-1", "request-2", "request-3"}
+    first_error = RuntimeError("first collector failure")
+    third_error = RuntimeError("third collector failure")
+    mock_deregister = AsyncMock(side_effect=[first_error, None, third_error])
+    monkeypatch.setattr(runtime, "_deregister_request", mock_deregister)
+
+    with pytest.raises(ExceptionGroup) as caught:
+        await runtime._deregister_requests()
+
+    assert mock_deregister.await_count == 3
+    assert {call.args[0] for call in mock_deregister.await_args_list} == {
+        "request-1",
+        "request-2",
+        "request-3",
+    }
+    assert caught.value.exceptions == (first_error, third_error)
 
 
 async def test_runtime_preserves_non_mapping_message_values(mock_native: MagicMock):

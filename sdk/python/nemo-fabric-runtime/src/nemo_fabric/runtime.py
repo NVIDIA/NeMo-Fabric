@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import deepcopy
 from enum import Enum
@@ -26,6 +27,9 @@ from nemo_fabric.models import RunRequest
 from nemo_fabric.openai_streaming import OpenAIInvokeStream
 from nemo_fabric.streaming import InvokeStream
 from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
+
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeStatus(str, Enum):
@@ -486,12 +490,24 @@ class Runtime:
             except Exception as cleanup_error:
                 if stop_error is not None:
                     stop_error.add_note(f"runtime cleanup failed: {cleanup_error}")
+                else:
+                    logger.warning(
+                        "ATOF collector deregistration failed during runtime shutdown: %s",
+                        cleanup_error,
+                        exc_info=cleanup_error,
+                    )
             finally:
                 await self._close_streaming_resources()
 
     async def _deregister_requests(self) -> None:
+        errors: list[Exception] = []
         for request_id in tuple(self._registered_requests):
-            await self._deregister_request(request_id, remove_queue=True)
+            try:
+                await self._deregister_request(request_id, remove_queue=True)
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise ExceptionGroup("ATOF collector deregistration failed", errors)
 
     async def _close_streaming_resources(self) -> None:
         try:
