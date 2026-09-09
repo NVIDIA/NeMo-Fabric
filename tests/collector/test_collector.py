@@ -3,6 +3,7 @@
 
 import asyncio
 import json
+import logging
 
 import pytest
 
@@ -82,8 +83,8 @@ async def test_queue_applies_byte_budget_backpressure():
     assert await queue.get() == record
 
 
-async def test_queue_drops_record_when_full_without_waiting():
-    queue = _AtofRecordQueue(maxsize=1, max_bytes=100)
+async def test_queue_raises_when_full_after_timeout():
+    queue = _AtofRecordQueue(maxsize=1, max_bytes=100, put_timeout=0)
     first = {"uuid": "first"}
     await queue.put(first)
 
@@ -91,6 +92,35 @@ async def test_queue_drops_record_when_full_without_waiting():
         await queue.put({"uuid": "second"})
 
     assert await queue.get() == first
+
+
+async def test_collector_logs_queue_timeout_drops(
+    caplog: pytest.LogCaptureFixture,
+):
+    collector = AtofCollector()
+    request_id = RequestId("request-1")
+    root = {
+        "kind": "scope",
+        "scope_category": "start",
+        "uuid": "root-1",
+        "metadata": {"nemo_fabric_request_id": request_id},
+    }
+    child = {"kind": "mark", "uuid": "mark-1", "parent_uuid": "root-1"}
+    await collector.register(request_id)
+    collector.request_messages[request_id] = _AtofRecordQueue(
+        maxsize=1,
+        max_bytes=100,
+        put_timeout=0,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="nemo_fabric_collector.app"):
+        await collector.route(root, byte_size=1)
+        await collector.route(child, byte_size=1)
+    await collector.close()
+
+    assert "Dropping ATOF record after queue backpressure timeout" in caplog.text
+    assert caplog.records[-1].request_id == request_id
+    assert caplog.records[-1].byte_size == 1
 
 
 async def test_collector_routes_only_scope_descendants():

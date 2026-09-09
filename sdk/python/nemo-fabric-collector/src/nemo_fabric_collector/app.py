@@ -32,7 +32,7 @@ ScopeUuid = NewType("ScopeUuid", str)
 _MAX_RECORD_BYTES = 1024 * 1024
 _QUEUE_MAX_BYTES = 16 * 1024 * 1024
 _QUEUE_MAXSIZE = 1024
-_QUEUE_PUT_TIMEOUT_SECONDS = 0.0
+_QUEUE_PUT_TIMEOUT_SECONDS = 30.0
 
 logger = logging.getLogger(__name__)
 
@@ -288,11 +288,20 @@ class AtofCollector:
             return
         try:
             await queue.put(record, byte_size=byte_size)
-        except (_AtofQueueClosed, _AtofQueueFull):
+        except _AtofQueueClosed:
             # Preserve the successful publisher response for a partially
             # processed NDJSON payload rather than causing a retry that could
             # duplicate records already enqueued from that payload.
             pass
+        except _AtofQueueFull:
+            logger.warning(
+                "Dropping ATOF record after queue backpressure timeout",
+                extra={
+                    "request_id": request_id,
+                    "byte_size": byte_size,
+                    "timeout_seconds": _QUEUE_PUT_TIMEOUT_SECONDS,
+                },
+            )
 
     async def close(self) -> None:
         async with self.state_lock:

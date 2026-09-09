@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 import json
 import logging
 
@@ -225,7 +226,7 @@ async def test_atof_records_are_routed_and_streamed_as_ndjson(
     assert missing.status_code == 404
 
 
-async def test_atof_drops_overflowed_records_without_blocking():
+async def test_atof_waits_for_queue_capacity_before_accepting_records():
     collector = AtofCollector(queue_maxsize=1, queue_max_bytes=1024)
     application = create_app(
         collector,
@@ -249,21 +250,26 @@ async def test_atof_drops_overflowed_records_without_blocking():
             headers={"Authorization": f"Bearer {CONTROL_TOKEN}"},
             json={"request_id": "request-1"},
         )
-        attached = await collector.attach_stream("request-1")
-        assert attached is not None
-        queue, token = attached
-        await collector.detach_stream("request-1", queue, token)
-        published = await client.post(
-            "/v1/atof",
-            headers={"Authorization": f"Bearer {PUBLISH_TOKEN}"},
-            content=b"\n".join(json.dumps(record).encode() for record in (root, child)),
+        published = asyncio.create_task(
+            client.post(
+                "/v1/atof",
+                headers={"Authorization": f"Bearer {PUBLISH_TOKEN}"},
+                content=b"\n".join(
+                    json.dumps(record).encode() for record in (root, child)
+                ),
+            )
         )
-    queued = await queue.get()
+        await asyncio.sleep(0)
+        assert not published.done()
+
+        queue = collector.request_messages["request-1"]
+        assert await queue.get() == root
+        response = await published
+        assert await queue.get() == child
     await collector.close()
 
     assert registered.status_code == 201
-    assert published.status_code == 200
-    assert queued == root
+    assert response.status_code == 200
 
 
 async def test_deregister_remove_queue_discards_records(

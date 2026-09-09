@@ -651,7 +651,8 @@ Streaming has the following v0.1 constraints:
   are represented by the returned result's status and error fields.
 - The collector limits each request queue to 1,024 records and 16 MiB of
   encoded record data. It rejects individual records larger than 1 MiB and
-  applies TCP backpressure.
+  applies TCP backpressure for up to 30 seconds. If the queue remains full,
+  the collector drops the record and logs a warning.
   NeMo Relay can drop records if a consumer stalls longer than its delivery
   timeout.
 - ATOF granularity depends on the NeMo Relay integration. Gateway harnesses expose
