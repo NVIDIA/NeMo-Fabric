@@ -69,15 +69,11 @@ The full build installs its own dependencies, so you do not need to run
 
 ### Install NeMo Relay
 
-Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.10.0` on `PATH`. The Relay
-0.9 CLI is not yet published to PyPI. Clone a matching NeMo Relay 0.9 source
-checkout and install the CLI separately from the npm adapter:
+Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.10.0` on `PATH`. Install the
+Relay 0.9 CLI separately from the npm adapter:
 
 ```bash
-git clone https://github.com/NVIDIA/NeMo-Relay.git
-cd NeMo-Relay
-git checkout 30b684dbb09231ee956d40abad9af253596a81ad
-cargo install --path crates/cli --locked
+pip install "nemo-relay-cli-bin>=0.9.0,<0.10"
 ```
 
 In a source checkout of NeMo Fabric, `uv run` prepends the repository's
@@ -87,13 +83,13 @@ In a source checkout of NeMo Fabric, `uv run` prepends the repository's
 binary so the adapter does not depend on `PATH` ordering:
 
 ```bash
-FABRIC_NEMO_RELAY_COMMAND="$HOME/.cargo/bin/nemo-relay" uv run python your_app.py
+FABRIC_NEMO_RELAY_COMMAND="/absolute/path/to/nemo-relay" uv run python your_app.py
 ```
 
-The adapter does not bundle the Relay Pi extension. Obtain the extension from
-that same source revision, such as
-[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/30b684dbb09231ee956d40abad9af253596a81ad/crates/cli/assets/pi-extension),
-and configure its path as described in the next section.
+The adapter does not bundle the Relay Pi extension. Obtain the
+[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/0.9.0/crates/cli/assets/pi-extension)
+directory from the Relay 0.9 release and configure its path as described in the
+next section.
 
 ## Configure the Adapter
 

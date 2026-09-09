@@ -921,7 +921,7 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
       }).start(input, model),
       (error) =>
         error.code === "pi_relay_unavailable" &&
-        error.message.includes("30b684dbb09231ee956d40abad9af253596a81ad") &&
+        error.message.includes('Install "nemo-relay-cli-bin>=0.9.0,<0.10"') &&
         error.metadata.relay_error === "missing",
     );
     await assert.rejects(
