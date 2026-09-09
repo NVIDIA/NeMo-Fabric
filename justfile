@@ -12,9 +12,9 @@ ref_name := ""
 # Linux wheel artifacts target this minimum glibc version for compatibility.
 linux_glibc_version := "2.17"
 
-python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/remote-agent"
+python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/collector adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/remote-agent"
 
-python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/remote-agent"
+python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/collector adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/remote-agent"
 
 bash_helpers := '''
 set -euo pipefail
@@ -320,8 +320,9 @@ build-python:
             --group adapters \
             "${editable_projects[@]}"
     else
-        uv sync --no-default-groups --group adapters \
+        uv sync --no-default-groups --group adapters --group collector \
             --reinstall-package nemo-fabric \
+            --reinstall-package nemo-fabric-collector \
             --reinstall-package nemo-fabric-runtime
     fi
 
@@ -498,7 +499,7 @@ test-python:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" != "true" ]]; then
-        uv sync --no-default-groups --group adapters --group adapter-tests --group test --extra harbor --extra relay
+        uv sync --no-default-groups --group adapters --group adapter-tests --group collector --group test --extra harbor --extra relay
     fi
     uv run --no-sync pytest
 

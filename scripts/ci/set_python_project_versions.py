@@ -19,6 +19,7 @@ INTERNAL_PIN_PATTERN = re.compile(
 def set_python_project_versions(root: Path, version: str) -> None:
     project_paths = (
         root / "sdk" / "python" / "nemo-fabric" / "pyproject.toml",
+        root / "sdk" / "python" / "collector" / "pyproject.toml",
         root / "adapter-contract" / "python" / "pyproject.toml",
         *sorted((root / "adapters" / "python").glob("*/pyproject.toml")),
     )

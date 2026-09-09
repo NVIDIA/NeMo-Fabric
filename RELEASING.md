@@ -33,7 +33,7 @@ package-specific tag pushes:
 |---|---|
 | crates.io | `nemo-fabric-core`, `nemo-fabric-cli` |
 | npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-pi` |
-| GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, and `nemo-fabric-adapters-hermes` wheel artifacts |
+| GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-collector`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, and `nemo-fabric-adapters-hermes` wheel artifacts |
 | Fern | The documentation site |
 
 ## Version Model
@@ -46,6 +46,7 @@ NeMo Fabric versions are anchored on the workspace SemVer in the repository root
 - The root `Cargo.toml` `workspace.dependencies` entry for
   `nemo-fabric-core` must stay aligned with that same version.
 - `sdk/python/nemo-fabric/pyproject.toml`,
+  `sdk/python/collector/pyproject.toml`,
   `adapter-contract/python/pyproject.toml`, and every
   `adapters/python/*/pyproject.toml` carry the Python package versions and internal
   dependency pins and must stay aligned with the same release version. The
@@ -457,8 +458,8 @@ The release pipeline then:
 1. Normalizes and validates the tag format, then stamps ecosystem-specific
    package metadata in each disposable workflow checkout.
 2. Builds platform `nemo-fabric-runtime` wheels and pure-Python
-   `nemo-fabric` and adapter wheels with the exact tag version, then uploads
-   them as GitHub Actions artifacts.
+   `nemo-fabric`, `nemo-fabric-collector`, and adapter wheels with the exact tag
+   version, then uploads them as GitHub Actions artifacts.
 3. Publishes `nemo-fabric-core` and `nemo-fabric-cli` to crates.io through
    trusted publishing for stable, beta, and RC tags. Alpha tags are not
    published to crates.io.
@@ -505,6 +506,7 @@ After the release is live, verify:
 2. The Python wheels are available on PyPI:
    - [`nemo-fabric`](https://pypi.org/project/nemo-fabric/)
    - [`nemo-fabric-runtime`](https://pypi.org/project/nemo-fabric-runtime/) Ensure that a wheel exists for each supported platform.
+   - [`nemo-fabric-collector`](https://pypi.org/project/nemo-fabric-collector/)
    - [`nemo-fabric-adapters-common`](https://pypi.org/project/nemo-fabric-adapters-common/)
    - [`nemo-fabric-adapters-claude`](https://pypi.org/project/nemo-fabric-adapters-claude/)
    - [`nemo-fabric-adapters-codex`](https://pypi.org/project/nemo-fabric-adapters-codex/)
@@ -513,6 +515,7 @@ After the release is live, verify:
 3. The Python wheels are available on NVIDIA PyPI:
    - [`nemo-fabric`](https://pypi.nvidia.com/nemo-fabric/)
    - [`nemo-fabric-runtime`](https://pypi.nvidia.com/nemo-fabric-runtime/) Ensure that a wheel exists for each supported platform.
+   - [`nemo-fabric-collector`](https://pypi.nvidia.com/nemo-fabric-collector/)
    - [`nemo-fabric-adapters-common`](https://pypi.nvidia.com/nemo-fabric-adapters-common/)
    - [`nemo-fabric-adapters-claude`](https://pypi.nvidia.com/nemo-fabric-adapters-claude/)
    - [`nemo-fabric-adapters-codex`](https://pypi.nvidia.com/nemo-fabric-adapters-codex/)

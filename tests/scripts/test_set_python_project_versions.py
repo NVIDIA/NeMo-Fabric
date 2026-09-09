@@ -20,6 +20,7 @@ def test_set_python_project_versions_updates_internal_pins_with_extras(
     (tmp_path / "adapters" / "python" / "claude").mkdir(parents=True)
     (tmp_path / "adapters" / "typescript" / "pi").mkdir(parents=True)
     (tmp_path / "adapter-contract" / "python").mkdir(parents=True)
+    (tmp_path / "sdk" / "python" / "collector").mkdir(parents=True)
     (tmp_path / "sdk" / "python" / "nemo-fabric").mkdir(parents=True)
     (tmp_path / "sdk" / "python" / "nemo-fabric-runtime").mkdir()
     coordinator_path = tmp_path / "pyproject.toml"
@@ -46,12 +47,24 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+collector = [
+  "nemo-fabric-collector == 0.2.0",
+]
 claude = [
   "nemo-fabric-adapters-claude[harness] == 0.2.0",
 ]
 hermes-agent = [
   "nemo-fabric-adapters-hermes[full] == 0.2.0; python_version < '3.14'",
 ]
+""",
+        encoding="utf-8",
+    )
+    collector_path = tmp_path / "sdk" / "python" / "collector" / "pyproject.toml"
+    collector_path.write_text(
+        """\
+[project]
+name = "nemo-fabric-collector"
+version = "0.2.0"
 """,
         encoding="utf-8",
     )
@@ -107,6 +120,9 @@ dynamic = ["version"]
 
     assert sdk_project["version"] == "0.2.0rc5"
     assert sdk_project["dependencies"] == ["nemo-fabric-runtime == 0.2.0rc5"]
+    assert sdk_project["optional-dependencies"]["collector"] == [
+        "nemo-fabric-collector == 0.2.0rc5"
+    ]
     assert sdk_project["optional-dependencies"]["claude"] == [
         "nemo-fabric-adapters-claude[harness] == 0.2.0rc5"
     ]
@@ -117,6 +133,9 @@ dynamic = ["version"]
     assert adapter_project["dependencies"] == [
         "nemo-fabric-adapters-common == 0.2.0rc5"
     ]
+    assert tomllib.loads(collector_path.read_text(encoding="utf-8"))["project"][
+        "version"
+    ] == "0.2.0rc5"
     assert typescript_decoy.read_text(encoding="utf-8") == (
         '[project]\nname = "typescript-build-helper"\n'
     )
