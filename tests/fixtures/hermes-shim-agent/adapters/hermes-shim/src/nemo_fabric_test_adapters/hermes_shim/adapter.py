@@ -87,9 +87,24 @@ class ShimRuntime:
         output["openai_stream_invocation_count"] = self._openai_stream_invocations
         return agent_result(output)
 
-    async def stop(self) -> None:
+    async def stop(self) -> dict[str, Any] | None:
+        output = None
+        if (
+            self._start_payload is not None
+            and settings_payload(self._start_payload).get("mode") == "stop_artifacts"
+        ):
+            root = Path(
+                runtime_context(self._start_payload)["artifacts"]["root"]
+            )
+            artifact = root / "relay" / "trajectory-runtime.atif.json"
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_text('{"session_id":"runtime"}\n', encoding="utf-8")
+            output = {
+                "relay_artifacts": [{"kind": "atif", "path": str(artifact)}]
+            }
         self._start_payload = None
         self._openai_stream_invocations = 0
+        return output
 
 
 def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:

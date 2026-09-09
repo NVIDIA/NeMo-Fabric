@@ -131,7 +131,7 @@ Execute one complete start, invoke, and stop lifecycle.
 
 
 **Returns:**
- The normalized ``RunResult``, including output, artifacts, telemetry references, lifecycle events, and structured error data.
+ The normalized ``RunResult``, including output, artifacts, telemetry references, lifecycle events, and structured error data. Its status and error describe the invocation. A shutdown failure is retained as a ``runtime_stop_error`` event instead of changing a completed invocation result.
 
 
 

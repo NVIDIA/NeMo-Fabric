@@ -27,6 +27,7 @@ pub enum SchemaName {
     InvocationHandle,
     RunRequest,
     RunResult,
+    RuntimeStopResult,
     ArtifactManifest,
     ErrorInfo,
     FabricEvent,
@@ -133,6 +134,12 @@ Runtime request schema.
 
 Runtime result schema.
 
+### `RuntimeStopResult`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "RuntimeStopResult"}} /></pre>
+
+Runtime stop result schema.
+
 ### `ArtifactManifest`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ArtifactManifest"}} /></pre>
@@ -159,7 +166,7 @@ NeMo Fabric lifecycle event schema.
 
 #### `ALL`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">19</a>]"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">20</a>]"}} /></pre>
 
 All public schemas in stable output order.
 

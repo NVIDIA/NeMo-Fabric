@@ -42,6 +42,11 @@ export interface PiAdapterRuntimeOptions {
   atifFinalizationTimeoutMs?: number;
 }
 
+interface PiStopFailure {
+  stage: "session" | "relay_output" | "relay";
+  error: unknown;
+}
+
 function failed(code: string, message: string): AgentRunResult {
   return {
     status: "failed",
@@ -78,6 +83,28 @@ async function collectNonAtifArtifacts(relay: PiRelayRuntime): Promise<RelayArti
   return (await collectRelayArtifacts(relay.pluginConfig, relay.atifMatchers)).filter(
     (artifact) => artifact.kind !== "atif",
   );
+}
+
+function stopError(failures: PiStopFailure[]): JsonObject {
+  const lifecycleFailure = failures.find((failure) => failure.error instanceof LifecycleError)?.error;
+  const primary = lifecycleFailure instanceof LifecycleError ? lifecycleFailure : undefined;
+  const details = failures.map(({ stage, error }) => ({
+    stage,
+    message: error instanceof Error ? error.message : String(error),
+  }));
+  return {
+    stage: "stop",
+    code: primary?.code ?? "pi_runtime_stop_failed",
+    message:
+      failures.length > 1
+        ? "Pi session and NeMo Relay cleanup failed"
+        : (primary?.message ?? "Pi runtime cleanup failed"),
+    retryable: primary?.retryable ?? false,
+    metadata: {
+      ...primary?.metadata,
+      failures: details,
+    },
+  };
 }
 
 export class PiAdapterRuntime implements AdapterRuntime {
@@ -174,11 +201,11 @@ export class PiAdapterRuntime implements AdapterRuntime {
           process.stderr.write(`NeMo Relay ATIF artifact snapshot failed${detail}\n`);
         }
       }
-      let failure: unknown;
+      const failures: PiStopFailure[] = [];
       try {
         await session.stop();
       } catch (error) {
-        failure = error;
+        failures.push({ stage: "session", error });
       }
       let relayOutput: JsonObject | undefined;
       if (relay !== undefined) {
@@ -217,30 +244,25 @@ export class PiAdapterRuntime implements AdapterRuntime {
             artifacts = [];
           }
         }
-        relayOutput = await relay.output(artifacts);
+        try {
+          relayOutput = await relay.output(artifacts);
+        } catch (error) {
+          failures.push({ stage: "relay_output", error });
+          relayOutput = {
+            relay_artifacts: artifacts.map(({ kind, path }) => ({ kind, path })),
+          };
+        }
       }
       try {
         await relay?.stop();
       } catch (error) {
-        if (failure === undefined) {
-          failure = error;
-        } else if (error instanceof LifecycleError) {
-          failure = new LifecycleError(error.code, "Pi session and NeMo Relay cleanup failed", {
-            retryable: error.retryable,
-            metadata: {
-              ...error.metadata,
-              session_error: failure instanceof Error ? failure.message : String(failure),
-            },
-          });
-        } else {
-          failure = new AggregateError([failure, error], "Pi session and NeMo Relay cleanup failed");
-        }
+        failures.push({ stage: "relay", error });
       }
-      if (failure !== undefined) {
-        this.unusable = true;
-        // Retain the handle so a host retry can reach Relay cleanup that failed,
-        // but prevent another invocation from reaching a disposed Pi session.
-        throw failure;
+      if (failures.length > 0) {
+        relayOutput = {
+          ...(relayOutput ?? {}),
+          runtime_stop_error: stopError(failures),
+        };
       }
       this.session = undefined;
       this.unusable = false;

@@ -24,7 +24,7 @@ The following table lists the `Fabric` methods and when to use each:
 | --- | --- | --- | --- |
 | `plan(config, *, base_dir=...)` | No | You need the selected adapter, capability routing, and runtime capabilities before running. | `RunPlan` |
 | `doctor(config, *, base_dir=...)` | Yes | You need preflight diagnostics for adapter resolution, capability routing, declared requirements, and environment assumptions. | `DoctorReport` |
-| `run(config, *, base_dir=..., input=... \| request=...)` | Yes | You need one complete start, invoke, result, and stop cycle. | `RunResult` |
+| `run(config, *, base_dir=..., input=... \| request=...)` | Yes | You need one complete start, invoke, result, and stop cycle. Invocation status remains authoritative; shutdown errors appear as `runtime_stop_error` events. | `RunResult` |
 | `start_runtime(config, *, base_dir=..., overrides=..., streaming=False)` | Yes | You need state across multiple ordered invocations. Pass `streaming=True` with NVIDIA NeMo Relay enabled only to provision `invoke_stream(...)`. | `Runtime` |
 
 `input` and `request` on `run(...)` are mutually exclusive. Use `input=...` for
@@ -40,21 +40,29 @@ The following table lists the `Runtime` members for driving a stateful runtime.
 | `invoke(*, input=... \| request=...)` | Yes | One turn on an active runtime. One active invocation at a time; overlap raises `FabricStateError`. |
 | `invoke_openai_stream(*, input=... \| request=...)` | No | Start exactly one descriptor-gated native invocation and return an async `OpenAIInvokeStream` of `chat.completion.chunk` mappings. Await `stream.result()` for the separate terminal `RunResult`. |
 | `invoke_stream(*, input=... \| request=...)` | No | Start one NeMo Relay turn and return an async `InvokeStream` of raw ATOF records. Await `stream.result()` for the terminal `RunResult`. |
-| `stop()` | Yes | Stop the runtime. Called automatically by `async with`. |
+| `stop()` | Yes | Stop the runtime and return `RuntimeStopResult`. Inspect its artifacts, events, and optional error. Called automatically by `async with`. |
 | `status` | No | `RuntimeStatus`: `ACTIVE`, `STOPPED`, or `FAILED`. |
 | `supports_openai_streaming` | No | `True` when the selected descriptor declares `capabilities.streaming` for native OpenAI Chat Completions chunks. |
 | `supports_streaming` | No | `True` when NeMo Relay ATOF streaming was enabled at runtime startup. |
 | `runtime_id` | No | Opaque identifier for this runtime lifecycle. |
+| `artifacts` | No | Detached runtime-scoped artifact manifest from the completed stop result. |
 | `messages` / `invocations` | No | Copied harness history and per-turn IDs. |
 
-Always use a runtime as an async context manager so cleanup runs on exit.
-Shutdown is attempted, not guaranteed — `stop()`, including the automatic call at
-`async with` exit, can raise `FabricRuntimeError`:
+Always use a runtime as an async context manager so cleanup runs on exit. Call
+`stop()` explicitly when the consumer needs to inspect its normalized shutdown
+error or events:
 
 ```python
 async with await fabric.start_runtime(config, base_dir=base) as runtime:
     result = await runtime.invoke(input="…")
+
+stopped = await runtime.stop()
+if stopped.error is not None:
+    log_cleanup_error(stopped.error)
 ```
+
+A failure that prevents a normalized stop result can still raise
+`FabricRuntimeError`.
 
 ## Stream Handles
 

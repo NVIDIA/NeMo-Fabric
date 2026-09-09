@@ -136,9 +136,11 @@ one `stop` for each NeMo Fabric runtime.
   `AgentRunResult` from `invoke`.
 - Make `stop` safe after partial startup and failed invocation.
 - Return a JSON mapping from `stop` when runtime-scoped output finalizes during
-  shutdown. Put NeMo Relay runtime data and artifact paths under
-  `relay_runtime` and `relay_artifacts` so NeMo Fabric can promote them into the
-  runtime stop artifact manifest.
+  shutdown. Put NeMo Relay artifact paths under `relay_artifacts` so NeMo
+  Fabric can promote them into the runtime stop artifact manifest; other output
+  fields are not surfaced. If cleanup fails after artifacts are collected,
+  return structured `ErrorInfo` under `runtime_stop_error` so the stop result
+  retains both the artifacts and the failure.
 - Isolate mutable state between independent runtimes.
 - If the descriptor declares `capabilities.streaming`, implement
   `async invoke_openai_stream(request, context, emit)`. Execute the target exactly once,

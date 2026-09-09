@@ -468,7 +468,7 @@ test("an ATIF snapshot failure preserves the prompt and excludes ATIF", async (t
   }
 });
 
-test("still stops Relay when Pi session shutdown fails", async () => {
+test("still stops Relay and returns artifacts when Pi session shutdown fails", async () => {
   let sessionStopAttempts = 0;
   let relayStopAttempts = 0;
   const sessionFailure = new Error("session shutdown failed");
@@ -478,7 +478,9 @@ test("still stops Relay when Pi session shutdown fails", async () => {
         relay: {
           pluginConfig: { version: 1, components: [] },
           async output() {
-            return {};
+            return {
+              relay_artifacts: [{ kind: "atif", path: "/tmp/trajectory.atif.json" }],
+            };
           },
           async stop() {
             relayStopAttempts += 1;
@@ -498,11 +500,17 @@ test("still stops Relay when Pi session shutdown fails", async () => {
   });
   await runtime.start(startInput());
 
-  await assert.rejects(runtime.stop(), sessionFailure);
+  const stopped = await runtime.stop();
+  assert.deepEqual(stopped.relay_artifacts, [{ kind: "atif", path: "/tmp/trajectory.atif.json" }]);
+  assert.equal(stopped.runtime_stop_error.stage, "stop");
+  assert.equal(stopped.runtime_stop_error.code, "pi_runtime_stop_failed");
+  assert.deepEqual(stopped.runtime_stop_error.metadata.failures, [
+    { stage: "session", message: "session shutdown failed" },
+  ]);
   assert.equal(relayStopAttempts, 1);
-  await runtime.stop();
-  assert.equal(sessionStopAttempts, 2);
-  assert.equal(relayStopAttempts, 2);
+  assert.equal(await runtime.stop(), undefined);
+  assert.equal(sessionStopAttempts, 1);
+  assert.equal(relayStopAttempts, 1);
 });
 
 test("preserves both Pi session and Relay shutdown failures", async () => {
@@ -536,19 +544,18 @@ test("preserves both Pi session and Relay shutdown failures", async () => {
   });
   await runtime.start(startInput());
 
-  await assert.rejects(
-    runtime.stop(),
-    (error) =>
-      error instanceof LifecycleError &&
-      error.code === "pi_relay_stop_failed" &&
-      error.message === "Pi session and NeMo Relay cleanup failed" &&
-      error.metadata.gateway_log_path === "/tmp/gateway.log" &&
-      error.metadata.relay_error === "gateway still running" &&
-      error.metadata.session_error === "session shutdown failed",
-  );
+  const stopped = await runtime.stop();
+  assert.equal(stopped.runtime_stop_error.code, "pi_relay_stop_failed");
+  assert.equal(stopped.runtime_stop_error.message, "Pi session and NeMo Relay cleanup failed");
+  assert.equal(stopped.runtime_stop_error.metadata.gateway_log_path, "/tmp/gateway.log");
+  assert.equal(stopped.runtime_stop_error.metadata.relay_error, "gateway still running");
+  assert.deepEqual(stopped.runtime_stop_error.metadata.failures, [
+    { stage: "session", message: "session shutdown failed" },
+    { stage: "relay", message: "gateway shutdown failed" },
+  ]);
 });
 
-test("preserves non-lifecycle cleanup failures in an AggregateError", async () => {
+test("normalizes non-lifecycle cleanup failures", async () => {
   const sessionFailure = new Error("session shutdown failed");
   const relayFailure = new Error("gateway shutdown failed");
   const runtime = new PiAdapterRuntime({
@@ -574,17 +581,16 @@ test("preserves non-lifecycle cleanup failures in an AggregateError", async () =
   });
   await runtime.start(startInput());
 
-  await assert.rejects(
-    runtime.stop(),
-    (error) =>
-      error instanceof AggregateError &&
-      error.message === "Pi session and NeMo Relay cleanup failed" &&
-      error.errors[0] === sessionFailure &&
-      error.errors[1] === relayFailure,
-  );
+  const stopped = await runtime.stop();
+  assert.equal(stopped.runtime_stop_error.code, "pi_runtime_stop_failed");
+  assert.equal(stopped.runtime_stop_error.message, "Pi session and NeMo Relay cleanup failed");
+  assert.deepEqual(stopped.runtime_stop_error.metadata.failures, [
+    { stage: "session", message: "session shutdown failed" },
+    { stage: "relay", message: "gateway shutdown failed" },
+  ]);
 });
 
-test("retries Relay cleanup when gateway shutdown fails", async () => {
+test("reports a gateway shutdown failure and keeps stop idempotent", async () => {
   let promptCount = 0;
   let sessionStopAttempts = 0;
   let relayStopAttempts = 0;
@@ -616,14 +622,15 @@ test("retries Relay cleanup when gateway shutdown fails", async () => {
   });
   await runtime.start(startInput());
 
-  await assert.rejects(runtime.stop(), relayFailure);
-  await assert.rejects(
-    runtime.invoke({ input: "must not run" }, context),
-    (error) => error.code === "pi_runtime_unusable",
-  );
+  const stopped = await runtime.stop();
+  assert.equal(stopped.runtime_stop_error.code, "pi_runtime_stop_failed");
+  assert.deepEqual(stopped.runtime_stop_error.metadata.failures, [
+    { stage: "relay", message: "gateway shutdown failed" },
+  ]);
+  await assert.rejects(runtime.invoke({ input: "must not run" }, context), (error) => error.code === "pi_not_started");
   assert.equal(promptCount, 0);
   await runtime.stop();
   await runtime.stop();
-  assert.equal(sessionStopAttempts, 2);
-  assert.equal(relayStopAttempts, 2);
+  assert.equal(sessionStopAttempts, 1);
+  assert.equal(relayStopAttempts, 1);
 });

@@ -126,6 +126,29 @@ def mock_native_fixture() -> MagicMock:
 
     mock_native.invoke_runtime.side_effect = invoke
     mock_native.stop_runtime.return_value = json.dumps([])
+
+    def merge_runtime_stop_result(run_result_json: str, stop_result_json: str) -> str:
+        result = json.loads(run_result_json)
+        stopped = json.loads(stop_result_json)
+        result.setdefault("events", []).extend(stopped.get("events", []))
+        if stopped.get("error") is not None:
+            error = stopped["error"]
+            result["events"].append(
+                {
+                    "event_id": "event-stop-error",
+                    "timestamp_millis": 1,
+                    "kind": "runtime_stop_error",
+                    "message": error["message"],
+                    "metadata": {
+                        "code": error["code"],
+                        "retryable": error.get("retryable", False),
+                        "details": error.get("metadata", {}),
+                    },
+                }
+            )
+        return json.dumps(result)
+
+    mock_native.merge_runtime_stop_result.side_effect = merge_runtime_stop_result
     return mock_native
 
 
@@ -540,13 +563,35 @@ async def test_run_surfaces_cleanup_failure_after_success(
 
     result = await native_client.run(_config(), input="hello")
 
-    assert result.status == "failed"
+    assert result.status == "succeeded"
     assert result.output["messages"][-1]["content"] == "reply-1"
-    assert result.error is not None
-    assert result.error.stage == "stop"
-    assert result.error.code == "runtime_stop_failed"
-    assert result.error.message == expected_message
+    assert result.error is None
+    stop_event = next(event for event in result.events if event.kind == "runtime_stop_error")
+    assert stop_event.metadata["code"] == "runtime_stop_failed"
+    assert stop_event.message == expected_message
     assert mock_native.stop_runtime.call_count == 1
+
+
+async def test_runtime_stop_returns_normalized_cleanup_failure(mock_native: MagicMock):
+    mock_native.stop_runtime.return_value = json.dumps(
+        {
+            "artifacts": {"artifacts": []},
+            "events": [],
+            "error": {
+                "stage": "stop",
+                "code": "gateway_stop_failed",
+                "message": "gateway shutdown failed",
+                "retryable": False,
+            },
+        }
+    )
+    runtime = _runtime_wrapper(mock_native)
+
+    stopped = await runtime.stop()
+
+    assert runtime.status is RuntimeStatus.STOPPED
+    assert stopped.error is not None
+    assert stopped.error.code == "gateway_stop_failed"
 
 
 async def test_context_manager_stops_runtime(mock_native: MagicMock):

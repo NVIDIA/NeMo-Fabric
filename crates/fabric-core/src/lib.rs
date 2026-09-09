@@ -45,8 +45,8 @@ pub use runtime::{
     OpenAiStreamInvocation, OpenAiStreamProfile, OpenAiStreamProtocolVersion, OpenAiStreamRecord,
     OpenAiStreamSink, OpenAiStreamTransport, RunRequest, RunResult, RunStatus, RunUsage,
     RuntimeContext, RuntimeHandle, RuntimeStopResult, RuntimeTelemetryContext, TelemetryRef,
-    invoke_openai_stream, invoke_runtime, prepare_environment, run_plan, start_runtime,
-    stop_runtime,
+    invoke_openai_stream, invoke_runtime, merge_runtime_stop_result, prepare_environment, run_plan,
+    start_runtime, stop_runtime,
 };
 pub use schema::{
     SchemaName, generate_all_schemas, generate_schema, generate_schema_json, write_schema_snapshots,

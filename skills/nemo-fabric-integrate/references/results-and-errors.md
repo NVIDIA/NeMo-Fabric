@@ -68,13 +68,20 @@ Refer to the [errors reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/
 | `FabricStateError` | Invalid runtime state transition (invoking after stop, overlapping invocations). |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 
+## RuntimeStopResult Fields
+
+`Runtime.stop()` returns a `RuntimeStopResult`. Its `artifacts` and `events`
+remain available when `error` contains a normalized cleanup failure. Repeated
+calls return the same detached result. `Fabric.run()` merges stop artifacts and
+events into `RunResult`; it preserves the invocation status and error and adds a
+`runtime_stop_error` event for a shutdown failure.
+
 ## Cleanup And Resilience
 
 - Prefer `run(...)` and `async with` runtimes: both attempt cleanup
-  automatically. Shutdown is attempted, not guaranteed — `stop()`, including the
-  automatic call at `async with` exit, can raise `FabricRuntimeError`. On a
-  normal block exit that error propagates; when an invocation already failed, the
-  cleanup failure is attached to the original exception rather than replacing it.
+  automatically. Inspect `RuntimeStopResult.error` after an explicit stop and
+  `runtime_stop_error` events after `run(...)`. A lifecycle failure that prevents
+  a normalized result can still raise `FabricRuntimeError`.
 - The consumer owns job-level retries and rollout failure policy. NeMo Fabric marks a
   runtime or invocation failed and returns structured error metadata when
   possible, but does not retry by default.

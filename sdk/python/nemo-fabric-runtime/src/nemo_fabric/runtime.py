@@ -386,13 +386,16 @@ class Runtime:
             raise FabricStateError("runtime is already running an invocation")
 
     async def stop(self) -> RuntimeStopResult:
-        """Destroy an idle runtime and return shutdown artifacts and events.
+        """Destroy an idle runtime and return shutdown output.
 
         Repeated calls after a successful stop return the same detached result.
         A failed runtime may still be stopped so its resources are released.
+        Adapter cleanup failures are normalized in ``RuntimeStopResult.error``;
+        failures that prevent a normalized result still raise an exception.
 
         Returns:
-            Runtime-scoped artifacts finalized during shutdown and stop events.
+            Runtime-scoped artifacts, stop events, and any structured cleanup
+            error.
 
         Raises:
             FabricStateError: If the runtime is already stopping or has an
@@ -560,37 +563,27 @@ def _decode_runtime_stop_result(value: Any) -> RuntimeStopResult:
     return RuntimeStopResult.from_mapping(value)
 
 
-def _merge_runtime_artifacts(
-    result: dict[str, Any], stop_result: RuntimeStopResult
+def _merge_runtime_stop_result(
+    native: Any,
+    result: dict[str, Any],
+    stopped: RuntimeStopResult,
 ) -> None:
-    source = stop_result.artifacts.to_mapping()
-    target = result.setdefault("artifacts", {"artifacts": []})
-    if not isinstance(target, dict):
+    merge = getattr(native, "merge_runtime_stop_result", None)
+    if merge is None:
+        # Native extensions from before RuntimeStopResult returned only events.
+        result.setdefault("events", []).extend(
+            event.to_mapping() for event in stopped.events
+        )
         return
-    if target.get("root") is None and source.get("root") is not None:
-        target["root"] = source["root"]
-    entries = target.setdefault("artifacts", [])
-    if not isinstance(entries, list):
-        return
-    existing_paths = {
-        entry.get("path") for entry in entries if isinstance(entry, dict)
-    }
-    existing_names = {
-        entry.get("name") for entry in entries if isinstance(entry, dict)
-    }
-    for artifact in source.get("artifacts", []):
-        if not isinstance(artifact, dict) or artifact.get("path") in existing_paths:
-            continue
-        artifact = deepcopy(artifact)
-        base = artifact.get("name")
-        if isinstance(base, str) and base in existing_names:
-            index = 2
-            while f"{base}_{index}" in existing_names:
-                index += 1
-            artifact["name"] = f"{base}_{index}"
-        entries.append(artifact)
-        existing_paths.add(artifact.get("path"))
-        existing_names.add(artifact.get("name"))
+    merged = json.loads(
+        merge(json.dumps(result), json.dumps(stopped.to_mapping()))
+    )
+    if not isinstance(merged, dict):
+        raise FabricRuntimeError(
+            "native runtime stop merge returned an invalid result", stage="stop"
+        )
+    result.clear()
+    result.update(merged)
 
 
 async def _run_native_lifecycle(
@@ -622,20 +615,20 @@ async def _run_native_lifecycle(
                 if invoke_error is None:
                     if result is None:
                         raise
-                    if result.get("status") == "succeeded":
-                        result["status"] = "failed"
-                        result["error"] = {
-                            "stage": "stop",
-                            "code": "runtime_stop_failed",
-                            "message": str(error) or "runtime shutdown failed",
-                            "retryable": False,
+                    stopped = RuntimeStopResult.from_mapping(
+                        {
+                            "error": {
+                                "stage": "stop",
+                                "code": "runtime_stop_failed",
+                                "message": str(error) or "runtime shutdown failed",
+                                "retryable": False,
+                            }
                         }
-                stopped = RuntimeStopResult.from_mapping({})
+                    )
+                else:
+                    stopped = RuntimeStopResult.from_mapping({})
             if result is not None:
-                _merge_runtime_artifacts(result, stopped)
-                result.setdefault("events", []).extend(
-                    event.to_mapping() for event in stopped.events
-                )
+                _merge_runtime_stop_result(native, result, stopped)
 
     try:
         return await _call_blocking(run)

@@ -195,14 +195,14 @@ Start one turn and stream raw NeMo Relay ATOF records as they arrive.
 async def stop() -> RuntimeStopResult
 ```
 
-Destroy an idle runtime and return shutdown artifacts and events.
+Destroy an idle runtime and return shutdown output.
 
-Repeated calls after a successful stop return the same detached result. A failed runtime may still be stopped so its resources are released.
+Repeated calls after a successful stop return the same detached result. A failed runtime may still be stopped so its resources are released. Adapter cleanup failures are normalized in ``RuntimeStopResult.error``; failures that prevent a normalized result still raise an exception.
 
 
 
 **Returns:**
-  Runtime-scoped artifacts finalized during shutdown and stop events.
+  Runtime-scoped artifacts, stop events, and any structured cleanup  error.
 
 
 

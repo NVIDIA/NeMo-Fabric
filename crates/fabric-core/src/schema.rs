@@ -16,7 +16,7 @@ use crate::error::{FabricError, Result};
 use crate::runtime::{
     AdapterInvocation, ArtifactManifest, EnvironmentHandle, ErrorInfo, FabricEvent,
     InvocationHandle, OpenAiStreamInvocation, OpenAiStreamRecord, RunRequest, RunResult,
-    RuntimeContext, RuntimeHandle,
+    RuntimeContext, RuntimeHandle, RuntimeStopResult,
 };
 use crate::{AgentRunRequest, AgentRunResult};
 
@@ -55,6 +55,8 @@ pub enum SchemaName {
     RunRequest,
     /// Runtime result schema.
     RunResult,
+    /// Runtime stop result schema.
+    RuntimeStopResult,
     /// Artifact manifest schema.
     ArtifactManifest,
     /// Structured error metadata schema.
@@ -65,7 +67,7 @@ pub enum SchemaName {
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::Agent,
         Self::AgentConfig,
         Self::AgentRunRequest,
@@ -82,6 +84,7 @@ impl SchemaName {
         Self::InvocationHandle,
         Self::RunRequest,
         Self::RunResult,
+        Self::RuntimeStopResult,
         Self::ArtifactManifest,
         Self::ErrorInfo,
         Self::FabricEvent,
@@ -106,6 +109,7 @@ impl SchemaName {
             Self::InvocationHandle => "invocation-handle",
             Self::RunRequest => "run-request",
             Self::RunResult => "run-result",
+            Self::RuntimeStopResult => "runtime-stop-result",
             Self::ArtifactManifest => "artifact-manifest",
             Self::ErrorInfo => "error-info",
             Self::FabricEvent => "fabric-event",
@@ -157,6 +161,7 @@ impl SchemaName {
             "invocation-handle" | "invocation_handle" => Ok(Self::InvocationHandle),
             "run-request" | "run_request" => Ok(Self::RunRequest),
             "run-result" | "run_result" => Ok(Self::RunResult),
+            "runtime-stop-result" | "runtime_stop_result" => Ok(Self::RuntimeStopResult),
             "artifact-manifest" | "artifact_manifest" => Ok(Self::ArtifactManifest),
             "error-info" | "error_info" => Ok(Self::ErrorInfo),
             "fabric-event" | "fabric_event" => Ok(Self::FabricEvent),
@@ -190,6 +195,7 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
         SchemaName::InvocationHandle => to_value(schema_for!(InvocationHandle)),
         SchemaName::RunRequest => to_value(schema_for!(RunRequest)),
         SchemaName::RunResult => to_value(schema_for!(RunResult)),
+        SchemaName::RuntimeStopResult => to_value(schema_for!(RuntimeStopResult)),
         SchemaName::ArtifactManifest => to_value(schema_for!(ArtifactManifest)),
         SchemaName::ErrorInfo => to_value(schema_for!(ErrorInfo)),
         SchemaName::FabricEvent => to_value(schema_for!(FabricEvent)),
@@ -305,6 +311,7 @@ mod tests {
             SchemaName::InvocationHandle,
             SchemaName::RunRequest,
             SchemaName::RunResult,
+            SchemaName::RuntimeStopResult,
             SchemaName::ArtifactManifest,
             SchemaName::ErrorInfo,
             SchemaName::FabricEvent,

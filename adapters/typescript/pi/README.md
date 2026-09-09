@@ -149,6 +149,11 @@ shutdown. If it does not finalize, a warning is written to the adapter log and
 the stop manifest omits ATIF while retaining any ATOF files. This wait is gated
 by local ATIF output; remote ATIF storage does not delay shutdown.
 
+If Pi session or Relay gateway cleanup fails, the adapter still attempts final
+artifact collection. The stop output retains any collected artifacts and
+includes a structured `runtime_stop_error`. NeMo Fabric surfaces that error
+without replacing the completed invocation result.
+
 Session, turn, and tool telemetry does not depend on model redirection. Model
 telemetry is available only when Relay supports the selected model API and the
 gateway upstream matches the model endpoint. A skipped redirect is recorded as
