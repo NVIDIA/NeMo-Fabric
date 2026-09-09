@@ -58,7 +58,7 @@ adapters = [
   # and test environments exercise the SDK-native NeMo Relay integration.
   "nemo-fabric-adapters-deepagents[relay]",
   "nemo-fabric-adapters-hermes; python_version < '3.14'",
-  "hermes-agent==0.20.1; python_version < '3.14'",
+  "hermes-agent==0.21.0; python_version < '3.14'",
   # Install the mini-SWE-agent adapter with Relay so focused adapter tests cover
   # its optional subclass-based telemetry integration.
   "nemo-fabric-adapters-mini-swe-agent[relay]",
