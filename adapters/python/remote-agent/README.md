@@ -179,6 +179,136 @@ sequenceDiagram
     end
 ```
 
+### End-to-End Example with Hermes Agent
+
+The following local example streams ATOF records from a Hermes Agent API server
+through the Remote Agent adapter. Run the commands from the repository root in
+separate terminals. It assumes that `NVIDIA_API_KEY` contains a valid NVIDIA API
+key; the server and client use it for API authentication.
+
+First, install Hermes Agent:
+
+```bash
+just install-hermes-agent
+```
+
+Start the collector:
+
+```bash
+nemo-fabric-collector --host 127.0.0.1 --port 8000 --log-level info
+```
+
+`--host` selects the bind address, `--port` selects the collector port, and
+`--log-level` controls collector verbosity. These are the default values and
+keep the unauthenticated collector on loopback. For a non-loopback collector,
+configure TLS and the publish and control tokens described by
+`nemo-fabric-collector --help`.
+
+Create a `hermes-relay-plugins.toml` file in the current directory to send Hermes Relay ATOF records to that collector. `nemo-relay plugins edit` provides an interactive editor, but writing this file directly makes the example reproducible:
+
+```toml
+version = 1
+
+[[components]]
+kind = "observability"
+enabled = true
+
+[components.config]
+version = 3
+
+[components.config.atof]
+enabled = true
+
+[[components.config.atof.sinks]]
+type = "stream"
+name = "nemo-fabric-stream"
+url = "http://127.0.0.1:8000/v1/atof"
+transport = "ndjson"
+timeout_millis = 10000
+field_name_policy = "preserve"
+```
+
+Start the Hermes API server with that Relay configuration:
+
+```bash
+API_SERVER_ENABLED=true API_SERVER_HOST=127.0.0.1 API_SERVER_PORT=8642 API_SERVER_KEY="$NVIDIA_API_KEY" HERMES_NEMO_RELAY_PLUGINS_TOML="$PWD/hermes-relay-plugins.toml" hermes gateway
+```
+
+In the above adjust the `API_SERVER_PORT` environment variable as needed.
+
+The following Python code snippet demonstrates how to invoke the Remote Agent adapter with Hermes Relay streaming. The values intentionally target the local
+collector and Hermes server.
+
+```python
+import asyncio
+
+from nemo_fabric import (
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+    RelayAtofConfig,
+    RelayAtofStreamSinkConfig,
+    RelayObservabilityConfig,
+    RunRequest,
+)
+
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="simple-relay-streaming"),
+    harness=HarnessConfig(
+        adapter_id="nvidia.fabric.remote-agent",
+        settings={
+            "base_url": "http://127.0.0.1:8642/v1",
+            "api_type": "openai-responses",
+            "relay_streaming": True,
+        },
+    ),
+    models={
+        "default": ModelConfig(
+            provider="remote",
+            model="remote-agent",
+            api_key_env="NVIDIA_API_KEY",
+        )
+    },
+).enable_relay(
+    observability=RelayObservabilityConfig(
+        atof=RelayAtofConfig(
+            enabled=True,
+            sinks=[
+                RelayAtofStreamSinkConfig(
+                    name="nemo-fabric-stream",
+                    url="http://127.0.0.1:8000",
+                    transport="ndjson",
+                )
+            ],
+        )
+    )
+)
+
+
+async def main() -> None:
+    async with await Fabric().start_runtime(
+        config,
+        streaming=True,
+        launch_collector=False,
+    ) as runtime:
+        stream = runtime.invoke_stream(
+            request=RunRequest(
+                input="Who are you?",
+            )
+        )
+        async for record in stream:
+            print(record)
+
+        result = await stream.result()
+        print(result.output.response)
+
+
+asyncio.run(main())
+```
+
 ### Invocation Constraints
 
 Invocations on one runtime are serialized. The consumer must use a unique
