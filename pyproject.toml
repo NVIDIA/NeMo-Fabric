@@ -20,8 +20,8 @@ codex = [
   "nemo-fabric[codex]",
 ]
 
-collector = [
-  "nemo-fabric-collector",
+streaming = [
+  "nemo-fabric[streaming]",
 ]
 
 deepagents = [

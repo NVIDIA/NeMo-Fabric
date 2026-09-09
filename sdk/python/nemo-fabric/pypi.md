@@ -37,6 +37,13 @@ Install the core runtime and Python SDK:
 pip install nemo-fabric
 ```
 
+Install the `streaming` extra to include the matching collector for embedded
+NeMo Relay ATOF streaming:
+
+```bash
+pip install "nemo-fabric[streaming]"
+```
+
 ### Supported Python Versions
 
 NeMo Fabric supports Python 3.11 through 3.14. However, some harnesses and

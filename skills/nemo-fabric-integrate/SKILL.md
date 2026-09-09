@@ -195,7 +195,9 @@ Pick the smallest lifecycle the consumer needs:
   target invocation. This path does not require NeMo Relay or
   `streaming=True`.
 - **NVIDIA NeMo Relay stream** — live, raw ATOF records plus a terminal normalized
-  result. Enable NeMo Relay, pass `streaming=True` to `start_runtime(...)`, call
+  result. Install `nemo-fabric[streaming]` to include the matching collector for
+  the default embedded streaming path. Enable NeMo Relay, pass `streaming=True`
+  to `start_runtime(...)`, call
   `runtime.invoke_stream(...)`, iterate the returned `InvokeStream`, and then
   await `stream.result()`. Iteration ending does not indicate invocation
   success; invocation exceptions raise from `result()`, while harness-reported

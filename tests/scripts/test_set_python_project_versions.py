@@ -47,8 +47,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-collector = [
-  "nemo-fabric-collector == 0.2.0",
+streaming = [
+  "nemo-fabric-runtime[streaming] == 0.2.0",
 ]
 claude = [
   "nemo-fabric-adapters-claude[harness] == 0.2.0",
@@ -100,6 +100,11 @@ version = "0.2.0"
 [project]
 name = "nemo-fabric-runtime"
 dynamic = ["version"]
+
+[project.optional-dependencies]
+streaming = [
+  "nemo-fabric-collector == 0.2.0",
+]
 """,
         encoding="utf-8",
     )
@@ -120,8 +125,8 @@ dynamic = ["version"]
 
     assert sdk_project["version"] == "0.2.0rc5"
     assert sdk_project["dependencies"] == ["nemo-fabric-runtime == 0.2.0rc5"]
-    assert sdk_project["optional-dependencies"]["collector"] == [
-        "nemo-fabric-collector == 0.2.0rc5"
+    assert sdk_project["optional-dependencies"]["streaming"] == [
+        "nemo-fabric-runtime[streaming] == 0.2.0rc5"
     ]
     assert sdk_project["optional-dependencies"]["claude"] == [
         "nemo-fabric-adapters-claude[harness] == 0.2.0rc5"
@@ -133,16 +138,19 @@ dynamic = ["version"]
     assert adapter_project["dependencies"] == [
         "nemo-fabric-adapters-common == 0.2.0rc5"
     ]
-    assert tomllib.loads(collector_path.read_text(encoding="utf-8"))["project"][
-        "version"
-    ] == "0.2.0rc5"
+    assert (
+        tomllib.loads(collector_path.read_text(encoding="utf-8"))["project"]["version"]
+        == "0.2.0rc5"
+    )
     assert typescript_decoy.read_text(encoding="utf-8") == (
         '[project]\nname = "typescript-build-helper"\n'
     )
     assert contract_project["version"] == "0.2.0rc5"
-    assert tomllib.loads(runtime_path.read_text(encoding="utf-8"))["project"][
-        "dynamic"
-    ] == ["version"]
+    runtime_project = tomllib.loads(runtime_path.read_text(encoding="utf-8"))["project"]
+    assert runtime_project["dynamic"] == ["version"]
+    assert runtime_project["optional-dependencies"]["streaming"] == [
+        "nemo-fabric-collector == 0.2.0rc5"
+    ]
     coordinator_project = tomllib.loads(coordinator_path.read_text(encoding="utf-8"))[
         "project"
     ]

@@ -61,10 +61,21 @@ def set_python_project_versions(root: Path, version: str) -> None:
             f"{coordinator_path.relative_to(root)} internal pins already set to {version}"
         )
 
-    runtime_path = (
-        root / "sdk" / "python" / "nemo-fabric-runtime" / "pyproject.toml"
+    runtime_path = root / "sdk" / "python" / "nemo-fabric-runtime" / "pyproject.toml"
+    runtime_text = runtime_path.read_text(encoding="utf-8")
+    runtime_updated = INTERNAL_PIN_PATTERN.sub(
+        lambda match: f"{match.group('prefix')}{version}",
+        runtime_text,
     )
-    runtime = tomllib.loads(runtime_path.read_text(encoding="utf-8"))
+    if runtime_updated != runtime_text:
+        runtime_path.write_text(runtime_updated, encoding="utf-8")
+        print(f"{runtime_path.relative_to(root)} internal pins updated to {version}")
+    else:
+        print(
+            f"{runtime_path.relative_to(root)} internal pins already set to {version}"
+        )
+
+    runtime = tomllib.loads(runtime_updated)
     project = runtime.get("project", {})
     if "version" in project or "version" not in project.get("dynamic", []):
         raise SystemExit(
@@ -88,7 +99,7 @@ def set_python_project_versions(root: Path, version: str) -> None:
         )
 
     mismatched_pins = []
-    for path in (coordinator_path, *project_paths):
+    for path in (coordinator_path, runtime_path, *project_paths):
         for match in INTERNAL_PIN_PATTERN.finditer(path.read_text(encoding="utf-8")):
             if match.group("version") != version:
                 mismatched_pins.append(f"{path.relative_to(root)}: {match.group(0)}")

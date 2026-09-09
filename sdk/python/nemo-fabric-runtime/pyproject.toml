@@ -28,6 +28,11 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[project.optional-dependencies]
+streaming = [
+  "nemo-fabric-collector == 0.3.0",
+]
+
 [project.urls]
 Repository = "https://github.com/NVIDIA/NeMo-Fabric"
 Homepage = "https://github.com/NVIDIA/NeMo-Fabric"
@@ -39,3 +44,6 @@ manifest-path = "../../../crates/fabric-python/Cargo.toml"
 python-source = "src"
 module-name = "nemo_fabric._native"
 features = ["pyo3/extension-module"]
+
+[tool.uv.sources]
+nemo-fabric-collector = { path = "../collector", editable = true }

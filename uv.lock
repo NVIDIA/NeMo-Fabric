@@ -2410,6 +2410,9 @@ relay = [
 remote-agent = [
     { name = "nemo-fabric-adapters-remote-agent" },
 ]
+streaming = [
+    { name = "nemo-fabric-runtime", extra = ["streaming"] },
+]
 
 [package.metadata]
 requires-dist = [
@@ -2420,12 +2423,12 @@ requires-dist = [
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "adapters/python/hermes" },
     { name = "nemo-fabric-adapters-mini-swe-agent", extras = ["harness"], marker = "extra == 'mini-swe-agent'", editable = "adapters/python/mini-swe-agent" },
     { name = "nemo-fabric-adapters-remote-agent", extras = ["harness"], marker = "extra == 'remote-agent'", editable = "adapters/python/remote-agent" },
-    { name = "nemo-fabric-collector", marker = "extra == 'collector'", editable = "sdk/python/collector" },
     { name = "nemo-fabric-runtime", editable = "sdk/python/nemo-fabric-runtime" },
+    { name = "nemo-fabric-runtime", extras = ["streaming"], marker = "extra == 'streaming'", editable = "sdk/python/nemo-fabric-runtime" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.7.2,<0.8" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
 ]
-provides-extras = ["claude", "codex", "collector", "deepagents", "mini-swe-agent", "remote-agent", "harbor", "hermes-agent", "relay"]
+provides-extras = ["claude", "codex", "streaming", "deepagents", "mini-swe-agent", "remote-agent", "harbor", "hermes-agent", "relay"]
 
 [[package]]
 name = "nemo-fabric-adapter-contract"
@@ -2644,9 +2647,6 @@ claude = [
 codex = [
     { name = "nemo-fabric", extra = ["codex"] },
 ]
-collector = [
-    { name = "nemo-fabric-collector" },
-]
 deepagents = [
     { name = "nemo-fabric", extra = ["deepagents"] },
 ]
@@ -2664,6 +2664,9 @@ relay = [
 ]
 remote-agent = [
     { name = "nemo-fabric", extra = ["remote-agent"] },
+]
+streaming = [
+    { name = "nemo-fabric", extra = ["streaming"] },
 ]
 
 [package.dev-dependencies]
@@ -2739,10 +2742,10 @@ requires-dist = [
     { name = "nemo-fabric", extras = ["mini-swe-agent"], marker = "extra == 'mini-swe-agent'", editable = "sdk/python/nemo-fabric" },
     { name = "nemo-fabric", extras = ["relay"], marker = "extra == 'relay'", editable = "sdk/python/nemo-fabric" },
     { name = "nemo-fabric", extras = ["remote-agent"], marker = "extra == 'remote-agent'", editable = "sdk/python/nemo-fabric" },
-    { name = "nemo-fabric-collector", marker = "extra == 'collector'", editable = "sdk/python/collector" },
+    { name = "nemo-fabric", extras = ["streaming"], marker = "extra == 'streaming'", editable = "sdk/python/nemo-fabric" },
     { name = "nemo-fabric-runtime", editable = "sdk/python/nemo-fabric-runtime" },
 ]
-provides-extras = ["claude", "codex", "collector", "deepagents", "mini-swe-agent", "remote-agent", "harbor", "hermes-agent", "relay"]
+provides-extras = ["claude", "codex", "streaming", "deepagents", "mini-swe-agent", "remote-agent", "harbor", "hermes-agent", "relay"]
 
 [package.metadata.requires-dev]
 adapter-tests = [
@@ -2812,12 +2815,19 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 
+[package.optional-dependencies]
+streaming = [
+    { name = "nemo-fabric-collector" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = "~=0.28" },
+    { name = "nemo-fabric-collector", marker = "extra == 'streaming'", editable = "sdk/python/collector" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "typing-extensions", specifier = ">=4.12" },
 ]
+provides-extras = ["streaming"]
 
 [[package]]
 name = "nemo-relay"

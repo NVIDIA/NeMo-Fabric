@@ -349,7 +349,7 @@ class Fabric:
                 except ImportError as error:
                     raise FabricConfigError(
                         "local adapter streaming requires the collector; "
-                        "install nemo-fabric[collector]"
+                        "install nemo-fabric[streaming]"
                     ) from error
                 stack = AsyncExitStack()
                 try:

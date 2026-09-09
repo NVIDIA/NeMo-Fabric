@@ -25,17 +25,18 @@ installation alternatives. A **No** entry means that the expression does not
 install that component; the component can already exist in the environment or
 be managed separately.
 
-| Installation | Runtime | Adapter | Harness | Relay Python | Relay CLI |
-| --- | --- | --- | --- | --- | --- |
-| `nemo-fabric` | Yes | No | No | No | No |
-| `nemo-fabric[relay]` | Yes | No | No | Yes | No |
-| `nemo-fabric[hermes-agent,relay]` | Yes | Yes | No | Yes | No |
-| `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | No | Yes |
-| `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | No | Yes |
-| `nemo-fabric-adapters-deepagents[full]` | No | Yes | Yes | Yes | No |
-| `nemo-fabric-adapters-mini-swe-agent[full]` | No | Yes | Yes | Yes | No |
-| `nemo-fabric-adapters-hermes[relay]` | No | Yes | No | Yes | No |
-| `nemo-fabric-adapters-claude` | No | Yes | No | No | No |
+| Installation | Runtime | Collector | Adapter | Harness | Relay Python | Relay CLI |
+| --- | --- | --- | --- | --- | --- | --- |
+| `nemo-fabric` | Yes | No | No | No | No | No |
+| `nemo-fabric[streaming]` | Yes | Yes | No | No | No | No |
+| `nemo-fabric[relay]` | Yes | No | No | No | Yes | No |
+| `nemo-fabric[hermes-agent,relay]` | Yes | No | Yes | No | Yes | No |
+| `nemo-fabric-adapters-claude[harness]` | No | No | Yes | Yes | No | Yes |
+| `nemo-fabric-adapters-claude[full]` | No | No | Yes | Yes | No | Yes |
+| `nemo-fabric-adapters-deepagents[full]` | No | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-mini-swe-agent[full]` | No | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-hermes[relay]` | No | No | Yes | No | Yes | No |
+| `nemo-fabric-adapters-claude` | No | No | Yes | No | No | No |
 
 An adapter package's `full` extra is scoped to the adapter environment and does
 not install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent
@@ -55,6 +56,16 @@ pip install nemo-fabric
 
 The `nemo-fabric` package installs the matching NeMo Fabric runtime
 unconditionally.
+
+Install the matching collector when an application uses the default
+embedded collector for NeMo Relay ATOF streaming:
+
+```bash
+pip install "nemo-fabric[streaming]"
+```
+
+Applications that set `launch_collector=False` and use an externally managed
+collector do not need this extra.
 
 ### Install a Complete Runtime and Harness
 

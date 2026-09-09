@@ -26,6 +26,13 @@ Installing the runtime package directly is equivalent:
 pip install nemo-fabric-runtime
 ```
 
+For the default embedded NeMo Relay ATOF streaming path, install the runtime's
+`streaming` extra to include the matching collector:
+
+```bash
+pip install "nemo-fabric-runtime[streaming]"
+```
+
 The package exposes the `nemo_fabric` Python module for typed agent
 configuration, validation, run planning, runtime lifecycle management,
 normalized results, artifacts, diagnostics, and telemetry references.

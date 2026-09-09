@@ -48,6 +48,10 @@ commitment.
   exception: its root extra delegates to the bare adapter because Hermes Agent
   0.20 and later is not installable from PyPI. Do not add other adapter-only
   aliases.
+- Keep the runtime `streaming` extra pinned to the version-matched
+  `nemo-fabric-collector` distribution. The metapackage `streaming` extra must
+  delegate to the version-matched runtime extra. Do not expose a separate
+  metapackage `collector` extra.
 - Keep leaf adapters adapter-only by default. Every leaf provides `full`, and
   every package-installable harness provides `harness`. The Hermes adapter omits
   `harness` because users install Hermes Agent separately from source. Provide

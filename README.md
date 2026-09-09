@@ -159,6 +159,9 @@ integrations use the package expressions shown in each column:
 
 > * The Remote Agent adapter communicates with an independently deployed service. Its `harness` extra installs the adapter and HTTP client, but not the remote service.
 
+Install `nemo-fabric[streaming]` to include the matching collector for the
+default embedded NeMo Relay ATOF streaming path.
+
 The `nemo-fabric` package always installs the runtime. For harnesses available
 as Python packages, the root package extras install the corresponding adapter
 and supported harness. Hermes Agent 0.20 and later is not available from PyPI.

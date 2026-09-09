@@ -59,8 +59,8 @@ codex = [
   "nemo-fabric-adapters-codex[harness] == 0.3.0",
 ]
 
-collector = [
-  "nemo-fabric-collector == 0.3.0",
+streaming = [
+  "nemo-fabric-runtime[streaming] == 0.3.0",
 ]
 
 deepagents = [
