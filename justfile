@@ -392,7 +392,8 @@ install-hermes-agent:
             exit 1
         fi
         git -C "$hermes_checkout" apply "$hermes_patch"
-    elif ! cmp --silent "$hermes_patch" <(git -C "$hermes_checkout" diff --binary --no-ext-diff --src-prefix=a/ --dst-prefix=b/); then
+    # Match the committed patch's index-ID width across Git versions.
+    elif ! cmp -s "$hermes_patch" <(git -C "$hermes_checkout" diff --binary --abbrev=8 --no-ext-diff --src-prefix=a/ --dst-prefix=b/); then
         echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
         exit 1
     fi
