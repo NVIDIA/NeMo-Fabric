@@ -77,9 +77,7 @@ config = FabricConfig(
             "relay_streaming": True,
         },
     ),
-    models={
-        "default": ModelConfig(provider="remote", model="remote-hermes")
-    },
+    models={"default": ModelConfig(provider="remote", model="remote-hermes")},
 ).enable_relay(
     observability=RelayObservabilityConfig(
         atof=RelayAtofConfig(
@@ -154,8 +152,8 @@ sequenceDiagram
         Fabric->>Collector: Register req-1
         Collector-->>Fabric: Ready
         Fabric->>API: POST invoke<br/>metadata.nemo_fabric_request_id = req-1
-        API->>Hermes: Map req-1 to task_id and invoke
-        Hermes-->>Collector: ATOF NDJSON<br/>hermes.turn.start(task_id=req-1)
+        API->>Hermes: Propagate metadata.nemo_fabric_request_id = req-1 and invoke
+        Hermes-->>Collector: ATOF NDJSON<br/>metadata.nemo_fabric_request_id = req-1
         Collector-->>Fabric: Matched req-1 records
         Fabric-->>App: Yield req-1 ATOF records
         Hermes-->>API: Terminal agent response
@@ -171,10 +169,10 @@ sequenceDiagram
         Fabric->>Collector: Register req-2
         Collector-->>Fabric: Ready
         Fabric->>API: POST invoke<br/>metadata.nemo_fabric_request_id = req-2
-        API->>Hermes: Map req-2 to task_id and invoke
+        API->>Hermes: Propagate metadata.nemo_fabric_request_id = req-2 and invoke
         Hermes--xCollector: Delayed req-1 record
         Note right of Collector: Discarded<br/>Request ID does not match the active turn
-        Hermes-->>Collector: ATOF NDJSON<br/>hermes.turn.start(task_id=req-2)
+        Hermes-->>Collector: ATOF NDJSON<br/>metadata.nemo_fabric_request_id = req-2
         Collector-->>Fabric: Matched req-2 records
         Fabric-->>App: Yield req-2 ATOF records only
         Hermes-->>API: Terminal agent response
@@ -206,7 +204,3 @@ constructed. The adapter normalizes only `models`, `models.temperature`, and
 replacement `instructions.system` settings. MCP, skills, tool policy, and
 subagents can be configured by the remote deployment, but the adapter does not
 expose them through `FabricConfig`.
-
-The descriptor keeps `capabilities.streaming: false` because that flag means
-adapter-native OpenAI Chat Completions streaming. Protocol-native OpenAI and
-Anthropic events are still reduced to the terminal result and are not exposed.
