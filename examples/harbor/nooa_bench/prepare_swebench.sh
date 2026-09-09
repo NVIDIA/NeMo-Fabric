@@ -6,7 +6,6 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git -C "$script_dir" rev-parse --show-toplevel)"
-oo_agents_repo="${1:-$repo_root/../labs-OO-Agents}"
 runs_dir="$script_dir/runs"
 task_dir="$runs_dir/prepared-django__django-13741"
 mkdir -p "$runs_dir"
@@ -17,7 +16,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$script_dir/prepare.sh" "$oo_agents_repo"
+"$script_dir/prepare.sh"
 
 uv run --extra harbor harbor download \
     swe-bench/django__django-13741 \

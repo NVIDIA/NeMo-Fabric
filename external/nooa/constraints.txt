@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# 0.0.10 introduces nooa_cli.coding.CodingAgent. Keep the three unstable
+# pre-1.0 distributions on this tested patch line until a later release is
+# validated with the Fabric adapter.
+nooa>=0.0.10,<0.0.11
+nooa-cli>=0.0.10,<0.0.11
+nooa-bench>=0.0.10,<0.0.11

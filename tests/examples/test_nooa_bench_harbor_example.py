@@ -12,6 +12,9 @@ from typing import Any
 from examples.harbor.nooa_bench.verify_run import verify
 
 
+REPOSITORY_ROOT = Path(__file__).parents[2]
+
+
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value), encoding="utf-8")
@@ -151,3 +154,49 @@ def test_verify_accepts_zero_reward_swebench_run(tmp_path: Path):
     )
 
     assert summary["reward"] == 0.0
+
+
+def test_harbor_example_uses_published_nooa_packages():
+    constraints = (
+        REPOSITORY_ROOT / "external" / "nooa" / "constraints.txt"
+    ).read_text(encoding="utf-8")
+    package_constraints = {
+        line.split(">=", maxsplit=1)[0]: line
+        for line in constraints.splitlines()
+        if line and not line.startswith("#")
+    }
+    assert package_constraints == {
+        "nooa": "nooa>=0.0.10,<0.0.11",
+        "nooa-cli": "nooa-cli>=0.0.10,<0.0.11",
+        "nooa-bench": "nooa-bench>=0.0.10,<0.0.11",
+    }
+
+    files = (
+        REPOSITORY_ROOT / "examples" / "harbor" / "nooa_bench" / "prepare.sh",
+        REPOSITORY_ROOT
+        / "examples"
+        / "harbor"
+        / "nooa_bench"
+        / "prepare_swebench.sh",
+        REPOSITORY_ROOT
+        / "examples"
+        / "harbor"
+        / "nooa_bench"
+        / "task"
+        / "environment"
+        / "Dockerfile",
+        REPOSITORY_ROOT
+        / "examples"
+        / "harbor"
+        / "nooa_bench"
+        / "swebench"
+        / "Dockerfile",
+    )
+    for path in files:
+        content = path.read_text(encoding="utf-8")
+        assert "labs-OO-Agents" not in content
+
+    calculator_dockerfile = files[2].read_text(encoding="utf-8")
+    swebench_dockerfile = files[3].read_text(encoding="utf-8")
+    assert "-c /opt/nooa-constraints.txt" in calculator_dockerfile
+    assert "-c /opt/nemo-fabric-nooa/nooa-constraints.txt" in swebench_dockerfile

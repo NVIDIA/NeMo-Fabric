@@ -22,25 +22,26 @@ results, optional Relay telemetry, and cleanup.
 
 ## Prepare the Task Image
 
-Complete the [shared Harbor setup](../README.md#shared-host-setup), clone OO
-Agents beside this repository, and set a valid NVIDIA API key:
+Complete the [shared Harbor setup](../README.md#shared-host-setup) and set a
+valid NVIDIA API key:
 
 ```bash
 export NVIDIA_API_KEY="..."
-test -d ../labs-OO-Agents/.git
 ```
 
 Build source-consistent Fabric wheels, including a manylinux runtime wheel, and
-stage committed Fabric and NOOA source into the ignored Docker build
-context:
+stage committed Fabric adapter source plus the shared NOOA package constraints
+into the ignored Docker build context:
 
 ```bash
-./examples/harbor/nooa_bench/prepare.sh ../labs-OO-Agents
+./examples/harbor/nooa_bench/prepare.sh
 ```
 
-The task image installs `nemo-relay>=0.7.2,<0.8`, NOOA core, `nooa-cli`,
-`nooa-bench`, and the BenchAgent adapter. `prepare.sh` builds every NeMo Fabric wheel
-in a fresh temporary directory and uses Maturin with Zig for manylinux 2.17
+The task image installs `nemo-relay>=0.7.2,<0.8`, `nooa`, `nooa-cli`, and
+`nooa-bench` from PyPI using
+[`external/nooa/constraints.txt`](../../../external/nooa/constraints.txt), plus
+the BenchAgent adapter source. `prepare.sh` builds every NeMo Fabric wheel in a
+fresh temporary directory and uses Maturin with Zig for manylinux 2.17
 compatibility, so the Python 3.12 Debian task image does not depend on the
 glibc version installed in the host.
 
@@ -113,7 +114,7 @@ task instruction and verifier unchanged but adds an isolated Python 3.12
 environment for NeMo Fabric, NOOA, and Relay:
 
 ```bash
-./examples/harbor/nooa_bench/prepare_swebench.sh ../labs-OO-Agents
+./examples/harbor/nooa_bench/prepare_swebench.sh
 ```
 
 The helper also performs the source build from `prepare.sh`. It writes the

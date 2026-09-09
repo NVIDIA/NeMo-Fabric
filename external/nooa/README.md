@@ -26,7 +26,7 @@ contains the following components:
 
 - NeMo Fabric, `nemo-fabric-adapter-contract`, and
   `nemo-fabric-adapters-common`.
-- NOOA core and the package that provides the selected agent.
+- The published NOOA packages that provide the selected agent.
 - The source adapter in this directory.
 
 NOOA requires Python 3.12 or 3.13. Expose the adapter source from the NVIDIA
@@ -34,6 +34,13 @@ NeMo Fabric repository root:
 
 ```bash
 export PYTHONPATH="$PWD/external/nooa/src${PYTHONPATH:+:$PYTHONPATH}"
+```
+
+Install the compatible published packages from the repository root. The shared
+constraints file is the maintained compatibility boundary for NOOA packages:
+
+```bash
+pip install -c external/nooa/constraints.txt nooa nooa-cli nooa-bench
 ```
 
 During source development, include `external/nooa` and the selected target
