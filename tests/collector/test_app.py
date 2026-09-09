@@ -2,10 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import logging
 
 import httpx
 import pytest
+from starlette.requests import ClientDisconnect, Request
 
+from nemo_fabric_collector import app as collector_app
 from nemo_fabric_collector.app import AtofCollector, create_app
 
 PUBLISH_TOKEN = "p" * 32
@@ -70,6 +73,33 @@ async def test_atof_endpoint_requires_publish_token(
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
+
+
+async def test_atof_logs_client_disconnect_at_info(
+    caplog: pytest.LogCaptureFixture,
+):
+    application = create_app(publish_token=PUBLISH_TOKEN)
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/v1/atof",
+            "headers": [(b"authorization", f"Bearer {PUBLISH_TOKEN}".encode())],
+            "app": application,
+        }
+    )
+
+    async def disconnected_stream():
+        raise ClientDisconnect
+        yield b""
+
+    request.stream = disconnected_stream  # type: ignore[method-assign]
+    with caplog.at_level(logging.INFO, logger=collector_app.logger.name):
+        response = await collector_app.atof(request)
+    await application.state.collector.close()
+
+    assert response.status_code == 200
+    assert "ATOF publisher disconnected before completing the request" in caplog.text
 
 
 @pytest.mark.parametrize(

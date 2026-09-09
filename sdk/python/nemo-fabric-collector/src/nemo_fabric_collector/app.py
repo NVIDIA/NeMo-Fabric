@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import secrets
 from collections import deque
 from collections.abc import AsyncIterator
@@ -16,7 +17,7 @@ from enum import Enum, auto
 from typing import Any, NewType
 
 from starlette.applications import Starlette
-from starlette.requests import Request
+from starlette.requests import ClientDisconnect, Request
 from starlette.responses import (
     JSONResponse,
     PlainTextResponse,
@@ -32,6 +33,8 @@ _MAX_RECORD_BYTES = 1024 * 1024
 _QUEUE_MAX_BYTES = 16 * 1024 * 1024
 _QUEUE_MAXSIZE = 1024
 _QUEUE_PUT_TIMEOUT_SECONDS = 0.0
+
+logger = logging.getLogger(__name__)
 
 
 class _RecordTooLarge(ValueError):
@@ -506,6 +509,8 @@ async def atof(request: Request) -> Response:
             await _emit_atof_line(_collector(request), bytes(buffer))
     except _RecordTooLarge:
         return _error_response(413, "ATOF record is too large")
+    except ClientDisconnect:
+        logger.info("ATOF publisher disconnected before completing the request")
     return Response(status_code=200)
 
 
