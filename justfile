@@ -392,10 +392,30 @@ install-hermes-agent:
             exit 1
         fi
         git -C "$hermes_checkout" apply "$hermes_patch"
-    # Match the committed patch's index-ID width across Git versions.
-    elif ! cmp -s "$hermes_patch" <(git -C "$hermes_checkout" diff --binary --abbrev=8 --no-ext-diff --src-prefix=a/ --dst-prefix=b/); then
-        echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
-        exit 1
+    else
+        # Validate the already-applied patch without depending on Git's
+        # platform-specific diff serialization.
+        patch_reversed=false
+        restore_hermes_patch() {
+            if [[ "$patch_reversed" == true ]]; then
+                git -C "$hermes_checkout" apply "$hermes_patch" || \
+                    echo "ERROR: failed to restore Hermes Agent metadata patch" >&2
+            fi
+        }
+        trap restore_hermes_patch EXIT
+        if ! git -C "$hermes_checkout" apply --reverse --check "$hermes_patch"; then
+            echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
+            exit 1
+        fi
+        git -C "$hermes_checkout" apply --reverse "$hermes_patch"
+        patch_reversed=true
+        if ! git -C "$hermes_checkout" diff --quiet; then
+            echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
+            exit 1
+        fi
+        git -C "$hermes_checkout" apply "$hermes_patch"
+        patch_reversed=false
+        trap - EXIT
     fi
     uv sync --inexact --reinstall-package hermes-agent
 
