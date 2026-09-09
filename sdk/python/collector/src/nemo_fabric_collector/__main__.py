@@ -15,6 +15,7 @@ import uvicorn
 from nemo_fabric_collector.app import create_app
 
 _MIN_TOKEN_LENGTH = 32
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 def main() -> None:
@@ -46,6 +47,13 @@ def main() -> None:
 
     if (args.tls_cert is None) != (args.tls_key is None):
         parser.error("--tls-cert and --tls-key must be specified together")
+    if args.host not in _LOOPBACK_HOSTS and (
+        args.publish_token_env is None or args.control_token_env is None
+    ):
+        parser.error(
+            "--publish-token-env and --control-token-env are required when "
+            "--host is not a loopback address"
+        )
 
     publish_token = _token_from_environment(
         parser,

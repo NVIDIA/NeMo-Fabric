@@ -72,6 +72,62 @@ def test_main_requires_tls_certificate_and_key_together(
     assert "must be specified together" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--host", "0.0.0.0"],
+        ["--host", "0.0.0.0", "--publish-token-env", "PUBLISH_TOKEN"],
+        ["--host", "0.0.0.0", "--control-token-env", "CONTROL_TOKEN"],
+    ],
+)
+def test_main_requires_both_tokens_for_non_loopback_hosts(
+    arguments: list[str],
+    capsys: pytest.CaptureFixture[str],
+):
+    with patch.object(sys, "argv", ["nemo-fabric-collector", *arguments]):
+        with pytest.raises(SystemExit):
+            collector_cli.main()
+
+    error_output = capsys.readouterr().err
+    assert "are required when --host is not a loopback address" in error_output
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
+def test_main_allows_loopback_hosts_without_tokens(host: str):
+    with (
+        patch.object(sys, "argv", ["nemo-fabric-collector", "--host", host]),
+        patch.object(collector_cli.uvicorn, "run") as mock_run,
+    ):
+        collector_cli.main()
+
+    assert mock_run.call_args.kwargs["host"] == host
+
+
+def test_main_allows_non_loopback_host_with_both_tokens():
+    publish_variable = "NEMO_FABRIC_PUBLISH_TOKEN"
+    control_variable = "NEMO_FABRIC_CONTROL_TOKEN"
+    os.environ[publish_variable] = "p" * 32
+    os.environ[control_variable] = "c" * 32
+    arguments = [
+        "nemo-fabric-collector",
+        "--host",
+        "0.0.0.0",
+        "--publish-token-env",
+        publish_variable,
+        "--control-token-env",
+        control_variable,
+    ]
+
+    with (
+        patch.object(sys, "argv", arguments),
+        patch.object(collector_cli.uvicorn, "run") as mock_run,
+        pytest.warns(RuntimeWarning, match="without TLS"),
+    ):
+        collector_cli.main()
+
+    assert mock_run.call_args.kwargs["host"] == "0.0.0.0"
+
+
 def test_main_warns_when_authentication_is_used_without_tls():
     variable = "NEMO_FABRIC_TEST_TOKEN"
     os.environ[variable] = "x" * 32
