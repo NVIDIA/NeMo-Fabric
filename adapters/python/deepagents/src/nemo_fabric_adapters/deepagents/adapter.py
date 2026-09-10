@@ -46,7 +46,8 @@ VALID_MCP_TRANSPORTS = {"stdio", "sse", "streamable_http", "websocket"}
 # create_deep_agent arguments Fabric derives from normalized config; the
 # harness.settings.deepagents passthrough must not override them (doing so would
 # bypass the normalized model config, MCP tool resolution, workspace confinement,
-# or tool gating).
+# or tool gating). The declarative backend selector is validated separately and
+# never forwarded as a create_deep_agent argument.
 FABRIC_OWNED_AGENT_KEYS = frozenset(
     {
         "model",
@@ -62,6 +63,7 @@ FABRIC_OWNED_AGENT_KEYS = frozenset(
 # through harness.settings.deepagents. Executable objects (AgentMiddleware, BaseTool,
 # Python callables) cannot cross the SDK->JSON->payload boundary and are excluded.
 DEEPAGENTS_PASSTHROUGH_KEYS = frozenset({"subagents", "interrupt_on"})
+DEEPAGENTS_ADAPTER_SETTING_KEYS = frozenset({"backend"})
 # Appended to the fault that poisoned Relay's scope stack, and then reported on every
 # later turn of the same runtime so none of them can look telemetry-clean. Deliberately
 # does not claim later turns are untraced: the Relay middleware is attached to the
@@ -221,15 +223,25 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
     return ChatOpenAI(**_supported_kwargs(ChatOpenAI, kwargs)), model_name, base_url
 
 
-def resolve_backend(runtime_context: RuntimeContext, base_dir: str) -> Any:
-    """Root the Deep Agents filesystem backend at the Fabric workspace, if set."""
+def resolve_backend(
+    runtime_context: RuntimeContext,
+    base_dir: str,
+    backend_config: dict[str, Any] | None = None,
+) -> Any:
+    """Resolve the adapter-owned backend selection and root directory."""
 
     workspace = runtime_context.environment.workspace
-    if not workspace:
+    if not workspace and backend_config is None:
         return None
-    root = Path(str(workspace))
+    root = Path(str(workspace or base_dir))
     if not root.is_absolute():
         root = Path(base_dir) / root
+
+    if backend_config is not None:
+        from deepagents.backends import LocalShellBackend
+
+        return LocalShellBackend(root_dir=str(root), virtual_mode=True)
+
     from deepagents.backends import FilesystemBackend
 
     # virtual_mode=True confines the agent to root_dir; absolute paths and ``..``
@@ -381,19 +393,20 @@ async def build_agent_kwargs(
         adapter="Deep Agents",
         supported_modes={"replace"},
     )
+    extra = _validated_deepagents_settings(settings.get("deepagents"))
     kwargs: dict[str, Any] = {
         "model": model,
         "tools": await resolve_tools(config),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
         "system_prompt": instruction.content if instruction else None,
         "skills": resolve_skills(config),
-        "backend": resolve_backend(runtime_context, base_dir),
+        "backend": resolve_backend(runtime_context, base_dir, extra.get("backend")),
     }
     # Deep Agents-specific settings (e.g. subagents, interrupt_on) pass through,
     # after validation against the documented JSON-serializable allow-list.
-    extra = settings.get("deepagents")
-    if extra is not None:
-        kwargs.update(_validated_passthrough(extra))
+    kwargs.update(
+        {key: extra[key] for key in DEEPAGENTS_PASSTHROUGH_KEYS if key in extra}
+    )
     enabled = _enabled_tool_names(config)
     blocked = _blocked_tool_names(config)
     if enabled is not None or blocked:
@@ -406,8 +419,8 @@ async def build_agent_kwargs(
     return {key: value for key, value in kwargs.items() if value is not None}
 
 
-def _validated_passthrough(extra: Any) -> dict[str, Any]:
-    """Validate the harness.settings.deepagents passthrough and return the safe subset.
+def _validated_deepagents_settings(extra: Any) -> dict[str, Any]:
+    """Validate adapter-owned and passthrough Deep Agents settings.
 
     Only documented, JSON-serializable create_deep_agent options are forwarded.
     Fabric-owned keys cannot be overridden (that would bypass the normalized model
@@ -415,22 +428,45 @@ def _validated_passthrough(extra: Any) -> dict[str, Any]:
     keys fail clearly instead of being silently dropped.
     """
 
+    if extra is None:
+        return {}
     if not isinstance(extra, dict):
         raise AdapterConfigError(
             f"harness.settings.deepagents must be a mapping of JSON-serializable options, not {type(extra).__name__}."
         )
-    reserved = sorted(FABRIC_OWNED_AGENT_KEYS.intersection(extra))
+    reserved = sorted(
+        FABRIC_OWNED_AGENT_KEYS.intersection(extra) - DEEPAGENTS_ADAPTER_SETTING_KEYS
+    )
     if reserved:
         raise AdapterConfigError(
             f"harness.settings.deepagents cannot override NeMo Fabric-owned keys {reserved}; "
             "they are derived from the normalized NeMo Fabric config."
         )
-    unknown = sorted(set(extra) - DEEPAGENTS_PASSTHROUGH_KEYS)
+    supported = DEEPAGENTS_PASSTHROUGH_KEYS | DEEPAGENTS_ADAPTER_SETTING_KEYS
+    unknown = sorted(set(extra) - supported)
     if unknown:
         raise AdapterConfigError(
             f"harness.settings.deepagents has unsupported option(s) {unknown}; supported "
-            f"passthrough keys are {sorted(DEEPAGENTS_PASSTHROUGH_KEYS)}."
+            f"settings are {sorted(supported)}."
         )
+
+    backend_config = extra.get("backend")
+    if backend_config is not None:
+        if not isinstance(backend_config, dict):
+            raise AdapterConfigError(
+                "harness.settings.deepagents.backend must be a mapping with "
+                "type='local_shell'."
+            )
+        unknown_backend = sorted(set(backend_config) - {"type"})
+        if unknown_backend:
+            raise AdapterConfigError(
+                "harness.settings.deepagents.backend has unsupported field(s) "
+                f"{unknown_backend}; only 'type' is supported."
+            )
+        if backend_config.get("type") != "local_shell":
+            raise AdapterConfigError(
+                "harness.settings.deepagents.backend.type must be 'local_shell'."
+            )
     return dict(extra)
 
 

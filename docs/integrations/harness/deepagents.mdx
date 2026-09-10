@@ -103,6 +103,8 @@ harness = HarnessConfig(
 
 The descriptor closes both `harness.settings` and its nested `deepagents`
 object, so planning rejects unknown settings before runtime start.
+The optional `backend` object accepts only `{"type": "local_shell"}`. Omit it
+to preserve the existing filesystem or Deep Agents default backend behavior.
 `runtime.max_turns=10` configures LangGraph with `recursion_limit=10`. This is
 a graph-superstep budget, not a promise of ten model responses or tool calls.
 One interaction can consume multiple supersteps. When `runtime.max_turns` is
@@ -111,6 +113,49 @@ omitted, the adapter keeps the Deep Agents default.
 `allowed_decisions`; supported decisions are `approve`, `edit`, `reject`, and
 `respond`. The object can also contain a static `description` and an
 `args_schema` JSON Schema.
+
+### Enable Local Shell Execution for a Supervised Demo
+
+<Warning>
+`LocalShellBackend` executes commands directly on the adapter host with the host
+user's permissions. It provides no process isolation, and shell commands can
+bypass `virtual_mode` filesystem restrictions. Use it only with trusted input
+in a controlled environment. Do not use it for production or multi-tenant
+workloads.
+</Warning>
+
+The following configuration opts in to local shell execution, limits the tool
+surface to `execute`, and requires a reviewer decision for each command:
+
+```python
+from nemo_fabric import EnvironmentConfig, HarnessConfig, ToolsConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.langchain.deepagents",
+    settings={
+        "deepagents": {
+            "backend": {"type": "local_shell"},
+            "interrupt_on": {
+                "execute": {
+                    "allowed_decisions": ["approve", "reject"],
+                    "description": "Review this local shell command.",
+                }
+            },
+        }
+    },
+)
+environment = EnvironmentConfig(
+    provider="local",
+    workspace="/path/to/supervised-demo",
+)
+tools = ToolsConfig(enabled=["execute"])
+```
+
+If `environment.workspace` is omitted, the adapter uses the NeMo Fabric base
+directory as the backend root. The `execute` tool remains subject to
+`tools.enabled` and `tools.blocked`, like all other Deep Agents built-ins.
+Approval middleware reduces accidental execution but does not isolate the
+process or contain an approved command.
 
 `subagents` accepts declarative synchronous subagents and Agent Protocol
 asynchronous subagents. A declarative subagent requires `name`, `description`,

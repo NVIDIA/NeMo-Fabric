@@ -59,10 +59,10 @@ NeMo Fabric maps the following into the harness:
   is a graph-superstep budget, not a promise of ten model responses or tool
   calls. One interaction can consume multiple supersteps. Omit the field
   to preserve the Deep Agents default.
-- `environment.workspace` roots the Deep Agents filesystem backend
+- By default, `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
-  confines the agent to the workspace: absolute paths and `..` cannot escape
-  `root_dir`.
+  confines filesystem tools to the workspace: absolute paths and `..` cannot
+  escape `root_dir`.
 - Routed `skills` (`native.skill_paths`) become the Deep Agents `skills` sources.
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
@@ -70,9 +70,9 @@ NeMo Fabric maps the following into the harness:
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.
-- `harness.settings.deepagents` accepts the JSON-serializable Deep Agents
-  `interrupt_on` and `subagents` options. The descriptor schema rejects unknown
-  settings and fields before runtime start.
+- `harness.settings.deepagents` accepts the adapter-owned `backend` selector and
+  the JSON-serializable Deep Agents `interrupt_on` and `subagents` options. The
+  descriptor schema rejects unknown settings and fields before runtime start.
 
 ### Harness Settings
 
@@ -106,6 +106,10 @@ harness = HarnessConfig(
 
 The `deepagents` object is closed and supports the following properties:
 
+- `backend` accepts only `{"type": "local_shell"}`. This opt-in constructs
+  `LocalShellBackend` at `environment.workspace`, or at the NeMo Fabric base
+  directory when the workspace is omitted. Omit `backend` to preserve the
+  existing filesystem or Deep Agents default backend behavior.
 - `interrupt_on` maps a Deep Agents tool name to a boolean or an object with
   required `allowed_decisions`. Decisions are `approve`, `edit`, `reject`, or
   `respond`. The object can also contain a static `description` and an
@@ -119,6 +123,48 @@ The `deepagents` object is closed and supports the following properties:
   and a JSON `response_format`. An asynchronous subagent requires `name`,
   `description`, and `graph_id`; it can also contain `url` and string-valued
   `headers`.
+
+### Enable Local Shell Execution for a Supervised Demo
+
+> [!WARNING]
+> `LocalShellBackend` executes commands directly on the adapter host with the
+> host user's permissions. It provides no process isolation, and shell commands
+> can bypass `virtual_mode` filesystem restrictions. Use it only with trusted
+> input in a controlled environment. Do not use it for production or
+> multi-tenant workloads.
+
+The following configuration opts in to local shell execution, limits the tool
+surface to `execute`, and requires a reviewer decision for each command:
+
+```python
+from nemo_fabric import EnvironmentConfig, HarnessConfig, ToolsConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.langchain.deepagents",
+    settings={
+        "deepagents": {
+            "backend": {"type": "local_shell"},
+            "interrupt_on": {
+                "execute": {
+                    "allowed_decisions": ["approve", "reject"],
+                    "description": "Review this local shell command.",
+                }
+            },
+        }
+    },
+)
+environment = EnvironmentConfig(
+    provider="local",
+    workspace="/path/to/supervised-demo",
+)
+tools = ToolsConfig(enabled=["execute"])
+```
+
+If `environment.workspace` is omitted, the adapter uses the NeMo Fabric base
+directory as the backend root. The `execute` tool remains subject to
+`tools.enabled` and `tools.blocked`, like all other Deep Agents built-ins.
+Approval middleware reduces accidental execution but does not isolate the
+process or contain an approved command.
 
 Python middleware, `FilesystemPermission` objects, Python tool objects, and
 precompiled `runnable` subagents are not exposed through `harness.settings`.

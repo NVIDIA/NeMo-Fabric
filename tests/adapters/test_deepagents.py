@@ -49,6 +49,24 @@ def test_descriptor_declares_supported_normalized_config():
 
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
     assert "runtime.max_turns" in descriptor["config"]["accepts"]
+    assert descriptor["settings_schema"]["properties"]["deepagents"]["properties"][
+        "backend"
+    ] == {
+        "type": "object",
+        "properties": {
+            "type": {
+                "type": "string",
+                "const": "local_shell",
+                "description": "Selects the adapter-owned LocalShellBackend.",
+            }
+        },
+        "required": ["type"],
+        "additionalProperties": False,
+        "description": (
+            "Optional backend selection. Local shell execution runs directly on "
+            "the adapter host without process isolation."
+        ),
+    }
 
 
 def lifecycle_start_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -110,16 +128,19 @@ def fake_sdks_fixture(monkeypatch):
     """Stub the deepagents/langchain/langgraph SDKs with mocks.
 
     Returns a recorder capturing the ``create_deep_agent`` kwargs, the streamed
-    ``config``, and the checkpointer close count. ``chat_openai``/``fs_backend``
-    expose the mocked classes so tests can assert their construction kwargs.
+    ``config``, and the checkpointer close count. ``chat_openai``, ``fs_backend``,
+    and ``local_shell_backend`` expose the mocked classes so tests can assert their
+    construction kwargs.
     """
 
     recorder: dict[str, Any] = {"saver_exits": 0}
 
     mock_chat_openai = MagicMock()
     mock_fs_backend = MagicMock()
+    mock_local_shell_backend = MagicMock()
     recorder["chat_openai"] = mock_chat_openai
     recorder["fs_backend"] = mock_fs_backend
+    recorder["local_shell_backend"] = mock_local_shell_backend
 
     def build_agent(**kwargs):
         recorder["create_kwargs"] = kwargs
@@ -189,6 +210,7 @@ def fake_sdks_fixture(monkeypatch):
     deepagents_mod.create_deep_agent = MagicMock(side_effect=build_agent)
     backends_mod = types.ModuleType("deepagents.backends")
     backends_mod.FilesystemBackend = mock_fs_backend
+    backends_mod.LocalShellBackend = mock_local_shell_backend
     middleware_mod = types.ModuleType("deepagents.middleware")
     subagents_mod = types.ModuleType("deepagents.middleware.subagents")
     subagents_mod.GENERAL_PURPOSE_SUBAGENT = {
@@ -1439,6 +1461,37 @@ async def test_workspace_roots_filesystem_backend(tmp_path, make_payload, fake_s
     assert backend_kwargs["virtual_mode"] is True
 
 
+async def test_omitted_workspace_preserves_default_backend(
+    tmp_path, make_payload, fake_sdks
+):
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = None
+
+    await invoke_once(payload)
+
+    assert "backend" not in fake_sdks["create_kwargs"]
+    fake_sdks["fs_backend"].assert_not_called()
+    fake_sdks["local_shell_backend"].assert_not_called()
+
+
+@pytest.mark.parametrize("workspace", [None, "relative-workspace"])
+async def test_local_shell_backend_resolves_root_from_workspace_or_base_dir(
+    tmp_path, make_payload, fake_sdks, workspace
+):
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = workspace
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "backend": {"type": "local_shell"}
+    }
+
+    await invoke_once(payload)
+
+    backend_kwargs = fake_sdks["local_shell_backend"].call_args.kwargs
+    expected_root = tmp_path if workspace is None else tmp_path / workspace
+    assert backend_kwargs == {"root_dir": str(expected_root), "virtual_mode": True}
+    fake_sdks["fs_backend"].assert_not_called()
+
+
 async def test_checkpointer_closed_on_success_and_failure(
     tmp_path, make_payload, monkeypatch, fake_sdks
 ):
@@ -1607,6 +1660,32 @@ async def test_tool_policy_middleware_enforces_enabled_and_blocked_tools():
     unselected = await middleware.awrap_tool_call(request("search"), handler)
     assert isinstance(unselected, ToolMessage)
     assert unselected.status == "error"
+
+
+@pytest.mark.parametrize(
+    ("enabled", "blocked"),
+    [({"execute"}, set()), (None, {"execute"})],
+)
+@pytest.mark.usefixtures("use_real_langgraph")
+async def test_tool_policy_applies_to_local_shell_execute(enabled, blocked):
+    pytest.importorskip("langchain.agents.middleware")
+    from langchain_core.messages import ToolMessage
+
+    middleware = adapter.tool_policy_middleware(enabled, blocked)
+    request = types.SimpleNamespace(
+        tool_call={"name": "execute", "id": "call-1", "args": {}}
+    )
+    handler = AsyncMock(return_value="executed")
+
+    result = await middleware.awrap_tool_call(request, handler)
+
+    if blocked:
+        assert isinstance(result, ToolMessage)
+        assert result.status == "error"
+        handler.assert_not_awaited()
+    else:
+        assert result == "executed"
+        handler.assert_awaited_once_with(request)
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
@@ -1995,17 +2074,23 @@ async def test_deepagents_passthrough_forwards_supported_options(
     assert fake_sdks["create_kwargs"]["interrupt_on"] == {"write_file": True}
 
 
-async def test_deepagents_passthrough_cannot_override_fabric_owned_keys(
-    tmp_path, make_payload
-):
-    # Overriding a Fabric-owned key (here backend) would defeat workspace confinement;
-    # it must fail loudly rather than silently replacing the derived value.
+async def test_deepagents_backend_rejects_unknown_fields(tmp_path, make_payload):
     payload = make_payload(tmp_path)
     payload["config"]["harness"]["settings"]["deepagents"] = {
         "backend": {"root_dir": "/etc"}
     }
 
-    with pytest.raises(adapter.AdapterConfigError, match="backend"):
+    with pytest.raises(adapter.AdapterConfigError, match="unsupported field"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+
+async def test_deepagents_backend_rejects_unknown_type(tmp_path, make_payload):
+    payload = make_payload(tmp_path)
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "backend": {"type": "sandbox"}
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="must be 'local_shell'"):
         await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
