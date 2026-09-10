@@ -205,5 +205,10 @@ def test_harbor_example_uses_published_nooa_packages():
         'uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapters/python/nooa"'
         in prepare
     )
-    for dockerfile in (calculator_dockerfile, swebench_dockerfile):
-        assert '"nemo-fabric-adapters-nooa[full]"' in dockerfile
+    assert '&& pip install --no-cache-dir "nemo-fabric-adapters-nooa[full]"' in (
+        calculator_dockerfile
+    )
+    assert (
+        '&& uv pip install --python /opt/nemo-fabric-venv/bin/python \\\n'
+        '        "nemo-fabric-adapters-nooa[full]"'
+    ) in swebench_dockerfile

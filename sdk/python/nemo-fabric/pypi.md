@@ -48,7 +48,8 @@ pip install "nemo-fabric[streaming]"
 
 NeMo Fabric supports Python 3.11 through 3.14. However, some harnesses and
 integrations have more restrictive requirements. Hermes Agent requires
-Python 3.11 through 3.13, and the Harbor integration requires Python 3.12 or later.
+Python 3.11 through 3.13, NOOA requires Python 3.12 or 3.13, and the Harbor
+integration requires Python 3.12 or later.
 
 
 ### Supported Harnesses
@@ -62,7 +63,7 @@ The following table shows the install target for each supported agent harness:
 | [Hermes Agent](https://pypi.org/project/nemo-fabric-adapters-hermes/) | Install Hermes Agent separately, then install `nemo-fabric` and `nemo-fabric-adapters-hermes` | Install Hermes Agent separately, then install `nemo-fabric-adapters-hermes` | `nemo-fabric-adapters-hermes` |
 | [LangChain Deep Agents](https://pypi.org/project/nemo-fabric-adapters-deepagents/) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
 | [mini-SWE-agent](https://pypi.org/project/nemo-fabric-adapters-mini-swe-agent/) | `nemo-fabric[mini-swe-agent]` | `nemo-fabric-adapters-mini-swe-agent[harness]` | `nemo-fabric-adapters-mini-swe-agent` |
-| [NOOA](https://pypi.org/project/nemo-fabric-adapters-nooa/) | `nemo-fabric[nooa]` | `nemo-fabric-adapters-nooa[harness]` | `nemo-fabric-adapters-nooa` |
+| [NOOA](https://pypi.org/project/nemo-fabric-adapters-nooa/) (Python 3.12-3.13) | `nemo-fabric[nooa]` | `nemo-fabric-adapters-nooa[harness]` | `nemo-fabric-adapters-nooa` |
 
 
 To install the NeMo Fabric runtime, adapter, and supported harness in one
@@ -93,7 +94,7 @@ pip install "nemo-fabric-adapters-nooa[harness]"
 ```
 
 Every adapter package also provides an adapter-scoped `full` extra, which does
-not install the NeMo Fabric runtime. For Claude, Codex, and mini-SWE-agent, `full` installs the same dependencies as `harness`. For LangChain Deep Agents, `full` also installs the NeMo Relay Python package. The Hermes adapter's `full` extra installs NeMo Relay but does not install Hermes Agent.
+not install the NeMo Fabric runtime. For Claude, Codex, and mini-SWE-agent, `full` installs the same dependencies as `harness`. For LangChain Deep Agents and NOOA, `full` also installs the NeMo Relay Python package. The Hermes adapter's `full` extra installs NeMo Relay but does not install Hermes Agent.
 
 If the environment already manages a compatible harness, choose one of the
 following bare adapter packages:
