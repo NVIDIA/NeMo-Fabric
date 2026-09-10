@@ -1611,6 +1611,36 @@ class FabricEvent(FabricMapping):
         return data
 
 
+class RuntimeStopResult(FabricMapping):
+    """Artifacts, events, and diagnostics finalized while stopping a runtime.
+
+    Attributes:
+        artifacts: Runtime-scoped artifact manifest finalized during shutdown.
+        events: Ordered lifecycle events emitted during shutdown.
+        error: Structured shutdown failure, when cleanup completed with an error.
+    """
+
+    artifacts: ArtifactManifest
+    events: Sequence[FabricEvent]
+    error: ErrorInfo | None
+    _fields = frozenset({"artifacts", "events", "error"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["artifacts"] = ArtifactManifest.from_mapping(
+            data.get("artifacts", {"artifacts": []})
+        )
+        data["events"] = tuple(
+            FabricEvent.from_mapping(event) for event in data.get("events", [])
+        )
+        data["error"] = (
+            ErrorInfo.from_mapping(data["error"])
+            if data.get("error") is not None
+            else None
+        )
+        return data
+
+
 class RuntimeHandle(FabricMapping):
     """Opaque identity and binding for one started runtime.
 

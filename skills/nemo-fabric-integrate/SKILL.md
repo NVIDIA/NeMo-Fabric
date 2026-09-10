@@ -70,6 +70,13 @@ runtime assumptions but never installs harnesses or credentials at run time.
   not install Hermes Agent. Claude and Codex do not provide `relay`; their
   `harness` and `full` extras install the supported `nemo-relay` CLI alongside
   the harness SDK.
+- The npm-distributed Pi adapter requires a separately installed compatible Pi
+  SDK harness. Relay-enabled Pi runs also require a supported `nemo-relay` CLI,
+  `runtime.artifacts`, and `harness.settings.relay_extension_path`. Relative
+  Relay extension paths resolve from `environment.workspace`. Set
+  `FABRIC_NEMO_RELAY_COMMAND` to an absolute path when `PATH` resolves to another
+  Relay version. Refer to the installation guide for the supported Relay
+  release and installation command.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise
@@ -180,10 +187,10 @@ Pick the smallest lifecycle the consumer needs:
   caller-owned request ID or context (the two are mutually exclusive).
 - **Stateful runtime** — ordered turns over one logical harness lifecycle. Start it with
   `start_runtime(...)` and use the returned `Runtime` as an async context
-  manager so cleanup runs on exit — shutdown is attempted, not guaranteed
-  (`stop()` can raise `FabricRuntimeError`; see Consume Results And Handle
-  Errors). A runtime accepts one active invocation at a time; overlapping calls
-  raise `FabricStateError`.
+  manager so cleanup runs on exit. Call `stop()` explicitly when the consumer
+  needs its `RuntimeStopResult`; inspect `error` as well as shutdown artifacts
+  and events. A runtime accepts one active invocation at a time; overlapping
+  calls raise `FabricStateError`.
 - **Native OpenAI stream** — adapter-native OpenAI Chat Completions chunks plus
   a separate terminal normalized result. Check
   `runtime.supports_openai_streaming`, call
@@ -221,7 +228,10 @@ Pick the smallest lifecycle the consumer needs:
   completing its chunked request body because yielded records can be incomplete.
   The `streaming=True` flag does not enable NeMo Relay by itself. Without
   `streaming=True`, startup leaves the NeMo Relay configuration unchanged and
-  does not inject the SDK-owned ATOF stream sink.
+  does not inject the SDK-owned ATOF stream sink. This lifecycle requires an
+  adapter that can correlate NeMo Relay records with a NeMo Fabric invocation.
+  The Pi adapter does not support it because the required turn correlation is
+  unavailable.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
@@ -342,11 +352,12 @@ else:
   `FabricRuntimeError`, `FabricStateError`, and `FabricNativeUnavailableError`.
 - The consumer owns retries and failure policy; NeMo Fabric does not retry by
   default. `run(...)` and `async with` runtimes attempt cleanup automatically,
-  so prefer them over manual `stop()` — but shutdown is not guaranteed: `stop()`,
-  including the automatic call when an `async with` block exits, can raise
-  `FabricRuntimeError`. On a normal exit that error propagates; after an
-  invocation error the cleanup failure is attached to the original exception. Be
-  ready to handle a shutdown failure.
+  so prefer them over manual `stop()`. An explicit `stop()` returns a
+  `RuntimeStopResult`; inspect its optional `error` without discarding its
+  artifacts or events. `run(...)` keeps invocation status authoritative and
+  reports a normalized shutdown failure as a `runtime_stop_error` event.
+  Lifecycle failures that prevent a normalized result still raise
+  `FabricRuntimeError`.
 
 Refer to [results-and-errors.md](references/results-and-errors.md) for the full
 result-field and error inventory, and
@@ -382,7 +393,7 @@ result-field and error inventory, and
 - [ ] `plan(...)` and `doctor(...)` validate adapter selection, capabilities, and environment before execution.
 - [ ] Installation, adapter dependencies, and credentials are owned by the environment, not consumer code.
 - [ ] `RunResult` status, error, and events are inspected before output; artifacts and telemetry are captured.
-- [ ] `FabricError` subclasses are handled, including a `FabricRuntimeError` raised by shutdown; cleanup is delegated to `run(...)` or `async with` (attempted, not guaranteed).
+- [ ] `RuntimeStopResult.error`, `runtime_stop_error` events, and `FabricError` subclasses are handled; cleanup is delegated to `run(...)` or `async with`.
 - [ ] Correlation IDs are stored and logged as opaque strings.
 - [ ] Focused integration tests pass and NeMo Fabric validation (`plan`/`doctor`, tests) succeeds.
 

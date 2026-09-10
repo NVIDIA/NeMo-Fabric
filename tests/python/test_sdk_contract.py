@@ -53,6 +53,7 @@ from nemo_fabric import Runtime
 from nemo_fabric import RuntimeCapabilities
 from nemo_fabric import RuntimeConfig
 from nemo_fabric import RuntimeHandle
+from nemo_fabric import RuntimeStopResult
 from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
 from nemo_fabric import ToolDefinitionConfig
@@ -77,6 +78,27 @@ def test_public_contract_has_no_unreleased_aliases():
         assert not get_overloads(getattr(Fabric, name)), name
 
     assert not hasattr(fabric_errors, "FabricCliError")
+
+
+def test_runtime_stop_result_preserves_artifacts_events_and_error():
+    stopped = RuntimeStopResult.from_mapping(
+        {
+            "artifacts": {"artifacts": []},
+            "events": [],
+            "error": {
+                "stage": "stop",
+                "code": "gateway_stop_failed",
+                "message": "gateway shutdown failed",
+                "retryable": False,
+            },
+        }
+    )
+
+    assert stopped.artifacts.artifacts == ()
+    assert stopped.events == ()
+    assert stopped.error is not None
+    assert stopped.error.code == "gateway_stop_failed"
+    assert stopped.to_mapping()["error"]["stage"] == "stop"
 
 
 def test_typed_config_validates_required_fields_and_preserves_extensions():
@@ -1706,6 +1728,7 @@ class NativeRecorder:
         self.config_base_dir_calls: list[str | None] = []
         self.stopped = 0
         self.fail_invoke = False
+        self.stop_result: Any = []
 
     def plan_config(
         self,
@@ -1760,7 +1783,24 @@ class NativeRecorder:
 
     def stop_runtime(self, plan_json: str, runtime_json: str) -> str:
         self.stopped += 1
-        return json.dumps([])
+        return json.dumps(self.stop_result)
+
+    def merge_runtime_stop_result(
+        self, run_result_json: str, stop_result_json: str
+    ) -> str:
+        result = json.loads(run_result_json)
+        stopped = json.loads(stop_result_json)
+        target = result.setdefault("artifacts", {"artifacts": []})
+        source = stopped.get("artifacts", {"artifacts": []})
+        if target.get("root") is None and source.get("root") is not None:
+            target["root"] = source["root"]
+        existing_paths = {artifact["path"] for artifact in target["artifacts"]}
+        for artifact in source.get("artifacts", []):
+            if artifact["path"] not in existing_paths:
+                target["artifacts"].append(artifact)
+                existing_paths.add(artifact["path"])
+        result.setdefault("events", []).extend(stopped.get("events", []))
+        return json.dumps(result)
 
 
 class NativeClient(Fabric):
@@ -2134,6 +2174,53 @@ async def test_typed_source_accepts_run_request_and_returns_result():
         "context": {"job_id": "job-1"},
         "overrides": {"max_iterations": 1},
     }
+
+
+async def test_one_shot_run_merges_runtime_stop_artifacts():
+    native = NativeRecorder()
+    native.stop_result = {
+        "artifacts": {
+            "root": "/tmp/artifacts",
+            "artifacts": [
+                {
+                    "name": "relay_atif",
+                    "kind": "atif",
+                    "path": "/tmp/artifacts/trajectory-runtime.atif.json",
+                    "media_type": "application/json",
+                }
+            ],
+        },
+        "events": [],
+    }
+
+    result = await NativeClient(native).run(_fabric_config(), input="hello")
+
+    assert [artifact.kind for artifact in result.artifacts.artifacts] == ["atif"]
+
+
+async def test_one_shot_failed_invocation_keeps_runtime_stop_artifacts():
+    native = NativeRecorder()
+    native.stop_result = {
+        "artifacts": {
+            "root": "/tmp/artifacts",
+            "artifacts": [
+                {
+                    "name": "relay_atif",
+                    "kind": "atif",
+                    "path": "/tmp/artifacts/trajectory-runtime.atif.json",
+                    "media_type": "application/json",
+                }
+            ],
+        },
+        "events": [],
+    }
+
+    result = await NativeClient(native).run(_fabric_config(), input="fail")
+
+    assert result.status == "failed"
+    assert result.error is not None
+    assert result.error.stage == "invoke"
+    assert [artifact.kind for artifact in result.artifacts.artifacts] == ["atif"]
 
 
 async def test_native_runtime_errors_use_typed_exception_and_stop_runtime():

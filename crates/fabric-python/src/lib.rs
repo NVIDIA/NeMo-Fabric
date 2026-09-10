@@ -10,8 +10,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use nemo_fabric_core::{
-    FabricConfig, OpenAiStreamTransport, ResolveContext, RunPlan, RunRequest, RuntimeHandle,
-    doctor_plan, resolve_diagnostic_plan_from_config_with_adapter_directories,
+    FabricConfig, OpenAiStreamTransport, ResolveContext, RunPlan, RunRequest, RunResult,
+    RuntimeHandle, RuntimeStopResult, doctor_plan,
+    merge_runtime_stop_result as merge_runtime_stop_result_core,
+    resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
 use pyo3::exceptions::PyRuntimeError;
@@ -163,15 +165,29 @@ fn invoke_openai_stream(
     to_json(&result)
 }
 
-/// Stop a previously started runtime and return FabricEvent list JSON.
+/// Stop a previously started runtime and return RuntimeStopResult JSON.
 #[pyfunction]
 fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyResult<String> {
     let plan = parse_run_plan(plan_json)?;
     let runtime = parse_runtime_handle(runtime_json)?;
-    let events = py
+    let result = py
         .detach(|| nemo_fabric_core::stop_runtime(&plan, &runtime))
         .map_err(to_py_error)?;
-    to_json(&events)
+    to_json(&result)
+}
+
+/// Merge RuntimeStopResult JSON into RunResult JSON using the Rust contract.
+#[pyfunction]
+fn merge_runtime_stop_result(
+    run_result_json: String,
+    stop_result_json: String,
+) -> PyResult<String> {
+    let mut result: RunResult = serde_json::from_str(&run_result_json)
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+    let stopped: RuntimeStopResult = serde_json::from_str(&stop_result_json)
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+    merge_runtime_stop_result_core(&mut result, stopped);
+    to_json(&result)
 }
 
 #[pymodule]
@@ -184,6 +200,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(invoke_runtime, m)?)?;
     m.add_function(wrap_pyfunction!(invoke_openai_stream, m)?)?;
     m.add_function(wrap_pyfunction!(stop_runtime, m)?)?;
+    m.add_function(wrap_pyfunction!(merge_runtime_stop_result, m)?)?;
     Ok(())
 }
 

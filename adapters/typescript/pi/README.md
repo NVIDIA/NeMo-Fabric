@@ -22,8 +22,10 @@ The adapter supports:
 - Explicit local `.ts` or `.js` extension files contained by the NeMo Fabric
   workspace
 - Slash commands registered by those explicit extensions
+- NeMo Relay 0.9 telemetry through a runtime-owned gateway and an explicitly
+  configured Relay Pi extension
 - Ordered plain-text invocations with a `{ "response": "..." }` terminal
-  output
+  output, Relay runtime details, and collected ATOF artifacts
 
 Ambient Pi settings, context files, packages, extensions, skills, prompts,
 themes, model files, credentials, and session files are disabled. Explicitly
@@ -65,6 +67,30 @@ just build-typescript
 The full build installs its own dependencies, so you do not need to run
 `just install-typescript-pi` first.
 
+### Install NeMo Relay
+
+Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.10.0` on `PATH`. Install the
+Relay 0.9 CLI separately from the npm adapter:
+
+```bash
+pip install "nemo-relay-cli-bin>=0.9.0,<0.10"
+```
+
+In a source checkout of NeMo Fabric, `uv run` prepends the repository's
+`.venv/bin` directory to `PATH`. If you installed the Claude or Codex extras,
+`.venv/bin/nemo-relay` is version 0.7.2 and shadows the separately installed
+0.9 CLI. Set `FABRIC_NEMO_RELAY_COMMAND` to the absolute path of the Pi-compatible
+binary so the adapter does not depend on `PATH` ordering:
+
+```bash
+FABRIC_NEMO_RELAY_COMMAND="/absolute/path/to/nemo-relay" uv run python your_app.py
+```
+
+The adapter does not bundle the Relay Pi extension. Obtain the
+[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/0.9.0/crates/cli/assets/pi-extension)
+directory from the Relay 0.9 release and configure its path as described in the
+next section.
+
 ## Configure the Adapter
 
 The npm package includes its adapter descriptor as `pi.fabric-adapter.json`.
@@ -84,6 +110,55 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.pi")
 
 For a source build, set `discovery.local_paths` to
 `adapters/typescript/pi/pi.fabric-adapter.json` instead.
+
+## Configure NeMo Relay
+
+Enable Relay with the standard NeMo Fabric configuration and provide the Relay
+Pi extension as an adapter setting:
+
+```python
+config.runtime.artifacts = "./artifacts/pi"
+config.enable_relay(output_dir="./artifacts/relay")
+config.harness.settings["relay_extension_path"] = (
+    "/path/to/NeMo-Relay/crates/cli/assets/pi-extension"
+)
+```
+
+Relay requires `runtime.artifacts` so NeMo Fabric can create the runtime-owned
+configuration passed to the adapter. The extension path can be absolute or
+relative to `environment.workspace`. It can identify a JavaScript or TypeScript
+file or a Pi extension package directory. Unlike user-configured Pi extensions,
+the Relay extension does not need to remain inside `environment.workspace` when
+an absolute path is used.
+
+When the runtime starts, the adapter validates the Relay 0.9 CLI, writes an
+explicit `plugins.toml`, starts a loopback gateway, and loads the extension into
+the isolated Pi session. Invocation output includes `relay_runtime` and any
+available ATOF paths in `relay_artifacts`. The gateway can produce ATOF, ATIF,
+OpenTelemetry, and OpenInference output from the Relay observability
+configuration.
+
+ATIF trajectories are scoped to the Pi session and finalize during runtime
+shutdown, after the extension drains `session_shutdown` and before the adapter
+terminates the Relay gateway. The stop lifecycle output reports finalized ATIF
+and ATOF paths; NeMo Fabric promotes them into the runtime stop artifact
+manifest. One-shot runs merge that manifest into `RunResult.artifacts`.
+
+The adapter budgets up to one second for a local ATIF file to appear during
+shutdown. If it does not finalize, a warning is written to the adapter log and
+the stop manifest omits ATIF while retaining any ATOF files. This wait is gated
+by local ATIF output; remote ATIF storage does not delay shutdown.
+
+If Pi session or Relay gateway cleanup fails, the adapter still attempts final
+artifact collection. The stop output retains any collected artifacts and
+includes a structured `runtime_stop_error`. NeMo Fabric surfaces that error
+without replacing the completed invocation result.
+
+Session, turn, and tool telemetry does not depend on model redirection. Model
+telemetry is available only when Relay supports the selected model API and the
+gateway upstream matches the model endpoint. A skipped redirect is recorded as
+a `model_redirect` mark with the reason. Relay-backed
+`Runtime.invoke_stream()` correlation is not yet supported for Pi.
 
 ## Custom Tool Modules
 
@@ -125,7 +200,18 @@ TypeScript packages, inspect the plan from the repository root:
 
 Refer to the
 [code-review example](../../../examples/code_review_agent/README.md) for the
-live NVIDIA-backed run command. Relay and MCP are not currently supported.
+live NVIDIA-backed run command. For a Relay-enabled Pi run, pass the extension
+path explicitly:
+
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --variant pi \
+  --relay \
+  --pi-relay-extension-path /path/to/NeMo-Relay/crates/cli/assets/pi-extension \
+  --input "Review calculator.py"
+```
+
+MCP is not currently supported. Do not combine the Pi variant with `--stream`.
 
 ## Dependency Rationale
 

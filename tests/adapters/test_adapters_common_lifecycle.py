@@ -584,6 +584,7 @@ def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
 
         async def stop(self):
             self.loop_ids.append(id(asyncio.get_running_loop()))
+            return {"finalized": True}
 
     lifecycle.serve(Runtime, input_stream=input_stream, output_stream=output_stream)
 
@@ -604,6 +605,7 @@ def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
         "status": "succeeded",
         "output": {"count": 2, "input": "second"},
     }
+    assert responses[3]["outcome"]["output"] == {"finalized": True}
     assert len(instances) == 1
     assert len(set(instances[0].loop_ids)) == 1
 

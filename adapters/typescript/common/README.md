@@ -13,7 +13,11 @@ context, and terminal results against the schemas bundled with
 The host owns JSONL framing, ordered `start`/`invoke`/`stop` dispatch, runtime
 identity checks, safe lifecycle failures, and cleanup after partial startup or
 end of input. Adapter implementations own only target translation and target
-state.
+state. A runtime can return a JSON object from `stop` for runtime-scoped output
+that finalizes during shutdown. NeMo Fabric promotes paths under
+`relay_artifacts`; other output fields are not surfaced. A failure discovered
+after artifact collection can be returned as structured `ErrorInfo` under
+`runtime_stop_error`.
 
 The following example starts and serves a `MyAdapterRuntime` instance:
 
