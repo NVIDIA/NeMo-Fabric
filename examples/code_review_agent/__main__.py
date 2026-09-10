@@ -38,6 +38,11 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--variant", choices=CONFIG_BUILDERS, default="hermes")
     parser.add_argument("--relay", action="store_true")
+    parser.add_argument(
+        "--pi-relay-extension-path",
+        metavar="PATH",
+        help="Path to the NeMo Relay 0.9 Pi extension file or package directory.",
+    )
     skill_group = parser.add_mutually_exclusive_group()
     skill_group.add_argument(
         "--skill-path",
@@ -75,15 +80,27 @@ async def main() -> None:
         parser.error("--stream requires --relay")
     if args.stream and args.plan:
         parser.error("--stream cannot be combined with --plan")
-
-    if args.variant == "pi" and args.relay:
-        parser.error("the Pi adapter does not support Relay yet")
+    if args.variant == "pi" and args.stream:
+        parser.error("the Pi adapter does not support Relay-backed streaming yet")
+    if args.pi_relay_extension_path is not None and args.variant != "pi":
+        parser.error("--pi-relay-extension-path requires --variant pi")
+    if (
+        args.variant == "pi"
+        and args.relay
+        and not args.plan
+        and args.pi_relay_extension_path is None
+    ):
+        parser.error("Pi Relay runs require --pi-relay-extension-path")
 
     config = CONFIG_BUILDERS[args.variant]()
     if args.skill_path is not None:
         config = with_skill_paths(config, *args.skill_path)
     elif args.no_skills:
         config = with_skill_paths(config)
+    if args.pi_relay_extension_path is not None:
+        config.harness.settings["relay_extension_path"] = (
+            args.pi_relay_extension_path
+        )
     if args.relay:
         config = with_relay(config)
 
