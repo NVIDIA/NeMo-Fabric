@@ -231,16 +231,24 @@ def resolve_backend(
     """Resolve the adapter-owned backend selection and root directory."""
 
     workspace = runtime_context.environment.workspace
-    if not workspace and backend_config is None:
+    if backend_config is not None and not workspace:
+        raise AdapterConfigError(
+            "harness.settings.deepagents.backend.type='local_shell' requires "
+            "environment.workspace so host shell execution is never rooted at the "
+            "NeMo Fabric base directory."
+        )
+    if not workspace:
         return None
-    root = Path(str(workspace or base_dir))
+    root = Path(str(workspace))
     if not root.is_absolute():
         root = Path(base_dir) / root
 
     if backend_config is not None:
         from deepagents.backends import LocalShellBackend
 
-        return LocalShellBackend(root_dir=str(root), virtual_mode=True)
+        return LocalShellBackend(
+            root_dir=str(root), virtual_mode=True, inherit_env=False
+        )
 
     from deepagents.backends import FilesystemBackend
 
@@ -280,21 +288,8 @@ def tool_policy_middleware(enabled: set[str] | None, blocked: set[str]) -> Any:
     )
 
 
-def _local_shell_execute_is_guarded(
-    settings: dict[str, Any], enabled: set[str] | None, blocked: set[str]
-) -> bool:
-    if "execute" in blocked or (enabled is not None and "execute" not in enabled):
-        return True
-    interrupt_on = settings.get("interrupt_on")
-    if not isinstance(interrupt_on, dict):
-        return False
-    execute_interrupt = interrupt_on.get("execute")
-    if execute_interrupt is True:
-        return True
-    if not isinstance(execute_interrupt, dict):
-        return False
-    allowed_decisions = execute_interrupt.get("allowed_decisions")
-    return isinstance(allowed_decisions, list) and bool(allowed_decisions)
+def _interrupt_is_enabled(policy: Any) -> bool:
+    return policy is True or isinstance(policy, dict)
 
 
 def resolve_skills(config: AgentConfig) -> list[str] | None:
@@ -413,15 +408,35 @@ async def build_agent_kwargs(
     extra = _validated_deepagents_settings(settings.get("deepagents"))
     enabled = _enabled_tool_names(config)
     blocked = _blocked_tool_names(config)
-    if extra.get("backend") is not None and not _local_shell_execute_is_guarded(
-        extra, enabled, blocked
-    ):
-        raise AdapterConfigError(
-            "harness.settings.deepagents.backend.type='local_shell' requires "
-            "'execute' to be blocked by tools.blocked, omitted from a configured "
-            "tools.enabled allowlist, or protected by "
-            "harness.settings.deepagents.interrupt_on.execute approval."
-        )
+    if extra.get("backend") is not None:
+        if enabled is None and "execute" not in blocked:
+            raise AdapterConfigError(
+                "harness.settings.deepagents.backend.type='local_shell' requires an "
+                "explicit tools.enabled allowlist or 'execute' in tools.blocked so "
+                "the policy is enforced for the main agent and declarative subagents."
+            )
+        interrupt_on = extra.get("interrupt_on")
+        if isinstance(interrupt_on, dict) and _interrupt_is_enabled(
+            interrupt_on.get("execute")
+        ):
+            raise AdapterConfigError(
+                "harness.settings.deepagents.interrupt_on.execute is not supported "
+                "with the local_shell backend because NeMo Fabric cannot resume the "
+                "LangGraph interrupt; use tools.enabled or tools.blocked instead."
+            )
+        for index, subagent in enumerate(extra.get("subagents") or []):
+            if not isinstance(subagent, dict):
+                continue
+            subagent_interrupt_on = subagent.get("interrupt_on")
+            if isinstance(subagent_interrupt_on, dict) and _interrupt_is_enabled(
+                subagent_interrupt_on.get("execute")
+            ):
+                raise AdapterConfigError(
+                    "harness.settings.deepagents.subagents"
+                    f"[{index}].interrupt_on.execute is not supported with the "
+                    "local_shell backend because NeMo Fabric cannot resume the "
+                    "LangGraph interrupt; use tools.enabled or tools.blocked instead."
+                )
     kwargs: dict[str, Any] = {
         "model": model,
         "tools": await resolve_tools(config),

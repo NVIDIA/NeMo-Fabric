@@ -107,9 +107,8 @@ harness = HarnessConfig(
 The `deepagents` object is closed and supports the following properties:
 
 - `backend` accepts only `{"type": "local_shell"}`. This opt-in constructs
-  `LocalShellBackend` at `environment.workspace`, or at the NeMo Fabric base
-  directory when the workspace is omitted. Omit `backend` to preserve the
-  existing filesystem or Deep Agents default backend behavior.
+  `LocalShellBackend` at the required `environment.workspace`. Omit `backend`
+  to preserve the existing filesystem or Deep Agents default backend behavior.
 - `interrupt_on` maps a Deep Agents tool name to a boolean or an object with
   required `allowed_decisions`. Decisions are `approve`, `edit`, `reject`, or
   `respond`. The object can also contain a static `description` and an
@@ -133,12 +132,20 @@ The `deepagents` object is closed and supports the following properties:
 > input in a controlled environment. Do not use it for production or
 > multi-tenant workloads.
 
-The adapter rejects `local_shell` unless `execute` is blocked by
-`tools.blocked`, omitted from a configured `tools.enabled` allowlist, or
-protected by an `interrupt_on.execute` approval rule.
+The adapter requires `environment.workspace` and an explicit Fabric tool policy
+when `local_shell` is selected. The policy is applied to the main agent and all
+declarative subagents, including a subagent that replaces the parent's
+`interrupt_on` map. Include `execute` in `tools.enabled` to permit commands;
+omit it from that allowlist or add it to `tools.blocked` to prevent commands.
 
-The following configuration opts in to local shell execution, limits the tool
-surface to `execute`, and requires a reviewer decision for each command:
+Do not configure `interrupt_on.execute` with `local_shell`. The current adapter
+lifecycle cannot surface and resume a LangGraph approval interrupt, so the
+adapter rejects that combination instead of reporting an interrupted command as
+a completed turn.
+
+The following configuration opts in to local shell execution and limits the
+tool surface to `execute`. It does not provide per-command approval; use it only
+with trusted input under direct operator supervision:
 
 ```python
 from nemo_fabric import EnvironmentConfig, HarnessConfig, ToolsConfig
@@ -146,15 +153,7 @@ from nemo_fabric import EnvironmentConfig, HarnessConfig, ToolsConfig
 harness = HarnessConfig(
     adapter_id="nvidia.fabric.langchain.deepagents",
     settings={
-        "deepagents": {
-            "backend": {"type": "local_shell"},
-            "interrupt_on": {
-                "execute": {
-                    "allowed_decisions": ["approve", "reject"],
-                    "description": "Review this local shell command.",
-                }
-            },
-        }
+        "deepagents": {"backend": {"type": "local_shell"}}
     },
 )
 environment = EnvironmentConfig(
@@ -164,11 +163,11 @@ environment = EnvironmentConfig(
 tools = ToolsConfig(enabled=["execute"])
 ```
 
-If `environment.workspace` is omitted, the adapter uses the NeMo Fabric base
-directory as the backend root. The `execute` tool remains subject to
-`tools.enabled` and `tools.blocked`, like all other Deep Agents built-ins.
-Approval middleware reduces accidental execution but does not isolate the
-process or contain an approved command.
+`LocalShellBackend` keeps its `inherit_env=False` default. Commands do not
+inherit host variables such as `HOME` and receive only the shell's fallback
+`PATH`; set required variables in the command and use absolute executable paths
+when needed. The `execute` tool remains subject to `tools.enabled` and
+`tools.blocked`, like all other Deep Agents built-ins.
 
 Python middleware, `FilesystemPermission` objects, Python tool objects, and
 precompiled `runnable` subagents are not exposed through `harness.settings`.

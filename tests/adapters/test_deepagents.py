@@ -1474,28 +1474,41 @@ async def test_omitted_workspace_preserves_default_backend(
     fake_sdks["local_shell_backend"].assert_not_called()
 
 
-@pytest.mark.parametrize("workspace", [None, "relative-workspace"])
-async def test_local_shell_backend_resolves_root_from_workspace_or_base_dir(
-    tmp_path, make_payload, fake_sdks, workspace
+async def test_local_shell_backend_resolves_root_from_workspace(
+    tmp_path, make_payload, fake_sdks
 ):
     payload = make_payload(tmp_path)
-    payload["runtime_context"]["environment"]["workspace"] = workspace
+    payload["runtime_context"]["environment"]["workspace"] = "relative-workspace"
     payload["config"]["harness"]["settings"]["deepagents"] = {
-        "backend": {"type": "local_shell"},
-        "interrupt_on": {"execute": {"allowed_decisions": ["approve", "reject"]}},
+        "backend": {"type": "local_shell"}
     }
     payload["config"]["tools"] = {"enabled": ["execute"]}
 
     await invoke_once(payload)
 
     backend_kwargs = fake_sdks["local_shell_backend"].call_args.kwargs
-    expected_root = tmp_path if workspace is None else tmp_path / workspace
-    assert backend_kwargs == {"root_dir": str(expected_root), "virtual_mode": True}
+    assert backend_kwargs == {
+        "root_dir": str(tmp_path / "relative-workspace"),
+        "virtual_mode": True,
+        "inherit_env": False,
+    }
     fake_sdks["fs_backend"].assert_not_called()
 
 
-@pytest.mark.parametrize("tools", [None, {"enabled": ["execute"]}])
-async def test_local_shell_backend_rejects_unguarded_execute(
+async def test_local_shell_backend_requires_workspace(tmp_path, make_payload):
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = None
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "backend": {"type": "local_shell"}
+    }
+    payload["config"]["tools"] = {"enabled": ["execute"]}
+
+    with pytest.raises(adapter.AdapterConfigError, match="requires environment.workspace"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+
+@pytest.mark.parametrize("tools", [None, {"blocked": ["write_file"]}])
+async def test_local_shell_backend_requires_explicit_execute_policy(
     tmp_path, make_payload, tools
 ):
     payload = make_payload(tmp_path)
@@ -1505,16 +1518,19 @@ async def test_local_shell_backend_rejects_unguarded_execute(
     if tools is not None:
         payload["config"]["tools"] = tools
 
-    with pytest.raises(
-        adapter.AdapterConfigError, match="requires 'execute' to be blocked"
-    ):
+    with pytest.raises(adapter.AdapterConfigError, match="explicit tools.enabled"):
         await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
 @pytest.mark.parametrize(
-    "tools", [{"blocked": ["execute"]}, {"enabled": ["read_file"]}]
+    "tools",
+    [
+        {"enabled": ["execute"]},
+        {"enabled": ["read_file"]},
+        {"blocked": ["execute"]},
+    ],
 )
-async def test_local_shell_backend_accepts_policy_that_blocks_execute(
+async def test_local_shell_backend_accepts_explicit_execute_policy(
     tmp_path, make_payload, fake_sdks, tools
 ):
     payload = make_payload(tmp_path)
@@ -1526,6 +1542,88 @@ async def test_local_shell_backend_accepts_policy_that_blocks_execute(
     await invoke_once(payload)
 
     fake_sdks["local_shell_backend"].assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("settings", "error_path"),
+    [
+        (
+            {
+                "interrupt_on": {
+                    "execute": {"allowed_decisions": ["approve", "reject"]}
+                }
+            },
+            "interrupt_on.execute",
+        ),
+        (
+            {
+                "subagents": [
+                    {
+                        "name": "runner",
+                        "description": "Runs commands.",
+                        "system_prompt": "Run the requested command.",
+                        "interrupt_on": {"execute": True},
+                    }
+                ]
+            },
+            "subagents[0].interrupt_on.execute",
+        ),
+    ],
+)
+async def test_local_shell_backend_rejects_unresumable_execute_interrupt(
+    tmp_path, make_payload, settings, error_path
+):
+    payload = make_payload(tmp_path)
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "backend": {"type": "local_shell"},
+        **settings,
+    }
+    payload["config"]["tools"] = {"enabled": ["execute"]}
+
+    with pytest.raises(adapter.AdapterConfigError) as error:
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+    assert error_path in str(error.value)
+
+
+async def test_local_shell_backend_gates_subagent_interrupt_override(
+    tmp_path, make_payload, fake_sdks
+):
+    from langchain_core.messages import ToolMessage
+
+    payload = make_payload(tmp_path)
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "backend": {"type": "local_shell"},
+        "interrupt_on": {"write_file": True},
+        "subagents": [
+            {
+                "name": "runner",
+                "description": "Runs commands.",
+                "system_prompt": "Run the requested command.",
+                "interrupt_on": {"execute": False},
+            }
+        ],
+    }
+    payload["config"]["tools"] = {"enabled": ["read_file"]}
+
+    await invoke_once(payload)
+
+    subagents = fake_sdks["create_kwargs"]["subagents"]
+    assert [subagent["name"] for subagent in subagents] == [
+        "general-purpose",
+        "runner",
+    ]
+    assert all(subagent["middleware"] for subagent in subagents)
+
+    request = types.SimpleNamespace(
+        tool_call={"name": "execute", "id": "call-1", "args": {}}
+    )
+    handler = AsyncMock(return_value="executed")
+    for subagent in subagents:
+        result = await subagent["middleware"][-1].awrap_tool_call(request, handler)
+        assert isinstance(result, ToolMessage)
+        assert result.status == "error"
+    handler.assert_not_awaited()
 
 
 async def test_checkpointer_closed_on_success_and_failure(
@@ -2139,6 +2237,11 @@ async def test_deepagents_passthrough_rejects_unknown_option(tmp_path, make_payl
 
     with pytest.raises(adapter.AdapterConfigError, match="interupt_on"):
         await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+
+def test_deepagents_passthrough_rejects_fabric_owned_option():
+    with pytest.raises(adapter.AdapterConfigError, match="Fabric-owned keys.*model"):
+        adapter._validated_deepagents_settings({"model": "untrusted-model"})
 
 
 async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monkeypatch):
