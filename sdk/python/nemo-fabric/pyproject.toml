@@ -47,6 +47,7 @@ nemo-fabric-adapters-codex = { path = "../../../adapters/python/codex", editable
 nemo-fabric-adapters-deepagents = { path = "../../../adapters/python/deepagents", editable = true }
 nemo-fabric-adapters-hermes = { path = "../../../adapters/python/hermes", editable = true }
 nemo-fabric-adapters-mini-swe-agent = { path = "../../../adapters/python/mini-swe-agent", editable = true }
+nemo-fabric-adapters-nooa = { path = "../../../adapters/python/nooa", editable = true }
 nemo-fabric-adapters-remote-agent = { path = "../../../adapters/python/remote-agent", editable = true }
 
 [project.optional-dependencies]
@@ -69,6 +70,10 @@ deepagents = [
 
 mini-swe-agent = [
   "nemo-fabric-adapters-mini-swe-agent[harness] == 0.3.0",
+]
+
+nooa = [
+  "nemo-fabric-adapters-nooa[harness] == 0.3.0; python_version >= '3.12' and python_version < '3.14'",
 ]
 
 remote-agent = [

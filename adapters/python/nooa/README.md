@@ -19,44 +19,33 @@ registered targets.
 The dedicated `nvidia.fabric.nooa.bench-agent` adapter maps the benchmark-native
 `BenchAgent` task contract directly into a NeMo Fabric invocation.
 
-## Install from Source
+## Install
 
-This directory has no package metadata. Use one Python environment that
-contains the following components:
-
-- NeMo Fabric, `nemo-fabric-adapter-contract`, and
-  `nemo-fabric-adapters-common`.
-- The published NOOA packages that provide the selected agent.
-- The source adapter in this directory.
-
-NOOA requires Python 3.12 or 3.13. Expose the adapter source from the NVIDIA
-NeMo Fabric repository root:
+NOOA requires Python 3.12 or 3.13. Install NeMo Fabric, the adapters, and the
+tested NOOA packages together:
 
 ```bash
-export PYTHONPATH="$PWD/external/nooa/src${PYTHONPATH:+:$PYTHONPATH}"
+pip install "nemo-fabric[nooa]"
 ```
 
-Install the compatible published packages from the repository root. The shared
-constraints file is the maintained compatibility boundary for NOOA packages:
-
-```bash
-pip install -c external/nooa/constraints.txt nooa nooa-cli nooa-bench
-```
-
-During source development, include `external/nooa` and the selected target
-descriptor's directory in `FabricConfig.discovery.local_paths`. The BenchAgent
-Harbor guide instead packages the harness descriptor in the uploaded NeMo Fabric
-configuration bundle.
+For a split adapter environment, install
+`nemo-fabric-adapters-nooa[harness]`. Use the adapter package without an extra
+when the environment already manages compatible NOOA packages. The installed
+wheel provides both adapter descriptors and the supported CodingAgent and ARC
+target descriptors; no source-path or explicit discovery configuration is
+required.
 
 ## Configure Relay
 
-Relay is optional. Install NOOA core and CLI without their optional Relay
-extra, then install the compatible Relay Python package in the adapter
-environment:
+Relay is optional. Install the adapter, tested NOOA packages, and compatible
+Relay Python package together:
 
 ```bash
-pip install "nemo-relay>=0.7.2,<0.8"
+pip install "nemo-fabric-adapters-nooa[full]"
 ```
+
+Use `nemo-fabric-adapters-nooa[relay]` when the environment already manages
+the NOOA harness packages.
 
 Both adapters declare Relay outputs for Agent Trajectory Interchange Format
 (ATIF), OpenTelemetry, and OpenInference. NeMo Fabric supplies the generated

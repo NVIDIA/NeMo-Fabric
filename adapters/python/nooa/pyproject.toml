@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = [
+  "setuptools>=77",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nemo-fabric-adapters-nooa"
+version = "0.3.0"
+description = "NOOA adapters for NeMo Fabric"
+authors = [
+  { name = "NVIDIA Corporation" },
+]
+keywords = ["agents", "ai", "nemo-fabric", "runtime", "tools"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+readme = "pypi.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "nemo-fabric-adapter-contract == 0.3.0",
+  "nemo-fabric-adapters-common == 0.3.0",
+]
+
+[project.optional-dependencies]
+harness = [
+  "nooa>=0.0.10,<0.0.11",
+  "nooa-cli>=0.0.10,<0.0.11",
+  "nooa-bench>=0.0.10,<0.0.11",
+]
+relay = [
+  "nemo-relay>=0.7.2,<0.8",
+]
+full = [
+  "nooa>=0.0.10,<0.0.11",
+  "nooa-cli>=0.0.10,<0.0.11",
+  "nooa-bench>=0.0.10,<0.0.11",
+  "nemo-relay>=0.7.2,<0.8",
+]
+
+[project.urls]
+Repository = "https://github.com/NVIDIA/NeMo-Fabric"
+Homepage = "https://github.com/NVIDIA/NeMo-Fabric"
+Issues = "https://github.com/NVIDIA/NeMo-Fabric/issues"
+Documentation = "https://docs.nvidia.com/nemo/fabric"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["nemo_fabric_adapters.nooa*"]
+
+[tool.setuptools.data-files]
+"share/nemo-fabric/adapters/nooa" = [
+  "nooa.fabric-adapter.json",
+  "nooa-bench.fabric-adapter.json",
+]
+"share/nemo-fabric/adapters/nooa/targets" = [
+  "targets/arc-solver.fabric-target.json",
+  "targets/coding-agent.fabric-target.json",
+]
+
+[tool.uv.sources]
+nemo-fabric-adapter-contract = { path = "../../../adapter-contract/python", editable = true }
+nemo-fabric-adapters-common = { path = "../common", editable = true }

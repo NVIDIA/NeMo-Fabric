@@ -32,13 +32,15 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 
 ROOT = Path(__file__).parents[2]
-NOOA_ADAPTER_SOURCE = ROOT / "external" / "nooa" / "src"
-sys.path.insert(0, str(NOOA_ADAPTER_SOURCE))
+NOOA_ROOT = ROOT / "adapters" / "python" / "nooa"
 
-from nemo_fabric_adapters.nooa import adapter  # noqa: E402
-from nemo_fabric_adapters.nooa import model_support  # noqa: E402
-from nemo_fabric_adapters.nooa import telemetry as nooa_telemetry  # noqa: E402
-from nemo_fabric_adapters.nooa.targets import arc_solver  # noqa: E402
+if not ((3, 12) <= sys.version_info[:2] < (3, 14)):
+    pytest.skip("NOOA supports Python 3.12 and 3.13", allow_module_level=True)
+
+from nemo_fabric_adapters.nooa import adapter
+from nemo_fabric_adapters.nooa import model_support
+from nemo_fabric_adapters.nooa import telemetry as nooa_telemetry
+from nemo_fabric_adapters.nooa.targets import arc_solver
 
 
 def _workflow(**settings: Any) -> dict[str, Any]:
@@ -186,9 +188,7 @@ def _install_deterministic_relay(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
 
 def test_descriptor_and_registered_target_declare_the_shared_boundary():
     descriptor = json.loads(
-        (ROOT / "external" / "nooa" / "nooa.fabric-adapter.json").read_text(
-            encoding="utf-8"
-        )
+        (NOOA_ROOT / "nooa.fabric-adapter.json").read_text(encoding="utf-8")
     )
     target = json.loads(
         (ROOT / "tests" / "fixtures" / "nooa" / "echo.fabric-target.json").read_text(
@@ -196,14 +196,14 @@ def test_descriptor_and_registered_target_declare_the_shared_boundary():
         )
     )
     coding_target = json.loads(
-        (
-            ROOT / "external" / "nooa" / "targets" / "coding-agent.fabric-target.json"
-        ).read_text(encoding="utf-8")
+        (NOOA_ROOT / "targets" / "coding-agent.fabric-target.json").read_text(
+            encoding="utf-8"
+        )
     )
     arc_target = json.loads(
-        (
-            ROOT / "external" / "nooa" / "targets" / "arc-solver.fabric-target.json"
-        ).read_text(encoding="utf-8")
+        (NOOA_ROOT / "targets" / "arc-solver.fabric-target.json").read_text(
+            encoding="utf-8"
+        )
     )
 
     assert descriptor["adapter_id"] == "nvidia.fabric.nooa"
@@ -251,7 +251,7 @@ def test_descriptor_and_registered_target_declare_the_shared_boundary():
 def test_registered_arc_target_projects_closed_settings(tmp_path: Path):
     config = FabricConfig(
         metadata=MetadataConfig(name="nooa-arc-test"),
-        discovery=DiscoveryConfig(local_paths=[ROOT / "external" / "nooa"]),
+        discovery=DiscoveryConfig(local_paths=[NOOA_ROOT]),
         workflow=WorkflowConfig(
             target_id="nvidia.nooa.arc-solver",
             settings={
@@ -278,7 +278,7 @@ def test_registered_arc_target_projects_closed_settings(tmp_path: Path):
 def test_registered_arc_target_rejects_zero_max_actions(tmp_path: Path):
     config = FabricConfig(
         metadata=MetadataConfig(name="nooa-arc-test"),
-        discovery=DiscoveryConfig(local_paths=[ROOT / "external" / "nooa"]),
+        discovery=DiscoveryConfig(local_paths=[NOOA_ROOT]),
         workflow=WorkflowConfig(
             target_id="nvidia.nooa.arc-solver",
             settings={"max_actions_per_turn": 0},
@@ -302,7 +302,7 @@ def test_registered_arc_target_rejects_consumer_identity_and_paths(
 ):
     config = FabricConfig(
         metadata=MetadataConfig(name="nooa-arc-test"),
-        discovery=DiscoveryConfig(local_paths=[ROOT / "external" / "nooa"]),
+        discovery=DiscoveryConfig(local_paths=[NOOA_ROOT]),
         workflow=WorkflowConfig(
             target_id="nvidia.nooa.arc-solver",
             settings=settings,
@@ -318,7 +318,7 @@ def test_registered_target_projects_the_factory_and_settings(tmp_path: Path):
         metadata=MetadataConfig(name="nooa-test"),
         discovery=DiscoveryConfig(
             local_paths=[
-                ROOT / "external" / "nooa",
+                NOOA_ROOT,
                 ROOT / "tests" / "fixtures" / "nooa",
             ]
         ),
@@ -351,7 +351,7 @@ def test_registered_target_projects_whole_mcp_servers(tmp_path: Path):
         metadata=MetadataConfig(name="nooa-mcp-test"),
         discovery=DiscoveryConfig(
             local_paths=[
-                ROOT / "external" / "nooa",
+                NOOA_ROOT,
                 ROOT / "tests" / "fixtures" / "nooa",
             ]
         ),
@@ -387,7 +387,7 @@ def test_registered_target_rejects_mcp_tool_filters(tmp_path: Path):
         metadata=MetadataConfig(name="nooa-filtered-mcp-test"),
         discovery=DiscoveryConfig(
             local_paths=[
-                ROOT / "external" / "nooa",
+                NOOA_ROOT,
                 ROOT / "tests" / "fixtures" / "nooa",
             ]
         ),
@@ -412,7 +412,7 @@ def test_registered_target_rejects_mcp_authentication(tmp_path: Path):
         metadata=MetadataConfig(name="nooa-authenticated-mcp-test"),
         discovery=DiscoveryConfig(
             local_paths=[
-                ROOT / "external" / "nooa",
+                NOOA_ROOT,
                 ROOT / "tests" / "fixtures" / "nooa",
             ]
         ),
@@ -442,7 +442,7 @@ def test_registered_target_rejects_unknown_settings(tmp_path: Path):
         metadata=MetadataConfig(name="nooa-test"),
         discovery=DiscoveryConfig(
             local_paths=[
-                ROOT / "external" / "nooa",
+                NOOA_ROOT,
                 ROOT / "tests" / "fixtures" / "nooa",
             ]
         ),
@@ -460,12 +460,7 @@ def test_interactive_runtime_registers_and_invokes_mcp_in_subprocess(
     tmp_path: Path,
 ):
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = os.pathsep.join(
-        (
-            str(ROOT / "tests" / "fixtures" / "nooa" / "src"),
-            str(NOOA_ADAPTER_SOURCE),
-        )
-    )
+    environment["PYTHONPATH"] = str(ROOT / "tests" / "fixtures" / "nooa" / "src")
 
     completed = subprocess.run(
         [sys.executable, "-m", "fabric_nooa_mcp_runtime", str(tmp_path)],

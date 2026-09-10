@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -157,27 +158,24 @@ def test_verify_accepts_zero_reward_swebench_run(tmp_path: Path):
 
 
 def test_harbor_example_uses_published_nooa_packages():
-    constraints = (
-        REPOSITORY_ROOT / "external" / "nooa" / "constraints.txt"
-    ).read_text(encoding="utf-8")
-    package_constraints = {
-        line.split(">=", maxsplit=1)[0]: line
-        for line in constraints.splitlines()
-        if line and not line.startswith("#")
+    adapter_project = tomllib.loads(
+        (REPOSITORY_ROOT / "adapters" / "python" / "nooa" / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )["project"]
+    assert set(adapter_project["optional-dependencies"]["harness"]) == {
+        "nooa>=0.0.10,<0.0.11",
+        "nooa-cli>=0.0.10,<0.0.11",
+        "nooa-bench>=0.0.10,<0.0.11",
     }
-    assert package_constraints == {
-        "nooa": "nooa>=0.0.10,<0.0.11",
-        "nooa-cli": "nooa-cli>=0.0.10,<0.0.11",
-        "nooa-bench": "nooa-bench>=0.0.10,<0.0.11",
+    assert set(adapter_project["optional-dependencies"]["full"]) == {
+        *adapter_project["optional-dependencies"]["harness"],
+        *adapter_project["optional-dependencies"]["relay"],
     }
 
     files = (
         REPOSITORY_ROOT / "examples" / "harbor" / "nooa_bench" / "prepare.sh",
-        REPOSITORY_ROOT
-        / "examples"
-        / "harbor"
-        / "nooa_bench"
-        / "prepare_swebench.sh",
+        REPOSITORY_ROOT / "examples" / "harbor" / "nooa_bench" / "prepare_swebench.sh",
         REPOSITORY_ROOT
         / "examples"
         / "harbor"
@@ -195,17 +193,17 @@ def test_harbor_example_uses_published_nooa_packages():
     for path in files:
         content = path.read_text(encoding="utf-8")
         assert "labs-OO-Agents" not in content
+        assert "external/nooa" not in content
+        assert "nooa-adapter" not in content
+        assert "nooa-constraints" not in content
+        assert "PYTHONPATH" not in content
 
+    prepare = files[0].read_text(encoding="utf-8")
     calculator_dockerfile = files[2].read_text(encoding="utf-8")
     swebench_dockerfile = files[3].read_text(encoding="utf-8")
-    assert "-c /opt/nooa-constraints.txt" in calculator_dockerfile
-    assert "-c /opt/nemo-fabric-nooa/nooa-constraints.txt" in swebench_dockerfile
-    calculator_install_command = calculator_dockerfile.split(
-        "RUN pip install --no-cache-dir", maxsplit=1
-    )[1].split("\n\nRUN ", maxsplit=1)[0]
-    swebench_install_command = swebench_dockerfile.split(
-        "RUN uv venv --python 3.12 /opt/nemo-fabric-venv", maxsplit=1
-    )[1].split("\n\nENV ", maxsplit=1)[0]
-    for install_command in (calculator_install_command, swebench_install_command):
-        for package in ("nooa", "nooa-cli", "nooa-bench"):
-            assert f"\n        {package}" in install_command
+    assert (
+        'uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapters/python/nooa"'
+        in prepare
+    )
+    for dockerfile in (calculator_dockerfile, swebench_dockerfile):
+        assert '"nemo-fabric-adapters-nooa[full]"' in dockerfile

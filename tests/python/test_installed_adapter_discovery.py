@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import sysconfig
 import venv
 from collections.abc import Callable
@@ -19,6 +20,7 @@ from typing import Any
 import pytest
 from _utils.configs import minimal_config
 from nemo_fabric import Fabric
+from nemo_fabric import FabricConfig
 from nemo_fabric import FabricConfigError
 from nemo_fabric import DiscoveryConfig
 
@@ -152,6 +154,38 @@ def installed_claude_wheel_fixture(
     return python, descriptor
 
 
+@pytest.fixture(name="installed_nooa_wheel", scope="session")
+def installed_nooa_wheel_fixture(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[Path, Path]:
+    root = tmp_path_factory.mktemp("installed-nooa-wheel")
+    wheelhouse = root / "wheelhouse"
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.fail("uv is required to exercise installed-wheel discovery")
+    subprocess.run(  # noqa: S603 - uv and all inputs are controlled by this test
+        [
+            uv,
+            "build",
+            "--wheel",
+            "--out-dir",
+            str(wheelhouse),
+            str(ROOT / "adapters" / "python" / "nooa"),
+        ],
+        check=True,
+    )
+    wheel = next(wheelhouse.glob("nemo_fabric_adapters_nooa-*.whl"))
+    adapter_env = root / "adapter-env"
+    _create_venv(adapter_env)
+    python = adapter_env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    subprocess.run(  # noqa: S603 - uv and all inputs are controlled by this test
+        [uv, "pip", "install", "--python", str(python), "--no-deps", str(wheel)],
+        check=True,
+    )
+    data_root = _python_sysconfig_path(python, "data")
+    return python, data_root / "share/nemo-fabric/adapters/nooa"
+
+
 def test_plan_discovers_adapter_from_python_data_directory(
     tmp_path: Path,
     patch_sysconfig_data: Callable[[Path], None],
@@ -274,6 +308,55 @@ def test_schema_less_descriptor_rejects_non_empty_settings(
     assert "test.fabric.installed" in message
     assert str(descriptor.resolve()) in message
     assert "harness.settings.unknown" in message
+
+
+@pytest.mark.skipif(
+    not ((3, 12) <= sys.version_info[:2] < (3, 14)),
+    reason="NOOA supports Python 3.12 and 3.13",
+)
+def test_installed_nooa_wheel_supplies_adapters_and_targets(
+    tmp_path: Path,
+    installed_nooa_wheel: tuple[Path, Path],
+):
+    python, descriptor_root = installed_nooa_wheel
+    os.environ["ADAPTER_PYTHON"] = str(python)
+
+    assert {
+        str(path.relative_to(descriptor_root))
+        for path in descriptor_root.rglob("*.json")
+    } == {
+        "nooa.fabric-adapter.json",
+        "nooa-bench.fabric-adapter.json",
+        "targets/arc-solver.fabric-target.json",
+        "targets/coding-agent.fabric-target.json",
+    }
+
+    workflow_plan = Fabric().plan(
+        FabricConfig.from_mapping(
+            {
+                "metadata": {"name": "installed-nooa-workflow"},
+                "workflow": {"target_id": "nvidia.nooa.coding-agent"},
+            }
+        ),
+        base_dir=tmp_path / "workflow",
+    )
+    assert any(
+        item["source"] == "installed_package"
+        for item in workflow_plan["adapter_descriptor"]["provenance"]
+    )
+    assert any(
+        item["source"] == "installed_package"
+        for item in workflow_plan["adapter_target_descriptor"]["provenance"]
+    )
+
+    bench_plan = Fabric().plan(
+        _config(adapter_id="nvidia.fabric.nooa.bench-agent"),
+        base_dir=tmp_path / "bench",
+    )
+    assert any(
+        item["source"] == "installed_package"
+        for item in bench_plan["adapter_descriptor"]["provenance"]
+    )
 
 
 def test_installed_claude_wheel_supplies_metadata_and_settings_schema(

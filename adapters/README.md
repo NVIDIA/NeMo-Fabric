@@ -46,6 +46,7 @@ schemas come from independently registered Adapter Target Descriptors.
 | [LangChain Deep Agents](python/deepagents/README.md) | `nvidia.fabric.langchain.deepagents` | `nemo-fabric-adapters-deepagents` | 3.11+ |
 | [Hermes Agent](python/hermes/README.md) | `nvidia.fabric.hermes` | `nemo-fabric-adapters-hermes` | 3.11-3.13 |
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | `nvidia.fabric.mini-swe-agent` | `nemo-fabric-adapters-mini-swe-agent` | 3.11+ |
+| [NOOA](python/nooa/README.md) | `nvidia.fabric.nooa`, `nvidia.fabric.nooa.bench-agent` | `nemo-fabric-adapters-nooa` | 3.12-3.13 |
 | [Remote Agent](python/remote-agent/README.md) | `nvidia.fabric.remote-agent` | `nemo-fabric-adapters-remote-agent` | 3.11+ |
 
 Refer to the [Python adapter package guide](python/README.md) for source-layout,

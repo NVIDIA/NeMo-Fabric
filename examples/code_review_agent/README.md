@@ -167,8 +167,8 @@ variant uses the `NVIDIA_API_KEY` configured for the default demo.
 
 ### NVIDIA-labs Object Oriented Agents (NOOA) CodingAgent (`nooa`)
 
-Follow the
-[NOOA InteractiveAgent source instructions](../../external/nooa/docs/interactive-agent.md#run-from-source).
+Install `nemo-fabric[nooa]` and follow the
+[NOOA InteractiveAgent instructions](../../adapters/python/nooa/docs/interactive-agent.md).
 CodingAgent is a workflow target rather than a harness, but the example selects
 it through the same `--variant` option. The variant discovers
 `nvidia.nooa.coding-agent` and uses the `NVIDIA_API_KEY` configured for the

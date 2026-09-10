@@ -15,14 +15,12 @@ cleanup() {
 trap cleanup EXIT
 
 wheelhouse="$stage_dir/wheelhouse"
-adapter_source="$stage_dir/nooa-adapter"
-constraints_file="$stage_dir/nooa-constraints.txt"
-bundle="$stage_dir/bundle"
-mkdir -p "$wheelhouse" "$adapter_source" "$bundle/adapters"
+mkdir -p "$wheelhouse"
 
 uv build --wheel --out-dir "$wheelhouse" "$repo_root/sdk/python/nemo-fabric"
 uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapter-contract/python"
 uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapters/python/common"
+uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapters/python/nooa"
 (
     cd "$repo_root/sdk/python/nemo-fabric-runtime"
     uvx --from 'maturin[zig]>=1.9.3,<2.0' maturin build \
@@ -33,15 +31,8 @@ uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapters/python/common"
         --out "$wheelhouse"
 )
 
-git -C "$repo_root" archive HEAD:external/nooa src | tar -x -C "$adapter_source"
-cp "$repo_root/external/nooa/constraints.txt" "$constraints_file"
-cp "$repo_root/external/nooa/nooa-bench.fabric-adapter.json" "$bundle/adapters/"
-
-rm -rf "$example_dir/task/environment/vendor" "$example_dir/.bundle"
+rm -rf "$example_dir/task/environment/vendor"
 mkdir -p "$example_dir/task/environment/vendor"
 mv "$wheelhouse" "$example_dir/task/environment/vendor/"
-mv "$adapter_source" "$example_dir/task/environment/vendor/"
-mv "$constraints_file" "$example_dir/task/environment/vendor/"
-mv "$bundle" "$example_dir/.bundle"
 
-echo "Built and prepared the BenchAgent Harbor context with published NOOA packages."
+echo "Built and prepared the BenchAgent Harbor context with packaged adapters."

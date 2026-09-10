@@ -32,6 +32,10 @@ mini-swe-agent = [
   "nemo-fabric[mini-swe-agent]",
 ]
 
+nooa = [
+  "nemo-fabric[nooa]",
+]
+
 remote-agent = [
   "nemo-fabric[remote-agent]",
 ]
@@ -62,6 +66,7 @@ adapters = [
   # Install the mini-SWE-agent adapter with Relay so focused adapter tests cover
   # its optional subclass-based telemetry integration.
   "nemo-fabric-adapters-mini-swe-agent[relay]",
+  "nemo-fabric-adapters-nooa; python_version >= '3.12' and python_version < '3.14'",
   "nemo-fabric-adapters-remote-agent[harness]",
 ]
 
@@ -75,6 +80,7 @@ adapter-tests = [
   "nemo-fabric-adapters-deepagents[harness]",
   "nemo-fabric-adapters-hermes[full]; python_version < '3.14'",
   "nemo-fabric-adapters-mini-swe-agent[harness]",
+  "nemo-fabric-adapters-nooa[full]; python_version >= '3.12' and python_version < '3.14'",
   "nemo-fabric-adapters-remote-agent[full]",
 ]
 
@@ -139,6 +145,7 @@ nemo-fabric-adapters-codex = { path = "adapters/python/codex", editable = true }
 nemo-fabric-adapters-deepagents = { path = "adapters/python/deepagents", editable = true }
 nemo-fabric-adapters-hermes = { path = "adapters/python/hermes", editable = true }
 nemo-fabric-adapters-mini-swe-agent = { path = "adapters/python/mini-swe-agent", editable = true }
+nemo-fabric-adapters-nooa = { path = "adapters/python/nooa", editable = true }
 nemo-fabric-adapters-remote-agent = { path = "adapters/python/remote-agent", editable = true }
 
 [tool.pytest.ini_options]

@@ -25,9 +25,13 @@ from nemo_fabric import RuntimeConfig
 from nemo_fabric import WorkflowConfig
 
 ROOT = Path(__file__).parents[2]
-NOOA_ROOT = ROOT / "external" / "nooa"
 FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "nooa"
 FIXTURE_SOURCE = FIXTURE_ROOT / "src"
+
+pytestmark = pytest.mark.skipif(
+    not ((3, 12) <= sys.version_info[:2] < (3, 14)),
+    reason="NOOA supports Python 3.12 and 3.13",
+)
 
 
 @pytest.mark.usefixtures("nemo_relay")
@@ -37,7 +41,6 @@ async def test_nooa_relay_streams_correlated_atof_and_returns_once(
     current_pythonpath = os.environ.get("PYTHONPATH")
     pythonpath = os.pathsep.join(
         [
-            str(NOOA_ROOT / "src"),
             str(FIXTURE_SOURCE),
             *([current_pythonpath] if current_pythonpath else []),
         ]
@@ -47,7 +50,7 @@ async def test_nooa_relay_streams_correlated_atof_and_returns_once(
 
     config = FabricConfig(
         metadata=MetadataConfig(name="nooa-relay-e2e"),
-        discovery=DiscoveryConfig(local_paths=[NOOA_ROOT, FIXTURE_ROOT]),
+        discovery=DiscoveryConfig(local_paths=[FIXTURE_ROOT]),
         workflow=WorkflowConfig(target_id="nvidia.tests.nooa.echo", settings={}),
         runtime=RuntimeConfig(
             input_schema="text",
