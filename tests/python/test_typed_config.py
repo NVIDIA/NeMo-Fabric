@@ -108,6 +108,17 @@ def test_model_config_bounds_max_tokens_to_u64():
         ModelConfig(provider="nvidia", model="test-model", max_tokens=1 << 64)
 
 
+def test_model_config_preserves_json_integer_compatibility():
+    model = ModelConfig(provider="nvidia", model="test-model", max_tokens=512.0)
+
+    assert model.max_tokens == 512
+
+
+def test_model_config_rejects_boolean_top_p():
+    with pytest.raises(ValidationError, match="valid number"):
+        ModelConfig(provider="nvidia", model="test-model", top_p=True)
+
+
 async def resolves_and_diagnoses_typed_config(client: Fabric) -> None:
     """Plan and doctor resolve a complete typed config."""
 

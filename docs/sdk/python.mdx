@@ -208,15 +208,15 @@ Relay subfields:
 
 Model selection is deterministic: the `default` role wins; otherwise a single
 named role is selected. More than one role without `default` fails planning.
-Claude, Codex, and Deep Agents publish a descriptor-owned `model_schema` for
-every configured model role. The Claude and Codex native providers (`anthropic`
-and `openai`, respectively) keep the existing authentication path. Other Claude
-and Codex providers remain valid only with an explicit `base_url` and
-`api_key_env`. Deep Agents keeps dynamic LangChain provider selection. Each
-schema rejects undeclared `ModelConfig.settings` during planning and reports
-each issue through `doctor(...)` before adapter startup. Existing configurations
-that supplied `top_p` and `max_tokens` as flattened model extensions retain the
-same wire shape when loaded as normalized fields.
+All bundled adapters except Hermes publish a descriptor-owned `model_schema`
+for every configured model role. The Claude and Codex native providers
+(`anthropic` and `openai`, respectively) keep the existing authentication path.
+Other Claude and Codex providers remain valid only with an explicit `base_url`
+and `api_key_env`. Deep Agents keeps dynamic LangChain provider selection. Each
+published schema rejects undeclared `ModelConfig.settings` during planning and
+reports each issue through `doctor(...)` before adapter startup. Existing
+configurations that supplied `top_p` and `max_tokens` as flattened model
+extensions retain the same wire shape when loaded as normalized fields.
 
 If a normalized field has no complete mapping, `plan(...)` and runtime start
 fail with a configuration compatibility error naming the adapter and field.

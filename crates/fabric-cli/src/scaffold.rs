@@ -381,11 +381,11 @@ fn rust_models(model: Option<&ModelConfig>) -> String {
         .unwrap_or_else(|| "None".to_string());
     let temperature = model
         .temperature
-        .map(|value| format!("Some({value})"))
+        .map(|value| format!("Some({value:?})"))
         .unwrap_or_else(|| "None".to_string());
     let top_p = model
         .top_p
-        .map(|value| format!("Some({value})"))
+        .map(|value| format!("Some({value:?})"))
         .unwrap_or_else(|| "None".to_string());
     let max_tokens = model
         .max_tokens
@@ -529,19 +529,19 @@ mod tests {
             .config()
             .expect("construct Hermes config");
         let model = config.models.get_mut("default").expect("default model");
-        model.temperature = Some(0.2);
-        model.top_p = Some(0.8);
+        model.temperature = Some(1.0);
+        model.top_p = Some(1.0);
         model.max_tokens = Some(512);
 
         let python = render_python(&config);
-        assert!(python.contains("temperature=0.2"));
-        assert!(python.contains("top_p=0.8"));
+        assert!(python.contains("temperature=1"));
+        assert!(python.contains("top_p=1"));
         assert!(python.contains("max_tokens=512"));
         assert!(python.contains("base_url=\"https://integrate.api.nvidia.com/v1\""));
 
         let rust = render_rust(&config);
-        assert!(rust.contains("temperature: Some(0.2)"));
-        assert!(rust.contains("top_p: Some(0.8)"));
+        assert!(rust.contains("temperature: Some(1.0)"));
+        assert!(rust.contains("top_p: Some(1.0)"));
         assert!(rust.contains("max_tokens: Some(512)"));
         assert!(
             rust.contains("base_url: Some(\"https://integrate.api.nvidia.com/v1\".to_string())")

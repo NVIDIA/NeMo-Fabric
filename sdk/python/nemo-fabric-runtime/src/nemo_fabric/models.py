@@ -272,7 +272,7 @@ class ModelConfig(FabricBaseModel):
     model: str = Field(min_length=1)
     api_key_env: str | None = None
     temperature: float | None = None
-    top_p: float | None = Field(default=None, ge=0, le=1)
+    top_p: float | None = Field(default=None, strict=True, ge=0, le=1)
     max_tokens: int | None = Field(
         default=None,
         strict=True,
@@ -287,6 +287,13 @@ class ModelConfig(FabricBaseModel):
     def _validate_provider(cls, value: str) -> str:
         if not value.strip() or value != value.strip() or value != value.lower():
             raise ValueError("provider must be a non-empty lowercase identifier")
+        return value
+
+    @field_validator("max_tokens", mode="before")
+    @classmethod
+    def _normalize_integral_max_tokens(cls, value: Any) -> Any:
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
         return value
 
     @field_validator("model", "api_key_env")

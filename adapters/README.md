@@ -149,12 +149,15 @@ and additive extension maps because their support does not vary by adapter:
 
 The selected model role is `default`, or the sole configured role when no
 `default` exists. More than one role without `default` fails planning.
-Claude and Codex publish a descriptor-owned `model_schema` for every configured
-model role. Their native providers (`anthropic` and `openai`, respectively)
-keep the existing authentication path. Other providers remain valid only with
-an explicit `base_url` and `api_key_env`. The same schema rejects undeclared
-`ModelConfig.settings` during planning and reports each issue through
-`doctor(...)` before adapter startup.
+All bundled adapters except Hermes publish a descriptor-owned `model_schema`
+for every configured model role. The Claude and Codex native providers
+(`anthropic` and `openai`, respectively) keep the existing authentication path.
+Other Claude and Codex providers remain valid only with an explicit `base_url`
+and `api_key_env`. Deep Agents keeps dynamic LangChain provider selection. Each
+published schema rejects undeclared `ModelConfig.settings` during planning and
+reports each issue through `doctor(...)` before adapter startup. Existing
+configurations that supplied `top_p` and `max_tokens` as flattened model
+extensions retain the same wire shape when loaded as normalized fields.
 `runtime.max_turns` is optional; omitting it preserves adapter-native defaults
 without creating a compatibility requirement.
 
