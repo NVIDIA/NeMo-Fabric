@@ -57,7 +57,7 @@ Relay-backed streaming has two sides:
   to the collector. Fabric does not start or configure the remote Relay
   installation or its sink.
 
-Both sides must use the same collector; the adapter does not send the collector
+Both sides must use the same collector. The adapter does not send the collector
 URL to the remote service. For correlation, the adapter puts the Fabric request
 ID in `metadata.nemo_fabric_request_id` in the invoke request body. The remote
 endpoint must add this request ID to the Relay span metadata.
@@ -328,7 +328,7 @@ invocations in one runtime.
 
 The remote agent is configured and started independently of Fabric, so Fabric
 cannot normalize or apply configuration that controls how the agent is
-constructed. The adapter normalizes only `models`, `models.temperature`, and
+constructed. The adapter only normalizes `models`, `models.temperature`, and
 replacement `instructions.system` settings. MCP, skills, tool policy, and
 subagents can be configured by the remote deployment, but the adapter does not
 expose them through `FabricConfig`.

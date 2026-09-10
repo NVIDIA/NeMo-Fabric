@@ -120,7 +120,7 @@ Relay-backed streaming has two sides:
   to the collector. Fabric does not start or configure the remote Relay
   installation or its sink.
 
-Both sides must use the same collector; the adapter does not send the collector
+Both sides must use the same collector. The adapter does not send the collector
 URL to the remote service. The Fabric sink uses the collector base URL. The
 remote Relay sink publishes to `<collector-base-url>/v1/atof`. For correlation,
 the adapter puts the Fabric request ID in `metadata.nemo_fabric_request_id` in

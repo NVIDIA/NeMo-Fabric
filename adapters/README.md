@@ -137,8 +137,8 @@ and additive extension maps because their support does not vary by adapter:
 | `skills.paths` | Yes | Yes | Yes | Yes | No | Yes | No |
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | No | No |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No | No |
-| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | No | Yes; supports collector-backed ATOF streaming |
-| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | No | Yes, supports collector-backed ATOF streaming |
+| `telemetry.providers.native` | No | Yes, OpenTelemetry | Yes, OpenTelemetry and OpenInference | No | No | No | No |
 | `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No |
 | `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | No | Uses the named external collector sink when selected; config is not sent to the remote service |
 | `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | No | Not sent to the remote service |
