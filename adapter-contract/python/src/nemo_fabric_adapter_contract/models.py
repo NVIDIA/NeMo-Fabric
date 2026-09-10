@@ -175,6 +175,7 @@ class AgentModelConfig(AgentContractBlock):
                 "must be greater than zero",
                 path=("max_tokens",),
             )
+        _bounded_int(self.max_tokens, "max_tokens", (1 << 64) - 1)
         if self.base_url is not None:
             _nonblank(self.base_url, "base_url")
 
