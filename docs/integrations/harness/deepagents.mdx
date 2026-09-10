@@ -124,6 +124,10 @@ in a controlled environment. Do not use it for production or multi-tenant
 workloads.
 </Warning>
 
+The adapter rejects `local_shell` unless `execute` is blocked by
+`tools.blocked`, omitted from a configured `tools.enabled` allowlist, or
+protected by an `interrupt_on.execute` approval rule.
+
 The following configuration opts in to local shell execution, limits the tool
 surface to `execute`, and requires a reviewer decision for each command:
 

@@ -1481,8 +1481,10 @@ async def test_local_shell_backend_resolves_root_from_workspace_or_base_dir(
     payload = make_payload(tmp_path)
     payload["runtime_context"]["environment"]["workspace"] = workspace
     payload["config"]["harness"]["settings"]["deepagents"] = {
-        "backend": {"type": "local_shell"}
+        "backend": {"type": "local_shell"},
+        "interrupt_on": {"execute": {"allowed_decisions": ["approve", "reject"]}},
     }
+    payload["config"]["tools"] = {"enabled": ["execute"]}
 
     await invoke_once(payload)
 
@@ -1490,6 +1492,40 @@ async def test_local_shell_backend_resolves_root_from_workspace_or_base_dir(
     expected_root = tmp_path if workspace is None else tmp_path / workspace
     assert backend_kwargs == {"root_dir": str(expected_root), "virtual_mode": True}
     fake_sdks["fs_backend"].assert_not_called()
+
+
+@pytest.mark.parametrize("tools", [None, {"enabled": ["execute"]}])
+async def test_local_shell_backend_rejects_unguarded_execute(
+    tmp_path, make_payload, tools
+):
+    payload = make_payload(tmp_path)
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "backend": {"type": "local_shell"}
+    }
+    if tools is not None:
+        payload["config"]["tools"] = tools
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="requires 'execute' to be blocked"
+    ):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+
+@pytest.mark.parametrize(
+    "tools", [{"blocked": ["execute"]}, {"enabled": ["read_file"]}]
+)
+async def test_local_shell_backend_accepts_policy_that_blocks_execute(
+    tmp_path, make_payload, fake_sdks, tools
+):
+    payload = make_payload(tmp_path)
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "backend": {"type": "local_shell"}
+    }
+    payload["config"]["tools"] = tools
+
+    await invoke_once(payload)
+
+    fake_sdks["local_shell_backend"].assert_called_once()
 
 
 async def test_checkpointer_closed_on_success_and_failure(

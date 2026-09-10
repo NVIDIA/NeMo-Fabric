@@ -280,6 +280,23 @@ def tool_policy_middleware(enabled: set[str] | None, blocked: set[str]) -> Any:
     )
 
 
+def _local_shell_execute_is_guarded(
+    settings: dict[str, Any], enabled: set[str] | None, blocked: set[str]
+) -> bool:
+    if "execute" in blocked or (enabled is not None and "execute" not in enabled):
+        return True
+    interrupt_on = settings.get("interrupt_on")
+    if not isinstance(interrupt_on, dict):
+        return False
+    execute_interrupt = interrupt_on.get("execute")
+    if execute_interrupt is True:
+        return True
+    if not isinstance(execute_interrupt, dict):
+        return False
+    allowed_decisions = execute_interrupt.get("allowed_decisions")
+    return isinstance(allowed_decisions, list) and bool(allowed_decisions)
+
+
 def resolve_skills(config: AgentConfig) -> list[str] | None:
     """Map Fabric skill paths onto the Deep Agents ``skills`` sources."""
 
@@ -394,6 +411,17 @@ async def build_agent_kwargs(
         supported_modes={"replace"},
     )
     extra = _validated_deepagents_settings(settings.get("deepagents"))
+    enabled = _enabled_tool_names(config)
+    blocked = _blocked_tool_names(config)
+    if extra.get("backend") is not None and not _local_shell_execute_is_guarded(
+        extra, enabled, blocked
+    ):
+        raise AdapterConfigError(
+            "harness.settings.deepagents.backend.type='local_shell' requires "
+            "'execute' to be blocked by tools.blocked, omitted from a configured "
+            "tools.enabled allowlist, or protected by "
+            "harness.settings.deepagents.interrupt_on.execute approval."
+        )
     kwargs: dict[str, Any] = {
         "model": model,
         "tools": await resolve_tools(config),
@@ -407,8 +435,6 @@ async def build_agent_kwargs(
     kwargs.update(
         {key: extra[key] for key in DEEPAGENTS_PASSTHROUGH_KEYS if key in extra}
     )
-    enabled = _enabled_tool_names(config)
-    blocked = _blocked_tool_names(config)
     if enabled is not None or blocked:
         middleware = list(kwargs.get("middleware") or [])
         middleware.append(tool_policy_middleware(enabled, blocked))
