@@ -83,7 +83,7 @@ pub struct AgentModelConfig {
     pub top_p: Option<f64>,
     /// Optional maximum number of response tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(range(min = 1))]
+    #[schemars(range(min = 1, max = u64::MAX))]
     pub max_tokens: Option<u64>,
     /// Optional provider API base URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -209,12 +209,27 @@ def test_agent_model_config_round_trips_normalized_sampling_fields():
     assert model.to_mapping()["max_tokens"] == 512
 
 
+def test_agent_model_config_accepts_u64_max_tokens():
+    maximum = (1 << 64) - 1
+
+    model = AgentModelConfig.from_mapping(
+        {"provider": "nvidia", "model": "test-model", "max_tokens": maximum}
+    )
+
+    assert model.max_tokens == maximum
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
         ("top_p", -0.1, "top_p: must be between zero and one"),
         ("top_p", 1.1, "top_p: must be between zero and one"),
         ("max_tokens", 0, "max_tokens: must be greater than zero"),
+        (
+            "max_tokens",
+            1 << 64,
+            "max_tokens: must be between 0 and 18446744073709551615",
+        ),
         ("max_tokens", True, "max_tokens: must be an integer"),
     ],
 )
