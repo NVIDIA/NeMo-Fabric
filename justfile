@@ -349,7 +349,7 @@ install-typescript: install-typescript-contract install-typescript-adapters
 # tied directly to Python 3.11, we also want to ensure that we are installing
 # into our Fabric virtualenv
 # 29112bef099274229cadff79cdff7bf7b99c4b77 aligns with Hermes Agent v0.21.0.
-# metadata-propagate.patch forwards the Fabric request ID into Hermes Relay
+# metadata-propagate.patch forwards OpenAI request metadata into Hermes Relay
 # turn metadata. Remove it when the pinned Hermes revision includes that behavior.
 # Install the pinned Hermes Agent source with Fabric Relay metadata propagation.
 install-hermes-agent:
