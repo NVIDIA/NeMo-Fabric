@@ -200,6 +200,12 @@ def test_harbor_example_uses_published_nooa_packages():
     swebench_dockerfile = files[3].read_text(encoding="utf-8")
     assert "-c /opt/nooa-constraints.txt" in calculator_dockerfile
     assert "-c /opt/nemo-fabric-nooa/nooa-constraints.txt" in swebench_dockerfile
-    for dockerfile in (calculator_dockerfile, swebench_dockerfile):
+    calculator_install_command = calculator_dockerfile.split(
+        "RUN pip install --no-cache-dir", maxsplit=1
+    )[1].split("\n\nRUN ", maxsplit=1)[0]
+    swebench_install_command = swebench_dockerfile.split(
+        "RUN uv venv --python 3.12 /opt/nemo-fabric-venv", maxsplit=1
+    )[1].split("\n\nENV ", maxsplit=1)[0]
+    for install_command in (calculator_install_command, swebench_install_command):
         for package in ("nooa", "nooa-cli", "nooa-bench"):
-            assert f"\n        {package}" in dockerfile
+            assert f"\n        {package}" in install_command
