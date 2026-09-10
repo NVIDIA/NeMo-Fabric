@@ -62,7 +62,7 @@ selectors, and telemetry. The adapter rejects `append` system instructions.
 
 During run-plan resolution, NeMo Fabric Core validates the
 `models.<role>.top_p` (from 0 through 1) and positive
-`models.<role>.max_tokens` extensions against the Hermes descriptor before
+`models.<role>.max_tokens` fields against the Hermes descriptor before
 runtime startup. Hermes reads these prevalidated values from `AgentConfig`. A
 model-level `max_tokens` overrides the harness-level default for the selected
 model role.

@@ -43,6 +43,29 @@ and defaults to `OPENAI_API_KEY` only for the native `openai` provider. Every
 other provider must set `api_key_env` explicitly (a missing one is a normalized
 configuration failure), so a key is never sent to the wrong endpoint.
 
+Set `models.<role>.top_p` from `0` through `1` and a positive
+`models.<role>.max_tokens` to control nucleus sampling and the response token
+limit for that model role. These are normalized model fields, not entries in
+`models.<role>.settings`:
+
+```python
+from nemo_fabric import ModelConfig
+
+model = ModelConfig(
+    provider="nvidia",
+    model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    api_key_env="NVIDIA_API_KEY",
+    base_url="https://integrate.api.nvidia.com/v1",
+    top_p=0.8,
+    max_tokens=512,
+)
+```
+
+The adapter passes `top_p` and `max_tokens` to LangChain only when configured,
+so omitted fields preserve the model provider's defaults. Planning rejects
+unknown top-level model fields and every key under
+`models.<role>.settings`.
+
 Because `models.<role>.api_key_env` is provider-specific, the adapter declares no
 static env requirement; a runtime **preflight** verifies that the `deepagents`
 package is importable and the configured credential is set. A failed preflight
@@ -51,7 +74,7 @@ fails runtime start with a stable lifecycle error.
 NeMo Fabric maps the following into the harness:
 
 - The selected `models` role supplies `model`, `provider`, `api_key_env`,
-  `base_url`, and `temperature`.
+  `base_url`, `temperature`, `top_p`, and `max_tokens`.
 - `instructions.system` supports `replace` and becomes the Deep Agents
   `system_prompt`. Deep Agents rejects `append`.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.

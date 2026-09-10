@@ -240,6 +240,10 @@ export interface AgentModelConfig {
    */
   extensions?: JsonObject;
   /**
+   * Optional maximum number of response tokens.
+   */
+  max_tokens?: number | null;
+  /**
    * Provider model identifier.
    */
   model: string;
@@ -255,6 +259,10 @@ export interface AgentModelConfig {
    * Optional model temperature.
    */
   temperature?: number | null;
+  /**
+   * Optional nucleus sampling probability.
+   */
+  top_p?: number | null;
 }
 /**
  * Runtime behavior applied by an adapter target.

@@ -77,6 +77,14 @@ pub struct AgentModelConfig {
     /// Optional model temperature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    /// Optional nucleus sampling probability.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub top_p: Option<f64>,
+    /// Optional maximum number of response tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
+    pub max_tokens: Option<u64>,
     /// Optional provider API base URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
@@ -347,6 +355,8 @@ pub(crate) fn project_agent_config(
                         model: model.model.clone(),
                         api_key_env: model.api_key_env.clone(),
                         temperature: model.temperature,
+                        top_p: model.top_p,
+                        max_tokens: model.max_tokens,
                         base_url: model.base_url.clone(),
                         settings: model.settings.clone(),
                         extensions: model.extensions.clone(),

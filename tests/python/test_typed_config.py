@@ -82,6 +82,20 @@ def _shim_adapter_config() -> FabricConfig:
     return FabricConfig.from_mapping(config)
 
 
+def test_existing_flat_sampling_extensions_load_as_normalized_fields():
+    raw = _repository_adapter_config().to_mapping()
+    raw["models"]["default"].update({"top_p": 0.8, "max_tokens": 512})
+
+    config = FabricConfig.from_mapping(raw)
+    model = config.models["default"]
+
+    assert model.top_p == 0.8
+    assert model.max_tokens == 512
+    assert model.model_extra is None or "top_p" not in model.model_extra
+    assert config.to_mapping()["models"]["default"]["top_p"] == 0.8
+    assert config.to_mapping()["models"]["default"]["max_tokens"] == 512
+
+
 async def resolves_and_diagnoses_typed_config(client: Fabric) -> None:
     """Plan and doctor resolve a complete typed config."""
 

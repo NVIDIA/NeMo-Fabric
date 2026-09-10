@@ -19,6 +19,16 @@
           "type": "string"
         },
         {
+          "const": "models.top_p",
+          "description": "Model nucleus sampling probability.",
+          "type": "string"
+        },
+        {
+          "const": "models.max_tokens",
+          "description": "Maximum model response tokens.",
+          "type": "string"
+        },
+        {
           "const": "instructions.system",
           "description": "Portable system instructions.",
           "type": "string"

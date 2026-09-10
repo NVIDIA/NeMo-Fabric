@@ -77,7 +77,8 @@ async def test_remote_agent_invokes_supported_protocol(
                     "provider": "test",
                     "model": "fabric-echo",
                     "temperature": 0.2,
-                    "settings": {"max_tokens": 64},
+                    "top_p": 0.8,
+                    "max_tokens": 64,
                 }
             },
         }
@@ -111,6 +112,13 @@ async def test_remote_agent_invokes_supported_protocol(
     assert result.usage.input_tokens == 0
     assert captured[-1]["model"] == "fabric-echo"
     assert captured[-1]["temperature"] == 0.2
+    assert captured[-1]["top_p"] == 0.8
+    max_tokens_field = {
+        "openai-responses": "max_output_tokens",
+        "openai-completions": "max_completion_tokens",
+        "anthropic-messages": "max_tokens",
+    }[api_type]
+    assert captured[-1][max_tokens_field] == 64
     assert captured[-1].get("stream", False) is (api_type != "openai-completions")
     assert captured[-1]["messages" if api_type != "openai-responses" else "input"]
 

@@ -96,6 +96,10 @@ class MiniSweAgentRuntime:
             model_kwargs["api_base"] = model.base_url
         if model.temperature is not None:
             model_kwargs["temperature"] = model.temperature
+        if model.top_p is not None:
+            model_kwargs["top_p"] = model.top_p
+        if model.max_tokens is not None:
+            model_kwargs["max_tokens"] = model.max_tokens
         self._model = LitellmModel(
             model_name=(
                 model.model if "/" in model.model else f"{model.provider}/{model.model}"
