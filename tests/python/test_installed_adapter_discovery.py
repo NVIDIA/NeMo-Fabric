@@ -322,7 +322,7 @@ def test_installed_nooa_wheel_supplies_adapters_and_targets(
     os.environ["ADAPTER_PYTHON"] = str(python)
 
     assert {
-        str(path.relative_to(descriptor_root))
+        path.relative_to(descriptor_root).as_posix()
         for path in descriptor_root.rglob("*.json")
     } == {
         "nooa.fabric-adapter.json",
