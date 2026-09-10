@@ -1549,7 +1549,7 @@ The model defines the following fields:
 | `enabled` | `bool` | No | `False` | — | — |
 | `agent_name` | `str` | No | `'NeMo Relay'` | — | — |
 | `agent_version` | `str \| None` | No | `None` | — | — |
-| `model_name` | `str` | No | `'unknown'` | — | — |
+| `model_name` | `str \| None` | No | `None` | — | — |
 | `tool_definitions` | `list[dict[str, Any]] \| None` | No | `None` | — | — |
 | `extra` | `dict[str, Any] \| None` | No | `None` | — | — |
 | `output_directory` | `str \| Path \| None` | No | `None` | — | — |

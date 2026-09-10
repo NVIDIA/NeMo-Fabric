@@ -175,7 +175,8 @@ environment that owns the configuration, then install
 `nemo-fabric-adapters-pi` in the project where NeMo Fabric can discover its
 adapter descriptor. Install a compatible Pi SDK harness separately in that
 project; the adapter declares the Pi packages as optional peers so deployments
-control the harness version.
+control the harness version. Relay-enabled Pi runs also require a NeMo Relay
+0.9 CLI and an explicit path to the matching Relay Pi extension.
 
 Capabilities vary by harness. Review the
 [configuration compatibility matrix](adapters/README.md#configuration-compatibility)
@@ -213,9 +214,10 @@ occur inside that sandbox.
 Install `nemo-fabric[harbor]==0.3.0` in the host environment. For a Hermes
 Agent task, use a task image that installs Hermes Agent according to its
 installation guide, then install `nemo-fabric`, `nemo-fabric-adapters-hermes`,
-and optionally `nemo-fabric[relay]` in that environment. For Claude or Codex
-Relay streaming, also provision the external NeMo Relay CLI in the task
-environment. Refer to the
+and optionally `nemo-fabric[relay]` in that environment. For Claude, Codex, or
+Pi Relay telemetry, also provision the adapter-compatible external NeMo Relay
+CLI in the task environment. Pi additionally requires its Relay extension.
+Refer to the
 [Harbor execution model](examples/harbor/README.md#execution-model) for details.
 
 ### Scenario 3: Runtime and Harness in Separate Python Environments

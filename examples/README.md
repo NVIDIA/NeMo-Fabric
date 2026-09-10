@@ -38,6 +38,10 @@ just build-all
   --input "Reply with exactly: NeMo Fabric works"
 ```
 
+The Pi variant supports Relay telemetry with a Relay 0.9 CLI and an explicit
+extension path. Pass `--variant pi --relay --pi-relay-extension-path <PATH>`;
+do not combine the Pi variant with `--stream`.
+
 ## LangGraph Custom Agent
 
 [`langgraph_custom_agent`](langgraph_custom_agent/README.md) demonstrates how

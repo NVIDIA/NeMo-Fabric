@@ -954,7 +954,6 @@ def test_fabric_config_authors_first_class_relay_observability():
             "atif": {
                 "enabled": True,
                 "agent_name": "fabric-tests",
-                "model_name": "unknown",
                 "output_directory": "./artifacts/relay",
                 "filename_template": "trajectory-{session_id}.atif.json",
             },
@@ -989,6 +988,13 @@ def test_fabric_config_authors_first_class_relay_observability():
             "unsupported_value": "error",
         },
     }
+
+
+def test_relay_atif_model_name_serializes_only_when_explicit():
+    assert "model_name" not in RelayAtifConfig(enabled=True).to_mapping()
+    assert RelayAtifConfig(
+        enabled=True, model_name="trajectory-model"
+    ).to_mapping()["model_name"] == "trajectory-model"
 
 
 @pytest.mark.parametrize("version", [1, 2, 4, True, 3.0, "3"])

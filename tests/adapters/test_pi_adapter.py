@@ -16,16 +16,23 @@ from nemo_fabric import FabricConfigError
 from nemo_fabric import HarnessConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
+from nemo_fabric import RelayAtifConfig
+from nemo_fabric import RelayObservabilityConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 DESCRIPTOR = ROOT / "adapters/typescript/pi/pi.fabric-adapter.json"
 
 
-def config(*, api_key_env: str | None = "TEST_API_KEY") -> FabricConfig:
+def config(
+    *,
+    api_key_env: str | None = "TEST_API_KEY",
+    descriptor: Path = DESCRIPTOR,
+    adapter_id: str = "nvidia.fabric.pi",
+) -> FabricConfig:
     return FabricConfig(
         metadata=MetadataConfig(name="pi-adapter-test"),
-        harness=HarnessConfig(adapter_id="nvidia.fabric.pi"),
-        discovery=DiscoveryConfig(local_paths=[DESCRIPTOR]),
+        harness=HarnessConfig(adapter_id=adapter_id),
+        discovery=DiscoveryConfig(local_paths=[descriptor]),
         models={
             "default": ModelConfig(
                 provider="openai",
@@ -53,6 +60,19 @@ def test_pi_descriptor_declares_the_supported_surface():
         "skills",
     ]
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
+    assert descriptor["settings_schema"]["properties"]["relay_extension_path"] == {
+        "type": "string",
+        "minLength": 1,
+        "description": (
+            "Absolute path or environment.workspace-relative path to the "
+            "NeMo Relay 0.9 Pi extension"
+        ),
+    }
+    assert descriptor["telemetry"] == {
+        "providers": {
+            "relay": {"outputs": ["atif", "otel", "openinference"]},
+        }
+    }
     assert descriptor["capabilities"] == {
         "streaming": False,
         "cancellation": False,
@@ -112,6 +132,59 @@ def test_pi_descriptor_plans_and_projects_the_selected_model():
             }
         }
     }
+
+
+def test_pi_descriptor_plans_relay_telemetry():
+    adapter_config = config()
+    adapter_config.enable_relay(output_dir="./artifacts/relay")
+
+    plan = Fabric().plan(adapter_config, base_dir=ROOT)
+
+    assert plan.telemetry_plan == {
+        "providers": ["relay"],
+        "relay_enabled": True,
+        "relay_output_dir": "./artifacts/relay",
+        "adapter_outputs": ["atif", "openinference", "otel"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("model_name", "expected"),
+    [(None, "gpt-4.1-mini"), ("trajectory-model", "trajectory-model")],
+)
+def test_pi_relay_atif_uses_selected_model_unless_overridden(
+    model_name: str | None, expected: str
+):
+    adapter_config = config()
+    adapter_config.enable_relay(
+        observability=RelayObservabilityConfig(
+            atif=RelayAtifConfig(enabled=True, model_name=model_name)
+        )
+    )
+
+    plan = Fabric().plan(adapter_config, base_dir=ROOT)
+
+    relay_config = plan.telemetry_plan["relay_config"]
+    assert relay_config["components"][0]["config"]["atif"]["model_name"] == expected
+
+
+def test_pi_descriptor_rejects_relay_when_support_is_not_declared(tmp_path: Path):
+    unsupported = json.loads(DESCRIPTOR.read_text(encoding="utf-8"))
+    del unsupported["telemetry"]
+    unsupported["adapter_id"] = "test.fabric.pi-no-relay"
+    descriptor = tmp_path / "pi.fabric-adapter.json"
+    descriptor.write_text(json.dumps(unsupported), encoding="utf-8")
+    adapter_config = config(
+        descriptor=descriptor,
+        adapter_id="test.fabric.pi-no-relay",
+    )
+    adapter_config.enable_relay(output_dir="./artifacts/relay")
+
+    with pytest.raises(
+        FabricConfigError,
+        match=r"adapter `test\.fabric\.pi-no-relay` does not support `telemetry\.providers` value `relay`",
+    ):
+        Fabric().plan(adapter_config, base_dir=ROOT)
 
 
 def test_pi_model_schema_requires_a_credential_name():

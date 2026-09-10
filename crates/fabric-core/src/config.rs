@@ -1429,9 +1429,9 @@ pub struct RelayAtifConfig {
     /// Agent version written into ATIF.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_version: Option<String>,
-    /// Model name written into ATIF.
-    #[serde(default = "default_relay_atif_model_name")]
-    pub model_name: String,
+    /// Optional model name override written into ATIF.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_name: Option<String>,
     /// Tool definitions written into ATIF.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_definitions: Option<Vec<Value>>,
@@ -1458,7 +1458,7 @@ impl Default for RelayAtifConfig {
             enabled: false,
             agent_name: default_relay_atif_agent_name(),
             agent_version: None,
-            model_name: default_relay_atif_model_name(),
+            model_name: None,
             tool_definitions: None,
             extra: None,
             output_directory: None,
@@ -1755,10 +1755,6 @@ fn default_enabled() -> bool {
 
 fn default_relay_atif_agent_name() -> String {
     "NeMo Relay".to_string()
-}
-
-fn default_relay_atif_model_name() -> String {
-    "unknown".to_string()
 }
 
 fn default_relay_atif_filename_template() -> String {
@@ -3614,18 +3610,39 @@ fn resolve_telemetry_plan(
             .then(|| relay.and_then(|relay| relay.output_dir.clone()))
             .flatten(),
         relay_config: relay_enabled
-            .then(|| resolve_relay_plugin_config(relay))
+            .then(|| resolve_relay_plugin_config(relay, selected_model_name(config)))
             .flatten(),
         native_config: native_provider.and_then(|provider| provider.config.clone()),
         adapter_outputs,
     }))
 }
 
-fn resolve_relay_plugin_config(relay: Option<&RelayConfig>) -> Option<Value> {
+fn selected_model_name(config: &FabricConfig) -> Option<&str> {
+    config
+        .models
+        .get("default")
+        .or_else(|| {
+            (config.models.len() == 1)
+                .then(|| config.models.values().next())
+                .flatten()
+        })
+        .map(|model| model.model.as_str())
+}
+
+fn resolve_relay_plugin_config(
+    relay: Option<&RelayConfig>,
+    selected_model_name: Option<&str>,
+) -> Option<Value> {
     let relay = relay?;
     let mut components = Vec::new();
 
     if let Some(observability) = relay.observability.as_ref() {
+        let mut observability = observability.clone();
+        if let Some(atif) = observability.atif.as_mut()
+            && atif.model_name.is_none()
+        {
+            atif.model_name = selected_model_name.map(str::to_string);
+        }
         components.push(serde_json::json!({
             "kind": "observability",
             "enabled": true,
@@ -4129,6 +4146,48 @@ mod tests {
             value["opentelemetry"]["endpoints"][0]["service_name"],
             "unknown_service"
         );
+    }
+
+    #[test]
+    fn relay_atif_model_name_uses_selected_model_unless_overridden() {
+        for (role, model_name, expected) in [
+            ("default", None, "test-model"),
+            ("review", None, "test-model"),
+            ("default", Some("trajectory-model"), "trajectory-model"),
+        ] {
+            let mut config = config_with_model("nvidia.fabric.hermes", "nvidia");
+            if role != "default" {
+                let model = config.models.remove("default").expect("default model");
+                config.models.insert(role.to_string(), model);
+            }
+            config.telemetry = Some(
+                serde_json::from_value(serde_json::json!({
+                    "providers": {"relay": {}}
+                }))
+                .expect("Relay telemetry config"),
+            );
+            config.relay = Some(
+                serde_json::from_value(serde_json::json!({
+                    "observability": {
+                        "atif": {
+                            "enabled": true,
+                            "model_name": model_name,
+                        }
+                    }
+                }))
+                .expect("Relay ATIF config"),
+            );
+
+            let telemetry = resolve_telemetry_plan(&config, None)
+                .expect("resolved telemetry")
+                .expect("telemetry plan");
+            let relay_config = telemetry.relay_config.expect("Relay plugin config");
+
+            assert_eq!(
+                relay_config["components"][0]["config"]["atif"]["model_name"],
+                expected
+            );
+        }
     }
 
     #[test]
