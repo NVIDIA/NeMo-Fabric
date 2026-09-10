@@ -976,7 +976,11 @@ pub struct ModelConfig {
     #[schemars(range(min = 0.0, max = 1.0))]
     pub top_p: Option<f64>,
     /// Optional maximum number of response tokens.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_max_tokens",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(range(min = 1, max = u64::MAX))]
     pub max_tokens: Option<u64>,
     /// Optional environment variable containing an API key.
@@ -991,6 +995,46 @@ pub struct ModelConfig {
     /// Additive normalized model fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+fn deserialize_optional_max_tokens<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    let Value::Number(number) = value else {
+        return Err(D::Error::custom("max_tokens must be an integer"));
+    };
+
+    if let Some(value) = number.as_u64() {
+        return Ok(Some(value));
+    }
+    if number.as_i64().is_some_and(|value| value < 0) {
+        // Keep invalid negative values representable until validation so callers
+        // receive the canonical `models.<role>.max_tokens` field path.
+        return Ok(Some(0));
+    }
+    if let Some(value) = number.as_f64()
+        && value.is_finite()
+        && value.fract() == 0.0
+    {
+        if value < 0.0 {
+            return Ok(Some(0));
+        }
+        // u64::MAX rounds to 2^64 as f64, so the strict comparison also rejects
+        // floating-point values outside the u64 domain.
+        if value < u64::MAX as f64 {
+            return Ok(Some(value as u64));
+        }
+    }
+
+    Err(D::Error::custom(
+        "max_tokens must be an integer between 0 and 18446744073709551615",
+    ))
 }
 
 /// Invocation runtime contract.
@@ -4799,7 +4843,7 @@ mod tests {
             "provider": "nvidia",
             "model": "test-model",
             "top_p": 0.8,
-            "max_tokens": 512
+            "max_tokens": 512.0
         }))
         .expect("existing flattened sampling config");
 
@@ -4812,6 +4856,23 @@ mod tests {
         assert_eq!(encoded["top_p"], serde_json::json!(0.8));
         assert_eq!(encoded["max_tokens"], serde_json::json!(512));
         assert!(encoded.get("extensions").is_none());
+    }
+
+    #[test]
+    fn negative_wire_max_tokens_reports_the_canonical_field() {
+        let mut value = serde_json::to_value(config_with_model("nvidia.fabric.hermes", "nvidia"))
+            .expect("serialize config");
+        value["models"]["default"]["max_tokens"] = serde_json::json!(-5);
+
+        let config: FabricConfig =
+            serde_json::from_value(value).expect("preserve invalid value for validation");
+        let error = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect_err("negative max_tokens");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidConfig { field, .. } if field == "models.default.max_tokens"
+        ));
     }
 
     #[test]

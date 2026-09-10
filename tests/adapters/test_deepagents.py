@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+from langchain_openai import ChatOpenAI as InstalledChatOpenAI
 from langgraph.errors import GraphRecursionError
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -2171,6 +2172,16 @@ async def test_openai_compatible_model_receives_normalized_sampling(
         top_p=0.8,
         max_completion_tokens=256,
     )
+
+
+def test_openai_max_tokens_keyword_matches_installed_chat_openai_signature():
+    kwargs = adapter._supported_kwargs(
+        InstalledChatOpenAI,
+        {"max_completion_tokens": 256, "max_tokens": 128},
+    )
+
+    assert kwargs["max_completion_tokens"] == 256
+    assert "max_tokens" not in kwargs
 
 
 async def test_generic_model_receives_normalized_sampling(
