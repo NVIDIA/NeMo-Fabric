@@ -175,12 +175,16 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | Conversation history | Adapter-owned subclass with NeMo Relay Python SDK scopes | Creates a fresh Relay plugin and request scope, emits step, model, and bash-action telemetry, and collects artifacts | Clears the agent and Relay state | Not implemented |
 | [NOOA](python/nooa/README.md) | InteractiveAgent queue dispatcher or BenchAgent task state | Adapter-owned Relay middleware and generated Relay configuration | InteractiveAgent dispatches queued requests; BenchAgent evaluates one task | Closes agent resources and Relay state | Not implemented |
 | [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Not supported | Reuses the session and calls `prompt()` for ordered text input | Aborts work, emits extension shutdown, and disposes the session | Not implemented |
-| [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Not supported | Sends one HTTP request and retains the completed transcript | Closes the HTTP client | Not implemented |
+| [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a shared ATOF collector | Registers the request ID, maps it into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |
 
 Telemetry output names use the descriptor contract values. Claude, Codex,
 Hermes Agent, and mini-SWE-agent can emit NeMo Relay ATIF, OpenTelemetry, and
 OpenInference output. Deep Agents supports the same Relay outputs plus native
-OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry.
+OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry. The
+Remote Agent adapter maps the request ID into the remote API body. The
+independently instrumented service publishes correlated ATOF to the collector
+base URL shared by its Relay configuration and `FabricConfig`. The collector can
+serve multiple runtimes when each request ID is unique.
 
 Shared lifecycle, Relay gateway, hook, and payload helpers are documented in
 the [adapter utilities guide](python/common/README.md).
