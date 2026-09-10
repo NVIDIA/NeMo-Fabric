@@ -855,6 +855,12 @@ pub enum AdapterConfigField {
     /// Model temperature.
     #[serde(rename = "models.temperature")]
     ModelTemperature,
+    /// Model nucleus sampling probability.
+    #[serde(rename = "models.top_p")]
+    ModelTopP,
+    /// Maximum model response tokens.
+    #[serde(rename = "models.max_tokens")]
+    ModelMaxTokens,
     /// Portable system instructions.
     #[serde(rename = "instructions.system")]
     SystemInstructions,
@@ -965,6 +971,14 @@ pub struct ModelConfig {
     /// Optional temperature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    /// Optional nucleus sampling probability.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub top_p: Option<f64>,
+    /// Optional maximum number of response tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
+    pub max_tokens: Option<u64>,
     /// Optional environment variable containing an API key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key_env: Option<String>,
@@ -1880,6 +1894,20 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                 "must be a non-empty string",
             );
         }
+        if let Some(top_p) = model.top_p
+            && (!top_p.is_finite() || !(0.0..=1.0).contains(&top_p))
+        {
+            return invalid_config(
+                format!("models.{role}.top_p"),
+                "must be a finite number between zero and one",
+            );
+        }
+        if model.max_tokens == Some(0) {
+            return invalid_config(
+                format!("models.{role}.max_tokens"),
+                "must be greater than zero",
+            );
+        }
     }
     if let Some(environment) = &config.environment {
         for name in environment.env.keys() {
@@ -2542,6 +2570,18 @@ pub(crate) fn adapter_config_compatibility_issues(
         if model.temperature.is_some() && !accepts(AdapterConfigField::ModelTemperature) {
             issues.push(incompatible(
                 format!("models.{role}.temperature"),
+                "the adapter does not declare an equivalent native mapping".to_string(),
+            ));
+        }
+        if model.top_p.is_some() && !accepts(AdapterConfigField::ModelTopP) {
+            issues.push(incompatible(
+                format!("models.{role}.top_p"),
+                "the adapter does not declare an equivalent native mapping".to_string(),
+            ));
+        }
+        if model.max_tokens.is_some() && !accepts(AdapterConfigField::ModelMaxTokens) {
+            issues.push(incompatible(
+                format!("models.{role}.max_tokens"),
                 "the adapter does not declare an equivalent native mapping".to_string(),
             ));
         }
@@ -3986,6 +4026,8 @@ mod tests {
                 provider: provider.to_string(),
                 model: "test-model".to_string(),
                 temperature: None,
+                top_p: None,
+                max_tokens: None,
                 api_key_env: None,
                 base_url: None,
                 settings: serde_json::Map::new(),
@@ -4700,57 +4742,76 @@ mod tests {
     }
 
     #[test]
-    fn hermes_model_extensions_are_validated_and_projected() {
+    fn hermes_normalized_model_sampling_is_validated_and_projected() {
         let mut config = config_with_model("nvidia.fabric.hermes", "nvidia");
         let model = config.models.get_mut("default").expect("default model");
-        model
-            .extensions
-            .insert("top_p".to_string(), serde_json::json!(0.85));
-        model
-            .extensions
-            .insert("max_tokens".to_string(), serde_json::json!(768));
+        model.top_p = Some(0.85);
+        model.max_tokens = Some(768);
 
         let plan = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
-            .expect("Hermes model extensions");
+            .expect("Hermes normalized model sampling");
         let model = plan
             .agent_config
             .models
             .get("default")
             .expect("projected default model");
 
-        assert_eq!(
-            model.extensions.get("top_p"),
-            Some(&serde_json::json!(0.85))
-        );
-        assert_eq!(
-            model.extensions.get("max_tokens"),
-            Some(&serde_json::json!(768))
-        );
+        assert_eq!(model.top_p, Some(0.85));
+        assert_eq!(model.max_tokens, Some(768));
     }
 
     #[test]
-    fn hermes_model_extensions_reject_invalid_sampling_values() {
+    fn normalized_model_sampling_rejects_invalid_values() {
         let mut config = config_with_model("nvidia.fabric.hermes", "nvidia");
         config
             .models
             .get_mut("default")
             .expect("default model")
-            .extensions
-            .insert("top_p".to_string(), serde_json::json!(1.1));
+            .top_p = Some(1.1);
 
         let error = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
             .expect_err("top_p above one");
 
-        assert!(
-            matches!(
-                error,
-                FabricError::InvalidAdapterExtension {
-                    ref extension_path,
-                    ..
-                } if extension_path == "models.default.top_p"
-            ),
-            "{error:?}"
-        );
+        assert!(matches!(
+            error,
+            FabricError::InvalidConfig { field, .. } if field == "models.default.top_p"
+        ));
+
+        let mut config = config_with_model("nvidia.fabric.hermes", "nvidia");
+        config
+            .models
+            .get_mut("default")
+            .expect("default model")
+            .max_tokens = Some(0);
+
+        let error = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect_err("zero max_tokens");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidConfig { field, .. } if field == "models.default.max_tokens"
+        ));
+    }
+
+    #[test]
+    fn flattened_sampling_extensions_keep_their_wire_shape_when_normalized() {
+        let model: ModelConfig = serde_json::from_value(serde_json::json!({
+            "provider": "nvidia",
+            "model": "test-model",
+            "top_p": 0.8,
+            "max_tokens": 512
+        }))
+        .expect("existing flattened sampling config");
+
+        assert_eq!(model.top_p, Some(0.8));
+        assert_eq!(model.max_tokens, Some(512));
+        assert!(!model.extensions.contains_key("top_p"));
+        assert!(!model.extensions.contains_key("max_tokens"));
+
+        let encoded = serde_json::to_value(model).expect("normalized model JSON");
+        assert_eq!(encoded["top_p"], serde_json::json!(0.8));
+        assert_eq!(encoded["max_tokens"], serde_json::json!(512));
+        assert!(encoded.get("extensions").is_none());
     }
 
     #[test]
@@ -5029,6 +5090,8 @@ mod tests {
                 provider: "nvidia".to_string(),
                 model: "nvidia/test".to_string(),
                 temperature: Some(0.2),
+                top_p: Some(0.8),
+                max_tokens: Some(512),
                 api_key_env: Some("NVIDIA_API_KEY".to_string()),
                 base_url: Some("https://models.example/v1".to_string()),
                 settings: serde_json::Map::new(),
@@ -5244,6 +5307,8 @@ mod tests {
                     provider: provider.to_string(),
                     model: "default-model".to_string(),
                     temperature: None,
+                    top_p: None,
+                    max_tokens: None,
                     api_key_env: None,
                     base_url: None,
                     settings: serde_json::Map::new(),
@@ -5256,6 +5321,8 @@ mod tests {
                     provider: provider.to_string(),
                     model: "test-model".to_string(),
                     temperature: Some(0.2),
+                    top_p: None,
+                    max_tokens: None,
                     api_key_env: None,
                     base_url: None,
                     settings: serde_json::Map::new(),
@@ -5289,6 +5356,8 @@ mod tests {
                 provider: "anthropic".to_string(),
                 model: "default-model".to_string(),
                 temperature: None,
+                top_p: None,
+                max_tokens: None,
                 api_key_env: None,
                 base_url: None,
                 settings: serde_json::Map::new(),
@@ -5301,6 +5370,8 @@ mod tests {
                 provider: "anthropic".to_string(),
                 model: "review-model".to_string(),
                 temperature: None,
+                top_p: None,
+                max_tokens: None,
                 api_key_env: None,
                 base_url: Some("https://example.test/v1".to_string()),
                 settings: serde_json::Map::new(),
@@ -5364,6 +5435,8 @@ mod tests {
                     provider: "acme".to_string(),
                     model: "review-model".to_string(),
                     temperature: None,
+                    top_p: None,
+                    max_tokens: None,
                     api_key_env: None,
                     base_url: None,
                     settings: serde_json::Map::new(),
@@ -5413,6 +5486,96 @@ mod tests {
     }
 
     #[test]
+    fn supporting_adapters_project_normalized_model_sampling() {
+        for adapter_id in [
+            "nvidia.fabric.langchain.deepagents",
+            "nvidia.fabric.hermes",
+            "nvidia.fabric.mini-swe-agent",
+            "nvidia.fabric.remote-agent",
+        ] {
+            let mut config = config_with_model(adapter_id, "nvidia");
+            config.skills = None;
+            let model = config.models.get_mut("default").expect("default model");
+            model.top_p = Some(0.8);
+            model.max_tokens = Some(256);
+
+            if adapter_id == "nvidia.fabric.remote-agent" {
+                config.harness.as_mut().expect("harness").settings.insert(
+                    "base_url".to_string(),
+                    serde_json::json!("https://agent.example/v1"),
+                );
+            }
+
+            let plan = resolve_run_plan_from_config(
+                config,
+                ResolveContext::new("/tmp/fabric-model-sampling"),
+            )
+            .unwrap_or_else(|error| panic!("valid {adapter_id} model sampling: {error}"));
+            let model = plan
+                .agent_config
+                .models
+                .get("default")
+                .expect("projected default model");
+
+            assert_eq!(model.top_p, Some(0.8), "{adapter_id}");
+            assert_eq!(model.max_tokens, Some(256), "{adapter_id}");
+        }
+    }
+
+    #[test]
+    fn adapters_without_normalized_model_sampling_reject_it() {
+        let mut config = config_with_model("nvidia.fabric.claude", "anthropic");
+        let model = config.models.get_mut("default").expect("default model");
+        model.top_p = Some(0.8);
+        model.max_tokens = Some(256);
+
+        let issues = adapter_config_compatibility_issues(
+            &config,
+            Some(
+                &load_adapter_descriptor(
+                    repository_root().join("adapters/python/claude/claude.fabric-adapter.json"),
+                )
+                .expect("Claude descriptor"),
+            ),
+        )
+        .into_iter()
+        .map(|issue| issue.field)
+        .collect::<BTreeSet<_>>();
+
+        assert!(issues.contains("models.default.top_p"));
+        assert!(issues.contains("models.default.max_tokens"));
+    }
+
+    #[test]
+    fn deepagents_model_schema_accepts_omitted_options_and_rejects_settings() {
+        resolve_run_plan_from_config(
+            config_with_model("nvidia.fabric.langchain.deepagents", "nvidia"),
+            ResolveContext::new("/tmp/fabric-deepagents-omitted-model-options"),
+        )
+        .expect("omitted Deep Agents model options");
+
+        let mut config = config_with_model("nvidia.fabric.langchain.deepagents", "nvidia");
+        config
+            .models
+            .get_mut("default")
+            .expect("default model")
+            .settings
+            .insert("top_p".to_string(), serde_json::json!(0.8));
+
+        let error = resolve_run_plan_from_config(
+            config,
+            ResolveContext::new("/tmp/fabric-deepagents-model-settings"),
+        )
+        .expect_err("undeclared Deep Agents model setting");
+
+        assert!(matches!(
+            error,
+            FabricError::AdapterCompatibility { field, .. }
+                if field == "models.default.settings.top_p"
+        ));
+    }
+
+    #[test]
     fn unsupported_enabled_tools_report_canonical_field() {
         let adapter_id = "nvidia.fabric.codex";
         let mut config = typed_config(adapter_id);
@@ -5446,6 +5609,8 @@ mod tests {
                 provider: "anthropic".to_string(),
                 model: "claude-test".to_string(),
                 temperature: None,
+                top_p: None,
+                max_tokens: None,
                 api_key_env: None,
                 base_url: None,
                 settings: serde_json::Map::new(),
@@ -5467,6 +5632,8 @@ mod tests {
                     provider: "anthropic".to_string(),
                     model: format!("claude-{role}"),
                     temperature: None,
+                    top_p: None,
+                    max_tokens: None,
                     api_key_env: None,
                     base_url: None,
                     settings: serde_json::Map::new(),

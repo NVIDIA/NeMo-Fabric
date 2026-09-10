@@ -39,6 +39,8 @@ export type AdapterConfigField =
   | "models"
   | "models.base_url"
   | "models.temperature"
+  | "models.top_p"
+  | "models.max_tokens"
   | "instructions.system"
   | "runtime.max_turns"
   | "tools.enabled"

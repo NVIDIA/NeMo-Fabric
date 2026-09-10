@@ -147,6 +147,8 @@ class AgentModelConfig(AgentContractBlock):
     model: str
     api_key_env: str | None = _optional()
     temperature: float | None = _optional()
+    top_p: float | None = _optional()
+    max_tokens: int | None = _optional()
     base_url: str | None = _optional()
     settings: dict[str, JsonValue] = _json_dict()
 
@@ -163,6 +165,16 @@ class AgentModelConfig(AgentContractBlock):
         _nonblank(self.model, "model")
         if self.api_key_env is not None:
             _nonblank(self.api_key_env, "api_key_env")
+        if self.top_p is not None and not 0 <= self.top_p <= 1:
+            raise ContractValidationError(
+                "must be between zero and one",
+                path=("top_p",),
+            )
+        if self.max_tokens is not None and self.max_tokens < 1:
+            raise ContractValidationError(
+                "must be greater than zero",
+                path=("max_tokens",),
+            )
         if self.base_url is not None:
             _nonblank(self.base_url, "base_url")
 

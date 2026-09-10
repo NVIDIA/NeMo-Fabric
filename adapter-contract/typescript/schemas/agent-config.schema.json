@@ -185,6 +185,15 @@
           "description": "Adapter-owned model fields.",
           "type": "object"
         },
+        "max_tokens": {
+          "description": "Optional maximum number of response tokens.",
+          "format": "uint64",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "model": {
           "description": "Provider model identifier.",
           "minLength": 1,
@@ -205,6 +214,16 @@
         "temperature": {
           "description": "Optional model temperature.",
           "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "top_p": {
+          "description": "Optional nucleus sampling probability.",
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
           "type": [
             "number",
             "null"

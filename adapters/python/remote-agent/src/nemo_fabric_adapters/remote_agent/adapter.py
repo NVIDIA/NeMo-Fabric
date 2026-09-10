@@ -292,6 +292,10 @@ class RemoteAgentRuntime:
             payload["instructions"] = config.instructions.system.content
         if model.temperature is not None:
             payload["temperature"] = model.temperature
+        if model.top_p is not None:
+            payload["top_p"] = model.top_p
+        if model.max_tokens is not None:
+            payload["max_output_tokens"] = model.max_tokens
         if metadata is not None:
             payload["metadata"] = metadata
         async with self._client.stream("POST", self._endpoint, json=payload) as response:
@@ -325,6 +329,10 @@ class RemoteAgentRuntime:
         payload: dict[str, Any] = {"model": model.model, "messages": messages}
         if model.temperature is not None:
             payload["temperature"] = model.temperature
+        if model.top_p is not None:
+            payload["top_p"] = model.top_p
+        if model.max_tokens is not None:
+            payload["max_completion_tokens"] = model.max_tokens
         if metadata is not None:
             payload["metadata"] = metadata
         response = await self._client.post(self._endpoint, json=payload)
@@ -349,15 +357,16 @@ class RemoteAgentRuntime:
         payload: dict[str, Any] = {
             "model": model.model,
             "messages": [*self._messages, {"role": "user", "content": user_text}],
-            "max_tokens": model.settings.get(
-                "max_tokens", DEFAULT_ANTHROPIC_MAX_TOKENS
-            ),
+            "max_tokens": model.max_tokens
+            or model.settings.get("max_tokens", DEFAULT_ANTHROPIC_MAX_TOKENS),
             "stream": True,
         }
         if config.instructions and config.instructions.system:
             payload["system"] = config.instructions.system.content
         if model.temperature is not None:
             payload["temperature"] = model.temperature
+        if model.top_p is not None:
+            payload["top_p"] = model.top_p
         if metadata is not None:
             payload["metadata"] = metadata
         text = ""

@@ -272,6 +272,8 @@ class ModelConfig(FabricBaseModel):
     model: str = Field(min_length=1)
     api_key_env: str | None = None
     temperature: float | None = None
+    top_p: float | None = Field(default=None, ge=0, le=1)
+    max_tokens: int | None = Field(default=None, strict=True, gt=0)
     base_url: str | None = Field(default=None, min_length=1)
     settings: dict[str, Any] = Field(default_factory=dict)
 

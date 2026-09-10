@@ -127,6 +127,7 @@ and additive extension maps because their support does not vary by adapter:
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | Yes | Yes; known catalog models only | No; use `harness.settings.base_url` |
 | `models.<role>.temperature` | No | No | Yes | Yes | Yes | Yes | No | Yes |
 | `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | `client_type` | No keys declared | `max_tokens` for Anthropic Messages |
+| `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM | No | No | Yes; translated to the selected API protocol |
 | `instructions.system` | `replace`, `append` | `replace`; base instructions | `replace` | `replace` | `replace` | `replace` | `replace`; Pi base instructions | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core | Core |
