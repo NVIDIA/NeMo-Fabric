@@ -101,103 +101,6 @@ def package_directory_fixture(tmp_path: Path) -> Path:
     return package_directory
 
 
-def test_runtime_dependencies_are_preflighted_against_npm(
-    package_directory: Path,
-):
-    dependency = "nemo-fabric-adapters-common"
-    dependency_version = "0.3.0"
-    manifest = json.loads(
-        (package_directory / "package.json").read_text(encoding="utf-8")
-    )
-    manifest["dependencies"] = {dependency: dependency_version}
-    (package_directory / "package.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
-    runner = NpmRunner(
-        [
-            (["pack", "--json", "--ignore-scripts"], _pack_result()),
-            (
-                ["view", f"{dependency}@{dependency_version}", "version"],
-                _result(dependency_version),
-            ),
-            *_exact_view_responses(),
-        ]
-    )
-
-    publish_typescript_package.publish_package(
-        package_directory,
-        VERSION,
-        "latest",
-        run_npm=runner,
-        sleep=lambda _: None,
-    )
-
-    runner.assert_finished()
-
-
-def test_unpublished_runtime_dependency_blocks_publication(
-    package_directory: Path,
-):
-    dependency = "nemo-fabric-adapters-common"
-    dependency_version = "0.3.0"
-    manifest = json.loads(
-        (package_directory / "package.json").read_text(encoding="utf-8")
-    )
-    manifest["dependencies"] = {dependency: dependency_version}
-    (package_directory / "package.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
-    missing = _result(returncode=1, stderr="npm error code E404")
-    runner = NpmRunner(
-        [
-            (["pack", "--json", "--ignore-scripts"], _pack_result()),
-            (["view", f"{dependency}@{dependency_version}", "version"], missing),
-        ]
-    )
-
-    with pytest.raises(
-        publish_typescript_package.PublicationError,
-        match=(
-            "Required runtime dependency "
-            f"{dependency}@{dependency_version} is not published"
-        ),
-    ):
-        publish_typescript_package.publish_package(
-            package_directory,
-            VERSION,
-            "latest",
-            run_npm=runner,
-            sleep=lambda _: None,
-        )
-
-    runner.assert_finished()
-
-
-def test_runtime_dependency_versions_must_be_exact(package_directory: Path):
-    manifest = json.loads(
-        (package_directory / "package.json").read_text(encoding="utf-8")
-    )
-    manifest["dependencies"] = {"nemo-fabric-adapters-common": "^0.3.0"}
-    (package_directory / "package.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
-    runner = NpmRunner([(["pack", "--json", "--ignore-scripts"], _pack_result())])
-
-    with pytest.raises(
-        publish_typescript_package.PublicationError,
-        match=r"must use an exact npm version, got \^0\.3\.0",
-    ):
-        publish_typescript_package.publish_package(
-            package_directory,
-            VERSION,
-            "latest",
-            run_npm=runner,
-            sleep=lambda _: None,
-        )
-
-    runner.assert_finished()
-
-
 def _exact_view_responses(
     *,
     integrity: str = INTEGRITY,
@@ -220,7 +123,7 @@ def test_invalid_readme_encoding_fails_closed(package_directory: Path):
         publish_typescript_package.PublicationError,
         match=r"Package README\.md could not be read",
     ):
-        publish_typescript_package.publish_package(
+        publish_typescript_package.verify_package(
             package_directory,
             VERSION,
             "latest",
@@ -243,7 +146,7 @@ def test_existing_exact_package_without_registry_readme_is_idempotent_success(
         ]
     )
 
-    publish_typescript_package.publish_package(
+    publish_typescript_package.verify_package(
         package_directory,
         VERSION,
         dist_tag,
@@ -288,7 +191,7 @@ def test_existing_conflicting_package_fails(
         publish_typescript_package.PublicationError,
         match=error,
     ):
-        publish_typescript_package.publish_package(
+        publish_typescript_package.verify_package(
             package_directory,
             VERSION,
             dist_tag,
@@ -313,7 +216,7 @@ def test_packed_artifact_must_include_readme(package_directory: Path):
         publish_typescript_package.PublicationError,
         match=r"Packed artifact is missing README\.md",
     ):
-        publish_typescript_package.publish_package(
+        publish_typescript_package.verify_package(
             package_directory,
             VERSION,
             "latest",
@@ -325,7 +228,7 @@ def test_packed_artifact_must_include_readme(package_directory: Path):
 
 
 @pytest.mark.parametrize("dist_tag", ["alpha", "latest", "next"])
-def test_absent_package_publishes_directory_and_verifies(
+def test_absent_package_publishes_directory(
     package_directory: Path,
     dist_tag: str,
 ):
@@ -347,7 +250,6 @@ def test_absent_package_publishes_directory_and_verifies(
                 ],
                 _result("published"),
             ),
-            *_exact_view_responses(dist_tag=dist_tag),
         ]
     )
 
@@ -356,7 +258,6 @@ def test_absent_package_publishes_directory_and_verifies(
         VERSION,
         dist_tag,
         run_npm=runner,
-        sleep=lambda _: None,
     )
 
     runner.assert_finished()
@@ -377,12 +278,11 @@ def test_non_404_lookup_failure_fails_closed(package_directory: Path):
         publish_typescript_package.PublicationError,
         match="E503",
     ):
-        publish_typescript_package.publish_package(
+        publish_typescript_package.verify_package(
             package_directory,
             VERSION,
             "latest",
             run_npm=runner,
-            sleep=lambda _: None,
         )
 
     runner.assert_finished()
@@ -411,13 +311,12 @@ def test_dist_tag_cannot_move_backward(
             VERSION,
             dist_tag,
             run_npm=runner,
-            sleep=lambda _: None,
         )
 
     runner.assert_finished()
 
 
-def test_ambiguous_publish_failure_reconciles_registry_state(package_directory: Path):
+def test_publish_failure_is_reported(package_directory: Path):
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
@@ -436,17 +335,19 @@ def test_ambiguous_publish_failure_reconciles_registry_state(package_directory: 
                 ],
                 _result(returncode=1, stderr="network connection closed"),
             ),
-            *_exact_view_responses(),
         ]
     )
 
-    publish_typescript_package.publish_package(
-        package_directory,
-        VERSION,
-        "latest",
-        run_npm=runner,
-        sleep=lambda _: None,
-    )
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match="npm publish failed: network connection closed",
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+        )
 
     runner.assert_finished()
 
@@ -458,7 +359,7 @@ def test_invalid_dist_tag_fails_before_packing(package_directory: Path):
         publish_typescript_package.PublicationError,
         match="Unsupported npm dist-tag: beta",
     ):
-        publish_typescript_package.publish_package(
+        publish_typescript_package.verify_package(
             package_directory,
             VERSION,
             "beta",
@@ -479,7 +380,7 @@ def test_invalid_verification_attempts_fail_before_packing(
         publish_typescript_package.PublicationError,
         match="At least one registry verification attempt is required",
     ):
-        publish_typescript_package.publish_package(
+        publish_typescript_package.verify_package(
             package_directory,
             VERSION,
             "latest",
@@ -552,25 +453,10 @@ def test_packed_tarball_must_exist(package_directory: Path):
     runner.assert_finished()
 
 
-def test_visible_post_publish_conflict_fails_without_retry(package_directory: Path):
-    missing = _result(returncode=1, stderr="npm error code E404")
+def test_visible_verification_conflict_fails_without_retry(package_directory: Path):
     runner = NpmRunner(
         [
             (["pack", "--json", "--ignore-scripts"], _pack_result()),
-            (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
-            (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
-            (
-                [
-                    "publish",
-                    ".",
-                    "--ignore-scripts",
-                    "--access",
-                    "public",
-                    "--tag",
-                    "latest",
-                ],
-                _result(returncode=1, stderr="network connection closed"),
-            ),
             *_exact_view_responses(integrity="sha512-conflict"),
         ]
     )
@@ -580,7 +466,7 @@ def test_visible_post_publish_conflict_fails_without_retry(package_directory: Pa
         publish_typescript_package.PublicationError,
         match="Expected integrity",
     ):
-        publish_typescript_package.publish_package(
+        publish_typescript_package.verify_package(
             package_directory,
             VERSION,
             "latest",
@@ -592,25 +478,11 @@ def test_visible_post_publish_conflict_fails_without_retry(package_directory: Pa
     runner.assert_finished()
 
 
-def test_failed_publish_exhaustion_reports_both_failures(package_directory: Path):
+def test_verification_exhaustion_reports_failure(package_directory: Path):
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
             (["pack", "--json", "--ignore-scripts"], _pack_result()),
-            (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
-            (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
-            (
-                [
-                    "publish",
-                    ".",
-                    "--ignore-scripts",
-                    "--access",
-                    "public",
-                    "--tag",
-                    "latest",
-                ],
-                _result(returncode=1, stderr="network connection closed"),
-            ),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
@@ -621,7 +493,7 @@ def test_failed_publish_exhaustion_reports_both_failures(package_directory: Path
     with pytest.raises(
         publish_typescript_package.PublicationError,
     ) as error:
-        publish_typescript_package.publish_package(
+        publish_typescript_package.verify_package(
             package_directory,
             VERSION,
             "latest",
@@ -631,9 +503,7 @@ def test_failed_publish_exhaustion_reports_both_failures(package_directory: Path
         )
 
     message = str(error.value)
-    assert "npm publish failed: network connection closed" in message
-    assert "registry verification also failed" in message
-    assert "package version is not visible in npm" in message
+    assert "Verification failed: The package version is not visible in npm" in message
     assert delays == [5, 10]
     runner.assert_finished()
 

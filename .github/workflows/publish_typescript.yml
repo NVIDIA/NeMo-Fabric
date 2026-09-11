@@ -7,11 +7,7 @@ on:
   push:
     tags:
       - 'v*'
-      - 'npm/nemo-fabric-adapters-common/v*'
-      - 'npm/nemo-fabric-adapters-pi/v*'
       - '!v*-alpha*'
-      - '!npm/nemo-fabric-adapters-common/v*-alpha*'
-      - '!npm/nemo-fabric-adapters-pi/v*-alpha*'
 
 concurrency:
   group: publish-typescript
@@ -103,25 +99,10 @@ jobs:
 
           case "$RELEASE_TAG" in
             v*)
-              package_name="nemo-fabric-adapter-contract"
-              package_directory="adapter-contract/typescript"
-              test_recipe="test-typescript"
               version_tag="$RELEASE_TAG"
               ;;
-            npm/nemo-fabric-adapters-common/v*)
-              package_name="nemo-fabric-adapters-common"
-              package_directory="adapters/typescript/common"
-              test_recipe="test-typescript-adapters"
-              version_tag="${RELEASE_TAG##*/}"
-              ;;
-            npm/nemo-fabric-adapters-pi/v*)
-              package_name="nemo-fabric-adapters-pi"
-              package_directory="adapters/typescript/pi"
-              test_recipe="test-typescript-adapters"
-              version_tag="${RELEASE_TAG##*/}"
-              ;;
             *)
-              echo "Unsupported TypeScript package tag: $RELEASE_TAG" >&2
+              echo "Unsupported TypeScript release tag: $RELEASE_TAG" >&2
               exit 1
               ;;
           esac
@@ -143,40 +124,47 @@ jobs:
 
           python3 scripts/ci/set_typescript_project_version.py "$version"
           {
-            echo "package_name=$package_name"
-            echo "package_directory=$package_directory"
-            echo "test_recipe=$test_recipe"
             echo "version=$version"
             echo "dist_tag=$dist_tag"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Test package
-        env:
-          RELEASE_TEST_RECIPE: ${{ steps.release.outputs.test_recipe }}
-        run: just "$RELEASE_TEST_RECIPE"
-
-      - name: Verify published dependencies
-        if: steps.release.outputs.package_name != 'nemo-fabric-adapter-contract'
-        env:
-          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
-          PACKAGE_NAME: ${{ steps.release.outputs.package_name }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+      - name: Test packages
         run: |
-          set -euo pipefail
-          npm view "nemo-fabric-adapter-contract@${RELEASE_VERSION}" version
-          if [[ "$PACKAGE_NAME" == "nemo-fabric-adapters-pi" ]]; then
-            npm view "nemo-fabric-adapters-common@${RELEASE_VERSION}" version
-          fi
+          just test-typescript
+          just test-typescript-adapters
 
-      - name: Publish package
+      - name: Publish packages
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org
-          PACKAGE_DIRECTORY: ${{ steps.release.outputs.package_directory }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_DIST_TAG: ${{ steps.release.outputs.dist_tag }}
         run: |
           set -euo pipefail
-          python3 scripts/ci/publish_typescript_package.py \
-            --package-directory "$PACKAGE_DIRECTORY" \
-            --version "$RELEASE_VERSION" \
-            --dist-tag "$RELEASE_DIST_TAG"
+          for package_directory in \
+            adapter-contract/typescript \
+            adapters/typescript/common \
+            adapters/typescript/pi; do
+            python3 scripts/ci/publish_typescript_package.py \
+              --action publish \
+              --package-directory "$package_directory" \
+              --version "$RELEASE_VERSION" \
+              --dist-tag "$RELEASE_DIST_TAG"
+          done
+
+      - name: Verify packages
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_DIST_TAG: ${{ steps.release.outputs.dist_tag }}
+        run: |
+          set -euo pipefail
+          for package_directory in \
+            adapter-contract/typescript \
+            adapters/typescript/common \
+            adapters/typescript/pi; do
+            python3 scripts/ci/publish_typescript_package.py \
+              --action verify \
+              --package-directory "$package_directory" \
+              --version "$RELEASE_VERSION" \
+              --dist-tag "$RELEASE_DIST_TAG"
+          done
