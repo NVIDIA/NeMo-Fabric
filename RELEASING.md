@@ -241,8 +241,7 @@ Before the first supported TypeScript package release:
    account-level two-factor authentication.
 2. Create and protect the GitHub `npmjs` environment. Require the release
    approvers who should authorize registry publication, and restrict deployment
-   tags to canonical release tags matching `v*` and adapter publication tags
-   matching `npm/nemo-fabric-adapters-*/v*`.
+   tags to canonical release tags matching `v*`.
 3. Configure each package's single trusted publisher in npm with the common
    values below and the package-specific workflow filename shown in the table.
    The values are case-sensitive.
@@ -258,11 +257,9 @@ Before the first supported TypeScript package release:
    | `nemo-fabric-adapters-common` | `publish_typescript.yml` |
    | `nemo-fabric-adapters-pi` | `publish_typescript.yml` |
 
-4. Cut the canonical release tag first. After the contract version is visible
-   on npm, create the Common adapter tag at the same commit. After Common is
-   visible, create the Pi adapter tag at that commit. Release coordination is
-   responsible for keeping these tags aligned; the publishing workflow does not
-   compare adapter tags with the canonical tag.
+4. Cut the canonical release tag. The publishing workflow uses that tag to
+   publish the contract, Common adapter, and Pi adapter packages in dependency
+   order, then verifies them in that order.
 5. Approve the `npmjs` environment when prompted. The workflows test, pack, and
    publish through OIDC; do not manually pre-publish a supported version. On a
    retry, a workflow exits without republishing only when its repack has
@@ -413,44 +410,23 @@ git push upstream "refs/tags/${RELEASE_TAG}"
 
 ## Publish the TypeScript Adapter Packages
 
-After the canonical beta, RC, or stable tag publishes the contract package,
-publish the bundled adapter packages in dependency order. Every package tag
-must use the canonical release version and point to the canonical tag's commit.
-
-```bash
-export NPM_CONFIG_REGISTRY=https://registry.npmjs.org
-RELEASE_SHA="$(git rev-parse "${RELEASE_TAG}^{commit}")"
-
-npm view "nemo-fabric-adapter-contract@${RELEASE_VERSION}" version
-
-for package in nemo-fabric-adapters-common nemo-fabric-adapters-pi; do
-  package_tag="npm/${package}/v${RELEASE_VERSION}"
-  git tag -s -a \
-    -m "${package} ${RELEASE_VERSION}" \
-    "$package_tag" \
-    "$RELEASE_SHA"
-  test "$(git rev-parse "${package_tag}^{commit}")" = "$RELEASE_SHA"
-  git push upstream "refs/tags/${package_tag}"
-
-  # Wait for this publication to finish before advancing to its dependent.
-  npm view "${package}@${RELEASE_VERSION}" version
-done
-```
-
-Do not create npm package tags for alpha versions. The nightly workflow runs
-the TypeScript tests against the alpha tag without publishing to npm.
+Pushing the canonical beta, RC, or stable tag publishes the contract, Common
+adapter, and Pi adapter packages in dependency order. The workflow submits all
+three packages before it starts deployment verification, then verifies them in
+the same order. Do not create package-specific npm tags. The nightly workflow
+runs the TypeScript tests against alpha tags without publishing to npm.
 
 
-## What CI Does on a Tag Push
+## What CI Does on a Canonical Tag Push
 
-Pushing a valid canonical or npm package tag triggers:
+Pushing a valid canonical tag triggers:
 
 | Workflow | Trigger |
 |---|---|
 | [`.github/workflows/ci_python.yml`](.github/workflows/ci_python.yml) | For all tags including alpha |
 | [`.github/workflows/publish_rust.yml`](.github/workflows/publish_rust.yml) | For RC, beta and release tags |
 | [`.github/workflows/ci_typescript.yml`](.github/workflows/ci_typescript.yml) | For nightly alpha tags and normal pull request/main validation |
-| [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml) | For contract, Common, and Pi beta, RC, and stable tags |
+| [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml) | Publishes and verifies the contract, Common, and Pi packages for beta, RC, and stable tags |
 | [`.github/workflows/fern-docs.yml`](.github/workflows/fern-docs.yml) | For RC, beta and release tags |
 
 The release pipeline then:
@@ -463,10 +439,10 @@ The release pipeline then:
 3. Publishes `nemo-fabric-core` and `nemo-fabric-cli` to crates.io through
    trusted publishing for stable, beta, and RC tags. Alpha tags are not
    published to crates.io.
-4. Publishes `nemo-fabric-adapter-contract` to npm from the canonical tag, then
-   publishes Common and Pi when their package tags are pushed in dependency
-   order. Stable releases use the `latest` dist-tag and beta and RC releases use
-   `next`. Alpha tags validate the packages without publishing them.
+4. Publishes the contract, Common, and Pi packages to npm from the canonical
+   tag in dependency order, then verifies the deployment in that order. Stable
+   releases use the `latest` dist-tag and beta and RC releases use `next`.
+   Alpha tags validate the packages without publishing them.
 5. Publishes Fern documentation versions for stable, beta, and RC tags. Alpha
    tags do not publish a separate documentation version.
 
