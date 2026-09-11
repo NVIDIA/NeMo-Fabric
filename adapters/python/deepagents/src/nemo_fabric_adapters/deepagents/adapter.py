@@ -247,7 +247,10 @@ def resolve_backend(
         from deepagents.backends import LocalShellBackend
 
         return LocalShellBackend(
-            root_dir=str(root), virtual_mode=True, inherit_env=False
+            root_dir=str(root),
+            virtual_mode=True,
+            env=dict(runtime_context.environment.env),
+            inherit_env=False,
         )
 
     from deepagents.backends import FilesystemBackend

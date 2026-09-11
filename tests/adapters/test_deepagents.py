@@ -1492,6 +1492,7 @@ async def test_local_shell_backend_resolves_root_from_workspace(
 ):
     payload = make_payload(tmp_path)
     payload["runtime_context"]["environment"]["workspace"] = "relative-workspace"
+    payload["runtime_context"]["environment"]["env"] = {"EXPLICIT_VALUE": "configured"}
     payload["config"]["harness"]["settings"]["deepagents"] = {
         "backend": {"type": "local_shell"}
     }
@@ -1503,6 +1504,7 @@ async def test_local_shell_backend_resolves_root_from_workspace(
     assert backend_kwargs == {
         "root_dir": str(tmp_path / "relative-workspace"),
         "virtual_mode": True,
+        "env": {"EXPLICIT_VALUE": "configured"},
         "inherit_env": False,
     }
     fake_sdks["fs_backend"].assert_not_called()
@@ -1539,6 +1541,28 @@ def test_local_shell_backend_keeps_file_and_shell_path_namespaces_distinct(
 
     assert relative.exit_code == 0
     assert host_absolute.exit_code != 0
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+def test_local_shell_backend_forwards_only_explicit_environment(tmp_path, make_payload):
+    os.environ["AMBIENT_ONLY"] = "ambient"
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["env"] = {"EXPLICIT_VALUE": "configured"}
+    context = RuntimeContext.from_mapping(payload["runtime_context"])
+
+    backend = adapter.resolve_backend(
+        context,
+        str(tmp_path),
+        {"type": "local_shell"},
+    )
+    result = backend.execute(
+        f'"{sys.executable}" -c "import os; '
+        "print(os.environ.get('EXPLICIT_VALUE')); "
+        "print(os.environ.get('AMBIENT_ONLY', '<missing>'))\""
+    )
+
+    assert result.exit_code == 0
+    assert result.output.splitlines() == ["configured", "<missing>"]
 
 
 async def test_local_shell_backend_requires_workspace(tmp_path, make_payload):
