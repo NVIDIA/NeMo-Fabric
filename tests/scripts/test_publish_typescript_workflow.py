@@ -46,10 +46,9 @@ def test_publisher_only_triggers_for_public_release_channels():
     assert not _tag_triggers_workflow("v0.3.0-alpha.20260817", tag_patterns)
     for package in ("nemo-fabric-adapters-common", "nemo-fabric-adapters-pi"):
         for version in ("0.3.0", "0.3.0-beta.1", "0.3.0-rc.1"):
-            assert _tag_triggers_workflow(f"npm/{package}/v{version}", tag_patterns)
-        assert not _tag_triggers_workflow(
-            f"npm/{package}/v0.3.0-alpha.20260817", tag_patterns
-        )
+            assert not _tag_triggers_workflow(
+                f"npm/{package}/v{version}", tag_patterns
+            )
 
     steps = {
         step["name"]: step
@@ -62,30 +61,35 @@ def test_publisher_only_triggers_for_public_release_channels():
     assert '*) dist_tag="latest"' in release_metadata
 
 
-def test_publisher_routes_packages_and_checks_adapter_dependencies():
+def test_publisher_publishes_then_verifies_packages_in_dependency_order():
     workflow = _load_workflow(PUBLISH_WORKFLOW)
     steps = {
         step["name"]: step
         for step in workflow["jobs"]["publish-typescript"]["steps"]
     }
     release = steps["Resolve package release"]["run"]
-    assert 'package_name="nemo-fabric-adapter-contract"' in release
-    assert 'package_directory="adapter-contract/typescript"' in release
-    assert 'package_name="nemo-fabric-adapters-common"' in release
-    assert 'package_directory="adapters/typescript/common"' in release
-    assert 'package_name="nemo-fabric-adapters-pi"' in release
-    assert 'package_directory="adapters/typescript/pi"' in release
-    assert 'test_recipe="test-typescript"' in release
-    assert 'test_recipe="test-typescript-adapters"' in release
+    assert 'case "$RELEASE_TAG" in' in release
+    assert "npm/nemo-fabric-adapters" not in release
     assert "set_typescript_project_version.py" in release
     assert "set_typescript_adapter_version.py" not in release
-    assert steps["Test package"]["run"] == 'just "$RELEASE_TEST_RECIPE"'
-    dependency_check = steps["Verify published dependencies"]["run"]
-    assert "nemo-fabric-adapter-contract@${RELEASE_VERSION}" in dependency_check
-    assert "nemo-fabric-adapters-common@${RELEASE_VERSION}" in dependency_check
-    assert steps["Publish package"]["env"]["PACKAGE_DIRECTORY"] == (
-        "${{ steps.release.outputs.package_directory }}"
+    assert steps["Test packages"]["run"] == (
+        "just test-typescript\njust test-typescript-adapters\n"
     )
+    assert "Verify published dependencies" not in steps
+
+    package_directories = (
+        "adapter-contract/typescript",
+        "adapters/typescript/common",
+        "adapters/typescript/pi",
+    )
+    for step_name, action in (
+        ("Publish packages", "publish"),
+        ("Verify packages", "verify"),
+    ):
+        run = steps[step_name]["run"]
+        positions = [run.index(directory) for directory in package_directories]
+        assert positions == sorted(positions)
+        assert f"--action {action}" in run
 
 
 def test_nightly_alpha_runs_typescript_ci_without_npm_permissions():
