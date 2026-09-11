@@ -52,6 +52,7 @@ from nemo_fabric import RunUsage
 from nemo_fabric import Runtime
 from nemo_fabric import RuntimeCapabilities
 from nemo_fabric import RuntimeConfig
+from nemo_fabric import EnvironmentHandle
 from nemo_fabric import RuntimeHandle
 from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
@@ -1546,6 +1547,59 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
     )
 
     assert handle.extra_fields == {"future_handle_field": "value"}
+
+
+def test_environment_handle_is_typed_immutable_and_preserves_extensions():
+    handle = EnvironmentHandle.from_mapping(
+        {
+            "environment_id": "environment-1",
+            "provider": "openshell",
+            "control_location": "in_env_control",
+            "workspace": "/workspace",
+            "artifacts": "/artifacts",
+            "env": {"MODE": "demo"},
+            "ownership": "fabric_owned",
+            "connection": {"sandbox_name": "fabric-demo"},
+            "metadata": {"policy_source": "demo.yaml"},
+            "future_environment_field": "value",
+        }
+    )
+
+    assert handle.workspace == Path("/workspace")
+    assert handle.env == {"MODE": "demo"}
+    assert handle.extra_fields == {"future_environment_field": "value"}
+    assert handle.to_mapping()["workspace"] == "/workspace"
+
+
+def test_environment_reference_is_typed_immutable_and_preserves_extensions():
+    from nemo_fabric import EnvironmentReference
+
+    reference = EnvironmentReference.from_mapping(
+        {
+            "provider": "openshell",
+            "resource": {
+                "sandbox_name": "fabric-demo",
+                "sandbox_id": "sandbox-id-1",
+            },
+            "future_reference_field": "value",
+        }
+    )
+
+    assert reference.provider == "openshell"
+    assert reference.resource["sandbox_id"] == "sandbox-id-1"
+    assert reference.extra_fields == {"future_reference_field": "value"}
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("environment_id", "provider", "control_location", "ownership"),
+)
+def test_environment_handle_requires_identity_fields(field):
+    raw = _runtime()["environment"]
+    del raw[field]
+
+    with pytest.raises(FabricConfigError, match=field.replace("_", " ")):
+        EnvironmentHandle.from_mapping(raw)
 
 
 @pytest.mark.parametrize(

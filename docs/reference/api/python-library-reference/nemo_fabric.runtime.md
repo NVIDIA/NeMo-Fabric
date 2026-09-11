@@ -47,7 +47,7 @@ The enum defines the following values:
 
 One logical, stateful harness execution.
 
-Create runtimes with ``Fabric.start_runtime()`` rather than calling the constructor. A runtime serializes invocations and preserves adapter-owned harness state across turns. Use it as an asynchronous context manager to stop the runtime on exit.
+Create runtimes with ``Fabric.start_runtime()`` or ``Fabric.start_runtime_in()`` rather than calling the constructor. A runtime serializes invocations and preserves adapter-owned harness state across turns. Use it as an asynchronous context manager to stop the runtime on exit.
 
 Runtime-scoped overrides are recursively merged with invocation overrides; invocation values win.
 

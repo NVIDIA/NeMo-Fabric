@@ -26,6 +26,10 @@ The following table lists the `Fabric` methods and when to use each:
 | `doctor(config, *, base_dir=...)` | Yes | You need preflight diagnostics for adapter resolution, capability routing, declared requirements, and environment assumptions. | `DoctorReport` |
 | `run(config, *, base_dir=..., input=... \| request=...)` | Yes | You need one complete start, invoke, result, and stop cycle. | `RunResult` |
 | `start_runtime(config, *, base_dir=..., overrides=..., streaming=False)` | Yes | You need state across multiple ordered invocations. Pass `streaming=True` with NVIDIA NeMo Relay enabled only to provision `invoke_stream(...)`. | `Runtime` |
+| `prepare_environment(config, *, base_dir=...)` | Yes | A self-contained development flow lets Fabric create a non-local environment. The caller controls when it is released. | `EnvironmentHandle` |
+| `attach_environment(config, reference, *, base_dir=...)` | Yes | A deployment already owns an environment and wants Fabric to verify and bind it without gaining deletion authority. Pass a typed `EnvironmentReference`. | `EnvironmentHandle` |
+| `start_runtime_in(config, environment, *, base_dir=..., overrides=..., streaming=False)` | Yes | You need one stateful runtime bound to an explicitly prepared or attached environment. Runtime shutdown does not release the environment. | `Runtime` |
+| `release_environment(environment)` | Yes | You are done with an explicit environment. Fabric deletes only Fabric-owned resources; caller-owned resources are detached. | `None` |
 
 `input` and `request` on `run(...)` are mutually exclusive. Use `input=...` for
 the common case; use `request=RunRequest(...)` when the invocation needs a
@@ -77,6 +81,9 @@ individual invocations:
 
 ```text
 FabricConfig -> plan() -> RunPlan -> start_runtime() -> Runtime -> invoke() -> RunResult
+                                  \-> prepare_environment() -> EnvironmentHandle
+                                  \-> attach_environment(reference) -> EnvironmentHandle
+                                      \-> start_runtime_in() -> Runtime
                                                             \-> invoke_openai_stream() -> OpenAIInvokeStream
                                                             \-> invoke_stream() -> InvokeStream
 ```

@@ -1,0 +1,16 @@
+---
+title: "Function start_runtime_in"
+sidebar-title: "start_runtime_in"
+description: "Start or connect to a harness runtime in an explicitly prepared or attached environment."
+position: 36
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn start_runtime_in(\n    plan: &amp;<a href=\"../config/struct-runplan.mdx\">RunPlan</a>,\n    environment: &amp;<a href=\"struct-environmenthandle.mdx\">EnvironmentHandle</a>,\n) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"struct-runtimehandle.mdx\">RuntimeHandle</a>&gt;"}} /></pre>
+
+Start or connect to a harness runtime in an explicitly prepared or attached environment.
+
+This operation neither prepares nor releases the environment. The consumer retains the [`EnvironmentHandle`](struct-environmenthandle.mdx) and remains responsible for calling [`release_environment`](fn-release-environment.mdx) after the runtime has stopped and any required inspection has completed.

@@ -14,9 +14,9 @@ use crate::config::{
 };
 use crate::error::{FabricError, Result};
 use crate::runtime::{
-    AdapterInvocation, ArtifactManifest, EnvironmentHandle, ErrorInfo, FabricEvent,
-    InvocationHandle, OpenAiStreamInvocation, OpenAiStreamRecord, RunRequest, RunResult,
-    RuntimeContext, RuntimeHandle,
+    AdapterInvocation, ArtifactManifest, EnvironmentHandle, EnvironmentReference, ErrorInfo,
+    FabricEvent, InvocationHandle, OpenAiStreamInvocation, OpenAiStreamRecord, RunRequest,
+    RunResult, RuntimeContext, RuntimeHandle,
 };
 use crate::{AgentRunRequest, AgentRunResult};
 
@@ -47,6 +47,8 @@ pub enum SchemaName {
     RuntimeContext,
     /// Environment handle schema.
     EnvironmentHandle,
+    /// Existing environment reference schema.
+    EnvironmentReference,
     /// Runtime handle schema.
     RuntimeHandle,
     /// Invocation handle schema.
@@ -65,7 +67,7 @@ pub enum SchemaName {
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::Agent,
         Self::AgentConfig,
         Self::AgentRunRequest,
@@ -78,6 +80,7 @@ impl SchemaName {
         Self::OpenAiStreamRecord,
         Self::RuntimeContext,
         Self::EnvironmentHandle,
+        Self::EnvironmentReference,
         Self::RuntimeHandle,
         Self::InvocationHandle,
         Self::RunRequest,
@@ -102,6 +105,7 @@ impl SchemaName {
             Self::OpenAiStreamRecord => "openai-stream-record",
             Self::RuntimeContext => "runtime-context",
             Self::EnvironmentHandle => "environment-handle",
+            Self::EnvironmentReference => "environment-reference",
             Self::RuntimeHandle => "runtime-handle",
             Self::InvocationHandle => "invocation-handle",
             Self::RunRequest => "run-request",
@@ -153,6 +157,7 @@ impl SchemaName {
             "openai-stream-record" | "openai_stream_record" => Ok(Self::OpenAiStreamRecord),
             "runtime-context" | "runtime_context" => Ok(Self::RuntimeContext),
             "environment-handle" | "environment_handle" => Ok(Self::EnvironmentHandle),
+            "environment-reference" | "environment_reference" => Ok(Self::EnvironmentReference),
             "runtime-handle" | "runtime_handle" => Ok(Self::RuntimeHandle),
             "invocation-handle" | "invocation_handle" => Ok(Self::InvocationHandle),
             "run-request" | "run_request" => Ok(Self::RunRequest),
@@ -186,6 +191,7 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
         SchemaName::OpenAiStreamRecord => to_value(schema_for!(OpenAiStreamRecord)),
         SchemaName::RuntimeContext => to_value(schema_for!(RuntimeContext)),
         SchemaName::EnvironmentHandle => to_value(schema_for!(EnvironmentHandle)),
+        SchemaName::EnvironmentReference => to_value(schema_for!(EnvironmentReference)),
         SchemaName::RuntimeHandle => to_value(schema_for!(RuntimeHandle)),
         SchemaName::InvocationHandle => to_value(schema_for!(InvocationHandle)),
         SchemaName::RunRequest => to_value(schema_for!(RunRequest)),
@@ -301,6 +307,7 @@ mod tests {
             SchemaName::Agent,
             SchemaName::RunPlan,
             SchemaName::EnvironmentHandle,
+            SchemaName::EnvironmentReference,
             SchemaName::RuntimeHandle,
             SchemaName::InvocationHandle,
             SchemaName::RunRequest,

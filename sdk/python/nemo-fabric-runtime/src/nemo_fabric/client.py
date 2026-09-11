@@ -35,6 +35,8 @@ from nemo_fabric.streaming import (
 )
 from nemo_fabric.types import (
     DoctorReport,
+    EnvironmentHandle,
+    EnvironmentReference,
     RunPlan,
     RunResult,
 )
@@ -52,7 +54,9 @@ class Fabric:
     optional ``base_dir`` used to resolve relative paths. Compose variants in
     Python before calling the SDK. The ``doctor()``, ``plan()``, and ``run()``
     results are typed, read-only mapping models. ``start_runtime()`` returns an
-    active ``Runtime`` handle.
+    active local ``Runtime`` handle. Explicit environment users call either
+    ``prepare_environment()`` or ``attach_environment()``, then
+    ``start_runtime_in()`` and ``release_environment()`` separately.
 
     ``Fabric`` uses the native Rust extension. SDK calls raise
     ``FabricNativeUnavailableError`` when the native extension is not
@@ -231,6 +235,168 @@ class Fabric:
             FabricRuntimeError: If runtime startup fails.
         """
 
+        return await self._start_runtime(
+            config,
+            base_dir=base_dir,
+            overrides=overrides,
+            streaming=streaming,
+        )
+
+    async def prepare_environment(
+        self,
+        config: FabricConfig,
+        *,
+        base_dir: str | os.PathLike[str] | None = None,
+    ) -> EnvironmentHandle:
+        """Prepare an execution environment.
+
+        The returned handle is independent of any runtime session. The caller
+        owns the lifecycle decision and must eventually pass it to
+        ``release_environment()``.
+
+        Args:
+            config: Complete typed ``FabricConfig`` describing the environment.
+            base_dir: Base directory for resolving relative paths.
+
+        Returns:
+            A typed, immutable ``EnvironmentHandle``.
+
+        Raises:
+            FabricConfigError: If config resolution or the returned handle is invalid.
+            FabricNativeUnavailableError: If the native extension is not installed.
+            FabricRuntimeError: If environment preparation fails.
+        """
+
+        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        native = self._require_native_module("prepare_environment")
+        try:
+            raw = await _call_blocking(
+                lambda: native.prepare_environment(json.dumps(plan.to_mapping()))
+            )
+            return EnvironmentHandle.from_mapping(json.loads(raw))
+        except FabricError:
+            raise
+        except Exception as error:
+            raise FabricRuntimeError(str(error), stage="environment_prepare") from error
+
+    async def attach_environment(
+        self,
+        config: FabricConfig,
+        reference: EnvironmentReference,
+        *,
+        base_dir: str | os.PathLike[str] | None = None,
+    ) -> EnvironmentHandle:
+        """Verify and attach to an existing caller-owned environment.
+
+        Attachment does not create the provider resource and does not grant
+        Fabric deletion authority. The returned handle can be passed to
+        ``start_runtime_in()`` and later to ``release_environment()`` to detach.
+
+        Args:
+            config: Complete typed ``FabricConfig`` with caller-owned environment settings.
+            reference: Provider-specific identity of the existing resource.
+            base_dir: Base directory for resolving relative paths.
+
+        Returns:
+            A verified, immutable ``EnvironmentHandle``.
+
+        Raises:
+            FabricConfigError: If config, reference, or returned handle is invalid.
+            FabricNativeUnavailableError: If the native extension is not installed.
+            FabricRuntimeError: If environment verification or attachment fails.
+        """
+
+        reference_json = _environment_reference_json(reference)
+        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        native = self._require_native_module("attach_environment")
+        try:
+            raw = await _call_blocking(
+                lambda: native.attach_environment(
+                    json.dumps(plan.to_mapping()), reference_json
+                )
+            )
+            return EnvironmentHandle.from_mapping(json.loads(raw))
+        except FabricError:
+            raise
+        except Exception as error:
+            raise FabricRuntimeError(str(error), stage="environment_attach") from error
+
+    async def start_runtime_in(
+        self,
+        config: FabricConfig,
+        environment: EnvironmentHandle,
+        *,
+        base_dir: str | os.PathLike[str] | None = None,
+        overrides: Mapping[str, Any] | None = None,
+        streaming: bool = False,
+    ) -> Runtime:
+        """Start one stateful runtime in an explicitly prepared or attached environment.
+
+        Starting or stopping the runtime does not release ``environment``. This
+        lets consumers run sequential sessions, or coordinate concurrent
+        sessions, without hiding environment ownership inside a session API.
+
+        Args:
+            config: Complete typed ``FabricConfig`` matching the environment.
+            environment: Handle returned by ``prepare_environment()`` or
+                ``attach_environment()``.
+            base_dir: Base directory for resolving relative paths.
+            overrides: JSON-compatible runtime-scoped invocation overrides.
+            streaming: Whether to provision NeMo Relay ATOF streaming.
+
+        Returns:
+            An active ``Runtime`` bound to ``environment``.
+
+        Raises:
+            FabricConfigError: If inputs are invalid or the handle does not match the plan.
+            FabricNativeUnavailableError: If the native extension is not installed.
+            FabricRuntimeError: If runtime startup fails.
+        """
+
+        _environment_json(environment)
+        return await self._start_runtime(
+            config,
+            environment=environment,
+            base_dir=base_dir,
+            overrides=overrides,
+            streaming=streaming,
+        )
+
+    async def release_environment(self, environment: EnvironmentHandle) -> None:
+        """Release or detach a prepared environment through its provider.
+
+        Local and externally owned environments detach without deletion.
+        Provider-managed, Fabric-owned environments may be deleted according
+        to their normalized ownership contract.
+
+        Args:
+            environment: Handle returned by ``prepare_environment()`` or
+                ``attach_environment()``.
+
+        Raises:
+            FabricConfigError: If ``environment`` is not a typed handle.
+            FabricNativeUnavailableError: If the native extension is not installed.
+            FabricRuntimeError: If release or detach fails.
+        """
+
+        environment_json = _environment_json(environment)
+        native = self._require_native_module("release_environment")
+        try:
+            await _call_blocking(lambda: native.release_environment(environment_json))
+        except FabricError:
+            raise
+        except Exception as error:
+            raise FabricRuntimeError(str(error), stage="environment_release") from error
+
+    async def _start_runtime(
+        self,
+        config: FabricConfig,
+        *,
+        environment: EnvironmentHandle | None = None,
+        base_dir: str | os.PathLike[str] | None = None,
+        overrides: Mapping[str, Any] | None = None,
+        streaming: bool = False,
+    ) -> Runtime:
         runtime_overrides = _json_mapping(overrides, "runtime overrides")
         collector: AsyncExitStack | None = None
         collector_client: _AtofCollectorClient | None = None
@@ -299,7 +465,8 @@ class Fabric:
             plan = await _call_blocking(
                 lambda: self.plan(runtime_config, base_dir=base_dir)
             )
-            native = self._require_native_module("start_runtime")
+            method = "start_runtime_in" if environment is not None else "start_runtime"
+            native = self._require_native_module(method)
         except BaseException:
             await close_streaming_resources()
             raise
@@ -307,9 +474,12 @@ class Fabric:
 
         def start() -> dict[str, Any]:
             nonlocal started_runtime
-            started_runtime = json.loads(
-                native.start_runtime(json.dumps(plan.to_mapping()))
-            )
+            plan_json = json.dumps(plan.to_mapping())
+            if environment is None:
+                raw = native.start_runtime(plan_json)
+            else:
+                raw = native.start_runtime_in(plan_json, _environment_json(environment))
+            started_runtime = json.loads(raw)
             return started_runtime
 
         try:
@@ -367,6 +537,28 @@ def _config_json(config: FabricConfig) -> str:
             )
         raise FabricConfigError("config must be a FabricConfig")
     return json.dumps(config.to_mapping())
+
+
+def _environment_json(environment: EnvironmentHandle) -> str:
+    if not isinstance(environment, EnvironmentHandle):
+        if isinstance(environment, Mapping):
+            raise FabricConfigError(
+                "environment mappings are not accepted directly; "
+                "use EnvironmentHandle.from_mapping(...) first"
+            )
+        raise FabricConfigError("environment must be an EnvironmentHandle")
+    return json.dumps(environment.to_mapping())
+
+
+def _environment_reference_json(reference: EnvironmentReference) -> str:
+    if not isinstance(reference, EnvironmentReference):
+        if isinstance(reference, Mapping):
+            raise FabricConfigError(
+                "reference mappings are not accepted directly; "
+                "use EnvironmentReference.from_mapping(...) first"
+            )
+        raise FabricConfigError("reference must be an EnvironmentReference")
+    return json.dumps(reference.to_mapping())
 
 
 def _base_dir_arg(base_dir: str | os.PathLike[str] | None) -> str | None:

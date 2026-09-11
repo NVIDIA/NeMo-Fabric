@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "nemo-fabric-runtime-control"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Runtime-control protocol and resident server for NVIDIA NeMo Fabric."
+publish = false
+
+[lib]
+name = "nemo_fabric_runtime_control"
+
+[[bin]]
+name = "fabric-runtime-server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "fabric-runtime-ctl"
+path = "src/bin/control.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

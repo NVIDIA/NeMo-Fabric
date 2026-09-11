@@ -53,6 +53,14 @@ in a separate directory:
 Start with the model-backed example. You can then vary its model settings, add
 a stdio MCP tool, or enable NeMo Relay telemetry.
 
+## LangGraph in OpenShell
+
+[`langgraph_openshell`](langgraph_openshell/README.md) demonstrates the
+experimental OpenShell environment provider with a credential-free, stateful
+LangGraph adapter. It demonstrates a policy-denied route, an allowed fallback,
+ordered multi-turn state, bounded artifact collection, and explicit attachment
+to and detachment from a consumer-owned environment.
+
 ## Harbor
 
 [`harbor`](harbor/README.md) demonstrates how to evaluate NeMo Fabric agents with

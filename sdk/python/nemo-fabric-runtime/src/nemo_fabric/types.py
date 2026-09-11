@@ -1611,6 +1611,98 @@ class FabricEvent(FabricMapping):
         return data
 
 
+class EnvironmentReference(FabricMapping):
+    """Provider-specific identity for an existing execution environment.
+
+    Pass this reference to ``Fabric.attach_environment()``. The provider verifies
+    the resource before returning a durable ``EnvironmentHandle`` and never gains
+    deletion authority over the caller-owned resource.
+
+    Attributes:
+        provider: Stable environment-provider identifier.
+        resource: Provider-specific resource identity.
+    """
+
+    provider: str
+    resource: Mapping[str, Any]
+    _fields = frozenset({"provider", "resource"})
+    _json_fields = frozenset({"resource"})
+    _omit_if_empty = frozenset({"resource"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["provider"] = _required_text(data.get("provider"), "provider")
+        data["resource"] = _mapping(data.get("resource", {}), "resource")
+        return data
+
+
+class EnvironmentHandle(FabricMapping):
+    """Durable identity and provider binding for a prepared or attached environment.
+
+    Environment handles are independent of runtime sessions. Applications may
+    start one or more runtimes in an environment and decide separately when to
+    release or detach it.
+
+    Attributes:
+        environment_id: Unique identifier for the prepared environment.
+        provider: Stable environment-provider identifier.
+        control_location: Whether Fabric control runs outside or inside the environment.
+        workspace: Optional workspace visible to the harness runtime.
+        artifacts: Optional artifact root visible to the harness runtime.
+        env: Environment variables visible to the harness and its tools.
+        ownership: Whether the caller or Fabric owns the environment resource.
+        connection: Provider connection metadata.
+        metadata: Provider-specific metadata.
+    """
+
+    environment_id: str
+    provider: str
+    control_location: str
+    workspace: Path | None
+    artifacts: Path | None
+    env: Mapping[str, str]
+    ownership: str
+    connection: Mapping[str, Any]
+    metadata: Mapping[str, Any]
+    _fields = frozenset(
+        {
+            "environment_id",
+            "provider",
+            "control_location",
+            "workspace",
+            "artifacts",
+            "env",
+            "ownership",
+            "connection",
+            "metadata",
+        }
+    )
+    _json_fields = frozenset({"env", "connection", "metadata"})
+    _omit_if_empty = frozenset({"env", "connection", "metadata"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        for field in (
+            "environment_id",
+            "provider",
+            "control_location",
+            "ownership",
+        ):
+            data[field] = _required_text(data.get(field), field.replace("_", " "))
+        for field in ("workspace", "artifacts"):
+            if data.get(field) is not None:
+                data[field] = Path(data[field])
+        environment = _mapping(data.get("env", {}), "environment variables")
+        for key, value in environment.items():
+            _required_text(key, "environment variable name")
+            if not isinstance(value, str):
+                raise FabricConfigError("environment variable values must be strings")
+        data["env"] = environment
+        data["connection"] = _mapping(data.get("connection", {}), "connection")
+        data["metadata"] = _mapping(data.get("metadata", {}), "environment metadata")
+        return data
+
+
 class RuntimeHandle(FabricMapping):
     """Opaque identity and binding for one started runtime.
 

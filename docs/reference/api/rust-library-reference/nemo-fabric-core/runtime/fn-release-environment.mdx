@@ -1,0 +1,16 @@
+---
+title: "Function release_environment"
+sidebar-title: "release_environment"
+description: "Release or detach an environment returned by `prepare_environment` or `attach_environment`."
+position: 33
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn release_environment(environment: &amp;<a href=\"struct-environmenthandle.mdx\">EnvironmentHandle</a>) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.unit.html\">()</a>&gt;"}} /></pre>
+
+Release or detach an environment returned by [`prepare_environment`](fn-prepare-environment.mdx) or [`attach_environment`](fn-attach-environment.mdx).
+
+Local and externally owned environments are detached without deletion. A provider may delete a Fabric-owned environment according to its normalized ownership contract.

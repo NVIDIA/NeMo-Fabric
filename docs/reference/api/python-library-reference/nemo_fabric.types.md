@@ -841,6 +841,180 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `EnvironmentReference`
+
+Provider-specific identity for an existing execution environment.
+
+Pass this reference to ``Fabric.attach_environment()``. The provider verifies the resource before returning a durable ``EnvironmentHandle`` and never gains deletion authority over the caller-owned resource.
+
+
+
+**Attributes:**
+
+ - <b>`provider`</b>:  Stable environment-provider identifier.
+ - <b>`resource`</b>:  Provider-specific resource identity.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `provider` | `str` |
+| `resource` | `Mapping[str, Any]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `EnvironmentHandle`
+
+Durable identity and provider binding for a prepared or attached environment.
+
+Environment handles are independent of runtime sessions. Applications may start one or more runtimes in an environment and decide separately when to release or detach it.
+
+
+
+**Attributes:**
+
+ - <b>`environment_id`</b>:  Unique identifier for the prepared environment.
+ - <b>`provider`</b>:  Stable environment-provider identifier.
+ - <b>`control_location`</b>:  Whether Fabric control runs outside or inside the environment.
+ - <b>`workspace`</b>:  Optional workspace visible to the harness runtime.
+ - <b>`artifacts`</b>:  Optional artifact root visible to the harness runtime.
+ - <b>`env`</b>:  Environment variables visible to the harness and its tools.
+ - <b>`ownership`</b>:  Whether the caller or Fabric owns the environment resource.
+ - <b>`connection`</b>:  Provider connection metadata.
+ - <b>`metadata`</b>:  Provider-specific metadata.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `environment_id` | `str` |
+| `provider` | `str` |
+| `control_location` | `str` |
+| `workspace` | `Path \| None` |
+| `artifacts` | `Path \| None` |
+| `env` | `Mapping[str, str]` |
+| `ownership` | `str` |
+| `connection` | `Mapping[str, Any]` |
+| `metadata` | `Mapping[str, Any]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
 ## <kbd>class</kbd> `RuntimeHandle`
 
 Opaque identity and binding for one started runtime.

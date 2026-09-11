@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "nemo-fabric-openshell-provider"
+description = "OpenShell environment provider for NVIDIA NeMo Fabric"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "fabric-environment-openshell"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", rev = "69a05ebb3b154e304a66fe80eed8504e889abc6d" }
+openshell-sdk = { git = "https://github.com/NVIDIA/OpenShell", rev = "69a05ebb3b154e304a66fe80eed8504e889abc6d" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { version = "1.43", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

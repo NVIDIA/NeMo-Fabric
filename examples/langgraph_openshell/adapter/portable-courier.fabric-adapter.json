@@ -1,0 +1,19 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.example.langgraph.portable-courier",
+  "adapter_kind": "python",
+  "runner": {
+    "module": "examples.langgraph_openshell.adapter.runtime",
+    "python": "/usr/local/bin/python"
+  },
+  "requirements": {},
+  "config": {
+    "accepts": []
+  },
+  "capabilities": {
+    "cancellation": false,
+    "service": false,
+    "streaming": false,
+    "updates": false
+  }
+}

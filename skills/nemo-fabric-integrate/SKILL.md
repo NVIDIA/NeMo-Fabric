@@ -184,6 +184,19 @@ Pick the smallest lifecycle the consumer needs:
   (`stop()` can raise `FabricRuntimeError`; see Consume Results And Handle
   Errors). A runtime accepts one active invocation at a time; overlapping calls
   raise `FabricStateError`.
+- **Explicit non-local environment** — for a self-contained development flow,
+  create the environment with `prepare_environment(...)`. In a deployment flow,
+  keep provisioning with the consumer and call
+  `attach_environment(config, EnvironmentReference(...))` to verify and bind the
+  existing caller-owned resource without giving Fabric deletion authority. Then
+  bind exactly one sequential session with
+  `start_runtime_in(config, environment)`, stop that runtime, inspect the still
+  live environment if needed, and call `release_environment(environment)` only
+  when the consumer is done. Runtime start/stop never implicitly prepares or
+  releases this environment. The OpenShell `in_env_control` profile supports process and
+  Python adapters with buffered `invoke` and bounded collection of declared
+  artifacts; it rejects a second runtime binding and does not yet provide
+  streaming.
 - **Native OpenAI stream** — adapter-native OpenAI Chat Completions chunks plus
   a separate terminal normalized result. Check
   `runtime.supports_openai_streaming`, call
@@ -231,7 +244,7 @@ in the configuration example above:
 ```python
 import asyncio
 
-from nemo_fabric import Fabric
+from nemo_fabric import EnvironmentReference, Fabric
 
 
 async def main() -> None:
@@ -244,6 +257,43 @@ async def main() -> None:
     async with await fabric.start_runtime(config, base_dir=base) as runtime:
         first = await runtime.invoke(input="Inspect the repository")
         second = await runtime.invoke(input="Now review the latest patch")
+
+    # Explicit non-local environment lifetime
+    environment = await fabric.prepare_environment(config, base_dir=base)
+    try:
+        async with await fabric.start_runtime_in(
+            config,
+            environment,
+            base_dir=base,
+        ) as runtime:
+            remote_result = await runtime.invoke(input="Inspect inside the sandbox")
+        # Inspect the retained environment here.
+    finally:
+        await fabric.release_environment(environment)
+
+    # Deployment-owned non-local environment lifetime
+    reference = EnvironmentReference.from_mapping(
+        {
+            "provider": "openshell",
+            "resource": {
+                "sandbox_name": deployment.sandbox_name,
+                "sandbox_id": deployment.sandbox_id,
+            },
+        }
+    )
+    environment = await fabric.attach_environment(
+        deployment_config, reference, base_dir=base
+    )
+    try:
+        async with await fabric.start_runtime_in(
+            deployment_config,
+            environment,
+            base_dir=base,
+        ) as runtime:
+            remote_result = await runtime.invoke(input="Inspect inside the sandbox")
+    finally:
+        # Detaches Fabric; the deployment remains responsible for deletion.
+        await fabric.release_environment(environment)
 
     # Adapter-native OpenAI Chat Completions chunks
     async with await fabric.start_runtime(config, base_dir=base) as runtime:
@@ -370,6 +420,7 @@ result-field and error inventory, and
 - [ ] The consumer config is built in memory and passed directly to NeMo Fabric.
 - [ ] The right lifecycle is chosen: `run(...)` for a single invocation,
   `start_runtime(...)` with `async with` for multi-turn,
+  explicit prepare-or-attach/bind/stop/release for a non-local environment,
   `invoke_openai_stream(...)` for descriptor-gated OpenAI chunks, or
   `invoke_stream(...)` for raw NeMo Relay ATOF.
 - [ ] `plan(...)` and `doctor(...)` validate adapter selection, capabilities, and environment before execution.

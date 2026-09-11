@@ -3,9 +3,11 @@
 
 [workspace]
 members = [
+    "crates/fabric-runtime-control",
     "crates/fabric-core",
     "crates/fabric-cli",
     "crates/fabric-python",
+    "environment-providers/openshell",
 ]
 default-members = [
     "crates/fabric-core",
