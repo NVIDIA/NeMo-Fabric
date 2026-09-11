@@ -9,8 +9,9 @@ SPDX-License-Identifier: Apache-2.0
 [![GitHub](https://img.shields.io/badge/github-repo-blue?logo=github)](https://github.com/NVIDIA/NeMo-Fabric/)
 [![Release](https://img.shields.io/github/v/release/NVIDIA/NeMo-Fabric?color=green)](https://github.com/NVIDIA/NeMo-Fabric/releases)
 
-`nemo-fabric-adapters-nooa` provides NVIDIA NeMo Fabric adapters for NOOA
-`InteractiveAgent` targets and `nooa_bench.BenchAgent` evaluations.
+`nemo-fabric-adapters-nooa` provides NVIDIA NeMo Fabric adapters for
+[NVIDIA-labs Object Oriented Agents](https://github.com/nvidia-nemo/labs-OO-Agents)
+(NOOA) `InteractiveAgent` targets and `nooa_bench.BenchAgent` evaluations.
 
 ## Install
 

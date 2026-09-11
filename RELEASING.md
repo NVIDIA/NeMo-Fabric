@@ -33,7 +33,7 @@ package-specific tag pushes:
 |---|---|
 | crates.io | `nemo-fabric-core`, `nemo-fabric-cli` |
 | npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-pi` |
-| GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-collector`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, and `nemo-fabric-adapters-hermes` wheel artifacts |
+| GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-collector`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, `nemo-fabric-adapters-hermes`, and `nemo-fabric-adapters-nooa` wheel artifacts |
 | Fern | The documentation site |
 
 ## Version Model
@@ -512,6 +512,7 @@ After the release is live, verify:
    - [`nemo-fabric-adapters-codex`](https://pypi.org/project/nemo-fabric-adapters-codex/)
    - [`nemo-fabric-adapters-deepagents`](https://pypi.org/project/nemo-fabric-adapters-deepagents/)
    - [`nemo-fabric-adapters-hermes`](https://pypi.org/project/nemo-fabric-adapters-hermes/)
+   - [`nemo-fabric-adapters-nooa`](https://pypi.org/project/nemo-fabric-adapters-nooa/)
 3. The Python wheels are available on NVIDIA PyPI:
    - [`nemo-fabric`](https://pypi.nvidia.com/nemo-fabric/)
    - [`nemo-fabric-runtime`](https://pypi.nvidia.com/nemo-fabric-runtime/) Ensure that a wheel exists for each supported platform.
@@ -521,6 +522,7 @@ After the release is live, verify:
    - [`nemo-fabric-adapters-codex`](https://pypi.nvidia.com/nemo-fabric-adapters-codex/)
    - [`nemo-fabric-adapters-deepagents`](https://pypi.nvidia.com/nemo-fabric-adapters-deepagents/)
    - [`nemo-fabric-adapters-hermes`](https://pypi.nvidia.com/nemo-fabric-adapters-hermes/)
+   - [`nemo-fabric-adapters-nooa`](https://pypi.nvidia.com/nemo-fabric-adapters-nooa/)
 4. The TypeScript contract, Common, and Pi packages are visible on npm with the
    expected version, dist-tag, and provenance:
 

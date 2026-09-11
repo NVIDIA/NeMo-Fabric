@@ -90,6 +90,10 @@ supplies the Relay CLI, while `relay` supplies the Relay Python package:
 pip install "nemo-fabric[claude,harbor,relay]"
 ```
 
+The NOOA extra supports Python 3.12 and 3.13 only. On another supported Python
+version, the command can succeed while its environment marker omits the NOOA
+adapter.
+
 The Claude and Codex harness extras install the `nemo-relay` CLI required for
 Relay-enabled runs. The root `relay` extra installs only the Relay Python
 package for SDK-native integrations.
