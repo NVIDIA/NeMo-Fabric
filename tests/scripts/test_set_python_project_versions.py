@@ -20,7 +20,7 @@ def test_set_python_project_versions_updates_internal_pins_with_extras(
     (tmp_path / "adapters" / "python" / "claude").mkdir(parents=True)
     (tmp_path / "adapters" / "typescript" / "pi").mkdir(parents=True)
     (tmp_path / "adapter-contract" / "python").mkdir(parents=True)
-    (tmp_path / "sdk" / "python" / "collector").mkdir(parents=True)
+    (tmp_path / "sdk" / "python" / "nemo-fabric-collector").mkdir(parents=True)
     (tmp_path / "sdk" / "python" / "nemo-fabric").mkdir(parents=True)
     (tmp_path / "sdk" / "python" / "nemo-fabric-runtime").mkdir()
     coordinator_path = tmp_path / "pyproject.toml"
@@ -59,7 +59,9 @@ hermes-agent = [
 """,
         encoding="utf-8",
     )
-    collector_path = tmp_path / "sdk" / "python" / "collector" / "pyproject.toml"
+    collector_path = (
+        tmp_path / "sdk" / "python" / "nemo-fabric-collector" / "pyproject.toml"
+    )
     collector_path.write_text(
         """\
 [project]
