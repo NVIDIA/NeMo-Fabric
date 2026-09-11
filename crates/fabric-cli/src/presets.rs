@@ -320,6 +320,8 @@ fn model(
         provider: provider.to_string(),
         model: name.to_string(),
         temperature: None,
+        top_p: None,
+        max_tokens: None,
         api_key_env: api_key_env.map(str::to_string),
         base_url: base_url.map(str::to_string),
         settings: Map::new(),

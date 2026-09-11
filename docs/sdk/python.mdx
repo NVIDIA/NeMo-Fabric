@@ -170,8 +170,7 @@ validated against the selected adapter descriptor during planning.
 around adapter execution. `Yes` means the adapter translates the normalized
 field into its harness. `No` means an explicitly configured value fails
 planning instead of being ignored. The following table groups provider-specific
-Relay subfields and additive extension maps because their support does not vary
-by adapter:
+Relay subfields:
 
 | `FabricConfig` Field | Claude | Codex | Deep Agents | Hermes Agent | mini-SWE-agent |
 | --- | --- | --- | --- | --- | --- |
@@ -186,6 +185,7 @@ by adapter:
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.temperature` | No | No | Yes | Yes | Yes |
 | `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared |
+| `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM |
 | `instructions.system` | `replace`, `append` | `replace`; maps to Codex base instructions | `replace` | `replace` | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core |
@@ -204,16 +204,22 @@ by adapter:
 | `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through |
 | `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes |
 | `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes |
-| Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics |
+| Other additive `extensions` on typed config objects | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor |
 
 Model selection is deterministic: the `default` role wins; otherwise a single
 named role is selected. More than one role without `default` fails planning.
-Claude and Codex publish a descriptor-owned `model_schema` for every configured
-model role. Their native providers (`anthropic` and `openai`, respectively)
-keep the existing authentication path. Other providers remain valid only with
-an explicit `base_url` and `api_key_env`. The same schema rejects undeclared
-`ModelConfig.settings` during planning and reports each issue through
-`doctor(...)` before adapter startup.
+All bundled adapters except Hermes publish a descriptor-owned `model_schema`
+for every configured model role. The Claude and Codex native providers
+(`anthropic` and `openai`, respectively) keep the existing authentication path.
+Other Claude and Codex providers remain valid only with an explicit `base_url`
+and `api_key_env`. Deep Agents keeps dynamic LangChain provider selection. Each
+published schema rejects undeclared `ModelConfig.settings` during planning and
+reports each issue through `doctor(...)` before adapter startup. Existing
+configurations that supplied `top_p` and `max_tokens` as flattened model
+extensions retain the same wire shape when loaded as normalized fields. Legacy
+adapter descriptors that accept either name through `extension_schemas.model`
+continue receiving it in `AgentModelConfig.extensions`; adapters that advertise
+the normalized capability receive the typed field instead.
 
 If a normalized field has no complete mapping, `plan(...)` and runtime start
 fail with a configuration compatibility error naming the adapter and field.

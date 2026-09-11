@@ -28,8 +28,10 @@ The `harness` and `full` extras install the latest compatible mini-SWE-agent
 ## Configuration
 
 The adapter supports `models`, `models.base_url`, `models.temperature`,
-replacement `instructions.system`, `runtime.max_turns`, and
-`environment.workspace`. It rejects `append` system instructions.
+`models.top_p`, `models.max_tokens`, replacement `instructions.system`,
+`runtime.max_turns`, and `environment.workspace`. It passes the normalized
+sampling fields through mini-SWE-agent's LiteLLM model arguments and rejects
+`append` system instructions.
 `runtime.timeout_seconds` sets the NVIDIA NeMo Fabric invocation deadline. Use
 `harness.settings.timeout` to set the maximum duration of one command; the
 default is `30` seconds.

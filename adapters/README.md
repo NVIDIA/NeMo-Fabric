@@ -127,6 +127,7 @@ and additive extension maps because their support does not vary by adapter:
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | Yes | Yes; known catalog models only | No; use `harness.settings.base_url` |
 | `models.<role>.temperature` | No | No | Yes | Yes | Yes | Yes | No | Yes |
 | `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | `client_type` | No keys declared | `max_tokens` for Anthropic Messages |
+| `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM | No | No | Yes; translated to the selected API protocol |
 | `instructions.system` | `replace`, `append` | `replace`; base instructions | `replace` | `replace` | `replace` | `replace` | `replace`; Pi base instructions | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core | Core |
@@ -144,16 +145,22 @@ and additive extension maps because their support does not vary by adapter:
 | `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No |
 | `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | Yes | No | Uses the named external collector sink when selected; config is not sent to the remote service |
 | `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | Yes | No | Not sent to the remote service |
-| Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Not accepted unless declared by the Pi descriptor | Preserved; no portable adapter semantics |
+| Other additive `extensions` on typed config objects | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor |
 
 The selected model role is `default`, or the sole configured role when no
 `default` exists. More than one role without `default` fails planning.
-Claude and Codex publish a descriptor-owned `model_schema` for every configured
-model role. Their native providers (`anthropic` and `openai`, respectively)
-keep the existing authentication path. Other providers remain valid only with
-an explicit `base_url` and `api_key_env`. The same schema rejects undeclared
-`ModelConfig.settings` during planning and reports each issue through
-`doctor(...)` before adapter startup.
+All bundled adapters except Hermes publish a descriptor-owned `model_schema`
+for every configured model role. The Claude and Codex native providers
+(`anthropic` and `openai`, respectively) keep the existing authentication path.
+Other Claude and Codex providers remain valid only with an explicit `base_url`
+and `api_key_env`. Deep Agents keeps dynamic LangChain provider selection. Each
+published schema rejects undeclared `ModelConfig.settings` during planning and
+reports each issue through `doctor(...)` before adapter startup. Existing
+configurations that supplied `top_p` and `max_tokens` as flattened model
+extensions retain the same wire shape when loaded as normalized fields. Legacy
+adapter descriptors that accept either name through `extension_schemas.model`
+continue receiving it in `AgentModelConfig.extensions`; adapters that advertise
+the normalized capability receive the typed field instead.
 `runtime.max_turns` is optional; omitting it preserves adapter-native defaults
 without creating a compatibility requirement.
 

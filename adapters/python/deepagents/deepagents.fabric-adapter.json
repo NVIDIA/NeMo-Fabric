@@ -5,6 +5,26 @@
   "runner": {
     "module": "nemo_fabric_adapters.deepagents.adapter"
   },
+  "model_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "provider": {"type": "string", "minLength": 1},
+      "model": {"type": "string", "minLength": 1},
+      "temperature": {"type": "number"},
+      "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+      "max_tokens": {"type": "integer", "minimum": 1},
+      "api_key_env": {"type": "string", "minLength": 1},
+      "base_url": {"type": "string", "minLength": 1},
+      "settings": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "required": ["provider", "model"],
+    "additionalProperties": false
+  },
   "settings_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$defs": {
@@ -167,6 +187,8 @@
       "models",
       "models.base_url",
       "models.temperature",
+      "models.top_p",
+      "models.max_tokens",
       "instructions.system",
       "runtime.max_turns",
       "tools.enabled",

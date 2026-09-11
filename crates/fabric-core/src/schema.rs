@@ -351,6 +351,10 @@ mod tests {
             u32::MAX
         );
         assert_eq!(
+            schema["$defs"]["ModelConfig"]["properties"]["max_tokens"]["maximum"],
+            u64::MAX
+        );
+        assert_eq!(
             schema["$defs"]["RuntimeConfig"]["properties"]["timeout_seconds"]["exclusiveMinimum"],
             0.0
         );
@@ -530,6 +534,10 @@ mod tests {
         assert_eq!(
             config["$defs"]["AgentRuntimeConfig"]["properties"]["max_turns"]["maximum"],
             u32::MAX
+        );
+        assert_eq!(
+            config["$defs"]["AgentModelConfig"]["properties"]["max_tokens"]["maximum"],
+            u64::MAX
         );
 
         let result = generate_schema(SchemaName::AgentRunResult).expect("schema generation");

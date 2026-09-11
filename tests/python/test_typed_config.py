@@ -23,8 +23,10 @@ import pytest
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric import FabricConfigError
+from nemo_fabric import ModelConfig
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
+from pydantic import ValidationError
 
 ROOT = Path(__file__).resolve().parents[2]
 SHIM_ADAPTERS = ROOT / "tests" / "fixtures" / "hermes-shim-agent" / "adapters"
@@ -80,6 +82,41 @@ def _shim_adapter_config() -> FabricConfig:
         "default": {"provider": "test", "model": "test-model", "temperature": 0.0}
     }
     return FabricConfig.from_mapping(config)
+
+
+def test_existing_flat_sampling_extensions_load_as_normalized_fields():
+    raw = _repository_adapter_config().to_mapping()
+    raw["models"]["default"].update({"top_p": 0.8, "max_tokens": 512})
+
+    config = FabricConfig.from_mapping(raw)
+    model = config.models["default"]
+
+    assert model.top_p == 0.8
+    assert model.max_tokens == 512
+    assert model.model_extra is None or "top_p" not in model.model_extra
+    assert config.to_mapping()["models"]["default"]["top_p"] == 0.8
+    assert config.to_mapping()["models"]["default"]["max_tokens"] == 512
+
+
+def test_model_config_bounds_max_tokens_to_u64():
+    maximum = (1 << 64) - 1
+
+    model = ModelConfig(provider="nvidia", model="test-model", max_tokens=maximum)
+    assert model.max_tokens == maximum
+
+    with pytest.raises(ValidationError, match="less than or equal"):
+        ModelConfig(provider="nvidia", model="test-model", max_tokens=1 << 64)
+
+
+def test_model_config_preserves_json_integer_compatibility():
+    model = ModelConfig(provider="nvidia", model="test-model", max_tokens=512.0)
+
+    assert model.max_tokens == 512
+
+
+def test_model_config_rejects_boolean_top_p():
+    with pytest.raises(ValidationError, match="valid number"):
+        ModelConfig(provider="nvidia", model="test-model", top_p=True)
 
 
 async def resolves_and_diagnoses_typed_config(client: Fabric) -> None:

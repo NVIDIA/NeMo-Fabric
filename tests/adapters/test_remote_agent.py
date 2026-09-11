@@ -77,7 +77,8 @@ async def test_remote_agent_invokes_supported_protocol(
                     "provider": "test",
                     "model": "fabric-echo",
                     "temperature": 0.2,
-                    "settings": {"max_tokens": 64},
+                    "top_p": 0.8,
+                    "max_tokens": 64,
                 }
             },
         }
@@ -111,8 +112,67 @@ async def test_remote_agent_invokes_supported_protocol(
     assert result.usage.input_tokens == 0
     assert captured[-1]["model"] == "fabric-echo"
     assert captured[-1]["temperature"] == 0.2
+    assert captured[-1]["top_p"] == 0.8
+    max_tokens_field = {
+        "openai-responses": "max_output_tokens",
+        "openai-completions": "max_completion_tokens",
+        "anthropic-messages": "max_tokens",
+    }[api_type]
+    assert captured[-1][max_tokens_field] == 64
     assert captured[-1].get("stream", False) is (api_type != "openai-completions")
     assert captured[-1]["messages" if api_type != "openai-responses" else "input"]
+
+
+@pytest.mark.parametrize(
+    ("normalized_max_tokens", "expected_max_tokens"),
+    [
+        pytest.param(None, 32, id="legacy-settings-fallback"),
+        pytest.param(64, 64, id="normalized-field-precedence"),
+    ],
+)
+async def test_anthropic_max_tokens_fallback_and_precedence(
+    api_server: str,
+    repo_root: Path,
+    normalized_max_tokens: int | None,
+    expected_max_tokens: int,
+):
+    model: dict[str, object] = {
+        "provider": "test",
+        "model": "fabric-echo",
+        "settings": {"max_tokens": 32},
+    }
+    if normalized_max_tokens is not None:
+        model["max_tokens"] = normalized_max_tokens
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {
+                "settings": {
+                    "base_url": f"{api_server}/v1",
+                    "api_type": "anthropic-messages",
+                }
+            },
+            "models": {"default": model},
+        }
+    )
+    context = _context()
+    runtime = adapter.RemoteAgentRuntime()
+    await runtime.start(
+        {
+            "config": config,
+            "runtime_context": context.to_mapping(),
+            "base_dir": str(repo_root),
+        }
+    )
+
+    try:
+        result = await runtime.invoke(AgentRunRequest(input="Hello."), context)
+    finally:
+        await runtime.stop()
+
+    async with httpx.AsyncClient() as control_client:
+        captured = (await control_client.get(f"{api_server}/_requests")).json()
+    assert result.status == "succeeded"
+    assert captured[-1]["max_tokens"] == expected_max_tokens
 
 
 async def test_remote_agent_retains_transcript_and_reports_http_failure(

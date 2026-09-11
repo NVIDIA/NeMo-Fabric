@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::config::{
     AdapterConfigField, AdapterDescriptor, CapabilityPlan, FabricConfig, InstructionMode,
-    McpAuthenticationConfig, ResolvedAdapterTargetDescriptor,
+    McpAuthenticationConfig, ResolvedAdapterTargetDescriptor, legacy_model_sampling_extensions,
 };
 use crate::error::{FabricError, Result};
 
@@ -77,6 +77,14 @@ pub struct AgentModelConfig {
     /// Optional model temperature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    /// Optional nucleus sampling probability.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub top_p: Option<f64>,
+    /// Optional maximum number of response tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1, max = u64::MAX))]
+    pub max_tokens: Option<u64>,
     /// Optional provider API base URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
@@ -340,6 +348,11 @@ pub(crate) fn project_agent_config(
             .models
             .iter()
             .map(|(name, model)| {
+                let legacy_extensions = descriptor
+                    .map(|descriptor| legacy_model_sampling_extensions(model, descriptor))
+                    .unwrap_or_default();
+                let mut extensions = model.extensions.clone();
+                extensions.extend(legacy_extensions.clone());
                 (
                     name.clone(),
                     AgentModelConfig {
@@ -347,9 +360,15 @@ pub(crate) fn project_agent_config(
                         model: model.model.clone(),
                         api_key_env: model.api_key_env.clone(),
                         temperature: model.temperature,
+                        top_p: (!legacy_extensions.contains_key("top_p"))
+                            .then_some(model.top_p)
+                            .flatten(),
+                        max_tokens: (!legacy_extensions.contains_key("max_tokens"))
+                            .then_some(model.max_tokens)
+                            .flatten(),
                         base_url: model.base_url.clone(),
                         settings: model.settings.clone(),
-                        extensions: model.extensions.clone(),
+                        extensions,
                     },
                 )
             })

@@ -190,6 +190,8 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
     provider = model_config.provider
     base_url = model_config.base_url
     temperature = model_config.temperature
+    top_p = model_config.top_p
+    max_tokens = model_config.max_tokens
 
     if provider in OPENAI_COMPATIBLE_PROVIDERS - {"openai"} and not base_url:
         raise AdapterConfigError(
@@ -203,6 +205,10 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
         kwargs = {"model": model_name, "model_provider": provider, "api_key": api_key}
         if temperature is not None:
             kwargs["temperature"] = temperature
+        if top_p is not None:
+            kwargs["top_p"] = top_p
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
         if base_url:
             kwargs["base_url"] = base_url
         return (
@@ -218,6 +224,10 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
         kwargs["base_url"] = base_url
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if top_p is not None:
+        kwargs["top_p"] = top_p
+    if max_tokens is not None:
+        kwargs["max_completion_tokens"] = max_tokens
     return ChatOpenAI(**_supported_kwargs(ChatOpenAI, kwargs)), model_name, base_url
 
 

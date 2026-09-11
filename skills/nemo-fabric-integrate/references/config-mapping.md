@@ -35,10 +35,18 @@ indexes the public config models. The generated pages omit constructor fields an
 defaults, so read the installed `nemo_fabric` models (they ship `py.typed`) for
 exact field names and defaults.
 
-Claude and Codex validate every model role against their descriptor-owned
-`model_schema`. Provider identifiers outside their native `anthropic` and
-`openai` paths require both `ModelConfig.base_url` and
-`ModelConfig.api_key_env`; undeclared `ModelConfig.settings` also fail planning.
+All bundled adapters except Hermes validate every model role against their
+descriptor-owned `model_schema`. Provider identifiers outside the native Claude
+and Codex `anthropic` and `openai` paths require both `ModelConfig.base_url` and
+`ModelConfig.api_key_env`. Deep Agents keeps dynamic LangChain provider
+selection. Undeclared `ModelConfig.settings` fail planning for each of these
+adapters. `models.<role>.top_p` and `models.<role>.max_tokens` are normalized
+fields. Deep Agents, Hermes, mini-SWE-agent, and Remote Agent declare native
+mappings; other adapters fail planning when either field is configured.
+Legacy adapter descriptors that instead accept either name through
+`extension_schemas.model` receive it in `AgentModelConfig.extensions`. A
+descriptor-advertised normalized mapping takes precedence over this compatibility
+route.
 
 Omit `instructions.system` to preserve the harness's native system instruction.
 When present, `InstructionConfig.mode` defaults to `replace`; set it to

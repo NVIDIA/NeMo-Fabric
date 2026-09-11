@@ -173,7 +173,7 @@ class HermesRuntime:
                 if max_iterations is None:
                     max_iterations = DEFAULT_MAX_ITERATIONS
                 temperature = model_config.temperature
-                top_p = model_config.extensions.get("top_p")
+                top_p = model_config.top_p
                 request_overrides = {
                     name: value
                     for name, value in (
@@ -199,10 +199,8 @@ class HermesRuntime:
                         save_trajectories=bool(
                             self._settings.get("save_trajectories", False)
                         ),
-                        max_tokens=model_config.extensions.get(
-                            "max_tokens",
-                            self._settings.get("max_tokens", 512),
-                        ),
+                        max_tokens=model_config.max_tokens
+                        or self._settings.get("max_tokens", 512),
                         request_overrides=request_overrides or None,
                         reasoning_config=self._settings.get(
                             "reasoning_config", {"effort": "none"}

@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+from langchain_openai import ChatOpenAI as InstalledChatOpenAI
 from langgraph.errors import GraphRecursionError
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -49,6 +50,27 @@ def test_descriptor_declares_supported_normalized_config():
 
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
     assert "runtime.max_turns" in descriptor["config"]["accepts"]
+    assert descriptor["model_schema"]["properties"]["settings"] == {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    }
+    assert {
+        name: descriptor["model_schema"]["properties"][name]
+        for name in ("top_p", "max_tokens")
+    } == {
+        "top_p": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+        },
+        "max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+        },
+    }
+    assert "models.top_p" in descriptor["config"]["accepts"]
+    assert "models.max_tokens" in descriptor["config"]["accepts"]
 
 
 def lifecycle_start_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -110,15 +132,18 @@ def fake_sdks_fixture(monkeypatch):
     """Stub the deepagents/langchain/langgraph SDKs with mocks.
 
     Returns a recorder capturing the ``create_deep_agent`` kwargs, the streamed
-    ``config``, and the checkpointer close count. ``chat_openai``/``fs_backend``
-    expose the mocked classes so tests can assert their construction kwargs.
+    ``config``, and the checkpointer close count. ``chat_openai``,
+    ``init_chat_model``, and ``fs_backend`` expose the mocked callables so tests
+    can assert their construction kwargs.
     """
 
     recorder: dict[str, Any] = {"saver_exits": 0}
 
     mock_chat_openai = MagicMock()
+    mock_init_chat_model = MagicMock()
     mock_fs_backend = MagicMock()
     recorder["chat_openai"] = mock_chat_openai
+    recorder["init_chat_model"] = mock_init_chat_model
     recorder["fs_backend"] = mock_fs_backend
 
     def build_agent(**kwargs):
@@ -207,6 +232,10 @@ def fake_sdks_fixture(monkeypatch):
     langchain_openai_mod = types.ModuleType("langchain_openai")
     langchain_openai_mod.ChatOpenAI = mock_chat_openai
     monkeypatch.setitem(sys.modules, "langchain_openai", langchain_openai_mod)
+
+    langchain_chat_models_mod = types.ModuleType("langchain.chat_models")
+    langchain_chat_models_mod.init_chat_model = mock_init_chat_model
+    monkeypatch.setitem(sys.modules, "langchain.chat_models", langchain_chat_models_mod)
 
     def open_saver(_conn):
         async def aexit(*_exc):
@@ -2118,6 +2147,81 @@ async def test_openai_provider_defaults_to_openai_key(
     assert output["failed"] is False, output["error"]
     assert output["base_url"] is None
     assert "base_url" not in fake_sdks["chat_openai"].call_args.kwargs
+
+
+async def test_openai_compatible_model_receives_normalized_sampling(
+    tmp_path, make_payload, fake_sdks
+):
+    payload = make_payload(tmp_path)
+    payload["config"]["models"]["default"].update(
+        {
+            "temperature": 0.2,
+            "top_p": 0.8,
+            "max_tokens": 256,
+        }
+    )
+
+    output = await invoke_once(payload)
+
+    assert output["failed"] is False, output["error"]
+    fake_sdks["chat_openai"].assert_called_once_with(
+        model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        api_key="test123",
+        base_url="https://integrate.api.nvidia.com/v1",
+        temperature=0.2,
+        top_p=0.8,
+        max_completion_tokens=256,
+    )
+
+
+def test_openai_max_tokens_keyword_matches_installed_chat_openai_signature():
+    kwargs = adapter._supported_kwargs(
+        InstalledChatOpenAI,
+        {"max_completion_tokens": 256, "max_tokens": 128},
+    )
+
+    assert kwargs["max_completion_tokens"] == 256
+    assert "max_tokens" not in kwargs
+
+
+async def test_generic_model_receives_normalized_sampling(
+    tmp_path, make_payload, fake_sdks
+):
+    os.environ["ANTHROPIC_API_KEY"] = "sk-test"
+    payload = make_payload(tmp_path)
+    payload["config"]["models"]["default"] = {
+        "provider": "anthropic",
+        "model": "claude-test",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "temperature": 0.3,
+        "top_p": 0.7,
+        "max_tokens": 512,
+    }
+
+    output = await invoke_once(payload)
+
+    assert output["failed"] is False, output["error"]
+    fake_sdks["init_chat_model"].assert_called_once_with(
+        model="claude-test",
+        model_provider="anthropic",
+        api_key="sk-test",
+        temperature=0.3,
+        top_p=0.7,
+        max_tokens=512,
+    )
+
+
+async def test_unset_sampling_preserves_chat_model_defaults(
+    tmp_path, make_payload, fake_sdks
+):
+    output = await invoke_once(make_payload(tmp_path))
+
+    assert output["failed"] is False, output["error"]
+    fake_sdks["chat_openai"].assert_called_once_with(
+        model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        api_key="test123",
+        base_url="https://integrate.api.nvidia.com/v1",
+    )
 
 
 async def test_openai_compatible_provider_requires_api_key_env(tmp_path, make_payload):

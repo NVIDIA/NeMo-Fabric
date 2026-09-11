@@ -32,11 +32,15 @@ includes `/v1`; `api_type` defaults to `openai-responses`.
 | `read_timeout_seconds` | Timeout between response bytes; defaults to `600` |
 | `relay_streaming` | Opt in to request-ID correlation with a Relay-instrumented remote service. Supported only by `openai-responses` and `openai-completions`; defaults to `false`. |
 
-The adapter accepts `models`, `models.temperature`, and replacement
-`instructions.system` values.
+The adapter accepts `models`, `models.temperature`, `models.top_p`,
+`models.max_tokens`, and replacement `instructions.system` values. It maps the
+token limit to `max_output_tokens` for OpenAI Responses,
+`max_completion_tokens` for OpenAI Chat Completions, and `max_tokens` for
+Anthropic Messages.
 Set `models.default.api_key_env` when the service requires a credential. For
-Anthropic Messages, optionally set `models.default.settings.max_tokens`; it
-otherwise uses `4096`.
+Anthropic Messages, the legacy `models.default.settings.max_tokens` key remains
+accepted; `models.default.max_tokens` takes precedence. The adapter otherwise
+uses `4096`.
 
 ## Relay-Backed Streaming
 
@@ -328,7 +332,7 @@ invocations in one runtime.
 
 The remote agent is configured and started independently of Fabric, so Fabric
 cannot normalize or apply configuration that controls how the agent is
-constructed. The adapter only normalizes `models`, `models.temperature`, and
-replacement `instructions.system` settings. MCP, skills, tool policy, and
-subagents can be configured by the remote deployment, but the adapter does not
-expose them through `FabricConfig`.
+constructed. The adapter only normalizes `models`, `models.temperature`,
+`models.top_p`, `models.max_tokens`, and replacement `instructions.system`
+settings. MCP, skills, tool policy, and subagents can be configured by the
+remote deployment, but the adapter does not expose them through `FabricConfig`.
