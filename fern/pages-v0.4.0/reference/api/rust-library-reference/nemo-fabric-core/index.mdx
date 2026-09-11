@@ -1,0 +1,147 @@
+---
+title: "nemo-fabric-core"
+sidebar-title: "nemo-fabric-core"
+description: "Core config and runtime contract for NeMo Fabric."
+position: 1
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+Core config and runtime contract for NeMo Fabric.
+
+## Re-exports
+
+- `pub use adapter_contract::ADAPTER_CONTRACT_VERSION;`
+- `pub use adapter_contract::AdapterExtensionPoint;`
+- `pub use agent_execution::AgentArtifact;`
+- `pub use agent_execution::AgentRunError;`
+- `pub use agent_execution::AgentRunRequest;`
+- `pub use agent_execution::AgentRunResult;`
+- `pub use agent_execution::AgentRunResultValidationError;`
+- `pub use agent_execution::AgentRunStatus;`
+- `pub use agent_execution::AgentUsage;`
+- `pub use config::AdapterConfigField;`
+- `pub use config::AdapterConfigSupport;`
+- `pub use config::AdapterDescriptor;`
+- `pub use config::AdapterKind;`
+- `pub use config::AdapterRequirements;`
+- `pub use config::AdapterTarget;`
+- `pub use config::AdapterTargetDescriptor;`
+- `pub use config::AdapterTargetType;`
+- `pub use config::AdapterTelemetryProviderSupport;`
+- `pub use config::AdapterTelemetrySupport;`
+- `pub use config::AgentConfig;`
+- `pub use config::AgentHarnessConfig;`
+- `pub use config::AgentInstructionConfig;`
+- `pub use config::AgentInstructionsConfig;`
+- `pub use config::AgentMcpConfig;`
+- `pub use config::AgentMcpServerConfig;`
+- `pub use config::AgentModelConfig;`
+- `pub use config::AgentRuntimeConfig;`
+- `pub use config::AgentSkillConfig;`
+- `pub use config::AgentToolDefinition;`
+- `pub use config::AgentToolsConfig;`
+- `pub use config::AgentWorkflowConfig;`
+- `pub use config::AgentWorkflowEntrypointConfig;`
+- `pub use config::CapabilityPlan;`
+- `pub use config::ControlLocation;`
+- `pub use config::DescriptorProvenance;`
+- `pub use config::DescriptorSource;`
+- `pub use config::DiscoveryConfig;`
+- `pub use config::EnvironmentConfig;`
+- `pub use config::EnvironmentOwnership;`
+- `pub use config::EnvironmentPlan;`
+- `pub use config::FabricConfig;`
+- `pub use config::HarnessConfig;`
+- `pub use config::InstructionConfig;`
+- `pub use config::InstructionMode;`
+- `pub use config::InstructionsConfig;`
+- `pub use config::McpAuthenticationConfig;`
+- `pub use config::McpConfig;`
+- `pub use config::McpExposure;`
+- `pub use config::McpServerPlan;`
+- `pub use config::McpTransport;`
+- `pub use config::MetadataConfig;`
+- `pub use config::ModelConfig;`
+- `pub use config::OAuthTokenEndpointAuthMethod;`
+- `pub use config::ResolutionStrategy;`
+- `pub use config::ResolveContext;`
+- `pub use config::ResolvedAdapterDescriptor;`
+- `pub use config::ResolvedAdapterTargetDescriptor;`
+- `pub use config::RunPlan;`
+- `pub use config::RuntimeCapabilities;`
+- `pub use config::RuntimeConfig;`
+- `pub use config::SkillConfig;`
+- `pub use config::TelemetryConfig;`
+- `pub use config::TelemetryPlan;`
+- `pub use config::TelemetryProvider;`
+- `pub use config::TelemetryProviderConfig;`
+- `pub use config::ToolDefinitionConfig;`
+- `pub use config::ToolsConfig;`
+- `pub use config::WorkflowConfig;`
+- `pub use config::WorkflowEntrypointConfig;`
+- `pub use config::WorkflowTargetSpec;`
+- `pub use config::load_adapter_descriptor;`
+- `pub use config::load_adapter_target_descriptor;`
+- `pub use config::resolve_run_plan_from_config;`
+- `pub use doctor::DoctorCheck;`
+- `pub use doctor::DoctorReport;`
+- `pub use doctor::DoctorStatus;`
+- `pub use doctor::doctor_plan;`
+- `pub use error::FabricError;`
+- `pub use error::Result;`
+- `pub use runtime::AdapterInvocation;`
+- `pub use runtime::ArtifactManifest;`
+- `pub use runtime::ArtifactRef;`
+- `pub use runtime::EnvironmentHandle;`
+- `pub use runtime::ErrorInfo;`
+- `pub use runtime::ErrorStage;`
+- `pub use runtime::FabricEvent;`
+- `pub use runtime::InvocationHandle;`
+- `pub use runtime::OpenAiChatCompletionChunk;`
+- `pub use runtime::OpenAiChatCompletionChunkChoice;`
+- `pub use runtime::OpenAiChatCompletionChunkDelta;`
+- `pub use runtime::OpenAiChatCompletionChunkObject;`
+- `pub use runtime::OpenAiStreamHost;`
+- `pub use runtime::OpenAiStreamInvocation;`
+- `pub use runtime::OpenAiStreamProfile;`
+- `pub use runtime::OpenAiStreamProtocolVersion;`
+- `pub use runtime::OpenAiStreamRecord;`
+- `pub use runtime::OpenAiStreamSink;`
+- `pub use runtime::OpenAiStreamTransport;`
+- `pub use runtime::RunRequest;`
+- `pub use runtime::RunResult;`
+- `pub use runtime::RunStatus;`
+- `pub use runtime::RunUsage;`
+- `pub use runtime::RuntimeContext;`
+- `pub use runtime::RuntimeHandle;`
+- `pub use runtime::RuntimeTelemetryContext;`
+- `pub use runtime::TelemetryRef;`
+- `pub use runtime::invoke_openai_stream;`
+- `pub use runtime::invoke_runtime;`
+- `pub use runtime::prepare_environment;`
+- `pub use runtime::run_plan;`
+- `pub use runtime::start_runtime;`
+- `pub use runtime::stop_runtime;`
+- `pub use schema::SchemaName;`
+- `pub use schema::generate_all_schemas;`
+- `pub use schema::generate_schema;`
+- `pub use schema::generate_schema_json;`
+- `pub use schema::write_schema_snapshots;`
+
+## Modules
+
+- [adapter_contract](adapter-contract/index.mdx): Shared southbound adapter contract metadata.
+- [agent_config](agent-config/index.mdx): Configuration projected southbound to an adapter target.
+- [agent_execution](agent-execution/index.mdx): Request and result structures exchanged with an adapter target.
+- [config](config/index.mdx): NeMo Fabric config models and loading helpers.
+- [doctor](doctor/index.mdx): Plan diagnostics for NeMo Fabric.
+- [error](error/index.mdx): Error types for NeMo Fabric core.
+- [runtime](runtime/index.mdx): Runtime invocation helpers.
+- [schema](schema/index.mdx): JSON Schema generation for the public NeMo Fabric contract.
+
+## Functions
+
+- [version](fn-version.mdx): Returns the crate version compiled into this build.

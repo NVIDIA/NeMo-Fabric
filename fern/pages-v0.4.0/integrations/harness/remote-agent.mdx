@@ -1,0 +1,155 @@
+---
+title: "Use the Remote Agent Adapter"
+description: "Configure a remote OpenAI- or Anthropic-compatible agent for NVIDIA NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the `nvidia.fabric.remote-agent` adapter to call an agent service over HTTP
+or HTTPS. The service can implement OpenAI Responses, OpenAI Chat Completions,
+or Anthropic Messages.
+
+## Install the Adapter
+
+Install the runtime and adapter together:
+
+```bash
+pip install "nemo-fabric[remote-agent]"
+```
+
+To install the adapter without the runtime, use:
+
+```bash
+pip install "nemo-fabric-adapters-remote-agent[harness]"
+```
+
+The bare, `harness`, and `full` installations contain the same adapter and HTTP
+client. They do not install the independently deployed remote service.
+
+## Configure the Adapter
+
+Set the remote API root, including its `/v1` path, in `HarnessConfig.settings`.
+`api_type` defaults to `openai-responses`.
+
+```python
+from nemo_fabric import (
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+)
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.remote-agent",
+    settings={
+        "base_url": "https://agent.example.com/v1",
+        "api_type": "openai-responses",
+        "connect_timeout_seconds": 10,
+        "read_timeout_seconds": 600,
+        "relay_streaming": False,
+    },
+)
+```
+
+Supported `api_type` values are `openai-responses`, `openai-completions`, and
+`anthropic-messages`. Planning rejects unknown settings and values outside this
+set.
+
+The adapter supports `models`, `models.temperature`, and replacement
+`instructions.system` values. Set `models.default.api_key_env` when the service
+requires a credential. The adapter sends it as a Bearer token for OpenAI APIs
+and as `x-api-key` for Anthropic Messages. For Anthropic Messages, you can set
+`models.default.settings.max_tokens`; when omitted, the adapter sends `4096`.
+The connect timeout defaults to 10 seconds, and the timeout between response
+bytes defaults to 600 seconds.
+
+## Stream Relay Telemetry
+
+The adapter supports Relay-backed `Runtime.invoke_stream()` when the remote
+service already has NVIDIA NeMo Relay instrumentation. Configure Fabric to
+connect to the independently managed collector that the remote deployment
+publishes to:
+
+```python
+from nemo_fabric import RelayAtofConfig
+from nemo_fabric import RelayAtofStreamSinkConfig
+from nemo_fabric import RelayObservabilityConfig
+
+collector_url = "http://fabric-host:43123"
+
+harness.settings["relay_streaming"] = True
+config = FabricConfig(
+    metadata=MetadataConfig(name="remote-agent"),
+    harness=harness,
+    models={"default": ModelConfig(provider="remote", model="agent")},
+).enable_relay(
+    observability=RelayObservabilityConfig(
+        atof=RelayAtofConfig(
+            enabled=True,
+            sinks=[
+                RelayAtofStreamSinkConfig(
+                    name="nemo-fabric-stream",
+                    url=collector_url,
+                    transport="ndjson",
+                )
+            ],
+        )
+    )
+)
+
+async with await Fabric().start_runtime(
+    config,
+    streaming=True,
+    launch_collector=False,
+) as runtime:
+    stream = runtime.invoke_stream(input="Review this change")
+    async for record in stream:
+        print(record)
+    result = await stream.result()
+```
+
+Relay-backed streaming has two sides:
+
+- **Receiver (Fabric Runtime):**
+  `start_runtime(..., streaming=True, launch_collector=False)` connects to the
+  independently managed collector at `collector_url`. The reserved
+  `nemo-fabric-stream` entry supplies the collector base URL.
+- **Publisher (Remote Deployment):** The independently started remote service
+  owns its Relay installation. Its Relay stream sink posts NDJSON ATOF records
+  to the collector. Fabric does not start or configure the remote Relay
+  installation or its sink.
+
+Both sides must use the same collector. The adapter does not send the collector
+URL to the remote service. The Fabric sink uses the collector base URL. The
+remote Relay sink publishes to `<collector-base-url>/v1/atof`. For correlation,
+the adapter puts the Fabric request ID in `metadata.nemo_fabric_request_id` in
+each mapped OpenAI or Anthropic request body. The remote endpoint must carry it
+into its Relay turn correlation metadata. The adapter sends no correlation
+headers.
+
+The collector base URL must be reachable from the remote deployment. The
+externally managed collector must be running before the first invocation.
+Invocations on one runtime are serialized. Give every turn a unique request ID
+and fully consume or close each stream before invoking again.
+
+Multiple Fabric runtimes can use `invoke` against the same remote agent, subject
+to the remote service's concurrency and session-isolation behavior. Multiple
+runtimes can also use `invoke_stream` through the same collector when every
+request ID is unique.
+
+The adapter keeps the completed user/assistant transcript for ordered
+invocations within a runtime.
+
+## Limitations
+
+The remote agent is configured and started independently of Fabric, so Fabric
+cannot normalize or apply configuration that controls how the agent is
+constructed. The adapter normalizes only `models`, `models.temperature`, and
+replacement `instructions.system` settings. MCP, skills, tool policy, and
+subagents can be configured by the remote deployment, but the adapter does not
+expose them through `FabricConfig`.
+
+`capabilities.streaming` remains false because that descriptor flag represents
+adapter-native OpenAI Chat Completions chunks. The adapter still reduces native
+OpenAI and Anthropic streams to a terminal result.
