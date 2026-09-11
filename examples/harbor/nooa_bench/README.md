@@ -36,7 +36,7 @@ manylinux runtime wheel, into the ignored Docker build context:
 ./examples/harbor/nooa_bench/prepare.sh
 ```
 
-The task image installs `nemo-fabric-adapters-nooa[full]` from the built wheel;
+The task image installs `nemo-fabric-adapters-nooa[full]` from the built wheel, while
 its package metadata installs the tested `nooa`, `nooa-cli`, `nooa-bench`, and
 Relay versions from PyPI. `prepare.sh` builds the required NeMo Fabric wheels in
 a fresh temporary directory and uses Maturin with Zig for manylinux 2.17

@@ -24,5 +24,5 @@ SPDX-License-Identifier: Apache-2.0
 | `pip install "nemo-fabric-adapters-nooa[full]"` | No | Yes | Yes | Yes |
 | `pip install nemo-fabric-adapters-nooa` | No | Yes | No | No |
 
-For configuration, supported targets, and behavior, see the
+For configuration, supported targets, and behavior, refer to the
 [NOOA adapter README](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/nooa/README.md).
