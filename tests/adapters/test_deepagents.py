@@ -441,6 +441,19 @@ def use_real_langgraph_fixture(fake_sdks, monkeypatch):
         monkeypatch.delitem(sys.modules, name, raising=False)
 
 
+@pytest.fixture(name="use_real_deepagents")
+def use_real_deepagents_fixture(fake_sdks, monkeypatch):
+    """Drop the fake Deep Agents stubs so the real backend package resolves."""
+
+    for name in (
+        "deepagents",
+        "deepagents.backends",
+        "deepagents.middleware",
+        "deepagents.middleware.subagents",
+    ):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+
 async def test_single_invocation_normalizes_response_usage_and_thread(
     tmp_path, make_payload, fake_sdks
 ):
@@ -1493,6 +1506,39 @@ async def test_local_shell_backend_resolves_root_from_workspace(
         "inherit_env": False,
     }
     fake_sdks["fs_backend"].assert_not_called()
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+def test_local_shell_backend_keeps_file_and_shell_path_namespaces_distinct(
+    tmp_path, make_payload
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = "workspace"
+    context = RuntimeContext.from_mapping(payload["runtime_context"])
+
+    backend = adapter.resolve_backend(
+        context,
+        str(tmp_path),
+        {"type": "local_shell"},
+    )
+    filename = f"virtual-path-{uuid.uuid4().hex}.txt"
+    backend.write(f"/{filename}", "workspace content")
+
+    assert (workspace / filename).read_text(encoding="utf-8") == "workspace content"
+
+    relative = backend.execute(
+        f'"{sys.executable}" -c "from pathlib import Path; '
+        f"raise SystemExit(not Path('{filename}').is_file())\""
+    )
+    host_absolute = backend.execute(
+        f'"{sys.executable}" -c "from pathlib import Path; '
+        f"raise SystemExit(not Path('/{filename}').is_file())\""
+    )
+
+    assert relative.exit_code == 0
+    assert host_absolute.exit_code != 0
 
 
 async def test_local_shell_backend_requires_workspace(tmp_path, make_payload):

@@ -169,6 +169,13 @@ inherit host variables such as `HOME` and receive only the shell's fallback
 when needed. The `execute` tool remains subject to `tools.enabled` and
 `tools.blocked`, like all other Deep Agents built-ins.
 
+File tools and shell commands use different absolute-path namespaces when
+`virtual_mode=True`. For file tools, `/report.txt` resolves to
+`<workspace>/report.txt`; in `execute`, the same path refers to `/report.txt` on
+the adapter host. Shell commands start in `environment.workspace`, so use
+workspace-relative paths, such as `cat report.txt`, for files surfaced by file
+tools. Do not pass a file tool's virtual absolute path directly to `execute`.
+
 Python middleware, `FilesystemPermission` objects, Python tool objects, and
 precompiled `runnable` subagents are not exposed through `harness.settings`.
 When `tools.enabled` or `tools.blocked` is configured, NeMo Fabric applies the
