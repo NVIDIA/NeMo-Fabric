@@ -43,6 +43,10 @@ selection. Undeclared `ModelConfig.settings` fail planning for each of these
 adapters. `models.<role>.top_p` and `models.<role>.max_tokens` are normalized
 fields. Deep Agents, Hermes, mini-SWE-agent, and Remote Agent declare native
 mappings; other adapters fail planning when either field is configured.
+Legacy adapter descriptors that instead accept either name through
+`extension_schemas.model` receive it in `AgentModelConfig.extensions`. A
+descriptor-advertised normalized mapping takes precedence over this compatibility
+route.
 
 Omit `instructions.system` to preserve the harness's native system instruction.
 When present, `InstructionConfig.mode` defaults to `replace`; set it to

@@ -2503,6 +2503,65 @@ pub(crate) struct AdapterCompatibilityIssue {
     pub(crate) reason: String,
 }
 
+/// Return normalized sampling fields that a legacy adapter still accepts through
+/// its model extension schema.
+pub(crate) fn legacy_model_sampling_extensions(
+    model: &ModelConfig,
+    descriptor: &AdapterDescriptor,
+) -> BTreeMap<String, Value> {
+    let Some(schema) = descriptor
+        .extension_schemas
+        .get(&AdapterExtensionPoint::Model)
+    else {
+        return BTreeMap::new();
+    };
+    let mut candidates = BTreeMap::new();
+    if model.top_p.is_some()
+        && !descriptor
+            .config
+            .accepts
+            .contains(&AdapterConfigField::ModelTopP)
+    {
+        candidates.insert("top_p".to_string(), serde_json::json!(model.top_p));
+    }
+    if model.max_tokens.is_some()
+        && !descriptor
+            .config
+            .accepts
+            .contains(&AdapterConfigField::ModelMaxTokens)
+    {
+        candidates.insert(
+            "max_tokens".to_string(),
+            serde_json::json!(model.max_tokens),
+        );
+    }
+    if candidates.is_empty() {
+        return candidates;
+    }
+
+    let validator = jsonschema::validator_for(&Value::Object(schema.clone()))
+        .expect("adapter extension schema was validated during descriptor resolution");
+    let accepts = |legacy: &BTreeMap<String, Value>| {
+        let mut extensions = model.extensions.clone();
+        extensions.extend(legacy.clone());
+        validator.is_valid(
+            &serde_json::to_value(extensions)
+                .expect("typed model extensions are always JSON serializable"),
+        )
+    };
+
+    if accepts(&candidates) {
+        return candidates;
+    }
+    for (name, value) in &candidates {
+        let candidate = BTreeMap::from([(name.clone(), value.clone())]);
+        if accepts(&candidate) {
+            return candidate;
+        }
+    }
+    BTreeMap::new()
+}
+
 pub(crate) fn adapter_config_compatibility_issues(
     config: &FabricConfig,
     descriptor: Option<&AdapterDescriptor>,
@@ -2588,10 +2647,14 @@ pub(crate) fn adapter_config_compatibility_issues(
         let validator = jsonschema::validator_for(&schema)
             .expect("adapter model schema was validated during descriptor resolution");
         for (role, model) in &config.models {
+            let legacy_extensions = legacy_model_sampling_extensions(model, descriptor);
             let mut value = serde_json::to_value(model)
                 .expect("typed model configuration is always JSON serializable");
             if let Some(object) = value.as_object_mut() {
                 for extension in model.extensions.keys() {
+                    object.remove(extension);
+                }
+                for extension in legacy_extensions.keys() {
                     object.remove(extension);
                 }
             }
@@ -2605,6 +2668,7 @@ pub(crate) fn adapter_config_compatibility_issues(
     }
 
     for (role, model) in &config.models {
+        let legacy_extensions = legacy_model_sampling_extensions(model, descriptor);
         if model.base_url.is_some() && !accepts(AdapterConfigField::ModelBaseUrl) {
             issues.push(incompatible(
                 format!("models.{role}.base_url"),
@@ -2617,13 +2681,19 @@ pub(crate) fn adapter_config_compatibility_issues(
                 "the adapter does not declare an equivalent native mapping".to_string(),
             ));
         }
-        if model.top_p.is_some() && !accepts(AdapterConfigField::ModelTopP) {
+        if model.top_p.is_some()
+            && !accepts(AdapterConfigField::ModelTopP)
+            && !legacy_extensions.contains_key("top_p")
+        {
             issues.push(incompatible(
                 format!("models.{role}.top_p"),
                 "the adapter does not declare an equivalent native mapping".to_string(),
             ));
         }
-        if model.max_tokens.is_some() && !accepts(AdapterConfigField::ModelMaxTokens) {
+        if model.max_tokens.is_some()
+            && !accepts(AdapterConfigField::ModelMaxTokens)
+            && !legacy_extensions.contains_key("max_tokens")
+        {
             issues.push(incompatible(
                 format!("models.{role}.max_tokens"),
                 "the adapter does not declare an equivalent native mapping".to_string(),
@@ -3055,11 +3125,16 @@ pub(crate) fn validate_agent_config_extensions(
         )?;
     }
     for (name, model) in &config.models {
+        let mut extensions = model.extensions.clone();
+        extensions.extend(legacy_model_sampling_extensions(
+            model,
+            &resolved.descriptor,
+        ));
         validate_extension_block(
             resolved,
             AdapterExtensionPoint::Model,
             &format!("models.{name}"),
-            &model.extensions,
+            &extensions,
             &mut validators,
         )?;
     }
@@ -5580,7 +5655,89 @@ mod tests {
 
             assert_eq!(model.top_p, Some(0.8), "{adapter_id}");
             assert_eq!(model.max_tokens, Some(256), "{adapter_id}");
+            assert!(!model.extensions.contains_key("top_p"), "{adapter_id}");
+            assert!(!model.extensions.contains_key("max_tokens"), "{adapter_id}");
         }
+    }
+
+    #[test]
+    fn legacy_model_sampling_extensions_are_validated_and_projected() {
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        descriptor.extension_schemas.insert(
+            AdapterExtensionPoint::Model,
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+                    "max_tokens": {"type": "integer", "minimum": 1}
+                },
+                "required": ["top_p", "max_tokens"],
+                "additionalProperties": false
+            })
+            .as_object()
+            .expect("model extension schema")
+            .clone(),
+        );
+        let resolved = resolved_adapter(path, descriptor);
+        let mut config = config_with_model("nvidia.fabric.claude", "anthropic");
+        let model = config.models.get_mut("default").expect("default model");
+        model.top_p = Some(0.8);
+        model.max_tokens = Some(256);
+
+        assert!(
+            adapter_config_compatibility_issues(&config, Some(&resolved.descriptor)).is_empty()
+        );
+        validate_agent_config_extensions(&config, Some(&resolved), None)
+            .expect("legacy sampling extensions");
+        let capability_plan = resolve_capability_plan(
+            &config,
+            Path::new("/tmp/fabric-legacy-sampling"),
+            Some(&resolved),
+        );
+        let agent_config =
+            project_agent_config(&config, &capability_plan, Some(&resolved.descriptor), None);
+        let model = agent_config
+            .models
+            .get("default")
+            .expect("projected default model");
+
+        assert_eq!(model.top_p, None);
+        assert_eq!(model.max_tokens, None);
+        assert_eq!(model.extensions["top_p"], serde_json::json!(0.8));
+        assert_eq!(model.extensions["max_tokens"], serde_json::json!(256));
+    }
+
+    #[test]
+    fn unrelated_model_extension_schema_does_not_accept_normalized_sampling() {
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        descriptor.extension_schemas.insert(
+            AdapterExtensionPoint::Model,
+            serde_json::json!({
+                "type": "object",
+                "properties": {"profile": {"type": "string"}},
+                "additionalProperties": false
+            })
+            .as_object()
+            .expect("model extension schema")
+            .clone(),
+        );
+        let mut config = config_with_model("nvidia.fabric.claude", "anthropic");
+        config
+            .models
+            .get_mut("default")
+            .expect("default model")
+            .top_p = Some(0.8);
+
+        let issues = adapter_config_compatibility_issues(&config, Some(&descriptor));
+
+        assert!(
+            !issues.is_empty()
+                && issues
+                    .iter()
+                    .all(|issue| issue.field == "models.default.top_p")
+        );
     }
 
     #[test]
