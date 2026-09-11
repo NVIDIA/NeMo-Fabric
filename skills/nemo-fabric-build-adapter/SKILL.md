@@ -63,6 +63,10 @@ translation:
   and `extension_schemas` where applicable. Use
   `model_schema` only for static model/provider compatibility and model settings;
   keep credential validity and provider availability in startup validation.
+- New adapters that consume `models.<role>.top_p` or `.max_tokens` should declare
+  the corresponding normalized `config.accepts` field. Existing descriptors
+  that declare either name through `extension_schemas.model` remain compatible
+  and receive it in `AgentModelConfig.extensions`.
 - Declare runtime requirements and telemetry outputs without secret values.
 - Leave optional capability flags false unless the installed NeMo Fabric runtime
   exposes and tests that adapter operation. Set `capabilities.streaming` only

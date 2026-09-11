@@ -157,7 +157,10 @@ and `api_key_env`. Deep Agents keeps dynamic LangChain provider selection. Each
 published schema rejects undeclared `ModelConfig.settings` during planning and
 reports each issue through `doctor(...)` before adapter startup. Existing
 configurations that supplied `top_p` and `max_tokens` as flattened model
-extensions retain the same wire shape when loaded as normalized fields.
+extensions retain the same wire shape when loaded as normalized fields. Legacy
+adapter descriptors that accept either name through `extension_schemas.model`
+continue receiving it in `AgentModelConfig.extensions`; adapters that advertise
+the normalized capability receive the typed field instead.
 `runtime.max_turns` is optional; omitting it preserves adapter-native defaults
 without creating a compatibility requirement.
 
