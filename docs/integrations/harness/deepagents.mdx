@@ -103,6 +103,8 @@ harness = HarnessConfig(
 
 The descriptor closes both `harness.settings` and its nested `deepagents`
 object, so planning rejects unknown settings before runtime start.
+The optional `backend` object accepts only `{"type": "local_shell"}`. Omit it
+to preserve the existing filesystem or Deep Agents default backend behavior.
 `runtime.max_turns=10` configures LangGraph with `recursion_limit=10`. This is
 a graph-superstep budget, not a promise of ten model responses or tool calls.
 One interaction can consume multiple supersteps. When `runtime.max_turns` is
@@ -111,6 +113,62 @@ omitted, the adapter keeps the Deep Agents default.
 `allowed_decisions`; supported decisions are `approve`, `edit`, `reject`, and
 `respond`. The object can also contain a static `description` and an
 `args_schema` JSON Schema.
+
+### Enable Local Shell Execution for a Supervised Demo
+
+<Warning>
+`LocalShellBackend` executes commands directly on the adapter host with the host
+user's permissions. It provides no process isolation, and shell commands can
+bypass `virtual_mode` filesystem restrictions. Use it only with trusted input
+in a controlled environment. Do not use it for production or multi-tenant
+workloads.
+</Warning>
+
+The adapter requires `environment.workspace` and an explicit Fabric tool policy
+when `local_shell` is selected. The policy is applied to the main agent and all
+declarative subagents, including a subagent that replaces the parent's
+`interrupt_on` map. Include `execute` in `tools.enabled` to permit commands;
+omit it from that allowlist or add it to `tools.blocked` to prevent commands.
+
+Do not configure `interrupt_on.execute` with `local_shell`. The current adapter
+lifecycle cannot surface and resume a LangGraph approval interrupt, so the
+adapter rejects that combination instead of reporting an interrupted command as
+a completed turn.
+
+The following configuration opts in to local shell execution and limits the
+tool surface to `execute`. It does not provide per-command approval; use it only
+with trusted input under direct operator supervision:
+
+```python
+from nemo_fabric import EnvironmentConfig, HarnessConfig, ToolsConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.langchain.deepagents",
+    settings={
+        "deepagents": {"backend": {"type": "local_shell"}}
+    },
+)
+environment = EnvironmentConfig(
+    provider="local",
+    workspace="/path/to/supervised-demo",
+)
+tools = ToolsConfig(enabled=["execute"])
+```
+
+`LocalShellBackend` keeps `inherit_env=False`, so commands do not inherit
+ambient adapter-host variables such as `HOME`. Values explicitly configured in
+`environment.env` are passed to shell commands and are available to
+agent-generated commands. If `environment.env` does not set `PATH`, the shell
+provides only its fallback path; configure required variables explicitly and
+use absolute executable paths when needed. The `execute` tool remains subject
+to `tools.enabled` and `tools.blocked`, like all other Deep Agents built-ins.
+
+File tools and shell commands use different absolute-path namespaces when
+`virtual_mode=True`. For file tools, `/report.txt` resolves to
+`<workspace>/report.txt`; in `execute`, the same path refers to `/report.txt` on
+the adapter host. Shell commands start in `environment.workspace`, so use
+workspace-relative paths, such as `cat report.txt`, for files surfaced by file
+tools. Do not pass a file tool's virtual absolute path directly to `execute`.
 
 `subagents` accepts declarative synchronous subagents and Agent Protocol
 asynchronous subagents. A declarative subagent requires `name`, `description`,

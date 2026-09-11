@@ -85,6 +85,7 @@ _config = partial(
             "nvidia.fabric.langchain.deepagents",
             {
                 "deepagents": {
+                    "backend": {"type": "local_shell"},
                     "interrupt_on": {
                         "write_file": True,
                         "delete_file": {
@@ -384,6 +385,18 @@ def test_remote_agent_accepts_relay_atof_for_invoke_stream(tmp_path: Path):
             {"deepagents": {"subagents": [{"name": "researcher"}]}},
             "harness.settings.deepagents.subagents.0",
             id="deepagents-subagent-required-fields",
+        ),
+        pytest.param(
+            "nvidia.fabric.langchain.deepagents",
+            {"deepagents": {"backend": {"type": "sandbox"}}},
+            "harness.settings.deepagents.backend.type",
+            id="deepagents-backend-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.langchain.deepagents",
+            {"deepagents": {"backend": {"type": "local_shell", "root_dir": "/tmp"}}},
+            "harness.settings.deepagents.backend.root_dir",
+            id="deepagents-backend-unknown-field",
         ),
         pytest.param(
             "nvidia.fabric.hermes",

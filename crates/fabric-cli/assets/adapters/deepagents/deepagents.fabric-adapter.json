@@ -131,6 +131,19 @@
       "deepagents": {
         "type": "object",
         "properties": {
+          "backend": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "local_shell",
+                "description": "Selects the adapter-owned LocalShellBackend."
+              }
+            },
+            "required": ["type"],
+            "additionalProperties": false,
+            "description": "Optional backend selection. Local shell execution runs directly on the adapter host without process isolation."
+          },
           "interrupt_on": {
             "$ref": "#/$defs/interrupt_on",
             "default": {},
@@ -155,7 +168,7 @@
         "required": [],
         "additionalProperties": false,
         "default": {},
-        "description": "JSON-serializable options forwarded to Deep Agents."
+        "description": "JSON-serializable adapter and Deep Agents options."
       }
     },
     "required": [],
