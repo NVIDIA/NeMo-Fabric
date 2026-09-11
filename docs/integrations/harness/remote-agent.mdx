@@ -150,10 +150,10 @@ invocations within a runtime.
 
 The remote agent is configured and started independently of Fabric, so Fabric
 cannot normalize or apply configuration that controls how the agent is
-constructed. The adapter normalizes only `models`, `models.temperature`, and
-replacement `instructions.system` settings. MCP, skills, tool policy, and
-subagents can be configured by the remote deployment, but the adapter does not
-expose them through `FabricConfig`.
+constructed. The adapter normalizes only `models`, `models.temperature`,
+`models.top_p`, `models.max_tokens`, and replacement `instructions.system`
+settings. MCP, skills, tool policy, and subagents can be configured by the
+remote deployment, but the adapter does not expose them through `FabricConfig`.
 
 `capabilities.streaming` remains false because that descriptor flag represents
 adapter-native OpenAI Chat Completions chunks. The adapter still reduces native

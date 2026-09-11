@@ -332,7 +332,7 @@ invocations in one runtime.
 
 The remote agent is configured and started independently of Fabric, so Fabric
 cannot normalize or apply configuration that controls how the agent is
-constructed. The adapter only normalizes `models`, `models.temperature`, and
-replacement `instructions.system` settings. MCP, skills, tool policy, and
-subagents can be configured by the remote deployment, but the adapter does not
-expose them through `FabricConfig`.
+constructed. The adapter only normalizes `models`, `models.temperature`,
+`models.top_p`, `models.max_tokens`, and replacement `instructions.system`
+settings. MCP, skills, tool policy, and subagents can be configured by the
+remote deployment, but the adapter does not expose them through `FabricConfig`.
