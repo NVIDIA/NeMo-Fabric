@@ -198,7 +198,7 @@ adapter authoring stages:
 Continue to Stage 6 and verify every descriptor claim.
 </Card>
 
-<Card title="Adapter Target Descriptor schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/schemas/adapter-contract/adapter-target-descriptor.schema.json">
+<Card title="Adapter Target Descriptor schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.2/schemas/adapter-contract/adapter-target-descriptor.schema.json">
 
 Review the canonical schema for the complete target record.
 </Card>

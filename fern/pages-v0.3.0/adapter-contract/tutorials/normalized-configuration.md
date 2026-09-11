@@ -21,7 +21,7 @@ Before you start, complete the following:
    projects.
 2. Identify which `AgentConfig` blocks your adapter needs and applies.
 3. Keep the canonical
-   [`agent-config.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/schemas/adapter-contract/agent-config.schema.json)
+   [`agent-config.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.2/schemas/adapter-contract/agent-config.schema.json)
    open for exact fields and constraints.
 
 ## Concepts Overview
@@ -62,7 +62,7 @@ needs and applies it.
 | `extensions` | Adapter-owned data validated at a declared extension point. |
 
 Use the canonical
-[`agent-config.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/schemas/adapter-contract/agent-config.schema.json)
+[`agent-config.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.2/schemas/adapter-contract/agent-config.schema.json)
 for exact fields and constraints. Python adapters can use the matching
 dependency-free dataclasses from `nemo_fabric_adapter_contract.models`.
 
@@ -225,7 +225,7 @@ Continue to Stage 3 and implement the required `start`, `invoke`, and `stop`
 lifecycle.
 </Card>
 
-<Card title="AgentConfig schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/schemas/adapter-contract/agent-config.schema.json">
+<Card title="AgentConfig schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.2/schemas/adapter-contract/agent-config.schema.json">
 
 Review the canonical schema for exact fields and constraints.
 </Card>

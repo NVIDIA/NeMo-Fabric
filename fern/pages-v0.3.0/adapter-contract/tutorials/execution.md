@@ -18,7 +18,7 @@ Before you start, complete the following:
 2. Choose whether to build on `nemo-fabric-adapters-common` or implement a
    supported binding directly.
 3. Keep the canonical
-   [`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/schemas/adapter-contract/runtime-context.schema.json)
+   [`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.2/schemas/adapter-contract/runtime-context.schema.json)
    open for the exact operation-context shape.
 
 ## Concepts Overview
@@ -132,7 +132,7 @@ value:
 | `telemetry` | Supplies invocation telemetry context, including generated Relay configuration when enabled. |
 
 Use the canonical
-[`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/schemas/adapter-contract/runtime-context.schema.json)
+[`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.2/schemas/adapter-contract/runtime-context.schema.json)
 for the exact shape. Runtime identity belongs in `RuntimeContext`, not in
 `AgentConfig.workflow`. Per-invocation task input belongs in the request, not in
 workflow settings.
@@ -201,7 +201,7 @@ With the lifecycle working, continue through the adapter authoring stages:
 Continue to Stage 4 and normalize the lifecycle's terminal outcomes.
 </Card>
 
-<Card title="RuntimeContext schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/schemas/adapter-contract/runtime-context.schema.json">
+<Card title="RuntimeContext schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.2/schemas/adapter-contract/runtime-context.schema.json">
 
 Review the canonical schema for the exact operation-context shape.
 </Card>

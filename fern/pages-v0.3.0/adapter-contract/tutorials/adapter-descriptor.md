@@ -22,7 +22,7 @@ Before you start, complete the following:
 2. Choose the runtime binding your adapter uses: `python`, `process`, `http`, or
    `native_plugin`.
 3. Keep the canonical
-   [`adapter-descriptor.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/schemas/adapter-contract/adapter-descriptor.schema.json)
+   [`adapter-descriptor.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.2/schemas/adapter-contract/adapter-descriptor.schema.json)
    open for exact fields, defaults, and constraints.
 
 ## Concepts Overview
@@ -212,7 +212,7 @@ Descriptor. It does not introduce another contract or schema version.
 not repeat its adapter-specific entry point.
 
 Use the canonical
-[`adapter-target-descriptor.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/schemas/adapter-contract/adapter-target-descriptor.schema.json)
+[`adapter-target-descriptor.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.2/schemas/adapter-contract/adapter-target-descriptor.schema.json)
 for the complete target record.
 
 **Success Check**: Planning resolves a `workflow.target_id` to exactly one
@@ -241,7 +241,7 @@ With the descriptor in place, continue through the adapter authoring stages:
 Continue to Stage 2 and implement only the fields listed in `config.accepts`.
 </Card>
 
-<Card title="Adapter Descriptor schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/schemas/adapter-contract/adapter-descriptor.schema.json">
+<Card title="Adapter Descriptor schema" href="https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.2/schemas/adapter-contract/adapter-descriptor.schema.json">
 
 Review the canonical schema for exact fields, defaults, and constraints.
 </Card>
