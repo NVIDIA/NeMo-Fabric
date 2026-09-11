@@ -35,6 +35,7 @@ be managed separately.
 | `nemo-fabric-adapters-claude[full]` | No | No | Yes | Yes | No | Yes |
 | `nemo-fabric-adapters-deepagents[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-mini-swe-agent[full]` | No | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-nooa[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-hermes[relay]` | No | No | Yes | No | Yes | No |
 | `nemo-fabric-adapters-claude` | No | No | Yes | No | No | No |
 
@@ -76,6 +77,8 @@ the same Python environment:
 pip install "nemo-fabric[claude]"
 pip install "nemo-fabric[codex]"
 pip install "nemo-fabric[deepagents]"
+pip install "nemo-fabric[mini-swe-agent]"
+pip install "nemo-fabric[nooa]"
 ```
 
 Each `nemo-fabric` harness extra installs the corresponding adapter package
@@ -86,6 +89,10 @@ supplies the Relay CLI, while `relay` supplies the Relay Python package:
 ```bash
 pip install "nemo-fabric[claude,harbor,relay]"
 ```
+
+The NOOA extra supports Python 3.12 and 3.13 only. On another supported Python
+version, the command can succeed while its environment marker omits the NOOA
+adapter.
 
 The Claude and Codex harness extras install the `nemo-relay` CLI required for
 Relay-enabled runs. The root `relay` extra installs only the Relay Python
@@ -119,6 +126,7 @@ Fabric:
 pip install "nemo-fabric-adapters-claude[harness]"
 pip install "nemo-fabric-adapters-codex[harness]"
 pip install "nemo-fabric-adapters-deepagents[harness]"
+pip install "nemo-fabric-adapters-nooa[harness]"
 ```
 
 This installation mode keeps the runtime dependencies out of the adapter
@@ -138,6 +146,7 @@ pip install nemo-fabric-adapters-claude
 pip install nemo-fabric-adapters-codex
 pip install nemo-fabric-adapters-deepagents
 pip install nemo-fabric-adapters-hermes
+pip install nemo-fabric-adapters-nooa
 ```
 
 Bare adapter distributions install only adapter-owned dependencies. They do not
@@ -172,21 +181,23 @@ to be compatible with the installed version of NeMo Fabric:
 pip install "nemo-fabric[relay]"
 ```
 
-LangChain Deep Agents, Hermes Agent, and mini-SWE-agent import the NeMo Relay
-Python package directly. Their adapter packages provide `relay` and `full`
-extras:
+LangChain Deep Agents, Hermes Agent, mini-SWE-agent, and NOOA import the NeMo
+Relay Python package directly. Their adapter packages provide `relay` and
+`full` extras:
 
 ```bash
 pip install "nemo-fabric-adapters-deepagents[relay]"
 pip install "nemo-fabric-adapters-hermes[relay]"
 pip install "nemo-fabric-adapters-mini-swe-agent[relay]"
+pip install "nemo-fabric-adapters-nooa[relay]"
 pip install "nemo-fabric-adapters-deepagents[full]"
 pip install "nemo-fabric-adapters-hermes[full]"
 pip install "nemo-fabric-adapters-mini-swe-agent[full]"
+pip install "nemo-fabric-adapters-nooa[full]"
 ```
 
-Use `relay` when the environment already manages the harness. For Deep Agents
-and mini-SWE-agent, use `full` to install the harness and Relay package
+Use `relay` when the environment already manages the harness. For Deep Agents,
+mini-SWE-agent, and NOOA, use `full` to install the harness and Relay package
 together. For Hermes Agent, `relay` and `full` install the adapter and Relay
 package, but neither installs Hermes Agent. Claude and Codex do not provide a
 `relay` extra because their adapters launch the external CLI instead of
