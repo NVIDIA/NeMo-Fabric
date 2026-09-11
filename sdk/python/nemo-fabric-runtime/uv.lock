@@ -90,7 +90,7 @@ wheels = [
 
 [[package]]
 name = "nemo-fabric-collector"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "../nemo-fabric-collector" }
 dependencies = [
     { name = "starlette" },

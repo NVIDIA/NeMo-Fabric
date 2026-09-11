@@ -1,6 +1,6 @@
 {
   "name": "nemo-fabric-adapters-pi",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Pi SDK harness adapter for NVIDIA NeMo Fabric.",
   "license": "Apache-2.0",
   "type": "module",
@@ -43,8 +43,8 @@
   },
   "dependencies": {
     "jiti": "2.7.0",
-    "nemo-fabric-adapter-contract": "0.3.0",
-    "nemo-fabric-adapters-common": "0.3.0"
+    "nemo-fabric-adapter-contract": "0.4.0",
+    "nemo-fabric-adapters-common": "0.4.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "^0.84.2",
