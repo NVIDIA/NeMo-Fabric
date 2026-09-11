@@ -313,7 +313,9 @@ def verify_package(
                     f"{dist_tag} dist-tag"
                 )
                 return
-            raise PublicationError(_describe_conflict(state, artifact, dist_tag))
+            if state.integrity and state.integrity != artifact.integrity:
+                raise PublicationError(_describe_conflict(state, artifact, dist_tag))
+            last_error = PublicationError(_describe_conflict(state, artifact, dist_tag))
         if attempt + 1 < verification_attempts:
             sleep(5 * (2**attempt))
 

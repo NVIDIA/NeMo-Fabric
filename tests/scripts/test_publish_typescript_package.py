@@ -163,9 +163,7 @@ def test_existing_exact_package_without_registry_readme_is_idempotent_success(
         (dist_tag, integrity, dist_tag_version, error)
         for dist_tag in ("alpha", "latest", "next")
         for integrity, dist_tag_version, error in (
-            ("", VERSION, "Published integrity is missing"),
             ("sha512-wrong", VERSION, "Expected integrity"),
-            (INTEGRITY, "0.1.0", f"Published {dist_tag} dist-tag"),
         )
     ],
 )
@@ -475,6 +473,32 @@ def test_visible_verification_conflict_fails_without_retry(package_directory: Pa
         )
 
     assert delays == []
+    runner.assert_finished()
+
+
+def test_verification_retries_until_registry_metadata_converges(
+    package_directory: Path,
+):
+    runner = NpmRunner(
+        [
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
+            (["view", f"{PACKAGE}@{VERSION}", "version"], _result(VERSION)),
+            (["view", f"{PACKAGE}@{VERSION}", "dist.integrity"], _result()),
+            (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
+            *_exact_view_responses(),
+        ]
+    )
+    delays: list[float] = []
+
+    publish_typescript_package.verify_package(
+        package_directory,
+        VERSION,
+        "latest",
+        run_npm=runner,
+        sleep=delays.append,
+    )
+
+    assert delays == [5]
     runner.assert_finished()
 
 
