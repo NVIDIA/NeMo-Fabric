@@ -51,9 +51,9 @@ Use the narrowest reusable adapter boundary that your target provides:
 
 | Integration Shape | Use It When | Adapter Reuse | Reference |
 | --- | --- | --- | --- |
-| Harness adapter | An opinionated harness supplies a stable construction and execution model. | One adapter supports many configurations of that harness. | [Hermes Agent](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-beta.2/adapters/python/hermes); [mini-SWE-agent](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-beta.2/adapters/python/mini-swe-agent) for the minimum surface |
-| Shared framework adapter | A framework can load multiple registered custom agents through stable entry-point semantics. | One adapter supports many separately installed targets. | [NeMo Agent Toolkit](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-beta.2/external/nat) |
-| Dedicated custom-agent adapter | The application owns execution behavior that does not fit a reusable loading contract. | One adapter packages one custom agent or agent family. | [LangGraph email-phishing analyzer](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-beta.2/examples/langgraph_custom_agent) |
+| Harness adapter | An opinionated harness supplies a stable construction and execution model. | One adapter supports many configurations of that harness. | [Hermes Agent](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-rc.1/adapters/python/hermes); [mini-SWE-agent](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-rc.1/adapters/python/mini-swe-agent) for the minimum surface |
+| Shared framework adapter | A framework can load multiple registered custom agents through stable entry-point semantics. | One adapter supports many separately installed targets. | [NeMo Agent Toolkit](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-rc.1/external/nat) |
+| Dedicated custom-agent adapter | The application owns execution behavior that does not fit a reusable loading contract. | One adapter packages one custom agent or agent family. | [LangGraph email-phishing analyzer](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-rc.1/examples/langgraph_custom_agent) |
 
 A custom agent does not automatically need a dedicated adapter. A shared
 adapter is appropriate when a framework has stable loading and invocation
@@ -92,12 +92,12 @@ needs:
 
 | Stage | Add | Done When |
 | --- | --- | --- |
-| 1. [Describe the adapter](adapter-descriptor.md) | Identity, runtime binding, minimum descriptor, and optional target records. | NeMo Fabric can discover and validate metadata without importing adapter code. |
-| 2. [Map configuration](normalized-configuration.md) | Only the normalized `AgentConfig` fields and typed settings the target applies. | Unsupported behavior fails planning instead of being ignored. |
-| 3. [Implement execution](execution.md) | `start`, `invoke`, `stop`, runtime isolation, and safe failures. | One runtime can execute an ordered request sequence and always attempts cleanup. |
-| 4. [Normalize outcomes](results.md) | `AgentRunResult`, error translation, artifacts, and telemetry integration. | Every completed target invocation has one safe terminal outcome. |
-| 5. [Package and register](registration-and-discovery.md) | Installed descriptor files or explicit development paths. | Planning resolves the intended adapter and optional registered target by exact ID. |
-| 6. [Verify the adapter](conformance.md) | Planning, lifecycle, cleanup, isolation, and declared capability tests. | The minimum profile and every descriptor claim have evidence. |
+| 1. [Describe the adapter](tutorials/adapter-descriptor.md) | Identity, runtime binding, minimum descriptor, and optional target records. | NeMo Fabric can discover and validate metadata without importing adapter code. |
+| 2. [Map configuration](tutorials/normalized-configuration.md) | Only the normalized `AgentConfig` fields and typed settings the target applies. | Unsupported behavior fails planning instead of being ignored. |
+| 3. [Implement execution](tutorials/execution.md) | `start`, `invoke`, `stop`, runtime isolation, and safe failures. | One runtime can execute an ordered request sequence and always attempts cleanup. |
+| 4. [Normalize outcomes](tutorials/results.md) | `AgentRunResult`, error translation, artifacts, and telemetry integration. | Every completed target invocation has one safe terminal outcome. |
+| 5. [Package and register](tutorials/registration-and-discovery.md) | Installed descriptor files or explicit development paths. | Planning resolves the intended adapter and optional registered target by exact ID. |
+| 6. [Verify the adapter](tutorials/conformance.md) | Planning, lifecycle, cleanup, isolation, and declared capability tests. | The minimum profile and every descriptor claim have evidence. |
 
 Add [native OpenAI Chat Completions streaming](openai-streaming.md) only after
 the required lifecycle works. It is an optional adapter capability and is
@@ -109,13 +109,13 @@ The repository documentation and versioned schemas are the source of truth.
 Use examples to understand the boundary, but do not recreate types from an
 example:
 
-- [`schemas/adapter-contract/`](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-beta.2/schemas/adapter-contract) contains the
+- [`schemas/adapter-contract/`](https://github.com/NVIDIA/NeMo-Fabric/tree/0.3.0-rc.1/schemas/adapter-contract) contains the
   canonical JSON Schemas.
 - `nemo-fabric-adapter-contract` provides dependency-free Python dataclasses
   with optional Pydantic interoperability.
 - The TypeScript `nemo-fabric-adapter-contract` package provides generated
   compile-time types and bundles the JSON Schemas for runtime validation.
-- [`nemo-fabric-build-adapter`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-beta.2/skills/nemo-fabric-build-adapter/SKILL.md)
+- [`nemo-fabric-build-adapter`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.3.0-rc.1/skills/nemo-fabric-build-adapter/SKILL.md)
   is the public coding-agent skill for adapter authoring.
 - [Examples and References](examples.md) identifies the exact files to read for
   each integration shape.

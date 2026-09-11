@@ -28,20 +28,22 @@ navigation:
     path: ../pages-v0.3.0/adapter-contract/README.md
   - page: Custom-Agent Integrations
     path: ../pages-v0.3.0/adapter-contract/custom-agents.md
-  - page: Adapter Descriptor
-    path: ../pages-v0.3.0/adapter-contract/adapter-descriptor.md
-  - page: Normalized Configuration
-    path: ../pages-v0.3.0/adapter-contract/normalized-configuration.md
-  - page: Execution
-    path: ../pages-v0.3.0/adapter-contract/execution.md
+  - section: Tutorials
+    contents:
+    - page: Describe Adapter
+      path: ../pages-v0.3.0/adapter-contract/tutorials/adapter-descriptor.md
+    - page: Map Normalized Configuration
+      path: ../pages-v0.3.0/adapter-contract/tutorials/normalized-configuration.md
+    - page: Implement Execution
+      path: ../pages-v0.3.0/adapter-contract/tutorials/execution.md
+    - page: Normalize Results and Telemetry
+      path: ../pages-v0.3.0/adapter-contract/tutorials/results.md
+    - page: Register and Discover Adapter
+      path: ../pages-v0.3.0/adapter-contract/tutorials/registration-and-discovery.md
+    - page: Verify Adapter
+      path: ../pages-v0.3.0/adapter-contract/tutorials/conformance.md
   - page: Optional OpenAI Streaming
     path: ../pages-v0.3.0/adapter-contract/openai-streaming.md
-  - page: Results and Telemetry
-    path: ../pages-v0.3.0/adapter-contract/results.md
-  - page: Registration and Discovery
-    path: ../pages-v0.3.0/adapter-contract/registration-and-discovery.md
-  - page: Verify an Adapter
-    path: ../pages-v0.3.0/adapter-contract/conformance.md
   - page: Examples and References
     path: ../pages-v0.3.0/adapter-contract/examples.md
 - section: Integrations
