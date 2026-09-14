@@ -1,6 +1,7 @@
 ---
 name: prepare-code-freeze
 description: Prepare a NeMo Fabric code freeze by creating a release branch, deciding whether frozen-line nightly alpha tags are required, bumping main to the next version, updating current-version documentation, opening the required PR, and creating RC 1. Use when starting, preparing, or automating a NeMo Fabric code freeze.
+author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: check-release-deployments
 description: Verify whether a tagged NeMo Fabric release is deployed to crates.io, PyPI, and npm. Use when checking publication status for a specific release tag; not for publishing packages or creating tags.
+author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
 

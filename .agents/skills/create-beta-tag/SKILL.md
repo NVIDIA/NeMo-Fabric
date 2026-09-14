@@ -1,6 +1,7 @@
 ---
 name: create-beta-tag
 description: Create and push a signed, annotated NeMo Fabric beta tag from its release branch or from validated main. Use when cutting a beta tag; not for RC or stable release tags.
+author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
 

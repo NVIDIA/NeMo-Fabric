@@ -1,6 +1,7 @@
 ---
 name: create-release-tag
 description: Create and push a signed, annotated NeMo Fabric stable release tag from its validated release branch. Use when cutting a stable release tag; not for beta or release-candidate tags.
+author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
 

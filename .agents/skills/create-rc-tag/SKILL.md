@@ -1,6 +1,7 @@
 ---
 name: create-rc-tag
 description: Create and push a signed, annotated NeMo Fabric release-candidate tag from its validated release branch. Use when cutting an RC tag; not for code freezes or stable release tags.
+author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
 

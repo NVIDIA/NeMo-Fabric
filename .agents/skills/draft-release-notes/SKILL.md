@@ -1,6 +1,7 @@
 ---
 name: draft-release-notes
 description: Compare NVIDIA NeMo Fabric release refs and draft the authoritative GitHub Release body plus any warranted documentation-site release-note update. Use when preparing a stable release, creating patch-release notes, updating docs/about-nemo-fabric/release-notes.mdx, or gathering verified release evidence.
+author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
 
