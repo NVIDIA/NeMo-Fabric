@@ -281,9 +281,5 @@ harnesses and custom agents. Use these references to compare and build them:
 
 ## Roadmap
 
-- **OOAgents reference adapter:** Add a reference NeMo Fabric adapter for
-  [OOAgents](https://github.com/NVIDIA-NeMo/labs-OO-Agents).
-- **Remote-agent thin-client adapter:** Add a thin-client adapter for invoking
-  remotely hosted agents through the NeMo Fabric lifecycle.
 - **Third-party adapter registry:** Extend installed and explicit descriptor
   discovery with a provider-backed registry and catalog experience.
