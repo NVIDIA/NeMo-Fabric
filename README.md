@@ -281,10 +281,17 @@ harnesses and custom agents. Use these references to compare and build them:
 
 ## Roadmap
 
-- **[NVIDIA OpenShell](https://docs.nvidia.com/openshell/about/overview):** Add
-  support for agent lifecycles in sandboxed environments.
-- **[NVIDIA NemoClaw](https://docs.nvidia.com/nemoclaw/user-guide/openclaw/home):** Add
-  an integration for sandboxed OpenClaw agents.
-- **Harness adapter support:** Expand support to additional agent harnesses.
-- **Session lifecycle:** Add cold-start, resume, and fork workflows.
-- **Subagent configuration:** Add portable configuration for subagents.
+- **Expand the harness ecosystem:** Add support for
+  [OpenCode](https://opencode.ai/docs), [OpenClaw](https://docs.openclaw.ai),
+  and other high-priority first- and third-party harnesses through Fabric
+  normalized lifecycle and capability contracts.
+- **Sandbox-native execution with [NVIDIA OpenShell](https://docs.nvidia.com/openshell/about/overview):**
+  Enable seamless Fabric runtime execution within secure sandboxes.
+- **End-to-end [NVIDIA NemoClaw](https://docs.nvidia.com/nemoclaw/user-guide/openclaw/home) integration:**
+  Enable NemoClaw to use Fabric as a standard boundary for harness
+  configuration, execution, workspaces, artifacts, and telemetry.
+- **Enhanced session lifecycle management:** Provide explicit cold-start,
+  resume, and fork operations with stable session identifiers and
+  capability-aware errors.
+- **Composable sub-agent configuration:** Allow supported harnesses to
+  configure sub-agents through validated Fabric configuration.
