@@ -39,9 +39,10 @@ remote deployment.
 
 The packaged
 [NOOA adapter](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/nooa)
-supports shared `InteractiveAgent` targets and dedicated `BenchAgent` tasks,
-including CodingAgent, ARC Solver, and Harbor evaluation workflows. The NOOA
-package supports Python 3.12 and 3.13.
+integrates [NVIDIA-labs Object Oriented Agents (NOOA)](https://github.com/nvidia-nemo/labs-OO-Agents)
+and supports shared `InteractiveAgent` targets and dedicated `BenchAgent` tasks,
+including CodingAgent, ARC Solver, and Harbor evaluation workflows. The package
+supports Python 3.12 and 3.13.
 
 ### Collector-Backed Relay Streaming
 
@@ -71,28 +72,6 @@ startup. Claude supports both modes; the other bundled adapters support
 NeMo Agent Toolkit configurations that set `instructions.system` must now set
 `mode="append"`, because that adapter maps the value to additive instructions
 and cannot implement replacement semantics.
-
-### Adapter Runtime and Compatibility Updates
-
-The Deep Agents adapter maps `runtime.max_turns` to the LangGraph recursion
-limit and supports Deep Agents versions from 0.6.12 through the 0.7 release
-line. The Hermes Agent adapter accepts model-level `top_p` and `max_tokens`,
-with model-level `max_tokens` taking precedence over its adapter setting.
-
-The
-[LangGraph custom-agent example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/langgraph_custom_agent)
-demonstrates bounded warm-session continuation across ordered invocations in
-one live runtime. It does not add durable resume or a Fabric-owned transcript
-store.
-
-### Adapter Authoring and Repository Layout
-
-The [adapter contract guide](../adapter-contract/README.md) now provides staged
-tutorials for descriptors, normalized configuration, execution, results,
-registration, discovery, and conformance. First-party Python adapter sources
-now live under `adapters/python/`, alongside `adapters/typescript/`. Published
-Python package names, import paths, adapter IDs, and installed descriptor
-locations remain unchanged.
 
 ## Current Limitations
 
