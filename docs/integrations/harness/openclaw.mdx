@@ -156,6 +156,10 @@ else:
 The `model` value `openclaw/default` selects OpenClaw's configured default
 agent. It does not select the model that OpenClaw sends to its provider.
 
+> *Note:*
+>
+> In the above example the Remote Agent adapter communicates with an OpenClaw Gateway running locally over the loopback IP address `127.0.0.1`. When communicating with a remote Gateway, use HTTPS to ensure the Gateway token is not transmitted in plaintext. Refer to https://docs.openclaw.ai/gateway/stable-https-url for more information.
+
 ## Troubleshoot Common Problems
 
 Use the following table to fix common setup problems.
