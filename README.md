@@ -281,5 +281,10 @@ harnesses and custom agents. Use these references to compare and build them:
 
 ## Roadmap
 
-- **Third-party adapter registry:** Extend installed and explicit descriptor
-  discovery with a provider-backed registry and catalog experience.
+- **[NVIDIA OpenShell](https://docs.nvidia.com/openshell/about/overview):** Add
+  support for agent lifecycles in sandboxed environments.
+- **[NVIDIA NemoClaw](https://docs.nvidia.com/nemoclaw/user-guide/openclaw/home):** Add
+  an integration for sandboxed OpenClaw agents.
+- **Harness adapter support:** Expand support to additional agent harnesses.
+- **Session lifecycle:** Add cold-start, resume, and fork workflows.
+- **Subagent configuration:** Add portable configuration for subagents.
