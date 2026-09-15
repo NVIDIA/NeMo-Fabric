@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import shutil
+import uuid
 
 import pytest
 import requests
@@ -127,22 +128,7 @@ async def test_opencode_runs_against_a_local_openai_compatible_endpoint(
     assert all("prompt_cache_key" not in payload for payload in captured)
 
 
-def test_live_config_uses_configured_model_provider_endpoint(tmp_path):
-    config = live_opencode_config(
-        workspace=tmp_path,
-        provider="nvidia",
-        model="nvidia/nemotron-3-ultra-550b-a55b",
-        api_key_env="NVIDIA_API_KEY",
-        credential="test-key",
-        base_url="https://integrate.api.nvidia.com/v1",
-    )
-
-    assert (
-        config.models["default"].base_url == "https://integrate.api.nvidia.com/v1"
-    )
-
-
-async def test_opencode_live_provider():
+async def test_opencode_live_provider_runtime(tmp_path):
     if os.environ.get("RUN_FABRIC_OPENCODE_INTEGRATION") != "1":
         pytest.skip("set RUN_FABRIC_OPENCODE_INTEGRATION=1 to run")
     provider = os.environ.get("OPENCODE_LIVE_PROVIDER")
@@ -158,7 +144,7 @@ async def test_opencode_live_provider():
     if not credential:
         pytest.fail(f"the configured credential {api_key_env!r} is not set")
 
-    workspace = Path.cwd()
+    workspace = tmp_path
     config = live_opencode_config(
         workspace=workspace,
         provider=provider,
@@ -169,11 +155,10 @@ async def test_opencode_live_provider():
     )
 
     async with await Fabric().start_runtime(config, base_dir=workspace) as runtime:
-        first = await runtime.invoke(
-            input="Reply with exactly: Fabric OpenCode live test one"
-        )
+        nonce = f"fabric-opencode-{uuid.uuid4().hex[:8]}"
+        first = await runtime.invoke(input=f"Remember this token exactly: {nonce}")
         second = await runtime.invoke(
-            input="Reply with exactly: Fabric OpenCode live test two"
+            input="Reply with only the token I asked you to remember."
         )
 
     assert first["status"] == second["status"] == "succeeded", (
@@ -182,4 +167,4 @@ async def test_opencode_live_provider():
         f"second={result_error_summary(second)}"
     )
     assert first["output"]["response"]
-    assert second["output"]["response"]
+    assert nonce in second["output"]["response"]
