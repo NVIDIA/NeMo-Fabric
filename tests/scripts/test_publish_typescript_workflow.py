@@ -61,7 +61,7 @@ def test_publisher_only_triggers_for_public_release_channels():
     assert '*) dist_tag="latest"' in release_metadata
 
 
-def test_publisher_publishes_then_verifies_packages_in_dependency_order():
+def test_publisher_publishes_packages_in_dependency_order():
     workflow = _load_workflow(PUBLISH_WORKFLOW)
     steps = {
         step["name"]: step
@@ -82,14 +82,11 @@ def test_publisher_publishes_then_verifies_packages_in_dependency_order():
         "adapters/typescript/common",
         "adapters/typescript/pi",
     )
-    for step_name, action in (
-        ("Publish packages", "publish"),
-        ("Verify packages", "verify"),
-    ):
-        run = steps[step_name]["run"]
-        positions = [run.index(directory) for directory in package_directories]
-        assert positions == sorted(positions)
-        assert f"--action {action}" in run
+    assert "Verify packages" not in steps
+    run = steps["Publish packages"]["run"]
+    positions = [run.index(directory) for directory in package_directories]
+    assert positions == sorted(positions)
+    assert "--action publish" in run
 
 
 def test_nightly_alpha_runs_typescript_ci_without_npm_permissions():
