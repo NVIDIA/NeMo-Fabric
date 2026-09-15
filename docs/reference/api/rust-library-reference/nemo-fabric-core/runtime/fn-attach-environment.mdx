@@ -1,0 +1,16 @@
+---
+title: "Function attach_environment"
+sidebar-title: "attach_environment"
+description: "Verify and attach to a caller-owned execution environment."
+position: 29
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn attach_environment(\n    plan: &amp;<a href=\"../config/struct-runplan.mdx\">RunPlan</a>,\n    reference: &amp;<a href=\"struct-environmentreference.mdx\">EnvironmentReference</a>,\n) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"struct-environmenthandle.mdx\">EnvironmentHandle</a>&gt;"}} /></pre>
+
+Verify and attach to a caller-owned execution environment.
+
+The provider resolves [`EnvironmentReference`](struct-environmentreference.mdx) into a verified [`EnvironmentHandle`](struct-environmenthandle.mdx). This operation never creates the referenced resource and does not grant Fabric deletion authority.

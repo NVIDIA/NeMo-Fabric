@@ -8,8 +8,10 @@ pub mod agent_config;
 pub mod agent_execution;
 pub mod config;
 pub mod doctor;
+mod environment;
 pub mod error;
 pub mod runtime;
+mod runtime_control_protocol;
 pub mod schema;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
@@ -39,13 +41,15 @@ pub use config::{
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};
 pub use runtime::{
-    AdapterInvocation, ArtifactManifest, ArtifactRef, EnvironmentHandle, ErrorInfo, ErrorStage,
-    FabricEvent, InvocationHandle, OpenAiChatCompletionChunk, OpenAiChatCompletionChunkChoice,
-    OpenAiChatCompletionChunkDelta, OpenAiChatCompletionChunkObject, OpenAiStreamHost,
-    OpenAiStreamInvocation, OpenAiStreamProfile, OpenAiStreamProtocolVersion, OpenAiStreamRecord,
-    OpenAiStreamSink, OpenAiStreamTransport, RunRequest, RunResult, RunStatus, RunUsage,
-    RuntimeContext, RuntimeHandle, RuntimeTelemetryContext, TelemetryRef, invoke_openai_stream,
-    invoke_runtime, prepare_environment, run_plan, start_runtime, stop_runtime,
+    AdapterInvocation, ArtifactManifest, ArtifactRef, EnvironmentHandle, EnvironmentReference,
+    ErrorInfo, ErrorStage, FabricEvent, InvocationHandle, OpenAiChatCompletionChunk,
+    OpenAiChatCompletionChunkChoice, OpenAiChatCompletionChunkDelta,
+    OpenAiChatCompletionChunkObject, OpenAiStreamHost, OpenAiStreamInvocation, OpenAiStreamProfile,
+    OpenAiStreamProtocolVersion, OpenAiStreamRecord, OpenAiStreamSink, OpenAiStreamTransport,
+    RunRequest, RunResult, RunStatus, RunUsage, RuntimeContext, RuntimeHandle,
+    RuntimeTelemetryContext, TelemetryRef, attach_environment, invoke_openai_stream,
+    invoke_runtime, prepare_environment, release_environment, run_plan, start_runtime,
+    start_runtime_in, stop_runtime,
 };
 pub use schema::{
     SchemaName, generate_all_schemas, generate_schema, generate_schema_json, write_schema_snapshots,
