@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Request passed to an optional adapter health hook.",
+  "properties": {
+    "runtime_id": {
+      "description": "Runtime being inspected.",
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "timeout_millis": {
+      "description": "Remaining health budget in milliseconds.",
+      "format": "uint64",
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "runtime_id",
+    "timeout_millis"
+  ],
+  "title": "AdapterHealthRequest",
+  "type": "object"
+}

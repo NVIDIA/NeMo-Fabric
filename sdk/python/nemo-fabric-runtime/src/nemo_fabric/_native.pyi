@@ -30,4 +30,9 @@ def invoke_openai_stream(
     request_json: str,
     transport_json: str,
 ) -> str: ...
+def check_runtime_health(
+    plan_json: str,
+    runtime_json: str,
+    timeout_millis: int,
+) -> str: ...
 def stop_runtime(plan_json: str, runtime_json: str) -> str: ...

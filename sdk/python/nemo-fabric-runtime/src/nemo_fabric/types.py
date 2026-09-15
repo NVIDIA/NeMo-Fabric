@@ -1358,6 +1358,7 @@ class RuntimeCapabilities(FabricMapping):
     Attributes:
         service: Whether long-lived service handles are supported.
         streaming: Whether event streaming is supported.
+        health: Whether bounded runtime health inspection is supported.
         updates: Whether runtime configuration updates are supported.
         cancellation: Whether in-flight cancellation is supported.
         metadata: Additional capability details.
@@ -1365,6 +1366,7 @@ class RuntimeCapabilities(FabricMapping):
 
     service: bool
     streaming: bool
+    health: bool
     updates: bool
     cancellation: bool
     metadata: Mapping[str, Any]
@@ -1374,6 +1376,7 @@ class RuntimeCapabilities(FabricMapping):
             "streaming",
             "updates",
             "cancellation",
+            "health",
             "metadata",
         }
     )
@@ -1660,6 +1663,126 @@ class RuntimeHandle(FabricMapping):
         if data.get("adapter_id") is not None:
             data["adapter_id"] = _required_text(data["adapter_id"], "adapter id")
         data["environment"] = _mapping(data.get("environment"), "environment")
+        return data
+
+
+class HealthCheck(FabricMapping):
+    """One timestamped runtime or adapter health observation.
+
+    Attributes:
+        name: Stable, namespaced check name.
+        status: One of ``ok``, ``failed``, ``unknown``, or ``unsupported``.
+        reason_code: Stable machine-readable reason.
+        observed_at_millis: Unix timestamp when the evidence was observed.
+        age_millis: Age of the evidence when the report was assembled.
+        message: Optional human-readable diagnostic detail.
+        metadata: Additional non-sensitive check metadata.
+    """
+
+    name: str
+    status: str
+    reason_code: str
+    observed_at_millis: int
+    age_millis: int
+    message: str | None
+    metadata: Mapping[str, Any]
+    _fields = frozenset(
+        {
+            "name",
+            "status",
+            "reason_code",
+            "observed_at_millis",
+            "age_millis",
+            "message",
+            "metadata",
+        }
+    )
+    _json_fields = frozenset({"metadata"})
+    _omit_if_empty = frozenset({"metadata"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["name"] = _required_text(data.get("name"), "health check name")
+        data["status"] = _required_text(data.get("status"), "health check status")
+        if data["status"] not in {"ok", "failed", "unknown", "unsupported"}:
+            raise FabricConfigError("health check status is invalid")
+        data["reason_code"] = _required_text(
+            data.get("reason_code"), "health check reason code"
+        )
+        for field in ("observed_at_millis", "age_millis"):
+            value = data.get(field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise FabricConfigError(
+                    f"{field.replace('_', ' ')} must be a nonnegative integer"
+                )
+        message = data.get("message")
+        if message is not None and not isinstance(message, str):
+            raise FabricConfigError("health check message must be a string or null")
+        data["message"] = message
+        data["metadata"] = _mapping(data.get("metadata", {}), "health check metadata")
+        return data
+
+
+class RuntimeHealth(FabricMapping):
+    """Bounded health report for one started runtime.
+
+    Attributes:
+        runtime_id: Runtime represented by the report.
+        checked_at_millis: Unix timestamp when the report completed.
+        duration_millis: Total probe duration.
+        liveness: Adapter-host liveness.
+        activity: Current invocation and shutdown activity.
+        readiness: Whether the runtime can currently accept work.
+        reason_code: Stable reason for the readiness decision.
+        checks: Ordered common and adapter-specific observations.
+    """
+
+    runtime_id: str
+    checked_at_millis: int
+    duration_millis: int
+    liveness: str
+    activity: str
+    readiness: str
+    reason_code: str
+    checks: Sequence[HealthCheck]
+    _fields = frozenset(
+        {
+            "runtime_id",
+            "checked_at_millis",
+            "duration_millis",
+            "liveness",
+            "activity",
+            "readiness",
+            "reason_code",
+            "checks",
+        }
+    )
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["runtime_id"] = _required_text(data.get("runtime_id"), "runtime id")
+        for field in ("checked_at_millis", "duration_millis"):
+            value = data.get(field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise FabricConfigError(
+                    f"{field.replace('_', ' ')} must be a nonnegative integer"
+                )
+        allowed = {
+            "liveness": {"responsive", "unresponsive", "exited", "unknown"},
+            "activity": {"idle", "busy", "stopping", "unknown"},
+            "readiness": {"ready", "not_ready", "unknown"},
+        }
+        for field, values in allowed.items():
+            data[field] = _required_text(data.get(field), field)
+            if data[field] not in values:
+                raise FabricConfigError(f"runtime health {field} is invalid")
+        data["reason_code"] = _required_text(
+            data.get("reason_code"), "runtime health reason code"
+        )
+        checks = data.get("checks", [])
+        if not isinstance(checks, Sequence) or isinstance(checks, (str, bytes)):
+            raise FabricConfigError("runtime health checks must be a sequence")
+        data["checks"] = tuple(HealthCheck.from_mapping(check) for check in checks)
         return data
 
 

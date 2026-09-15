@@ -534,6 +534,79 @@ class AgentRunResult(AgentContractBlock):
             raise ContractValidationError("succeeded result must not include an error")
 
 
+class RuntimeReadiness(StrEnum):
+    """Whether an adapter knows its runtime can currently accept work."""
+
+    READY = "ready"
+    NOT_READY = "not_ready"
+    UNKNOWN = "unknown"
+
+
+class HealthCheckStatus(StrEnum):
+    """Outcome of one adapter health check."""
+
+    OK = "ok"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+    UNSUPPORTED = "unsupported"
+
+
+@dataclass(slots=True, kw_only=True)
+class HealthCheck(ContractModel):
+    """One timestamped adapter or dependency health observation."""
+
+    name: str
+    status: HealthCheckStatus
+    reason_code: str
+    observed_at_millis: int
+    age_millis: int
+    message: str | None = _optional()
+    metadata: dict[str, JsonValue] = _json_dict()
+
+    def _validate(self) -> None:
+        _nonblank(self.name, "name")
+        _nonblank(self.reason_code, "reason_code")
+        _bounded_int(self.observed_at_millis, "observed_at_millis", (1 << 128) - 1)
+        _bounded_int(self.age_millis, "age_millis", (1 << 64) - 1)
+        if self.message is not None:
+            _nonblank(self.message, "message")
+
+
+@dataclass(slots=True, kw_only=True)
+class AdapterHealthRequest(ContractModel):
+    """Budget passed to an optional adapter health hook."""
+
+    runtime_id: str
+    timeout_millis: int
+
+    def _validate(self) -> None:
+        _nonblank(self.runtime_id, "runtime_id")
+        _bounded_int(self.timeout_millis, "timeout_millis", (1 << 64) - 1)
+        if self.timeout_millis == 0:
+            raise ContractValidationError(
+                "must be greater than zero", path=("timeout_millis",)
+            )
+
+
+@dataclass(slots=True, kw_only=True)
+class AdapterReadiness(ContractModel):
+    """Adapter-owned readiness observation."""
+
+    state: RuntimeReadiness
+    reason_code: str
+
+    def _validate(self) -> None:
+        _nonblank(self.reason_code, "reason_code")
+
+
+@dataclass(slots=True, kw_only=True)
+class AdapterHealthResult(ContractModel):
+    """Optional adapter-specific contribution to runtime health."""
+
+    readiness: AdapterReadiness | None = _optional()
+    checks: list[HealthCheck] = _empty_list()
+
+
 class ControlLocation(StrEnum):
     """Where Fabric control code runs relative to the task environment."""
 

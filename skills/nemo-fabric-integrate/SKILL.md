@@ -184,6 +184,10 @@ Pick the smallest lifecycle the consumer needs:
   (`stop()` can raise `FabricRuntimeError`; see Consume Results And Handle
   Errors). A runtime accepts one active invocation at a time; overlapping calls
   raise `FabricStateError`.
+- **Runtime health** — bounded liveness and readiness data for a started local
+  runtime. Call `await runtime.check_health(timeout_seconds=3.0)`. Treat
+  timeouts, unsupported checks, and not-ready results as `RuntimeHealth` data;
+  the check does not invoke the agent, stop the runtime, or mark it failed.
 - **Native OpenAI stream** — adapter-native OpenAI Chat Completions chunks plus
   a separate terminal normalized result. Check
   `runtime.supports_openai_streaming`, call

@@ -6,9 +6,12 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import os
+import secrets
 import sys
+import time
 import traceback
 from collections.abc import Awaitable
 from collections.abc import Callable
@@ -18,13 +21,20 @@ from contextlib import contextmanager
 from contextlib import redirect_stdout
 from contextlib import suppress
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
 from typing import Protocol
 from typing import TextIO
 
+from nemo_fabric_adapter_contract.models import AdapterHealthRequest
+from nemo_fabric_adapter_contract.models import AdapterHealthResult
+from nemo_fabric_adapter_contract.models import AdapterReadiness
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
+from nemo_fabric_adapter_contract.models import HealthCheck
+from nemo_fabric_adapter_contract.models import HealthCheckStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
+from nemo_fabric_adapter_contract.models import RuntimeReadiness
 
 
 class AdapterRuntime(Protocol):
@@ -56,6 +66,11 @@ _OPENAI_STREAM_PROFILE = "openai.chat_completions.chunk/v1"
 _OPENAI_STREAM_RECORD_LIMIT = 1024 * 1024
 _UINT32_MAX = (1 << 32) - 1
 _UINT64_MAX = (1 << 64) - 1
+_HEALTH_CONTROL_HOST = "127.0.0.1"
+_HEALTH_CONTROL_PROTOCOL = "fabric.health/v1alpha1"
+_HEALTH_REQUEST_LIMIT = 1024 * 1024
+_HEALTH_REQUEST_TIMEOUT = 10.0
+_HEALTH_RESPONSE_RESERVE_MILLIS = 50
 
 
 class LifecycleError(Exception):
@@ -391,11 +406,21 @@ class _HostState:
     runtime: AdapterRuntime | None = None
     runtime_id: str | None = None
     failed: bool = False
+    invoking: bool = False
+    stopping: bool = False
+    health_server: asyncio.AbstractServer | None = None
+    health_token: str | None = None
+    health_tasks: set[asyncio.Task[None]] = field(default_factory=set)
 
     def clear(self) -> None:
         self.runtime = None
         self.runtime_id = None
         self.failed = False
+        self.invoking = False
+        self.stopping = False
+        self.health_server = None
+        self.health_token = None
+        self.health_tasks.clear()
 
 
 def _error(
@@ -504,6 +529,217 @@ async def _stop_after_eof(runtime: AdapterRuntime) -> None:
         traceback.print_exc(file=sys.stderr)
 
 
+def _now_millis() -> int:
+    return time.time_ns() // 1_000_000
+
+
+def _health_check(
+    name: str,
+    status: HealthCheckStatus,
+    reason_code: str,
+    *,
+    message: str | None = None,
+) -> HealthCheck:
+    return HealthCheck(
+        name=name,
+        status=status,
+        reason_code=reason_code,
+        observed_at_millis=_now_millis(),
+        age_millis=0,
+        message=message,
+    )
+
+
+async def _close_health_server(state: _HostState) -> None:
+    server = state.health_server
+    state.health_server = None
+    state.health_token = None
+    if server is not None:
+        server.close()
+        await server.wait_closed()
+    tasks = tuple(state.health_tasks)
+    state.health_tasks.clear()
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def _schedule_health_connection(
+    state: _HostState,
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+) -> None:
+    task = asyncio.create_task(_handle_health_connection(state, reader, writer))
+    state.health_tasks.add(task)
+    task.add_done_callback(state.health_tasks.discard)
+
+
+async def _start_health_server(state: _HostState) -> dict[str, Any]:
+    token = secrets.token_urlsafe(32)
+    server = await asyncio.start_server(
+        lambda reader, writer: _schedule_health_connection(state, reader, writer),
+        _HEALTH_CONTROL_HOST,
+        0,
+        limit=_HEALTH_REQUEST_LIMIT,
+    )
+    socket = server.sockets[0]
+    port = socket.getsockname()[1]
+    state.health_server = server
+    state.health_token = token
+    return {
+        "health_control": {
+            "protocol_version": _HEALTH_CONTROL_PROTOCOL,
+            "host": _HEALTH_CONTROL_HOST,
+            "port": port,
+            "token": token,
+        }
+    }
+
+
+async def _handle_health_connection(
+    state: _HostState,
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+) -> None:
+    try:
+        encoded = await asyncio.wait_for(
+            reader.readline(), timeout=_HEALTH_REQUEST_TIMEOUT
+        )
+        if not encoded or len(encoded) > _HEALTH_REQUEST_LIMIT:
+            return
+        message = json.loads(encoded)
+        if not isinstance(message, dict):
+            return
+        token = message.get("token")
+        if (
+            not isinstance(token, str)
+            or state.health_token is None
+            or not hmac.compare_digest(token, state.health_token)
+        ):
+            return
+        if message.get("protocol_version") != _HEALTH_CONTROL_PROTOCOL:
+            return
+        request = AdapterHealthRequest.from_mapping(
+            {
+                "runtime_id": message.get("runtime_id"),
+                "timeout_millis": message.get("timeout_millis"),
+            }
+        )
+        if request.runtime_id != state.runtime_id or state.runtime is None:
+            return
+        result = await _adapter_health(state, request)
+        response = {
+            "protocol_version": _HEALTH_CONTROL_PROTOCOL,
+            "runtime_id": request.runtime_id,
+            "result": result.to_mapping(),
+        }
+        writer.write(
+            json.dumps(response, separators=(",", ":"), ensure_ascii=False).encode()
+            + b"\n"
+        )
+        await writer.drain()
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+    finally:
+        writer.close()
+        with suppress(OSError):
+            await writer.wait_closed()
+
+
+async def _adapter_health(
+    state: _HostState,
+    request: AdapterHealthRequest,
+) -> AdapterHealthResult:
+    checks = [
+        _health_check(
+            "dependency.inference",
+            HealthCheckStatus.UNSUPPORTED,
+            "inference_probe_prohibited",
+        )
+    ]
+    if state.failed:
+        return AdapterHealthResult(
+            readiness=AdapterReadiness(
+                state=RuntimeReadiness.NOT_READY,
+                reason_code="runtime_failed",
+            ),
+            checks=checks,
+        )
+    if state.stopping:
+        return AdapterHealthResult(
+            readiness=AdapterReadiness(
+                state=RuntimeReadiness.NOT_READY,
+                reason_code="stop_in_progress",
+            ),
+            checks=checks,
+        )
+
+    readiness = AdapterReadiness(
+        state=(
+            RuntimeReadiness.NOT_READY
+            if state.invoking
+            else RuntimeReadiness.READY
+        ),
+        reason_code=("invocation_in_progress" if state.invoking else "ready"),
+    )
+    hook = getattr(state.runtime, "health", None)
+    if not callable(hook):
+        checks.append(
+            _health_check(
+                "adapter.health",
+                HealthCheckStatus.UNSUPPORTED,
+                "check_unsupported",
+            )
+        )
+        return AdapterHealthResult(readiness=readiness, checks=checks)
+
+    hook_budget_millis = max(
+        0,
+        request.timeout_millis - _HEALTH_RESPONSE_RESERVE_MILLIS,
+    )
+    if hook_budget_millis == 0:
+        checks.append(
+            _health_check(
+                "adapter.health",
+                HealthCheckStatus.UNKNOWN,
+                "adapter_health_timed_out",
+            )
+        )
+        return AdapterHealthResult(readiness=readiness, checks=checks)
+    try:
+        result = await asyncio.wait_for(
+            _adapter_call("health", lambda: hook(request)),
+            timeout=hook_budget_millis / 1000,
+        )
+        if not isinstance(result, AdapterHealthResult):
+            raise LifecycleError(
+                "lifecycle_invalid_health_response",
+                "Adapter health hook must return AdapterHealthResult",
+            )
+    except TimeoutError:
+        checks.append(
+            _health_check(
+                "adapter.health",
+                HealthCheckStatus.UNKNOWN,
+                "adapter_health_timed_out",
+            )
+        )
+    except LifecycleError:
+        checks.append(
+            _health_check(
+                "adapter.health",
+                HealthCheckStatus.UNKNOWN,
+                "adapter_health_failed",
+            )
+        )
+    else:
+        checks.extend(result.checks)
+        if not state.invoking and result.readiness is not None:
+            readiness = result.readiness
+    return AdapterHealthResult(readiness=readiness, checks=checks)
+
+
 def _validated_request(
     message: dict[str, Any], operation: str
 ) -> tuple[dict[str, Any], str]:
@@ -572,7 +808,16 @@ async def _handle_start(
     state.runtime = candidate
     state.runtime_id = message_runtime_id
     state.failed = False
-    return _response("start")
+    try:
+        output = await _start_health_server(state)
+    except Exception:
+        state.clear()
+        await _stop_after_eof(candidate)
+        raise LifecycleError(
+            "lifecycle_health_control_failed",
+            "Lifecycle host could not start its health control endpoint",
+        )
+    return _response("start", output=output)
 
 
 async def _handle_invoke(
@@ -667,7 +912,9 @@ async def _handle_stop(
     state: _HostState,
     runtime: AdapterRuntime,
 ) -> dict[str, Any]:
+    state.stopping = True
     try:
+        await _close_health_server(state)
         await _adapter_call("stop", runtime.stop)
     finally:
         state.clear()
@@ -692,9 +939,17 @@ async def _dispatch(
         )
     runtime = _active_runtime(state, message_runtime_id)
     if operation == "invoke":
-        return await _handle_invoke(state, runtime, payload)
+        state.invoking = True
+        try:
+            return await _handle_invoke(state, runtime, payload)
+        finally:
+            state.invoking = False
     if operation == "invoke_openai_stream":
-        return await _handle_invoke_openai_stream(state, runtime, payload)
+        state.invoking = True
+        try:
+            return await _handle_invoke_openai_stream(state, runtime, payload)
+        finally:
+            state.invoking = False
     return await _handle_stop(state, runtime)
 
 
@@ -790,6 +1045,7 @@ async def _serve(
                 break
     finally:
         if state.runtime is not None:
+            await _close_health_server(state)
             await _stop_after_eof(state.runtime)
 
 

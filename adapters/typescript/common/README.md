@@ -26,6 +26,15 @@ await serve(() => new MyAdapterRuntime());
 The factory may return a runtime directly or resolve one asynchronously. The
 host begins reading lifecycle input before it awaits asynchronous adapter setup.
 
+The host also exposes an authenticated loopback health endpoint that is
+independent of ordered lifecycle traffic. It reports idle or busy activity even
+when the runtime omits the optional
+`health(request): Promise<AdapterHealthResult>` method. Implement that method
+only for fast adapter-owned checks, respect `request.timeout_millis`, and do not
+invoke the agent or probe an inference model. Missing, failed, and timed-out
+hooks become structured health data without failing the runtime. Do not log or
+persist health-control credentials.
+
 This package is intended to be published as the shared runtime dependency for
 TypeScript adapters. Its public API will be versioned independently from the
 adapters that use it.

@@ -72,6 +72,7 @@ Test each descriptor claim independently:
 | Telemetry output | The output is produced and correlated to the intended invocation. |
 | Relay-backed stream | Ordinary `invoke` completes while correlated Agent Trajectory Observability Format (ATOF) records reach `Runtime.invoke_stream()`. |
 | Native OpenAI stream | Empty and multi-chunk streams, invalid records, early close, a separate terminal value, and exactly one target invocation. |
+| Runtime health | Idle and busy reports, authenticated-control rejection, deadline enforcement, unsupported checks, and a subsequent successful invocation after a negative health result. |
 
 Do not claim reserved cancellation, update, or service capabilities until the
 installed NeMo Fabric runtime binding exposes and tests the corresponding

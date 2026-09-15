@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import { connect } from "node:net";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 
@@ -65,6 +66,106 @@ async function exchange(factory, messages) {
   await serving;
   return encoded.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
+
+function responseReader(output) {
+  let encoded = "";
+  let wake;
+  output.setEncoding("utf8");
+  output.on("data", (chunk) => {
+    encoded += chunk;
+    wake?.();
+    wake = undefined;
+  });
+  return async () => {
+    while (!encoded.includes("\n")) {
+      await new Promise((resolve) => {
+        wake = resolve;
+      });
+    }
+    const newline = encoded.indexOf("\n");
+    const line = encoded.slice(0, newline);
+    encoded = encoded.slice(newline + 1);
+    return JSON.parse(line);
+  };
+}
+
+async function checkHealth(control, runtimeId, timeoutMillis = 1000) {
+  const socket = connect(control.port, control.host);
+  socket.setEncoding("utf8");
+  let encoded = "";
+  const response = new Promise((resolve, reject) => {
+    socket.on("data", (chunk) => {
+      encoded += chunk;
+      const newline = encoded.indexOf("\n");
+      if (newline >= 0) {
+        resolve(JSON.parse(encoded.slice(0, newline)));
+      }
+    });
+    socket.once("error", reject);
+    socket.once("end", () => {
+      if (!encoded.includes("\n")) {
+        reject(new Error("health connection ended without a response"));
+      }
+    });
+  });
+  await new Promise((resolve) => socket.once("connect", resolve));
+  socket.write(`${JSON.stringify({
+    protocol_version: "fabric.health/v1alpha1",
+    token: control.token,
+    runtime_id: runtimeId,
+    timeout_millis: timeoutMillis,
+  })}\n`);
+  return response;
+}
+
+test("serves health independently while an invocation is busy", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const diagnostics = new PassThrough();
+  const nextResponse = responseReader(output);
+  let releaseInvocation;
+  let invocationStarted;
+  const started = new Promise((resolve) => {
+    invocationStarted = resolve;
+  });
+  const blocked = new Promise((resolve) => {
+    releaseInvocation = resolve;
+  });
+  const runtime = {
+    async start() {},
+    async invoke() {
+      invocationStarted();
+      await blocked;
+      return { status: "succeeded", output: null };
+    },
+    async stop() {},
+  };
+  const serving = serve(() => runtime, { input, output, diagnostics });
+  input.write(`${JSON.stringify(start("runtime-1"))}\n`);
+  const startResponse = await nextResponse();
+  const control = startResponse.outcome.output.health_control;
+
+  input.write(`${JSON.stringify(invoke("runtime-1", "one", "one"))}\n`);
+  await started;
+  const healthResponse = await checkHealth(control, "runtime-1");
+
+  assert.equal(healthResponse.result.readiness.state, "not_ready");
+  assert.equal(healthResponse.result.readiness.reason_code, "invocation_in_progress");
+  assert.deepEqual(
+    healthResponse.result.checks.map((check) => [check.name, check.status]),
+    [
+      ["dependency.inference", "unsupported"],
+      ["adapter.health", "unsupported"],
+    ],
+  );
+
+  releaseInvocation();
+  await nextResponse();
+  input.write(`${JSON.stringify(stop("runtime-1"))}\n`);
+  await nextResponse();
+  input.end();
+  await serving;
+});
 
 test("serves two ordered invocations and stops one runtime", async () => {
   const calls = [];

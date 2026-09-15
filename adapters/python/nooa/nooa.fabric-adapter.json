@@ -57,6 +57,7 @@
     "cancellation": false,
     "service": false,
     "streaming": false,
+    "health": true,
     "updates": false
   }
 }

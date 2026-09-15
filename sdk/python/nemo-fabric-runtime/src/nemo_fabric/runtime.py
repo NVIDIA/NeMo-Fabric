@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from copy import deepcopy
@@ -27,10 +28,11 @@ from nemo_fabric.errors import (
 from nemo_fabric.models import RunRequest
 from nemo_fabric.openai_streaming import OpenAIInvokeStream
 from nemo_fabric.streaming import InvokeStream
-from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
+from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle, RuntimeHealth
 
 
 logger = logging.getLogger(__name__)
+_UINT64_MAX = (1 << 64) - 1
 
 
 class RuntimeStatus(str, Enum):
@@ -149,6 +151,62 @@ class Runtime:
             and isinstance(descriptor_capabilities, Mapping)
             and descriptor_capabilities.get("streaming") is True
         )
+
+    async def check_health(self, *, timeout_seconds: float = 3.0) -> RuntimeHealth:
+        """Inspect liveness and readiness without changing runtime state.
+
+        Negative health outcomes, including timeouts and unsupported adapter
+        checks, are returned as structured data. Only invalid SDK usage or an
+        inability to perform the inspection raises an exception.
+
+        Args:
+            timeout_seconds: Positive finite deadline for the complete check.
+
+        Returns:
+            A typed snapshot of runtime liveness, activity, readiness, and
+            individual checks.
+
+        Raises:
+            FabricConfigError: If ``timeout_seconds`` is not positive and finite.
+            FabricStateError: If the runtime has already stopped.
+            FabricNativeUnavailableError: If the native extension is missing.
+            FabricRuntimeError: If health inspection cannot be performed.
+        """
+
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise FabricConfigError("timeout_seconds must be positive and finite")
+        if self._status is RuntimeStatus.STOPPED:
+            raise FabricStateError("cannot check health of a stopped runtime")
+
+        try:
+            native = self._client._require_native_module("health")
+            timeout_millis = (
+                _UINT64_MAX
+                if timeout_seconds >= _UINT64_MAX / 1000
+                else min(
+                    _UINT64_MAX,
+                    max(1, math.ceil(float(timeout_seconds) * 1000)),
+                )
+            )
+
+            def check() -> dict[str, Any]:
+                encoded = native.check_runtime_health(
+                    json.dumps(self._plan.to_mapping()),
+                    json.dumps(self._runtime.to_mapping()),
+                    timeout_millis,
+                )
+                return json.loads(encoded)
+
+            return RuntimeHealth.from_mapping(await _call_blocking(check))
+        except FabricError:
+            raise
+        except Exception as error:
+            raise FabricRuntimeError(str(error), stage="health") from error
 
     async def invoke(
         self,

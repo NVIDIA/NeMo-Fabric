@@ -12,6 +12,8 @@ export type * from "./generated/adapter-target-descriptor.js";
 export type * from "./generated/agent-config.js";
 export type * from "./generated/agent-run-request.js";
 export type * from "./generated/agent-run-result.js";
+export type * from "./generated/adapter-health-request.js";
+export type * from "./generated/adapter-health-result.js";
 export type * from "./generated/runtime-context.js";
 export type {
   JsonArray,

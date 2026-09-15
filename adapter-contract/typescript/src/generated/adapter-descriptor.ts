@@ -114,6 +114,10 @@ export type RuntimeCapabilities = {
    */
   cancellation?: boolean;
   /**
+   * Whether the selected runtime exposes bounded health observations.
+   */
+  health?: boolean;
+  /**
    * Additional adapter-specific capability metadata.
    */
   metadata?: JsonObject;

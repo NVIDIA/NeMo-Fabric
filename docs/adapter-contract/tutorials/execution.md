@@ -29,6 +29,7 @@ The minimum adapter implements these operations:
 | --- | --- |
 | `start` | Validate startup-only requirements, translate `AgentConfig`, and retain one isolated target runtime. |
 | `invoke` | Translate one `AgentRunRequest`, execute the retained target, and return one `AgentRunResult`. |
+| `health` | Optionally contribute bounded adapter-specific readiness and dependency observations through the common host. |
 | `stop` | Attempt to release every adapter-owned resource, including after partial startup or failed invocation. |
 
 The required order is one successful `start`, zero or more ordered `invoke`
@@ -179,6 +180,44 @@ binding exposes and tests the corresponding adapter operation.
 native streaming is added only through the declared `invoke_openai_stream`
 capability.
 
+### 5. Add Adapter-Specific Health Only When Useful
+
+The maintained common hosts expose an authenticated loopback health endpoint
+that remains independent of ordered lifecycle traffic. Set
+`capabilities.health: true` when the adapter uses that host. Fabric reports
+process and control-path observations even when the runtime class does not
+implement an adapter-specific hook.
+
+Implement the optional Python hook only for fast checks that do not invoke the
+agent:
+
+```python
+from nemo_fabric_adapter_contract.models import AdapterHealthResult
+from nemo_fabric_adapter_contract.models import AdapterReadiness
+from nemo_fabric_adapter_contract.models import RuntimeReadiness
+
+
+class TargetRuntime:
+    async def health(self, request):
+        return AdapterHealthResult(
+            readiness=AdapterReadiness(
+                state=RuntimeReadiness.READY,
+                reason_code="ready",
+            )
+        )
+```
+
+Respect `request.timeout_millis`. Return stable reason codes and timestamped
+`HealthCheck` values for adapter-owned dependencies. Do not send inference
+requests, consume model quota, mutate conversation state, or include secrets in
+messages or metadata. The common host reports an omitted hook as unsupported
+and converts a hook timeout or failure into unknown health data without failing
+the runtime.
+
+**Success Check**: Health responds within the caller's deadline during both an
+idle runtime and an active invocation, and a failed health hook does not change
+the next invocation outcome.
+
 ## Summary
 
 In this tutorial, you have:
@@ -189,6 +228,7 @@ In this tutorial, you have:
 - Separated lifecycle failures from terminal target failures without exposing
   secrets.
 - Added native streaming only where the declared capability requires it.
+- Added bounded adapter health only where the descriptor declares it.
 
 ## Next Steps
 

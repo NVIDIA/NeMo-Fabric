@@ -55,6 +55,7 @@ def test_pi_descriptor_declares_the_supported_surface():
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
     assert descriptor["capabilities"] == {
         "streaming": False,
+        "health": True,
         "cancellation": False,
         "updates": False,
         "service": False,

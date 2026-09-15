@@ -116,6 +116,21 @@ state during `start`. Adapter stdout is reserved for the protocol; diagnostics
 are redirected to stderr. A host crash or protocol timeout terminates that
 runtime.
 
+## Runtime Health
+
+The common host starts an authenticated loopback health endpoint and returns
+its connection metadata to NeMo Fabric during lifecycle startup. The endpoint
+is independent of the ordered lifecycle channel, so it responds while
+`invoke` is running. Do not log or persist the endpoint token.
+
+The host always reports lifecycle activity and marks inference probing as
+unsupported. An adapter can optionally implement
+`async health(request) -> AdapterHealthResult` to add fast, adapter-owned
+checks. Respect `request.timeout_millis`; do not invoke the agent, contact a
+model merely to test availability, consume quota, or mutate runtime state. A
+missing, failed, or timed-out hook becomes structured unsupported or unknown
+health data and does not fail the runtime.
+
 ## Relay Request Correlation
 
 In-process Relay SDK adapters that own their Agent scope can use

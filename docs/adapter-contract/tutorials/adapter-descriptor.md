@@ -47,6 +47,9 @@ native cancellation or streaming feature does not become a NeMo Fabric
 capability until the adapter binding implements the corresponding contract.
 Relay-backed ATOF streaming does not require `capabilities.streaming`; that
 flag is reserved for the optional native OpenAI streaming operation.
+Set `capabilities.health` only when the selected local host implements the
+authenticated health-control protocol. The maintained Python and TypeScript
+common hosts provide that protocol.
 </Note>
 
 ## To Implement the Adapter Descriptor

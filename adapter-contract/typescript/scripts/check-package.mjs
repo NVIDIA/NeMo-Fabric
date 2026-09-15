@@ -42,6 +42,10 @@ try {
     "dist/generated/agent-run-request.js",
     "dist/generated/agent-run-result.d.ts",
     "dist/generated/agent-run-result.js",
+    "dist/generated/adapter-health-request.d.ts",
+    "dist/generated/adapter-health-request.js",
+    "dist/generated/adapter-health-result.d.ts",
+    "dist/generated/adapter-health-result.js",
     "dist/generated/runtime-context.d.ts",
     "dist/generated/runtime-context.js",
     "dist/index.d.ts",
@@ -56,6 +60,8 @@ try {
     "schemas/agent-config.schema.json",
     "schemas/agent-run-request.schema.json",
     "schemas/agent-run-result.schema.json",
+    "schemas/adapter-health-request.schema.json",
+    "schemas/adapter-health-result.schema.json",
     "schemas/runtime-context.schema.json",
   ]);
   const missingFiles = [...expectedFiles].filter(

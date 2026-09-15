@@ -14,9 +14,9 @@ use crate::config::{
 };
 use crate::error::{FabricError, Result};
 use crate::runtime::{
-    AdapterInvocation, ArtifactManifest, EnvironmentHandle, ErrorInfo, FabricEvent,
-    InvocationHandle, OpenAiStreamInvocation, OpenAiStreamRecord, RunRequest, RunResult,
-    RuntimeContext, RuntimeHandle,
+    AdapterHealthRequest, AdapterHealthResult, AdapterInvocation, ArtifactManifest,
+    EnvironmentHandle, ErrorInfo, FabricEvent, InvocationHandle, OpenAiStreamInvocation,
+    OpenAiStreamRecord, RunRequest, RunResult, RuntimeContext, RuntimeHandle, RuntimeHealth,
 };
 use crate::{AgentRunRequest, AgentRunResult};
 
@@ -39,6 +39,10 @@ pub enum SchemaName {
     RunPlan,
     /// Initialized-runtime invocation payload schema.
     AdapterInvocation,
+    /// Adapter-facing bounded health-hook request.
+    AdapterHealthRequest,
+    /// Adapter-facing bounded health-hook result.
+    AdapterHealthResult,
     /// Adapter-facing native OpenAI streaming invocation schema.
     OpenAiStreamInvocation,
     /// Adapter-native OpenAI streaming NDJSON record schema.
@@ -49,6 +53,8 @@ pub enum SchemaName {
     EnvironmentHandle,
     /// Runtime handle schema.
     RuntimeHandle,
+    /// Bounded runtime health report.
+    RuntimeHealth,
     /// Invocation handle schema.
     InvocationHandle,
     /// Runtime request schema.
@@ -65,7 +71,7 @@ pub enum SchemaName {
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 22] = [
         Self::Agent,
         Self::AgentConfig,
         Self::AgentRunRequest,
@@ -74,11 +80,14 @@ impl SchemaName {
         Self::AdapterTargetDescriptor,
         Self::RunPlan,
         Self::AdapterInvocation,
+        Self::AdapterHealthRequest,
+        Self::AdapterHealthResult,
         Self::OpenAiStreamInvocation,
         Self::OpenAiStreamRecord,
         Self::RuntimeContext,
         Self::EnvironmentHandle,
         Self::RuntimeHandle,
+        Self::RuntimeHealth,
         Self::InvocationHandle,
         Self::RunRequest,
         Self::RunResult,
@@ -98,11 +107,14 @@ impl SchemaName {
             Self::AdapterTargetDescriptor => "adapter-target-descriptor",
             Self::RunPlan => "run-plan",
             Self::AdapterInvocation => "adapter-invocation",
+            Self::AdapterHealthRequest => "adapter-health-request",
+            Self::AdapterHealthResult => "adapter-health-result",
             Self::OpenAiStreamInvocation => "openai-stream-invocation",
             Self::OpenAiStreamRecord => "openai-stream-record",
             Self::RuntimeContext => "runtime-context",
             Self::EnvironmentHandle => "environment-handle",
             Self::RuntimeHandle => "runtime-handle",
+            Self::RuntimeHealth => "runtime-health",
             Self::InvocationHandle => "invocation-handle",
             Self::RunRequest => "run-request",
             Self::RunResult => "run-result",
@@ -127,6 +139,8 @@ impl SchemaName {
             | Self::AdapterDescriptor
             | Self::AdapterTargetDescriptor
             | Self::AdapterInvocation
+            | Self::AdapterHealthRequest
+            | Self::AdapterHealthResult
             | Self::OpenAiStreamInvocation
             | Self::OpenAiStreamRecord
             | Self::RuntimeContext => PathBuf::from("adapter-contract").join(filename),
@@ -147,6 +161,8 @@ impl SchemaName {
             }
             "run-plan" | "run_plan" => Ok(Self::RunPlan),
             "adapter-invocation" | "adapter_invocation" => Ok(Self::AdapterInvocation),
+            "adapter-health-request" | "adapter_health_request" => Ok(Self::AdapterHealthRequest),
+            "adapter-health-result" | "adapter_health_result" => Ok(Self::AdapterHealthResult),
             "openai-stream-invocation" | "openai_stream_invocation" => {
                 Ok(Self::OpenAiStreamInvocation)
             }
@@ -154,6 +170,7 @@ impl SchemaName {
             "runtime-context" | "runtime_context" => Ok(Self::RuntimeContext),
             "environment-handle" | "environment_handle" => Ok(Self::EnvironmentHandle),
             "runtime-handle" | "runtime_handle" => Ok(Self::RuntimeHandle),
+            "runtime-health" | "runtime_health" => Ok(Self::RuntimeHealth),
             "invocation-handle" | "invocation_handle" => Ok(Self::InvocationHandle),
             "run-request" | "run_request" => Ok(Self::RunRequest),
             "run-result" | "run_result" => Ok(Self::RunResult),
@@ -182,11 +199,14 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
         SchemaName::AdapterTargetDescriptor => to_value(schema_for!(AdapterTargetDescriptor)),
         SchemaName::RunPlan => to_value(schema_for!(RunPlan)),
         SchemaName::AdapterInvocation => to_value(schema_for!(AdapterInvocation)),
+        SchemaName::AdapterHealthRequest => to_value(schema_for!(AdapterHealthRequest)),
+        SchemaName::AdapterHealthResult => to_value(schema_for!(AdapterHealthResult)),
         SchemaName::OpenAiStreamInvocation => to_value(schema_for!(OpenAiStreamInvocation)),
         SchemaName::OpenAiStreamRecord => to_value(schema_for!(OpenAiStreamRecord)),
         SchemaName::RuntimeContext => to_value(schema_for!(RuntimeContext)),
         SchemaName::EnvironmentHandle => to_value(schema_for!(EnvironmentHandle)),
         SchemaName::RuntimeHandle => to_value(schema_for!(RuntimeHandle)),
+        SchemaName::RuntimeHealth => to_value(schema_for!(RuntimeHealth)),
         SchemaName::InvocationHandle => to_value(schema_for!(InvocationHandle)),
         SchemaName::RunRequest => to_value(schema_for!(RunRequest)),
         SchemaName::RunResult => to_value(schema_for!(RunResult)),

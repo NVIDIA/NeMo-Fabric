@@ -1,0 +1,215 @@
+{
+  "$defs": {
+    "HealthCheck": {
+      "additionalProperties": false,
+      "description": "One timestamped runtime or adapter health observation.",
+      "properties": {
+        "age_millis": {
+          "description": "Age of the evidence when this report was assembled.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message": {
+          "description": "Optional human-readable diagnostic detail.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Additional non-sensitive check metadata.",
+          "type": "object"
+        },
+        "name": {
+          "description": "Stable, namespaced check name.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "observed_at_millis": {
+          "description": "Unix timestamp in milliseconds when the evidence was observed.",
+          "format": "uint128",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason_code": {
+          "description": "Stable machine-readable reason.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/HealthCheckStatus",
+          "description": "Structured check outcome."
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "reason_code",
+        "observed_at_millis",
+        "age_millis"
+      ],
+      "type": "object"
+    },
+    "HealthCheckStatus": {
+      "description": "Outcome of one runtime health check.",
+      "oneOf": [
+        {
+          "const": "ok",
+          "description": "The check passed.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "The check observed a failure.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "The check could not establish a result.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported",
+          "description": "The selected adapter does not implement the check.",
+          "type": "string"
+        }
+      ]
+    },
+    "RuntimeActivity": {
+      "description": "Current runtime activity observed by Fabric.",
+      "oneOf": [
+        {
+          "const": "idle",
+          "description": "No invocation or stop is in progress.",
+          "type": "string"
+        },
+        {
+          "const": "busy",
+          "description": "At least one invocation is in progress or waiting on the runtime.",
+          "type": "string"
+        },
+        {
+          "const": "stopping",
+          "description": "Runtime shutdown is in progress.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Fabric could not establish activity.",
+          "type": "string"
+        }
+      ]
+    },
+    "RuntimeLiveness": {
+      "description": "Whether the adapter host can be reached independently of invocation traffic.",
+      "oneOf": [
+        {
+          "const": "responsive",
+          "description": "The adapter process and health control path responded within the deadline.",
+          "type": "string"
+        },
+        {
+          "const": "unresponsive",
+          "description": "The process was observed running but its health control path did not respond.",
+          "type": "string"
+        },
+        {
+          "const": "exited",
+          "description": "Fabric directly observed that the adapter process exited.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Fabric could not establish liveness.",
+          "type": "string"
+        }
+      ]
+    },
+    "RuntimeReadiness": {
+      "description": "Whether Fabric knows the runtime can currently accept work.",
+      "oneOf": [
+        {
+          "const": "ready",
+          "description": "The runtime can accept work under its current invocation policy.",
+          "type": "string"
+        },
+        {
+          "const": "not_ready",
+          "description": "The runtime is known not to accept work.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Fabric lacks enough fresh evidence to decide.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Bounded health report for one started runtime.",
+  "properties": {
+    "activity": {
+      "$ref": "#/$defs/RuntimeActivity",
+      "description": "Current invocation and shutdown activity."
+    },
+    "checked_at_millis": {
+      "description": "Unix timestamp in milliseconds when the report completed.",
+      "format": "uint128",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "checks": {
+      "description": "Ordered common and adapter-specific observations.",
+      "items": {
+        "$ref": "#/$defs/HealthCheck"
+      },
+      "type": "array"
+    },
+    "duration_millis": {
+      "description": "Total probe duration in milliseconds.",
+      "format": "uint128",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "liveness": {
+      "$ref": "#/$defs/RuntimeLiveness",
+      "description": "Adapter-host liveness."
+    },
+    "readiness": {
+      "$ref": "#/$defs/RuntimeReadiness",
+      "description": "Current admission readiness."
+    },
+    "reason_code": {
+      "description": "Stable reason for the top-level readiness decision.",
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "runtime_id": {
+      "description": "Runtime represented by this report.",
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    }
+  },
+  "required": [
+    "runtime_id",
+    "checked_at_millis",
+    "duration_millis",
+    "liveness",
+    "activity",
+    "readiness",
+    "reason_code",
+    "checks"
+  ],
+  "title": "RuntimeHealth",
+  "type": "object"
+}

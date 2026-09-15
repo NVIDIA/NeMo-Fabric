@@ -6,13 +6,17 @@
 // stop operations, and returns normalized responses while keeping diagnostics
 // off the protocol output stream.
 
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createRequire } from "node:module";
+import { createServer, type Server, type Socket } from "node:net";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 
 import type { ValidateFunction } from "ajv";
 import type {
   AgentConfig,
+  AdapterHealthRequest,
+  AdapterHealthResult,
   AgentRunRequest,
   AgentRunResult,
   JsonObject,
@@ -31,6 +35,7 @@ export interface AdapterStartInput {
 export interface AdapterRuntime {
   start(input: AdapterStartInput): Promise<void>;
   invoke(request: AgentRunRequest, context: RuntimeContext): Promise<AgentRunResult>;
+  health?(request: AdapterHealthRequest): Promise<AdapterHealthResult>;
   stop(): Promise<void>;
 }
 
@@ -46,6 +51,11 @@ interface HostState {
   runtime?: AdapterRuntime;
   runtimeId?: string;
   failed: boolean;
+  invoking: boolean;
+  stopping: boolean;
+  healthServer?: Server;
+  healthSockets?: Set<Socket>;
+  healthToken?: string;
 }
 
 interface LifecycleRequest {
@@ -97,6 +107,10 @@ ajv.addFormat("uint64", {
   type: "number",
   validate: (value: number) => Number.isSafeInteger(value) && value >= 0,
 });
+ajv.addFormat("uint128", {
+  type: "number",
+  validate: (value: number) => Number.isSafeInteger(value) && value >= 0,
+});
 ajv.addFormat("double", {
   type: "number",
   validate: (value: number) => Number.isFinite(value),
@@ -105,6 +119,14 @@ const validateAgentConfig = compileSchema("agent-config");
 const validateAgentRunRequest = compileSchema("agent-run-request");
 const validateAgentRunResult = compileSchema("agent-run-result");
 const validateRuntimeContext = compileSchema("runtime-context");
+const validateAdapterHealthRequest = compileSchema("adapter-health-request");
+const validateAdapterHealthResult = compileSchema("adapter-health-result");
+
+const HEALTH_CONTROL_HOST = "127.0.0.1";
+const HEALTH_CONTROL_PROTOCOL = "fabric.health/v1alpha1";
+const HEALTH_REQUEST_LIMIT = 1024 * 1024;
+const HEALTH_REQUEST_TIMEOUT_MILLIS = 10_000;
+const HEALTH_RESPONSE_RESERVE_MILLIS = 50;
 
 function compileSchema(name: string): ValidateFunction {
   const schema = require(`nemo-fabric-adapter-contract/schemas/${name}`) as object;
@@ -233,6 +255,236 @@ async function stopQuietly(runtime: AdapterRuntime, diagnostics: Writable): Prom
   }
 }
 
+function nowMillis(): number {
+  return Date.now();
+}
+
+function healthCheck(
+  name: string,
+  status: "ok" | "failed" | "unknown" | "unsupported",
+  reasonCode: string,
+): NonNullable<AdapterHealthResult["checks"]>[number] {
+  return {
+    name,
+    status,
+    reason_code: reasonCode,
+    observed_at_millis: nowMillis(),
+    age_millis: 0,
+  };
+}
+
+async function closeHealthServer(state: HostState): Promise<void> {
+  const server = state.healthServer;
+  const sockets = state.healthSockets;
+  state.healthServer = undefined;
+  state.healthSockets = undefined;
+  state.healthToken = undefined;
+  if (server === undefined) {
+    return;
+  }
+  for (const socket of sockets ?? []) {
+    socket.destroy();
+  }
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
+async function startHealthServer(state: HostState): Promise<JsonObject> {
+  const token = randomBytes(32).toString("base64url");
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+    void handleHealthConnection(state, socket);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => reject(error);
+    server.once("error", onError);
+    server.listen(0, HEALTH_CONTROL_HOST, () => {
+      server.off("error", onError);
+      resolve();
+    });
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    server.close();
+    throw new Error("health control server did not expose a TCP address");
+  }
+  state.healthServer = server;
+  state.healthSockets = sockets;
+  state.healthToken = token;
+  return {
+    health_control: {
+      protocol_version: HEALTH_CONTROL_PROTOCOL,
+      host: HEALTH_CONTROL_HOST,
+      port: address.port,
+      token,
+    },
+  };
+}
+
+function readHealthLine(socket: Socket): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let encoded = "";
+    const cleanup = (): void => {
+      socket.off("data", onData);
+      socket.off("error", onError);
+      socket.off("end", onEnd);
+      socket.off("timeout", onTimeout);
+    };
+    const onData = (chunk: Buffer): void => {
+      encoded += chunk.toString("utf8");
+      if (Buffer.byteLength(encoded) > HEALTH_REQUEST_LIMIT) {
+        cleanup();
+        reject(new Error("health request exceeds the size limit"));
+        return;
+      }
+      const newline = encoded.indexOf("\n");
+      if (newline >= 0) {
+        cleanup();
+        resolve(encoded.slice(0, newline));
+      }
+    };
+    const onError = (error: Error): void => {
+      cleanup();
+      reject(error);
+    };
+    const onEnd = (): void => {
+      cleanup();
+      reject(new Error("health request ended before a complete record"));
+    };
+    const onTimeout = (): void => {
+      cleanup();
+      reject(new Error("health request timed out"));
+    };
+    socket.on("data", onData);
+    socket.once("error", onError);
+    socket.once("end", onEnd);
+    socket.once("timeout", onTimeout);
+    socket.setTimeout(HEALTH_REQUEST_TIMEOUT_MILLIS);
+  });
+}
+
+function tokensEqual(actual: unknown, expected: string | undefined): boolean {
+  if (typeof actual !== "string" || expected === undefined) {
+    return false;
+  }
+  const actualBytes = Buffer.from(actual);
+  const expectedBytes = Buffer.from(expected);
+  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
+}
+
+async function handleHealthConnection(state: HostState, socket: Socket): Promise<void> {
+  let responseSent = false;
+  try {
+    const message = requireRecord(
+      JSON.parse(await readHealthLine(socket)) as unknown,
+      "lifecycle_invalid_health_request",
+      "Health request must be an object",
+    );
+    if (!tokensEqual(message.token, state.healthToken)) {
+      return;
+    }
+    if (message.protocol_version !== HEALTH_CONTROL_PROTOCOL) {
+      return;
+    }
+    const request = validate<AdapterHealthRequest>(
+      validateAdapterHealthRequest,
+      {
+        runtime_id: message.runtime_id,
+        timeout_millis: message.timeout_millis,
+      },
+      "lifecycle_invalid_health_request",
+      "Health request does not match its typed contract",
+    );
+    if (request.runtime_id !== state.runtimeId || state.runtime === undefined) {
+      return;
+    }
+    const result = await adapterHealth(state, request);
+    socket.end(
+      `${JSON.stringify({
+        protocol_version: HEALTH_CONTROL_PROTOCOL,
+        runtime_id: request.runtime_id,
+        result,
+      })}\n`,
+    );
+    responseSent = true;
+  } catch {
+    // Invalid and unauthenticated health requests fail closed without details.
+  } finally {
+    if (!responseSent) {
+      socket.destroy();
+    }
+  }
+}
+
+class HealthHookTimeout extends Error {}
+
+async function adapterHealth(
+  state: HostState,
+  request: AdapterHealthRequest,
+): Promise<AdapterHealthResult> {
+  const checks: NonNullable<AdapterHealthResult["checks"]> = [
+    healthCheck("dependency.inference", "unsupported", "inference_probe_prohibited"),
+  ];
+  if (state.failed) {
+    return { readiness: { state: "not_ready", reason_code: "runtime_failed" }, checks };
+  }
+  if (state.stopping) {
+    return { readiness: { state: "not_ready", reason_code: "stop_in_progress" }, checks };
+  }
+
+  let readiness: NonNullable<AdapterHealthResult["readiness"]> = state.invoking
+    ? { state: "not_ready", reason_code: "invocation_in_progress" }
+    : { state: "ready", reason_code: "ready" };
+  const runtime = state.runtime;
+  const hook = runtime?.health;
+  if (hook === undefined) {
+    checks.push(healthCheck("adapter.health", "unsupported", "check_unsupported"));
+    return { readiness, checks };
+  }
+
+  const hookBudgetMillis = Math.max(
+    0,
+    request.timeout_millis - HEALTH_RESPONSE_RESERVE_MILLIS,
+  );
+  if (hookBudgetMillis === 0) {
+    checks.push(healthCheck("adapter.health", "unknown", "adapter_health_timed_out"));
+    return { readiness, checks };
+  }
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      callAdapter("health", () => hook.call(runtime, request)),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new HealthHookTimeout()), hookBudgetMillis);
+      }),
+    ]);
+    validate<AdapterHealthResult>(
+      validateAdapterHealthResult,
+      result,
+      "lifecycle_invalid_health_response",
+      "Adapter health hook returned an invalid result",
+    );
+    checks.push(...(result.checks ?? []));
+    if (!state.invoking && result.readiness !== undefined && result.readiness !== null) {
+      readiness = result.readiness;
+    }
+  } catch (error) {
+    checks.push(
+      healthCheck(
+        "adapter.health",
+        "unknown",
+        error instanceof HealthHookTimeout ? "adapter_health_timed_out" : "adapter_health_failed",
+      ),
+    );
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  }
+  return { readiness, checks };
+}
+
 function success(operation: string, output: unknown = null): LifecycleResponse {
   return { operation, outcome: { status: "succeeded", output } };
 }
@@ -271,16 +523,22 @@ async function dispatch(
       candidate = await callAdapter("start", factory);
       const active = candidate;
       await callAdapter("start", () => active.start(decodeStart(request.payload)));
+      state.runtime = active;
+      state.runtimeId = messageRuntimeId;
+      state.failed = false;
+      state.invoking = false;
+      state.stopping = false;
+      const output = await startHealthServer(state);
+      return success("start", output);
     } catch (error) {
+      await closeHealthServer(state);
+      state.runtime = undefined;
+      state.runtimeId = undefined;
       if (candidate !== undefined) {
         await stopQuietly(candidate, diagnostics);
       }
       throw error;
     }
-    state.runtime = candidate;
-    state.runtimeId = messageRuntimeId;
-    state.failed = false;
-    return success("start");
   }
 
   if (state.runtime === undefined || state.runtimeId === undefined) {
@@ -292,17 +550,24 @@ async function dispatch(
 
   if (request.operation === "stop") {
     const active = state.runtime;
-    await callAdapter("stop", () => active.stop());
-    state.runtime = undefined;
-    state.runtimeId = undefined;
-    state.failed = false;
-    return success("stop");
+    state.stopping = true;
+    await closeHealthServer(state);
+    try {
+      await callAdapter("stop", () => active.stop());
+      state.runtime = undefined;
+      state.runtimeId = undefined;
+      state.failed = false;
+      return success("stop");
+    } finally {
+      state.stopping = false;
+    }
   }
 
   if (state.failed) {
     throw new LifecycleError("lifecycle_runtime_failed", "Lifecycle runtime cannot accept another invocation");
   }
   const { request: invocation, context } = decodeInvocation(request.payload);
+  state.invoking = true;
   try {
     const result = await callAdapter("invoke", () => state.runtime!.invoke(invocation, context));
     validate<AgentRunResult>(
@@ -320,6 +585,8 @@ async function dispatch(
       state.failed = true;
     }
     throw error;
+  } finally {
+    state.invoking = false;
   }
 }
 
@@ -360,7 +627,7 @@ export async function serve(factory: AdapterRuntimeFactory, options: LifecycleHo
     process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
   }
   const lines = createInterface({ input, crlfDelay: Infinity });
-  const state: HostState = { failed: false };
+  const state: HostState = { failed: false, invoking: false, stopping: false };
 
   try {
     for await (const line of lines) {
@@ -408,6 +675,8 @@ export async function serve(factory: AdapterRuntimeFactory, options: LifecycleHo
     }
   } finally {
     lines.close();
+    state.stopping = true;
+    await closeHealthServer(state);
     if (state.runtime !== undefined) {
       await stopQuietly(state.runtime, diagnostics);
     }

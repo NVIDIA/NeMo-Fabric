@@ -19,11 +19,14 @@ pub enum SchemaName {
     AdapterTargetDescriptor,
     RunPlan,
     AdapterInvocation,
+    AdapterHealthRequest,
+    AdapterHealthResult,
     OpenAiStreamInvocation,
     OpenAiStreamRecord,
     RuntimeContext,
     EnvironmentHandle,
     RuntimeHandle,
+    RuntimeHealth,
     InvocationHandle,
     RunRequest,
     RunResult,
@@ -85,6 +88,18 @@ Resolved run plan schema.
 
 Initialized-runtime invocation payload schema.
 
+### `AdapterHealthRequest`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterHealthRequest"}} /></pre>
+
+Adapter-facing bounded health-hook request.
+
+### `AdapterHealthResult`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterHealthResult"}} /></pre>
+
+Adapter-facing bounded health-hook result.
+
 ### `OpenAiStreamInvocation`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "OpenAiStreamInvocation"}} /></pre>
@@ -114,6 +129,12 @@ Environment handle schema.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "RuntimeHandle"}} /></pre>
 
 Runtime handle schema.
+
+### `RuntimeHealth`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "RuntimeHealth"}} /></pre>
+
+Bounded runtime health report.
 
 ### `InvocationHandle`
 
@@ -159,7 +180,7 @@ NeMo Fabric lifecycle event schema.
 
 #### `ALL`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">19</a>]"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">22</a>]"}} /></pre>
 
 All public schemas in stable output order.
 

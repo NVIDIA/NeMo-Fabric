@@ -28,6 +28,7 @@ from nemo_fabric import FabricNativeUnavailableError
 from nemo_fabric import FabricRuntimeError
 from nemo_fabric import FabricStateError
 from nemo_fabric import HarnessConfig
+from nemo_fabric import HealthCheck
 from nemo_fabric import InstructionConfig
 from nemo_fabric import InstructionsConfig
 from nemo_fabric import McpAuthenticationConfig
@@ -53,6 +54,7 @@ from nemo_fabric import Runtime
 from nemo_fabric import RuntimeCapabilities
 from nemo_fabric import RuntimeConfig
 from nemo_fabric import RuntimeHandle
+from nemo_fabric import RuntimeHealth
 from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
 from nemo_fabric import ToolDefinitionConfig
@@ -1490,6 +1492,7 @@ def test_inspection_models_are_typed_read_only_mappings():
     assert plan.adapter.harness == "hermes"
     assert "harness_type" not in plan.adapter
     assert plan.adapter.extra_fields["future"] == "value"
+    assert plan.capabilities.health is False
     assert plan.capabilities.extra_fields["future_capability"] == "declared"
     resolved = plan.to_mapping()
     plan.config.metadata.name = "mutated"
@@ -1597,6 +1600,40 @@ def test_run_plan_config_enable_native_preserves_existing_native_config():
 def test_runtime_capabilities_reject_non_boolean_values():
     with pytest.raises(FabricConfigError, match="streaming capability"):
         RuntimeCapabilities.from_mapping({"streaming": "false"})
+
+
+def test_runtime_health_models_are_typed_and_validate_states():
+    report = RuntimeHealth.from_mapping(
+        {
+            "runtime_id": "runtime-1",
+            "checked_at_millis": 10,
+            "duration_millis": 2,
+            "liveness": "responsive",
+            "activity": "idle",
+            "readiness": "ready",
+            "reason_code": "ready",
+            "checks": [
+                {
+                    "name": "adapter.process",
+                    "status": "ok",
+                    "reason_code": "process_running",
+                    "observed_at_millis": 9,
+                    "age_millis": 1,
+                }
+            ],
+        }
+    )
+
+    assert isinstance(report.checks[0], HealthCheck)
+    assert report.to_mapping()["checks"][0]["status"] == "ok"
+
+    with pytest.raises(FabricConfigError, match="liveness"):
+        RuntimeHealth.from_mapping(
+            {
+                **report.to_mapping(),
+                "liveness": "alive",
+            }
+        )
 
 
 def test_doctor_report_and_errors_expose_typed_contract_fields():

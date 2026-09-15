@@ -73,6 +73,9 @@ translation:
   when the adapter implements native OpenAI Chat Completions streaming through
   `invoke_openai_stream`. Relay-backed ATOF streaming is independent and does
   not require this capability.
+- Set `capabilities.health` only when the selected local host implements the
+  authenticated health-control protocol. The maintained Python and TypeScript
+  common hosts implement it. An adapter-specific health hook is optional.
 
 If the adapter loads registered targets, list their types in `target_types`.
 Create one `*.fabric-target.json` per target. The target record owns its
@@ -206,6 +209,12 @@ the transport envelope or infer failure from fields inside `output`.
 Return `AgentRunStatus.FAILED` with an `AgentRunError` when the target completes
 with a failed outcome. Raise an exception when the adapter cannot produce a
 normalized terminal result.
+
+The common host also serves health on an authenticated loopback endpoint that
+does not share the ordered lifecycle channel. Optional health hooks must respect
+`request.timeout_millis`, avoid inference or other billable probes, avoid
+runtime mutation, return stable reason codes, and never expose credentials.
+Treat hook failure and timeout as health data; do not fail the runtime.
 
 ### Support Warm Session Continuation
 

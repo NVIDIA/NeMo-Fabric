@@ -244,8 +244,8 @@ Use the following resources to learn about NeMo Fabric:
 
 - [Example Notebooks](examples/notebooks/README.md) provide a guided tour of the Python SDK.
 - The [Python SDK guide](docs/sdk/python.mdx) covers typed configuration,
-  planning, diagnostics, requests, multi-turn runtimes, streaming, parallelism,
-  results, and errors.
+  planning, diagnostics, requests, multi-turn runtimes, bounded runtime health
+  checks, streaming, parallelism, results, and errors.
 - The [Experimentation CLI guide](docs/experimentation/cli.mdx) covers presets,
   maintained examples, and editable application scaffolds.
 - The [getting started overview](docs/about-nemo-fabric/overview.mdx) explains

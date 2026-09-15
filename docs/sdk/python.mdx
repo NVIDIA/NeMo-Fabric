@@ -158,6 +158,37 @@ objects.
 NeMo Fabric provides the runtime contract. Applications own scheduling, queues,
 retries, worker scaling, and the number of runtimes to run.
 
+### Check Runtime Health
+
+Call `Runtime.check_health(...)` to get a bounded snapshot of a started local
+runtime without invoking the agent or changing the runtime state:
+
+```python
+async with await fabric.start_runtime(config, base_dir=base) as runtime:
+    health = await runtime.check_health(timeout_seconds=3.0)
+    if health.readiness == "ready":
+        result = await runtime.invoke(input="Inspect the repository")
+```
+
+The returned `RuntimeHealth` contains `liveness`, `activity`, `readiness`, a
+top-level `reason_code`, and ordered `HealthCheck` observations. A probe timeout,
+an unavailable control endpoint, and an unsupported adapter check are report
+data rather than exceptions. Inspect `reason_code` and each check's `status`
+instead of parsing diagnostic messages.
+
+Health checks use an authenticated loopback control endpoint that is separate
+from the ordered lifecycle channel. You can therefore check a runtime while an
+invocation is active. Under the one-invocation policy, the report uses
+`activity="busy"`, `readiness="not_ready"`, and
+`reason_code="invocation_in_progress"`. The health timeout does not cancel an
+invocation, stop the runtime, or mark it failed.
+
+The SDK raises `FabricConfigError` for a nonpositive or nonfinite timeout and
+`FabricStateError` after the runtime has stopped. Transport or native binding
+errors raise `FabricRuntimeError`. Health inspection is currently implemented
+for local Process and Python adapter hosts. Older hosts and adapters that do not
+declare `capabilities.health` return explicit unknown or unsupported evidence.
+
 ## Configure Agents In Code
 
 ### Normalized Configuration Compatibility
