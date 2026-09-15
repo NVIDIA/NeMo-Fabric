@@ -53,6 +53,8 @@ const schemaSpecs = [
     output: "agent-run-result.ts",
     generate: generateRunResult,
   },
+  { name: "adapter-health-request", output: "adapter-health-request.ts" },
+  { name: "adapter-health-result", output: "adapter-health-result.ts" },
   { name: "runtime-context", output: "runtime-context.ts" },
 ];
 

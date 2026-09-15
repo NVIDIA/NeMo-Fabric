@@ -3486,6 +3486,7 @@ fn resolve_runtime_capabilities(
     RuntimeCapabilities {
         service: implemented_runtime && descriptor_capabilities.service,
         streaming: implemented_runtime && descriptor_capabilities.streaming,
+        health: implemented_runtime && descriptor_capabilities.health,
         updates: implemented_runtime && descriptor_capabilities.updates,
         cancellation: implemented_runtime && descriptor_capabilities.cancellation,
         metadata: descriptor_capabilities.metadata,
@@ -3872,6 +3873,9 @@ pub struct RuntimeCapabilities {
     /// Whether invocations can emit progressive output.
     #[serde(default)]
     pub streaming: bool,
+    /// Whether the selected runtime exposes bounded health observations.
+    #[serde(default)]
+    pub health: bool,
     /// Whether a running runtime can accept config updates.
     #[serde(default)]
     pub updates: bool,

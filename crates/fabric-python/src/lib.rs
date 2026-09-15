@@ -163,6 +163,28 @@ fn invoke_openai_stream(
     to_json(&result)
 }
 
+/// Inspect a previously started runtime without changing its lifecycle state.
+#[pyfunction]
+fn check_runtime_health(
+    py: Python<'_>,
+    plan_json: String,
+    runtime_json: String,
+    timeout_millis: u64,
+) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let health = py
+        .detach(|| {
+            nemo_fabric_core::check_runtime_health(
+                &plan,
+                &runtime,
+                Duration::from_millis(timeout_millis),
+            )
+        })
+        .map_err(to_py_error)?;
+    to_json(&health)
+}
+
 /// Stop a previously started runtime and return FabricEvent list JSON.
 #[pyfunction]
 fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyResult<String> {
@@ -183,6 +205,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(start_runtime, m)?)?;
     m.add_function(wrap_pyfunction!(invoke_runtime, m)?)?;
     m.add_function(wrap_pyfunction!(invoke_openai_stream, m)?)?;
+    m.add_function(wrap_pyfunction!(check_runtime_health, m)?)?;
     m.add_function(wrap_pyfunction!(stop_runtime, m)?)?;
     Ok(())
 }

@@ -107,6 +107,7 @@ Capabilities describe what the selected runtime can support; callers should stil
 
  - <b>`service`</b>:  Whether long-lived service handles are supported.
  - <b>`streaming`</b>:  Whether event streaming is supported.
+ - <b>`health`</b>:  Whether bounded runtime health inspection is supported.
  - <b>`updates`</b>:  Whether runtime configuration updates are supported.
  - <b>`cancellation`</b>:  Whether in-flight cancellation is supported.
  - <b>`metadata`</b>:  Additional capability details.
@@ -121,6 +122,7 @@ The mapping exposes the following typed fields:
 | --- | --- |
 | `service` | `bool` |
 | `streaming` | `bool` |
+| `health` | `bool` |
 | `updates` | `bool` |
 | `cancellation` | `bool` |
 | `metadata` | `Mapping[str, Any]` |
@@ -874,6 +876,184 @@ The mapping exposes the following typed fields:
 | `adapter_kind` | `str` |
 | `adapter_id` | `str \| None` |
 | `environment` | `Mapping[str, Any]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `HealthCheck`
+
+One timestamped runtime or adapter health observation.
+
+
+
+**Attributes:**
+
+ - <b>`name`</b>:  Stable, namespaced check name.
+ - <b>`status`</b>:  One of ``ok``, ``failed``, ``unknown``, or ``unsupported``.
+ - <b>`reason_code`</b>:  Stable machine-readable reason.
+ - <b>`observed_at_millis`</b>:  Unix timestamp when the evidence was observed.
+ - <b>`age_millis`</b>:  Age of the evidence when the report was assembled.
+ - <b>`message`</b>:  Optional human-readable diagnostic detail.
+ - <b>`metadata`</b>:  Additional non-sensitive check metadata.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `name` | `str` |
+| `status` | `str` |
+| `reason_code` | `str` |
+| `observed_at_millis` | `int` |
+| `age_millis` | `int` |
+| `message` | `str \| None` |
+| `metadata` | `Mapping[str, Any]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `RuntimeHealth`
+
+Bounded health report for one started runtime.
+
+
+
+**Attributes:**
+
+ - <b>`runtime_id`</b>:  Runtime represented by the report.
+ - <b>`checked_at_millis`</b>:  Unix timestamp when the report completed.
+ - <b>`duration_millis`</b>:  Total probe duration.
+ - <b>`liveness`</b>:  Adapter-host liveness.
+ - <b>`activity`</b>:  Current invocation and shutdown activity.
+ - <b>`readiness`</b>:  Whether the runtime can currently accept work.
+ - <b>`reason_code`</b>:  Stable reason for the readiness decision.
+ - <b>`checks`</b>:  Ordered common and adapter-specific observations.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `runtime_id` | `str` |
+| `checked_at_millis` | `int` |
+| `duration_millis` | `int` |
+| `liveness` | `str` |
+| `activity` | `str` |
+| `readiness` | `str` |
+| `reason_code` | `str` |
+| `checks` | `Sequence[HealthCheck]` |
 
 ### <kbd>method</kbd> `__init__`
 

@@ -99,6 +99,39 @@ Return whether NVIDIA NeMo Relay ATOF streaming is enabled.
 ---
 
 
+### <kbd>method</kbd> `check_health`
+
+```python
+async def check_health(*, timeout_seconds: float = 3.0) -> RuntimeHealth
+```
+
+Inspect liveness and readiness without changing runtime state.
+
+Negative health outcomes, including timeouts and unsupported adapter checks, are returned as structured data. Only invalid SDK usage or an inability to perform the inspection raises an exception.
+
+
+
+**Args:**
+
+ - <b>`timeout_seconds`</b>:  Positive finite deadline for the complete check.
+
+
+
+**Returns:**
+ A typed snapshot of runtime liveness, activity, readiness, and individual checks.
+
+
+
+**Raises:**
+
+ - <b>`FabricConfigError`</b>:  If ``timeout_seconds`` is not positive and finite.
+ - <b>`FabricStateError`</b>:  If the runtime has already stopped.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is missing.
+ - <b>`FabricRuntimeError`</b>:  If health inspection cannot be performed.
+
+---
+
+
 ### <kbd>method</kbd> `invoke`
 
 ```python

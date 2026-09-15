@@ -131,6 +131,7 @@
           "$ref": "#/$defs/RuntimeCapabilities",
           "default": {
             "cancellation": false,
+            "health": false,
             "service": false,
             "streaming": false,
             "updates": false
@@ -2699,6 +2700,11 @@
         "cancellation": {
           "default": false,
           "description": "Whether an in-flight invocation can be cancelled.",
+          "type": "boolean"
+        },
+        "health": {
+          "default": false,
+          "description": "Whether the selected runtime exposes bounded health observations.",
           "type": "boolean"
         },
         "metadata": {

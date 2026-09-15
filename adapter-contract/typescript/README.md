@@ -63,6 +63,8 @@ adapter-contract package:
 
 ```typescript
 import type {
+  AdapterHealthRequest,
+  AdapterHealthResult,
   AgentRunRequest,
   AgentRunResult,
 } from "nemo-fabric-adapter-contract";
@@ -73,6 +75,10 @@ boundary and requires adapters to return a valid `AgentRunResult` before NeMo
 Fabric normalizes the result. Token counts originate from JSON Schema `uint64`
 values but are represented as JavaScript `number`; values greater than
 `Number.MAX_SAFE_INTEGER` cannot be represented exactly.
+
+Use `AdapterHealthRequest` and `AdapterHealthResult` only for an optional,
+bounded health method served by a compatible local lifecycle host. Health
+checks must not invoke the agent or mutate runtime state.
 
 ## JSON Schemas
 

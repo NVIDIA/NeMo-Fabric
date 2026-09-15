@@ -1,0 +1,151 @@
+{
+  "$defs": {
+    "AdapterReadiness": {
+      "additionalProperties": false,
+      "description": "Adapter-owned readiness observation.",
+      "properties": {
+        "reason_code": {
+          "description": "Stable machine-readable reason.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeReadiness",
+          "description": "Adapter readiness state."
+        }
+      },
+      "required": [
+        "state",
+        "reason_code"
+      ],
+      "type": "object"
+    },
+    "HealthCheck": {
+      "additionalProperties": false,
+      "description": "One timestamped runtime or adapter health observation.",
+      "properties": {
+        "age_millis": {
+          "description": "Age of the evidence when this report was assembled.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message": {
+          "description": "Optional human-readable diagnostic detail.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Additional non-sensitive check metadata.",
+          "type": "object"
+        },
+        "name": {
+          "description": "Stable, namespaced check name.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "observed_at_millis": {
+          "description": "Unix timestamp in milliseconds when the evidence was observed.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason_code": {
+          "description": "Stable machine-readable reason.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/HealthCheckStatus",
+          "description": "Structured check outcome."
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "reason_code",
+        "observed_at_millis",
+        "age_millis"
+      ],
+      "type": "object"
+    },
+    "HealthCheckStatus": {
+      "description": "Outcome of one runtime health check.",
+      "oneOf": [
+        {
+          "const": "ok",
+          "description": "The check passed.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "The check observed a failure.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "The check could not establish a result.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported",
+          "description": "The selected adapter does not implement the check.",
+          "type": "string"
+        }
+      ]
+    },
+    "RuntimeReadiness": {
+      "description": "Whether Fabric knows the runtime can currently accept work.",
+      "oneOf": [
+        {
+          "const": "ready",
+          "description": "The runtime can accept work under its current invocation policy.",
+          "type": "string"
+        },
+        {
+          "const": "not_ready",
+          "description": "The runtime is known not to accept work.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Fabric lacks enough fresh evidence to decide.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Optional adapter-specific contribution to a runtime health report.",
+  "properties": {
+    "checks": {
+      "description": "Adapter or dependency checks.",
+      "items": {
+        "$ref": "#/$defs/HealthCheck"
+      },
+      "type": "array"
+    },
+    "readiness": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AdapterReadiness"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Adapter-owned readiness override when one is known."
+    }
+  },
+  "title": "AdapterHealthResult",
+  "type": "object"
+}

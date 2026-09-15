@@ -63,6 +63,7 @@
   },
   "capabilities": {
     "streaming": false,
+    "health": true,
     "cancellation": false,
     "updates": false,
     "service": false

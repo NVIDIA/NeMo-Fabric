@@ -211,6 +211,9 @@
     ],
     "system_instruction_modes": ["replace"]
   },
+  "capabilities": {
+    "health": true
+  },
   "telemetry": {
     "providers": {
       "relay": {

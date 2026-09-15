@@ -1706,6 +1706,7 @@ def test_descriptor_has_no_codex_binary_requirement():
         "skills",
     ]
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
+    assert descriptor["capabilities"]["health"] is True
     assert descriptor["model_schema"]["if"]["properties"]["provider"] == {
         "const": "openai"
     }

@@ -53,12 +53,14 @@ from nemo_fabric.types import DoctorCheck
 from nemo_fabric.types import DoctorReport
 from nemo_fabric.types import ErrorInfo
 from nemo_fabric.types import FabricEvent
+from nemo_fabric.types import HealthCheck
 from nemo_fabric.types import RunOutput
 from nemo_fabric.types import RunPlan
 from nemo_fabric.types import RunResult
 from nemo_fabric.types import RunUsage
 from nemo_fabric.types import RuntimeCapabilities
 from nemo_fabric.types import RuntimeHandle
+from nemo_fabric.types import RuntimeHealth
 from nemo_fabric.types import TelemetryRef
 
 __all__ = [
@@ -78,6 +80,7 @@ __all__ = [
     "FabricError",
     "FabricEvent",
     "HarnessConfig",
+    "HealthCheck",
     "InstructionConfig",
     "InstructionsConfig",
     "InvokeStream",
@@ -109,6 +112,7 @@ __all__ = [
     "RunUsage",
     "RuntimeCapabilities",
     "RuntimeHandle",
+    "RuntimeHealth",
     "RuntimeConfig",
     "Runtime",
     "RuntimeStatus",

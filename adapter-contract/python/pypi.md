@@ -34,6 +34,10 @@ NeMo Fabric delivers `AgentConfig` as the southbound configuration. Python
 adapters using the optional common lifecycle host pass
 `AgentConfig.from_mapping` as the `config_loader`.
 
+The models module also exports `AdapterHealthRequest`, `AdapterHealthResult`,
+`AdapterReadiness`, and `HealthCheck` for optional bounded health hooks used by
+the maintained local lifecycle hosts.
+
 ## Install
 
 Install the package directly when developing a Python adapter:

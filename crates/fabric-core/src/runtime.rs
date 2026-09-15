@@ -6,10 +6,11 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
@@ -40,6 +41,8 @@ const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
 // timeouts and should return a normalized response before this bound.
 const LOCAL_HOST_INVOKE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(10);
+const HEALTH_CONTROL_PROTOCOL: &str = "fabric.health/v1alpha1";
+const HEALTH_CONTROL_RESPONSE_LIMIT: usize = 1024 * 1024;
 const LOCAL_HOST_EXIT_GRACE: Duration = Duration::from_secs(2);
 const LOCAL_HOST_DIAGNOSTIC_LIMIT: usize = 16 * 1024;
 #[cfg(test)]
@@ -67,7 +70,7 @@ const DEFAULT_PYTHON: &str = "python3";
 const DEFAULT_PYTHON: &str = "python.exe";
 #[cfg(test)]
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-static LOCAL_HOSTS: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalAdapterHost>>>>> =
+static LOCAL_HOSTS: LazyLock<Mutex<BTreeMap<String, Arc<LocalAdapterHostHandle>>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 /// A request passed to a NeMo Fabric-managed harness runtime.
@@ -317,6 +320,144 @@ pub struct RuntimeHandle {
     pub adapter_id: Option<String>,
     /// Prepared environment.
     pub environment: EnvironmentHandle,
+}
+
+/// Whether the adapter host can be reached independently of invocation traffic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeLiveness {
+    /// The adapter process and health control path responded within the deadline.
+    Responsive,
+    /// The process was observed running but its health control path did not respond.
+    Unresponsive,
+    /// Fabric directly observed that the adapter process exited.
+    Exited,
+    /// Fabric could not establish liveness.
+    Unknown,
+}
+
+/// Current runtime activity observed by Fabric.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeActivity {
+    /// No invocation or stop is in progress.
+    Idle,
+    /// At least one invocation is in progress or waiting on the runtime.
+    Busy,
+    /// Runtime shutdown is in progress.
+    Stopping,
+    /// Fabric could not establish activity.
+    Unknown,
+}
+
+/// Whether Fabric knows the runtime can currently accept work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeReadiness {
+    /// The runtime can accept work under its current invocation policy.
+    Ready,
+    /// The runtime is known not to accept work.
+    NotReady,
+    /// Fabric lacks enough fresh evidence to decide.
+    Unknown,
+}
+
+/// Outcome of one runtime health check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthCheckStatus {
+    /// The check passed.
+    Ok,
+    /// The check observed a failure.
+    Failed,
+    /// The check could not establish a result.
+    Unknown,
+    /// The selected adapter does not implement the check.
+    Unsupported,
+}
+
+/// One timestamped runtime or adapter health observation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HealthCheck {
+    /// Stable, namespaced check name.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub name: String,
+    /// Structured check outcome.
+    pub status: HealthCheckStatus,
+    /// Stable machine-readable reason.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub reason_code: String,
+    /// Unix timestamp in milliseconds when the evidence was observed.
+    pub observed_at_millis: u64,
+    /// Age of the evidence when this report was assembled.
+    pub age_millis: u64,
+    /// Optional human-readable diagnostic detail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub message: Option<String>,
+    /// Additional non-sensitive check metadata.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, Value>,
+}
+
+/// Bounded health report for one started runtime.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeHealth {
+    /// Runtime represented by this report.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub runtime_id: String,
+    /// Unix timestamp in milliseconds when the report completed.
+    pub checked_at_millis: u64,
+    /// Total probe duration in milliseconds.
+    pub duration_millis: u64,
+    /// Adapter-host liveness.
+    pub liveness: RuntimeLiveness,
+    /// Current invocation and shutdown activity.
+    pub activity: RuntimeActivity,
+    /// Current admission readiness.
+    pub readiness: RuntimeReadiness,
+    /// Stable reason for the top-level readiness decision.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub reason_code: String,
+    /// Ordered common and adapter-specific observations.
+    pub checks: Vec<HealthCheck>,
+}
+
+/// Request passed to an optional adapter health hook.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterHealthRequest {
+    /// Runtime being inspected.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub runtime_id: String,
+    /// Remaining health budget in milliseconds.
+    #[schemars(range(min = 1))]
+    pub timeout_millis: u64,
+}
+
+/// Adapter-owned readiness observation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterReadiness {
+    /// Adapter readiness state.
+    pub state: RuntimeReadiness,
+    /// Stable machine-readable reason.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub reason_code: String,
+}
+
+/// Optional adapter-specific contribution to a runtime health report.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterHealthResult {
+    /// Adapter-owned readiness override when one is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readiness: Option<AdapterReadiness>,
+    /// Adapter or dependency checks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<HealthCheck>,
 }
 
 /// One request sent to a runtime.
@@ -622,6 +763,7 @@ struct AdapterLifecycleStart {
     base_dir: PathBuf,
     config: AgentConfig,
     runtime_context: RuntimeContext,
+    health_enabled: bool,
     capability_plan: CapabilityPlan,
     #[serde(skip_serializing_if = "Option::is_none")]
     telemetry_plan: Option<TelemetryPlan>,
@@ -722,6 +864,78 @@ struct LocalAdapterHost {
     stderr_offset: usize,
     artifacts: ArtifactManifest,
     relay_config: Option<RelayRuntimeConfig>,
+    process_exited: Arc<AtomicBool>,
+}
+
+struct LocalAdapterHostHandle {
+    host: Mutex<LocalAdapterHost>,
+    health_control: Option<LocalHealthControl>,
+    active_invocations: AtomicUsize,
+    stopping: AtomicBool,
+    process_exited: Arc<AtomicBool>,
+}
+
+impl LocalAdapterHostHandle {
+    fn activity(&self) -> RuntimeActivity {
+        if self.stopping.load(Ordering::Acquire) {
+            RuntimeActivity::Stopping
+        } else if self.active_invocations.load(Ordering::Acquire) > 0 {
+            RuntimeActivity::Busy
+        } else {
+            RuntimeActivity::Idle
+        }
+    }
+}
+
+struct InvocationActivityGuard<'a>(&'a LocalAdapterHostHandle);
+
+impl Drop for InvocationActivityGuard<'_> {
+    fn drop(&mut self) {
+        self.0.active_invocations.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocalHealthControl {
+    protocol_version: String,
+    host: String,
+    port: u16,
+    token: String,
+}
+
+impl std::fmt::Debug for LocalHealthControl {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LocalHealthControl")
+            .field("protocol_version", &self.protocol_version)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("token", &"[REDACTED]")
+            .finish()
+    }
+}
+
+#[derive(Default, Deserialize)]
+struct AdapterLifecycleStartOutput {
+    #[serde(default)]
+    health_control: Option<LocalHealthControl>,
+}
+
+#[derive(Serialize)]
+struct HealthControlRequest<'a> {
+    protocol_version: &'static str,
+    token: &'a str,
+    runtime_id: &'a str,
+    timeout_millis: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HealthControlResponse {
+    protocol_version: String,
+    runtime_id: String,
+    result: AdapterHealthResult,
 }
 
 /// Invoke a NeMo Fabric run plan.
@@ -887,6 +1101,441 @@ pub fn invoke_openai_stream(
         harness: harness(plan),
         adapter_kind: adapter_kind(plan),
     })
+}
+
+/// Inspect a started runtime without invoking the agent or changing its state.
+pub fn check_runtime_health(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    timeout: Duration,
+) -> Result<RuntimeHealth> {
+    validate_runtime_handle(plan, runtime)?;
+    if timeout.is_zero() {
+        return Err(FabricError::InvalidConfig {
+            field: "health.timeout_seconds".to_string(),
+            reason: "must be greater than zero".to_string(),
+        });
+    }
+    if !uses_local_host(plan) {
+        return Err(FabricError::UnsupportedRuntimeAdapter {
+            harness: runtime.harness.clone(),
+            adapter_kind: runtime.adapter_kind,
+        });
+    }
+
+    let started = Instant::now();
+    let observed_at = health_now_millis();
+    let Some(host) = local_hosts().get(&runtime.runtime_id).cloned() else {
+        return Ok(finish_health_report(
+            runtime,
+            started,
+            RuntimeLiveness::Unknown,
+            RuntimeActivity::Unknown,
+            RuntimeReadiness::Unknown,
+            "host_unavailable",
+            vec![
+                health_check(
+                    "adapter.process",
+                    HealthCheckStatus::Unknown,
+                    "host_unavailable",
+                    observed_at,
+                ),
+                health_check(
+                    "adapter.control",
+                    HealthCheckStatus::Unsupported,
+                    "control_unsupported",
+                    observed_at,
+                ),
+            ],
+        ));
+    };
+
+    let activity = host.activity();
+    let process = inspect_local_host_process(&host);
+    let mut checks = vec![match process {
+        ProcessObservation::Running => health_check(
+            "adapter.process",
+            HealthCheckStatus::Ok,
+            "process_running",
+            observed_at,
+        ),
+        ProcessObservation::Exited => health_check(
+            "adapter.process",
+            HealthCheckStatus::Failed,
+            "process_exited",
+            observed_at,
+        ),
+        ProcessObservation::Unknown => health_check(
+            "adapter.process",
+            HealthCheckStatus::Unknown,
+            "process_status_unknown",
+            observed_at,
+        ),
+    }];
+
+    if process == ProcessObservation::Exited {
+        checks.push(health_check(
+            "adapter.control",
+            HealthCheckStatus::Failed,
+            "process_exited",
+            observed_at,
+        ));
+        return Ok(finish_health_report(
+            runtime,
+            started,
+            RuntimeLiveness::Exited,
+            activity,
+            RuntimeReadiness::NotReady,
+            "process_exited",
+            checks,
+        ));
+    }
+
+    if activity == RuntimeActivity::Stopping {
+        checks.push(health_check(
+            "adapter.control",
+            HealthCheckStatus::Unknown,
+            "stop_in_progress",
+            observed_at,
+        ));
+        return Ok(finish_health_report(
+            runtime,
+            started,
+            RuntimeLiveness::Unknown,
+            activity,
+            RuntimeReadiness::NotReady,
+            "stop_in_progress",
+            checks,
+        ));
+    }
+
+    if !plan.capabilities.health {
+        checks.push(health_check(
+            "adapter.control",
+            HealthCheckStatus::Unsupported,
+            "control_unsupported",
+            observed_at,
+        ));
+        let (readiness, reason) = if activity == RuntimeActivity::Busy {
+            (RuntimeReadiness::NotReady, "invocation_in_progress")
+        } else {
+            (RuntimeReadiness::Unknown, "control_unsupported")
+        };
+        return Ok(finish_health_report(
+            runtime,
+            started,
+            RuntimeLiveness::Unknown,
+            activity,
+            readiness,
+            reason,
+            checks,
+        ));
+    }
+
+    let Some(control) = host.health_control.as_ref() else {
+        checks.push(health_check(
+            "adapter.control",
+            HealthCheckStatus::Unsupported,
+            "control_unsupported",
+            observed_at,
+        ));
+        return Ok(finish_health_report(
+            runtime,
+            started,
+            RuntimeLiveness::Unknown,
+            activity,
+            if activity == RuntimeActivity::Busy {
+                RuntimeReadiness::NotReady
+            } else {
+                RuntimeReadiness::Unknown
+            },
+            if activity == RuntimeActivity::Busy {
+                "invocation_in_progress"
+            } else {
+                "control_unsupported"
+            },
+            checks,
+        ));
+    };
+
+    match probe_health_control(control, &runtime.runtime_id, started, timeout) {
+        HealthControlProbe::Succeeded(result) => {
+            checks.push(health_check(
+                "adapter.control",
+                HealthCheckStatus::Ok,
+                "probe_succeeded",
+                health_now_millis(),
+            ));
+            checks.extend(result.checks);
+            let (readiness, reason_code) = result
+                .readiness
+                .map(|readiness| (readiness.state, readiness.reason_code))
+                .unwrap_or_else(|| match activity {
+                    RuntimeActivity::Busy => (
+                        RuntimeReadiness::NotReady,
+                        "invocation_in_progress".to_string(),
+                    ),
+                    RuntimeActivity::Stopping => {
+                        (RuntimeReadiness::NotReady, "stop_in_progress".to_string())
+                    }
+                    RuntimeActivity::Idle | RuntimeActivity::Unknown => {
+                        (RuntimeReadiness::Unknown, "readiness_unknown".to_string())
+                    }
+                });
+            Ok(finish_health_report(
+                runtime,
+                started,
+                RuntimeLiveness::Responsive,
+                activity,
+                readiness,
+                &reason_code,
+                checks,
+            ))
+        }
+        HealthControlProbe::TimedOut => {
+            checks.push(health_check(
+                "adapter.control",
+                HealthCheckStatus::Unknown,
+                "probe_timed_out",
+                health_now_millis(),
+            ));
+            Ok(finish_health_report(
+                runtime,
+                started,
+                if process == ProcessObservation::Running {
+                    RuntimeLiveness::Unresponsive
+                } else {
+                    RuntimeLiveness::Unknown
+                },
+                activity,
+                if activity == RuntimeActivity::Busy {
+                    RuntimeReadiness::NotReady
+                } else {
+                    RuntimeReadiness::Unknown
+                },
+                if activity == RuntimeActivity::Busy {
+                    "invocation_in_progress"
+                } else {
+                    "probe_timed_out"
+                },
+                checks,
+            ))
+        }
+        HealthControlProbe::Unavailable(reason_code) => {
+            checks.push(health_check(
+                "adapter.control",
+                HealthCheckStatus::Unknown,
+                reason_code,
+                health_now_millis(),
+            ));
+            Ok(finish_health_report(
+                runtime,
+                started,
+                if process == ProcessObservation::Running {
+                    RuntimeLiveness::Unresponsive
+                } else {
+                    RuntimeLiveness::Unknown
+                },
+                activity,
+                if activity == RuntimeActivity::Busy {
+                    RuntimeReadiness::NotReady
+                } else {
+                    RuntimeReadiness::Unknown
+                },
+                if activity == RuntimeActivity::Busy {
+                    "invocation_in_progress"
+                } else {
+                    reason_code
+                },
+                checks,
+            ))
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessObservation {
+    Running,
+    Exited,
+    Unknown,
+}
+
+fn inspect_local_host_process(host: &LocalAdapterHostHandle) -> ProcessObservation {
+    if host.process_exited.load(Ordering::Acquire) {
+        return ProcessObservation::Exited;
+    }
+    match host.host.try_lock() {
+        Ok(mut host) => match host.child.try_wait() {
+            Ok(Some(_)) => ProcessObservation::Exited,
+            Ok(None) => ProcessObservation::Running,
+            Err(_) => ProcessObservation::Unknown,
+        },
+        Err(std::sync::TryLockError::Poisoned(error)) => {
+            let mut host = error.into_inner();
+            match host.child.try_wait() {
+                Ok(Some(_)) => ProcessObservation::Exited,
+                Ok(None) => ProcessObservation::Running,
+                Err(_) => ProcessObservation::Unknown,
+            }
+        }
+        Err(std::sync::TryLockError::WouldBlock) => ProcessObservation::Running,
+    }
+}
+
+enum HealthControlProbe {
+    Succeeded(AdapterHealthResult),
+    TimedOut,
+    Unavailable(&'static str),
+}
+
+fn probe_health_control(
+    control: &LocalHealthControl,
+    runtime_id: &str,
+    started: Instant,
+    timeout: Duration,
+) -> HealthControlProbe {
+    if control.protocol_version != HEALTH_CONTROL_PROTOCOL || control.host != "127.0.0.1" {
+        return HealthControlProbe::Unavailable("control_protocol_error");
+    }
+    let Some(remaining) = timeout.checked_sub(started.elapsed()) else {
+        return HealthControlProbe::TimedOut;
+    };
+    if remaining.is_zero() {
+        return HealthControlProbe::TimedOut;
+    }
+    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), control.port);
+    let mut stream = match TcpStream::connect_timeout(&address, remaining) {
+        Ok(stream) => stream,
+        Err(error) if is_timeout_error(&error) => return HealthControlProbe::TimedOut,
+        Err(_) => return HealthControlProbe::Unavailable("control_unavailable"),
+    };
+    let Some(remaining) = timeout.checked_sub(started.elapsed()) else {
+        return HealthControlProbe::TimedOut;
+    };
+    if remaining.is_zero()
+        || stream.set_read_timeout(Some(remaining)).is_err()
+        || stream.set_write_timeout(Some(remaining)).is_err()
+    {
+        return HealthControlProbe::TimedOut;
+    }
+    let request = HealthControlRequest {
+        protocol_version: HEALTH_CONTROL_PROTOCOL,
+        token: &control.token,
+        runtime_id,
+        timeout_millis: remaining.as_millis().clamp(1, u128::from(u64::MAX)) as u64,
+    };
+    let mut encoded = match serde_json::to_vec(&request) {
+        Ok(encoded) => encoded,
+        Err(_) => return HealthControlProbe::Unavailable("control_protocol_error"),
+    };
+    encoded.push(b'\n');
+    if let Err(error) = stream.write_all(&encoded).and_then(|()| stream.flush()) {
+        return if is_timeout_error(&error) {
+            HealthControlProbe::TimedOut
+        } else {
+            HealthControlProbe::Unavailable("control_unavailable")
+        };
+    }
+    let mut line = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        let Some(remaining) = timeout.checked_sub(started.elapsed()) else {
+            return HealthControlProbe::TimedOut;
+        };
+        if remaining.is_zero() || stream.set_read_timeout(Some(remaining)).is_err() {
+            return HealthControlProbe::TimedOut;
+        }
+        let read = match stream.read(&mut buffer) {
+            Ok(0) => return HealthControlProbe::Unavailable("control_protocol_error"),
+            Ok(read) => read,
+            Err(error) if is_timeout_error(&error) => return HealthControlProbe::TimedOut,
+            Err(_) => return HealthControlProbe::Unavailable("control_unavailable"),
+        };
+        let record_end = buffer[..read]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(read, |index| index + 1);
+        if line.len().saturating_add(record_end) > HEALTH_CONTROL_RESPONSE_LIMIT {
+            return HealthControlProbe::Unavailable("control_protocol_error");
+        }
+        line.extend_from_slice(&buffer[..record_end]);
+        if line.ends_with(b"\n") {
+            break;
+        }
+    }
+    let response: HealthControlResponse = match serde_json::from_slice(&line) {
+        Ok(response) => response,
+        Err(_) => return HealthControlProbe::Unavailable("control_protocol_error"),
+    };
+    if response.protocol_version != HEALTH_CONTROL_PROTOCOL
+        || response.runtime_id != runtime_id
+        || !valid_adapter_health_result(&response.result)
+    {
+        return HealthControlProbe::Unavailable("control_protocol_error");
+    }
+    HealthControlProbe::Succeeded(response.result)
+}
+
+fn valid_adapter_health_result(result: &AdapterHealthResult) -> bool {
+    let readiness_valid = result
+        .readiness
+        .as_ref()
+        .is_none_or(|readiness| !readiness.reason_code.trim().is_empty());
+    readiness_valid
+        && result.checks.iter().all(|check| {
+            !check.name.trim().is_empty()
+                && !check.reason_code.trim().is_empty()
+                && check
+                    .message
+                    .as_ref()
+                    .is_none_or(|message| !message.trim().is_empty())
+        })
+}
+
+fn is_timeout_error(error: &std::io::Error) -> bool {
+    matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock)
+}
+
+fn health_check(
+    name: impl Into<String>,
+    status: HealthCheckStatus,
+    reason_code: impl Into<String>,
+    observed_at_millis: u64,
+) -> HealthCheck {
+    HealthCheck {
+        name: name.into(),
+        status,
+        reason_code: reason_code.into(),
+        observed_at_millis,
+        age_millis: 0,
+        message: None,
+        metadata: BTreeMap::new(),
+    }
+}
+
+fn finish_health_report(
+    runtime: &RuntimeHandle,
+    started: Instant,
+    liveness: RuntimeLiveness,
+    activity: RuntimeActivity,
+    readiness: RuntimeReadiness,
+    reason_code: impl Into<String>,
+    mut checks: Vec<HealthCheck>,
+) -> RuntimeHealth {
+    let checked_at_millis = health_now_millis();
+    for check in &mut checks {
+        check.age_millis = checked_at_millis.saturating_sub(check.observed_at_millis);
+    }
+    RuntimeHealth {
+        runtime_id: runtime.runtime_id.clone(),
+        checked_at_millis,
+        duration_millis: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        liveness,
+        activity,
+        readiness,
+        reason_code: reason_code.into(),
+        checks,
+    }
 }
 
 fn validate_openai_stream_transport(transport: &OpenAiStreamTransport) -> Result<()> {
@@ -1171,18 +1820,46 @@ impl RuntimeAdapter for LocalHostAdapter {
         let request =
             AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
         let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config)?;
-        if let Err(error) = exchange_lifecycle_message(
+        let start_output = match exchange_lifecycle_message(
             &mut host,
             &runtime.runtime_id,
             &request,
             LOCAL_HOST_START_TIMEOUT,
         ) {
-            let _ = terminate_local_host(&mut host);
-            let _ = remove_local_host_files(&host);
-            return Err(error);
-        }
-
-        local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
+            Ok(output) => output,
+            Err(error) => {
+                let _ = terminate_local_host(&mut host);
+                let _ = remove_local_host_files(&host);
+                return Err(error);
+            }
+        };
+        let start_output: AdapterLifecycleStartOutput = match start_output {
+            Value::Object(output) => match serde_json::from_value(Value::Object(output)) {
+                Ok(output) => output,
+                Err(source) => {
+                    let error = lifecycle_error(
+                        AdapterLifecycleOperation::Start,
+                        &runtime.runtime_id,
+                        "protocol_error",
+                        format!("invalid lifecycle start output: {source}"),
+                        local_host_diagnostics(&host),
+                    );
+                    let _ = terminate_local_host(&mut host);
+                    let _ = remove_local_host_files(&host);
+                    return Err(error);
+                }
+            },
+            _ => AdapterLifecycleStartOutput::default(),
+        };
+        let process_exited = Arc::clone(&host.process_exited);
+        let handle = LocalAdapterHostHandle {
+            host: Mutex::new(host),
+            health_control: start_output.health_control,
+            active_invocations: AtomicUsize::new(0),
+            stopping: AtomicBool::new(false),
+            process_exited,
+        };
+        local_hosts().insert(runtime.runtime_id.clone(), Arc::new(handle));
         Ok(runtime)
     }
 
@@ -1206,28 +1883,33 @@ impl RuntimeAdapter for LocalHostAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
-        let Some(host) = local_hosts().remove(&runtime.runtime_id) else {
+        let Some(host) = local_hosts().get(&runtime.runtime_id).cloned() else {
             return Ok(vec![local_host_stop_event(runtime, true, false)]);
         };
-        let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
+        if host.stopping.swap(true, Ordering::AcqRel) {
+            return Ok(vec![local_host_stop_event(runtime, true, false)]);
+        }
+        let mut host_guard = host.host.lock().unwrap_or_else(|error| error.into_inner());
         let request =
             AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
                 runtime_id: runtime.runtime_id.clone(),
             }));
         let result = exchange_lifecycle_message(
-            &mut host,
+            &mut host_guard,
             &runtime.runtime_id,
             &request,
             LOCAL_HOST_STOP_TIMEOUT,
         );
-        let termination = terminate_local_host(&mut host);
-        let diagnostics = local_host_diagnostics(&host);
-        let removal = remove_local_host_files(&host);
+        let termination = terminate_local_host(&mut host_guard);
+        let diagnostics = local_host_diagnostics(&host_guard);
+        let removal = remove_local_host_files(&host_guard);
         let host_crashed = matches!(
             &result,
             Err(FabricError::AdapterLifecycleOperation { code, .. })
                 if code == "host_crashed"
         );
+        drop(host_guard);
+        local_hosts().remove(&runtime.runtime_id);
         if !host_crashed {
             result?;
         }
@@ -1355,9 +2037,20 @@ fn run_local_host_invocation_with_timeout(
                 "",
             )
         })?;
+    host.active_invocations.fetch_add(1, Ordering::AcqRel);
+    let _activity = InvocationActivityGuard(&host);
+    if host.stopping.load(Ordering::Acquire) {
+        return Err(lifecycle_error(
+            operation,
+            &runtime.runtime_id,
+            "stop_in_progress",
+            "persistent local adapter host is stopping",
+            "",
+        ));
+    }
 
     let exchange_result = {
-        let mut host_guard = host.lock().unwrap_or_else(|error| error.into_inner());
+        let mut host_guard = host.host.lock().unwrap_or_else(|error| error.into_inner());
         let artifacts = host_guard.artifacts.clone();
         let relay_config = host_guard.relay_config.clone();
         let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
@@ -1593,7 +2286,7 @@ fn run_local_host_invocation_with_timeout(
 
 fn invalidate_timed_out_local_host(
     runtime_id: &str,
-    expected_host: &Arc<Mutex<LocalAdapterHost>>,
+    expected_host: &Arc<LocalAdapterHostHandle>,
     host: &mut LocalAdapterHost,
 ) {
     {
@@ -1682,7 +2375,7 @@ fn local_host_stop_event(
     )
 }
 
-fn local_hosts() -> std::sync::MutexGuard<'static, BTreeMap<String, Arc<Mutex<LocalAdapterHost>>>> {
+fn local_hosts() -> std::sync::MutexGuard<'static, BTreeMap<String, Arc<LocalAdapterHostHandle>>> {
     LOCAL_HOSTS
         .lock()
         .unwrap_or_else(|error| error.into_inner())
@@ -1759,6 +2452,8 @@ fn spawn_local_host(
         ));
     };
     let (sender, responses) = mpsc::channel();
+    let process_exited = Arc::new(AtomicBool::new(false));
+    let reader_process_exited = Arc::clone(&process_exited);
     if let Err(source) = thread::Builder::new()
         .name(format!("fabric-host-{}", runtime.runtime_id))
         .spawn(move || {
@@ -1781,6 +2476,7 @@ fn spawn_local_host(
                     }
                 }
             }
+            reader_process_exited.store(true, Ordering::Release);
         })
     {
         let _ = child.kill();
@@ -1801,6 +2497,7 @@ fn spawn_local_host(
         stderr_offset: 0,
         artifacts,
         relay_config,
+        process_exited,
     })
 }
 
@@ -2176,6 +2873,7 @@ fn adapter_lifecycle_start(
             artifacts,
             relay_config,
         ),
+        health_enabled: plan.capabilities.health,
         capability_plan: plan.capability_plan.clone(),
         telemetry_plan: plan.telemetry_plan.clone(),
     })
@@ -2937,6 +3635,10 @@ fn now_millis() -> u128 {
         .unwrap_or_default()
 }
 
+fn health_now_millis() -> u64 {
+    u64::try_from(now_millis()).unwrap_or(u64::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -2961,6 +3663,7 @@ mod tests {
   "adapter_id": "acme.fabric.local-host",
   "adapter_kind": "python",
   "runner": {"module": "fake_host"},
+  "capabilities": {"health": true},
   "settings_schema": {
     "type": "object",
     "properties": {
@@ -3009,6 +3712,7 @@ mod tests {
 import os
 import socket
 import sys
+import threading
 import time
 
 MODE = os.environ.get("FABRIC_FAKE_HOST_MODE", "success")
@@ -3079,6 +3783,59 @@ def write_openai_stream(sink, chunks):
         if read_http_response(stream) != 200:
             raise RuntimeError("stream listener rejected records")
 
+def start_health_control(runtime_id):
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    token = "fake-health-token"
+
+    def serve_health():
+        client, _address = listener.accept()
+        with client:
+            stream = client.makefile("rb")
+            request = json.loads(stream.readline())
+            if request.get("token") != token:
+                return
+            if MODE == "health_timeout":
+                time.sleep(1)
+                return
+            result = {
+                "readiness": {"state": "ready", "reason_code": "ready"},
+                "checks": [{
+                    "name": "adapter.health",
+                    "status": "ok",
+                    "reason_code": "adapter_ready",
+                    "observed_at_millis": int(time.time() * 1000),
+                    "age_millis": 0,
+                }],
+            }
+            response = {
+                "protocol_version": "fabric.health/v1alpha1",
+                "runtime_id": runtime_id,
+                "result": result,
+            }
+            encoded = json.dumps(response).encode() + b"\n"
+            if MODE == "health_dribble":
+                for byte in encoded:
+                    try:
+                        client.sendall(bytes([byte]))
+                    except BrokenPipeError:
+                        break
+                    time.sleep(0.05)
+                return
+            client.sendall(encoded)
+        listener.close()
+
+    threading.Thread(target=serve_health, daemon=True).start()
+    return {
+        "health_control": {
+            "protocol_version": "fabric.health/v1alpha1",
+            "host": "127.0.0.1",
+            "port": listener.getsockname()[1],
+            "token": token,
+        }
+    }
+
 for line in sys.stdin:
     message = json.loads(line)
     operation = message["operation"]
@@ -3087,7 +3844,12 @@ for line in sys.stdin:
             print("start diagnostic", file=sys.stderr, flush=True)
             response("start", error=failure("start", "fake_start", "start rejected"))
             sys.exit(16)
-        response("start")
+        output = (
+            start_health_control(message["payload"]["runtime_context"]["runtime_id"])
+            if MODE in {"health_success", "health_timeout", "health_dribble", "health_busy"}
+            else ("legacy-start-output" if MODE == "legacy_start_output" else None)
+        )
+        response("start", output=output)
         if MODE == "crash_after_start":
             os.close(0)
             print("host crashed intentionally", file=sys.stderr, flush=True)
@@ -3095,6 +3857,12 @@ for line in sys.stdin:
             sys.exit(17)
     elif operation in {"invoke", "invoke_openai_stream"}:
         invocations += 1
+        if MODE == "health_busy":
+            print("busy invocation accepted", file=sys.stderr, flush=True)
+            time.sleep(1)
+        if MODE == "crash_during_invoke":
+            print("crash invocation accepted", file=sys.stderr, flush=True)
+            os._exit(19)
         if MODE == "invoke_stderr":
             print(f"diagnostic-{invocations}", file=sys.stderr, flush=True)
         if MODE == "invoke_timeout":
@@ -3175,6 +3943,9 @@ for line in sys.stdin:
             result = {"status": "succeeded", "output": output}
         response(operation, output=result)
     elif operation == "stop":
+        if MODE == "stop_slow":
+            print("stop accepted", file=sys.stderr, flush=True)
+            time.sleep(1)
         if MODE == "stop_failure":
             response("stop", error=failure("stop", "fake_stop", "stop rejected"))
             sys.exit(18)
@@ -3314,6 +4085,228 @@ for line in sys.stdin:
             },
             capture,
         )
+    }
+
+    #[test]
+    fn local_host_health_reports_ready_without_mutating_runtime() {
+        let (root, plan) = local_host_plan("health_success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let health = check_runtime_health(&plan, &runtime, Duration::from_secs(1))
+            .expect("check runtime health");
+
+        assert_eq!(health.runtime_id, runtime.runtime_id);
+        assert_eq!(health.liveness, RuntimeLiveness::Responsive);
+        assert_eq!(health.activity, RuntimeActivity::Idle);
+        assert_eq!(health.readiness, RuntimeReadiness::Ready);
+        assert_eq!(health.reason_code, "ready");
+        assert!(health.checks.iter().any(|check| {
+            check.name == "adapter.health" && check.status == HealthCheckStatus::Ok
+        }));
+
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("after health"))
+            .expect("invoke after health check");
+        assert_eq!(result.status, RunStatus::Succeeded);
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_health_marks_legacy_control_unsupported() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let health = check_runtime_health(&plan, &runtime, Duration::from_secs(1))
+            .expect("check runtime health");
+
+        assert_eq!(health.liveness, RuntimeLiveness::Unknown);
+        assert_eq!(health.activity, RuntimeActivity::Idle);
+        assert_eq!(health.readiness, RuntimeReadiness::Unknown);
+        assert_eq!(health.reason_code, "control_unsupported");
+        assert!(health.checks.iter().any(|check| {
+            check.name == "adapter.control" && check.status == HealthCheckStatus::Unsupported
+        }));
+
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_health_timeout_is_bounded_data() {
+        let (root, plan) = local_host_plan("health_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let started = Instant::now();
+
+        let health = check_runtime_health(&plan, &runtime, Duration::from_millis(75))
+            .expect("health timeout is a report");
+
+        assert!(started.elapsed() < Duration::from_millis(500));
+        assert_eq!(health.liveness, RuntimeLiveness::Unresponsive);
+        assert_eq!(health.readiness, RuntimeReadiness::Unknown);
+        assert_eq!(health.reason_code, "probe_timed_out");
+        assert!(health.checks.iter().any(|check| {
+            check.name == "adapter.control" && check.reason_code == "probe_timed_out"
+        }));
+
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_health_timeout_is_one_total_deadline() {
+        let (root, plan) = local_host_plan("health_dribble");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let started = Instant::now();
+
+        let health = check_runtime_health(&plan, &runtime, Duration::from_millis(75))
+            .expect("health timeout is a report");
+
+        assert!(started.elapsed() < Duration::from_millis(500));
+        assert_eq!(health.reason_code, "probe_timed_out");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_health_uses_control_path_during_invocation() {
+        let (root, plan) = local_host_plan("health_busy");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let stderr_path = local_hosts()[&runtime.runtime_id]
+            .host
+            .lock()
+            .expect("local host")
+            .stderr_path
+            .clone();
+        let invoke_plan = plan.clone();
+        let invoke_runtime_handle = runtime.clone();
+        let invocation = thread::spawn(move || {
+            invoke_runtime(
+                &invoke_plan,
+                &invoke_runtime_handle,
+                RunRequest::text("busy"),
+            )
+        });
+        let accepted_deadline = Instant::now() + Duration::from_secs(2);
+        while !fs::read_to_string(&stderr_path)
+            .expect("read host stderr")
+            .contains("busy invocation accepted")
+        {
+            assert!(
+                Instant::now() < accepted_deadline,
+                "busy invocation was not accepted"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let health = check_runtime_health(&plan, &runtime, Duration::from_millis(500))
+            .expect("check busy runtime health");
+
+        assert_eq!(health.liveness, RuntimeLiveness::Responsive);
+        assert_eq!(health.activity, RuntimeActivity::Busy);
+        assert_eq!(health.readiness, RuntimeReadiness::Ready);
+        assert_eq!(health.reason_code, "ready");
+        invocation.join().expect("join invocation").expect("invoke");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_health_reports_stop_in_progress() {
+        let (root, plan) = local_host_plan("stop_slow");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let stderr_path = local_hosts()[&runtime.runtime_id]
+            .host
+            .lock()
+            .expect("local host")
+            .stderr_path
+            .clone();
+        let stop_plan = plan.clone();
+        let stop_runtime_handle = runtime.clone();
+        let stopping = thread::spawn(move || stop_runtime(&stop_plan, &stop_runtime_handle));
+        let accepted_deadline = Instant::now() + Duration::from_secs(2);
+        while !fs::read_to_string(&stderr_path)
+            .expect("read host stderr")
+            .contains("stop accepted")
+        {
+            assert!(Instant::now() < accepted_deadline, "stop was not accepted");
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let health = check_runtime_health(&plan, &runtime, Duration::from_millis(500))
+            .expect("check stopping runtime health");
+
+        assert_eq!(health.activity, RuntimeActivity::Stopping);
+        assert_eq!(health.readiness, RuntimeReadiness::NotReady);
+        assert_eq!(health.reason_code, "stop_in_progress");
+        stopping
+            .join()
+            .expect("join stop")
+            .expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_health_observes_process_exit_during_invocation() {
+        let (root, plan) = local_host_plan("crash_during_invoke");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let stderr_path = local_hosts()[&runtime.runtime_id]
+            .host
+            .lock()
+            .expect("local host")
+            .stderr_path
+            .clone();
+        let invoke_plan = plan.clone();
+        let invoke_runtime_handle = runtime.clone();
+        let invocation = thread::spawn(move || {
+            invoke_runtime(
+                &invoke_plan,
+                &invoke_runtime_handle,
+                RunRequest::text("crash"),
+            )
+        });
+        let accepted_deadline = Instant::now() + Duration::from_secs(2);
+        while !fs::read_to_string(&stderr_path)
+            .expect("read host stderr")
+            .contains("crash invocation accepted")
+        {
+            assert!(
+                Instant::now() < accepted_deadline,
+                "crashing invocation was not accepted"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        let health_deadline = Instant::now() + Duration::from_secs(2);
+        let health = loop {
+            let health = check_runtime_health(&plan, &runtime, Duration::from_millis(100))
+                .expect("check crashed runtime health");
+            if health.reason_code == "process_exited" {
+                break health;
+            }
+            assert!(
+                Instant::now() < health_deadline,
+                "process exit was not observed"
+            );
+            thread::sleep(Duration::from_millis(10));
+        };
+
+        assert_eq!(health.liveness, RuntimeLiveness::Exited);
+        assert_eq!(health.readiness, RuntimeReadiness::NotReady);
+        invocation
+            .join()
+            .expect("join invocation")
+            .expect_err("invocation should observe host crash");
+        stop_runtime(&plan, &runtime).expect("stop crashed local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_tolerates_legacy_scalar_start_output() {
+        let (root, plan) = local_host_plan("legacy_start_output");
+
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -3611,6 +4604,7 @@ for line in sys.stdin:
             .cloned()
             .expect("active local host");
         let relay_config_path = host
+            .host
             .lock()
             .expect("local host")
             .relay_config
@@ -3661,7 +4655,7 @@ for line in sys.stdin:
             .get(&runtime.runtime_id)
             .cloned()
             .expect("active local host");
-        let runtime_dir = host.lock().expect("local host").runtime_dir.clone();
+        let runtime_dir = host.host.lock().expect("local host").runtime_dir.clone();
 
         let error = run_local_host_adapter_with_timeout(
             &plan,
@@ -3681,7 +4675,8 @@ for line in sys.stdin:
         ));
         assert!(!local_hosts().contains_key(&runtime.runtime_id));
         assert!(
-            host.lock()
+            host.host
+                .lock()
                 .expect("local host")
                 .child
                 .try_wait()
@@ -3883,7 +4878,7 @@ for line in sys.stdin:
             .get(&runtime.runtime_id)
             .cloned()
             .expect("active local host");
-        let stderr_path = host.lock().expect("local host").stderr_path.clone();
+        let stderr_path = host.host.lock().expect("local host").stderr_path.clone();
 
         let first_plan = plan.clone();
         let first_runtime = runtime.clone();
@@ -4149,7 +5144,7 @@ for line in sys.stdin:
             .get(&runtime.runtime_id)
             .cloned()
             .expect("active local host");
-        let stderr_path = host.lock().expect("local host").stderr_path.clone();
+        let stderr_path = host.host.lock().expect("local host").stderr_path.clone();
         let closed_deadline = Instant::now() + Duration::from_secs(2);
         while !fs::read_to_string(&stderr_path)
             .expect("read host stderr")
@@ -4162,7 +5157,8 @@ for line in sys.stdin:
             thread::sleep(Duration::from_millis(10));
         }
         assert!(
-            host.lock()
+            host.host
+                .lock()
                 .expect("local host")
                 .child
                 .try_wait()

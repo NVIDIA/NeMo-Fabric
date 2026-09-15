@@ -275,6 +275,7 @@ def test_mini_swe_agent_descriptor_is_narrow_and_versioned():
     assert descriptor["capabilities"] == {
         "service": False,
         "streaming": False,
+        "health": True,
         "updates": False,
         "cancellation": False,
     }

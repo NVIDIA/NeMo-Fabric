@@ -90,6 +90,9 @@
     ],
     "system_instruction_modes": ["replace", "append"]
   },
+  "capabilities": {
+    "health": true
+  },
   "telemetry": {
     "providers": {
       "relay": {

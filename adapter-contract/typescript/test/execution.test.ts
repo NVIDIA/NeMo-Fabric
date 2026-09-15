@@ -2,11 +2,30 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
+  AdapterHealthRequest,
+  AdapterHealthResult,
   AgentRunError,
   AgentRunRequest,
   AgentRunResult,
   AgentRunStatus,
 } from "../src/index.js";
+
+const healthRequest: AdapterHealthRequest = {
+  runtime_id: "runtime-1",
+  timeout_millis: 1000,
+};
+const healthResult: AdapterHealthResult = {
+  readiness: { state: "ready", reason_code: "ready" },
+  checks: [
+    {
+      name: "adapter.health",
+      status: "ok",
+      reason_code: "adapter_ready",
+      observed_at_millis: 1,
+      age_millis: 0,
+    },
+  ],
+};
 
 const requests: AgentRunRequest[] = [
   { input: null },
@@ -34,6 +53,8 @@ void requests;
 void results;
 void status;
 void runError;
+void healthRequest;
+void healthResult;
 
 // @ts-expect-error successful results cannot include an error
 const invalidSuccess: AgentRunResult = {

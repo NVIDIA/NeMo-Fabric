@@ -222,6 +222,7 @@ def test_descriptor_and_registered_target_declare_the_shared_boundary():
         "cancellation": False,
         "service": False,
         "streaming": False,
+        "health": True,
         "updates": False,
     }
     assert descriptor["telemetry"] == {

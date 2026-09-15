@@ -96,6 +96,10 @@ descriptor schema.
   and the projected southbound `agent-run-request`. This envelope is an
   internal transport detail; the common Python host passes its members to the
   adapter as typed arguments.
+- `adapter-contract/adapter-health-request`: runtime identity and remaining
+  deadline passed to an optional adapter health hook.
+- `adapter-contract/adapter-health-result`: optional adapter readiness and
+  timestamped check observations returned through the health-control endpoint.
 - `adapter-contract/openai-stream-invocation`: current native OpenAI
   stream payload sent to an initialized persistent local adapter host. It
   contains the per-turn runtime context and request plus a NeMo Fabric-owned
@@ -120,6 +124,8 @@ descriptor schema.
 - `sdk/environment-handle`: prepared execution environment context.
 - `sdk/runtime-handle`: active harness runtime identity and opaque adapter binding.
 - `sdk/invocation-handle`: one request or turn sent to a runtime.
+- `sdk/runtime-health`: bounded runtime liveness, activity, readiness, reason,
+  and ordered common or adapter-specific checks.
 
 ### Results, Artifacts, and Diagnostics
 

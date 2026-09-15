@@ -23,11 +23,13 @@ from nemo_fabric import (
     FabricRuntimeError,
     FabricStateError,
     HarnessConfig,
+    HealthCheck,
     MetadataConfig,
     RunRequest,
     RunResult,
     RuntimeConfig,
     Runtime,
+    RuntimeHealth,
     RuntimeStatus,
 )
 from nemo_fabric import client as client_mod
@@ -74,6 +76,32 @@ def _runtime(runtime_id: str = "runtime-1") -> dict[str, Any]:
             "control_location": "external_control",
             "ownership": "caller_owned",
         },
+    }
+
+
+def _health(
+    runtime_id: str = "runtime-1",
+    *,
+    readiness: str = "ready",
+    reason_code: str = "ready",
+) -> dict[str, Any]:
+    return {
+        "runtime_id": runtime_id,
+        "checked_at_millis": 1_700_000_000_000,
+        "duration_millis": 2,
+        "liveness": "responsive",
+        "activity": "idle",
+        "readiness": readiness,
+        "reason_code": reason_code,
+        "checks": [
+            {
+                "name": "adapter.control",
+                "status": "ok",
+                "reason_code": "probe_succeeded",
+                "observed_at_millis": 1_700_000_000_000,
+                "age_millis": 0,
+            }
+        ],
     }
 
 
@@ -127,6 +155,11 @@ def mock_native_fixture() -> MagicMock:
         )
 
     mock_native.invoke_runtime.side_effect = invoke
+    mock_native.check_runtime_health.side_effect = (
+        lambda _plan, runtime_json, _timeout: json.dumps(
+            _health(json.loads(runtime_json)["runtime_id"])
+        )
+    )
     mock_native.stop_runtime.return_value = json.dumps([])
     return mock_native
 
@@ -218,6 +251,58 @@ async def test_runtime_reuses_runtime_and_orders_turns(mock_native: MagicMock):
     assert [request["input"] for request in mock_native.requests] == ["one", "two"]
     assert runtime.messages[-1]["content"] == "reply-2"
     assert len(runtime.invocations) == 2
+
+
+async def test_runtime_health_returns_typed_report(mock_native: MagicMock):
+    runtime = _runtime_wrapper(mock_native)
+
+    health = await runtime.check_health(timeout_seconds=0.125)
+
+    assert isinstance(health, RuntimeHealth)
+    assert health.runtime_id == "runtime-1"
+    assert health.liveness == "responsive"
+    assert health.readiness == "ready"
+    assert isinstance(health.checks[0], HealthCheck)
+    assert health.checks[0].reason_code == "probe_succeeded"
+    assert mock_native.check_runtime_health.call_args.args[2] == 125
+    assert runtime.status is RuntimeStatus.ACTIVE
+
+
+async def test_negative_runtime_health_is_data(mock_native: MagicMock):
+    mock_native.check_runtime_health.return_value = json.dumps(
+        _health(readiness="unknown", reason_code="probe_timed_out")
+    )
+    mock_native.check_runtime_health.side_effect = None
+    runtime = _runtime_wrapper(mock_native)
+
+    health = await runtime.check_health()
+
+    assert health.readiness == "unknown"
+    assert health.reason_code == "probe_timed_out"
+    assert runtime.status is RuntimeStatus.ACTIVE
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan"), True])
+async def test_runtime_health_rejects_invalid_timeout(
+    mock_native: MagicMock,
+    timeout: Any,
+):
+    runtime = _runtime_wrapper(mock_native)
+
+    with pytest.raises(FabricConfigError, match="positive and finite"):
+        await runtime.check_health(timeout_seconds=timeout)
+
+    mock_native.check_runtime_health.assert_not_called()
+
+
+async def test_runtime_health_rejects_stopped_runtime(mock_native: MagicMock):
+    runtime = _runtime_wrapper(mock_native)
+    await runtime.stop()
+
+    with pytest.raises(FabricStateError, match="stopped"):
+        await runtime.check_health()
+
+    mock_native.check_runtime_health.assert_not_called()
 
 
 async def test_native_invoke_failure_marks_runtime_failed(mock_native: MagicMock):

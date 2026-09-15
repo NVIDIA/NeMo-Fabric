@@ -143,6 +143,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
     ]
     assert "model" not in descriptor["extension_schemas"]
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
+    assert descriptor["capabilities"]["health"] is True
 
 
 async def test_runtime_start_rejects_append_system_instruction(tmp_path: Path):

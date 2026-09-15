@@ -40,6 +40,7 @@ The following table lists the `Runtime` members for driving a stateful runtime.
 | `invoke(*, input=... \| request=...)` | Yes | One turn on an active runtime. One active invocation at a time; overlap raises `FabricStateError`. |
 | `invoke_openai_stream(*, input=... \| request=...)` | No | Start exactly one descriptor-gated native invocation and return an async `OpenAIInvokeStream` of `chat.completion.chunk` mappings. Await `stream.result()` for the separate terminal `RunResult`. |
 | `invoke_stream(*, input=... \| request=...)` | No | Start one NeMo Relay turn and return an async `InvokeStream` of raw ATOF records. Await `stream.result()` for the terminal `RunResult`. |
+| `check_health(*, timeout_seconds=3.0)` | Yes | Return bounded `RuntimeHealth` data without invoking, stopping, or failing the runtime. Negative health and timeouts are report data. |
 | `stop()` | Yes | Stop the runtime. Called automatically by `async with`. |
 | `status` | No | `RuntimeStatus`: `ACTIVE`, `STOPPED`, or `FAILED`. |
 | `supports_openai_streaming` | No | `True` when the selected descriptor declares `capabilities.streaming` for native OpenAI Chat Completions chunks. |
