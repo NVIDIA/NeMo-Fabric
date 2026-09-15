@@ -428,12 +428,36 @@ fn adapter_kind_name(adapter_kind: AdapterKind) -> &'static str {
 fn command_available(binary: &str) -> bool {
     let path = Path::new(binary);
     if path.components().count() > 1 {
-        return path.is_file();
+        return executable_path_available(path);
     }
     let Some(paths) = std::env::var_os("PATH") else {
         return false;
     };
-    std::env::split_paths(&paths).any(|dir| dir.join(binary).is_file())
+    std::env::split_paths(&paths).any(|dir| executable_path_available(&dir.join(binary)))
+}
+
+fn executable_path_available(path: &Path) -> bool {
+    if path.is_file() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        if path.extension().is_some() {
+            return false;
+        }
+        let extensions = std::env::var_os("PATHEXT")
+            .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into())
+            .to_string_lossy()
+            .into_owned();
+        return extensions
+            .split(';')
+            .map(str::trim)
+            .filter_map(|extension| extension.strip_prefix('.'))
+            .filter(|extension| !extension.is_empty())
+            .any(|extension| path.with_extension(extension).is_file());
+    }
+    #[cfg(not(windows))]
+    false
 }
 
 struct BinaryRequirement {
@@ -657,5 +681,17 @@ mod tests {
                     == Some(&Value::String("instructions.system.mode".to_string()))
                 && check.message.contains("supported modes: replace")
         }));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn command_available_recognizes_windows_executable_extensions() {
+        let root = std::env::temp_dir().join(format!("nemo-fabric-doctor-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("create temporary command directory");
+        std::fs::write(root.join("bun.exe"), []).expect("create Windows executable fixture");
+
+        assert!(command_available(&root.join("bun").to_string_lossy()));
+
+        std::fs::remove_dir_all(root).expect("remove temporary command directory");
     }
 }

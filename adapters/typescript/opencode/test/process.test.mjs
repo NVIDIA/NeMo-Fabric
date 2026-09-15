@@ -1,0 +1,194 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn } from "node:child_process";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+function context(workspace, invocationId) {
+  return {
+    artifacts: {},
+    environment: {
+      control_location: "external_control",
+      env: { TEST_API_KEY: "not-a-real-key" },
+      environment_id: "environment-1",
+      ownership: "caller_owned",
+      provider: "local",
+      workspace,
+    },
+    invocation_id: invocationId,
+    request_id: `request-${invocationId}`,
+    runtime_id: "runtime-1",
+  };
+}
+
+async function exchange(workspace, requests, environment = {}) {
+  const childEnv = { ...process.env, ...environment };
+  delete childEnv.NODE_TEST_CONTEXT;
+  const child = spawn(process.env.BUN_EXECUTABLE ?? "bun", [fileURLToPath(new URL("../dist/cli.js", import.meta.url))], {
+    cwd: workspace,
+    env: childEnv,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  child.stdin.end(`${requests.map((request) => JSON.stringify(request)).join("\n")}\n`);
+
+  const exitCode = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  return {
+    exitCode,
+    responses: stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)),
+    stderr,
+  };
+}
+
+async function listen(server) {
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.notEqual(typeof address, "string");
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function close(server) {
+  await new Promise((resolve, reject) => {
+    server.close((error) => (error === undefined ? resolve() : reject(error)));
+  });
+}
+
+function openAiStream(text) {
+  const chunk = (delta, finishReason = null) =>
+    `data: ${JSON.stringify({
+      id: "chatcmpl-opencode-test",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: "fabric-echo",
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+    })}\n\n`;
+  return `${chunk({ role: "assistant" })}${chunk({ content: text })}${chunk({}, "stop")}data: [DONE]\n\n`;
+}
+
+test("runs two real OpenCode SDK prompts through the process host", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "fabric-opencode-process-"));
+  const fakeHome = await mkdtemp(join(tmpdir(), "fabric-opencode-home-"));
+  let prompts = 0;
+  const providerRequests = [];
+  const endpoint = createServer(async (request, response) => {
+    if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+      response.writeHead(404).end();
+      return;
+    }
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    providerRequests.push(payload);
+    const messages = Array.isArray(payload.messages) ? payload.messages : [];
+    const userMessages = messages.filter((message) => message?.role === "user");
+    const latest = userMessages.at(-1)?.content;
+    prompts += 1;
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end(
+      openAiStream(
+        typeof latest === "string"
+          ? `reply:user_count=${userMessages.length} latest=${latest}`
+          : `reply-${prompts}`,
+      ),
+    );
+  });
+  const endpointUrl = await listen(endpoint);
+  try {
+    const workspaceConfigInstruction = join(workspace, "workspace-opencode-instructions.md");
+    const homeConfigInstruction = join(fakeHome, "home-opencode-instructions.md");
+    await writeFile(join(workspace, "AGENTS.md"), "FABRIC_WORKSPACE_CONFIG_SENTINEL", "utf8");
+    await writeFile(workspaceConfigInstruction, "FABRIC_WORKSPACE_OPENCODE_CONFIG_SENTINEL", "utf8");
+    await writeFile(
+      join(workspace, "opencode.json"),
+      JSON.stringify({ instructions: [workspaceConfigInstruction] }),
+      "utf8",
+    );
+    await mkdir(join(fakeHome, ".agents"), { recursive: true });
+    await writeFile(join(fakeHome, ".agents", "AGENTS.md"), "FABRIC_HOME_CONFIG_SENTINEL", "utf8");
+    await writeFile(homeConfigInstruction, "FABRIC_HOME_OPENCODE_CONFIG_SENTINEL", "utf8");
+    await mkdir(join(fakeHome, ".config", "opencode"), { recursive: true });
+    await writeFile(
+      join(fakeHome, ".config", "opencode", "opencode.json"),
+      JSON.stringify({ instructions: [homeConfigInstruction] }),
+      "utf8",
+    );
+    const start = {
+      operation: "start",
+      payload: {
+        agent_name: "opencode-process-test",
+        base_dir: workspace,
+        config: {
+          models: {
+            default: {
+              api_key_env: "TEST_API_KEY",
+              base_url: `${endpointUrl}/v1`,
+              model: "fabric-echo",
+              provider: "fabric-test",
+            },
+          },
+        },
+        runtime_context: context(workspace, "start"),
+      },
+    };
+    const invoke = (input, invocationId) => ({
+      operation: "invoke",
+      payload: {
+        request: { input },
+        runtime_context: context(workspace, invocationId),
+      },
+    });
+    const stop = { operation: "stop", payload: { runtime_id: "runtime-1" } };
+    const { exitCode, responses, stderr } = await exchange(
+      workspace,
+      [start, invoke("first", "first"), invoke("second", "second"), stop],
+      { HOME: fakeHome, XDG_CONFIG_HOME: join(fakeHome, ".config") },
+    );
+
+    assert.equal(exitCode, 0, stderr);
+    assert.deepEqual(responses.map((response) => response.operation), ["start", "invoke", "invoke", "stop"]);
+    assert.equal(responses[0].outcome.status, "succeeded");
+    assert.equal(responses[1].outcome.output.status, "succeeded");
+    assert.equal(responses[1].outcome.output.output.response, "reply:user_count=1 latest=first");
+    assert.equal(responses[2].outcome.output.status, "succeeded");
+    assert.equal(responses[2].outcome.output.output.response, "reply:user_count=2 latest=second");
+    assert.equal(responses[3].outcome.status, "succeeded");
+    assert.ok(prompts >= 2);
+    const ambientInstructions = providerRequests
+      .flatMap((request) => (Array.isArray(request.messages) ? request.messages : []))
+      .map((message) => message?.content)
+      .filter((content) => typeof content === "string" && /FABRIC_(?:WORKSPACE|HOME)_(?:CONFIG|OPENCODE_CONFIG)_SENTINEL/u.test(content))
+      .map((content) => content.match(/FABRIC_(?:WORKSPACE|HOME)_(?:CONFIG|OPENCODE_CONFIG)_SENTINEL/u)?.[0]);
+    assert.deepEqual(ambientInstructions, []);
+  } finally {
+    await close(endpoint);
+    await rm(workspace, { recursive: true, force: true });
+    await rm(fakeHome, { recursive: true, force: true });
+  }
+});

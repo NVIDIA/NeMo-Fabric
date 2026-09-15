@@ -5,9 +5,9 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric TypeScript Adapter Workspace
 
-This private npm workspace coordinates the independently published common and
-Pi adapter packages. It provides shared build, test, package-content, and
-consumer-install checks without becoming a published package itself.
+This private npm workspace coordinates the independently published common, Pi,
+and OpenCode adapter packages. It provides shared build, test, package-content,
+and consumer-install checks without becoming a published package itself.
 
 ## Build and Test
 
@@ -28,6 +28,13 @@ harness, run:
 just install-typescript-pi
 ```
 
+To install only the OpenCode adapter workspace and its exact-pinned development
+harness, run:
+
+```bash
+just install-typescript-opencode
+```
+
 ## Dependency Rationale
 
 The workspace links `nemo-fabric-adapter-contract` from the checked-out source
@@ -41,3 +48,7 @@ Harness SDKs are optional peers of their published adapters so consumers can
 select a compatible harness version. Each adapter exact-pins its tested harness
 under `devDependencies`; source installs and CI therefore remain reproducible
 without making the harness a production dependency.
+
+The OpenCode adapter runs with Bun 1.4.2 or later. Source and package checks
+run its process lifecycle under Bun while using Node.js for TypeScript builds
+and the shared workspace tooling.
