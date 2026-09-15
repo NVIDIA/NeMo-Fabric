@@ -1,0 +1,66 @@
+{
+  "name": "nemo-fabric-adapters-opencode",
+  "version": "0.4.0",
+  "description": "OpenCode v2 SDK harness adapter for NVIDIA NeMo Fabric.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./descriptor": "./opencode.fabric-adapter.json",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "nemo-fabric-adapters-opencode": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "opencode.fabric-adapter.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "pack:check": "npm run build && node ../scripts/check-package.mjs",
+    "prepack": "npm run build",
+    "test": "npm run clean && npm run build && node --test test/*.test.mjs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NVIDIA/NeMo-Fabric.git",
+    "directory": "adapters/typescript/opencode"
+  },
+  "bugs": {
+    "url": "https://github.com/NVIDIA/NeMo-Fabric/issues"
+  },
+  "homepage": "https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/opencode#readme",
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "dependencies": {
+    "nemo-fabric-adapter-contract": "0.4.0",
+    "nemo-fabric-adapters-common": "0.4.0"
+  },
+  "peerDependencies": {
+    "@opencode/core": "^2.0.3",
+    "@opencode/sdk": "^2.0.3"
+  },
+  "peerDependenciesMeta": {
+    "@opencode/core": {
+      "optional": true
+    },
+    "@opencode/sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@opencode/core": "2.0.3",
+    "@opencode/sdk": "2.0.3",
+    "@types/node": "24.12.4",
+    "typescript": "5.9.3"
+  }
+}

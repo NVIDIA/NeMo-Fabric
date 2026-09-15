@@ -1,0 +1,108 @@
+---
+title: "Use the OpenCode Adapter"
+description: "Install and configure the NVIDIA NeMo Fabric harness integration for OpenCode."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the `nvidia.fabric.opencode` adapter to run tasks with the OpenCode 2 SDK.
+Each NVIDIA NeMo Fabric runtime starts one embedded OpenCode host and session.
+
+## Install the Adapter
+
+OpenCode adapter processes require Bun 1.4.2 or later on `PATH`.
+
+Install the npm adapter and the compatible OpenCode SDK in the project that
+owns the NeMo Fabric configuration:
+
+```bash
+npm install nemo-fabric-adapters-opencode @opencode/sdk@^2.0.3
+```
+
+The OpenCode SDK is an optional peer dependency. Installing the adapter alone
+does not install the SDK. Starting the adapter without a compatible SDK returns
+`opencode_harness_unavailable`.
+
+For source development, install the checked-out adapter workspace and its
+pinned SDK from the repository root:
+
+```bash
+just install-typescript-opencode
+```
+
+## Configure the Adapter
+
+Select the OpenCode integration and point discovery at the adapter descriptor.
+The following example uses the descriptor from an installed npm package:
+
+```python
+from nemo_fabric import DiscoveryConfig, FabricConfig, HarnessConfig
+from nemo_fabric import MetadataConfig, ModelConfig
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="opencode-review"),
+    discovery=DiscoveryConfig(
+        local_paths=[
+            "./node_modules/nemo-fabric-adapters-opencode/opencode.fabric-adapter.json"
+        ]
+    ),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.opencode"),
+    models={
+        "default": ModelConfig(
+            provider="openai",
+            model="gpt-4.1-mini",
+            api_key_env="OPENAI_API_KEY",
+        )
+    },
+)
+```
+
+For a source build, set `discovery.local_paths` to
+`adapters/typescript/opencode/opencode.fabric-adapter.json` instead.
+
+The adapter selects the `default` model role or the only configured role. With
+multiple roles, configure `default`. Set `api_key_env` to the name of the
+environment variable that contains the provider credential. The provider and
+model must be supported by the installed OpenCode SDK when no endpoint is
+configured. The adapter passes this configured name explicitly to OpenCode, so
+it does not need to be the provider's conventional environment-variable name.
+
+To route model requests through a local or company-hosted endpoint, set
+`base_url`. The endpoint must implement the OpenAI-compatible Chat Completions
+protocol. It is a model-provider endpoint, not the address of a remote
+OpenCode server. The adapter removes OpenCode's `prompt_cache_key` extension
+for configured endpoints, so providers that reject that OpenAI-specific field
+can still use the core protocol.
+
+```python
+config.models["default"].base_url = "http://127.0.0.1:8080/v1"
+```
+
+The initial adapter exposes `models` and `models.base_url`. NeMo Fabric rejects
+temperature, instructions, MCP, skills, tool policy, subagents, Relay, remote
+OpenCode service configuration, and other undeclared configuration rather than
+ignoring them.
+
+The embedded session keeps the Fabric workspace as its working location, but
+does not load ambient OpenCode project or user configuration and instructions
+from that workspace or the host home directory.
+
+## Understand the Runtime Lifecycle
+
+The adapter runs in a persistent Bun process. `start` creates one embedded
+OpenCode host and one OpenCode session for the NeMo Fabric runtime. Ordered
+plain-text invocations reuse that session and its conversation history. A
+successful result has `output.response`; usage fields are present when OpenCode
+reports them. `stop` removes the OpenCode session and closes the embedded host.
+
+When OpenCode reports files changed by an invocation, the adapter writes the
+combined diff to `opencode/turn-<n>.patch` under the Fabric artifact root and
+returns it as a `patch` artifact.
+
+Create a new runtime to change the selected model or workspace.
+
+## Limitations
+
+The initial adapter does not expose streaming, caller-driven cancellation,
+runtime updates, remote-service execution, Relay telemetry, MCP, skills, tool
+policy, subagents, system instructions, or model settings.

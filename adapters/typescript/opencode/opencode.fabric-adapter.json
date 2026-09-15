@@ -1,0 +1,32 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.opencode",
+  "adapter_kind": "process",
+  "runner": {
+    "command": "bun",
+    "script": "dist/cli.js"
+  },
+  "requirements": {
+    "binaries": ["bun"]
+  },
+  "config": {
+    "accepts": ["models", "models.base_url"]
+  },
+  "model_schema": {
+    "type": "object",
+    "properties": {
+      "provider": {"type": "string", "minLength": 1},
+      "model": {"type": "string", "minLength": 1},
+      "api_key_env": {"type": "string", "minLength": 1},
+      "base_url": {"type": ["string", "null"], "format": "uri", "pattern": "^https?://"}
+    },
+    "required": ["provider", "model", "api_key_env"],
+    "additionalProperties": false
+  },
+  "capabilities": {
+    "streaming": false,
+    "cancellation": false,
+    "updates": false,
+    "service": false
+  }
+}

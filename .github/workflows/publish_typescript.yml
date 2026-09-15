@@ -62,6 +62,11 @@ jobs:
           node-version: '24'
           package-manager-cache: false
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
       - name: Install just
         uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
         with:
@@ -143,7 +148,8 @@ jobs:
           for package_directory in \
             adapter-contract/typescript \
             adapters/typescript/common \
-            adapters/typescript/pi; do
+            adapters/typescript/pi \
+            adapters/typescript/opencode; do
             python3 scripts/ci/publish_typescript_package.py \
               --action publish \
               --package-directory "$package_directory" \
