@@ -43,7 +43,7 @@ This table lists the maintainer skills in this set and what each covers.
 | [`draft-release-notes`](draft-release-notes/SKILL.md) | Draft GitHub and documentation release notes from verified repository evidence. |
 | [`create-beta-tag`](create-beta-tag/SKILL.md) | Create and push a signed, annotated beta tag from a release branch or validated main. |
 | [`create-rc-tag`](create-rc-tag/SKILL.md) | Create and push a signed, annotated release-candidate tag from the validated release branch. |
-| [`create-release-tag`](create-release-tag/SKILL.md) | Create and push a signed, annotated stable release tag, then prepare an unpublished GitHub Release for review. |
+| [`create-release-tag`](create-release-tag/SKILL.md) | Create and push a signed, annotated stable release tag, then prepare unpublished GitHub Release and team announcement drafts for review. |
 | [`prepare-pr`](prepare-pr/SKILL.md) | Prepare, open, or edit a pull request with the right scope and review handoff. |
 | [`karpathy-guidelines`](karpathy-guidelines/SKILL.md) | Behavioral coding guidelines; use as a companion to the others. |
 

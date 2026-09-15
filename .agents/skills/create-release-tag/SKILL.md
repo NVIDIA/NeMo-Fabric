@@ -1,6 +1,6 @@
 ---
 name: create-release-tag
-description: Create and push a signed, annotated NeMo Fabric stable release tag from its validated release branch, then prepare an unpublished GitHub Release for review. Use when cutting a stable release tag; not for beta or release-candidate tags.
+description: Create and push a signed, annotated NeMo Fabric stable release tag, then prepare unpublished GitHub Release and team announcement drafts for review. Use when cutting a stable release tag; not for beta or release-candidate tags.
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
@@ -240,3 +240,48 @@ Present `${DRAFT_EDIT_URL}` to the user as a clickable link. Tell the user to
 review the title and body before clicking **Publish release**. Do not run
 `gh release edit --draft=false`, call the publish API, or otherwise publish the
 release as part of this skill.
+
+## Draft the Team Release Announcement
+
+Draft an announcement suitable for a team communication platform. Make it shorter and more condensed than the GitHub Release body: use a one-line description and include only the most important features. Do not copy paragraphs, exhaustive lists, contributor details, or changelog details from the release notes.
+
+Create the `.tmp` directory if needed and save the announcement at the exact
+path `.tmp/draft-${RELEASE_VERSION}release-announce.md`:
+
+```bash
+mkdir -p .tmp
+ANNOUNCEMENT_PATH=".tmp/draft-${RELEASE_VERSION}release-announce.md"
+TAGGED_RELEASE_NOTES_URL="https://github.com/${GITHUB_REPOSITORY}/blob/${RELEASE_TAG}/docs/about-nemo-fabric/release-notes.mdx"
+```
+
+Use this structure:
+
+```markdown
+:mega: NVIDIA NeMo Fabric <version> is here! :mega:
+
+<short one-line description>
+
+What’s new in <version>?
+<!-- List the most important features here there should be 3-4 bullet points -->
+* <emoji> <key feature>
+
+<if there are breaking changes>
+:warning: Breaking change: <change>
+:warning: Breaking change: <change>
+</if there are breaking changes>
+
+Learn more and get started:
+
+:book: Release Notes: <link to tagged release-notes.mdx file in GitHub>
+:computer: GitHub: https://github.com/NVIDIA/NeMo-Fabric
+```
+
+Replace `<version>` with `${RELEASE_VERSION}`, without the leading `v`, and use
+`${TAGGED_RELEASE_NOTES_URL}` for the release-notes link. Select only the
+highest-impact features from the tagged release-notes page and give each a
+relevant emoji. Include one `:warning:` line per verified breaking change;
+omit the entire breaking-change block when there are none. Remove every
+placeholder before saving the file.
+
+Present `${ANNOUNCEMENT_PATH}` to the user together with `${DRAFT_EDIT_URL}`.
+Do not post or send the announcement as part of this skill.
