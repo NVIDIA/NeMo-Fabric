@@ -1,0 +1,186 @@
+---
+title: "Connect NVIDIA NeMo Fabric to OpenClaw"
+description: "Use the Remote Agent adapter to call an OpenClaw Gateway through its OpenAI-compatible Chat Completions API."
+template-library-version: "1.0.0"
+sidebar-title: "OpenClaw"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+{/*
+ @tpl:naming
+Change the frontmatter `title` to the actual title of the page. Fern renders the frontmatter title as the page heading, so this template carries no `#` heading.
+Use title casing: Start with an active verb, such as Deploy NeMo Retriever Embedding NIM on Vertex AI.
+*/}
+
+{/*
+ This is the Procedural template for procedure topics that contain multiple procedures. To create procedure topics that only require one procedure, use the [Template for Creating Procedure Topics with One Procedure](https://gitlab-master.nvidia.com/tech-docs/template-library/-/tree/main/templates/procedural?ref_type=heads).
+*/}
+
+{/*
+ @tpl:naming
+Rename the file and save it in the appropriate project repository. The filename gets included in the URL. Try to name your file in a way that the content can change without having to change the filename (and the URL). For better SEO, use hyphens instead of underscores. Avoid putting product names in file names whenever possible. For example, instead of nemoretriever-parse, a product-agnostic name could be "advanced-ocr-parsing". For more information, refer to [General File Naming Guidelines](https://gitlab-master.nvidia.com/tech-docs/template-library/-/blob/main/README.md?ref_type=heads#general-file-naming-guidelines).
+*/}
+
+{/*
+ @tpl:formatting
+- Use tables to organize complex information.
+- Use in-page tabs (`tab-set`) to present OS-specific and language-specific command variants within a step.
+- Use code blocks for examples, API patterns, or configuration structures.
+- Use Mermaid diagrams sparingly to illustrate component relationships, data flows, or process steps.
+- Use callouts for important warnings, notes, and tips.
+*/}
+
+Use the NeMo Fabric Remote Agent adapter to call an OpenClaw Gateway over HTTP. For OpenClaw Gateway API details, refer to the [OpenClaw OpenAI HTTP
+API](https://docs.openclaw.ai/gateway/openai-http-api).
+
+For general Remote Agent settings, refer to [Use the Remote Agent
+Adapter](./remote-agent.mdx).
+
+## Prerequisites
+
+{/*
+ @tpl:naming
+Do not rename this section.
+*/}
+
+Before you start, complete the following steps:
+
+{/*
+ @tpl:optional
+Provide the list of prerequisites here. Replace the following steps with your own.
+*/}
+
+1. [Install OpenClaw](https://docs.openclaw.ai/install) and configure a working
+   default agent and model.
+2. Enable the Chat Completions API, validate the configuration, and restart the
+   Gateway:
+
+   ```bash
+   openclaw config set gateway.http.endpoints.chatCompletions.enabled true --strict-json
+   openclaw config validate
+   openclaw gateway restart
+   ```
+
+3. Generate a Gateway token, restart the Gateway, and display the token:
+
+   ```bash
+   openclaw doctor --generate-gateway-token
+   openclaw gateway restart
+   openclaw gateway auth-token --show
+   ```
+
+   Copy the displayed token into the shell that runs the Python example:
+
+   ```bash
+   export OPENCLAW_GATEWAY_TOKEN="<gateway-token>"
+   ```
+
+   Treat this token like an administrator password. Do not share it or expose
+   the Gateway to the public internet.
+
+
+{/*
+ @tpl:naming
+Add the heading of the first procedure here (start with an active verb, such as Set Up the Working Environment). Section headings are denoted with a double hashtag (##).
+*/}
+
+{/*
+ @tpl:formatting
+Provide the steps for the procedure here. Replace the following steps with your own.
+*/}
+
+## Run the Python Example
+
+{/*
+ @tpl:naming
+Add the heading of the second procedure here (start with an active verb, such as Download and Push the Latest Embedding NIM Image). Section headings are denoted with a double hashtag (##).
+*/}
+
+{/*
+ @tpl:formatting
+Provide the steps for the procedure here. Replace the following steps with your own.
+*/}
+
+Install the Remote Agent adapter:
+
+```bash
+pip install "nemo-fabric[remote-agent]"
+```
+
+The following Python code snippet demonstrates how to run a prompt through the Remote Agent adapter to an OpenClaw Gateway backend. This code assumes a running Gateway listening on the default local address `http://127.0.0.1:18789`.
+
+```python
+import asyncio
+import pprint
+
+from nemo_fabric import (
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+    RuntimeConfig,
+)
+
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="openclaw-remote-agent"),
+    harness=HarnessConfig(
+        adapter_id="nvidia.fabric.remote-agent",
+        settings={
+            "base_url": "http://127.0.0.1:18789/v1",
+            "api_type": "openai-completions",
+        },
+    ),
+    models={
+        "default": ModelConfig(
+            provider="openclaw",
+            model="openclaw/default",
+            api_key_env="OPENCLAW_GATEWAY_TOKEN",
+        )
+    },
+    runtime=RuntimeConfig(artifacts="./artifacts"),
+)
+
+result = asyncio.run(Fabric().run(config, input="Who are you?"))
+
+if result["status"] == "failed":
+    pprint.pprint(result.to_mapping())
+else:
+    print(result.output.response)
+```
+
+The `model` value `openclaw/default` selects OpenClaw's configured default
+agent. It does not select the model that OpenClaw sends to its provider.
+
+> *Note:*
+>
+> In the above example the Remote Agent adapter communicates with an OpenClaw Gateway running locally over the loopback IP address `127.0.0.1`. When communicating with a remote Gateway, use HTTPS to ensure the Gateway token is not transmitted in plaintext. Refer to https://docs.openclaw.ai/gateway/stable-https-url for more information.
+
+## Troubleshoot Common Problems
+
+Use the following table to fix common setup problems.
+
+| Problem | Likely cause | Fix |
+| --- | --- | --- |
+| `404 Not Found` | The Chat Completions endpoint is disabled, or `base_url` does not end in `/v1`. | Enable `gateway.http.endpoints.chatCompletions` and use `http://<host>:<port>/v1`. |
+| `401 Unauthorized` | The token is missing or does not match the Gateway token. | Run `openclaw gateway auth-token --show` on the Gateway host and set `OPENCLAW_GATEWAY_TOKEN` again. |
+| Connection refused | The Gateway is stopped, uses another port, or is not reachable from the Python host. | Start the Gateway and check the address and port. |
+| OpenClaw returns an agent error | The selected OpenClaw agent or its model is not ready. | Run `openclaw models status` on the Gateway host and fix the reported model or credential problem. |
+
+
+## Next Steps
+
+{/*
+ @tpl:naming
+Do not rename this section.
+*/}
+
+{/*
+ @tpl:optional
+The Next Steps section is only required when additional procedures follow this page. If no additional procedures follow this page, then the Next Steps section is not needed. The Next Steps section guides the user to the next procedural topic or tutorial. Replace the following next step with your own.
+*/}
+
+To use another HTTP agent service, refer to [Use the Remote Agent
+Adapter](./remote-agent.mdx).
