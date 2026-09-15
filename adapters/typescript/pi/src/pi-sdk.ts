@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Pi SDK integration boundary. It translates normalized adapter configuration
-// into a controlled in-memory Pi session, including model credentials, skills,
-// extensions, custom tools, and workspace containment.
+// into a controlled Pi session, including model credentials, optional durable
+// session state, skills, extensions, custom tools, and workspace containment.
 
-import { realpath, stat } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, stat, unlink } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type {
@@ -22,6 +22,13 @@ import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runti
 
 interface PiHarnessSettings {
   extensions: string[];
+  session?: PiSessionSettings;
+}
+
+interface PiSessionSettings {
+  mode: "create" | "resume";
+  id: string;
+  directory: string;
 }
 
 interface PiToolFactoryContext {
@@ -36,6 +43,8 @@ const PI_BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", 
 const TOOL_MODULE_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 const PI_HARNESS_INSTALL_COMMAND =
   "npm install @earendil-works/pi-ai@^0.84.2 @earendil-works/pi-coding-agent@^0.84.2";
+const DEFAULT_SESSION_DIRECTORY = ".fabric-pi/sessions";
+const SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 
 interface PiSdkModules {
   InMemoryCredentialStore: typeof import("@earendil-works/pi-ai").InMemoryCredentialStore;
@@ -115,20 +124,39 @@ function selectModel(config: AgentConfig): AgentModelConfig {
 function harnessSettings(config: AgentConfig): PiHarnessSettings {
   const raw = config.harness?.settings;
   const extensions = raw?.extensions;
-  if (extensions === undefined) {
-    return { extensions: [] };
-  }
-  if (!Array.isArray(extensions)) {
+  if (extensions !== undefined && !Array.isArray(extensions)) {
     throw new LifecycleError("pi_invalid_settings", "Pi extension settings do not match the adapter schema");
   }
   const values: string[] = [];
-  for (const entry of extensions) {
+  for (const entry of extensions ?? []) {
     if (typeof entry !== "string") {
       throw new LifecycleError("pi_invalid_settings", "Pi extension settings do not match the adapter schema");
     }
     values.push(entry);
   }
-  return { extensions: values };
+  const session = raw?.session;
+  if (session === undefined) {
+    return { extensions: values };
+  }
+  if (
+    !isRecord(session) ||
+    (session.mode !== "create" && session.mode !== "resume") ||
+    typeof session.id !== "string" ||
+    session.id.length > 128 ||
+    !SESSION_ID_PATTERN.test(session.id) ||
+    (session.directory !== undefined &&
+      (typeof session.directory !== "string" || session.directory.length === 0))
+  ) {
+    throw new LifecycleError("pi_invalid_settings", "Pi session settings do not match the adapter schema");
+  }
+  return {
+    extensions: values,
+    session: {
+      mode: session.mode,
+      id: session.id,
+      directory: session.directory ?? DEFAULT_SESSION_DIRECTORY,
+    },
+  };
 }
 
 function containedBy(root: string, candidate: string): boolean {
@@ -138,6 +166,153 @@ function containedBy(root: string, candidate: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (isRecord(error) && typeof error.code === "string") {
+    return error.code;
+  }
+  return undefined;
+}
+
+async function createSessionManager(
+  pi: PiSdkModules,
+  workspace: string,
+  settings: PiSessionSettings | undefined,
+): Promise<{
+  sessionManager: ReturnType<PiSdkModules["SessionManager"]["inMemory"]>;
+  cleanupOnFailure: () => Promise<void>;
+}> {
+  if (settings === undefined) {
+    return {
+      sessionManager: pi.SessionManager.inMemory(workspace),
+      cleanupOnFailure: async () => undefined,
+    };
+  }
+  if (isAbsolute(settings.directory)) {
+    throw new LifecycleError(
+      "pi_session_directory_outside_workspace",
+      "The Pi session directory must be workspace-relative",
+    );
+  }
+  const configuredDirectory = resolve(workspace, settings.directory);
+  if (!containedBy(workspace, configuredDirectory)) {
+    throw new LifecycleError(
+      "pi_session_directory_outside_workspace",
+      "The Pi session directory must be contained by the workspace",
+    );
+  }
+  let sessionDirectory = workspace;
+  for (const component of relative(workspace, configuredDirectory).split(sep).filter(Boolean)) {
+    const candidate = join(sessionDirectory, component);
+    try {
+      await mkdir(candidate);
+    } catch (error) {
+      if (errorCode(error) !== "EEXIST") {
+        throw new LifecycleError("pi_session_storage_failed", "The Pi session directory could not be prepared");
+      }
+    }
+    try {
+      sessionDirectory = await realpath(candidate);
+    } catch {
+      throw new LifecycleError("pi_session_storage_failed", "The Pi session directory could not be prepared");
+    }
+    if (!containedBy(workspace, sessionDirectory)) {
+      throw new LifecycleError(
+        "pi_session_directory_outside_workspace",
+        "The Pi session directory resolves outside the workspace",
+      );
+    }
+  }
+  try {
+    if (!(await stat(sessionDirectory)).isDirectory()) {
+      throw new Error("not a directory");
+    }
+  } catch {
+    throw new LifecycleError("pi_session_storage_failed", "The Pi session directory is not a directory");
+  }
+
+  const sessionFile = join(sessionDirectory, `${settings.id}.jsonl`);
+  let cleanupOnFailure = async (): Promise<void> => undefined;
+  if (settings.mode === "create") {
+    try {
+      const placeholder = await open(sessionFile, "wx");
+      cleanupOnFailure = async () => {
+        try {
+          await unlink(sessionFile);
+        } catch (error) {
+          if (errorCode(error) !== "ENOENT") {
+            throw error;
+          }
+        }
+      };
+      try {
+        const reserved = await placeholder.stat();
+        cleanupOnFailure = async () => {
+          try {
+            const current = await lstat(sessionFile);
+            if (current.dev === reserved.dev && current.ino === reserved.ino) {
+              await unlink(sessionFile);
+            }
+          } catch (error) {
+            if (errorCode(error) !== "ENOENT") {
+              throw error;
+            }
+          }
+        };
+      } finally {
+        await placeholder.close();
+      }
+    } catch (error) {
+      if (errorCode(error) === "EEXIST") {
+        throw new LifecycleError("pi_session_exists", "A Pi session with the configured id already exists");
+      }
+      try {
+        await cleanupOnFailure();
+      } catch {
+        // The original storage failure is more useful than cleanup diagnostics.
+      }
+      throw new LifecycleError("pi_session_storage_failed", "The Pi session file could not be created");
+    }
+  } else {
+    try {
+      const info = await lstat(sessionFile);
+      if (info.isSymbolicLink()) {
+        throw new LifecycleError(
+          "pi_session_directory_outside_workspace",
+          "The Pi session file must not be a symbolic link",
+        );
+      }
+      if (!info.isFile() || info.size === 0) {
+        throw new LifecycleError("pi_session_invalid", "The configured Pi session file is invalid");
+      }
+    } catch (error) {
+      if (error instanceof LifecycleError) {
+        throw error;
+      }
+      if (errorCode(error) === "ENOENT") {
+        throw new LifecycleError("pi_session_not_found", "The configured Pi session does not exist");
+      }
+      throw new LifecycleError("pi_session_storage_failed", "The Pi session file could not be read");
+    }
+  }
+
+  try {
+    return {
+      sessionManager: pi.SessionManager.open(sessionFile, sessionDirectory, workspace),
+      cleanupOnFailure,
+    };
+  } catch {
+    if (settings.mode === "create") {
+      try {
+        await cleanupOnFailure();
+      } catch {
+        // The original storage failure is more useful than cleanup diagnostics.
+      }
+      throw new LifecycleError("pi_session_storage_failed", "The Pi session file could not be initialized");
+    }
+    throw new LifecycleError("pi_session_invalid", "The configured Pi session file is invalid");
+  }
 }
 
 async function resolveToolModule(workspace: string, reference: string): Promise<{ path: string; exportName: string }> {
@@ -420,6 +595,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         },
       );
     }
+    const settings = harnessSettings(input.config);
     const pi = await loadPiSdk();
     let workspace: string;
     try {
@@ -440,15 +616,15 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       throw new LifecycleError("pi_credential_missing", `Credential environment variable ${apiKeyEnv} is not set`);
     }
 
-    const settings = pi.SettingsManager.inMemory({}, { projectTrusted: false });
-    const extensionPaths = await resolveExtensionPaths(workspace, harnessSettings(input.config).extensions);
+    const piSettings = pi.SettingsManager.inMemory({}, { projectTrusted: false });
+    const extensionPaths = await resolveExtensionPaths(workspace, settings.extensions);
     const skillPaths = await resolveSkillPaths(input.baseDir, input.config.skills?.paths ?? []);
     const customTools = await resolveCustomTools(workspace, input.config.tools?.definitions ?? {});
     const agentDir = join(workspace, ".fabric-pi");
     const resourceLoader = new pi.DefaultResourceLoader({
       cwd: workspace,
       agentDir,
-      settingsManager: settings,
+      settingsManager: piSettings,
       additionalExtensionPaths: extensionPaths,
       additionalSkillPaths: skillPaths,
       noExtensions: true,
@@ -495,20 +671,22 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     const enabled = input.config.tools?.enabled;
     const blocked = input.config.tools?.blocked ?? [];
     const state = { shutdownRequested: false };
-    const { session } = await pi.createAgentSession({
-      cwd: workspace,
-      agentDir,
-      model,
-      modelRuntime,
-      resourceLoader,
-      sessionManager: pi.SessionManager.inMemory(workspace),
-      settingsManager: settings,
-      customTools,
-      tools: enabled === null ? undefined : enabled,
-      excludeTools: blocked,
-    });
-    const handle = new PiSdkSessionHandle(session, state);
+    const preparedSession = await createSessionManager(pi, workspace, settings.session);
+    let handle: PiSdkSessionHandle | undefined;
     try {
+      const { session } = await pi.createAgentSession({
+        cwd: workspace,
+        agentDir,
+        model,
+        modelRuntime,
+        resourceLoader,
+        sessionManager: preparedSession.sessionManager,
+        settingsManager: piSettings,
+        customTools,
+        tools: enabled === null ? undefined : enabled,
+        excludeTools: blocked,
+      });
+      handle = new PiSdkSessionHandle(session, state);
       const blockedNames = new Set(blocked);
       const availableNames = new Set(session.getAllTools().map((tool) => tool.name));
       const missing = (enabled ?? []).filter((name) => !blockedNames.has(name) && !availableNames.has(name));
@@ -542,10 +720,17 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       });
       return handle;
     } catch (error) {
+      if (handle !== undefined) {
+        try {
+          await handle.stop();
+        } catch {
+          process.stderr.write("Pi session cleanup failed after adapter startup error\n");
+        }
+      }
       try {
-        await handle.stop();
+        await preparedSession.cleanupOnFailure();
       } catch {
-        process.stderr.write("Pi session cleanup failed after adapter startup error\n");
+        process.stderr.write("Pi session file cleanup failed after adapter startup error\n");
       }
       throw error;
     }

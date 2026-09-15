@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -31,11 +31,11 @@ function context(workspace, invocationId) {
   };
 }
 
-async function exchange(workspace, requests) {
+async function exchange(workspace, requests, childCwd = workspace) {
   const childEnv = { ...process.env };
   delete childEnv.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [fileURLToPath(new URL("../dist/cli.js", import.meta.url))], {
-    cwd: workspace,
+    cwd: childCwd,
     env: childEnv,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -323,6 +323,86 @@ test(
       assert.equal(exitCode, 0, stderr);
       assert.equal(responses.length, 1);
       assert.equal(responses[0].outcome.error.code, "pi_extension_not_found");
+    } finally {
+      await rm(baseDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "returns stable failures for conflicting, missing, and invalid persistent sessions",
+  { skip: supportsPi ? false : "Pi 0.84.2 requires Node 22.19 or newer" },
+  async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "fabric-pi-session-errors-"));
+    const workspace = join(baseDir, "workspace");
+    try {
+      await mkdir(workspace);
+      const start = (mode, id) => ({
+        operation: "start",
+        payload: {
+          agent_name: "pi-session-errors-test",
+          base_dir: baseDir,
+          config: {
+            harness: { settings: { session: { mode, id } } },
+            models: {
+              default: {
+                api_key_env: "TEST_API_KEY",
+                model: "gpt-4.1-mini",
+                provider: "openai",
+              },
+            },
+            tools: { enabled: [] },
+          },
+          runtime_context: context(workspace, "start"),
+        },
+      });
+      const stop = { operation: "stop", payload: { runtime_id: "runtime-1" } };
+
+      const created = await exchange(workspace, [start("create", "existing"), stop], baseDir);
+      assert.equal(created.responses[0].outcome.status, "succeeded", created.stderr);
+      const sessionHeader = JSON.parse(
+        (await readFile(join(workspace, ".fabric-pi", "sessions", "existing.jsonl"), "utf8")).split("\n")[0],
+      );
+      assert.equal(sessionHeader.cwd, await realpath(workspace));
+
+      const resumed = await exchange(workspace, [start("resume", "existing"), stop]);
+      assert.equal(resumed.responses[0].outcome.status, "succeeded", resumed.stderr);
+
+      const conflicting = await exchange(workspace, [start("create", "existing")]);
+      assert.equal(conflicting.responses[0].outcome.error.code, "pi_session_exists");
+
+      const missing = await exchange(workspace, [start("resume", "missing")]);
+      assert.equal(missing.responses[0].outcome.error.code, "pi_session_not_found");
+
+      await writeFile(join(workspace, ".fabric-pi", "sessions", "invalid.jsonl"), "not jsonl\n", "utf8");
+      const invalid = await exchange(workspace, [start("resume", "invalid")]);
+      assert.equal(invalid.responses[0].outcome.error.code, "pi_session_invalid");
+
+      if (process.platform !== "win32") {
+        const outsideSession = join(baseDir, "outside.jsonl");
+        await writeFile(
+          outsideSession,
+          `${JSON.stringify({
+            type: "session",
+            version: 3,
+            id: "outside",
+            timestamp: "2026-01-01T00:00:00.000Z",
+            cwd: workspace,
+          })}\n`,
+          "utf8",
+        );
+        await symlink(outsideSession, join(workspace, ".fabric-pi", "sessions", "linked.jsonl"));
+        const linked = await exchange(workspace, [start("resume", "linked")]);
+        assert.equal(linked.responses[0].outcome.error?.code, "pi_session_directory_outside_workspace");
+      }
+
+      const failedStart = start("create", "retry-after-failure");
+      failedStart.payload.config.tools.enabled = ["missing-tool"];
+      const failed = await exchange(workspace, [failedStart]);
+      assert.equal(failed.responses[0].outcome.error.code, "pi_tool_missing");
+
+      const retried = await exchange(workspace, [failedStart]);
+      assert.equal(retried.responses[0].outcome.error.code, "pi_tool_missing");
     } finally {
       await rm(baseDir, { recursive: true, force: true });
     }

@@ -7,7 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 
 This package provides a Pi harness adapter for NVIDIA NeMo Fabric. It embeds the
 Pi SDK in the Node process of the adapter and maps one NeMo Fabric runtime to one
-in-memory Pi session.
+Pi session. Sessions are in memory by default and can use explicit disk-backed
+storage when conversation state must survive a runtime restart.
 
 The adapter supports:
 
@@ -22,12 +23,13 @@ The adapter supports:
 - Explicit local `.ts` or `.js` extension files contained by the NeMo Fabric
   workspace
 - Slash commands registered by those explicit extensions
+- Explicit persistent session creation and resume
 - Ordered plain-text invocations with a `{ "response": "..." }` terminal
   output
 
 Ambient Pi settings, context files, packages, extensions, skills, prompts,
-themes, model files, credentials, and session files are disabled. Explicitly
-configured extensions are trusted code.
+themes, model files, credentials, and session discovery are disabled.
+Explicitly configured extensions are trusted code.
 
 ## Install the Adapter
 
@@ -84,6 +86,45 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.pi")
 
 For a source build, set `discovery.local_paths` to
 `adapters/typescript/pi/pi.fabric-adapter.json` instead.
+
+## Persistent Sessions
+
+Omitting session settings preserves the default in-memory behavior. To create a
+disk-backed session, configure a caller-owned ID:
+
+```python
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.pi",
+    settings={
+        "session": {
+            "mode": "create",
+            "id": "review-conversation-1",
+        }
+    },
+)
+```
+
+After the runtime starts successfully and stops normally, start a new runtime
+with the same configuration except for `"mode": "resume"`. A session is never
+selected only because two runtimes use the same workspace.
+
+The default session file is
+`<workspace>/.fabric-pi/sessions/<id>.jsonl`. An optional `directory` selects a
+different workspace-relative directory. The adapter rejects absolute paths,
+parent-directory escapes, session-file symlinks, and directory symlinks that
+resolve outside the workspace.
+Session IDs may contain letters, numbers, `.`, `_`, and `-`; they must start and
+end with a letter or number.
+
+`create` returns `pi_session_exists` rather than overwriting an existing file.
+`resume` returns `pi_session_not_found` for a missing file and
+`pi_session_invalid` for an empty or malformed file. Other storage or permission
+failures return `pi_session_storage_failed`. Stopping a runtime preserves the
+file. Use only one live runtime per persistent session ID. Concurrently resuming
+the same session is unsupported because Pi does not lock its JSONL session file.
+The caller owns retention: after the runtime stops, delete
+`<directory>/<id>.jsonl` to dispose of the conversation. The file contains
+conversation and tool history and should be protected as agent data.
 
 ## Custom Tool Modules
 

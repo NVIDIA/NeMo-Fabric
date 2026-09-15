@@ -21,10 +21,14 @@ ROOT = Path(__file__).resolve().parents[2]
 DESCRIPTOR = ROOT / "adapters/typescript/pi/pi.fabric-adapter.json"
 
 
-def config(*, api_key_env: str | None = "TEST_API_KEY") -> FabricConfig:
+def config(
+    *,
+    api_key_env: str | None = "TEST_API_KEY",
+    settings: dict[str, object] | None = None,
+) -> FabricConfig:
     return FabricConfig(
         metadata=MetadataConfig(name="pi-adapter-test"),
-        harness=HarnessConfig(adapter_id="nvidia.fabric.pi"),
+        harness=HarnessConfig(adapter_id="nvidia.fabric.pi", settings=settings or {}),
         discovery=DiscoveryConfig(local_paths=[DESCRIPTOR]),
         models={
             "default": ModelConfig(
@@ -53,6 +57,31 @@ def test_pi_descriptor_declares_the_supported_surface():
         "skills",
     ]
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
+    assert descriptor["settings_schema"]["properties"]["session"] == {
+        "type": "object",
+        "properties": {
+            "mode": {"type": "string", "enum": ["create", "resume"]},
+            "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            },
+            "directory": {
+                "type": "string",
+                "minLength": 1,
+                "not": {
+                    "anyOf": [
+                        {"pattern": r"^[\\/]"},
+                        {"pattern": r"^[A-Za-z]:"},
+                        {"pattern": r"(^|[\\/])\.\.([\\/]|$)"},
+                    ]
+                },
+            },
+        },
+        "required": ["mode", "id"],
+        "additionalProperties": False,
+    }
     assert descriptor["capabilities"] == {
         "streaming": False,
         "cancellation": False,
@@ -112,6 +141,49 @@ def test_pi_descriptor_plans_and_projects_the_selected_model():
             }
         }
     }
+
+
+def test_pi_descriptor_preserves_explicit_session_settings():
+    settings = {
+        "session": {
+            "mode": "create",
+            "id": "persistent-conversation-1",
+            "directory": ".sessions/pi",
+        }
+    }
+
+    plan = Fabric().plan(config(settings=settings), base_dir=ROOT)
+
+    assert plan.config.harness.settings == settings
+
+
+@pytest.mark.parametrize("session_id", ["", "../escape", "leading-", "has/slash"])
+def test_pi_descriptor_rejects_invalid_session_ids(session_id: str):
+    with pytest.raises(FabricConfigError, match="harness.settings.session.id"):
+        Fabric().plan(
+            config(settings={"session": {"mode": "create", "id": session_id}}),
+            base_dir=ROOT,
+        )
+
+
+@pytest.mark.parametrize(
+    "directory",
+    ["/tmp/sessions", "../sessions", "nested/../sessions", r"C:\sessions"],
+)
+def test_pi_descriptor_rejects_unsafe_session_directories(directory: str):
+    with pytest.raises(FabricConfigError, match="harness.settings.session.directory"):
+        Fabric().plan(
+            config(
+                settings={
+                    "session": {
+                        "mode": "create",
+                        "id": "persistent-conversation",
+                        "directory": directory,
+                    }
+                }
+            ),
+            base_dir=ROOT,
+        )
 
 
 def test_pi_model_schema_requires_a_credential_name():
