@@ -107,10 +107,13 @@ def test_opencode_descriptor_rejects_a_non_http_model_endpoint():
 async def test_opencode_descriptor_doctor_requires_bun(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    bun = tmp_path / "bun"
-    bun.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    bun.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ.get('PATH', '')}")
+    bun = tmp_path / ("bun.exe" if os.name == "nt" else "bun")
+    if os.name == "nt":
+        bun.write_bytes(b"")
+    else:
+        bun.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        bun.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
 
     report = await Fabric().doctor(config(), base_dir=ROOT)
 
