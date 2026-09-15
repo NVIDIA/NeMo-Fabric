@@ -159,7 +159,7 @@ tools = ToolsConfig(enabled=["execute"])
 ambient adapter-host variables such as `HOME`. Values explicitly configured in
 `environment.env` are passed to shell commands and are available to
 agent-generated commands. If `environment.env` does not set `PATH`, the shell
-provides only its fallback path; configure required variables explicitly and
+provides only its fallback path. Configure the required variables explicitly and
 use absolute executable paths when needed. The `execute` tool remains subject
 to `tools.enabled` and `tools.blocked`, like all other Deep Agents built-ins.
 
