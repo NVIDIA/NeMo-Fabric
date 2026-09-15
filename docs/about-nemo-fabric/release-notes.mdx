@@ -25,87 +25,83 @@ tag-specific notes.
 
 ## Current Release
 
-NVIDIA NeMo Fabric 0.2 expands the execution contract from bundled agent
-harnesses to shared framework adapters and dedicated custom-agent adapters.
-Applications, evaluation systems, and rollout infrastructure can use the same
-configuration, lifecycle, result, artifact, and telemetry APIs across these
-Adapter Targets.
+NVIDIA NeMo Fabric 0.3 adds packaged integrations for
+[Pi](https://pi.dev/docs/latest), remote HTTP agents, and
+[NVIDIA-labs Object Oriented Agents (NOOA)](https://github.com/nvidia-nemo/labs-OO-Agents).
+It also expands [NVIDIA NeMo Relay](https://docs.nvidia.com/nemo/relay/about-nemo-relay/overview)
+streaming with a standalone collector, explicit request correlation, and
+additional adapter telemetry.
 
 For release artifacts and the complete PR-by-PR history, refer to
 [GitHub Releases](https://github.com/NVIDIA/NeMo-Fabric/releases).
 
 ## Release Highlights
 
-### Public v1alpha2 Adapter Contract
+### New Harness Integrations
 
-The v1alpha2 contract makes the southbound adapter boundary independently
-consumable. This release publishes canonical JSON Schemas, dependency-free
-Python dataclasses with optional Pydantic interoperability, generated
-TypeScript types, maintained repository documentation, and a public
-adapter-authoring skill.
+The [Pi adapter](../integrations/harness/pi.mdx) runs the Pi SDK in a persistent
+Node.js process and is distributed as `nemo-fabric-adapters-pi` on npm. It maps
+normalized models, replacement system instructions, tool policy, custom tool
+modules, skills, and explicit local extensions into one in-memory Pi session.
+Pi requires Node.js 22.19.0 or newer.
 
-Adapters receive projected `AgentConfig`; northbound `FabricConfig` does not
-cross the supported adapter boundary. Each invocation receives typed
-`AgentRunRequest` and `RuntimeContext` values and returns one typed
-`AgentRunResult`; NeMo Fabric validates and enriches that result for consumers.
+The [Remote Agent adapter](../integrations/harness/remote-agent.mdx) invokes an
+independently deployed service through OpenAI Responses, OpenAI Chat
+Completions, or Anthropic Messages-compatible HTTP APIs. It retains the
+completed user and assistant transcript across ordered invocations in one
+runtime and can consume correlated records in Agent Trajectory Observability Format (ATOF)
+from a collector shared with the
+remote deployment.
 
-### Harness and Custom-Agent Integration Patterns
+The packaged
+[NOOA adapter](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/nooa)
+integrates [NVIDIA-labs Object Oriented Agents (NOOA)](https://github.com/nvidia-nemo/labs-OO-Agents)
+and supports shared `InteractiveAgent` targets and dedicated `BenchAgent` tasks,
+including CodingAgent, ARC Solver, and Harbor evaluation workflows. The package
+supports Python 3.12 and 3.13.
 
-The adapter contract now documents three integration shapes:
+### Collector-Backed Relay Streaming
 
-- one shared adapter for many configurations of an opinionated harness;
-- one shared framework adapter for separately registered custom agents; and
-- one dedicated adapter for an application-owned custom agent.
+The new `nemo-fabric-collector` package receives ATOF over HTTP, routes records
+to per-request queues, and supports multiple Fabric runtimes when request IDs
+are unique. Install `nemo-fabric[streaming]` to use the default embedded
+collector. Applications can instead set `launch_collector=False` and connect
+to an externally managed collector.
 
-The compact [mini-SWE-agent adapter](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/mini-swe-agent)
-demonstrates the required lifecycle. The source-only NVIDIA NeMo Agent Toolkit
-reference demonstrates one shared adapter for calculator and email-phishing
-targets. The [LangGraph email-phishing example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/langgraph_custom_agent)
-demonstrates a dedicated custom-agent adapter with separate consumer, adapter,
-and agent code.
+Relay-enabled in-process adapters propagate UUID request IDs into Relay scope
+context and preserve other request IDs as metadata. mini-SWE-agent now emits
+agent, function, model, and tool telemetry for live ATOF streaming and ATIF,
+OpenTelemetry, and OpenInference outputs.
 
-### Target-Driven Discovery
+For collector setup, correlation behavior, backpressure limits, and stream
+lifecycle requirements, refer to the
+[Python SDK guide](../sdk/python.mdx#nemo-relay-streaming).
 
-Adapter Target Descriptors let a target package select its shared adapter and
-publish its adapter-scoped entry point and workflow settings schema. Consumers
-select a registered target with `workflow.target_id`; NeMo Fabric discovers
-metadata, validates compatibility, and projects the resolved entry point into
-`AgentConfig` before loading adapter code.
+### Explicit System Instruction Modes
 
-NeMo Fabric discovers descriptors bundled with the runtime, installed below
-the shared package-data root, or listed explicitly in
-`FabricConfig.discovery.local_paths`. Conflicting records with the same ID fail
-planning instead of silently overriding one another.
+The normalized contract now distinguishes `replace` and `append` system
+instruction modes. `replace` remains the default. Adapter descriptors declare
+the modes they support, and planning rejects unsupported modes before adapter
+startup. Claude supports both modes; the other bundled adapters support
+`replace` only.
 
-### Expanded Configuration and Streaming
-
-The normalized contract adds named tool and tool-group definitions, per-server
-MCP tool filters, and MCP OAuth 2.0 and service-account authentication metadata.
-Adapters advertise only the normalized fields and authentication modes they
-apply, and unsupported configured behavior fails planning.
-
-Native OpenAI Chat Completions streaming is available to adapters that declare
-and implement the optional capability. Relay-backed Agent Trajectory
-Observability Format (ATOF) streaming remains the primary normalized streaming
-API and does not require another adapter method. This release also updates
-NVIDIA NeMo Relay integration to 0.7.
-
-### Bundled Adapter Alignment
-
-Claude Code, Codex, Hermes Agent, LangChain Deep Agents, and mini-SWE-agent use
-the v1alpha2 descriptor, configuration, request, context, and result boundary.
-Each adapter publishes its supported configuration, settings schemas, runtime
-requirements, telemetry outputs, and optional capabilities for planning and
-diagnostics.
+NeMo Agent Toolkit configurations that set `instructions.system` must now set
+`mode="append"`, because that adapter maps the value to additive instructions
+and cannot implement replacement semantics.
 
 ## Current Limitations
 
 The current release has the following limitations:
 
-- Provider-backed third-party adapter registries and remotely hosted adapter
-  services are not included.
+- Provider-backed third-party adapter registries are not included.
 - The automated adapter conformance suite is not included. Adapter authors can
   use the maintained verification checklist for the required profile and
   declared capabilities.
 - Cancellation, live updates, and service lifecycle flags are reserved until a
   runtime binding exposes and tests the corresponding adapter operations.
+- The Remote Agent adapter does not normalize remote MCP, skills, tool policy,
+  or subagent configuration. The remote service owns those capabilities and
+  its lifecycle. Relay streaming requires an independently instrumented remote
+  service and a collector reachable by both the service and Fabric.
+- The Pi adapter does not expose Relay, MCP, native streaming, caller-driven
+  cancellation, or remote-service execution.

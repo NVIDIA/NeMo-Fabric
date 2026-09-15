@@ -281,9 +281,17 @@ harnesses and custom agents. Use these references to compare and build them:
 
 ## Roadmap
 
-- **OOAgents reference adapter:** Add a reference NeMo Fabric adapter for
-  [OOAgents](https://github.com/NVIDIA-NeMo/labs-OO-Agents).
-- **Remote-agent thin-client adapter:** Add a thin-client adapter for invoking
-  remotely hosted agents through the NeMo Fabric lifecycle.
-- **Third-party adapter registry:** Extend installed and explicit descriptor
-  discovery with a provider-backed registry and catalog experience.
+- **Expand the harness ecosystem:** Add support for
+  [OpenCode](https://opencode.ai/docs), [OpenClaw](https://docs.openclaw.ai),
+  and other high-priority first- and third-party harnesses through Fabric
+  normalized lifecycle and capability contracts.
+- **Sandbox-native execution with [NVIDIA OpenShell](https://docs.nvidia.com/openshell/about/overview):**
+  Enable seamless Fabric runtime execution within secure sandboxes.
+- **End-to-end [NVIDIA NemoClaw](https://docs.nvidia.com/nemoclaw/user-guide/openclaw/home) integration:**
+  Enable NemoClaw to use Fabric as a standard boundary for harness
+  configuration, execution, workspaces, artifacts, and telemetry.
+- **Enhanced session lifecycle management:** Provide explicit cold-start,
+  resume, and fork operations with stable session identifiers and
+  capability-aware errors.
+- **Composable sub-agent configuration:** Allow supported harnesses to
+  configure sub-agents through validated Fabric configuration.

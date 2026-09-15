@@ -21,12 +21,23 @@ def _write_yaml(path: Path, value: object) -> None:
 
 
 def _source_tree(root: Path) -> None:
+    root.mkdir()
+    (root / "README.md").write_text("# NeMo Fabric\n", encoding="utf-8")
     docs = root / "docs"
     docs.mkdir(parents=True)
     (docs / "guide.mdx").write_text(
-        "See https://github.com/NVIDIA/NeMo-Fabric/blob/main/README.md\n",
+        "\n".join(
+            (
+                "See https://github.com/NVIDIA/NeMo-Fabric/blob/main/README.md.",
+                "Browse https://github.com/NVIDIA/NeMo-Fabric/tree/main/docs#guides.",
+                "Read https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/My%20Guide.md.",
+                "Missing https://github.com/NVIDIA/NeMo-Fabric/blob/main/notebooks/quickstart.ipynb.",
+                "",
+            )
+        ),
         encoding="utf-8",
     )
+    (docs / "My Guide.md").write_text("# My Guide\n", encoding="utf-8")
     (docs / "_source").mkdir()
     (docs / "_source" / "ignored.md").write_text("ignored\n", encoding="utf-8")
     python_reference = docs / "reference" / "api" / "python-library-reference"
@@ -190,9 +201,11 @@ def test_release_version_promotes_stable_snapshot(tmp_path: Path):
     assert stable_product["path"] == "./versions/v0.2.0.yml"
     assert stable_product["versions"][0]["display-name"] == "Latest (v0.2.0)"
     assert stable_product["versions"][2]["availability"] == "stable"
-    assert "blob/0.2.0/README.md" in (
-        target_fern / "pages-v0.2.0" / "guide.mdx"
-    ).read_text(encoding="utf-8")
+    guide = (target_fern / "pages-v0.2.0" / "guide.mdx").read_text(encoding="utf-8")
+    assert "blob/v0.2.0/README.md" in guide
+    assert "tree/v0.2.0/docs#guides" in guide
+    assert "blob/v0.2.0/docs/My%20Guide.md" in guide
+    assert "blob/main/notebooks/quickstart.ipynb" in guide
     assert (
         target_fern
         / "pages-v0.2.0"
