@@ -102,16 +102,16 @@ not publication-ready copy.
    - `release-notes.mdx` records current limitations.
 9. Preserve MDX front matter and the JSX SPDX comment. State the full history
    is available in GitHub Releases. Do not create a changelog.
-10. Run the validation checks detailed in [Validate](#validate).
-11. Commit the release-notes page with a signed-off commit after validation
-    succeeds:
+10. Update the `Roadmap` section in [README.md](../../../README.md), removing items implemented or fixed by changes in the current release.
+11. Run the validation checks detailed in [Validate](#validate).
+12. Commit the release-notes page and README with a signed-off commit after validation succeeds:
 
     ```bash
-    git add docs/about-nemo-fabric/release-notes.mdx
+    git add docs/about-nemo-fabric/release-notes.mdx README.md
     git commit -sm "Drafting release notes for v${TARGET_VERSION}"
     git push -u upstream HEAD
     ```
-12. Use the `prepare-pr` skill to open a pull request from the release-notes
+13. Use the `prepare-pr` skill to open a pull request from the release-notes
     branch to `${RELEASE_BRANCH}`. Use this title:
 
     ```text
