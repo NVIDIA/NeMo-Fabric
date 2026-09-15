@@ -104,7 +104,7 @@ harness = HarnessConfig(
 )
 ```
 
-After a successful invocation and a normal runtime stop, start a new runtime
+After the runtime starts successfully and stops normally, start a new runtime
 with the same configuration except for `"mode": "resume"`. A session is never
 selected only because two runtimes use the same workspace.
 
@@ -120,9 +120,11 @@ end with a letter or number.
 `resume` returns `pi_session_not_found` for a missing file and
 `pi_session_invalid` for an empty or malformed file. Other storage or permission
 failures return `pi_session_storage_failed`. Stopping a runtime preserves the
-file. After all runtimes stop using it, delete `<directory>/<id>.jsonl` to
-dispose of the conversation. The file contains conversation and tool history
-and should be protected as agent data.
+file. Use only one live runtime per persistent session ID. Concurrently resuming
+the same session is unsupported because Pi does not lock its JSONL session file.
+The caller owns retention: after the runtime stops, delete
+`<directory>/<id>.jsonl` to dispose of the conversation. The file contains
+conversation and tool history and should be protected as agent data.
 
 ## Custom Tool Modules
 

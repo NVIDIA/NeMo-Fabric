@@ -67,7 +67,17 @@ def test_pi_descriptor_declares_the_supported_surface():
                 "maxLength": 128,
                 "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
             },
-            "directory": {"type": "string", "minLength": 1},
+            "directory": {
+                "type": "string",
+                "minLength": 1,
+                "not": {
+                    "anyOf": [
+                        {"pattern": r"^[\\/]"},
+                        {"pattern": r"^[A-Za-z]:"},
+                        {"pattern": r"(^|[\\/])\.\.([\\/]|$)"},
+                    ]
+                },
+            },
         },
         "required": ["mode", "id"],
         "additionalProperties": False,
@@ -152,6 +162,26 @@ def test_pi_descriptor_rejects_invalid_session_ids(session_id: str):
     with pytest.raises(FabricConfigError, match="harness.settings.session.id"):
         Fabric().plan(
             config(settings={"session": {"mode": "create", "id": session_id}}),
+            base_dir=ROOT,
+        )
+
+
+@pytest.mark.parametrize(
+    "directory",
+    ["/tmp/sessions", "../sessions", "nested/../sessions", r"C:\sessions"],
+)
+def test_pi_descriptor_rejects_unsafe_session_directories(directory: str):
+    with pytest.raises(FabricConfigError, match="harness.settings.session.directory"):
+        Fabric().plan(
+            config(
+                settings={
+                    "session": {
+                        "mode": "create",
+                        "id": "persistent-conversation",
+                        "directory": directory,
+                    }
+                }
+            ),
             base_dir=ROOT,
         )
 

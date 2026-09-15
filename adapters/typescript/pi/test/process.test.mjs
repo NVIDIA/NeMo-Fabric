@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -31,11 +31,11 @@ function context(workspace, invocationId) {
   };
 }
 
-async function exchange(workspace, requests) {
+async function exchange(workspace, requests, childCwd = workspace) {
   const childEnv = { ...process.env };
   delete childEnv.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [fileURLToPath(new URL("../dist/cli.js", import.meta.url))], {
-    cwd: workspace,
+    cwd: childCwd,
     env: childEnv,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -358,8 +358,15 @@ test(
       });
       const stop = { operation: "stop", payload: { runtime_id: "runtime-1" } };
 
-      const created = await exchange(workspace, [start("create", "existing"), stop]);
+      const created = await exchange(workspace, [start("create", "existing"), stop], baseDir);
       assert.equal(created.responses[0].outcome.status, "succeeded", created.stderr);
+      const sessionHeader = JSON.parse(
+        (await readFile(join(workspace, ".fabric-pi", "sessions", "existing.jsonl"), "utf8")).split("\n")[0],
+      );
+      assert.equal(sessionHeader.cwd, await realpath(workspace));
+
+      const resumed = await exchange(workspace, [start("resume", "existing"), stop]);
+      assert.equal(resumed.responses[0].outcome.status, "succeeded", resumed.stderr);
 
       const conflicting = await exchange(workspace, [start("create", "existing")]);
       assert.equal(conflicting.responses[0].outcome.error.code, "pi_session_exists");

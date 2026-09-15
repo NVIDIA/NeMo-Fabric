@@ -20,9 +20,14 @@ DESCRIPTOR = ROOT / "adapters/typescript/pi/pi.fabric-adapter.json"
 PI_CLI = ROOT / "adapters/typescript/pi/dist/cli.js"
 MARKER = "SESSION_MARKER_7a943c"
 
+if os.environ.get("CI") == "true" and not PI_CLI.is_file():
+    raise RuntimeError(
+        "Python CI must build the packaged Pi adapter before collecting its E2E test"
+    )
+
 pytestmark = pytest.mark.skipif(
     not PI_CLI.is_file(),
-    reason="build the packaged Pi adapter with `just install-typescript-pi` first",
+    reason="build the packaged Pi adapter before running this test",
 )
 
 

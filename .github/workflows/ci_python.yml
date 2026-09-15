@@ -93,6 +93,15 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
 
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '22.19.0'
+          cache: npm
+          cache-dependency-path: |
+            adapter-contract/typescript/package-lock.json
+            adapters/typescript/package-lock.json
+
       - name: Cache cargo build
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -112,6 +121,12 @@ jobs:
       - name: Build SDK with native extension
         run: |
           uv sync --no-default-groups --group adapter-tests --group collector --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent --extra remote-agent ${{ (matrix.python-version == '3.12' || matrix.python-version == '3.13') && '--extra nooa' || '' }} ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes-agent' || '' }} --extra relay ${{ matrix.python-version == '3.14' && '--frozen --no-sources-package hermes-agent' || '' }}
+
+      - name: Build packaged Pi adapter
+        run: |
+          just install-typescript-pi
+          npm run build --prefix adapter-contract/typescript
+          npm run build --prefix adapters/typescript
 
       - name: Run pytest
         run: |

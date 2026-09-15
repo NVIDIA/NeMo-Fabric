@@ -47,7 +47,14 @@
           },
           "directory": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "not": {
+              "anyOf": [
+                {"pattern": "^[\\\\/]"},
+                {"pattern": "^[A-Za-z]:"},
+                {"pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)"}
+              ]
+            }
           }
         },
         "required": ["mode", "id"],

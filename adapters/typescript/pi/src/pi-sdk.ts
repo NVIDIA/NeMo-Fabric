@@ -237,6 +237,15 @@ async function createSessionManager(
   if (settings.mode === "create") {
     try {
       const placeholder = await open(sessionFile, "wx");
+      cleanupOnFailure = async () => {
+        try {
+          await unlink(sessionFile);
+        } catch (error) {
+          if (errorCode(error) !== "ENOENT") {
+            throw error;
+          }
+        }
+      };
       try {
         const reserved = await placeholder.stat();
         cleanupOnFailure = async () => {
@@ -290,7 +299,7 @@ async function createSessionManager(
 
   try {
     return {
-      sessionManager: pi.SessionManager.open(sessionFile),
+      sessionManager: pi.SessionManager.open(sessionFile, sessionDirectory, workspace),
       cleanupOnFailure,
     };
   } catch {
