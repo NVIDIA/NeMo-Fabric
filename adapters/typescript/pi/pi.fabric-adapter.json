@@ -31,6 +31,27 @@
           "minLength": 1
         },
         "uniqueItems": true
+      },
+      "session": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["create", "resume"]
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+          },
+          "directory": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["mode", "id"],
+        "additionalProperties": false
       }
     },
     "additionalProperties": false

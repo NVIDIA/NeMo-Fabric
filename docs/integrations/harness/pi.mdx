@@ -85,6 +85,51 @@ the environment variable that contains the provider credential.
 The provider and model pair must already exist in Pi's catalog. A base URL can
 override a known model endpoint, but it does not define a new provider.
 
+## Persist and Resume a Conversation
+
+Pi sessions remain in memory unless you explicitly configure persistent
+storage. To create a disk-backed session, choose a session ID and start the
+runtime with `mode` set to `create`:
+
+```python
+config.harness.settings["session"] = {
+    "mode": "create",
+    "id": "review-conversation-1",
+}
+```
+
+After at least one successful invocation, stop the runtime normally. To resume
+the conversation in a new runtime, use the same ID and change the mode:
+
+```python
+config.harness.settings["session"] = {
+    "mode": "resume",
+    "id": "review-conversation-1",
+}
+```
+
+By default, the adapter stores the session at
+`<workspace>/.fabric-pi/sessions/<id>.jsonl`. Set `directory` to another
+workspace-relative directory if the caller owns a different durable storage
+location:
+
+```python
+config.harness.settings["session"]["directory"] = ".sessions/pi"
+```
+
+The session ID must contain only letters, numbers, `.`, `_`, or `-`, and must
+start and end with a letter or number. `create` fails with `pi_session_exists`
+instead of overwriting an existing session. `resume` fails with
+`pi_session_not_found` when the file is missing and `pi_session_invalid` when
+the file is empty or malformed. Storage and permission failures use
+`pi_session_storage_failed`. The adapter rejects absolute directories,
+parent-directory escapes, and symlinks that resolve outside the workspace.
+
+Stopping a runtime preserves its session file. The caller owns retention and
+must delete `<directory>/<id>.jsonl` after the runtime stops when the
+conversation is no longer needed. Session files contain conversation and tool
+history and should receive the same access controls as other agent data.
+
 ## Configure Skills and Extensions
 
 Add normalized skill paths with the Python SDK. NeMo Fabric resolves these
@@ -149,10 +194,13 @@ and extensions.
 
 ## Understand the Runtime Lifecycle
 
-Each NeMo Fabric runtime owns one in-memory Pi session in a persistent Node.js
-adapter process. Ordered invocations reuse that session and its conversation
-history until the runtime stops. Start a new runtime to change the model,
-skills, extensions, custom tools, or workspace.
+Each NeMo Fabric runtime owns one Pi session in a persistent Node.js adapter
+process. Ordered invocations reuse that session and its conversation history.
+Without explicit session settings, the history remains in memory and is lost
+when the runtime stops. A disk-backed session is shared only when another
+runtime explicitly resumes the same session ID; using the same workspace alone
+does not share a conversation. Start a new runtime to change the model, skills,
+extensions, custom tools, or workspace.
 
 ## Current Limitations
 

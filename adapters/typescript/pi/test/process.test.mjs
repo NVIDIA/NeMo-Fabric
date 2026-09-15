@@ -328,3 +328,50 @@ test(
     }
   },
 );
+
+test(
+  "returns stable failures for conflicting, missing, and invalid persistent sessions",
+  { skip: supportsPi ? false : "Pi 0.84.2 requires Node 22.19 or newer" },
+  async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "fabric-pi-session-errors-"));
+    const workspace = join(baseDir, "workspace");
+    try {
+      await mkdir(workspace);
+      const start = (mode, id) => ({
+        operation: "start",
+        payload: {
+          agent_name: "pi-session-errors-test",
+          base_dir: baseDir,
+          config: {
+            harness: { settings: { session: { mode, id } } },
+            models: {
+              default: {
+                api_key_env: "TEST_API_KEY",
+                model: "gpt-4.1-mini",
+                provider: "openai",
+              },
+            },
+            tools: { enabled: [] },
+          },
+          runtime_context: context(workspace, "start"),
+        },
+      });
+      const stop = { operation: "stop", payload: { runtime_id: "runtime-1" } };
+
+      const created = await exchange(workspace, [start("create", "existing"), stop]);
+      assert.equal(created.responses[0].outcome.status, "succeeded", created.stderr);
+
+      const conflicting = await exchange(workspace, [start("create", "existing")]);
+      assert.equal(conflicting.responses[0].outcome.error.code, "pi_session_exists");
+
+      const missing = await exchange(workspace, [start("resume", "missing")]);
+      assert.equal(missing.responses[0].outcome.error.code, "pi_session_not_found");
+
+      await writeFile(join(workspace, ".fabric-pi", "sessions", "invalid.jsonl"), "not jsonl\n", "utf8");
+      const invalid = await exchange(workspace, [start("resume", "invalid")]);
+      assert.equal(invalid.responses[0].outcome.error.code, "pi_session_invalid");
+    } finally {
+      await rm(baseDir, { recursive: true, force: true });
+    }
+  },
+);
