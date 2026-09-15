@@ -53,7 +53,7 @@
         },
         "observed_at_millis": {
           "description": "Unix timestamp in milliseconds when the evidence was observed.",
-          "format": "uint128",
+          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },

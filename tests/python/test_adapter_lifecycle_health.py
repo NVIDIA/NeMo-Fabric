@@ -7,11 +7,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from typing import Any
 
 from nemo_fabric_adapter_contract.models import AdapterHealthRequest
+from nemo_fabric_adapter_contract.models import AdapterHealthResult
+from nemo_fabric_adapter_contract.models import AdapterReadiness
+from nemo_fabric_adapter_contract.models import RuntimeReadiness
+from nemo_fabric_adapters.common.lifecycle import _adapter_call
 from nemo_fabric_adapters.common.lifecycle import _adapter_health
 from nemo_fabric_adapters.common.lifecycle import _close_health_server
+from nemo_fabric_adapters.common.lifecycle import _handle_start
+from nemo_fabric_adapters.common.lifecycle import _handle_stop
 from nemo_fabric_adapters.common.lifecycle import _HostState
 from nemo_fabric_adapters.common.lifecycle import _start_health_server
 
@@ -35,6 +42,47 @@ class _SlowHealthRuntime(_Runtime):
         raise AssertionError("health hook should time out")
 
 
+class _ReadyWhileBusyRuntime(_Runtime):
+    async def health(self, request: AdapterHealthRequest):
+        del request
+        return AdapterHealthResult(
+            readiness=AdapterReadiness(
+                state=RuntimeReadiness.READY,
+                reason_code="concurrent_invocations_supported",
+            )
+        )
+
+
+class _BlockingStopRuntime(_Runtime):
+    def __init__(self, started: asyncio.Event, release: asyncio.Event) -> None:
+        self._started = started
+        self._release = release
+
+    async def stop(self):
+        self._started.set()
+        await self._release.wait()
+
+
+async def _check_health(control: dict[str, Any], runtime_id: str) -> dict[str, Any]:
+    reader, writer = await asyncio.open_connection(control["host"], control["port"])
+    writer.write(
+        json.dumps(
+            {
+                "protocol_version": control["protocol_version"],
+                "token": control["token"],
+                "runtime_id": runtime_id,
+                "timeout_millis": 1_000,
+            }
+        ).encode()
+        + b"\n"
+    )
+    await writer.drain()
+    response = json.loads(await reader.readline())
+    writer.close()
+    await writer.wait_closed()
+    return response
+
+
 async def test_python_health_control_reports_busy_without_lifecycle_channel():
     state = _HostState(
         runtime=_Runtime(),
@@ -44,24 +92,7 @@ async def test_python_health_control_reports_busy_without_lifecycle_channel():
     output = await _start_health_server(state)
     control = output["health_control"]
     try:
-        reader, writer = await asyncio.open_connection(
-            control["host"], control["port"]
-        )
-        writer.write(
-            json.dumps(
-                {
-                    "protocol_version": control["protocol_version"],
-                    "token": control["token"],
-                    "runtime_id": "runtime-1",
-                    "timeout_millis": 1_000,
-                }
-            ).encode()
-            + b"\n"
-        )
-        await writer.drain()
-        response = json.loads(await reader.readline())
-        writer.close()
-        await writer.wait_closed()
+        response = await _check_health(control, "runtime-1")
     finally:
         await _close_health_server(state)
 
@@ -88,3 +119,86 @@ async def test_python_adapter_health_hook_timeout_is_data():
     assert result.readiness is not None
     assert result.readiness.state.value == "ready"
     assert result.checks[-1].reason_code == "adapter_health_timed_out"
+
+
+async def test_python_adapter_health_preserves_busy_runtime_readiness():
+    state = _HostState(
+        runtime=_ReadyWhileBusyRuntime(),
+        runtime_id="runtime-1",
+        invoking=True,
+    )
+
+    result = await _adapter_health(
+        state,
+        AdapterHealthRequest(runtime_id="runtime-1", timeout_millis=1_000),
+    )
+
+    assert result.readiness is not None
+    assert result.readiness.state is RuntimeReadiness.READY
+    assert result.readiness.reason_code == "concurrent_invocations_supported"
+
+
+async def test_python_health_reports_stop_in_progress():
+    stop_started = asyncio.Event()
+    release_stop = asyncio.Event()
+    runtime = _BlockingStopRuntime(stop_started, release_stop)
+    state = _HostState(runtime=runtime, runtime_id="runtime-1")
+    control = (await _start_health_server(state))["health_control"]
+    stopping = asyncio.create_task(_handle_stop(state, runtime))
+    await stop_started.wait()
+
+    response = await _check_health(control, "runtime-1")
+
+    assert response["result"]["readiness"] == {
+        "state": "not_ready",
+        "reason_code": "stop_in_progress",
+    }
+    release_stop.set()
+    await stopping
+
+
+async def test_python_host_skips_health_server_when_capability_is_disabled():
+    state = _HostState()
+
+    response = await _handle_start(
+        state,
+        _Runtime,
+        {"health_enabled": False},
+        "runtime-1",
+        None,
+    )
+
+    assert response["outcome"]["output"] is None
+    assert state.health_server is None
+    assert state.runtime is not None
+    await _handle_stop(state, state.runtime)
+
+
+async def test_adapter_calls_do_not_rebind_stdout_when_they_overlap():
+    original_stdout = sys.stdout
+    first_started = asyncio.Event()
+    second_started = asyncio.Event()
+    release_first = asyncio.Event()
+    release_second = asyncio.Event()
+
+    async def first_call():
+        first_started.set()
+        await release_first.wait()
+
+    async def second_call():
+        second_started.set()
+        await release_second.wait()
+
+    try:
+        first = asyncio.create_task(_adapter_call("first", first_call))
+        await first_started.wait()
+        second = asyncio.create_task(_adapter_call("second", second_call))
+        await second_started.wait()
+        release_first.set()
+        await first
+        release_second.set()
+        await second
+
+        assert sys.stdout is original_stdout
+    finally:
+        sys.stdout = original_stdout

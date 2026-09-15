@@ -54,6 +54,13 @@ class AdapterRuntime(Protocol):
         """Release all resources owned by the runtime."""
 
 
+class AdapterHealthRuntime(Protocol):
+    """Optional adapter extension for runtime-specific health evidence."""
+
+    async def health(self, request: AdapterHealthRequest) -> AdapterHealthResult:
+        """Return adapter-owned health observations within the request budget."""
+
+
 RuntimeFactory = Callable[[], AdapterRuntime]
 ConfigLoader = Callable[[Any], Any]
 OpenAIChunkEmitter = Callable[[Mapping[str, Any]], Awaitable[None]]
@@ -418,9 +425,6 @@ class _HostState:
         self.failed = False
         self.invoking = False
         self.stopping = False
-        self.health_server = None
-        self.health_token = None
-        self.health_tasks.clear()
 
 
 def _error(
@@ -490,10 +494,7 @@ def _invocation_environment(payload: dict[str, Any]) -> Iterator[None]:
 
 async def _adapter_call(operation: str, call: Callable[[], Awaitable[Any]]) -> Any:
     try:
-        # Protocol stdout is reserved for exactly one JSON response per line.
-        # Keep incidental adapter and library output as host diagnostics.
-        with redirect_stdout(sys.stderr):
-            return await call()
+        return await call()
     except LifecycleError as error:
         raise _AdapterCallError(
             error.code,
@@ -677,9 +678,7 @@ async def _adapter_health(
 
     readiness = AdapterReadiness(
         state=(
-            RuntimeReadiness.NOT_READY
-            if state.invoking
-            else RuntimeReadiness.READY
+            RuntimeReadiness.NOT_READY if state.invoking else RuntimeReadiness.READY
         ),
         reason_code=("invocation_in_progress" if state.invoking else "ready"),
     )
@@ -735,7 +734,7 @@ async def _adapter_health(
         )
     else:
         checks.extend(result.checks)
-        if not state.invoking and result.readiness is not None:
+        if result.readiness is not None:
             readiness = result.readiness
     return AdapterHealthResult(readiness=readiness, checks=checks)
 
@@ -808,6 +807,8 @@ async def _handle_start(
     state.runtime = candidate
     state.runtime_id = message_runtime_id
     state.failed = False
+    if payload.get("health_enabled") is not True:
+        return _response("start")
     try:
         output = await _start_health_server(state)
     except Exception:
@@ -914,9 +915,9 @@ async def _handle_stop(
 ) -> dict[str, Any]:
     state.stopping = True
     try:
-        await _close_health_server(state)
         await _adapter_call("stop", runtime.stop)
     finally:
+        await _close_health_server(state)
         state.clear()
     return _response("stop")
 

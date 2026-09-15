@@ -214,6 +214,9 @@ The common host also serves health on an authenticated loopback endpoint that
 does not share the ordered lifecycle channel. Optional health hooks must respect
 `request.timeout_millis`, avoid inference or other billable probes, avoid
 runtime mutation, return stable reason codes, and never expose credentials.
+TypeScript hooks should also stop promptly when their optional `AbortSignal` is
+aborted. Cached checks must preserve their original `observed_at_millis` so
+NeMo Fabric can report their age accurately.
 Treat hook failure and timeout as health data; do not fail the runtime.
 
 ### Support Warm Session Continuation

@@ -49,6 +49,7 @@ def test_descriptor_declares_supported_normalized_config():
     )
 
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
+    assert descriptor["capabilities"]["health"] is True
     assert "runtime.max_turns" in descriptor["config"]["accepts"]
     assert descriptor["settings_schema"]["properties"]["deepagents"]["properties"][
         "backend"

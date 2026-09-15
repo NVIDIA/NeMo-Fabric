@@ -28,6 +28,7 @@ export interface AdapterStartInput {
   baseDir: string;
   config: AgentConfig;
   runtimeContext: RuntimeContext;
+  healthEnabled: boolean;
   capabilityPlan?: JsonObject;
   telemetryPlan?: JsonObject;
 }
@@ -35,7 +36,7 @@ export interface AdapterStartInput {
 export interface AdapterRuntime {
   start(input: AdapterStartInput): Promise<void>;
   invoke(request: AgentRunRequest, context: RuntimeContext): Promise<AgentRunResult>;
-  health?(request: AdapterHealthRequest): Promise<AdapterHealthResult>;
+  health?(request: AdapterHealthRequest, signal?: AbortSignal): Promise<AdapterHealthResult>;
   stop(): Promise<void>;
 }
 
@@ -104,10 +105,6 @@ ajv.addFormat("uint32", {
   validate: (value: number) => Number.isInteger(value) && value >= 0 && value <= 0xffff_ffff,
 });
 ajv.addFormat("uint64", {
-  type: "number",
-  validate: (value: number) => Number.isSafeInteger(value) && value >= 0,
-});
-ajv.addFormat("uint128", {
   type: "number",
   validate: (value: number) => Number.isSafeInteger(value) && value >= 0,
 });
@@ -205,6 +202,7 @@ function decodeStart(payload: Record<string, unknown>): AdapterStartInput {
     baseDir: payload.base_dir,
     config,
     runtimeContext: context,
+    healthEnabled: payload.health_enabled === true,
     capabilityPlan: capabilityPlan as JsonObject | undefined,
     telemetryPlan: telemetryPlan as JsonObject | undefined,
   };
@@ -324,7 +322,8 @@ async function startHealthServer(state: HostState): Promise<JsonObject> {
 
 function readHealthLine(socket: Socket): Promise<string> {
   return new Promise((resolve, reject) => {
-    let encoded = "";
+    const chunks: Buffer[] = [];
+    let encodedLength = 0;
     const cleanup = (): void => {
       socket.off("data", onData);
       socket.off("error", onError);
@@ -332,16 +331,18 @@ function readHealthLine(socket: Socket): Promise<string> {
       socket.off("timeout", onTimeout);
     };
     const onData = (chunk: Buffer): void => {
-      encoded += chunk.toString("utf8");
-      if (Buffer.byteLength(encoded) > HEALTH_REQUEST_LIMIT) {
+      const newline = chunk.indexOf(0x0a);
+      const recordChunk = newline >= 0 ? chunk.subarray(0, newline) : chunk;
+      encodedLength += recordChunk.length;
+      if (encodedLength > HEALTH_REQUEST_LIMIT) {
         cleanup();
         reject(new Error("health request exceeds the size limit"));
         return;
       }
-      const newline = encoded.indexOf("\n");
+      chunks.push(recordChunk);
       if (newline >= 0) {
         cleanup();
-        resolve(encoded.slice(0, newline));
+        resolve(Buffer.concat(chunks, encodedLength).toString("utf8"));
       }
     };
     const onError = (error: Error): void => {
@@ -452,11 +453,15 @@ async function adapterHealth(
     return { readiness, checks };
   }
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
   try {
     const result = await Promise.race([
-      callAdapter("health", () => hook.call(runtime, request)),
+      callAdapter("health", () => hook.call(runtime, request, controller.signal)),
       new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => reject(new HealthHookTimeout()), hookBudgetMillis);
+        timeout = setTimeout(() => {
+          controller.abort();
+          reject(new HealthHookTimeout());
+        }, hookBudgetMillis);
       }),
     ]);
     validate<AdapterHealthResult>(
@@ -466,7 +471,7 @@ async function adapterHealth(
       "Adapter health hook returned an invalid result",
     );
     checks.push(...(result.checks ?? []));
-    if (!state.invoking && result.readiness !== undefined && result.readiness !== null) {
+    if (result.readiness !== undefined && result.readiness !== null) {
       readiness = result.readiness;
     }
   } catch (error) {
@@ -522,13 +527,14 @@ async function dispatch(
     try {
       candidate = await callAdapter("start", factory);
       const active = candidate;
-      await callAdapter("start", () => active.start(decodeStart(request.payload)));
+      const startInput = decodeStart(request.payload);
+      await callAdapter("start", () => active.start(startInput));
       state.runtime = active;
       state.runtimeId = messageRuntimeId;
       state.failed = false;
       state.invoking = false;
       state.stopping = false;
-      const output = await startHealthServer(state);
+      const output = startInput.healthEnabled ? await startHealthServer(state) : null;
       return success("start", output);
     } catch (error) {
       await closeHealthServer(state);
@@ -551,7 +557,6 @@ async function dispatch(
   if (request.operation === "stop") {
     const active = state.runtime;
     state.stopping = true;
-    await closeHealthServer(state);
     try {
       await callAdapter("stop", () => active.stop());
       state.runtime = undefined;
@@ -559,6 +564,7 @@ async function dispatch(
       state.failed = false;
       return success("stop");
     } finally {
+      await closeHealthServer(state);
       state.stopping = false;
     }
   }

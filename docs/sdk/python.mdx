@@ -176,6 +176,13 @@ an unavailable control endpoint, and an unsupported adapter check are report
 data rather than exceptions. Inspect `reason_code` and each check's `status`
 instead of parsing diagnostic messages.
 
+Each check records `observed_at_millis`, the Unix timestamp in milliseconds when
+its evidence was collected. The report recomputes `age_millis` at
+`checked_at_millis`, when the complete report is assembled. Common process and
+control checks are fresh observations and normally have an age near zero. An
+adapter hook that returns cached evidence must preserve the original observation
+timestamp so its age identifies the evidence as cached rather than fresh.
+
 Health checks use an authenticated loopback control endpoint that is separate
 from the ordered lifecycle channel. You can therefore check a runtime while an
 invocation is active. Under the one-invocation policy, the report uses

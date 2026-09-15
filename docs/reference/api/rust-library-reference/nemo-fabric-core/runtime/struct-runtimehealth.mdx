@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeHealth &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub checked_at_millis: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u128.html\">u128</a>,\n    pub duration_millis: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u128.html\">u128</a>,\n    pub liveness: <a href=\"enum-runtimeliveness.mdx\">RuntimeLiveness</a>,\n    pub activity: <a href=\"enum-runtimeactivity.mdx\">RuntimeActivity</a>,\n    pub readiness: <a href=\"enum-runtimereadiness.mdx\">RuntimeReadiness</a>,\n    pub reason_code: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub checks: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-healthcheck.mdx\">HealthCheck</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeHealth &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub checked_at_millis: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>,\n    pub duration_millis: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>,\n    pub liveness: <a href=\"enum-runtimeliveness.mdx\">RuntimeLiveness</a>,\n    pub activity: <a href=\"enum-runtimeactivity.mdx\">RuntimeActivity</a>,\n    pub readiness: <a href=\"enum-runtimereadiness.mdx\">RuntimeReadiness</a>,\n    pub reason_code: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub checks: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-healthcheck.mdx\">HealthCheck</a>&gt;,\n&#125;"}} /></pre>
 
 Bounded health report for one started runtime.
 
@@ -19,11 +19,11 @@ Bounded health report for one started runtime.
 
 Runtime represented by this report.
 
-### `checked_at_millis: u128`
+### `checked_at_millis: u64`
 
 Unix timestamp in milliseconds when the report completed.
 
-### `duration_millis: u128`
+### `duration_millis: u64`
 
 Total probe duration in milliseconds.
 

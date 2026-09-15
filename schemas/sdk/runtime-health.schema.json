@@ -32,7 +32,7 @@
         },
         "observed_at_millis": {
           "description": "Unix timestamp in milliseconds when the evidence was observed.",
-          "format": "uint128",
+          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
@@ -162,7 +162,7 @@
     },
     "checked_at_millis": {
       "description": "Unix timestamp in milliseconds when the report completed.",
-      "format": "uint128",
+      "format": "uint64",
       "minimum": 0,
       "type": "integer"
     },
@@ -175,7 +175,7 @@
     },
     "duration_millis": {
       "description": "Total probe duration in milliseconds.",
-      "format": "uint128",
+      "format": "uint64",
       "minimum": 0,
       "type": "integer"
     },

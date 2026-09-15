@@ -23,13 +23,14 @@ function context(runtimeId, invocationId = "invocation-1") {
   };
 }
 
-function start(runtimeId) {
+function start(runtimeId, healthEnabled = true) {
   return {
     operation: "start",
     payload: {
       agent_name: "test-agent",
       base_dir: "/tmp",
       config: {},
+      health_enabled: healthEnabled,
       runtime_context: context(runtimeId, "start"),
     },
   };
@@ -138,6 +139,11 @@ test("serves health independently while an invocation is busy", async () => {
       await blocked;
       return { status: "succeeded", output: null };
     },
+    async health() {
+      return {
+        readiness: { state: "ready", reason_code: "concurrent_invocations_supported" },
+      };
+    },
     async stop() {},
   };
   const serving = serve(() => runtime, { input, output, diagnostics });
@@ -149,13 +155,12 @@ test("serves health independently while an invocation is busy", async () => {
   await started;
   const healthResponse = await checkHealth(control, "runtime-1");
 
-  assert.equal(healthResponse.result.readiness.state, "not_ready");
-  assert.equal(healthResponse.result.readiness.reason_code, "invocation_in_progress");
+  assert.equal(healthResponse.result.readiness.state, "ready");
+  assert.equal(healthResponse.result.readiness.reason_code, "concurrent_invocations_supported");
   assert.deepEqual(
     healthResponse.result.checks.map((check) => [check.name, check.status]),
     [
       ["dependency.inference", "unsupported"],
-      ["adapter.health", "unsupported"],
     ],
   );
 
@@ -165,6 +170,154 @@ test("serves health independently while an invocation is busy", async () => {
   await nextResponse();
   input.end();
   await serving;
+});
+
+test("reports stop in progress while adapter cleanup is running", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const diagnostics = new PassThrough();
+  const nextResponse = responseReader(output);
+  let releaseStop;
+  let stopStarted;
+  const started = new Promise((resolve) => {
+    stopStarted = resolve;
+  });
+  const blocked = new Promise((resolve) => {
+    releaseStop = resolve;
+  });
+  const runtime = {
+    async start() {},
+    async invoke() {
+      return { status: "succeeded", output: null };
+    },
+    async stop() {
+      stopStarted();
+      await blocked;
+    },
+  };
+  const serving = serve(() => runtime, { input, output, diagnostics });
+  input.write(`${JSON.stringify(start("runtime-1"))}\n`);
+  const startResponse = await nextResponse();
+  const control = startResponse.outcome.output.health_control;
+
+  input.write(`${JSON.stringify(stop("runtime-1"))}\n`);
+  await started;
+  const healthResponse = await checkHealth(control, "runtime-1");
+
+  assert.deepEqual(healthResponse.result.readiness, {
+    state: "not_ready",
+    reason_code: "stop_in_progress",
+  });
+  releaseStop();
+  await nextResponse();
+  input.end();
+  await serving;
+});
+
+test("aborts a timed-out adapter health hook", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const diagnostics = new PassThrough();
+  const nextResponse = responseReader(output);
+  let aborted = false;
+  const runtime = {
+    async start() {},
+    async invoke() {
+      return { status: "succeeded", output: null };
+    },
+    async health(_request, signal) {
+      await new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => {
+          aborted = true;
+          reject(new Error("aborted"));
+        }, { once: true });
+      });
+    },
+    async stop() {},
+  };
+  const serving = serve(() => runtime, { input, output, diagnostics });
+  input.write(`${JSON.stringify(start("runtime-1"))}\n`);
+  const startResponse = await nextResponse();
+
+  const healthResponse = await checkHealth(
+    startResponse.outcome.output.health_control,
+    "runtime-1",
+    60,
+  );
+
+  assert.equal(aborted, true);
+  assert.equal(healthResponse.result.checks.at(-1).reason_code, "adapter_health_timed_out");
+  input.write(`${JSON.stringify(stop("runtime-1"))}\n`);
+  await nextResponse();
+  input.end();
+  await serving;
+});
+
+test("decodes a health request after a UTF-8 code point is split across chunks", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const diagnostics = new PassThrough();
+  const nextResponse = responseReader(output);
+  const runtimeId = "runtime-é";
+  const runtime = {
+    async start() {},
+    async invoke() {
+      return { status: "succeeded", output: null };
+    },
+    async stop() {},
+  };
+  const serving = serve(() => runtime, { input, output, diagnostics });
+  input.write(`${JSON.stringify(start(runtimeId))}\n`);
+  const startResponse = await nextResponse();
+  const control = startResponse.outcome.output.health_control;
+  const socket = connect(control.port, control.host);
+  const response = new Promise((resolve, reject) => {
+    let encoded = "";
+    socket.on("data", (chunk) => {
+      encoded += chunk.toString("utf8");
+      const newline = encoded.indexOf("\n");
+      if (newline >= 0) {
+        resolve(JSON.parse(encoded.slice(0, newline)));
+      }
+    });
+    socket.once("error", reject);
+  });
+  await new Promise((resolve) => socket.once("connect", resolve));
+  const request = Buffer.from(`${JSON.stringify({
+    protocol_version: "fabric.health/v1alpha1",
+    token: control.token,
+    runtime_id: runtimeId,
+    timeout_millis: 1000,
+  })}\n`);
+  const codePoint = Buffer.from("é");
+  const splitAt = request.indexOf(codePoint) + 1;
+  socket.write(request.subarray(0, splitAt));
+  socket.write(request.subarray(splitAt));
+
+  const healthResponse = await response;
+
+  assert.equal(healthResponse.runtime_id, runtimeId);
+  input.write(`${JSON.stringify(stop(runtimeId))}\n`);
+  await nextResponse();
+  input.end();
+  await serving;
+});
+
+test("does not start health control when the capability is disabled", async () => {
+  const runtime = {
+    async start() {},
+    async invoke() {
+      return { status: "succeeded", output: null };
+    },
+    async stop() {},
+  };
+
+  const responses = await exchange(
+    () => runtime,
+    [start("runtime-1", false), stop("runtime-1")],
+  );
+
+  assert.equal(responses[0].outcome.output, null);
 });
 
 test("serves two ordered invocations and stops one runtime", async () => {

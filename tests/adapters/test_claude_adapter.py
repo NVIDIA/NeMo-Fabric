@@ -237,6 +237,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
             ],
             "system_instruction_modes": ["replace", "append"],
         },
+        "capabilities": {"health": True},
         "telemetry": {
             "providers": {
                 "relay": {

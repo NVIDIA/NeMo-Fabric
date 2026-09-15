@@ -566,7 +566,7 @@ class HealthCheck(ContractModel):
     def _validate(self) -> None:
         _nonblank(self.name, "name")
         _nonblank(self.reason_code, "reason_code")
-        _bounded_int(self.observed_at_millis, "observed_at_millis", (1 << 128) - 1)
+        _bounded_int(self.observed_at_millis, "observed_at_millis", (1 << 64) - 1)
         _bounded_int(self.age_millis, "age_millis", (1 << 64) - 1)
         if self.message is not None:
             _nonblank(self.message, "message")
