@@ -6,7 +6,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
 
-import { ModelEndpointProxy } from "../dist/model-endpoint-proxy.js";
+import { forwardedHeaders, ModelEndpointProxy } from "../dist/model-endpoint-proxy.js";
 
 async function listen(server) {
   await new Promise((resolve, reject) => {
@@ -27,6 +27,25 @@ async function close(server) {
     server.close((error) => (error === undefined ? resolve() : reject(error)));
   });
 }
+
+test("removes hop-by-hop and framing request headers", () => {
+  const headers = forwardedHeaders({
+    authorization: "Bearer test-key",
+    connection: "keep-alive, x-local-only",
+    "content-length": "42",
+    host: "proxy.example",
+    "keep-alive": "timeout=5",
+    "proxy-authenticate": "Basic realm=upstream",
+    "proxy-authorization": "Basic credentials",
+    te: "trailers",
+    trailer: "x-checksum",
+    "transfer-encoding": "chunked",
+    upgrade: "websocket",
+    "x-local-only": "do-not-forward",
+  });
+
+  assert.deepEqual(Object.fromEntries(headers), { authorization: "Bearer test-key" });
+});
 
 test("forwards decoded compressed responses without stale content headers", async () => {
   const responseBody = JSON.stringify({ response: "compressed provider response" });

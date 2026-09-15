@@ -50,6 +50,27 @@ test("selects an OpenAI-compatible endpoint when configured", () => {
   );
 });
 
+test("selects an HTTPS OpenAI-compatible endpoint when configured", () => {
+  assert.deepEqual(
+    selectModel({
+      models: {
+        default: {
+          provider: "hosted-test",
+          model: "test-model",
+          api_key_env: "HOSTED_TEST_KEY",
+          base_url: "https://provider.example/v1",
+        },
+      },
+    }),
+    {
+      provider: "hosted-test",
+      model: "test-model",
+      apiKeyEnv: "HOSTED_TEST_KEY",
+      baseUrl: "https://provider.example/v1",
+    },
+  );
+});
+
 test("rejects missing and ambiguous OpenCode model selection", () => {
   assert.throws(() => selectModel({}), (error) => error.code === "opencode_model_required");
   assert.throws(
@@ -74,6 +95,23 @@ test("rejects non-HTTP OpenCode model endpoints", () => {
             model: "test-model",
             api_key_env: "LOCAL_TEST_KEY",
             base_url: "ftp://provider.example/v1",
+          },
+        },
+      }),
+    (error) => error.code === "opencode_invalid_model",
+  );
+});
+
+test("rejects non-loopback HTTP OpenCode model endpoints", () => {
+  assert.throws(
+    () =>
+      selectModel({
+        models: {
+          default: {
+            provider: "hosted-test",
+            model: "test-model",
+            api_key_env: "HOSTED_TEST_KEY",
+            base_url: "http://provider.example/v1",
           },
         },
       }),

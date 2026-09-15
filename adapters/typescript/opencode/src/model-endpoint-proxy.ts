@@ -9,7 +9,7 @@ import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-const HOP_BY_HOP_RESPONSE_HEADERS = new Set([
+const HOP_BY_HOP_HEADERS = new Set([
   "connection",
   "keep-alive",
   "proxy-authenticate",
@@ -20,10 +20,30 @@ const HOP_BY_HOP_RESPONSE_HEADERS = new Set([
   "upgrade",
 ]);
 
-function forwardedHeaders(headers: IncomingHttpHeaders): Headers {
+function hopByHopHeaderNames(headers: IncomingHttpHeaders): Set<string> {
+  const connection = headers.connection;
+  const connectionValues = Array.isArray(connection) ? connection : [connection];
+  return new Set([
+    ...HOP_BY_HOP_HEADERS,
+    ...connectionValues
+      .filter((value): value is string => typeof value === "string")
+      .flatMap((value) => value.split(","))
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length > 0),
+  ]);
+}
+
+export function forwardedHeaders(headers: IncomingHttpHeaders): Headers {
   const result = new Headers();
+  const hopByHopHeaders = hopByHopHeaderNames(headers);
   for (const [name, value] of Object.entries(headers)) {
-    if (value === undefined || name === "host" || name === "content-length") {
+    const normalizedName = name.toLowerCase();
+    if (
+      value === undefined ||
+      normalizedName === "host" ||
+      normalizedName === "content-length" ||
+      hopByHopHeaders.has(normalizedName)
+    ) {
       continue;
     }
     result.set(name, Array.isArray(value) ? value.join(", ") : value);
@@ -62,7 +82,7 @@ function targetUrl(baseUrl: string, path: string): string {
 function forwardedResponseHeaders(headers: Headers): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [name, value] of headers.entries()) {
-    if (name === "content-encoding" || name === "content-length" || HOP_BY_HOP_RESPONSE_HEADERS.has(name)) {
+    if (name === "content-encoding" || name === "content-length" || HOP_BY_HOP_HEADERS.has(name)) {
       continue;
     }
     result[name] = value;

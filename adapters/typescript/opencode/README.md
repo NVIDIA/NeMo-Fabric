@@ -34,6 +34,9 @@ native OpenCode providers, so it does not need to be that provider's usual
 environment-variable name.
 A configured endpoint must implement the OpenAI-compatible Chat Completions
 protocol; it is a model-provider endpoint, not an OpenCode server endpoint.
+Remote endpoints must use HTTPS because requests include the provider
+credential; HTTP is permitted only for loopback endpoints used in local
+development and testing.
 For configured endpoints, the adapter omits OpenCode's `prompt_cache_key`
 extension so providers that implement the core protocol but reject that
 OpenAI-specific field remain compatible.
@@ -46,6 +49,6 @@ One Bun adapter process owns one embedded OpenCode host and session for each
 NeMo Fabric runtime. Ordered invocations reuse that session. Stopping the
 runtime removes the session and closes the host.
 
-When OpenCode reports a diff for an invocation, the adapter writes it under the
-Fabric artifact root as `opencode/turn-<n>.patch` and returns it as a `patch`
-artifact.
+When OpenCode reports a diff for an invocation and the runtime has an artifact
+root, the adapter writes it as `opencode/turn-<n>.patch` and returns it as a
+`patch` artifact. Without an artifact root, it returns no patch artifact.

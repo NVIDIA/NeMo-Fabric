@@ -13,10 +13,14 @@ export interface OpenCodeModel {
   baseUrl?: string;
 }
 
+function loopbackHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "::1" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
+}
+
 function validEndpoint(value: string): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
+    return url.protocol === "https:" || (url.protocol === "http:" && loopbackHostname(url.hostname));
   } catch {
     return false;
   }

@@ -74,9 +74,11 @@ it does not need to be the provider's conventional environment-variable name.
 To route model requests through a local or company-hosted endpoint, set
 `base_url`. The endpoint must implement the OpenAI-compatible Chat Completions
 protocol. It is a model-provider endpoint, not the address of a remote
-OpenCode server. The adapter removes OpenCode's `prompt_cache_key` extension
-for configured endpoints, so providers that reject that OpenAI-specific field
-can still use the core protocol.
+OpenCode server. Remote endpoints must use HTTPS because requests include the
+provider credential; HTTP is permitted only for loopback endpoints used in
+local development and testing. The adapter removes OpenCode's
+`prompt_cache_key` extension for configured endpoints, so providers that
+reject that OpenAI-specific field can still use the core protocol.
 
 ```python
 config.models["default"].base_url = "http://127.0.0.1:8080/v1"
@@ -99,9 +101,10 @@ plain-text invocations reuse that session and its conversation history. A
 successful result has `output.response`; usage fields are present when OpenCode
 reports them. `stop` removes the OpenCode session and closes the embedded host.
 
-When OpenCode reports files changed by an invocation, the adapter writes the
-combined diff to `opencode/turn-<n>.patch` under the Fabric artifact root and
-returns it as a `patch` artifact.
+When OpenCode reports files changed by an invocation and the runtime has an
+artifact root, the adapter writes the combined diff to
+`opencode/turn-<n>.patch` and returns it as a `patch` artifact. Without an
+artifact root, it returns no patch artifact.
 
 Create a new runtime to change the selected model or workspace.
 
