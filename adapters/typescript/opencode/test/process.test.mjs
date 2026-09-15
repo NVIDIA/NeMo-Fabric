@@ -121,9 +121,24 @@ test("runs two real OpenCode SDK prompts through the process host", async () => 
   });
   const endpointUrl = await listen(endpoint);
   try {
+    const workspaceConfigInstruction = join(workspace, "workspace-opencode-instructions.md");
+    const homeConfigInstruction = join(fakeHome, "home-opencode-instructions.md");
     await writeFile(join(workspace, "AGENTS.md"), "FABRIC_WORKSPACE_CONFIG_SENTINEL", "utf8");
+    await writeFile(workspaceConfigInstruction, "FABRIC_WORKSPACE_OPENCODE_CONFIG_SENTINEL", "utf8");
+    await writeFile(
+      join(workspace, "opencode.json"),
+      JSON.stringify({ instructions: [workspaceConfigInstruction] }),
+      "utf8",
+    );
     await mkdir(join(fakeHome, ".agents"), { recursive: true });
     await writeFile(join(fakeHome, ".agents", "AGENTS.md"), "FABRIC_HOME_CONFIG_SENTINEL", "utf8");
+    await writeFile(homeConfigInstruction, "FABRIC_HOME_OPENCODE_CONFIG_SENTINEL", "utf8");
+    await mkdir(join(fakeHome, ".config", "opencode"), { recursive: true });
+    await writeFile(
+      join(fakeHome, ".config", "opencode", "opencode.json"),
+      JSON.stringify({ instructions: [homeConfigInstruction] }),
+      "utf8",
+    );
     const start = {
       operation: "start",
       payload: {
@@ -168,8 +183,8 @@ test("runs two real OpenCode SDK prompts through the process host", async () => 
     const ambientInstructions = providerRequests
       .flatMap((request) => (Array.isArray(request.messages) ? request.messages : []))
       .map((message) => message?.content)
-      .filter((content) => typeof content === "string" && /FABRIC_(?:WORKSPACE|HOME)_CONFIG_SENTINEL/u.test(content))
-      .map((content) => content.match(/FABRIC_(?:WORKSPACE|HOME)_CONFIG_SENTINEL/u)?.[0]);
+      .filter((content) => typeof content === "string" && /FABRIC_(?:WORKSPACE|HOME)_(?:CONFIG|OPENCODE_CONFIG)_SENTINEL/u.test(content))
+      .map((content) => content.match(/FABRIC_(?:WORKSPACE|HOME)_(?:CONFIG|OPENCODE_CONFIG)_SENTINEL/u)?.[0]);
     assert.deepEqual(ambientInstructions, []);
   } finally {
     await close(endpoint);

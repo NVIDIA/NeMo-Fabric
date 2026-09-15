@@ -16,6 +16,8 @@ import type { OpenCodePromptOutcome, OpenCodeSessionFactory, OpenCodeSessionHand
 type OpenCodeClient = Awaited<ReturnType<(typeof import("@opencode/sdk"))["OpenCode"]["create"]>>;
 type OpenCodeEmbedOptions = { overrides?: unknown[] };
 type OpenCodeEmbedOptionsLoader = (configContent: string) => Promise<OpenCodeEmbedOptions>;
+type ModuleResolver = (specifier: string) => string;
+type ModuleLoader = (specifier: string) => Promise<unknown>;
 type EmbeddedOpenCodeCreate = (
   options: Parameters<(typeof import("@opencode/sdk"))["OpenCode"]["create"]>[0],
   embedOptions: OpenCodeEmbedOptions,
@@ -141,25 +143,25 @@ export function extractOpenCodePromptOutcome(
   return {};
 }
 
-function isMissingModuleError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error.code === "ERR_MODULE_NOT_FOUND" || error.code === "MODULE_NOT_FOUND")
-  );
-}
-
-async function loadOpenCodeSdk(): Promise<typeof import("@opencode/sdk")> {
+export async function loadOpenCodeSdk(
+  resolveModule: ModuleResolver = (specifier) => import.meta.resolve(specifier),
+  loadModule: ModuleLoader = (specifier) => import(specifier),
+): Promise<typeof import("@opencode/sdk")> {
+  let coreConfig: string;
+  let sdk: string;
   try {
-    return await import("@opencode/sdk");
-  } catch (error) {
-    if (isMissingModuleError(error)) {
-      throw new LifecycleError(
-        "opencode_harness_unavailable",
-        "The OpenCode v2 SDK is not installed. Install a compatible harness with: npm install @opencode/sdk@^2.0.3",
-      );
-    }
+    coreConfig = resolveModule("@opencode/core/config");
+    sdk = resolveModule("@opencode/sdk");
+  } catch {
+    throw new LifecycleError(
+      "opencode_harness_unavailable",
+      "The OpenCode v2 harness is not installed. Install compatible packages with: npm install @opencode/core@2.0.3 @opencode/sdk@2.0.3",
+    );
+  }
+  try {
+    const [, loadedSdk] = await Promise.all([loadModule(coreConfig), loadModule(sdk)]);
+    return loadedSdk as typeof import("@opencode/sdk");
+  } catch {
     throw new LifecycleError("opencode_harness_load_failed", "The installed OpenCode v2 SDK could not be loaded");
   }
 }
@@ -167,7 +169,9 @@ async function loadOpenCodeSdk(): Promise<typeof import("@opencode/sdk")> {
 async function loadEmbeddedOpenCodeCreate(): Promise<EmbeddedOpenCodeCreate> {
   // @opencode/sdk@2.0.3 exposes its two-argument Promise SDK entry point as a
   // packaged file but does not export it from the package root. Resolve the
-  // package root first so this remains valid when npm hoists dependencies.
+  // package root first so this remains valid when npm hoists dependencies. The
+  // adapter exact-pins its Core and SDK peers while this private-file workaround
+  // is required.
   const sdkRoot = import.meta.resolve("@opencode/sdk");
   const { create } = await import(new URL("./promise.js", sdkRoot).href);
   return create as EmbeddedOpenCodeCreate;

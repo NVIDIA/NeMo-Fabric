@@ -16,12 +16,16 @@ Install the npm adapter and the compatible OpenCode SDK in the project that
 owns the NeMo Fabric configuration:
 
 ```bash
-npm install nemo-fabric-adapters-opencode @opencode/sdk@^2.0.3
+npm install nemo-fabric-adapters-opencode @opencode/core@2.0.3 @opencode/sdk@2.0.3
 ```
 
-The OpenCode SDK is an optional peer dependency. Installing the adapter alone
-does not install the SDK. Starting the adapter without a compatible SDK returns
+OpenCode Core and the OpenCode SDK are optional peers, exact-pinned to the
+supported OpenCode release. Installing the adapter alone does not install
+either package. Starting the adapter without the compatible packages returns
 `opencode_harness_unavailable`.
+
+OpenCode 2.0.3 does not support npm's `install-strategy=nested`. The documented
+command requires npm's default hoisted layout.
 
 For source development, install the checked-out adapter workspace and its
 pinned SDK from the repository root:

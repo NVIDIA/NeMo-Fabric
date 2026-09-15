@@ -231,6 +231,9 @@ try {
   if (await pathExists(join(consumerRoot, "node_modules/@opencode/sdk/package.json"))) {
     throw new Error("Adapter-only install unexpectedly included @opencode/sdk");
   }
+  if (await pathExists(join(consumerRoot, "node_modules/@opencode/core/package.json"))) {
+    throw new Error("Adapter-only install unexpectedly included @opencode/core");
+  }
 
   const [invalidOpenCodeResponse] = runOpenCodeCli(opencodeRoot, consumerRoot, [{}]);
   if (invalidOpenCodeResponse.outcome?.error?.code !== "lifecycle_invalid_operation") {
@@ -251,10 +254,14 @@ try {
       "--no-audit",
       "--no-fund",
       "--package-lock=false",
+      "@opencode/core@2.0.3",
       "@opencode/sdk@2.0.3",
     ],
     consumerRoot,
   );
+  if (!(await pathExists(join(consumerRoot, "node_modules/@opencode/core/package.json")))) {
+    throw new Error("Consumer-managed OpenCode core harness was not installed at the adapter resolution level");
+  }
   const opencodeResponses = runOpenCodeCli(opencodeRoot, consumerRoot, [
     openCodeStartRequest(consumerRoot),
     { operation: "stop", payload: { runtime_id: "runtime-install-check" } },

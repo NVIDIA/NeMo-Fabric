@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractOpenCodePromptOutcome, OpenCodeSdkSessionFactory } from "../dist/opencode-sdk.js";
+import { extractOpenCodePromptOutcome, loadOpenCodeSdk, OpenCodeSdkSessionFactory } from "../dist/opencode-sdk.js";
 
 function startInput() {
   return {
@@ -31,6 +31,43 @@ function startInput() {
     },
   };
 }
+
+test("reports an unresolvable OpenCode peer as unavailable before attempting to load it", async () => {
+  const resolved = [];
+  await assert.rejects(
+    loadOpenCodeSdk(
+      (specifier) => {
+        resolved.push(specifier);
+        throw new Error("package is not installed");
+      },
+      async () => {
+        throw new Error("should not load an unresolved package");
+      },
+    ),
+    (error) => error.code === "opencode_harness_unavailable",
+  );
+  assert.deepEqual(resolved, ["@opencode/core/config"]);
+});
+
+test("reports an installed OpenCode peer with a missing transitive module as a load failure", async () => {
+  const loaded = [];
+  await assert.rejects(
+    loadOpenCodeSdk(
+      (specifier) => `resolved:${specifier}`,
+      async (specifier) => {
+        loaded.push(specifier);
+        if (specifier === "resolved:@opencode/sdk") {
+          const error = new Error("Cannot find @effect/platform-node");
+          Object.assign(error, { code: "ERR_MODULE_NOT_FOUND" });
+          throw error;
+        }
+        return {};
+      },
+    ),
+    (error) => error.code === "opencode_harness_load_failed",
+  );
+  assert.deepEqual(loaded, ["resolved:@opencode/core/config", "resolved:@opencode/sdk"]);
+});
 
 test("extracts the final assistant text and usage from OpenCode session history", () => {
   const outcome = extractOpenCodePromptOutcome([
