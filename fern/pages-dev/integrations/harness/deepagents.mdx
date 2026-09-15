@@ -70,6 +70,27 @@ from nemo_fabric import HarnessConfig
 harness = HarnessConfig(adapter_id="nvidia.fabric.langchain.deepagents")
 ```
 
+Configure nucleus sampling and the response token limit with the normalized
+`models.<role>.top_p` and `models.<role>.max_tokens` fields. `top_p` must be
+from `0` through `1`, and `max_tokens` must be a positive integer:
+
+```python
+from nemo_fabric import ModelConfig
+
+model = ModelConfig(
+    provider="nvidia",
+    model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    api_key_env="NVIDIA_API_KEY",
+    base_url="https://integrate.api.nvidia.com/v1",
+    top_p=0.8,
+    max_tokens=512,
+)
+```
+
+The adapter passes these fields to LangChain only when configured, so omitted
+fields preserve the model provider's defaults. Planning rejects unknown
+top-level model fields and every key under `models.<role>.settings`.
+
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, replacement system instructions, blocked tools, and telemetry.
 The adapter rejects `append` system instructions. Use
