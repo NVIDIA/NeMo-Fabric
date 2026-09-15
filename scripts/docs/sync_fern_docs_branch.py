@@ -16,6 +16,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import yaml
 
@@ -205,7 +206,7 @@ def update_github_links(pages_dir: Path, tag: str, source_root: Path) -> None:
 
     def replace(match: re.Match[str]) -> str:
         path = match.group("path")
-        repository_path = path.rstrip(".,;:")
+        repository_path = unquote(path.rstrip(".,;:"))
         linked_path = (source_root / repository_path.lstrip("/")).resolve()
         if not linked_path.is_relative_to(source_root) or not linked_path.exists():
             return match.group(0)
