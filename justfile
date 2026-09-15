@@ -16,6 +16,10 @@ python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/
 
 python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/remote-agent"
 
+# List Python package paths, one per line.
+python-package-paths:
+    @printf '%s\n' {{ python_packages }}
+
 bash_helpers := '''
 set -euo pipefail
 

@@ -213,14 +213,15 @@ else
 fi
 
 if [[ "$check_python_packages" == true ]]; then
-    while IFS= read -r project_file; do
+    while IFS= read -r package_path; do
+        project_file="${package_path}/pyproject.toml"
         package_name="$(python -c "import tomllib; print(tomllib.load(open('$project_file', 'rb'))['project']['name'])")"
         status="$(pypi_deployment_status "$package_name" "$python_version")"
         printf '| Python | `%s` | `%s` | %s |\n' \
             "$package_name" \
             "$python_version" \
             "$(deployment_status "$status")"
-    done < <(find sdk adapters -name pyproject.toml -type f | sort)
+    done < <(just python-package-paths)
 else
     printf '| Python | — | — | skipped: %s |\n' "$python_skip_reason"
 fi
