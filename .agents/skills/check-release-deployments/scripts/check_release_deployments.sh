@@ -81,6 +81,8 @@ deployment_status() {
 
 print_github_release_pipeline() {
     local trigger_type='release'
+    local nightly_date=""
+    local nightly_created=""
     local tag_sha=""
     local runs=""
     local run=""
@@ -90,8 +92,10 @@ print_github_release_pipeline() {
     local conclusion=""
     local run_url=""
 
-    if [[ "$node_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]{8}$ ]]; then
+    if [[ "$node_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.([0-9]{8})$ ]]; then
         trigger_type='nightly'
+        nightly_date="${BASH_REMATCH[1]}"
+        nightly_created="${nightly_date:0:4}-${nightly_date:4:2}-${nightly_date:6:2}"
     fi
 
     printf '## GitHub Release Pipeline\n\n'
@@ -115,7 +119,8 @@ print_github_release_pipeline() {
     if [[ "$trigger_type" == 'nightly' ]]; then
         runs="$(
             gh run list --repo "$github_repository" --commit "$tag_sha" \
-                --event push --limit 100 \
+                --workflow nightly-alpha-tag.yml --created "$nightly_created" \
+                --limit 100 \
                 --json databaseId,workflowName,status,conclusion,url 2>/dev/null
         )" || {
             printf '| all workflows | `%s` | — | 000 |\n' "$tag"
