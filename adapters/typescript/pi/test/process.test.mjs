@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -370,6 +370,32 @@ test(
       await writeFile(join(workspace, ".fabric-pi", "sessions", "invalid.jsonl"), "not jsonl\n", "utf8");
       const invalid = await exchange(workspace, [start("resume", "invalid")]);
       assert.equal(invalid.responses[0].outcome.error.code, "pi_session_invalid");
+
+      if (process.platform !== "win32") {
+        const outsideSession = join(baseDir, "outside.jsonl");
+        await writeFile(
+          outsideSession,
+          `${JSON.stringify({
+            type: "session",
+            version: 3,
+            id: "outside",
+            timestamp: "2026-01-01T00:00:00.000Z",
+            cwd: workspace,
+          })}\n`,
+          "utf8",
+        );
+        await symlink(outsideSession, join(workspace, ".fabric-pi", "sessions", "linked.jsonl"));
+        const linked = await exchange(workspace, [start("resume", "linked")]);
+        assert.equal(linked.responses[0].outcome.error?.code, "pi_session_directory_outside_workspace");
+      }
+
+      const failedStart = start("create", "retry-after-failure");
+      failedStart.payload.config.tools.enabled = ["missing-tool"];
+      const failed = await exchange(workspace, [failedStart]);
+      assert.equal(failed.responses[0].outcome.error.code, "pi_tool_missing");
+
+      const retried = await exchange(workspace, [failedStart]);
+      assert.equal(retried.responses[0].outcome.error.code, "pi_tool_missing");
     } finally {
       await rm(baseDir, { recursive: true, force: true });
     }

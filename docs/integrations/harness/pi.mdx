@@ -123,7 +123,8 @@ instead of overwriting an existing session. `resume` fails with
 `pi_session_not_found` when the file is missing and `pi_session_invalid` when
 the file is empty or malformed. Storage and permission failures use
 `pi_session_storage_failed`. The adapter rejects absolute directories,
-parent-directory escapes, and symlinks that resolve outside the workspace.
+parent-directory escapes, session-file symlinks, and directory symlinks that
+resolve outside the workspace.
 
 Stopping a runtime preserves its session file. The caller owns retention and
 must delete `<directory>/<id>.jsonl` after the runtime stops when the

@@ -111,7 +111,8 @@ selected only because two runtimes use the same workspace.
 The default session file is
 `<workspace>/.fabric-pi/sessions/<id>.jsonl`. An optional `directory` selects a
 different workspace-relative directory. The adapter rejects absolute paths,
-parent-directory escapes, and symlinks that resolve outside the workspace.
+parent-directory escapes, session-file symlinks, and directory symlinks that
+resolve outside the workspace.
 Session IDs may contain letters, numbers, `.`, `_`, and `-`; they must start and
 end with a letter or number.
 
