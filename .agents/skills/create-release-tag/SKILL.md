@@ -1,6 +1,6 @@
 ---
 name: create-release-tag
-description: Create and push a signed, annotated NeMo Fabric stable release tag from its validated release branch. Use when cutting a stable release tag; not for beta or release-candidate tags.
+description: Create and push a signed, annotated NeMo Fabric stable release tag from its validated release branch, then prepare an unpublished GitHub Release for review. Use when cutting a stable release tag; not for beta or release-candidate tags.
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
@@ -36,8 +36,9 @@ branch check must succeed before switching to the release branch.
 
 Run the remaining commands in one noninteractive Bash session. Record the
 user's original checkout and install this exit trap before switching branches.
-The trap returns to the original named branch (or detached commit) after a
-successful tag or any error, but only if this workflow changed the checkout.
+The trap returns to the original named branch (or detached commit) after the
+workflow succeeds or encounters an error, but only if this workflow changed the
+checkout.
 
 ```bash
 set -euo pipefail
@@ -102,3 +103,140 @@ git push upstream "refs/tags/${RELEASE_TAG}"
 
 Stop on any failed check. Do not force-update, replace, or delete an existing
 local or remote tag.
+
+## Draft the GitHub Release
+
+After the tag push succeeds, create a draft GitHub Release for that exact tag.
+Do not publish the release. Determine the previous release tag from GitHub's
+latest published, non-draft, non-prerelease release. Do not infer it from local
+tag ordering.
+
+```bash
+GITHUB_REPOSITORY="NVIDIA/NeMo-Fabric"
+PREVIOUS_RELEASE_TAG="$(
+  gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name'
+)"
+test -n "${PREVIOUS_RELEASE_TAG}"
+test "${PREVIOUS_RELEASE_TAG}" != "${RELEASE_TAG}"
+
+if ! git rev-parse --verify --quiet "refs/tags/${PREVIOUS_RELEASE_TAG}" >/dev/null; then
+  git fetch upstream "refs/tags/${PREVIOUS_RELEASE_TAG}:refs/tags/${PREVIOUS_RELEASE_TAG}"
+fi
+
+RELEASE_NOTES_URL="https://docs.nvidia.com/nemo/fabric/about-nemo-fabric/release-notes"
+COMPARISON_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${PREVIOUS_RELEASE_TAG}...${RELEASE_TAG}"
+```
+
+Read the tagged release-notes page so the draft describes the content that was
+actually released, not later working-tree edits:
+
+```bash
+git show \
+  "${RELEASE_TAG}:docs/about-nemo-fabric/release-notes.mdx"
+```
+
+Also gather the comparison evidence with the existing read-only helper:
+
+```bash
+python3 .agents/skills/draft-release-notes/scripts/collect_release_evidence.py \
+  --previous "${PREVIOUS_RELEASE_TAG}" \
+  --current "${RELEASE_TAG}" \
+  --version "${RELEASE_VERSION}"
+```
+
+Use GitHub's generated notes only to identify included pull requests and
+potential new contributors. Verify that evidence before including it; do not
+substitute the generated text for the curated release-notes page.
+
+```bash
+gh api --method POST \
+  "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+  -f "tag_name=${RELEASE_TAG}" \
+  -f "previous_tag_name=${PREVIOUS_RELEASE_TAG}"
+```
+
+Draft a condensed release body rather than reproducing the full release-notes
+page. Include only the highest-impact user-facing changes, keep each bullet
+brief, and use the detailed release-notes link for supporting context. Do not
+copy full paragraphs or exhaustive lists from the source page.
+
+Use a temporary Markdown file with this exact structure:
+
+```markdown
+# NVIDIA NeMo Fabric <version>
+
+<One or two sentences summarizing the release.>
+
+## At a Glance
+
+### New
+
+- <Notable new capability>
+
+### Changed
+
+- <Notable behavior or experience change>
+
+### Breaking Changes
+
+- **<Affected area>:** <What changed and what users must do.>
+  [Migration details](<absolute-documentation-url>)
+
+## Learn More
+
+- [Detailed release notes](<absolute-documentation-url>)
+- [Full changelog](<comparison-url>)
+
+## New Contributors
+
+- <Contributor and contribution>
+
+```
+
+Replace `<version>` with `${RELEASE_VERSION}`, without the leading `v`. Derive
+the summary, `New`, `Changed`, and `Breaking Changes` content from the tagged
+`docs/about-nemo-fabric/release-notes.mdx`. Link migration items to the most
+specific absolute documentation URL available. Use `${RELEASE_NOTES_URL}` for
+the detailed release-notes link and `${COMPARISON_URL}` for both changelog
+links. List only verified first-time contributors from the comparison. Use
+`- None.` under any category with no applicable entries so every heading in the
+template remains present.
+
+Review the completed body for unsupported claims, unresolved placeholders, and
+relative URLs. Then create and verify the draft. `--verify-tag` is required so
+GitHub cannot create a different tag implicitly. The title must be the exact tag
+name.
+
+```bash
+RELEASE_BODY_PATH="<temporary-markdown-file>"
+
+if gh release view "${RELEASE_TAG}" \
+  --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+  echo "Error: a GitHub Release for ${RELEASE_TAG} already exists" >&2
+  exit 1
+fi
+
+gh release create "${RELEASE_TAG}" \
+  --repo "${GITHUB_REPOSITORY}" \
+  --draft \
+  --title "${RELEASE_TAG}" \
+  --notes-file "${RELEASE_BODY_PATH}" \
+  --verify-tag
+
+test "$(gh release view "${RELEASE_TAG}" \
+  --repo "${GITHUB_REPOSITORY}" \
+  --json isDraft \
+  --jq '.isDraft')" = "true"
+test "$(gh release view "${RELEASE_TAG}" \
+  --repo "${GITHUB_REPOSITORY}" \
+  --json name \
+  --jq '.name')" = "${RELEASE_TAG}"
+
+DRAFT_EDIT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/edit/${RELEASE_TAG}"
+printf 'Review the draft release before publishing: %s\n' "${DRAFT_EDIT_URL}"
+```
+
+Present `${DRAFT_EDIT_URL}` to the user as a clickable link. Tell the user to
+review the title and body before clicking **Publish release**. Do not run
+`gh release edit --draft=false`, call the publish API, or otherwise publish the
+release as part of this skill.
