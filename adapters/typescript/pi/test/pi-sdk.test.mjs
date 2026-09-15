@@ -7,7 +7,45 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { PiSdkSessionFactory, resolveCustomTools } from "../dist/pi-sdk.js";
+import {
+  classifyOpaqueProxyContextOverflow,
+  modelAwareCompactionReserveTokens,
+  PiSdkSessionFactory,
+  resolveCustomTools,
+  withCustomBaseUrl,
+} from "../dist/pi-sdk.js";
+
+test("uses standard content when replaying reasoning through a custom model proxy", () => {
+  const catalogModel = {
+    api: "openai-completions",
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    compat: { supportsStore: false },
+  };
+
+  assert.deepEqual(withCustomBaseUrl(catalogModel, "http://model-proxy:10240"), {
+    api: "openai-completions",
+    baseUrl: "http://model-proxy:10240",
+    compat: { supportsStore: false, requiresThinkingAsText: true },
+  });
+  assert.strictEqual(withCustomBaseUrl(catalogModel, undefined), catalogModel);
+});
+
+test("reserves enough context for the selected model's maximum output", () => {
+  assert.equal(modelAwareCompactionReserveTokens(16_384, 65_536), 65_536);
+  assert.equal(modelAwareCompactionReserveTokens(65_536, 32_768), 65_536);
+});
+
+test("classifies only an exact opaque custom-proxy error as context overflow", () => {
+  assert.match(
+    classifyOpaqueProxyContextOverflow("500 status code (no body)", 262_144),
+    /maximum context length is 262144 tokens/u,
+  );
+  assert.equal(
+    classifyOpaqueProxyContextOverflow("503 status code (no body)", 262_144),
+    "503 status code (no body)",
+  );
+  assert.equal(classifyOpaqueProxyContextOverflow("500 status code (no body)", 0), "500 status code (no body)");
+});
 
 test("rejects append system instructions before loading the Pi harness", async () => {
   const factory = new PiSdkSessionFactory();
