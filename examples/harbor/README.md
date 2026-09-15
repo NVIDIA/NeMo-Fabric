@@ -68,16 +68,16 @@ not read task paths; adapter and asset resolution is deferred to
 
 Use the following package requirements for the two-environment model. Pin the
 host and task packages to the same NeMo Fabric release. These examples use
-version `0.3.0`.
+version `0.4.0`.
 
 | Environment | Required Dependencies | Purpose |
 | --- | --- | --- |
-| Harbor host | `nemo-fabric[harbor]==0.3.0` | Harbor CLI, `FabricAgent`, and typed `FabricConfig` construction |
-| Claude task without Relay | `nemo-fabric[claude]==0.3.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
-| Claude task with Relay | `nemo-fabric[claude]==0.3.0` plus a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
-| Hermes Agent task with Relay | Task image with Hermes Agent, `nemo-fabric==0.3.0`, `nemo-fabric-adapters-hermes==0.3.0`, and `nemo-relay>=0.7.2,<0.8` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
-| NOOA BenchAgent task | `nemo-fabric==0.3.0` and `nemo-fabric-adapters-nooa[harness]==0.3.0` | NeMo Fabric runner, the packaged BenchAgent adapter and descriptors, and tested NOOA harness packages |
-| NOOA BenchAgent task with Relay | `nemo-fabric==0.3.0` and `nemo-fabric-adapters-nooa[full]==0.3.0` | Baseline dependencies plus compatible Relay telemetry support |
+| Harbor host | `nemo-fabric[harbor]==0.4.0` | Harbor CLI, `FabricAgent`, and typed `FabricConfig` construction |
+| Claude task without Relay | `nemo-fabric[claude]==0.4.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
+| Claude task with Relay | `nemo-fabric[claude]==0.4.0` plus a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
+| Hermes Agent task with Relay | Task image with Hermes Agent, `nemo-fabric==0.4.0`, `nemo-fabric-adapters-hermes==0.4.0`, and `nemo-relay>=0.7.2,<0.8` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
+| NOOA BenchAgent task | `nemo-fabric==0.4.0` and `nemo-fabric-adapters-nooa[harness]==0.4.0` | NeMo Fabric runner, the packaged BenchAgent adapter and descriptors, and tested NOOA harness packages |
+| NOOA BenchAgent task with Relay | `nemo-fabric==0.4.0` and `nemo-fabric-adapters-nooa[full]==0.4.0` | Baseline dependencies plus compatible Relay telemetry support |
 
 The `nemo-fabric` package installs the runtime. The `relay` extra installs the
 NeMo Relay Python package, not the CLI required by Claude.

@@ -30,7 +30,7 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 streaming = [
-  "nemo-fabric-collector == 0.3.0",
+  "nemo-fabric-collector == 0.4.0",
 ]
 
 [project.urls]

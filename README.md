@@ -214,7 +214,7 @@ selected adapter, and the harness inside an isolated task environment such as a
 Docker container or Daytona sandbox. Adapter discovery and task-path resolution
 occur inside that sandbox.
 
-Install `nemo-fabric[harbor]==0.3.0` in the host environment. For a Hermes
+Install `nemo-fabric[harbor]==0.4.0` in the host environment. For a Hermes
 Agent task, use a task image that installs Hermes Agent according to its
 installation guide, then install `nemo-fabric`, `nemo-fabric-adapters-hermes`,
 and optionally `nemo-fabric[relay]` in that environment. For Claude or Codex

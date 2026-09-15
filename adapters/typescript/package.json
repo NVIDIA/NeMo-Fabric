@@ -1,6 +1,6 @@
 {
   "name": "nemo-fabric-typescript-adapters",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "TypeScript adapter workspace for NVIDIA NeMo Fabric.",
   "license": "Apache-2.0",
   "private": true,
