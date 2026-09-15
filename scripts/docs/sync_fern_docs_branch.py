@@ -23,6 +23,10 @@ VERSION_RE = re.compile(
     r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)"
     r"(?:-(?P<label>alpha|beta|rc)\.(?P<number>[0-9]+))?$"
 )
+GITHUB_MAIN_LINK_RE = re.compile(
+    r"(?P<prefix>github\.com/NVIDIA/NeMo-Fabric/(?:blob|tree)/)main"
+    r"(?P<path>/[^\s)\]?#]*)(?P<suffix>[?#][^\s)\]]*)?"
+)
 COPY_EXCLUDES = {
     ".DS_Store",
     "__pycache__",
@@ -194,24 +198,24 @@ def sync_dev(source_root: Path, target_root: Path) -> None:
     write_docs_yml(source_fern / "docs.yml", target_fern / "docs.yml")
 
 
-def update_github_links(pages_dir: Path, tag: str) -> None:
-    replacements = (
-        (
-            "github.com/NVIDIA/NeMo-Fabric/blob/main",
-            f"github.com/NVIDIA/NeMo-Fabric/blob/{tag}",
-        ),
-        (
-            "github.com/NVIDIA/NeMo-Fabric/tree/main",
-            f"github.com/NVIDIA/NeMo-Fabric/tree/{tag}",
-        ),
-    )
+def update_github_links(pages_dir: Path, tag: str, source_root: Path) -> None:
+    """Pin links to paths that exist in a release; retain ``main`` otherwise."""
+
+    source_root = source_root.resolve()
+
+    def replace(match: re.Match[str]) -> str:
+        path = match.group("path")
+        repository_path = path.rstrip(".,;:")
+        linked_path = (source_root / repository_path.lstrip("/")).resolve()
+        if not linked_path.is_relative_to(source_root) or not linked_path.exists():
+            return match.group(0)
+        return f"{match.group('prefix')}{tag}{path}{match.group('suffix') or ''}"
+
     for path in pages_dir.rglob("*"):
         if path.suffix not in {".md", ".mdx"} or not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
-        updated = text
-        for old, new in replacements:
-            updated = updated.replace(old, new)
+        updated = GITHUB_MAIN_LINK_RE.sub(replace, text)
         if updated != text:
             path.write_text(updated, encoding="utf-8")
 
@@ -235,7 +239,7 @@ def release_version(target_root: Path, tag: str, source_root: Path) -> None:
 
     shutil.copytree(source_docs, pages_version, ignore=docs_ignore)
     prepare_generated_python_references_for_fern(pages_version)
-    update_github_links(pages_version, tag)
+    update_github_links(pages_version, display_tag, source_root)
     version_navigation = rewrite_doc_references(
         read_yaml(source_docs / "index.yml"), f"pages-{display_tag}"
     )
