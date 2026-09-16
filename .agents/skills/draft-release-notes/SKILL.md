@@ -82,29 +82,23 @@ not publication-ready copy.
 4. Verify each candidate claim in the changed public docs, API types, command
    help, or source before including it. Prioritize breaking changes, migrations,
    user-visible features, and ongoing support limitations.
-5. Draft the GitHub Release body for every stable release. Include:
-   - a concise user-facing overview
-   - breaking changes, migrations, and compatibility requirements
-   - verified features and fixes grouped by user-facing theme
-   - current limitations that materially affect the release
-   - links to included pull requests and the full comparison
-6. For a patch release, identify the affected behavior and state whether public
+5. For a patch release, identify the affected behavior and state whether public
    APIs, configuration, or dependency contracts changed.
-7. Update only this page unless the release changes its route or entry point:
+6. Update only this page unless the release changes its route or entry point:
    - `docs/about-nemo-fabric/release-notes.mdx`
    Leave it unchanged when a patch release does not alter the
    documentation-visible summary, compatibility guidance, support status, or
    limitations.
-8. Keep the existing page role:
+7. Keep the existing page role:
    - `release-notes.mdx` gives the current-release summary, compatibility notes,
      scope, and curated feature links.
    - `release-notes.mdx` groups notable changes by user-facing theme.
    - `release-notes.mdx` records current limitations.
-9. Preserve MDX front matter and the JSX SPDX comment. State the full history
+8. Preserve MDX front matter and the JSX SPDX comment. State the full history
    is available in GitHub Releases. Do not create a changelog.
-10. Update the `Roadmap` section in [README.md](../../../README.md), removing items implemented or fixed by changes in the current release.
-11. Run the validation checks detailed in [Validate](#validate).
-12. If `docs/about-nemo-fabric/release-notes.mdx` or `README.md` changed, commit the
+9. Update the `Roadmap` section in [README.md](../../../README.md), removing items implemented or fixed by changes in the current release.
+10. Run the validation checks detailed in [Validate](#validate).
+11. If `docs/about-nemo-fabric/release-notes.mdx` or `README.md` changed, commit the
     release-notes page and README with a signed-off commit after validation
     succeeds:
 
@@ -113,7 +107,7 @@ not publication-ready copy.
     git commit -sm "Drafting release notes for v${TARGET_VERSION}"
     git push -u upstream HEAD
     ```
-13. If `docs/about-nemo-fabric/release-notes.mdx` or `README.md` changed, use the `prepare-pr`
+12. If `docs/about-nemo-fabric/release-notes.mdx` or `README.md` changed, use the `prepare-pr`
     skill to open a pull request from the release-notes branch to
     `${RELEASE_BRANCH}`. Use this title:
 
@@ -121,8 +115,8 @@ not publication-ready copy.
     docs: Release notes for v${TARGET_VERSION}
     ```
 
-    If `docs/about-nemo-fabric/release-notes.mdx` and `README.md` are unchanged, skip steps 12
-    and 13. Do not create a release-notes commit or pull request.
+    If `docs/about-nemo-fabric/release-notes.mdx` and `README.md` are unchanged, skip steps 11
+    and 12. Do not create a release-notes commit or pull request.
 
 ## Validate
 
