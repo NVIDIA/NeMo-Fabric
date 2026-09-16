@@ -73,6 +73,7 @@ test("extracts the final assistant text and usage from OpenCode session history"
   const outcome = extractOpenCodePromptOutcome([
     { type: "user", text: "first" },
     {
+      id: "assistant-first",
       type: "assistant",
       content: [{ type: "text", text: "first answer" }],
       finish: "stop",
@@ -81,17 +82,47 @@ test("extracts the final assistant text and usage from OpenCode session history"
     },
     { type: "user", text: "second" },
     {
+      id: "assistant-second",
       type: "assistant",
       content: [{ type: "reasoning", text: "hidden" }, { type: "text", text: "second answer" }],
       finish: "stop",
       tokens: { input: 5, output: 7, reasoning: 2, cache: { read: 1, write: 0 } },
       cost: 0.023,
     },
-  ]);
+  ], new Set(["assistant-first"]));
 
   assert.deepEqual(outcome, {
     text: "second answer",
     usage: { input_tokens: 5, output_tokens: 7, total_tokens: 12, cost_usd: 0.023 },
+  });
+});
+
+test("sums usage across every new assistant message in a tool-using prompt", () => {
+  const outcome = extractOpenCodePromptOutcome(
+    [
+      {
+        id: "assistant-tool-call",
+        type: "assistant",
+        content: [{ type: "tool", name: "read", input: { path: "example.txt" } }],
+        finish: "tool-calls",
+        tokens: { input: 11, output: 13 },
+        cost: 0.01,
+      },
+      {
+        id: "assistant-terminal",
+        type: "assistant",
+        content: [{ type: "text", text: "done" }],
+        finish: "stop",
+        tokens: { input: 17, output: 19 },
+        cost: 0.02,
+      },
+    ],
+    new Set(),
+  );
+
+  assert.deepEqual(outcome, {
+    text: "done",
+    usage: { input_tokens: 28, output_tokens: 32, total_tokens: 60, cost_usd: 0.03 },
   });
 });
 

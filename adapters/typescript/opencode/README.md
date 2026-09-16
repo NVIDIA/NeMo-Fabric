@@ -50,5 +50,6 @@ NeMo Fabric runtime. Ordered invocations reuse that session. Stopping the
 runtime removes the session and closes the host.
 
 When OpenCode reports a diff for an invocation and the runtime has an artifact
-root, the adapter writes it as `opencode/turn-<n>.patch` and returns it as a
-`patch` artifact. Without an artifact root, it returns no patch artifact.
+root, the adapter writes it to a runtime- and invocation-scoped path beneath
+`opencode/` and returns it as a `patch` artifact. Without an artifact root, it
+returns no patch artifact.

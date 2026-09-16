@@ -4,6 +4,7 @@
 // Fabric lifecycle state for one OpenCode session. The SDK boundary supplies
 // the session implementation so lifecycle tests do not need an installed SDK.
 
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -35,6 +36,10 @@ function failed(code: string, message: string): AgentRunResult {
   };
 }
 
+function artifactSegment(identifier: string): string {
+  return createHash("sha256").update(identifier).digest("hex").slice(0, 32);
+}
+
 export class OpenCodeAdapterRuntime implements AdapterRuntime {
   private readonly factory: OpenCodeSessionFactory;
   private session?: OpenCodeSessionHandle;
@@ -58,10 +63,12 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
       return undefined;
     }
     const turn = this.artifactCount + 1;
-    const path = `opencode/turn-${turn}.patch`;
+    const runtime = artifactSegment(context.runtime_id);
+    const invocation = artifactSegment(context.invocation_id);
+    const path = `opencode/${runtime}/${invocation}-turn-${turn}.patch`;
     try {
-      await mkdir(join(root, "opencode"), { recursive: true });
-      await writeFile(join(root, path), patch, "utf8");
+      await mkdir(join(root, "opencode", runtime), { recursive: true });
+      await writeFile(join(root, path), patch, { encoding: "utf8", flag: "wx" });
     } catch {
       throw new LifecycleError("opencode_artifact_write_failed", "OpenCode could not write its session diff artifact");
     }

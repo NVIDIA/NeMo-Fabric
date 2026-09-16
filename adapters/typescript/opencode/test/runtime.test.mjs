@@ -130,15 +130,44 @@ test("writes an OpenCode session diff as a per-invocation Fabric artifact", asyn
       { ...context, artifacts: { root: artifacts }, invocation_id: "invocation-1" },
     );
 
-    assert.deepEqual(result.artifacts, [
-      {
-        kind: "patch",
-        media_type: "text/x-diff",
-        name: "opencode-diff-1",
-        path: "opencode/turn-1.patch",
+    const artifact = result.artifacts?.[0];
+    assert.equal(artifact?.kind, "patch");
+    assert.equal(artifact?.media_type, "text/x-diff");
+    assert.equal(artifact?.name, "opencode-diff-1");
+    assert.match(artifact?.path ?? "", /^opencode\/[a-f0-9]{32}\/[a-f0-9]{32}-turn-1\.patch$/);
+    assert.equal(await readFile(join(artifacts, artifact?.path), "utf8"), "diff --git a/example.txt b/example.txt\n+added\n");
+  } finally {
+    await rm(artifacts, { recursive: true, force: true });
+  }
+});
+
+test("keeps patch artifacts from distinct runtimes under a shared root", async () => {
+  const artifacts = await mkdtemp(join(tmpdir(), "fabric-opencode-shared-artifacts-"));
+  try {
+    const createRuntime = (patch) => new OpenCodeAdapterRuntime({
+      async create() {
+        return { id: "session", async prompt() { return { text: "done", patch }; }, async stop() {} };
       },
-    ]);
-    assert.equal(await readFile(join(artifacts, "opencode/turn-1.patch"), "utf8"), "diff --git a/example.txt b/example.txt\n+added\n");
+    });
+    const first = createRuntime("first patch");
+    const second = createRuntime("second patch");
+    await first.start(startInput("runtime-one"));
+    await second.start(startInput("runtime-two"));
+
+    const firstResult = await first.invoke(
+      { input: "first" },
+      { ...context, artifacts: { root: artifacts }, runtime_id: "runtime-one", invocation_id: "invocation-one" },
+    );
+    const secondResult = await second.invoke(
+      { input: "second" },
+      { ...context, artifacts: { root: artifacts }, runtime_id: "runtime-two", invocation_id: "invocation-two" },
+    );
+
+    const firstPath = firstResult.artifacts?.[0]?.path;
+    const secondPath = secondResult.artifacts?.[0]?.path;
+    assert.notEqual(firstPath, secondPath);
+    assert.equal(await readFile(join(artifacts, firstPath), "utf8"), "first patch");
+    assert.equal(await readFile(join(artifacts, secondPath), "utf8"), "second patch");
   } finally {
     await rm(artifacts, { recursive: true, force: true });
   }

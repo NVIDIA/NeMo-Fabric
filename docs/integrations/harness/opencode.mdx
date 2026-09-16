@@ -102,9 +102,9 @@ successful result has `output.response`; usage fields are present when OpenCode
 reports them. `stop` removes the OpenCode session and closes the embedded host.
 
 When OpenCode reports files changed by an invocation and the runtime has an
-artifact root, the adapter writes the combined diff to
-`opencode/turn-<n>.patch` and returns it as a `patch` artifact. Without an
-artifact root, it returns no patch artifact.
+artifact root, the adapter writes the combined diff to a runtime- and
+invocation-scoped path beneath `opencode/` and returns it as a `patch` artifact.
+Without an artifact root, it returns no patch artifact.
 
 Create a new runtime to change the selected model or workspace.
 

@@ -88,6 +88,39 @@ function usage(message: Record<string, unknown>): AgentUsage | undefined {
   return result;
 }
 
+function totalUsage(messages: Record<string, unknown>[]): AgentUsage | undefined {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let costUsd = 0;
+  let hasInputTokens = false;
+  let hasOutputTokens = false;
+  let hasCostUsd = false;
+  for (const message of messages) {
+    const current = usage(message);
+    if (current?.input_tokens !== undefined && current.input_tokens !== null) {
+      inputTokens += current.input_tokens;
+      hasInputTokens = true;
+    }
+    if (current?.output_tokens !== undefined && current.output_tokens !== null) {
+      outputTokens += current.output_tokens;
+      hasOutputTokens = true;
+    }
+    if (current?.cost_usd !== undefined && current.cost_usd !== null) {
+      costUsd += current.cost_usd;
+      hasCostUsd = true;
+    }
+  }
+  if (!hasInputTokens && !hasOutputTokens && !hasCostUsd) {
+    return undefined;
+  }
+  return {
+    ...(hasInputTokens ? { input_tokens: inputTokens } : {}),
+    ...(hasOutputTokens ? { output_tokens: outputTokens } : {}),
+    ...(hasInputTokens && hasOutputTokens ? { total_tokens: inputTokens + outputTokens } : {}),
+    ...(hasCostUsd ? { cost_usd: costUsd } : {}),
+  };
+}
+
 function patch(diffs: unknown): string | undefined {
   if (!Array.isArray(diffs)) {
     return undefined;
@@ -113,8 +146,8 @@ export function extractOpenCodePromptOutcome(
   messages: unknown[],
   existingMessageIds?: ReadonlySet<string>,
 ): OpenCodePromptOutcome {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
+  const assistantMessages: Record<string, unknown>[] = [];
+  for (const message of messages) {
     if (!isRecord(message) || message.type !== "assistant") {
       continue;
     }
@@ -124,23 +157,31 @@ export function extractOpenCodePromptOutcome(
     ) {
       continue;
     }
-    if (message.finish === "error" || message.error !== undefined) {
-      return { errorMessage: "OpenCode model invocation failed" };
-    }
-    if (!Array.isArray(message.content)) {
-      return {};
-    }
-    const text = message.content
-      .filter((part): part is Record<string, unknown> => isRecord(part) && part.type === "text")
-      .map((part) => part.text)
-      .filter((part): part is string => typeof part === "string")
-      .join("");
+    assistantMessages.push(message);
+  }
+  const terminal = assistantMessages.at(-1);
+  if (terminal === undefined) {
+    return {};
+  }
+  const invocationUsage = totalUsage(assistantMessages);
+  if (terminal.finish === "error" || terminal.error !== undefined) {
     return {
-      ...(text.length === 0 ? {} : { text }),
-      ...(usage(message) === undefined ? {} : { usage: usage(message) }),
+      errorMessage: "OpenCode model invocation failed",
+      ...(invocationUsage === undefined ? {} : { usage: invocationUsage }),
     };
   }
-  return {};
+  if (!Array.isArray(terminal.content)) {
+    return {};
+  }
+  const text = terminal.content
+    .filter((part): part is Record<string, unknown> => isRecord(part) && part.type === "text")
+    .map((part) => part.text)
+    .filter((part): part is string => typeof part === "string")
+    .join("");
+  return {
+    ...(text.length === 0 ? {} : { text }),
+    ...(invocationUsage === undefined ? {} : { usage: invocationUsage }),
+  };
 }
 
 export async function loadOpenCodeSdk(
