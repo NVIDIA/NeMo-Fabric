@@ -5,13 +5,15 @@
 // into a controlled Pi session, including model credentials, optional durable
 // session state, skills, extensions, custom tools, and workspace containment.
 
-import { lstat, mkdir, open, realpath, stat, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, stat, unlink } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { TextDecoder } from "node:util";
 
 import type {
   AgentSession,
   DefaultResourceLoader,
   ExtensionCommandContextActions,
+  FileEntry,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti/static";
@@ -47,9 +49,11 @@ const DEFAULT_SESSION_DIRECTORY = ".fabric-pi/sessions";
 const SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 
 interface PiSdkModules {
+  CURRENT_SESSION_VERSION: typeof import("@earendil-works/pi-coding-agent").CURRENT_SESSION_VERSION;
   InMemoryCredentialStore: typeof import("@earendil-works/pi-ai").InMemoryCredentialStore;
   createAgentSession: typeof import("@earendil-works/pi-coding-agent").createAgentSession;
   DefaultResourceLoader: typeof import("@earendil-works/pi-coding-agent").DefaultResourceLoader;
+  migrateSessionEntries: typeof import("@earendil-works/pi-coding-agent").migrateSessionEntries;
   ModelRuntime: typeof import("@earendil-works/pi-coding-agent").ModelRuntime;
   SessionManager: typeof import("@earendil-works/pi-coding-agent").SessionManager;
   SettingsManager: typeof import("@earendil-works/pi-coding-agent").SettingsManager;
@@ -84,8 +88,10 @@ async function loadPiSdk(): Promise<PiSdkModules> {
 
   if (
     typeof ai.InMemoryCredentialStore !== "function" ||
+    typeof codingAgent.CURRENT_SESSION_VERSION !== "number" ||
     typeof codingAgent.createAgentSession !== "function" ||
     typeof codingAgent.DefaultResourceLoader !== "function" ||
+    typeof codingAgent.migrateSessionEntries !== "function" ||
     typeof codingAgent.ModelRuntime !== "function" ||
     typeof codingAgent.SessionManager !== "function" ||
     typeof codingAgent.SettingsManager !== "function"
@@ -97,9 +103,11 @@ async function loadPiSdk(): Promise<PiSdkModules> {
   }
 
   return {
+    CURRENT_SESSION_VERSION: codingAgent.CURRENT_SESSION_VERSION,
     InMemoryCredentialStore: ai.InMemoryCredentialStore,
     createAgentSession: codingAgent.createAgentSession,
     DefaultResourceLoader: codingAgent.DefaultResourceLoader,
+    migrateSessionEntries: codingAgent.migrateSessionEntries,
     ModelRuntime: codingAgent.ModelRuntime,
     SessionManager: codingAgent.SessionManager,
     SettingsManager: codingAgent.SettingsManager,
@@ -173,6 +181,217 @@ function errorCode(error: unknown): string | undefined {
     return error.code;
   }
   return undefined;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isTextOrImageContent(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.type !== "string") {
+    return false;
+  }
+  if (value.type === "text") {
+    return typeof value.text === "string";
+  }
+  return value.type === "image" && typeof value.data === "string" && typeof value.mimeType === "string";
+}
+
+function isAssistantContent(value: unknown): boolean {
+  if (isTextOrImageContent(value)) {
+    return true;
+  }
+  if (!isRecord(value) || typeof value.type !== "string") {
+    return false;
+  }
+  if (value.type === "thinking") {
+    return typeof value.thinking === "string";
+  }
+  return (
+    value.type === "toolCall" &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    isRecord(value.arguments)
+  );
+}
+
+function isMessageContent(value: unknown): boolean {
+  return typeof value === "string" || (Array.isArray(value) && value.every(isTextOrImageContent));
+}
+
+function isUsage(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.cost)) {
+    return false;
+  }
+  return [
+    value.input,
+    value.output,
+    value.cacheRead,
+    value.cacheWrite,
+    value.totalTokens,
+    value.cost.input,
+    value.cost.output,
+    value.cost.cacheRead,
+    value.cost.cacheWrite,
+    value.cost.total,
+  ].every(isFiniteNumber);
+}
+
+function isPiAgentMessage(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.role !== "string" || !isFiniteNumber(value.timestamp)) {
+    return false;
+  }
+  switch (value.role) {
+    case "user":
+      return isMessageContent(value.content);
+    case "assistant":
+      return (
+        Array.isArray(value.content) &&
+        value.content.every(isAssistantContent) &&
+        typeof value.api === "string" &&
+        typeof value.provider === "string" &&
+        typeof value.model === "string" &&
+        isUsage(value.usage) &&
+        typeof value.stopReason === "string"
+      );
+    case "toolResult":
+      return (
+        typeof value.toolCallId === "string" &&
+        typeof value.toolName === "string" &&
+        Array.isArray(value.content) &&
+        value.content.every(isTextOrImageContent) &&
+        typeof value.isError === "boolean"
+      );
+    case "bashExecution":
+      return (
+        typeof value.command === "string" &&
+        typeof value.output === "string" &&
+        (value.exitCode === undefined || isFiniteNumber(value.exitCode)) &&
+        typeof value.cancelled === "boolean" &&
+        typeof value.truncated === "boolean"
+      );
+    case "custom":
+      return (
+        typeof value.customType === "string" &&
+        isMessageContent(value.content) &&
+        typeof value.display === "boolean"
+      );
+    case "branchSummary":
+      return typeof value.summary === "string" && typeof value.fromId === "string";
+    case "compactionSummary":
+      return typeof value.summary === "string" && isFiniteNumber(value.tokensBefore);
+    default:
+      return false;
+  }
+}
+
+function isPiSessionEntry(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    typeof value.type !== "string" ||
+    typeof value.id !== "string" ||
+    (value.parentId !== null && typeof value.parentId !== "string") ||
+    typeof value.timestamp !== "string"
+  ) {
+    return false;
+  }
+  switch (value.type) {
+    case "message":
+      return isPiAgentMessage(value.message);
+    case "thinking_level_change":
+      return typeof value.thinkingLevel === "string";
+    case "model_change":
+      return typeof value.provider === "string" && typeof value.modelId === "string";
+    case "compaction":
+      return (
+        typeof value.summary === "string" &&
+        typeof value.firstKeptEntryId === "string" &&
+        isFiniteNumber(value.tokensBefore)
+      );
+    case "branch_summary":
+      return typeof value.fromId === "string" && typeof value.summary === "string";
+    case "custom":
+      return typeof value.customType === "string";
+    case "custom_message":
+      return (
+        typeof value.customType === "string" &&
+        isMessageContent(value.content) &&
+        typeof value.display === "boolean"
+      );
+    case "label":
+      return typeof value.targetId === "string" && (value.label === undefined || typeof value.label === "string");
+    case "session_info":
+      return value.name === undefined || typeof value.name === "string";
+    default:
+      return false;
+  }
+}
+
+function isPiSessionHeader(value: unknown, currentVersion: number): boolean {
+  if (
+    !isRecord(value) ||
+    value.type !== "session" ||
+    typeof value.id !== "string" ||
+    typeof value.timestamp !== "string" ||
+    typeof value.cwd !== "string" ||
+    (value.parentSession !== undefined && typeof value.parentSession !== "string")
+  ) {
+    return false;
+  }
+  const version = value.version ?? 1;
+  return Number.isInteger(version) && Number(version) >= 1 && Number(version) <= currentVersion;
+}
+
+async function validateSessionFile(pi: PiSdkModules, sessionFile: string): Promise<void> {
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(sessionFile);
+  } catch {
+    throw new LifecycleError("pi_session_storage_failed", "The Pi session file could not be read");
+  }
+
+  let content: string;
+  try {
+    content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new LifecycleError("pi_session_invalid", "The configured Pi session file is invalid");
+  }
+
+  const records: unknown[] = [];
+  let reachedTrailingBlankLines = false;
+  for (const line of content.split("\n")) {
+    if (line.trim().length === 0) {
+      reachedTrailingBlankLines = true;
+      continue;
+    }
+    if (reachedTrailingBlankLines) {
+      throw new LifecycleError("pi_session_invalid", "The configured Pi session file is invalid");
+    }
+    try {
+      records.push(JSON.parse(line));
+    } catch {
+      throw new LifecycleError("pi_session_invalid", "The configured Pi session file is invalid");
+    }
+  }
+
+  if (!isPiSessionHeader(records[0], pi.CURRENT_SESSION_VERSION)) {
+    throw new LifecycleError("pi_session_invalid", "The configured Pi session file is invalid");
+  }
+  const migrated = structuredClone(records) as FileEntry[];
+  try {
+    pi.migrateSessionEntries(migrated);
+  } catch {
+    throw new LifecycleError("pi_session_invalid", "The configured Pi session file is invalid");
+  }
+  const migratedHeader = migrated[0];
+  if (
+    !isRecord(migratedHeader) ||
+    !isPiSessionHeader(migratedHeader, pi.CURRENT_SESSION_VERSION) ||
+    migratedHeader.version !== pi.CURRENT_SESSION_VERSION ||
+    !migrated.slice(1).every(isPiSessionEntry)
+  ) {
+    throw new LifecycleError("pi_session_invalid", "The configured Pi session file is invalid");
+  }
 }
 
 async function createSessionManager(
@@ -286,6 +505,7 @@ async function createSessionManager(
       if (!info.isFile() || info.size === 0) {
         throw new LifecycleError("pi_session_invalid", "The configured Pi session file is invalid");
       }
+      await validateSessionFile(pi, sessionFile);
     } catch (error) {
       if (error instanceof LifecycleError) {
         throw error;

@@ -126,6 +126,11 @@ the file is empty or malformed. Storage and permission failures use
 parent-directory escapes, session-file symlinks, and directory symlinks that
 resolve outside the workspace.
 
+Treat the session directory as trusted runtime storage. Do not replace the
+directory or session file while a runtime is using it. The Pi SDK reopens the
+JSONL path when it persists session updates and does not provide a no-follow
+file-descriptor API.
+
 Stopping a runtime preserves its session file. Use only one live runtime per
 persistent session ID. Concurrently resuming the same session is unsupported
 because Pi does not lock its JSONL session file. The caller owns retention:

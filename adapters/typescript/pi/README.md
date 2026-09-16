@@ -116,6 +116,11 @@ resolve outside the workspace.
 Session IDs may contain letters, numbers, `.`, `_`, and `-`; they must start and
 end with a letter or number.
 
+Treat the session directory as trusted runtime storage. Do not replace the
+directory or session file while a runtime is using it. The Pi SDK reopens the
+JSONL path when it persists session updates and does not provide a no-follow
+file-descriptor API.
+
 `create` returns `pi_session_exists` rather than overwriting an existing file.
 `resume` returns `pi_session_not_found` for a missing file and
 `pi_session_invalid` for an empty or malformed file. Other storage or permission

@@ -378,6 +378,45 @@ test(
       const invalid = await exchange(workspace, [start("resume", "invalid")]);
       assert.equal(invalid.responses[0].outcome.error.code, "pi_session_invalid");
 
+      const fixtureHeader = {
+        type: "session",
+        version: 3,
+        id: "fixture-session",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        cwd: workspace,
+      };
+      await writeFile(
+        join(workspace, ".fabric-pi", "sessions", "truncated.jsonl"),
+        `${JSON.stringify(fixtureHeader)}\n{"type":"message"`,
+        "utf8",
+      );
+      const truncated = await exchange(workspace, [start("resume", "truncated")]);
+      assert.equal(truncated.responses[0].outcome.error.code, "pi_session_invalid");
+
+      await writeFile(
+        join(workspace, ".fabric-pi", "sessions", "incomplete.jsonl"),
+        `${JSON.stringify(fixtureHeader)}\n{"type":"message"}\n`,
+        "utf8",
+      );
+      const incomplete = await exchange(workspace, [start("resume", "incomplete")]);
+      assert.equal(incomplete.responses[0].outcome.error.code, "pi_session_invalid");
+
+      await writeFile(
+        join(workspace, ".fabric-pi", "sessions", "unsupported-version.jsonl"),
+        `${JSON.stringify({ ...fixtureHeader, version: 4 })}\n`,
+        "utf8",
+      );
+      const unsupportedVersion = await exchange(workspace, [start("resume", "unsupported-version")]);
+      assert.equal(unsupportedVersion.responses[0].outcome.error.code, "pi_session_invalid");
+
+      await writeFile(
+        join(workspace, ".fabric-pi", "sessions", "trailing-blanks.jsonl"),
+        `${JSON.stringify(fixtureHeader)}\n\n\n`,
+        "utf8",
+      );
+      const trailingBlanks = await exchange(workspace, [start("resume", "trailing-blanks"), stop]);
+      assert.equal(trailingBlanks.responses[0].outcome.status, "succeeded", trailingBlanks.stderr);
+
       if (process.platform !== "win32") {
         const outsideSession = join(baseDir, "outside.jsonl");
         await writeFile(
