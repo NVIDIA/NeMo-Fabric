@@ -12,8 +12,8 @@ runtime to one isolated OpenCode host and session.
 The adapter process runs with Bun 1.4.2 or newer. Install Bun before running
 NeMo Fabric with this adapter.
 
-Install the adapter and its compatible OpenCode SDK in the project that owns
-the NeMo Fabric configuration:
+To use a published adapter release, install the adapter and its compatible
+OpenCode SDK in the project that owns the NeMo Fabric configuration:
 
 ```bash
 npm install nemo-fabric-adapters-opencode @opencode/core@2.0.3 @opencode/sdk@2.0.3

@@ -12,8 +12,8 @@ Each NVIDIA NeMo Fabric runtime starts one embedded OpenCode host and session.
 
 OpenCode adapter processes require Bun 1.4.2 or later on `PATH`.
 
-Install the npm adapter and the compatible OpenCode SDK in the project that
-owns the NeMo Fabric configuration:
+To use a published adapter release, install the npm adapter and the compatible
+OpenCode SDK in the project that owns the NeMo Fabric configuration:
 
 ```bash
 npm install nemo-fabric-adapters-opencode @opencode/core@2.0.3 @opencode/sdk@2.0.3
@@ -28,10 +28,13 @@ OpenCode 2.0.3 does not support npm's `install-strategy=nested`. The documented
 command requires npm's default hoisted layout.
 
 For source development, install the checked-out adapter workspace and its
-pinned SDK from the repository root:
+pinned SDK from the repository root, then build the generated adapter CLI:
 
 ```bash
 just install-typescript-opencode
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-opencode
 ```
 
 ## Configure the Adapter
@@ -62,7 +65,8 @@ config = FabricConfig(
 ```
 
 For a source build, set `discovery.local_paths` to
-`adapters/typescript/opencode/opencode.fabric-adapter.json` instead.
+`adapters/typescript/opencode/opencode.fabric-adapter.json` instead. The build
+commands above create the descriptor's `dist/cli.js` runner.
 
 The adapter selects the `default` model role or the only configured role. With
 multiple roles, configure `default`. Set `api_key_env` to the name of the
