@@ -28,11 +28,18 @@ export interface OpenCodeSessionFactory {
   create(input: AdapterStartInput): Promise<OpenCodeSessionHandle>;
 }
 
-function failed(code: string, message: string): AgentRunResult {
+function failed(
+  code: string,
+  message: string,
+  usage?: AgentUsage,
+  artifacts?: AgentArtifact[],
+): AgentRunResult {
   return {
     status: "failed",
     output: null,
     error: { code, message, retryable: false },
+    ...(usage === undefined ? {} : { usage }),
+    ...(artifacts === undefined ? {} : { artifacts }),
   };
 }
 
@@ -107,13 +114,18 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
       }
       throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", { retryable: true });
     }
+    const artifacts = outcome.patch === undefined ? undefined : await this.writePatch(outcome.patch, context);
     if (outcome.errorMessage !== undefined) {
-      return failed("opencode_model_error", outcome.errorMessage);
+      return failed("opencode_model_error", outcome.errorMessage, outcome.usage, artifacts);
     }
     if (outcome.text === undefined || outcome.text.length === 0) {
-      return failed("opencode_no_assistant_response", "OpenCode completed without a final assistant text response");
+      return failed(
+        "opencode_no_assistant_response",
+        "OpenCode completed without a final assistant text response",
+        outcome.usage,
+        artifacts,
+      );
     }
-    const artifacts = outcome.patch === undefined ? undefined : await this.writePatch(outcome.patch, context);
     return {
       status: "succeeded",
       output: { response: outcome.text },

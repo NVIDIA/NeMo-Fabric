@@ -164,6 +164,48 @@ test("preserves a redacted OpenCode terminal error and handles malformed assista
   assert.deepEqual(extractOpenCodePromptOutcome([]), {});
 });
 
+test("collects usage and a diff after a terminal model error", async () => {
+  let contextCalls = 0;
+  const factory = new OpenCodeSdkSessionFactory(async () => ({
+    OpenCode: {
+      async create() {
+        return {
+          sessions: {
+            async create() { return { id: "session-terminal-error" }; },
+            async context() {
+              contextCalls += 1;
+              return contextCalls === 1
+                ? []
+                : [{
+                  id: "assistant-error",
+                  type: "assistant",
+                  content: [],
+                  finish: "error",
+                  error: { message: "provider error" },
+                  tokens: { input: 5, output: 7 },
+                  cost: 0.012,
+                }];
+            },
+            async prompt() {},
+            async wait() {},
+            async diff() { return [{ file: "example.txt", patch: "diff --git a/example.txt b/example.txt\n+changed\n" }]; },
+            async remove() {},
+          },
+          async close() {},
+        };
+      },
+    },
+  }));
+
+  const handle = await factory.create(startInput());
+  assert.deepEqual(await handle.prompt("edit"), {
+    errorMessage: "OpenCode model invocation failed",
+    patch: "diff --git a/example.txt b/example.txt\n+changed\n",
+    usage: { input_tokens: 5, output_tokens: 7, total_tokens: 12, cost_usd: 0.012 },
+  });
+  await handle.stop();
+});
+
 test("does not return a prior assistant response for a new prompt", async () => {
   let contextCalls = 0;
   const factory = new OpenCodeSdkSessionFactory(async () => ({

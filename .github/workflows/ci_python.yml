@@ -132,6 +132,14 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.ref || github.sha }}
 
+      - name: Checkout Hermes Agent
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: 29112bef099274229cadff79cdff7bf7b99c4b77
+          path: external/hermes-agent
+          persist-credentials: false
+
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
         with:

@@ -141,6 +141,41 @@ test("writes an OpenCode session diff as a per-invocation Fabric artifact", asyn
   }
 });
 
+test("returns usage and a patch artifact for a terminal OpenCode model error", async () => {
+  const artifacts = await mkdtemp(join(tmpdir(), "fabric-opencode-failed-artifacts-"));
+  try {
+    const runtime = new OpenCodeAdapterRuntime({
+      async create() {
+        return {
+          id: "session-1",
+          async prompt() {
+            return {
+              errorMessage: "OpenCode model invocation failed",
+              patch: "failed turn diff",
+              usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8, cost_usd: 0.01 },
+            };
+          },
+          async stop() {},
+        };
+      },
+    });
+    await runtime.start(startInput());
+
+    const result = await runtime.invoke(
+      { input: "edit" },
+      { ...context, artifacts: { root: artifacts }, invocation_id: "failed-invocation" },
+    );
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.error?.code, "opencode_model_error");
+    assert.deepEqual(result.usage, { input_tokens: 3, output_tokens: 5, total_tokens: 8, cost_usd: 0.01 });
+    assert.match(result.artifacts?.[0]?.path ?? "", /^opencode\/[a-f0-9]{32}\/[a-f0-9]{32}-turn-1\.patch$/);
+    assert.equal(await readFile(join(artifacts, result.artifacts?.[0]?.path), "utf8"), "failed turn diff");
+  } finally {
+    await rm(artifacts, { recursive: true, force: true });
+  }
+});
+
 test("returns a successful result without an artifact when no artifact root is configured", async () => {
   const runtime = new OpenCodeAdapterRuntime({
     async create() {

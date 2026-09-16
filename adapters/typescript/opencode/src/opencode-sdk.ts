@@ -270,9 +270,6 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
       await this.client.sessions.wait({ sessionID: this.id });
       const historyAfterPrompt = await this.client.sessions.context({ sessionID: this.id });
       const outcome = extractOpenCodePromptOutcome(historyAfterPrompt, existingMessageIds);
-      if (outcome.errorMessage !== undefined) {
-        return outcome;
-      }
       try {
         const sessionPatch = patch(await this.client.sessions.diff({ sessionID: this.id }));
         return { ...outcome, ...(sessionPatch === undefined ? {} : { patch: sessionPatch }) };
