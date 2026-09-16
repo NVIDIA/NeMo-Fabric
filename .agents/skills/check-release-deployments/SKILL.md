@@ -10,7 +10,8 @@ license: Apache-2.0
 Require the release tag as input. Do not infer the tag from the current branch,
 Git history, or package metadata.
 
-Run the checker from the repository root:
+The Bash checker does not work on Windows. Run it from the repository root on a
+supported platform:
 
 ```bash
 bash .agents/skills/check-release-deployments/scripts/check_release_deployments.sh <tag>

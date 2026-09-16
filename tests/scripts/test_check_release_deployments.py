@@ -5,13 +5,20 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHECKER = (
     REPO_ROOT
     / ".agents/skills/check-release-deployments/scripts/check_release_deployments.sh"
+)
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="requires Bash",
 )
 
 
