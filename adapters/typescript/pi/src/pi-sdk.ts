@@ -377,7 +377,7 @@ async function validateSessionFile(pi: PiSdkModules, sessionFile: string): Promi
   if (!isPiSessionHeader(records[0], pi.CURRENT_SESSION_VERSION)) {
     throw new LifecycleError("pi_session_invalid", "The configured Pi session file is invalid");
   }
-  const migrated = structuredClone(records) as FileEntry[];
+  const migrated = records as FileEntry[];
   try {
     pi.migrateSessionEntries(migrated);
   } catch {
