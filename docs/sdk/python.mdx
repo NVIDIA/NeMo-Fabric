@@ -191,10 +191,12 @@ invocation is active. Under the one-invocation policy, the report uses
 invocation, stop the runtime, or mark it failed.
 
 The SDK raises `FabricConfigError` for a nonpositive or nonfinite timeout and
-`FabricStateError` after the runtime has stopped. Transport or native binding
-errors raise `FabricRuntimeError`. Health inspection is currently implemented
-for local Process and Python adapter hosts. Older hosts and adapters that do not
-declare `capabilities.health` return explicit unknown or unsupported evidence.
+`FabricStateError` after the runtime has stopped. If the native extension is
+unavailable, the SDK raises `FabricNativeUnavailableError`. Other health
+inspection failures raise `FabricRuntimeError`. Health inspection is currently
+implemented for local Process and Python adapter hosts. Older hosts and adapters
+that do not declare `capabilities.health` return explicit unknown or unsupported
+evidence.
 
 ## Configure Agents In Code
 

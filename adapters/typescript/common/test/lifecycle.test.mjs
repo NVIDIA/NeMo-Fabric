@@ -70,15 +70,34 @@ async function exchange(factory, messages) {
 
 function responseReader(output) {
   let encoded = "";
+  let ended = false;
+  let failure;
   let wake;
+  const notify = () => {
+    wake?.();
+    wake = undefined;
+  };
   output.setEncoding("utf8");
   output.on("data", (chunk) => {
     encoded += chunk;
-    wake?.();
-    wake = undefined;
+    notify();
+  });
+  output.once("end", () => {
+    ended = true;
+    notify();
+  });
+  output.once("error", (error) => {
+    failure = error;
+    notify();
   });
   return async () => {
     while (!encoded.includes("\n")) {
+      if (failure !== undefined) {
+        throw failure;
+      }
+      if (ended) {
+        throw new Error("lifecycle output ended without a complete response");
+      }
       await new Promise((resolve) => {
         wake = resolve;
       });
@@ -90,9 +109,43 @@ function responseReader(output) {
   };
 }
 
+test("response reader settles when lifecycle output terminates", async () => {
+  const endedOutput = new PassThrough();
+  const endedResponse = responseReader(endedOutput)();
+  endedOutput.end();
+  await assert.rejects(endedResponse, /ended without a complete response/);
+
+  const failedOutput = new PassThrough();
+  const failedResponse = responseReader(failedOutput)();
+  failedOutput.destroy(new Error("lifecycle output failed"));
+  await assert.rejects(failedResponse, /lifecycle output failed/);
+});
+
 async function checkHealth(control, runtimeId, timeoutMillis = 1000) {
   const socket = connect(control.port, control.host);
   socket.setEncoding("utf8");
+  await new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.off("connect", onConnect);
+      socket.off("error", onError);
+    };
+    const onConnect = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      socket.destroy();
+      reject(new Error("health connection timed out"));
+    }, 1000);
+    socket.once("connect", onConnect);
+    socket.once("error", onError);
+  });
   let encoded = "";
   const response = new Promise((resolve, reject) => {
     socket.on("data", (chunk) => {
@@ -109,7 +162,6 @@ async function checkHealth(control, runtimeId, timeoutMillis = 1000) {
       }
     });
   });
-  await new Promise((resolve) => socket.once("connect", resolve));
   socket.write(`${JSON.stringify({
     protocol_version: "fabric.health/v1alpha1",
     token: control.token,
@@ -153,23 +205,28 @@ test("serves health independently while an invocation is busy", async () => {
 
   input.write(`${JSON.stringify(invoke("runtime-1", "one", "one"))}\n`);
   await started;
-  const healthResponse = await checkHealth(control, "runtime-1");
+  try {
+    const healthResponse = await checkHealth(control, "runtime-1");
 
-  assert.equal(healthResponse.result.readiness.state, "ready");
-  assert.equal(healthResponse.result.readiness.reason_code, "concurrent_invocations_supported");
-  assert.deepEqual(
-    healthResponse.result.checks.map((check) => [check.name, check.status]),
-    [
-      ["dependency.inference", "unsupported"],
-    ],
-  );
-
-  releaseInvocation();
-  await nextResponse();
-  input.write(`${JSON.stringify(stop("runtime-1"))}\n`);
-  await nextResponse();
-  input.end();
-  await serving;
+    assert.equal(healthResponse.result.readiness.state, "ready");
+    assert.equal(healthResponse.result.readiness.reason_code, "concurrent_invocations_supported");
+    assert.deepEqual(
+      healthResponse.result.checks.map((check) => [check.name, check.status]),
+      [
+        ["dependency.inference", "unsupported"],
+      ],
+    );
+  } finally {
+    releaseInvocation();
+    try {
+      await nextResponse();
+      input.write(`${JSON.stringify(stop("runtime-1"))}\n`);
+      await nextResponse();
+    } finally {
+      input.end();
+      await serving;
+    }
+  }
 });
 
 test("reports stop in progress while adapter cleanup is running", async () => {
@@ -202,16 +259,22 @@ test("reports stop in progress while adapter cleanup is running", async () => {
 
   input.write(`${JSON.stringify(stop("runtime-1"))}\n`);
   await started;
-  const healthResponse = await checkHealth(control, "runtime-1");
+  try {
+    const healthResponse = await checkHealth(control, "runtime-1");
 
-  assert.deepEqual(healthResponse.result.readiness, {
-    state: "not_ready",
-    reason_code: "stop_in_progress",
-  });
-  releaseStop();
-  await nextResponse();
-  input.end();
-  await serving;
+    assert.deepEqual(healthResponse.result.readiness, {
+      state: "not_ready",
+      reason_code: "stop_in_progress",
+    });
+  } finally {
+    releaseStop();
+    try {
+      await nextResponse();
+    } finally {
+      input.end();
+      await serving;
+    }
+  }
 });
 
 test("aborts a timed-out adapter health hook", async () => {

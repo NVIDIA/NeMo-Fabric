@@ -82,7 +82,7 @@
       ]
     },
     "RuntimeActivity": {
-      "description": "Current runtime activity observed by Fabric.",
+      "description": "Current runtime activity observed by NVIDIA NeMo Fabric.",
       "oneOf": [
         {
           "const": "idle",
@@ -101,13 +101,13 @@
         },
         {
           "const": "unknown",
-          "description": "Fabric could not establish activity.",
+          "description": "NeMo Fabric could not establish activity.",
           "type": "string"
         }
       ]
     },
     "RuntimeLiveness": {
-      "description": "Whether the adapter host can be reached independently of invocation traffic.",
+      "description": "Whether NVIDIA NeMo Fabric can reach the adapter host independently of\ninvocation traffic.",
       "oneOf": [
         {
           "const": "responsive",
@@ -121,18 +121,18 @@
         },
         {
           "const": "exited",
-          "description": "Fabric directly observed that the adapter process exited.",
+          "description": "NeMo Fabric directly observed that the adapter process exited.",
           "type": "string"
         },
         {
           "const": "unknown",
-          "description": "Fabric could not establish liveness.",
+          "description": "NeMo Fabric could not establish liveness.",
           "type": "string"
         }
       ]
     },
     "RuntimeReadiness": {
-      "description": "Whether Fabric knows the runtime can currently accept work.",
+      "description": "Whether NVIDIA NeMo Fabric knows the runtime can currently accept work.",
       "oneOf": [
         {
           "const": "ready",
@@ -146,7 +146,7 @@
         },
         {
           "const": "unknown",
-          "description": "Fabric lacks enough fresh evidence to decide.",
+          "description": "NeMo Fabric lacks enough fresh evidence to decide.",
           "type": "string"
         }
       ]

@@ -1,7 +1,7 @@
 ---
 title: "Enum Runtime Liveness"
 sidebar-title: "RuntimeLiveness"
-description: "Whether the adapter host can be reached independently of invocation traffic."
+description: "Whether NVIDIA NeMo Fabric can reach the adapter host independently of invocation traffic."
 position: 35
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -18,7 +18,7 @@ pub enum RuntimeLiveness {
 }
 ```
 
-Whether the adapter host can be reached independently of invocation traffic.
+Whether NVIDIA NeMo Fabric can reach the adapter host independently of invocation traffic.
 
 ## Variants
 
@@ -38,13 +38,13 @@ The process was observed running but its health control path did not respond.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Exited"}} /></pre>
 
-Fabric directly observed that the adapter process exited.
+NeMo Fabric directly observed that the adapter process exited.
 
 ### `Unknown`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Unknown"}} /></pre>
 
-Fabric could not establish liveness.
+NeMo Fabric could not establish liveness.
 
 ## Trait Implementations
 

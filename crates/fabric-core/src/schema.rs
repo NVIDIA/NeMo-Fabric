@@ -302,37 +302,64 @@ mod tests {
 
     #[test]
     fn schemas_use_contract_boundary_snapshot_paths() {
-        for schema in [
-            SchemaName::AdapterDescriptor,
-            SchemaName::AgentConfig,
-            SchemaName::AgentRunRequest,
-            SchemaName::AgentRunResult,
-            SchemaName::AdapterInvocation,
-            SchemaName::OpenAiStreamInvocation,
-            SchemaName::OpenAiStreamRecord,
-            SchemaName::RuntimeContext,
+        for (schema, expected) in [
+            (
+                SchemaName::AdapterDescriptor,
+                "adapter-descriptor.schema.json",
+            ),
+            (SchemaName::AgentConfig, "agent-config.schema.json"),
+            (SchemaName::AgentRunRequest, "agent-run-request.schema.json"),
+            (SchemaName::AgentRunResult, "agent-run-result.schema.json"),
+            (
+                SchemaName::AdapterInvocation,
+                "adapter-invocation.schema.json",
+            ),
+            (
+                SchemaName::AdapterHealthRequest,
+                "adapter-health-request.schema.json",
+            ),
+            (
+                SchemaName::AdapterHealthResult,
+                "adapter-health-result.schema.json",
+            ),
+            (
+                SchemaName::OpenAiStreamInvocation,
+                "openai-stream-invocation.schema.json",
+            ),
+            (
+                SchemaName::OpenAiStreamRecord,
+                "openai-stream-record.schema.json",
+            ),
+            (SchemaName::RuntimeContext, "runtime-context.schema.json"),
         ] {
             assert_eq!(
                 schema.relative_path(),
-                PathBuf::from("adapter-contract").join(schema.filename())
+                PathBuf::from("adapter-contract").join(expected)
             );
         }
-        for schema in [
-            SchemaName::Agent,
-            SchemaName::RunPlan,
-            SchemaName::EnvironmentHandle,
-            SchemaName::RuntimeHandle,
-            SchemaName::InvocationHandle,
-            SchemaName::RunRequest,
-            SchemaName::RunResult,
-            SchemaName::ArtifactManifest,
-            SchemaName::ErrorInfo,
-            SchemaName::FabricEvent,
+        for (schema, expected) in [
+            (SchemaName::Agent, "agent.schema.json"),
+            (SchemaName::RunPlan, "run-plan.schema.json"),
+            (
+                SchemaName::EnvironmentHandle,
+                "environment-handle.schema.json",
+            ),
+            (SchemaName::RuntimeHandle, "runtime-handle.schema.json"),
+            (SchemaName::RuntimeHealth, "runtime-health.schema.json"),
+            (
+                SchemaName::InvocationHandle,
+                "invocation-handle.schema.json",
+            ),
+            (SchemaName::RunRequest, "run-request.schema.json"),
+            (SchemaName::RunResult, "run-result.schema.json"),
+            (
+                SchemaName::ArtifactManifest,
+                "artifact-manifest.schema.json",
+            ),
+            (SchemaName::ErrorInfo, "error-info.schema.json"),
+            (SchemaName::FabricEvent, "fabric-event.schema.json"),
         ] {
-            assert_eq!(
-                schema.relative_path(),
-                PathBuf::from("sdk").join(schema.filename())
-            );
+            assert_eq!(schema.relative_path(), PathBuf::from("sdk").join(expected));
         }
     }
 

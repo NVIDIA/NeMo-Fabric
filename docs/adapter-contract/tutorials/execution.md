@@ -184,7 +184,7 @@ capability.
 
 The maintained common hosts expose an authenticated loopback health endpoint
 that remains independent of ordered lifecycle traffic. Set
-`capabilities.health: true` when the adapter uses that host. Fabric reports
+`capabilities.health: true` when the adapter uses that host. NeMo Fabric reports
 process and control-path observations even when the runtime class does not
 implement an adapter-specific hook.
 

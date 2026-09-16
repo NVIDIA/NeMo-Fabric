@@ -103,7 +103,7 @@
       ]
     },
     "RuntimeReadiness": {
-      "description": "Whether Fabric knows the runtime can currently accept work.",
+      "description": "Whether NVIDIA NeMo Fabric knows the runtime can currently accept work.",
       "oneOf": [
         {
           "const": "ready",
@@ -117,7 +117,7 @@
         },
         {
           "const": "unknown",
-          "description": "Fabric lacks enough fresh evidence to decide.",
+          "description": "NeMo Fabric lacks enough fresh evidence to decide.",
           "type": "string"
         }
       ]

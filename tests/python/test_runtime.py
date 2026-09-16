@@ -268,6 +268,32 @@ async def test_runtime_health_returns_typed_report(mock_native: MagicMock):
     assert runtime.status is RuntimeStatus.ACTIVE
 
 
+async def test_runtime_health_maps_malformed_native_report_to_runtime_error(
+    mock_native: MagicMock,
+):
+    mock_native.check_runtime_health.side_effect = None
+    mock_native.check_runtime_health.return_value = json.dumps(
+        {"runtime_id": "runtime-1"}
+    )
+    runtime = _runtime_wrapper(mock_native)
+
+    with pytest.raises(FabricRuntimeError, match="checked at millis") as caught:
+        await runtime.check_health()
+
+    assert caught.value.stage == "health"
+
+
+async def test_runtime_health_preserves_native_fabric_errors(mock_native: MagicMock):
+    expected = FabricStateError("native health state")
+    mock_native.check_runtime_health.side_effect = expected
+    runtime = _runtime_wrapper(mock_native)
+
+    with pytest.raises(FabricStateError) as caught:
+        await runtime.check_health()
+
+    assert caught.value is expected
+
+
 async def test_negative_runtime_health_is_data(mock_native: MagicMock):
     mock_native.check_runtime_health.return_value = json.dumps(
         _health(readiness="unknown", reason_code="probe_timed_out")

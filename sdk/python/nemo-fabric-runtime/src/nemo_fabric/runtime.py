@@ -202,10 +202,14 @@ class Runtime:
                 )
                 return json.loads(encoded)
 
-            return RuntimeHealth.from_mapping(await _call_blocking(check))
+            report = await _call_blocking(check)
         except FabricError:
             raise
         except Exception as error:
+            raise FabricRuntimeError(str(error), stage="health") from error
+        try:
+            return RuntimeHealth.from_mapping(report)
+        except FabricConfigError as error:
             raise FabricRuntimeError(str(error), stage="health") from error
 
     async def invoke(

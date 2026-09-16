@@ -322,7 +322,8 @@ pub struct RuntimeHandle {
     pub environment: EnvironmentHandle,
 }
 
-/// Whether the adapter host can be reached independently of invocation traffic.
+/// Whether NVIDIA NeMo Fabric can reach the adapter host independently of
+/// invocation traffic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeLiveness {
@@ -330,13 +331,13 @@ pub enum RuntimeLiveness {
     Responsive,
     /// The process was observed running but its health control path did not respond.
     Unresponsive,
-    /// Fabric directly observed that the adapter process exited.
+    /// NeMo Fabric directly observed that the adapter process exited.
     Exited,
-    /// Fabric could not establish liveness.
+    /// NeMo Fabric could not establish liveness.
     Unknown,
 }
 
-/// Current runtime activity observed by Fabric.
+/// Current runtime activity observed by NVIDIA NeMo Fabric.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeActivity {
@@ -346,11 +347,11 @@ pub enum RuntimeActivity {
     Busy,
     /// Runtime shutdown is in progress.
     Stopping,
-    /// Fabric could not establish activity.
+    /// NeMo Fabric could not establish activity.
     Unknown,
 }
 
-/// Whether Fabric knows the runtime can currently accept work.
+/// Whether NVIDIA NeMo Fabric knows the runtime can currently accept work.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeReadiness {
@@ -358,7 +359,7 @@ pub enum RuntimeReadiness {
     Ready,
     /// The runtime is known not to accept work.
     NotReady,
-    /// Fabric lacks enough fresh evidence to decide.
+    /// NeMo Fabric lacks enough fresh evidence to decide.
     Unknown,
 }
 

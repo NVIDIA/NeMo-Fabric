@@ -9,6 +9,8 @@ import asyncio
 import json
 import sys
 from typing import Any
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 from nemo_fabric_adapter_contract.models import AdapterHealthRequest
 from nemo_fabric_adapter_contract.models import AdapterHealthResult
@@ -23,44 +25,17 @@ from nemo_fabric_adapters.common.lifecycle import _HostState
 from nemo_fabric_adapters.common.lifecycle import _start_health_server
 
 
-class _Runtime:
-    async def start(self, payload: dict[str, Any]):
-        del payload
-
-    async def invoke(self, request: Any, context: Any):
-        del request, context
-        raise AssertionError("not used")
-
-    async def stop(self):
-        pass
-
-
-class _SlowHealthRuntime(_Runtime):
-    async def health(self, request: AdapterHealthRequest):
-        del request
-        await asyncio.sleep(1)
-        raise AssertionError("health hook should time out")
-
-
-class _ReadyWhileBusyRuntime(_Runtime):
-    async def health(self, request: AdapterHealthRequest):
-        del request
-        return AdapterHealthResult(
-            readiness=AdapterReadiness(
-                state=RuntimeReadiness.READY,
-                reason_code="concurrent_invocations_supported",
-            )
-        )
-
-
-class _BlockingStopRuntime(_Runtime):
-    def __init__(self, started: asyncio.Event, release: asyncio.Event) -> None:
-        self._started = started
-        self._release = release
-
-    async def stop(self):
-        self._started.set()
-        await self._release.wait()
+def _runtime_mock(*, health: AsyncMock | None = None) -> MagicMock:
+    methods = ["start", "invoke", "stop"]
+    if health is not None:
+        methods.append("health")
+    runtime = MagicMock(spec_set=methods)
+    runtime.start = AsyncMock()
+    runtime.invoke = AsyncMock(side_effect=AssertionError("not used"))
+    runtime.stop = AsyncMock()
+    if health is not None:
+        runtime.health = health
+    return runtime
 
 
 async def _check_health(control: dict[str, Any], runtime_id: str) -> dict[str, Any]:
@@ -85,7 +60,7 @@ async def _check_health(control: dict[str, Any], runtime_id: str) -> dict[str, A
 
 async def test_python_health_control_reports_busy_without_lifecycle_channel():
     state = _HostState(
-        runtime=_Runtime(),
+        runtime=_runtime_mock(),
         runtime_id="runtime-1",
         invoking=True,
     )
@@ -108,7 +83,15 @@ async def test_python_health_control_reports_busy_without_lifecycle_channel():
 
 
 async def test_python_adapter_health_hook_timeout_is_data():
-    state = _HostState(runtime=_SlowHealthRuntime(), runtime_id="runtime-1")
+    async def slow_health(request: AdapterHealthRequest):
+        del request
+        await asyncio.sleep(1)
+        raise AssertionError("health hook should time out")
+
+    state = _HostState(
+        runtime=_runtime_mock(health=AsyncMock(side_effect=slow_health)),
+        runtime_id="runtime-1",
+    )
 
     result = await _adapter_health(
         state,
@@ -122,8 +105,14 @@ async def test_python_adapter_health_hook_timeout_is_data():
 
 
 async def test_python_adapter_health_preserves_busy_runtime_readiness():
+    readiness = AdapterHealthResult(
+        readiness=AdapterReadiness(
+            state=RuntimeReadiness.READY,
+            reason_code="concurrent_invocations_supported",
+        )
+    )
     state = _HostState(
-        runtime=_ReadyWhileBusyRuntime(),
+        runtime=_runtime_mock(health=AsyncMock(return_value=readiness)),
         runtime_id="runtime-1",
         invoking=True,
     )
@@ -141,28 +130,37 @@ async def test_python_adapter_health_preserves_busy_runtime_readiness():
 async def test_python_health_reports_stop_in_progress():
     stop_started = asyncio.Event()
     release_stop = asyncio.Event()
-    runtime = _BlockingStopRuntime(stop_started, release_stop)
+
+    async def blocking_stop():
+        stop_started.set()
+        await release_stop.wait()
+
+    runtime = _runtime_mock()
+    runtime.stop.side_effect = blocking_stop
     state = _HostState(runtime=runtime, runtime_id="runtime-1")
     control = (await _start_health_server(state))["health_control"]
     stopping = asyncio.create_task(_handle_stop(state, runtime))
     await stop_started.wait()
 
-    response = await _check_health(control, "runtime-1")
+    try:
+        response = await _check_health(control, "runtime-1")
 
-    assert response["result"]["readiness"] == {
-        "state": "not_ready",
-        "reason_code": "stop_in_progress",
-    }
-    release_stop.set()
-    await stopping
+        assert response["result"]["readiness"] == {
+            "state": "not_ready",
+            "reason_code": "stop_in_progress",
+        }
+    finally:
+        release_stop.set()
+        await stopping
 
 
 async def test_python_host_skips_health_server_when_capability_is_disabled():
     state = _HostState()
+    runtime = _runtime_mock()
 
     response = await _handle_start(
         state,
-        _Runtime,
+        lambda: runtime,
         {"health_enabled": False},
         "runtime-1",
         None,
@@ -172,6 +170,39 @@ async def test_python_host_skips_health_server_when_capability_is_disabled():
     assert state.health_server is None
     assert state.runtime is not None
     await _handle_stop(state, state.runtime)
+
+
+async def test_python_close_health_server_drains_connections_before_wait_closed():
+    events: list[str] = []
+    connection_started = asyncio.Event()
+    release_connection = asyncio.Event()
+
+    async def connection():
+        connection_started.set()
+        try:
+            await release_connection.wait()
+        finally:
+            events.append("connection_closed")
+
+    task = asyncio.create_task(connection())
+    await connection_started.wait()
+    server = MagicMock()
+    server.close.side_effect = lambda: events.append("server_closed")
+
+    async def wait_closed():
+        assert task.done()
+        events.append("server_waited")
+
+    server.wait_closed = AsyncMock(side_effect=wait_closed)
+    state = _HostState(health_server=server, health_token="secret")
+    state.health_tasks.add(task)
+
+    await _close_health_server(state)
+
+    assert events == ["server_closed", "connection_closed", "server_waited"]
+    assert state.health_server is None
+    assert state.health_token is None
+    assert not state.health_tasks
 
 
 async def test_adapter_calls_do_not_rebind_stdout_when_they_overlap():

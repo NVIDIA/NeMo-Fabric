@@ -557,13 +557,14 @@ async def _close_health_server(state: _HostState) -> None:
     state.health_token = None
     if server is not None:
         server.close()
-        await server.wait_closed()
     tasks = tuple(state.health_tasks)
     state.health_tasks.clear()
     for task in tasks:
         task.cancel()
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
+    if server is not None:
+        await server.wait_closed()
 
 
 def _schedule_health_connection(
