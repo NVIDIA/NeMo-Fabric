@@ -104,19 +104,25 @@ not publication-ready copy.
    is available in GitHub Releases. Do not create a changelog.
 10. Update the `Roadmap` section in [README.md](../../../README.md), removing items implemented or fixed by changes in the current release.
 11. Run the validation checks detailed in [Validate](#validate).
-12. Commit the release-notes page and README with a signed-off commit after validation succeeds:
+12. If `docs/about-nemo-fabric/release-notes.mdx` or `README.md` changed, commit the
+    release-notes page and README with a signed-off commit after validation
+    succeeds:
 
     ```bash
     git add docs/about-nemo-fabric/release-notes.mdx README.md
     git commit -sm "Drafting release notes for v${TARGET_VERSION}"
     git push -u upstream HEAD
     ```
-13. Use the `prepare-pr` skill to open a pull request from the release-notes
-    branch to `${RELEASE_BRANCH}`. Use this title:
+13. If `docs/about-nemo-fabric/release-notes.mdx` or `README.md` changed, use the `prepare-pr`
+    skill to open a pull request from the release-notes branch to
+    `${RELEASE_BRANCH}`. Use this title:
 
     ```text
     docs: Release notes for v${TARGET_VERSION}
     ```
+
+    If `docs/about-nemo-fabric/release-notes.mdx` and `README.md` are unchanged, skip steps 12
+    and 13. Do not create a release-notes commit or pull request.
 
 ## Validate
 
