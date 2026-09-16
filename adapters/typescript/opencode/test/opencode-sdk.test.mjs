@@ -69,6 +69,26 @@ test("reports an installed OpenCode peer with a missing transitive module as a l
   assert.deepEqual(loaded, ["resolved:@opencode/core/config", "resolved:@opencode/sdk"]);
 });
 
+test("rejects a missing configured credential before loading the OpenCode SDK", async () => {
+  const input = startInput();
+  input.runtimeContext.environment.env = {};
+  const previous = process.env.OPENCODE_TEST_KEY;
+  delete process.env.OPENCODE_TEST_KEY;
+  try {
+    const factory = new OpenCodeSdkSessionFactory(async () => {
+      throw new Error("the SDK must not load without a credential");
+    });
+
+    await assert.rejects(factory.create(input), (error) => error.code === "opencode_credential_missing");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.OPENCODE_TEST_KEY;
+    } else {
+      process.env.OPENCODE_TEST_KEY = previous;
+    }
+  }
+});
+
 test("extracts the final assistant text and usage from OpenCode session history", () => {
   const outcome = extractOpenCodePromptOutcome([
     { type: "user", text: "first" },
@@ -378,6 +398,7 @@ test("turns SDK transport failures into a stable lifecycle error without request
     (error) =>
       error.code === "opencode_session_failed" &&
       error.message === "OpenCode session communication failed" &&
+      error.retryable === true &&
       !error.message.includes("supersecret") &&
       !error.message.includes("private prompt"),
   );
@@ -417,6 +438,46 @@ test("does not mark a failure after prompt submission as retryable", async () =>
       error.retryable === false,
   );
   await handle.stop();
+});
+
+test("releases the client, endpoint proxy, and credential when session removal fails", async () => {
+  let clientClosed = false;
+  let proxyClosed = false;
+  const previous = process.env.OPENCODE_TEST_KEY;
+  delete process.env.OPENCODE_TEST_KEY;
+  try {
+    const input = startInput();
+    input.config.models.default.base_url = "http://127.0.0.1:1/v1";
+    const factory = new OpenCodeSdkSessionFactory(
+      async () => ({
+        OpenCode: {
+          async create() {
+            return {
+              sessions: {
+                async create() { return { id: "session-cleanup" }; },
+                async remove() { throw new Error("remove failed"); },
+              },
+              async close() { clientClosed = true; },
+            };
+          },
+        },
+      }),
+      async () => ({}),
+      async () => ({ url: "http://127.0.0.1:12345", async close() { proxyClosed = true; } }),
+    );
+
+    const handle = await factory.create(input);
+    await assert.rejects(handle.stop(), /remove failed/);
+    assert.equal(clientClosed, true);
+    assert.equal(proxyClosed, true);
+    assert.equal(process.env.OPENCODE_TEST_KEY, undefined);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.OPENCODE_TEST_KEY;
+    } else {
+      process.env.OPENCODE_TEST_KEY = previous;
+    }
+  }
 });
 
 test("configures an OpenAI-compatible OpenCode provider for an explicit endpoint", async () => {

@@ -180,6 +180,8 @@ test("runs two real OpenCode SDK prompts through the process host", async () => 
     assert.equal(responses[2].outcome.output.output.response, "reply:user_count=2 latest=second");
     assert.equal(responses[3].outcome.status, "succeeded");
     assert.ok(prompts >= 2);
+    assert.ok(providerRequests.length >= 2);
+    assert.ok(providerRequests.every((request) => !("prompt_cache_key" in request)));
     const ambientInstructions = providerRequests
       .flatMap((request) => (Array.isArray(request.messages) ? request.messages : []))
       .map((message) => message?.content)

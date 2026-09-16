@@ -18,6 +18,11 @@ type OpenCodeEmbedOptions = { overrides?: unknown[] };
 type OpenCodeEmbedOptionsLoader = (configContent: string) => Promise<OpenCodeEmbedOptions>;
 type ModuleResolver = (specifier: string) => string;
 type ModuleLoader = (specifier: string) => Promise<unknown>;
+interface EndpointProxy {
+  readonly url: string;
+  close(): Promise<void>;
+}
+type EndpointProxyFactory = (baseUrl: string) => Promise<EndpointProxy>;
 type EmbeddedOpenCodeCreate = (
   options: Parameters<(typeof import("@opencode/sdk"))["OpenCode"]["create"]>[0],
   embedOptions: OpenCodeEmbedOptions,
@@ -245,10 +250,10 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
   readonly id: string;
   private readonly client: OpenCodeClient;
   private readonly credential: EnvironmentLease;
-  private readonly endpointProxy?: ModelEndpointProxy;
+  private readonly endpointProxy?: EndpointProxy;
   private stopped = false;
 
-  constructor(id: string, client: OpenCodeClient, credential: EnvironmentLease, endpointProxy?: ModelEndpointProxy) {
+  constructor(id: string, client: OpenCodeClient, credential: EnvironmentLease, endpointProxy?: EndpointProxy) {
     this.id = id;
     this.client = client;
     this.credential = credential;
@@ -305,14 +310,17 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
 export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
   private readonly sdkLoader: typeof loadOpenCodeSdk;
   private readonly embedOptionsLoader: OpenCodeEmbedOptionsLoader;
+  private readonly endpointProxyFactory: EndpointProxyFactory;
 
   constructor(
     sdkLoader: typeof loadOpenCodeSdk = loadOpenCodeSdk,
     embedOptionsLoader: OpenCodeEmbedOptionsLoader =
       sdkLoader === loadOpenCodeSdk ? loadIsolatedEmbedOptions : async () => ({}),
+    endpointProxyFactory: EndpointProxyFactory = ModelEndpointProxy.create,
   ) {
     this.sdkLoader = sdkLoader;
     this.embedOptionsLoader = embedOptionsLoader;
+    this.endpointProxyFactory = endpointProxyFactory;
   }
 
   async create(input: AdapterStartInput): Promise<OpenCodeSessionHandle> {
@@ -320,11 +328,11 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
     const workspace = input.runtimeContext.environment.workspace ?? input.baseDir;
     const credential = leaseCredential(input, model.apiKeyEnv);
     let client: OpenCodeClient | undefined;
-    let endpointProxy: ModelEndpointProxy | undefined;
+    let endpointProxy: EndpointProxy | undefined;
     try {
       const sdk = await this.sdkLoader();
       if (model.baseUrl !== undefined) {
-        endpointProxy = await ModelEndpointProxy.create(model.baseUrl);
+        endpointProxy = await this.endpointProxyFactory(model.baseUrl);
       }
       const configContent = hostConfigContent(model, endpointProxy?.url);
       const embedOptions = await this.embedOptionsLoader(configContent);

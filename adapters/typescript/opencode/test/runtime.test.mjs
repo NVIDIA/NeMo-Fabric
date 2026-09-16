@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -138,6 +138,41 @@ test("writes an OpenCode session diff as a per-invocation Fabric artifact", asyn
     assert.equal(await readFile(join(artifacts, artifact?.path), "utf8"), "diff --git a/example.txt b/example.txt\n+added\n");
   } finally {
     await rm(artifacts, { recursive: true, force: true });
+  }
+});
+
+test("returns a successful result without an artifact when no artifact root is configured", async () => {
+  const runtime = new OpenCodeAdapterRuntime({
+    async create() {
+      return { id: "session-1", async prompt() { return { text: "done", patch: "diff" }; }, async stop() {} };
+    },
+  });
+
+  await runtime.start(startInput());
+  const result = await runtime.invoke({ input: "edit" }, context);
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.artifacts, undefined);
+});
+
+test("reports a stable error when it cannot write an artifact", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fabric-opencode-artifact-file-"));
+  const artifactFile = join(root, "not-a-directory");
+  await writeFile(artifactFile, "file", "utf8");
+  try {
+    const runtime = new OpenCodeAdapterRuntime({
+      async create() {
+        return { id: "session-1", async prompt() { return { text: "done", patch: "diff" }; }, async stop() {} };
+      },
+    });
+    await runtime.start(startInput());
+
+    await assert.rejects(
+      runtime.invoke({ input: "edit" }, { ...context, artifacts: { root: artifactFile } }),
+      (error) => error.code === "opencode_artifact_write_failed",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

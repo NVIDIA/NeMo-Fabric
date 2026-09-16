@@ -75,6 +75,86 @@ test("forwards decoded compressed responses without stale content headers", asyn
   }
 });
 
+test("removes prompt_cache_key while preserving the remaining JSON request body", async () => {
+  let received;
+  const upstream = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    received = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end("{}");
+  });
+  const upstreamUrl = await listen(upstream);
+  const proxy = await ModelEndpointProxy.create(`${upstreamUrl}/v1`);
+  const payload = {
+    model: "fabric-echo",
+    messages: [{ role: "user", content: "hello" }],
+    prompt_cache_key: "provider-specific-cache-key",
+    stream: true,
+    temperature: 0.2,
+  };
+  try {
+    const response = await fetch(`${proxy.url}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(received, {
+      model: "fabric-echo",
+      messages: [{ role: "user", content: "hello" }],
+      stream: true,
+      temperature: 0.2,
+    });
+  } finally {
+    await proxy.close();
+    await close(upstream);
+  }
+});
+
+test("forwards a non-JSON request body unchanged", async () => {
+  let received;
+  const upstream = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    received = Buffer.concat(chunks).toString("utf8");
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end("{}");
+  });
+  const upstreamUrl = await listen(upstream);
+  const proxy = await ModelEndpointProxy.create(`${upstreamUrl}/v1`);
+  const payload = "not a JSON payload";
+  try {
+    const response = await fetch(`${proxy.url}/chat/completions`, { method: "POST", body: payload });
+
+    assert.equal(response.status, 200);
+    assert.equal(received, payload);
+  } finally {
+    await proxy.close();
+    await close(upstream);
+  }
+});
+
+test("returns 502 when the configured endpoint cannot be reached", async () => {
+  const upstream = createServer();
+  const upstreamUrl = await listen(upstream);
+  const proxy = await ModelEndpointProxy.create(`${upstreamUrl}/v1`);
+  await close(upstream);
+  try {
+    const response = await fetch(`${proxy.url}/chat/completions`, { method: "POST", body: "{}" });
+
+    assert.equal(response.status, 502);
+    assert.equal(await response.text(), "OpenCode model-provider proxy could not reach the configured endpoint");
+  } finally {
+    await proxy.close();
+  }
+});
+
 test("preserves configured endpoint query parameters when forwarding a request", async () => {
   const upstream = createServer((request, response) => {
     assert.equal(request.url, "/v1/chat/completions?api-version=fixed&trace=on");
