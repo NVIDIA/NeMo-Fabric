@@ -57,7 +57,7 @@ with repository expectations.
   parity). Regenerate docs with `just docs` after changing the docs site.
 - Keep release policy and the end-to-end maintainer workflow in `RELEASING.md`; keep packaging implementation guidance in `.agents/skills/maintain-packaging/SKILL.md`. Do not move release-history policy into user-facing docs or add a duplicate `CHANGELOG.md`.
 - Keep the stable public wrapper `scripts/generate_api_docs.sh` at the `scripts/` root in docs and examples. Reference namespaced helper paths under `scripts/docs/` only when documenting internal maintenance work.
-- Use branch prefixes for your work: `feat/`, `fix/`, `docs/`, `test/`, or `refactor/`.
+- Use branch prefixes for your work: `chore/`, `feat/`, `fix/`, `docs/`, `test/`, or `refactor/`.
 - Name branches after the work, never the Linear ticket. Do not embed ticket IDs or slugs in the branch name (e.g. use `feat/notebooks-onboarding`, not `feat/fabric-70-notebooks-onboarding`). This rule has historically been overlooked, so double-check the branch name before pushing or opening a PR.
 - Use Conventional Commit PR titles (`<type>: <summary>`) as required by `.coderabbit.yaml` and the `prepare-pr` skill; reserve `fix` for actual product bugs, not CI, docs, or chores.
 - Use signed-off commits for PR work: `git commit -s`.
