@@ -30,6 +30,7 @@ from langgraph.errors import GraphRecursionError
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
+from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
@@ -525,6 +526,47 @@ async def test_invocation_preserves_falsy_json_input(
     output = await invoke_once(payload)
 
     assert output["response"] == f"reply to {encoded}"
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "sent"),
+    [
+        ("openai", "openai/gpt-5.4", "gpt-5.4"),
+        ("openai", "gpt-5.4", "gpt-5.4"),
+        (
+            "nvidia",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        ),
+        ("openai-compatible", "openai/local-model", "openai/local-model"),
+    ],
+)
+def test_openai_provider_drops_the_fabric_slug_prefix(provider, model, sent):
+    """Fabric slugs are ``provider/model``; only OpenAI's ids have no namespace of their own.
+
+    Without this the harness sent ``openai/gpt-5.4`` to OpenAI, which rejects it, while the
+    Codex adapter already stripped the prefix. NVIDIA ids keep their ``nvidia/`` namespace
+    because it is part of the id the endpoint expects.
+    """
+    config = AgentModelConfig(provider=provider, model=model, api_key_env="X")
+
+    assert adapter.selected_model_name(config) == sent
+
+
+async def test_openai_slug_prefix_is_dropped_before_chat_openai(
+    tmp_path, make_payload, fake_sdks
+):
+    os.environ["OPENAI_API_KEY"] = "sk-test"
+    payload = make_payload(tmp_path)
+    payload["config"]["models"]["default"] = {
+        "provider": "openai",
+        "model": "openai/gpt-5.4",
+    }
+
+    output = await invoke_once(payload)
+
+    assert output["failed"] is False, output["error"]
+    assert fake_sdks["chat_openai"].call_args.kwargs["model"] == "gpt-5.4"
 
 
 @pytest.mark.parametrize("api_key", [None, ""])

@@ -178,6 +178,20 @@ def _max_turns(config: AgentConfig) -> int | None:
     return config.runtime.max_turns if config.runtime is not None else None
 
 
+def selected_model_name(model_config: AgentModelConfig) -> str:
+    """The model id sent to the endpoint.
+
+    Fabric model slugs are ``provider/model``; for the ``openai`` provider the
+    prefix is Fabric's, not part of OpenAI's id, so it is dropped (the same rule
+    the Codex adapter applies). Other providers' ids are sent as written, since
+    namespaces such as ``nvidia/`` belong to the id itself.
+    """
+
+    if model_config.provider == "openai":
+        return model_config.model.removeprefix("openai/")
+    return model_config.model
+
+
 def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | None]:
     """Build a LangChain chat model from Fabric model config.
 
@@ -185,7 +199,7 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
     delegated to ``langchain.chat_models.init_chat_model``.
     """
 
-    model_name = model_config.model
+    model_name = selected_model_name(model_config)
     api_key_env = resolve_api_key_env(model_config)
     api_key = os.environ[api_key_env]
 
