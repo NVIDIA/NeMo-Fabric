@@ -1728,6 +1728,7 @@ class NativeRecorder:
         self.config_base_dir_calls: list[str | None] = []
         self.stopped = 0
         self.fail_invoke = False
+        self.stop_error: Exception | None = None
         self.stop_result: Any = []
 
     def plan_config(
@@ -1783,24 +1784,22 @@ class NativeRecorder:
 
     def stop_runtime(self, plan_json: str, runtime_json: str) -> str:
         self.stopped += 1
+        if self.stop_error is not None:
+            raise self.stop_error
         return json.dumps(self.stop_result)
 
-    def merge_runtime_stop_result(
-        self, run_result_json: str, stop_result_json: str
-    ) -> str:
-        result = json.loads(run_result_json)
-        stopped = json.loads(stop_result_json)
-        target = result.setdefault("artifacts", {"artifacts": []})
-        source = stopped.get("artifacts", {"artifacts": []})
-        if target.get("root") is None and source.get("root") is not None:
-            target["root"] = source["root"]
-        existing_paths = {artifact["path"] for artifact in target["artifacts"]}
-        for artifact in source.get("artifacts", []):
-            if artifact["path"] not in existing_paths:
-                target["artifacts"].append(artifact)
-                existing_paths.add(artifact["path"])
-        result.setdefault("events", []).extend(stopped.get("events", []))
-        return json.dumps(result)
+
+@pytest.fixture(autouse=True)
+def configure_native_stop_result_merger_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    native_stop_result_merger,
+) -> None:
+    monkeypatch.setattr(
+        NativeRecorder,
+        "merge_runtime_stop_result",
+        staticmethod(native_stop_result_merger),
+        raising=False,
+    )
 
 
 class NativeClient(Fabric):
@@ -2221,6 +2220,40 @@ async def test_one_shot_failed_invocation_keeps_runtime_stop_artifacts():
     assert result.error is not None
     assert result.error.stage == "invoke"
     assert [artifact.kind for artifact in result.artifacts.artifacts] == ["atif"]
+
+
+async def test_one_shot_run_merges_runtime_stop_error():
+    native = NativeRecorder()
+    native.stop_result = {
+        "artifacts": {"artifacts": []},
+        "events": [],
+        "error": {
+            "stage": "stop",
+            "code": "gateway_stop_failed",
+            "message": "gateway shutdown failed",
+            "retryable": False,
+        },
+    }
+
+    result = await NativeClient(native).run(_fabric_config(), input="hello")
+
+    stop_event = next(event for event in result.events if event.kind == "runtime_stop_error")
+    assert stop_event.metadata["code"] == "gateway_stop_failed"
+    assert stop_event.message == "gateway shutdown failed"
+
+
+async def test_old_native_fallback_keeps_runtime_stop_error(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.delattr(NativeRecorder, "merge_runtime_stop_result")
+    native = NativeRecorder()
+    native.stop_error = RuntimeError("gateway shutdown failed")
+
+    result = await NativeClient(native).run(_fabric_config(), input="hello")
+
+    stop_event = next(event for event in result.events if event.kind == "runtime_stop_error")
+    assert stop_event.metadata["code"] == "runtime_stop_failed"
+    assert stop_event.message == "gateway shutdown failed"
 
 
 async def test_native_runtime_errors_use_typed_exception_and_stop_runtime():

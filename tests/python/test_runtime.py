@@ -94,7 +94,7 @@ async def _wait_for(event: threading.Event, timeout: float = 2.0) -> bool:
 
 
 @pytest.fixture(name="mock_native")
-def mock_native_fixture() -> MagicMock:
+def mock_native_fixture(native_stop_result_merger) -> MagicMock:
     mock_native = MagicMock()
     mock_native.requests = []
     mock_native.plan_config.side_effect = lambda config_json, base_dir: json.dumps(_plan())
@@ -129,28 +129,7 @@ def mock_native_fixture() -> MagicMock:
     mock_native.invoke_runtime.side_effect = invoke
     mock_native.stop_runtime.return_value = json.dumps([])
 
-    def merge_runtime_stop_result(run_result_json: str, stop_result_json: str) -> str:
-        result = json.loads(run_result_json)
-        stopped = json.loads(stop_result_json)
-        result.setdefault("events", []).extend(stopped.get("events", []))
-        if stopped.get("error") is not None:
-            error = stopped["error"]
-            result["events"].append(
-                {
-                    "event_id": "event-stop-error",
-                    "timestamp_millis": 1,
-                    "kind": "runtime_stop_error",
-                    "message": error["message"],
-                    "metadata": {
-                        "code": error["code"],
-                        "retryable": error.get("retryable", False),
-                        "details": error.get("metadata", {}),
-                    },
-                }
-            )
-        return json.dumps(result)
-
-    mock_native.merge_runtime_stop_result.side_effect = merge_runtime_stop_result
+    mock_native.merge_runtime_stop_result.side_effect = native_stop_result_merger
     return mock_native
 
 

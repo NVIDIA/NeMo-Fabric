@@ -8,11 +8,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from copy import deepcopy
 from enum import Enum
 from typing import Any, Protocol
+from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -670,6 +672,21 @@ def _merge_runtime_stop_result(
         result.setdefault("events", []).extend(
             event.to_mapping() for event in stopped.events
         )
+        if stopped.error is not None:
+            error = stopped.error
+            result["events"].append(
+                {
+                    "event_id": f"event-{uuid4()}",
+                    "timestamp_millis": time.time_ns() // 1_000_000,
+                    "kind": "runtime_stop_error",
+                    "message": error.message,
+                    "metadata": {
+                        "code": error.code,
+                        "retryable": error.retryable,
+                        "details": dict(error.metadata),
+                    },
+                }
+            )
         return
     merged = json.loads(
         merge(json.dumps(result), json.dumps(stopped.to_mapping()))

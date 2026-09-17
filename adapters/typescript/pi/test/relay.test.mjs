@@ -760,20 +760,22 @@ test("drains unsuccessful and successful Relay health responses", async () => {
   assert.deepEqual(cancelled, [0, 1]);
 });
 
-test("escalates gateway shutdown from terminate to kill and is safe after exit", async () => {
+test("allows a killed gateway to report exit on a later tick", async () => {
   const mockChild = new MockChild();
   mockChild.kill = function (signal) {
     this.signals.push(signal);
     if (signal === "SIGKILL") {
-      this.signalCode = signal;
-      this.emit("exit", null, signal);
+      setTimeout(() => {
+        this.signalCode = signal;
+        this.emit("exit", null, signal);
+      }, 0);
     }
     return true;
   };
 
-  await stopRelayGateway(mockChild, 1);
+  await stopRelayGateway(mockChild, 10);
   assert.deepEqual(mockChild.signals, ["SIGTERM", "SIGKILL"]);
-  await stopRelayGateway(mockChild, 1);
+  await stopRelayGateway(mockChild, 10);
   assert.deepEqual(mockChild.signals, ["SIGTERM", "SIGKILL"]);
 });
 

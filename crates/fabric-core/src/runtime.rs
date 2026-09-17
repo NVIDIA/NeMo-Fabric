@@ -2581,6 +2581,14 @@ fn promote_relay_artifacts_to_manifest(
             ));
             continue;
         }
+        if !relay_artifact_within_root(manifest, &path) {
+            events.push(relay_artifact_rejected_event(
+                "outside_root",
+                Some(kind),
+                Some(&path),
+            ));
+            continue;
+        }
         if manifest
             .artifacts
             .iter()
@@ -2629,6 +2637,9 @@ fn relay_artifact_rejected_event(
 
 fn runtime_stop_output_error(output: &Value) -> Option<ErrorInfo> {
     let value = output.get("runtime_stop_error")?;
+    if value.is_null() {
+        return None;
+    }
     match serde_json::from_value::<ErrorInfo>(value.clone()) {
         Ok(error) if error.stage == ErrorStage::Stop => Some(error),
         _ => Some(ErrorInfo {
@@ -2708,6 +2719,16 @@ fn resolve_relay_artifact_path(manifest: &ArtifactManifest, path: &Path) -> Path
         .as_ref()
         .map(|root| root.join(path))
         .unwrap_or_else(|| path.to_path_buf())
+}
+
+fn relay_artifact_within_root(manifest: &ArtifactManifest, path: &Path) -> bool {
+    let Some(root) = &manifest.root else {
+        return true;
+    };
+    let (Ok(root), Ok(path)) = (root.canonicalize(), path.canonicalize()) else {
+        return false;
+    };
+    path.starts_with(root)
 }
 
 fn relay_artifact_media_type(kind: &str) -> Option<&'static str> {
@@ -3366,6 +3387,9 @@ for line in sys.stdin:
         if MODE == "stop_failure":
             response("stop", error=failure("stop", "fake_stop", "stop rejected"))
             sys.exit(18)
+        if MODE == "stop_null_error":
+            response("stop", output={"runtime_stop_error": None})
+            break
         if MODE in {"stop_artifacts", "stop_artifacts_error"}:
             artifact = os.path.join(
                 os.environ["FABRIC_ARTIFACTS"],
@@ -3696,6 +3720,25 @@ for line in sys.stdin:
                 .events
                 .iter()
                 .any(|event| event.kind == "runtime_stop_error")
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn stop_treats_null_runtime_stop_error_as_absent() {
+        let (root, plan) = local_host_plan("stop_null_error");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let stopped = stop_runtime(&plan, &runtime).expect("stop local host");
+
+        assert!(stopped.error.is_none());
+        let one_shot = run_plan(&plan, RunRequest::text("one turn")).expect("run plan");
+        assert!(
+            one_shot
+                .events
+                .iter()
+                .all(|event| event.kind != "runtime_stop_error")
         );
 
         let _ = fs::remove_dir_all(root);
@@ -4517,6 +4560,8 @@ for line in sys.stdin:
         fs::create_dir_all(&root).expect("artifact root");
         let existing = root.join("events.atof.jsonl");
         fs::write(&existing, "{}\n").expect("existing artifact");
+        let outside = std::env::temp_dir().join(new_id("outside-relay-artifact"));
+        fs::write(&outside, "{}\n").expect("outside artifact");
         let mut manifest = ArtifactManifest {
             root: Some(root.clone()),
             artifacts: vec![ArtifactRef {
@@ -4534,6 +4579,7 @@ for line in sys.stdin:
                 {"kind": "trace", "path": "trace.json"},
                 {"kind": "atif", "path": ""},
                 {"kind": "atif", "path": "missing.atif.json"},
+                {"kind": "atif", "path": outside},
                 {"kind": "atof", "path": existing},
             ]
         });
@@ -4551,6 +4597,7 @@ for line in sys.stdin:
                 "unsupported_kind",
                 "empty_path",
                 "path_not_found",
+                "outside_root",
                 "duplicate_path",
             ]
         );
@@ -4561,5 +4608,6 @@ for line in sys.stdin:
         );
 
         let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_file(outside);
     }
 }

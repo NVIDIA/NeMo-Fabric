@@ -292,11 +292,14 @@ async function dispatch(
 
   if (request.operation === "stop") {
     const active = state.runtime;
-    const output = await callAdapter("stop", () => active.stop());
-    state.runtime = undefined;
-    state.runtimeId = undefined;
-    state.failed = false;
-    return success("stop", output ?? null);
+    try {
+      const output = await callAdapter("stop", () => active.stop());
+      return success("stop", output ?? null);
+    } finally {
+      state.runtime = undefined;
+      state.runtimeId = undefined;
+      state.failed = false;
+    }
   }
 
   if (state.failed) {

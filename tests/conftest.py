@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import os
 import shutil
 import subprocess
@@ -18,6 +19,52 @@ CUR_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = CUR_DIR.parent.resolve()
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+
+@pytest.fixture(name="native_stop_result_merger")
+def native_stop_result_merger_fixture() -> typing.Callable[[str, str], str]:
+    def merge(run_result_json: str, stop_result_json: str) -> str:
+        result = json.loads(run_result_json)
+        stopped = json.loads(stop_result_json)
+        target = result.setdefault("artifacts", {"artifacts": []})
+        source = stopped.get("artifacts", {"artifacts": []})
+        if target.get("root") is None and source.get("root") is not None:
+            target["root"] = source["root"]
+        existing_paths = {artifact["path"] for artifact in target["artifacts"]}
+        existing_names = {artifact["name"] for artifact in target["artifacts"]}
+        for artifact in source.get("artifacts", []):
+            if artifact["path"] in existing_paths:
+                continue
+            artifact = dict(artifact)
+            base = artifact["name"]
+            candidate = base
+            suffix = 2
+            while candidate in existing_names:
+                candidate = f"{base}_{suffix}"
+                suffix += 1
+            artifact["name"] = candidate
+            target["artifacts"].append(artifact)
+            existing_paths.add(artifact["path"])
+            existing_names.add(candidate)
+        result.setdefault("events", []).extend(stopped.get("events", []))
+        if stopped.get("error") is not None:
+            error = stopped["error"]
+            result["events"].append(
+                {
+                    "event_id": "event-stop-error",
+                    "timestamp_millis": 1,
+                    "kind": "runtime_stop_error",
+                    "message": error["message"],
+                    "metadata": {
+                        "code": error["code"],
+                        "retryable": error.get("retryable", False),
+                        "details": error.get("metadata", {}),
+                    },
+                }
+            )
+        return json.dumps(result)
+
+    return merge
 
 
 @pytest.fixture(name="requires_harbor", scope="session")

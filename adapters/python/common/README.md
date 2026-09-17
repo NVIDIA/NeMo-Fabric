@@ -63,8 +63,10 @@ shutdown. Put finalized NeMo Relay artifact paths under `relay_artifacts`; NeMo
 Fabric promotes those paths into the runtime stop artifact manifest. Other
 adapter output fields are not surfaced. If cleanup fails after artifacts are
 collected, return structured `ErrorInfo` under `runtime_stop_error` so callers
-retain both the artifacts and the failure. Returning `None` preserves an empty
-stop output.
+retain both the artifacts and the failure. Set the error `stage` to `stop`;
+otherwise, NeMo Fabric discards its code and message and reports an
+`invalid_runtime_stop_error` diagnostic. Returning `None` preserves an empty stop
+output.
 
 If the adapter descriptor declares `capabilities.streaming`, the runtime must
 also implement native OpenAI Chat Completions streaming:

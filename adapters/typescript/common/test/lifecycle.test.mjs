@@ -136,7 +136,7 @@ test("classifies factory failures as adapter startup failures", async () => {
   assert.equal(response.outcome.error.message, "Adapter failed during lifecycle start");
 });
 
-test("retains a runtime for final cleanup when stop fails", async () => {
+test("clears host state when adapter stop fails", async () => {
   let stopCount = 0;
   const responses = await exchange(
     () => ({
@@ -152,7 +152,7 @@ test("retains a runtime for final cleanup when stop fails", async () => {
     [start("runtime-1"), stop("runtime-1")],
   );
 
-  assert.equal(stopCount, 2);
+  assert.equal(stopCount, 1);
   assert.equal(responses[1].outcome.error.code, "lifecycle_adapter_stop_failed");
 });
 
