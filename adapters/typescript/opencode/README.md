@@ -31,7 +31,8 @@ adapter selects the `default` model role or the only configured role, accepts
 plain-text input, and returns a terminal result with `output.response`. A
 configured `api_key_env` name is passed explicitly to OpenCode, including for
 native OpenCode providers, so it does not need to be that provider's usual
-environment-variable name.
+environment-variable name. It must be a portable environment-variable
+identifier (for example, `NVIDIA_API_KEY`).
 A configured endpoint must implement the OpenAI-compatible Chat Completions
 protocol; it is a model-provider endpoint, not an OpenCode server endpoint.
 Remote endpoints must use HTTPS because requests include the provider

@@ -17,7 +17,7 @@
     "properties": {
       "provider": {"type": "string", "minLength": 1},
       "model": {"type": "string", "minLength": 1},
-      "api_key_env": {"type": "string", "minLength": 1},
+      "api_key_env": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
       "base_url": {"type": ["string", "null"], "format": "uri", "pattern": "^https?://"}
     },
     "required": ["provider", "model", "api_key_env"],

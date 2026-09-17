@@ -85,6 +85,18 @@ test("rejects missing and ambiguous OpenCode model selection", () => {
   );
 });
 
+test("rejects a non-portable OpenCode credential environment-variable name", () => {
+  assert.throws(
+    () =>
+      selectModel({
+        models: {
+          default: { provider: "openai", model: "gpt-4.1-mini", api_key_env: "MODEL-API-KEY" },
+        },
+      }),
+    (error) => error.code === "opencode_invalid_model",
+  );
+});
+
 test("rejects non-HTTP OpenCode model endpoints", () => {
   assert.throws(
     () =>

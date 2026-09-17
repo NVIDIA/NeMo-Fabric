@@ -56,13 +56,17 @@ config = FabricConfig(
     harness=HarnessConfig(adapter_id="nvidia.fabric.opencode"),
     models={
         "default": ModelConfig(
-            provider="openai",
-            model="gpt-4.1-mini",
-            api_key_env="OPENAI_API_KEY",
+            provider="nvidia",
+            model="nvidia/nemotron-3.5-nano-30b-a3b",
+            api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
         )
     },
 )
 ```
+
+This example uses NVIDIA's hosted Nemotron 3.5 Nano model. Set
+`NVIDIA_API_KEY` before starting the runtime.
 
 For a source build, set `discovery.local_paths` to
 `adapters/typescript/opencode/opencode.fabric-adapter.json` instead. The build
@@ -70,10 +74,12 @@ commands above create the descriptor's `dist/cli.js` runner.
 
 The adapter selects the `default` model role or the only configured role. With
 multiple roles, configure `default`. Set `api_key_env` to the name of the
-environment variable that contains the provider credential. The provider and
-model must be supported by the installed OpenCode SDK when no endpoint is
-configured. The adapter passes this configured name explicitly to OpenCode, so
-it does not need to be the provider's conventional environment-variable name.
+environment variable that contains the provider credential; it must be a
+portable environment-variable identifier (for example, `NVIDIA_API_KEY`). The
+provider and model must be supported by the installed OpenCode SDK when no
+endpoint is configured. The adapter passes this configured name explicitly to
+OpenCode, so it does not need to be the provider's conventional
+environment-variable name.
 
 To route model requests through a local or company-hosted endpoint, set
 `base_url`. The endpoint must implement the OpenAI-compatible Chat Completions
@@ -82,7 +88,9 @@ OpenCode server. Remote endpoints must use HTTPS because requests include the
 provider credential; HTTP is permitted only for loopback endpoints used in
 local development and testing. The adapter removes OpenCode's
 `prompt_cache_key` extension for configured endpoints, so providers that
-reject that OpenAI-specific field can still use the core protocol.
+reject that OpenAI-specific field can still use the core protocol. The proxy
+buffers and rewrites request bodies up to 16 MiB; larger requests receive HTTP
+413 rather than consuming unbounded adapter memory.
 
 ```python
 config.models["default"].base_url = "http://127.0.0.1:8080/v1"
@@ -104,6 +112,19 @@ OpenCode host and one OpenCode session for the NeMo Fabric runtime. Ordered
 plain-text invocations reuse that session and its conversation history. A
 successful result has `output.response`; usage fields are present when OpenCode
 reports them. `stop` removes the OpenCode session and closes the embedded host.
+
+```mermaid
+flowchart LR
+  Fabric["Fabric runtime"] -->|"NDJSON over stdio"| Adapter
+  subgraph Bun["One persistent Bun adapter process"]
+    Adapter["OpenCode adapter"] --> Client["OpenCode SDK client"]
+    Client -->|"in-memory fetch (no TCP)"| Host["Embedded OpenCode host"]
+    Host --> Session["One OpenCode session"]
+    Host -->|"when models.base_url is configured"| Proxy["Loopback compatibility proxy"]
+  end
+  Proxy --> Provider["Model-provider endpoint"]
+  Host -->|"otherwise"| NativeProvider["OpenCode native provider"]
+```
 
 When OpenCode reports files changed by an invocation and the runtime has an
 artifact root, the adapter writes the combined diff to a runtime- and

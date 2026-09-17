@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
 
@@ -25,6 +25,18 @@ async function listen(server) {
 async function close(server) {
   await new Promise((resolve, reject) => {
     server.close((error) => (error === undefined ? resolve() : reject(error)));
+  });
+}
+
+async function post(url, headers, body) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url, { method: "POST", headers }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString("utf8") }));
+    });
+    request.on("error", reject);
+    request.end(body);
   });
 }
 
@@ -69,6 +81,78 @@ test("forwards decoded compressed responses without stale content headers", asyn
     assert.equal(response.headers.get("content-encoding"), null);
     assert.equal(response.headers.get("content-length"), null);
     assert.equal(await response.text(), responseBody);
+  } finally {
+    await proxy.close();
+    await close(upstream);
+  }
+});
+
+test("removes response headers named by Connection", async () => {
+  const upstream = createServer((request, response) => {
+    assert.equal(request.url, "/v1/chat/completions");
+    response.writeHead(200, {
+      connection: "x-local-only",
+      "content-type": "application/json",
+      "x-local-only": "do-not-forward",
+    });
+    response.end("{}");
+  });
+  const upstreamUrl = await listen(upstream);
+  const proxy = await ModelEndpointProxy.create(`${upstreamUrl}/v1`);
+  try {
+    const response = await fetch(`${proxy.url}/chat/completions`, { method: "POST", body: "{}" });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-local-only"), null);
+  } finally {
+    await proxy.close();
+    await close(upstream);
+  }
+});
+
+test("rejects a request above the proxy body limit", async () => {
+  let upstreamCalled = false;
+  const upstream = createServer((request, response) => {
+    upstreamCalled = true;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end("{}");
+  });
+  const upstreamUrl = await listen(upstream);
+  const proxy = await ModelEndpointProxy.create(`${upstreamUrl}/v1`);
+  try {
+    const response = await post(
+      `${proxy.url}/chat/completions`,
+      { "content-length": String(16 * 1024 * 1024 + 1) },
+      "{}",
+    );
+
+    assert.equal(response.status, 413);
+    assert.equal(response.body, "OpenCode model-provider proxy request body exceeds 16 MiB");
+    assert.equal(upstreamCalled, false);
+  } finally {
+    await proxy.close();
+    await close(upstream);
+  }
+});
+
+test("rejects a chunked request above the proxy body limit", async () => {
+  let upstreamCalled = false;
+  const upstream = createServer((request, response) => {
+    upstreamCalled = true;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end("{}");
+  });
+  const upstreamUrl = await listen(upstream);
+  const proxy = await ModelEndpointProxy.create(`${upstreamUrl}/v1`);
+  try {
+    const response = await post(
+      `${proxy.url}/chat/completions`,
+      { "transfer-encoding": "chunked" },
+      Buffer.alloc(16 * 1024 * 1024 + 1),
+    );
+
+    assert.equal(response.status, 413);
+    assert.equal(upstreamCalled, false);
   } finally {
     await proxy.close();
     await close(upstream);

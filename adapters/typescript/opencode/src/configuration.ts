@@ -13,6 +13,8 @@ export interface OpenCodeModel {
   baseUrl?: string;
 }
 
+const ENVIRONMENT_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+
 function loopbackHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname === "::1" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
 }
@@ -33,7 +35,7 @@ function validModel(model: AgentModelConfig): OpenCodeModel {
     typeof model.model !== "string" ||
     model.model.length === 0 ||
     typeof model.api_key_env !== "string" ||
-    model.api_key_env.length === 0
+    !ENVIRONMENT_VARIABLE_NAME.test(model.api_key_env)
   ) {
     throw new LifecycleError("opencode_invalid_model", "OpenCode model configuration does not match the adapter schema");
   }

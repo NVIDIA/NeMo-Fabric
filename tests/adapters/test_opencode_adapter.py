@@ -53,7 +53,11 @@ def test_opencode_descriptor_declares_the_minimum_supported_surface():
             "properties": {
                 "provider": {"type": "string", "minLength": 1},
                 "model": {"type": "string", "minLength": 1},
-                "api_key_env": {"type": "string", "minLength": 1},
+                "api_key_env": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                },
                 "base_url": {
                     "type": ["string", "null"],
                     "format": "uri",
@@ -90,6 +94,11 @@ def test_opencode_descriptor_plans_and_projects_the_selected_model():
 def test_opencode_model_schema_requires_a_credential_name():
     with pytest.raises(FabricConfigError, match="api_key_env"):
         Fabric().plan(config(api_key_env=None), base_dir=ROOT)
+
+
+def test_opencode_model_schema_requires_a_portable_credential_name():
+    with pytest.raises(FabricConfigError, match="api_key_env"):
+        Fabric().plan(config(api_key_env="MODEL-API-KEY"), base_dir=ROOT)
 
 
 def test_opencode_descriptor_plans_an_openai_compatible_model_endpoint():

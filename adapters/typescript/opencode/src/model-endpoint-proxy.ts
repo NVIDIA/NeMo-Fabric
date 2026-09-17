@@ -19,17 +19,29 @@ const HOP_BY_HOP_HEADERS = new Set([
   "transfer-encoding",
   "upgrade",
 ]);
+const MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024;
+
+class RequestBodyTooLargeError extends Error {
+  constructor() {
+    super("OpenCode model-provider proxy request body exceeds 16 MiB");
+  }
+}
+
+function connectionHeaderNames(value: string | string[] | undefined | null): Set<string> {
+  const connectionValues = Array.isArray(value) ? value : [value];
+  return new Set(
+    connectionValues
+      .filter((entry): entry is string => typeof entry === "string")
+      .flatMap((entry) => entry.split(","))
+      .map((entry) => entry.trim().toLowerCase())
+      .filter((entry) => entry.length > 0),
+  );
+}
 
 function hopByHopHeaderNames(headers: IncomingHttpHeaders): Set<string> {
-  const connection = headers.connection;
-  const connectionValues = Array.isArray(connection) ? connection : [connection];
   return new Set([
     ...HOP_BY_HOP_HEADERS,
-    ...connectionValues
-      .filter((value): value is string => typeof value === "string")
-      .flatMap((value) => value.split(","))
-      .map((value) => value.trim().toLowerCase())
-      .filter((value) => value.length > 0),
+    ...connectionHeaderNames(headers.connection),
   ]);
 }
 
@@ -53,8 +65,14 @@ export function forwardedHeaders(headers: IncomingHttpHeaders): Headers {
 
 async function bodyWithoutPromptCacheKey(request: AsyncIterable<Buffer | string>): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let byteLength = 0;
   for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    byteLength += buffer.length;
+    if (byteLength > MAX_REQUEST_BODY_BYTES) {
+      throw new RequestBodyTooLargeError();
+    }
+    chunks.push(buffer);
   }
   const body = Buffer.concat(chunks);
   try {
@@ -81,8 +99,12 @@ function targetUrl(baseUrl: string, path: string): string {
 
 function forwardedResponseHeaders(headers: Headers): Record<string, string> {
   const result: Record<string, string> = {};
+  const hopByHopHeaders = new Set([
+    ...HOP_BY_HOP_HEADERS,
+    ...connectionHeaderNames(headers.get("connection")),
+  ]);
   for (const [name, value] of headers.entries()) {
-    if (name === "content-encoding" || name === "content-length" || HOP_BY_HOP_HEADERS.has(name)) {
+    if (name === "content-encoding" || name === "content-length" || hopByHopHeaders.has(name)) {
       continue;
     }
     result[name] = value;
@@ -102,6 +124,11 @@ export class ModelEndpointProxy {
   static async create(baseUrl: string): Promise<ModelEndpointProxy> {
     const server = createServer(async (request, response) => {
       try {
+        const contentLength = request.headers["content-length"];
+        const declaredLength = Number(Array.isArray(contentLength) ? contentLength[0] : contentLength);
+        if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BODY_BYTES) {
+          throw new RequestBodyTooLargeError();
+        }
         const body = await bodyWithoutPromptCacheKey(request);
         const upstream = await fetch(targetUrl(baseUrl, request.url ?? "/"), {
           method: request.method,
@@ -117,9 +144,14 @@ export class ModelEndpointProxy {
           Readable.fromWeb(upstream.body as unknown as import("node:stream/web").ReadableStream),
           response,
         );
-      } catch {
+      } catch (error) {
         if (response.headersSent) {
           response.destroy();
+          return;
+        }
+        if (error instanceof RequestBodyTooLargeError) {
+          response.writeHead(413, { "content-type": "text/plain" });
+          response.end(error.message);
           return;
         }
         response.writeHead(502, { "content-type": "text/plain" });
