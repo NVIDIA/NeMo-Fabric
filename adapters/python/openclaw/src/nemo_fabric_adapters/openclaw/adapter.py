@@ -507,7 +507,7 @@ class OpenClawRuntime:
                 parent_pid=os.getpid(),
                 shutdown_timeout=self._shutdown_timeout,
             )
-            process = await asyncio.create_subprocess_exec(
+            self._process = await asyncio.create_subprocess_exec(
                 *gateway_command,
                 stdin=(
                     asyncio.subprocess.PIPE
@@ -519,23 +519,26 @@ class OpenClawRuntime:
                 env=child_env,
                 start_new_session=os.name != "nt",
             )
-            self._process = process
             if self._windows_job is not None:
                 try:
-                    _windows_job.assign_process(self._windows_job, process.pid)
-                    if process.stdin is None:
+                    _windows_job.assign_process(self._windows_job, self._process.pid)
+                    if self._process.stdin is None:
                         raise RuntimeError("Windows supervisor stdin was unavailable")
-                    process.stdin.write(WINDOWS_START_BYTE)
-                    await process.stdin.drain()
-                    process.stdin.close()
+                    self._process.stdin.write(WINDOWS_START_BYTE)
+                    await self._process.stdin.drain()
+                    self._process.stdin.close()
                 except (OSError, RuntimeError) as error:
                     raise lifecycle.LifecycleError(
                         "openclaw_process_supervision_failed",
                         "OpenClaw could not join the Windows Job Object",
                     ) from error
             self._log_tasks = [
-                asyncio.create_task(_capture_stream(process.stdout, deque(maxlen=10))),
-                asyncio.create_task(_capture_stream(process.stderr, self._stderr_tail)),
+                asyncio.create_task(
+                    _capture_stream(self._process.stdout, deque(maxlen=10))
+                ),
+                asyncio.create_task(
+                    _capture_stream(self._process.stderr, self._stderr_tail)
+                ),
             ]
             self._install_signal_handlers()
             startup_timeout = _positive_setting(
@@ -649,9 +652,20 @@ class OpenClawRuntime:
         request: contract.AgentRunRequest,
         context: contract.RuntimeContext,
     ) -> contract.AgentRunResult:
-        if self._client is None or self._config is None or self._port is None:
+        if (
+            self._client is None
+            or self._config is None
+            or self._port is None
+            or self._process is None
+        ):
             raise lifecycle.LifecycleError(
                 "openclaw_not_started", "OpenClaw runtime is not started"
+            )
+        if self._process.returncode is not None:
+            raise lifecycle.LifecycleError(
+                "openclaw_gateway_exited",
+                "OpenClaw Gateway exited unexpectedly",
+                metadata={"exit_code": self._process.returncode},
             )
         if self._context is None or context.runtime_id != self._context.runtime_id:
             raise lifecycle.LifecycleError(

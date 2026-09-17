@@ -243,6 +243,25 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert not state_root.exists()
 
 
+async def test_openclaw_invoke_rejects_exited_gateway(tmp_path: Path):
+    context = _context(tmp_path)
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = 17
+    runtime._client = MagicMock()
+    runtime._config = _config(tmp_path / "openclaw")
+    runtime._context = context
+    runtime._port = 12345
+    runtime._process = mock_process
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.invoke(AgentRunRequest(input="Hello."), context)
+
+    assert caught.value.code == "openclaw_gateway_exited"
+    assert caught.value.metadata == {"exit_code": 17}
+    runtime._client.post.assert_not_called()
+
+
 def test_openclaw_resolves_relative_command_without_path_fallback(tmp_path: Path):
     command = tmp_path / "tools" / "openclaw"
     command.parent.mkdir()
