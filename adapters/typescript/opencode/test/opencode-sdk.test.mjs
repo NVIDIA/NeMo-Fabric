@@ -370,7 +370,20 @@ test("creates, invokes, and cleans up one embedded OpenCode session", async () =
         },
         "test-secret",
       ],
-      ["session.create", { location: { directory: "/workspace" }, model: { providerID: "openai", id: "gpt-4.1-mini" } }],
+      [
+        "session.create",
+        {
+          location: { directory: "/workspace" },
+          model: { providerID: "openai", id: "gpt-4.1-mini" },
+          permissions: [
+            { action: "external_directory", resource: "*", effect: "deny" },
+            { action: "read", resource: "*.env", effect: "deny" },
+            { action: "read", resource: "*.env.*", effect: "deny" },
+            { action: "read", resource: "*.env.example", effect: "allow" },
+            { action: "question", resource: "*", effect: "deny" },
+          ],
+        },
+      ],
       ["session.context", { sessionID: "session-1" }],
       ["session.prompt", { sessionID: "session-1", text: "hello" }],
       ["session.wait", { sessionID: "session-1" }],
@@ -383,6 +396,59 @@ test("creates, invokes, and cleans up one embedded OpenCode session", async () =
       delete process.env.OPENCODE_TEST_KEY;
     } else {
       process.env.OPENCODE_TEST_KEY = previous;
+    }
+  }
+});
+
+test("limits the embedded OpenCode environment to declared values and restores it after stop", async () => {
+  const ambientName = "OPENCODE_AMBIENT_SECRET";
+  const declaredName = "OPENCODE_DECLARED_VALUE";
+  const previousAmbient = process.env[ambientName];
+  const previousDeclared = process.env[declaredName];
+  process.env[ambientName] = "ambient-secret";
+  delete process.env[declaredName];
+  try {
+    const input = startInput();
+    input.runtimeContext.environment.env[declaredName] = "declared-value";
+    let observed;
+    const factory = new OpenCodeSdkSessionFactory(async () => ({
+      OpenCode: {
+        async create() {
+          observed = {
+            ambient: process.env[ambientName],
+            declared: process.env[declaredName],
+            credential: process.env.OPENCODE_TEST_KEY,
+          };
+          return {
+            sessions: {
+              async create() { return { id: "session-environment" }; },
+              async remove() {},
+            },
+            async close() {},
+          };
+        },
+      },
+    }));
+
+    const handle = await factory.create(input);
+    assert.deepEqual(observed, {
+      ambient: undefined,
+      declared: "declared-value",
+      credential: "test-secret",
+    });
+    await handle.stop();
+    assert.equal(process.env[ambientName], "ambient-secret");
+    assert.equal(process.env[declaredName], undefined);
+  } finally {
+    if (previousAmbient === undefined) {
+      delete process.env[ambientName];
+    } else {
+      process.env[ambientName] = previousAmbient;
+    }
+    if (previousDeclared === undefined) {
+      delete process.env[declaredName];
+    } else {
+      process.env[declaredName] = previousDeclared;
     }
   }
 });
@@ -482,7 +548,7 @@ test("does not mark a failure after prompt submission as retryable", async () =>
   await handle.stop();
 });
 
-test("releases the client, endpoint proxy, and credential when session removal fails", async () => {
+test("releases the client, endpoint proxy, and environment when session removal fails", async () => {
   let clientClosed = false;
   let proxyClosed = false;
   const previous = process.env.OPENCODE_TEST_KEY;
@@ -558,13 +624,18 @@ test("configures an OpenAI-compatible OpenCode provider for an explicit endpoint
   assert.deepEqual(provider.models, { "test-model": {} });
 });
 
-test("restores the credential lease when startup cleanup also fails", async () => {
+test("restores the environment lease when startup cleanup also fails", async () => {
+  const ambientName = "OPENCODE_AMBIENT_SECRET";
   const previous = process.env.OPENCODE_TEST_KEY;
+  const previousAmbient = process.env[ambientName];
   delete process.env.OPENCODE_TEST_KEY;
+  process.env[ambientName] = "ambient-secret";
   try {
+    let observedAmbient;
     const factory = new OpenCodeSdkSessionFactory(async () => ({
       OpenCode: {
         async create() {
+          observedAmbient = process.env[ambientName];
           return {
             sessions: {
               async create() {
@@ -580,12 +651,19 @@ test("restores the credential lease when startup cleanup also fails", async () =
     }));
 
     await assert.rejects(factory.create(startInput()), (error) => error.code === "opencode_start_failed");
+    assert.equal(observedAmbient, undefined);
     assert.equal(process.env.OPENCODE_TEST_KEY, undefined);
+    assert.equal(process.env[ambientName], "ambient-secret");
   } finally {
     if (previous === undefined) {
       delete process.env.OPENCODE_TEST_KEY;
     } else {
       process.env.OPENCODE_TEST_KEY = previous;
+    }
+    if (previousAmbient === undefined) {
+      delete process.env[ambientName];
+    } else {
+      process.env[ambientName] = previousAmbient;
     }
   }
 });

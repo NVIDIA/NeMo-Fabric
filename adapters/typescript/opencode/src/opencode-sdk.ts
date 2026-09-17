@@ -28,6 +28,17 @@ type EmbeddedOpenCodeCreate = (
   embedOptions: OpenCodeEmbedOptions,
 ) => Promise<OpenCodeClient>;
 
+// Fabric invokes OpenCode non-interactively. Session rules are evaluated after
+// OpenCode's agent defaults, so they override upstream "ask" rules without
+// changing the permissions of other OpenCode sessions in the process.
+const NONINTERACTIVE_SESSION_PERMISSIONS = [
+  { action: "external_directory", resource: "*", effect: "deny" },
+  { action: "read", resource: "*.env", effect: "deny" },
+  { action: "read", resource: "*.env.*", effect: "deny" },
+  { action: "read", resource: "*.env.example", effect: "allow" },
+  { action: "question", resource: "*", effect: "deny" },
+] as const;
+
 /**
  * OpenCode's Promise SDK accepts embedding overrides. They set the
  * location-specific configuration and instruction services to OpenCode's
@@ -227,36 +238,81 @@ interface EnvironmentLease {
   release(): void;
 }
 
-function leaseCredential(input: AdapterStartInput, name: string): EnvironmentLease {
-  const value = input.runtimeContext.environment.env?.[name] ?? process.env[name];
-  if (value === undefined || value.length === 0) {
+const INHERITED_ENVIRONMENT_NAMES = new Set([
+  "APPDATA",
+  "BUN_INSTALL",
+  "COMSPEC",
+  "ComSpec",
+  "DBUS_SESSION_BUS_ADDRESS",
+  "HOME",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LOCALAPPDATA",
+  "NO_PROXY",
+  "PATH",
+  "PATHEXT",
+  "Path",
+  "PathExt",
+  "SHELL",
+  "SSL_CERT_DIR",
+  "SSL_CERT_FILE",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "TEMP",
+  "TERM",
+  "TERM_PROGRAM",
+  "TMP",
+  "TMPDIR",
+  "USER",
+  "USERPROFILE",
+  "XDG_CACHE_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_RUNTIME_DIR",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+]);
+
+function replaceEnvironment(values: NodeJS.ProcessEnv): void {
+  for (const name of Object.keys(process.env)) {
+    delete process.env[name];
+  }
+  Object.assign(process.env, values);
+}
+
+function leaseEnvironment(input: AdapterStartInput, credentialName: string): EnvironmentLease {
+  const original = { ...process.env };
+  const configured = input.runtimeContext.environment.env ?? {};
+  const credential = configured[credentialName] ?? original[credentialName];
+  const values = Object.fromEntries(
+    [...INHERITED_ENVIRONMENT_NAMES]
+      .map((name) => [name, original[name]] as const)
+      .filter((entry): entry is [string, string] => entry[1] !== undefined),
+  );
+  Object.assign(values, configured);
+  if (credential === undefined || credential.length === 0) {
     throw new LifecycleError("opencode_credential_missing", "The configured OpenCode credential is not available");
   }
-  const hadValue = Object.hasOwn(process.env, name);
-  const previous = process.env[name];
-  process.env[name] = value;
-  return {
-    release() {
-      if (hadValue) {
-        process.env[name] = previous;
-      } else {
-        delete process.env[name];
-      }
-    },
-  };
+  values[credentialName] = credential;
+  replaceEnvironment(values);
+  return { release: () => replaceEnvironment(original) };
 }
 
 class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
   readonly id: string;
   private readonly client: OpenCodeClient;
-  private readonly credential: EnvironmentLease;
+  private readonly environment: EnvironmentLease;
   private readonly endpointProxy?: EndpointProxy;
   private stopped = false;
 
-  constructor(id: string, client: OpenCodeClient, credential: EnvironmentLease, endpointProxy?: EndpointProxy) {
+  constructor(id: string, client: OpenCodeClient, environment: EnvironmentLease, endpointProxy?: EndpointProxy) {
     this.id = id;
     this.client = client;
-    this.credential = credential;
+    this.environment = environment;
     this.endpointProxy = endpointProxy;
   }
 
@@ -297,7 +353,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
         try {
           await this.endpointProxy?.close();
         } finally {
-          this.credential.release();
+          this.environment.release();
         }
       }
     }
@@ -323,7 +379,7 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
   async create(input: AdapterStartInput): Promise<OpenCodeSessionHandle> {
     const model = selectModel(input.config);
     const workspace = input.runtimeContext.environment.workspace ?? input.baseDir;
-    const credential = leaseCredential(input, model.apiKeyEnv);
+    const environment = leaseEnvironment(input, model.apiKeyEnv);
     let client: OpenCodeClient | undefined;
     let endpointProxy: EndpointProxy | undefined;
     try {
@@ -348,20 +404,21 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
       const session = await client.sessions.create({
         location: { directory: workspace },
         model: { providerID: model.provider, id: model.model },
+        permissions: NONINTERACTIVE_SESSION_PERMISSIONS,
       });
-      return new OpenCodeSdkSessionHandle(session.id, client, credential, endpointProxy);
+      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy);
     } catch (error) {
       try {
         if (client !== undefined) {
           await client.close();
         }
       } catch {
-        // Preserve the startup failure while still releasing the credential lease.
+        // Preserve the startup failure while still releasing the environment lease.
       } finally {
         try {
           await endpointProxy?.close();
         } finally {
-          credential.release();
+          environment.release();
         }
       }
       if (error instanceof LifecycleError) {

@@ -27,7 +27,7 @@ function context(workspace, invocationId) {
   };
 }
 
-async function exchange(workspace, requests, environment = {}) {
+async function exchange(workspace, requests, environment = {}, timeoutMs) {
   const childEnv = { ...process.env, ...environment };
   delete childEnv.NODE_TEST_CONTEXT;
   const child = spawn(process.env.BUN_EXECUTABLE ?? "bun", [fileURLToPath(new URL("../dist/cli.js", import.meta.url))], {
@@ -47,15 +47,26 @@ async function exchange(workspace, requests, environment = {}) {
   });
   child.stdin.end(`${requests.map((request) => JSON.stringify(request)).join("\n")}\n`);
 
-  const exitCode = await new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", resolve);
-  });
-  return {
-    exitCode,
-    responses: stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)),
-    stderr,
-  };
+  let timeout;
+  try {
+    const exitCode = await new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", resolve);
+      if (timeoutMs !== undefined) {
+        timeout = setTimeout(() => {
+          child.kill();
+          reject(new Error(`adapter process did not exit within ${timeoutMs}ms`));
+        }, timeoutMs);
+      }
+    });
+    return {
+      exitCode,
+      responses: stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)),
+      stderr,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function listen(server) {
@@ -88,6 +99,26 @@ function openAiStream(text) {
       choices: [{ index: 0, delta, finish_reason: finishReason }],
     })}\n\n`;
   return `${chunk({ role: "assistant" })}${chunk({ content: text })}${chunk({}, "stop")}data: [DONE]\n\n`;
+}
+
+function openAiToolCall(name, input) {
+  const chunk = (delta, finishReason = null) =>
+    `data: ${JSON.stringify({
+      id: "chatcmpl-opencode-tool-test",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: "fabric-echo",
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+    })}\n\n`;
+  return `${chunk({
+    role: "assistant",
+    tool_calls: [{
+      index: 0,
+      id: "call-read-env",
+      type: "function",
+      function: { name, arguments: JSON.stringify(input) },
+    }],
+  })}${chunk({}, "tool_calls")}data: [DONE]\n\n`;
 }
 
 test("runs two real OpenCode SDK prompts through the process host", async () => {
@@ -192,5 +223,68 @@ test("runs two real OpenCode SDK prompts through the process host", async () => 
     await close(endpoint);
     await rm(workspace, { recursive: true, force: true });
     await rm(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test("denies interactive OpenCode operations instead of waiting for a reply", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "fabric-opencode-permissions-"));
+  let providerRequests = 0;
+  const endpoint = createServer(async (request, response) => {
+    if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+      response.writeHead(404).end();
+      return;
+    }
+    for await (const _chunk of request) {
+      // Consume the request body before writing the deterministic response.
+    }
+    providerRequests += 1;
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end(
+      providerRequests === 1
+        ? openAiToolCall("read", { path: ".env" })
+        : openAiStream("permission denial completed"),
+    );
+  });
+  const endpointUrl = await listen(endpoint);
+  try {
+    await writeFile(join(workspace, ".env"), "SECRET=do-not-read\n", "utf8");
+    const start = {
+      operation: "start",
+      payload: {
+        agent_name: "opencode-permission-test",
+        base_dir: workspace,
+        config: {
+          models: {
+            default: {
+              api_key_env: "TEST_API_KEY",
+              base_url: `${endpointUrl}/v1`,
+              model: "fabric-echo",
+              provider: "fabric-test",
+            },
+          },
+        },
+        runtime_context: context(workspace, "start"),
+      },
+    };
+    const invoke = {
+      operation: "invoke",
+      payload: {
+        request: { input: "Read .env, then report whether it was available." },
+        runtime_context: context(workspace, "permission"),
+      },
+    };
+    const stop = { operation: "stop", payload: { runtime_id: "runtime-1" } };
+    const { exitCode, responses, stderr } = await exchange(workspace, [start, invoke, stop], {}, 10_000);
+
+    assert.equal(exitCode, 0, stderr);
+    assert.deepEqual(responses.map((response) => response.operation), ["start", "invoke", "stop"]);
+    assert.equal(responses[0].outcome.status, "succeeded");
+    assert.equal(responses[1].outcome.output.status, "succeeded");
+    assert.equal(responses[1].outcome.output.output.response, "permission denial completed");
+    assert.equal(responses[2].outcome.status, "succeeded");
+    assert.equal(providerRequests, 2);
+  } finally {
+    await close(endpoint);
+    await rm(workspace, { recursive: true, force: true });
   }
 });

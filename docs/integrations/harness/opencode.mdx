@@ -105,6 +105,14 @@ The embedded session keeps the Fabric workspace as its working location, but
 does not load ambient OpenCode project or user configuration and instructions
 from that workspace or the host home directory.
 
+At runtime, OpenCode receives only required operating-system variables,
+explicit Fabric `environment.env` values, and the selected model credential.
+Other variables inherited by the Fabric process are not exposed to OpenCode.
+
+The adapter is non-interactive. It denies OpenCode requests to read `.env`
+files (except `.env.example`), access outside the workspace, or ask follow-up
+questions, rather than waiting for an approval that Fabric cannot supply.
+
 ## Understand the Runtime Lifecycle
 
 The adapter runs in a persistent Bun process. `start` creates one embedded
