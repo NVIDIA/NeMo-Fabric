@@ -118,9 +118,9 @@ runtime, establish the supported integration boundary before relying on it:
   before loading them. Report a missing requirement differently from a
   dependency that was found but failed during import or initialization.
 - Decide whether the harness may discover project files, user-home
-  configuration, plugins, instructions, or credentials. If Fabric does not
-  declare that surface, disable discovery when the harness supports it rather
-  than depending on ambient host behavior.
+  configuration, plugins, instructions, or credentials. If NeMo Fabric does
+  not declare that surface, disable discovery when the harness supports it
+  rather than depending on ambient host behavior.
 - If the adapter accepts a URL for an authenticated upstream endpoint, define
   and test its transport and trust boundary.
 
@@ -310,13 +310,14 @@ Complete these checks before handing off an adapter:
 When applicable, add focused evidence for the decisions above:
 
 - Run a real-harness regression with temporary project and user-home inputs
-  when configuration discovery could affect a Fabric runtime.
+  when configuration discovery could affect a NeMo Fabric runtime.
 - For a stateful harness, make a later result observably depend on an earlier
   invocation; a test that merely invokes twice does not prove continuity.
 - Test a configured external endpoint against a local deterministic server when
-  its security or forwarding behavior is adapter-owned.
-- When a live-provider check is intended to be provider-agnostic, do not
-  hard-code a vendor or model.
+  its forwarding behavior is adapter-owned.
+- When the adapter owns an authenticated external connection, require evidence
+  of encrypted transport, certificate validation, and redirect handling that
+  does not forward credentials to another origin.
 
 Do not claim automated NeMo Fabric conformance until the published conformance
 suite exists and the exact adapter release passes it.
