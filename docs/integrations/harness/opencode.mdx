@@ -25,7 +25,7 @@ either package. Starting the adapter without the compatible packages returns
 `opencode_harness_unavailable`.
 
 OpenCode 2.0.3 does not support npm's `install-strategy=nested`. The documented
-command requires npm's default hoisted layout.
+command requires the default npm hoisted layout.
 
 For source development, install the checked-out adapter workspace and its
 pinned SDK from the repository root, then build the generated adapter CLI:
@@ -72,11 +72,11 @@ For a source build, set `discovery.local_paths` to
 `adapters/typescript/opencode/opencode.fabric-adapter.json` instead. The build
 commands above create the descriptor's `dist/cli.js` runner.
 
-The adapter selects the `default` model role or the only configured role. With
-multiple roles, configure `default`. Set `api_key_env` to the name of the
-environment variable that contains the provider credential; it must be a
-portable environment-variable identifier (for example, `NVIDIA_API_KEY`). The
-provider and model must be supported by the installed OpenCode SDK when no
+The adapter selects the `default` model role or the only configured role.
+Configure `default` with multiple roles. Set `api_key_env` to the name of the
+environment variable that contains the provider credential. The credential must
+be a portable environment-variable identifier (for example, `NVIDIA_API_KEY`).
+The provider and model must be supported by the installed OpenCode SDK when no
 endpoint is configured. The adapter passes this configured name explicitly to
 OpenCode, so it does not need to be the provider's conventional
 environment-variable name.
@@ -85,11 +85,11 @@ To route model requests through a local or company-hosted endpoint, set
 `base_url`. The endpoint must implement the OpenAI-compatible Chat Completions
 protocol. It is a model-provider endpoint, not the address of a remote
 OpenCode server. Remote endpoints must use HTTPS because requests include the
-provider credential; HTTP is permitted only for loopback endpoints used in
+provider credential. HTTP is permitted only for loopback endpoints used in
 local development and testing. The adapter removes OpenCode's
 `prompt_cache_key` extension for configured endpoints, so providers that
 reject that OpenAI-specific field can still use the core protocol. The proxy
-buffers and rewrites request bodies up to 16 MiB; larger requests receive HTTP
+buffers and rewrites request bodies up to 16 MiB. Larger requests receive HTTP
 413 rather than consuming unbounded adapter memory.
 
 ```python
@@ -110,7 +110,7 @@ from that workspace or the host home directory.
 The adapter runs in a persistent Bun process. `start` creates one embedded
 OpenCode host and one OpenCode session for the NeMo Fabric runtime. Ordered
 plain-text invocations reuse that session and its conversation history. A
-successful result has `output.response`; usage fields are present when OpenCode
+successful result has `output.response`. Usage fields are present when OpenCode
 reports them. `stop` removes the OpenCode session and closes the embedded host.
 
 ```mermaid
