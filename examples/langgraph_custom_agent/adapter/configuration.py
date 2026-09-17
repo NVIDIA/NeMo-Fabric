@@ -23,6 +23,14 @@ OPENAI_COMPATIBLE_PROVIDERS = frozenset(
     {"nvidia", "openai", "openai-compatible"}
 )
 MODEL_REQUEST_TIMEOUT_SECONDS = 60
+DEFAULT_MAX_HISTORY_ENTRIES = 20
+
+
+@dataclass(frozen=True, slots=True)
+class ContinuationSettings:
+    """Adapter settings projected for warm continuation."""
+
+    max_history_entries: int = DEFAULT_MAX_HISTORY_ENTRIES
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +39,7 @@ class AgentDependencies:
 
     model: BaseChatModel
     system_instruction: str
+    max_history_entries: int = DEFAULT_MAX_HISTORY_ENTRIES
 
 
 def _config_error(field: str, message: str) -> lifecycle.LifecycleError:
@@ -38,6 +47,19 @@ def _config_error(field: str, message: str) -> lifecycle.LifecycleError:
         "email_phishing_invalid_config",
         message,
         metadata={"field": field},
+    )
+
+
+def _continuation_settings(agent_config: AgentConfig) -> ContinuationSettings:
+    """Translate descriptor-validated harness settings once at the boundary."""
+
+    settings = agent_config.harness.settings if agent_config.harness else {}
+    continuation = settings.get("continuation", {})
+    return ContinuationSettings(
+        max_history_entries=continuation.get(
+            "max_history_entries",
+            DEFAULT_MAX_HISTORY_ENTRIES,
+        )
     )
 
 
@@ -107,4 +129,5 @@ def resolve_agent_dependencies(agent_config: AgentConfig) -> AgentDependencies:
     return AgentDependencies(
         model=ChatOpenAI(**chat_model_options),
         system_instruction=system_instruction,
+        max_history_entries=_continuation_settings(agent_config).max_history_entries,
     )

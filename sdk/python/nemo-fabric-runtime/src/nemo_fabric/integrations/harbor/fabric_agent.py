@@ -119,6 +119,7 @@ else:
             fabric_timeout_sec: int | None = None,
             extra_env: dict[str, str] | None = None,
             *args: Any,
+            fabric_model_api_key_env: str | None = None,
             **kwargs: Any,
         ) -> None:
             super().__init__(logs_dir=logs_dir, extra_env=extra_env, *args, **kwargs)
@@ -147,6 +148,15 @@ else:
             self.fabric_workspace = str(workspace)
             self.fabric_harness_settings = dict(fabric_harness_settings or {})
             self.fabric_model_base_url = fabric_model_base_url
+            if fabric_model_api_key_env is not None and (
+                not fabric_model_api_key_env
+                or fabric_model_api_key_env != fabric_model_api_key_env.strip()
+            ):
+                raise ValueError(
+                    "fabric_model_api_key_env must be a non-empty environment "
+                    "variable name without surrounding whitespace"
+                )
+            self.fabric_model_api_key_env = fabric_model_api_key_env
             self.fabric_system_instruction = fabric_system_instruction
             self.fabric_max_turns = fabric_max_turns
             self.fabric_runtime_timeout_seconds = fabric_runtime_timeout_seconds
@@ -280,6 +290,7 @@ else:
                 workspace=self.fabric_workspace,
                 harness_settings=self.fabric_harness_settings,
                 model_base_url=self.fabric_model_base_url,
+                model_api_key_env=self.fabric_model_api_key_env,
                 system_instruction=self.fabric_system_instruction,
                 max_turns=self.fabric_max_turns,
                 timeout_seconds=self.fabric_runtime_timeout_seconds,
@@ -368,6 +379,7 @@ def build_harbor_config(
     workspace: str,
     harness_settings: dict[str, Any] | None = None,
     model_base_url: str | None = None,
+    model_api_key_env: str | None = None,
     system_instruction: str | None = None,
     max_turns: int | None = None,
     timeout_seconds: float | None = None,
@@ -444,9 +456,12 @@ def build_harbor_config(
             provider=model_provider(model_name),
             model=model_name,
             base_url=model_base_url,
+            api_key_env=model_api_key_env,
         )
     elif model_base_url is not None:
         raise ValueError("model_base_url requires model_name")
+    elif model_api_key_env is not None:
+        raise ValueError("model_api_key_env requires model_name")
     for server in mcp_servers:
         if server.transport == "stdio":
             config.add_mcp_server(

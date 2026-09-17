@@ -63,6 +63,10 @@ translation:
   and `extension_schemas` where applicable. Use
   `model_schema` only for static model/provider compatibility and model settings;
   keep credential validity and provider availability in startup validation.
+- New adapters that consume `models.<role>.top_p` or `.max_tokens` should declare
+  the corresponding normalized `config.accepts` field. Existing descriptors
+  that declare either name through `extension_schemas.model` remain compatible
+  and receive it in `AgentModelConfig.extensions`.
 - Declare runtime requirements and telemetry outputs without secret values.
 - Leave optional capability flags false unless the installed NeMo Fabric runtime
   exposes and tests that adapter operation. Set `capabilities.streaming` only
@@ -202,6 +206,33 @@ the transport envelope or infer failure from fields inside `output`.
 Return `AgentRunStatus.FAILED` with an `AgentRunError` when the target completes
 with a failed outcome. Raise an exception when the adapter cannot produce a
 normalized terminal result.
+
+### Support Warm Session Continuation
+
+When later invocations must use earlier conversation state, retain that state
+on the adapter runtime created during `start`. Prefer a target-native live
+session whose lifetime and retention behavior are suitable for the deployment.
+Do not substitute a framework's development-only in-memory checkpointer in a
+production adapter. If the target has no suitable facility, retain the
+adapter-owned history required to construct its next native request.
+
+Bound retained history so a live runtime cannot grow memory or model input
+without limit. When consumers need control, publish a typed adapter-wide
+`harness.settings` or target-specific `workflow.settings` field with explicit
+units, defaults, validation bounds, and overflow behavior. Do not overload
+`runtime.max_turns`, which limits one invocation's agent loop.
+
+Keep session state separate from invocation state. Conversation context,
+required artifact references, and live workspace state may persist until
+`stop`; timeout state, counters, terminal markers, result assembly, usage, and
+telemetry scopes reset for each `invoke`. Independent runtime instances must
+never share mutable continuation state.
+
+Test observable continuation rather than merely calling `invoke` twice: make
+the second result depend on the first turn without caller-side replay, then
+prove another runtime cannot observe that context. Refer to the
+[LangGraph custom-agent example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/langgraph_custom_agent)
+for an adapter-owned history pattern.
 
 For in-process Relay SDK telemetry where the adapter owns the invocation-level
 Agent scope, wrap that scope with

@@ -17,6 +17,9 @@ from examples.langgraph_custom_agent.adapter.configuration import (
     DEFAULT_SYSTEM_INSTRUCTION,
 )
 from examples.langgraph_custom_agent.adapter.configuration import (
+    DEFAULT_MAX_HISTORY_ENTRIES,
+)
+from examples.langgraph_custom_agent.adapter.configuration import (
     MODEL_REQUEST_TIMEOUT_SECONDS,
 )
 from examples.langgraph_custom_agent.adapter.configuration import (
@@ -57,6 +60,19 @@ def test_resolver_applies_every_advertised_model_and_instruction_field(monkeypat
     assert dependencies.model.temperature == 0.2
     assert dependencies.model.request_timeout == MODEL_REQUEST_TIMEOUT_SECONDS
     assert dependencies.system_instruction == "Use the extracted signals."
+    assert dependencies.max_history_entries == DEFAULT_MAX_HISTORY_ENTRIES
+
+
+def test_resolver_applies_continuation_history_limit(monkeypatch):
+    monkeypatch.setenv("TEST_NVIDIA_API_KEY", "test-key")
+    mapping = _config_mapping()
+    mapping["harness"] = {
+        "settings": {"continuation": {"max_history_entries": 7}}
+    }
+
+    dependencies = resolve_agent_dependencies(AgentConfig.from_mapping(mapping))
+
+    assert dependencies.max_history_entries == 7
 
 
 def test_resolver_appends_to_the_agent_default_instruction():

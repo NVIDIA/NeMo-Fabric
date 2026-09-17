@@ -73,6 +73,91 @@ def test_graph_keeps_classification_deterministic_and_uses_model_for_explanation
     )
 
 
+def test_graph_accepts_prior_assessment_history(monkeypatch):
+    model_inputs = []
+    original_ainvoke = FakeListChatModel.ainvoke
+
+    async def recording_ainvoke(model, input_value, *args, **kwargs):
+        model_inputs.append(input_value)
+        return await original_ainvoke(model, input_value, *args, **kwargs)
+
+    monkeypatch.setattr(FakeListChatModel, "ainvoke", recording_ainvoke)
+    graph = build_email_phishing_graph(
+        FakeListChatModel(
+            responses=[
+                "First explanation.",
+                "Second explanation.",
+                "Third explanation.",
+            ]
+        ),
+        "Explain the fixed assessment.",
+    )
+
+    first = asyncio.run(
+        graph.ainvoke(
+            {"email": "Urgent: verify your password immediately."},
+        )
+    )
+    second = asyncio.run(
+        graph.ainvoke(
+            {
+                "email": "Team lunch is at noon.",
+                "assessment_history": first["assessment_history"],
+            },
+        )
+    )
+    third = asyncio.run(
+        graph.ainvoke(
+            {
+                "email": "Act now and sign in to avoid suspension.",
+                "assessment_history": second["assessment_history"],
+            },
+        )
+    )
+
+    assert "previous_classification" not in first
+    assert second["previous_classification"] == "phishing"
+    assert [item["classification"] for item in second["assessment_history"]] == [
+        "phishing",
+        "benign",
+    ]
+    assert third["previous_classification"] == "benign"
+    assert [item["classification"] for item in third["assessment_history"]] == [
+        "phishing",
+        "benign",
+        "phishing",
+    ]
+    second_prompt = next(
+        content for role, content in model_inputs[1] if role == "user"
+    )
+    assert "Prior assessments:" in second_prompt
+    assert '"classification": "phishing"' in second_prompt
+    assert "Urgent: verify your password immediately." in second_prompt
+
+
+def test_graph_does_not_retain_implicit_history_between_invocations():
+    graph = build_email_phishing_graph(
+        FakeListChatModel(responses=["First explanation.", "Isolated explanation."]),
+        "Explain the fixed assessment.",
+    )
+
+    asyncio.run(
+        graph.ainvoke(
+            {"email": "Urgent: verify your password immediately."},
+        )
+    )
+    isolated = asyncio.run(
+        graph.ainvoke(
+            {"email": "Team lunch is at noon."},
+        )
+    )
+
+    assert "previous_classification" not in isolated
+    assert [item["classification"] for item in isolated["assessment_history"]] == [
+        "benign"
+    ]
+
+
 def test_graph_uses_an_optional_native_url_inspection_tool():
     @tool
     async def inspect_url(url: str) -> list[dict[str, str]]:

@@ -6,10 +6,14 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 from typing import Any
 
 from examples.harbor.nooa_bench.verify_run import verify
+
+
+REPOSITORY_ROOT = Path(__file__).parents[2]
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -151,3 +155,60 @@ def test_verify_accepts_zero_reward_swebench_run(tmp_path: Path):
     )
 
     assert summary["reward"] == 0.0
+
+
+def test_harbor_example_uses_published_nooa_packages():
+    adapter_project = tomllib.loads(
+        (REPOSITORY_ROOT / "adapters" / "python" / "nooa" / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )["project"]
+    assert set(adapter_project["optional-dependencies"]["harness"]) == {
+        "nooa>=0.0.10,<0.0.11",
+        "nooa-cli>=0.0.10,<0.0.11",
+        "nooa-bench>=0.0.10,<0.0.11",
+    }
+    assert set(adapter_project["optional-dependencies"]["full"]) == {
+        *adapter_project["optional-dependencies"]["harness"],
+        *adapter_project["optional-dependencies"]["relay"],
+    }
+
+    files = (
+        REPOSITORY_ROOT / "examples" / "harbor" / "nooa_bench" / "prepare.sh",
+        REPOSITORY_ROOT / "examples" / "harbor" / "nooa_bench" / "prepare_swebench.sh",
+        REPOSITORY_ROOT
+        / "examples"
+        / "harbor"
+        / "nooa_bench"
+        / "task"
+        / "environment"
+        / "Dockerfile",
+        REPOSITORY_ROOT
+        / "examples"
+        / "harbor"
+        / "nooa_bench"
+        / "swebench"
+        / "Dockerfile",
+    )
+    for path in files:
+        content = path.read_text(encoding="utf-8")
+        assert "labs-OO-Agents" not in content
+        assert "external/nooa" not in content
+        assert "nooa-adapter" not in content
+        assert "nooa-constraints" not in content
+        assert "PYTHONPATH" not in content
+
+    prepare = files[0].read_text(encoding="utf-8")
+    calculator_dockerfile = files[2].read_text(encoding="utf-8")
+    swebench_dockerfile = files[3].read_text(encoding="utf-8")
+    assert (
+        'uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapters/python/nooa"'
+        in prepare
+    )
+    assert '&& pip install --no-cache-dir "nemo-fabric-adapters-nooa[full]"' in (
+        calculator_dockerfile
+    )
+    assert (
+        '&& uv pip install --python /opt/nemo-fabric-venv/bin/python \\\n'
+        '        "nemo-fabric-adapters-nooa[full]"'
+    ) in swebench_dockerfile

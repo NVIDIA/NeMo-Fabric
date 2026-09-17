@@ -34,9 +34,7 @@ from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import telemetry
 
 # Default agent loop budget when FabricConfig.runtime.max_turns is unset.
-# Mirrors Hermes' own AIAgent default (agent/agent_init.py); a lower value such
-# as 1 silently starves multi-step tasks (they run out of budget before
-# answering while the trial still reports success). See FABRIC-85.
+# The actual internal hermes default  as of v0.21 is `sys.maxsize`
 DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
 hermes_mcp_server_config = configuration.hermes_mcp_server_config
@@ -175,7 +173,7 @@ class HermesRuntime:
                 if max_iterations is None:
                     max_iterations = DEFAULT_MAX_ITERATIONS
                 temperature = model_config.temperature
-                top_p = model_config.extensions.get("top_p")
+                top_p = model_config.top_p
                 request_overrides = {
                     name: value
                     for name, value in (
@@ -201,10 +199,8 @@ class HermesRuntime:
                         save_trajectories=bool(
                             self._settings.get("save_trajectories", False)
                         ),
-                        max_tokens=model_config.extensions.get(
-                            "max_tokens",
-                            self._settings.get("max_tokens", 512),
-                        ),
+                        max_tokens=model_config.max_tokens
+                        or self._settings.get("max_tokens", 512),
                         request_overrides=request_overrides or None,
                         reasoning_config=self._settings.get(
                             "reasoning_config", {"effort": "none"}

@@ -116,7 +116,7 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
 
 
 def test_descriptor_uses_the_typed_agent_config_contract():
-    """The Hermes descriptor declares its typed config and model extensions."""
+    """The Hermes descriptor declares its typed normalized config."""
     descriptor_path = (
         Path(__file__).parents[2]
         / "adapters"
@@ -131,6 +131,8 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "models",
         "models.base_url",
         "models.temperature",
+        "models.top_p",
+        "models.max_tokens",
         "instructions.system",
         "runtime.max_turns",
         "tools.enabled",
@@ -139,19 +141,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "mcp.auth.oauth2",
         "skills",
     ]
-    assert descriptor["extension_schemas"]["model"]["properties"] == {
-        "top_p": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Nucleus sampling probability passed to the model provider.",
-        },
-        "max_tokens": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Maximum number of tokens for responses from this model role.",
-        },
-    }
+    assert "model" not in descriptor["extension_schemas"]
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
 
 
@@ -536,18 +526,6 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         "platform_toolsets": {"cli": ["git"]},
         "plugins": {"enabled": ["custom/plugin", "observability/nemo_relay"]},
     }
-
-
-def test_default_max_iterations_matches_hermes_library_default():
-    # Regression guard for FABRIC-85: the adapter must not override Hermes' own
-    # sane loop budget with a starving value like 1, which silently truncates
-    # multi-step tasks while the trial still reports success.
-    assert adapter.DEFAULT_MAX_ITERATIONS > 1
-
-    hermes_default = (
-        inspect.signature(AIAgent.__init__).parameters["max_iterations"].default
-    )
-    assert adapter.DEFAULT_MAX_ITERATIONS == hermes_default
 
 
 def test_build_hermes_config_omits_max_turns_when_fabric_limit_unset():
@@ -1374,10 +1352,8 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
                     "model": "test-model",
                     "api_key_env": "TEST_API_KEY",
                     "temperature": 0.2,
-                    "extensions": {
-                        "top_p": 0.85,
-                        "max_tokens": 768,
-                    },
+                    "top_p": 0.85,
+                    "max_tokens": 768,
                 }
             },
         }

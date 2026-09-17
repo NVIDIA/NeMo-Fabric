@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
+from contextlib import AsyncExitStack
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -260,6 +262,140 @@ async def test_failed_cleanup_does_not_mask_invoke_failure(mock_native: MagicMoc
     mock_native.stop_runtime.assert_called_once()
 
 
+async def test_stop_logs_collector_deregistration_failure(
+    mock_native: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    runtime = _runtime_wrapper(mock_native)
+    mock_deregister = AsyncMock(side_effect=RuntimeError("collector unavailable"))
+    mock_close = AsyncMock()
+    monkeypatch.setattr(runtime, "_deregister_requests", mock_deregister)
+    monkeypatch.setattr(runtime, "_close_streaming_resources", mock_close)
+
+    with caplog.at_level(logging.WARNING, logger=runtime_mod.logger.name):
+        await runtime.stop()
+
+    assert runtime.status is RuntimeStatus.STOPPED
+    assert "ATOF collector deregistration failed during runtime shutdown" in caplog.text
+    mock_native.stop_runtime.assert_called_once()
+    mock_deregister.assert_awaited_once()
+    mock_close.assert_awaited_once()
+
+
+async def test_stop_preserves_native_failure_when_collector_deregistration_fails(
+    mock_native: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    mock_native.stop_runtime.side_effect = RuntimeError("native stop failed")
+    runtime = _runtime_wrapper(mock_native)
+    mock_deregister = AsyncMock(side_effect=RuntimeError("collector unavailable"))
+    mock_close = AsyncMock()
+    monkeypatch.setattr(runtime, "_deregister_requests", mock_deregister)
+    monkeypatch.setattr(runtime, "_close_streaming_resources", mock_close)
+
+    with pytest.raises(FabricRuntimeError, match="native stop failed") as caught:
+        await runtime.stop()
+
+    assert caught.value.__notes__ == ["runtime cleanup failed: collector unavailable"]
+    mock_deregister.assert_awaited_once()
+    mock_close.assert_awaited_once()
+
+
+async def test_deregister_requests_attempts_all_registered_requests(
+    mock_native: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = _runtime_wrapper(mock_native)
+    runtime._registered_requests = {"request-1", "request-2", "request-3"}
+    first_error = RuntimeError("first collector failure")
+    third_error = RuntimeError("third collector failure")
+    mock_deregister = AsyncMock(side_effect=[first_error, None, third_error])
+    monkeypatch.setattr(runtime, "_deregister_request", mock_deregister)
+
+    with pytest.raises(ExceptionGroup) as caught:
+        await runtime._deregister_requests()
+
+    assert mock_deregister.await_count == 3
+    assert {call.args[0] for call in mock_deregister.await_args_list} == {
+        "request-1",
+        "request-2",
+        "request-3",
+    }
+    assert caught.value.exceptions == (first_error, third_error)
+
+
+async def test_cancelled_registration_is_deregistered_during_shutdown(
+    mock_native: MagicMock,
+):
+    registration_committed = asyncio.Event()
+    wait_for_response = asyncio.Event()
+    collector_registrations: set[str] = set()
+
+    async def register(request_id: str) -> None:
+        collector_registrations.add(request_id)
+        registration_committed.set()
+        await wait_for_response.wait()
+
+    async def deregister(request_id: str, *, remove_queue: bool) -> None:
+        assert remove_queue is True
+        collector_registrations.discard(request_id)
+
+    mock_collector = MagicMock()
+    mock_collector.register = AsyncMock(side_effect=register)
+    mock_collector.deregister = AsyncMock(side_effect=deregister)
+    mock_collector.aclose = AsyncMock()
+    runtime = _runtime_wrapper(mock_native)
+    runtime._collector_client = mock_collector
+
+    registration = asyncio.create_task(runtime._register_request("request-1"))
+    await registration_committed.wait()
+    registration.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await registration
+
+    assert runtime._registered_requests == {"request-1"}
+    assert collector_registrations == {"request-1"}
+
+    await runtime.stop()
+
+    assert runtime._registered_requests == set()
+    assert collector_registrations == set()
+    mock_collector.deregister.assert_awaited_once_with(
+        "request-1",
+        remove_queue=True,
+    )
+
+
+async def test_failed_registration_remains_tracked_until_cleanup_succeeds(
+    mock_native: MagicMock,
+):
+    registration_error = FabricRuntimeError("collector response lost")
+    mock_collector = MagicMock()
+    mock_collector.register = AsyncMock(side_effect=registration_error)
+    mock_collector.deregister = AsyncMock(
+        side_effect=RuntimeError("collector unavailable")
+    )
+    runtime = _runtime_wrapper(mock_native)
+    runtime._collector_client = mock_collector
+
+    with pytest.raises(FabricRuntimeError) as caught:
+        await runtime._register_request("request-1")
+
+    assert caught.value is registration_error
+    assert runtime._registered_requests == {"request-1"}
+
+    with pytest.raises(ExceptionGroup, match="deregistration failed"):
+        await runtime._deregister_requests()
+
+    assert runtime._registered_requests == {"request-1"}
+
+    mock_collector.deregister.side_effect = None
+    await runtime._deregister_requests()
+
+    assert runtime._registered_requests == set()
+
+
 async def test_runtime_preserves_non_mapping_message_values(mock_native: MagicMock):
     result = json.loads(
         mock_native.invoke_runtime.side_effect(
@@ -308,6 +444,22 @@ async def test_stop_is_idempotent_and_blocks_future_invokes(mock_native: MagicMo
     assert mock_native.stop_runtime.call_count == 1
     with pytest.raises(FabricStateError, match="stopped"):
         await runtime.invoke(input="hello")
+
+
+async def test_stop_closes_runtime_owned_collector(mock_native: MagicMock):
+    mock_collector = MagicMock(spec=AsyncExitStack)
+    client = Fabric()
+    client._native_module = lambda: mock_native  # type: ignore[method-assign]
+    runtime = Runtime(
+        client=client,
+        plan=_plan(),
+        runtime=_runtime(),
+        collector=mock_collector,
+    )
+
+    await runtime.stop()
+
+    mock_collector.aclose.assert_awaited_once()
 
 
 async def test_stop_rejects_in_flight_turn(

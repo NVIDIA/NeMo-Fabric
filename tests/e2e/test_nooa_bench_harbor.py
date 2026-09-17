@@ -9,7 +9,6 @@ import asyncio
 import json
 import os
 import shlex
-import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,7 +18,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-pytestmark = pytest.mark.usefixtures("requires_harbor")
+pytestmark = [
+    pytest.mark.usefixtures("requires_harbor"),
+    pytest.mark.skipif(
+        not ((3, 12) <= sys.version_info[:2] < (3, 14)),
+        reason="NOOA supports Python 3.12 and 3.13",
+    ),
+]
 
 ROOT = Path(__file__).parents[2]
 
@@ -35,21 +40,11 @@ async def test_harbor_fabric_agent_runs_nooa_bench_adapter(
     workspace = tmp_path / "testbed"
     workspace.mkdir()
     artifacts = tmp_path / "artifacts"
-    bundle = tmp_path / "bundle"
-    bundle_adapters = bundle / "adapters"
-    bundle_adapters.mkdir(parents=True)
-    shutil.copyfile(
-        ROOT / "external" / "nooa" / "nooa-bench.fabric-adapter.json",
-        bundle_adapters / "nooa-bench.fabric-adapter.json",
-    )
-
     fixture_source = ROOT / "tests" / "fixtures" / "nooa_bench" / "src"
-    adapter_source = ROOT / "external" / "nooa" / "src"
-    python_path = os.pathsep.join((str(fixture_source), str(adapter_source)))
+    python_path = str(fixture_source)
     agent = FabricAgent(
         logs_dir=tmp_path / "logs",
         fabric_adapter_id="nvidia.fabric.nooa.bench-agent",
-        fabric_config_bundle=bundle,
         fabric_environment_env={
             "ADAPTER_PYTHON": sys.executable,
             "OPENAI_API_KEY": "fixture-key",
@@ -81,7 +76,7 @@ async def test_harbor_fabric_agent_runs_nooa_bench_adapter(
         spec_path = arguments[arguments.index("--spec") + 1]
         result_path = arguments[arguments.index("--result") + 1]
         payload = FabricRunPayload.model_validate_json(remote_files[spec_path])
-        payload.config_base_dir = bundle
+        payload.config_base_dir = tmp_path
         assert payload.config.environment is not None
         payload.config.environment.workspace = str(workspace)
         payload.config.environment.artifacts = str(artifacts)

@@ -43,6 +43,29 @@ and defaults to `OPENAI_API_KEY` only for the native `openai` provider. Every
 other provider must set `api_key_env` explicitly (a missing one is a normalized
 configuration failure), so a key is never sent to the wrong endpoint.
 
+Set `models.<role>.top_p` from `0` through `1` and a positive
+`models.<role>.max_tokens` to control nucleus sampling and the response token
+limit for that model role. These are normalized model fields, not entries in
+`models.<role>.settings`:
+
+```python
+from nemo_fabric import ModelConfig
+
+model = ModelConfig(
+    provider="nvidia",
+    model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    api_key_env="NVIDIA_API_KEY",
+    base_url="https://integrate.api.nvidia.com/v1",
+    top_p=0.8,
+    max_tokens=512,
+)
+```
+
+The adapter passes `top_p` and `max_tokens` to LangChain only when configured,
+so omitted fields preserve the model provider's defaults. Planning rejects
+unknown top-level model fields and every key under
+`models.<role>.settings`.
+
 Because `models.<role>.api_key_env` is provider-specific, the adapter declares no
 static env requirement; a runtime **preflight** verifies that the `deepagents`
 package is importable and the configured credential is set. A failed preflight
@@ -51,7 +74,7 @@ fails runtime start with a stable lifecycle error.
 NeMo Fabric maps the following into the harness:
 
 - The selected `models` role supplies `model`, `provider`, `api_key_env`,
-  `base_url`, and `temperature`.
+  `base_url`, `temperature`, `top_p`, and `max_tokens`.
 - `instructions.system` supports `replace` and becomes the Deep Agents
   `system_prompt`. Deep Agents rejects `append`.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
@@ -59,10 +82,10 @@ NeMo Fabric maps the following into the harness:
   is a graph-superstep budget, not a promise of ten model responses or tool
   calls. One interaction can consume multiple supersteps. Omit the field
   to preserve the Deep Agents default.
-- `environment.workspace` roots the Deep Agents filesystem backend
+- By default, `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
-  confines the agent to the workspace: absolute paths and `..` cannot escape
-  `root_dir`.
+  confines filesystem tools to the workspace: absolute paths and `..` cannot
+  escape `root_dir`.
 - Routed `skills` (`native.skill_paths`) become the Deep Agents `skills` sources.
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
@@ -70,9 +93,9 @@ NeMo Fabric maps the following into the harness:
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.
-- `harness.settings.deepagents` accepts the JSON-serializable Deep Agents
-  `interrupt_on` and `subagents` options. The descriptor schema rejects unknown
-  settings and fields before runtime start.
+- `harness.settings.deepagents` accepts the adapter-owned `backend` selector and
+  the JSON-serializable Deep Agents `interrupt_on` and `subagents` options. The
+  descriptor schema rejects unknown settings and fields before runtime start.
 
 ### Harness Settings
 
@@ -106,6 +129,9 @@ harness = HarnessConfig(
 
 The `deepagents` object is closed and supports the following properties:
 
+- `backend` accepts only `{"type": "local_shell"}`. This opt-in constructs
+  `LocalShellBackend` at the required `environment.workspace`. Omit `backend`
+  to preserve the existing filesystem or Deep Agents default backend behavior.
 - `interrupt_on` maps a Deep Agents tool name to a boolean or an object with
   required `allowed_decisions`. Decisions are `approve`, `edit`, `reject`, or
   `respond`. The object can also contain a static `description` and an
@@ -119,6 +145,61 @@ The `deepagents` object is closed and supports the following properties:
   and a JSON `response_format`. An asynchronous subagent requires `name`,
   `description`, and `graph_id`; it can also contain `url` and string-valued
   `headers`.
+
+### Enable Local Shell Execution for a Supervised Demo
+
+> [!WARNING]
+> `LocalShellBackend` executes commands directly on the adapter host with the
+> host user's permissions. It provides no process isolation, and shell commands
+> can bypass `virtual_mode` filesystem restrictions. Use it only with trusted
+> input in a controlled environment. Do not use it for production or
+> multi-tenant workloads.
+
+The adapter requires `environment.workspace` and an explicit Fabric tool policy
+when `local_shell` is selected. The policy is applied to the main agent and all
+declarative subagents, including a subagent that replaces the parent's
+`interrupt_on` map. Include `execute` in `tools.enabled` to permit commands;
+omit it from that allowlist or add it to `tools.blocked` to prevent commands.
+
+Do not configure `interrupt_on.execute` with `local_shell`. The current adapter
+lifecycle cannot surface and resume a LangGraph approval interrupt, so the
+adapter rejects that combination instead of reporting an interrupted command as
+a completed turn.
+
+The following configuration opts in to local shell execution and limits the
+tool surface to `execute`. It does not provide per-command approval; use it only
+with trusted input under direct operator supervision:
+
+```python
+from nemo_fabric import EnvironmentConfig, HarnessConfig, ToolsConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.langchain.deepagents",
+    settings={
+        "deepagents": {"backend": {"type": "local_shell"}}
+    },
+)
+environment = EnvironmentConfig(
+    provider="local",
+    workspace="/path/to/supervised-demo",
+)
+tools = ToolsConfig(enabled=["execute"])
+```
+
+`LocalShellBackend` keeps `inherit_env=False`, so commands do not inherit
+ambient adapter-host variables such as `HOME`. Values explicitly configured in
+`environment.env` are passed to shell commands and are available to
+agent-generated commands. If `environment.env` does not set `PATH`, the shell
+provides only its fallback path; configure required variables explicitly and
+use absolute executable paths when needed. The `execute` tool remains subject
+to `tools.enabled` and `tools.blocked`, like all other Deep Agents built-ins.
+
+File tools and shell commands use different absolute-path namespaces when
+`virtual_mode=True`. For file tools, `/report.txt` resolves to
+`<workspace>/report.txt`; in `execute`, the same path refers to `/report.txt` on
+the adapter host. Shell commands start in `environment.workspace`, so use
+workspace-relative paths, such as `cat report.txt`, for files surfaced by file
+tools. Do not pass a file tool's virtual absolute path directly to `execute`.
 
 Python middleware, `FilesystemPermission` objects, Python tool objects, and
 precompiled `runnable` subagents are not exposed through `harness.settings`.

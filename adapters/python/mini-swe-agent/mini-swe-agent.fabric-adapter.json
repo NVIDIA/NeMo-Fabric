@@ -12,6 +12,8 @@
       "provider": {"type": "string", "minLength": 1},
       "model": {"type": "string", "minLength": 1},
       "temperature": {"type": "number"},
+      "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+      "max_tokens": {"type": "integer", "minimum": 1},
       "api_key_env": {"type": "string", "minLength": 1},
       "base_url": {"type": "string", "minLength": 1},
       "settings": {
@@ -42,6 +44,8 @@
       "models",
       "models.base_url",
       "models.temperature",
+      "models.top_p",
+      "models.max_tokens",
       "instructions.system",
       "runtime.max_turns"
     ],

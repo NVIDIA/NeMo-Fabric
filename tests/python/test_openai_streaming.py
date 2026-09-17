@@ -291,7 +291,7 @@ def _runtime_wrapper(
             adapter_supports_openai_streaming=adapter_supports_openai_streaming,
         ),
         runtime=_runtime(),
-        stream_listener=MagicMock() if relay_streaming else None,
+        collector_client=MagicMock() if relay_streaming else None,
     )
 
 

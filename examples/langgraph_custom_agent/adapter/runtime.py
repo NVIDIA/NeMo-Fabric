@@ -17,10 +17,14 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
 
 from examples.langgraph_custom_agent.adapter.configuration import (
+    DEFAULT_MAX_HISTORY_ENTRIES,
+)
+from examples.langgraph_custom_agent.adapter.configuration import (
     resolve_agent_dependencies,
 )
 from examples.langgraph_custom_agent.adapter.mcp import resolve_url_inspector
 from examples.langgraph_custom_agent.adapter.telemetry import observe_invocation
+from examples.langgraph_custom_agent.agent.graph import Assessment
 from examples.langgraph_custom_agent.agent.graph import build_email_phishing_graph
 
 
@@ -52,6 +56,8 @@ class EmailPhishingRuntime:
         self._base_dir: Path | None = None
         self._agent_name: str | None = None
         self._model_name: str | None = None
+        self._max_history_entries = DEFAULT_MAX_HISTORY_ENTRIES
+        self._assessment_history: list[Assessment] = []
         self._graph: CompiledStateGraph | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
@@ -81,6 +87,8 @@ class EmailPhishingRuntime:
         self._base_dir = Path(payload.get("base_dir") or ".").resolve()
         self._agent_name = str(payload.get("agent_name") or "email-phishing-agent")
         self._model_name = agent_config.models["default"].model
+        self._max_history_entries = dependencies.max_history_entries
+        self._assessment_history = []
         self._graph = graph
 
     async def invoke(
@@ -120,9 +128,15 @@ class EmailPhishingRuntime:
             model_name=self._model_name,
         ) as telemetry:
             result = await self._graph.ainvoke(
-                {"email": email},
+                {
+                    "email": email,
+                    "assessment_history": list(self._assessment_history),
+                },
                 config=telemetry.runnable_config,
             )
+        self._assessment_history = list(
+            result["assessment_history"][-self._max_history_entries :]
+        )
         output = {
             "response": result["explanation"],
             "classification": result["classification"],
@@ -130,6 +144,8 @@ class EmailPhishingRuntime:
         }
         if "link_inspections" in result:
             output["link_inspections"] = result["link_inspections"]
+        if "previous_classification" in result:
+            output["previous_classification"] = result["previous_classification"]
         relay_artifacts = telemetry.artifacts()
         if relay_artifacts:
             output["relay_artifacts"] = relay_artifacts
@@ -142,6 +158,8 @@ class EmailPhishingRuntime:
         self._base_dir = None
         self._agent_name = None
         self._model_name = None
+        self._max_history_entries = DEFAULT_MAX_HISTORY_ENTRIES
+        self._assessment_history = []
         self._graph = None
 
 

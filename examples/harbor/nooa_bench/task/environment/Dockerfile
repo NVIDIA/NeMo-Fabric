@@ -9,20 +9,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY vendor/wheelhouse /opt/nemo-fabric-wheelhouse
-COPY vendor/nooa-adapter /opt/nemo-fabric-nooa
-COPY vendor/labs-OO-Agents /opt/labs-OO-Agents
 
 RUN pip install --no-cache-dir \
         /opt/nemo-fabric-wheelhouse/*.whl \
-        "nemo-relay>=0.7.2,<0.8" \
-        -e /opt/labs-OO-Agents \
-        -e /opt/labs-OO-Agents/packages/nooa-cli \
-        -e /opt/labs-OO-Agents/packages/nooa-bench
+    && pip install --no-cache-dir "nemo-fabric-adapters-nooa[full]"
 
 RUN python -c \
     "import importlib.metadata as m; from nooa_bench.bench_agent import BenchAgent; print(BenchAgent.__name__, m.version('nemo-relay'))"
-
-ENV PYTHONPATH=/opt/nemo-fabric-nooa/src
 
 COPY calculator.py /app/calculator.py
 

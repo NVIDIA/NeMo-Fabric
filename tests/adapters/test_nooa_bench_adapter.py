@@ -29,11 +29,13 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 
 ROOT = Path(__file__).parents[2]
-NOOA_ADAPTER_SOURCE = ROOT / "external" / "nooa" / "src"
-sys.path.insert(0, str(NOOA_ADAPTER_SOURCE))
+NOOA_ROOT = ROOT / "adapters" / "python" / "nooa"
 
-from nemo_fabric_adapters.nooa import bench_adapter  # noqa: E402
-from nemo_fabric_adapters.nooa import telemetry as nooa_telemetry  # noqa: E402
+if not ((3, 12) <= sys.version_info[:2] < (3, 14)):
+    pytest.skip("NOOA supports Python 3.12 and 3.13", allow_module_level=True)
+
+from nemo_fabric_adapters.nooa import bench_adapter
+from nemo_fabric_adapters.nooa import telemetry as nooa_telemetry
 
 
 def _config() -> AgentConfig:
@@ -176,9 +178,7 @@ def bench_dependencies_fixture(monkeypatch: pytest.MonkeyPatch):
 
 def test_bench_descriptor_is_a_closed_harness_adapter(tmp_path: Path):
     descriptor = json.loads(
-        (ROOT / "external" / "nooa" / "nooa-bench.fabric-adapter.json").read_text(
-            encoding="utf-8"
-        )
+        (NOOA_ROOT / "nooa-bench.fabric-adapter.json").read_text(encoding="utf-8")
     )
 
     assert descriptor["adapter_id"] == "nvidia.fabric.nooa.bench-agent"
@@ -201,7 +201,7 @@ def test_bench_descriptor_is_a_closed_harness_adapter(tmp_path: Path):
     workspace.mkdir()
     config = FabricConfig(
         metadata=MetadataConfig(name="bench-plan"),
-        discovery=DiscoveryConfig(local_paths=[ROOT / "external" / "nooa"]),
+        discovery=DiscoveryConfig(local_paths=[NOOA_ROOT]),
         harness=HarnessConfig(adapter_id=descriptor["adapter_id"]),
         models={
             "default": ModelConfig(provider="openai", model="openai/fixture-model")
@@ -402,9 +402,7 @@ def test_bench_persistent_host_runs_start_invoke_stop(tmp_path: Path):
     ]
     environment = os.environ.copy()
     environment["OPENAI_API_KEY"] = "fixture-key"
-    environment["PYTHONPATH"] = os.pathsep.join(
-        (str(fixture_source), str(NOOA_ADAPTER_SOURCE))
-    )
+    environment["PYTHONPATH"] = str(fixture_source)
 
     completed = subprocess.run(
         [sys.executable, "-m", "nemo_fabric_adapters.nooa.bench_adapter"],

@@ -10,7 +10,7 @@ targets through the NeMo Fabric workflow contract. Target packages construct
 their own agents, while the adapter provides a common lifecycle, queue
 dispatcher, and result format.
 
-Complete the [shared source and Relay setup](../README.md) before using this
+Complete the [shared installation and Relay setup](../README.md) before using this
 adapter.
 
 ## How the Adapter Works
@@ -136,11 +136,10 @@ finalizes the current invocation's artifacts.
 runs its ordinary `invoke` operation. This adapter does not implement native
 model-response streaming.
 
-## Run from Source
+## Supported Targets
 
-Complete the [shared source installation](../README.md#install-from-source).
-Include this directory and the target descriptor's directory in
-`FabricConfig.discovery.local_paths`.
+The adapter wheel installs the following target descriptors for automatic
+discovery.
 
 ### CodingAgent
 
@@ -183,7 +182,7 @@ instead of waiting indefinitely for another queue event.
 Expose the ARC example source before starting NeMo Fabric:
 
 ```bash
-export PYTHONPATH="$PWD/external/nooa/src:$PWD/../labs-OO-Agents/examples/arc_agi_3${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$PWD/../labs-OO-Agents/examples/arc_agi_3${PYTHONPATH:+:$PYTHONPATH}"
 ```
 
 This command assumes that the `labs-OO-Agents` checkout is a sibling of the

@@ -10,7 +10,10 @@ import importlib
 import json
 import os
 from collections.abc import Mapping
+from contextlib import AsyncExitStack
 from typing import Any
+
+from nemo_fabric._collector_client import _AtofCollectorClient
 from nemo_fabric.errors import (
     FabricConfigError,
     FabricError,
@@ -26,7 +29,7 @@ from nemo_fabric.runtime import (
     _run_request_payload,
 )
 from nemo_fabric.streaming import (
-    _AtofStreamListener,
+    _configured_stream_sink,
     _relay_enabled,
     _with_stream_sink,
 )
@@ -58,6 +61,9 @@ class Fabric:
     See the Getting Started overview for runnable single-invocation,
     typed-config, and multi-turn examples.
     """
+
+    def __init__(self) -> None:
+        pass
 
     def plan(
         self,
@@ -190,50 +196,103 @@ class Fabric:
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
         streaming: bool = False,
+        launch_collector: bool | None = None,
     ) -> Runtime:
         """Start a stateful runtime for one or more ordered invocations.
 
         Each call starts a new logical runtime. Runtime-scoped overrides are
-        recursively merged below invocation-scoped overrides. Set
-        ``streaming=True`` with NVIDIA NeMo Relay enabled to provision the SDK-owned
-        ATOF endpoint used by ``Runtime.invoke_stream()``.
+        recursively merged below invocation-scoped overrides. With NVIDIA NeMo
+        Relay enabled, ``streaming=True`` uses collector-backed streaming.
+        By default, streaming starts an embedded collector. Set
+        ``launch_collector=False`` to use an externally managed collector.
 
         Args:
             config: Complete typed ``FabricConfig``.
             base_dir: Base directory for resolving relative paths.
             overrides: JSON-compatible overrides applied to every invocation
                 in the runtime unless superseded by invocation overrides.
-            streaming: Whether to provision NeMo Relay ATOF streaming for
-                ``Runtime.invoke_stream()``.
+            streaming: Whether to enable collector-backed NeMo Relay ATOF
+                streaming for ``Runtime.invoke_stream()``.
+            launch_collector: Whether to launch an embedded collector. ``None``
+                defaults to ``True`` when streaming is enabled. ``False`` uses
+                an externally managed collector. This argument cannot be set
+                unless ``streaming=True``.
 
         Returns:
             An active ``Runtime``. Use it as an asynchronous context
             manager to guarantee runtime shutdown.
 
         Raises:
-            FabricConfigError: If inputs or overrides are invalid, or streaming
-                is requested without NeMo Relay enabled.
+            FabricConfigError: If inputs or overrides are invalid, streaming is
+                requested without NeMo Relay enabled, ``launch_collector`` is
+                set without streaming, or an external collector has no sink.
             FabricNativeUnavailableError: If the native extension is not
                 installed.
             FabricRuntimeError: If runtime startup fails.
         """
 
         runtime_overrides = _json_mapping(overrides, "runtime overrides")
-        stream_listener: _AtofStreamListener | None = None
+        collector: AsyncExitStack | None = None
+        collector_client: _AtofCollectorClient | None = None
         runtime_config = config
+
+        async def close_streaming_resources() -> None:
+            try:
+                if collector_client is not None:
+                    await collector_client.aclose()
+            finally:
+                if collector is not None:
+                    await collector.aclose()
+
+        if launch_collector is not None and not streaming:
+            raise FabricConfigError("launch_collector requires streaming=True")
         if streaming and not _relay_enabled(config):
             raise FabricConfigError("streaming requires Relay telemetry to be enabled")
         if streaming:
             try:
-                stream_listener = await _AtofStreamListener().start()
-                runtime_config = _with_stream_sink(config, stream_listener.url)
+                if launch_collector is not False:
+                    try:
+                        from nemo_fabric_collector import serve_collector
+                    except ImportError as error:
+                        raise FabricConfigError(
+                            "local adapter streaming requires the collector; "
+                            "install nemo-fabric[streaming]"
+                        ) from error
+                    collector = AsyncExitStack()
+                    collector_base_url = await collector.enter_async_context(
+                        serve_collector(host="127.0.0.1", port=0, standalone=True)
+                    )
+                    runtime_config = _with_stream_sink(config, collector_base_url)
+                    stream_sink = _configured_stream_sink(runtime_config)
+                    if stream_sink is None:
+                        raise RuntimeError("failed to configure the ATOF collector")
+                else:
+                    stream_sink = _configured_stream_sink(config)
+                    if stream_sink is None:
+                        raise FabricConfigError(
+                            "external collector streaming requires a configured "
+                            "nemo-fabric-stream collector sink"
+                        )
+                collector_client = _AtofCollectorClient.from_sink(stream_sink)
+                if runtime_config is config:
+                    runtime_config = config.model_copy(deep=True)
+                runtime_stream_sink = _configured_stream_sink(runtime_config)
+                if runtime_stream_sink is not None:
+                    runtime_stream_sink.url = (
+                        f"{collector_client.base_url}/v1/atof"
+                    )
+            except asyncio.CancelledError:
+                await close_streaming_resources()
+                raise
+            except FabricError:
+                await close_streaming_resources()
+                raise
             except Exception as error:
-                if stream_listener is not None:
-                    await stream_listener.close()
+                await close_streaming_resources()
                 raise FabricRuntimeError(
                     str(error),
                     stage="start",
-                    code="stream_listener_start_failed",
+                    code="collector_start_failed",
                 ) from error
 
         try:
@@ -242,8 +301,7 @@ class Fabric:
             )
             native = self._require_native_module("start_runtime")
         except BaseException:
-            if stream_listener is not None:
-                await stream_listener.close()
+            await close_streaming_resources()
             raise
         started_runtime: dict[str, Any] | None = None
 
@@ -269,23 +327,21 @@ class Fabric:
                     )
                 except Exception:
                     pass
-            if stream_listener is not None:
-                await stream_listener.close()
+            await close_streaming_resources()
             raise
         except FabricError:
-            if stream_listener is not None:
-                await stream_listener.close()
+            await close_streaming_resources()
             raise
         except Exception as error:
-            if stream_listener is not None:
-                await stream_listener.close()
+            await close_streaming_resources()
             raise FabricRuntimeError(str(error), stage="start") from error
         return Runtime(
             client=self,
             plan=plan,
             runtime=runtime,
             overrides=runtime_overrides,
-            stream_listener=stream_listener,
+            collector=collector,
+            collector_client=collector_client,
         )
 
     def _native_module(self) -> Any | None:

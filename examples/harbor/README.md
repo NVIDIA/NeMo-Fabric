@@ -68,17 +68,17 @@ not read task paths; adapter and asset resolution is deferred to
 
 Use the following package requirements for the two-environment model. Pin the
 host and task packages to the same NeMo Fabric release. These examples use
-version `0.3.0`.
+version `0.4.0`.
 
 | Environment | Required Dependencies | Purpose |
 | --- | --- | --- |
-| Harbor host | `nemo-fabric[harbor]==0.3.0` | Harbor CLI, `FabricAgent`, and typed `FabricConfig` construction |
-| Claude task without Relay | `nemo-fabric[claude]==0.3.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
-| Claude task with Relay | `nemo-fabric[claude]==0.3.0` plus a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
-| Pi task with Relay | `nemo-fabric==0.3.0`, `nemo-fabric-adapters-pi@0.3.0`, a compatible Pi SDK harness, a NeMo Relay CLI in the `>=0.9.0,<0.10.0` range on `PATH`, and the matching Relay Pi extension | NeMo Fabric runner, Pi adapter and harness, and the adapter-managed Relay gateway and extension |
-| Hermes Agent task with Relay | Task image with Hermes Agent, `nemo-fabric==0.3.0`, `nemo-fabric-adapters-hermes==0.3.0`, and `nemo-relay>=0.7.2,<0.8` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
-| NOOA BenchAgent task | Task image with NOOA core, `nooa-bench`, `nemo-fabric==0.3.0`, and the BenchAgent adapter source | NeMo Fabric runner, BenchAgent, and its source-only adapter |
-| NOOA BenchAgent task with Relay | Baseline task dependencies plus `nemo-relay>=0.7.2,<0.8` | Optional Relay telemetry for the same BenchAgent task |
+| Harbor host | `nemo-fabric[harbor]==0.4.0` | Harbor CLI, `FabricAgent`, and typed `FabricConfig` construction |
+| Claude task without Relay | `nemo-fabric[claude]==0.4.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
+| Claude task with Relay | `nemo-fabric[claude]==0.4.0` plus a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
+| Pi task with Relay | `nemo-fabric==0.4.0`, `nemo-fabric-adapters-pi@0.4.0`, a compatible Pi SDK harness, a NeMo Relay CLI in the `>=0.9.0,<0.10.0` range on `PATH`, and the matching Relay Pi extension | NeMo Fabric runner, Pi adapter and harness, and the adapter-managed Relay gateway and extension |
+| Hermes Agent task with Relay | Task image with Hermes Agent, `nemo-fabric==0.4.0`, `nemo-fabric-adapters-hermes==0.4.0`, and `nemo-relay>=0.7.2,<0.8` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
+| NOOA BenchAgent task | `nemo-fabric==0.4.0` and `nemo-fabric-adapters-nooa[harness]==0.4.0` | NeMo Fabric runner, the packaged BenchAgent adapter and descriptors, and tested NOOA harness packages |
+| NOOA BenchAgent task with Relay | `nemo-fabric==0.4.0` and `nemo-fabric-adapters-nooa[full]==0.4.0` | Baseline dependencies plus compatible Relay telemetry support |
 
 The `nemo-fabric` package installs the runtime. The `relay` extra installs the
 NeMo Relay Python package, not the CLI required by Claude.
@@ -106,6 +106,7 @@ container boundary:
 | `--mcp-config` | `mcp.servers` |
 | `--ak fabric_telemetry=relay` | `telemetry.providers.relay` and `relay.observability` |
 | `--ak fabric_model_base_url=<url>` | `models.default.base_url` |
+| `--ak fabric_model_api_key_env=<name>` | `models.default.api_key_env` |
 | `--ak fabric_system_instruction=<text>` | `instructions.system` |
 | `--ak fabric_max_turns=<count>` | `runtime.max_turns` |
 | `--ak fabric_runtime_timeout_seconds=<seconds>` | `runtime.timeout_seconds` |
@@ -113,6 +114,12 @@ container boundary:
 | `--ak fabric_blocked_tools='[...]'` | `tools.blocked` |
 | `--ak fabric_enabled_tools='[...]'` | `tools.enabled` |
 | `--ak fabric_harness_settings='{...}'` | Merged into `harness.settings`; planning rejects non-empty settings when the selected descriptor does not declare `settings_schema` |
+
+`fabric_model_api_key_env` names the environment variable the harness reads the
+model API key from inside the task container; pair it with Harbor's
+`--ae <NAME>=<value>` so the variable is present there. Adapters that require an
+explicit credential name for non-OpenAI providers (deepagents, for example) need it
+whenever `--model` is not an `openai/` model.
 
 The result is the complete `FabricConfig` uploaded with the `RunRequest` and
 task-local `base_dir`. The container-side runner deserializes that payload and

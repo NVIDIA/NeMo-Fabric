@@ -11,7 +11,7 @@ separate from the shared `InteractiveAgent` adapter because BenchAgent derives
 from NOOA's base `Agent` and implements the benchmark-specific
 `_run_evaluation(task_input)` contract.
 
-Complete the [shared source and Relay setup](../README.md) before using this
+Complete the [shared installation and Relay setup](../README.md) before using this
 adapter.
 
 ## Task Mapping
@@ -47,9 +47,9 @@ Harbor owns task materialization, the task workspace, verification, rewards,
 retries, and job artifacts. The BenchAgent adapter owns model construction,
 task execution, result normalization, Relay telemetry, and runtime cleanup.
 
-The task environment must contain NeMo Fabric, the NOOA adapter source, NOOA
-core, and `nooa-bench`. The NeMo Fabric configuration bundle must expose
-`nooa-bench.fabric-adapter.json` under its `adapters/` directory.
+The task environment must contain NeMo Fabric and
+`nemo-fabric-adapters-nooa[harness]`. The adapter wheel supplies the BenchAgent
+descriptor through installed-package discovery.
 
 Follow the runnable
 [BenchAgent Harbor walkthrough](../../../examples/harbor/nooa_bench/README.md)

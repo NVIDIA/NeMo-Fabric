@@ -94,5 +94,25 @@
       "Does not claim the same behavior for external gateways or isolated upstream scope boundaries",
       "Tests UUID and non-UUID correlation plus scope cleanup"
     ]
+  },
+  {
+    "id": "nemo-fabric-build-adapter-007-warm-session-continuation",
+    "question": "Our custom-agent harness has no durable resume support, but sequential invocations on one live Fabric runtime must retain conversation context. Add warm continuation without inventing a cold-resume API or a shared transcript service. What state belongs where, and how should we test it?",
+    "expected_skill": "nemo-fabric-build-adapter",
+    "expected_script": null,
+    "ground_truth": "The adapter creates and retains a target-native session with suitable deployment retention semantics or adapter-owned history on its per-runtime instance during start. It does not substitute a framework's development-only in-memory checkpointer in a production adapter. Each invoke appends the new request to that live state while resetting invocation-only timeout, counters, results, usage, and telemetry. Retained history has a deliberate bound; if consumers control it, the adapter publishes a typed setting with explicit units, defaults, validation bounds, and overflow behavior rather than overloading runtime.max_turns. Stop discards the state, and independent runtimes never share it. The implementation does not add durable resume, a Fabric-owned transcript store, or generic adapter-common history utilities. Tests require a second result that depends on the first turn without caller replay, direct evidence that prior context reaches the target, a history-bound case, and separate-runtime isolation.",
+    "expected_behavior": [
+      "Routes to nemo-fabric-build-adapter",
+      "Uses the existing start, ordered invoke, and stop lifecycle",
+      "Retains target-native or adapter-owned context on the per-runtime instance",
+      "Avoids framework checkpointers that are documented only for development or testing",
+      "Bounds retained history and documents any consumer-controlled setting and overflow behavior",
+      "Separates retained session state from invocation-only state",
+      "Does not introduce cold resume, durable storage, or a new resume method",
+      "Does not put framework-specific conversation history in adapter-common",
+      "Tests a context-dependent second invocation without caller replay",
+      "Tests that prior context reaches the target and that the history bound is enforced",
+      "Tests isolation between independent runtimes and cleanup at stop"
+    ]
   }
 ]

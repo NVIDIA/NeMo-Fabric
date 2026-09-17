@@ -10,8 +10,10 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
+from nemo_fabric import FabricConfigError
 from nemo_fabric import DiscoveryConfig
 from nemo_fabric import HarnessConfig
 from nemo_fabric import InstructionConfig
@@ -21,6 +23,9 @@ from nemo_fabric import ModelConfig
 
 from examples.langgraph_custom_agent.consumer.config import URL_INSPECTOR_SERVER
 from examples.langgraph_custom_agent.consumer.config import public_config
+from examples.langgraph_custom_agent.consumer.config import (
+    with_continuation_history_limit,
+)
 from examples.langgraph_custom_agent.consumer.config import with_relay
 from examples.langgraph_custom_agent.consumer.config import with_url_inspector_mcp
 
@@ -43,6 +48,29 @@ def test_descriptor_freezes_the_custom_agent_contract_surface():
         "adapter_id": ADAPTER_ID,
         "adapter_kind": "python",
         "runner": {"module": "examples.langgraph_custom_agent.adapter.runtime"},
+        "settings_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "continuation": {
+                    "type": "object",
+                    "properties": {
+                        "max_history_entries": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 1000,
+                            "default": 20,
+                            "description": (
+                                "Maximum completed assessments retained for warm "
+                                "continuation; oldest entries are discarded."
+                            ),
+                        }
+                    },
+                    "additionalProperties": False,
+                }
+            },
+            "additionalProperties": False,
+        },
         "requirements": {},
         "config": {
             "accepts": [
@@ -122,6 +150,32 @@ def test_plan_accepts_only_the_verified_relay_output(tmp_path: Path):
     assert plan["telemetry_plan"]["relay_enabled"] is True
     assert plan["telemetry_plan"]["providers"] == ["relay"]
     assert plan["telemetry_plan"]["adapter_outputs"] == ["atif"]
+
+
+def test_plan_projects_continuation_history_limit(tmp_path: Path):
+    plan = Fabric().plan(
+        with_continuation_history_limit(public_config(), 7),
+        base_dir=tmp_path,
+    )
+
+    assert plan.config.harness.settings == {
+        "continuation": {"max_history_entries": 7}
+    }
+
+
+@pytest.mark.parametrize("limit", [True, 0, 1001, "20"])
+def test_plan_rejects_invalid_continuation_history_limit(
+    tmp_path: Path,
+    limit: object,
+):
+    with pytest.raises(
+        FabricConfigError,
+        match=r"harness\.settings\.continuation\.max_history_entries",
+    ):
+        Fabric().plan(
+            with_continuation_history_limit(public_config(), limit),
+            base_dir=tmp_path,
+        )
 
 
 def test_plan_projects_optional_stdio_mcp_to_agent_config(tmp_path: Path):

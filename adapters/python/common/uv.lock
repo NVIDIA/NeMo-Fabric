@@ -10,7 +10,7 @@ resolution-markers = [
 
 [[package]]
 name = "nemo-fabric-adapter-contract"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "../../../adapter-contract/python" }
 
 [package.metadata]
@@ -19,7 +19,7 @@ provides-extras = ["pydantic"]
 
 [[package]]
 name = "nemo-fabric-adapters-common"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "nemo-fabric-adapter-contract" },

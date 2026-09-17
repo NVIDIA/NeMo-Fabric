@@ -222,13 +222,21 @@ fn python_models(model: Option<&ModelConfig>) -> String {
         .temperature
         .map(|value| value.to_string())
         .unwrap_or_else(|| "None".to_string());
+    let top_p = model
+        .top_p
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "None".to_string());
+    let max_tokens = model
+        .max_tokens
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "None".to_string());
     let base_url = model
         .base_url
         .as_deref()
         .map(python_string)
         .unwrap_or_else(|| "None".to_string());
     format!(
-        "{{\"default\": ModelConfig(provider={}, model={}, temperature={temperature}, api_key_env={}, base_url={base_url}, settings={})}}",
+        "{{\"default\": ModelConfig(provider={}, model={}, temperature={temperature}, top_p={top_p}, max_tokens={max_tokens}, api_key_env={}, base_url={base_url}, settings={})}}",
         python_string(&model.provider),
         python_string(&model.model),
         model
@@ -373,6 +381,14 @@ fn rust_models(model: Option<&ModelConfig>) -> String {
         .unwrap_or_else(|| "None".to_string());
     let temperature = model
         .temperature
+        .map(|value| format!("Some({value:?})"))
+        .unwrap_or_else(|| "None".to_string());
+    let top_p = model
+        .top_p
+        .map(|value| format!("Some({value:?})"))
+        .unwrap_or_else(|| "None".to_string());
+    let max_tokens = model
+        .max_tokens
         .map(|value| format!("Some({value})"))
         .unwrap_or_else(|| "None".to_string());
     let base_url = model
@@ -381,7 +397,7 @@ fn rust_models(model: Option<&ModelConfig>) -> String {
         .map(|value| format!("Some({}.to_string())", rust_string(value)))
         .unwrap_or_else(|| "None".to_string());
     format!(
-        "BTreeMap::from_iter([(\"default\".to_string(), nemo_fabric_core::ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, api_key_env: {api_key}, base_url: {base_url}, settings: {}, extensions: BTreeMap::new() }})])",
+        "BTreeMap::from_iter([(\"default\".to_string(), nemo_fabric_core::ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, top_p: {top_p}, max_tokens: {max_tokens}, api_key_env: {api_key}, base_url: {base_url}, settings: {}, extensions: BTreeMap::new() }})])",
         rust_string(&model.provider),
         rust_string(&model.model),
         rust_settings(&model.settings),
@@ -507,23 +523,26 @@ mod tests {
     }
 
     #[test]
-    fn renderers_preserve_model_settings_and_temperature() {
+    fn renderers_preserve_normalized_model_settings() {
         let mut config = presets::find("hermes")
             .expect("hermes preset")
             .config()
             .expect("construct Hermes config");
-        config
-            .models
-            .get_mut("default")
-            .expect("default model")
-            .temperature = Some(0.2);
+        let model = config.models.get_mut("default").expect("default model");
+        model.temperature = Some(1.0);
+        model.top_p = Some(1.0);
+        model.max_tokens = Some(512);
 
         let python = render_python(&config);
-        assert!(python.contains("temperature=0.2"));
+        assert!(python.contains("temperature=1"));
+        assert!(python.contains("top_p=1"));
+        assert!(python.contains("max_tokens=512"));
         assert!(python.contains("base_url=\"https://integrate.api.nvidia.com/v1\""));
 
         let rust = render_rust(&config);
-        assert!(rust.contains("temperature: Some(0.2)"));
+        assert!(rust.contains("temperature: Some(1.0)"));
+        assert!(rust.contains("top_p: Some(1.0)"));
+        assert!(rust.contains("max_tokens: Some(512)"));
         assert!(
             rust.contains("base_url: Some(\"https://integrate.api.nvidia.com/v1\".to_string())")
         );

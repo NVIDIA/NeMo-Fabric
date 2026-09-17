@@ -111,6 +111,20 @@ def with_temperature(base: FabricConfig, temperature: float) -> FabricConfig:
     return config
 
 
+def with_continuation_history_limit(
+    base: FabricConfig,
+    max_history_entries: int,
+) -> FabricConfig:
+    """Return an independent config with a bounded continuation history."""
+
+    config = base.model_copy(deep=True)
+    config.harness.settings = {
+        **config.harness.settings,
+        "continuation": {"max_history_entries": max_history_entries},
+    }
+    return config
+
+
 def with_url_inspector_mcp(base: FabricConfig) -> FabricConfig:
     """Return an independent config with the example's stdio MCP server."""
 

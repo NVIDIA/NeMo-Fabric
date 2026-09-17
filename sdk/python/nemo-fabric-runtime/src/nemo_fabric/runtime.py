@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Mapping, Sequence
+from contextlib import AsyncExitStack
 from copy import deepcopy
 from enum import Enum
 from typing import Any, Protocol
 
 from pydantic import ValidationError
 
+from nemo_fabric._collector_client import _AtofCollectorClient
 from nemo_fabric.errors import (
     FabricCapabilityError,
     FabricConfigError,
@@ -23,8 +26,11 @@ from nemo_fabric.errors import (
 )
 from nemo_fabric.models import RunRequest
 from nemo_fabric.openai_streaming import OpenAIInvokeStream
-from nemo_fabric.streaming import InvokeStream, _AtofStreamListener
+from nemo_fabric.streaming import InvokeStream
 from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
+
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeStatus(str, Enum):
@@ -68,7 +74,8 @@ class Runtime:
         plan: RunPlan | Mapping[str, Any],
         runtime: RuntimeHandle | Mapping[str, Any],
         overrides: Mapping[str, Any] | None = None,
-        stream_listener: _AtofStreamListener | None = None,
+        collector: AsyncExitStack | None = None,
+        collector_client: _AtofCollectorClient | None = None,
     ) -> None:
         """lazydocs: ignore"""
 
@@ -83,7 +90,9 @@ class Runtime:
         self._status = RuntimeStatus.ACTIVE
         self._current_task: asyncio.Task[Any] | None = None
         self._current_stream: _RuntimeStream | None = None
-        self._stream_listener = stream_listener
+        self._collector = collector
+        self._collector_client = collector_client
+        self._registered_requests: set[str] = set()
         self._closing = False
 
     @property
@@ -120,7 +129,7 @@ class Runtime:
     def supports_streaming(self) -> bool:
         """Return whether NVIDIA NeMo Relay ATOF streaming is enabled."""
 
-        return self._stream_listener is not None
+        return self._collector_client is not None
 
     @property
     def supports_openai_streaming(self) -> bool:
@@ -282,9 +291,9 @@ class Runtime:
             FabricStateError: If another turn or stream is active.
         """
 
-        if self._stream_listener is None:
+        if self._collector_client is None:
             raise FabricCapabilityError(
-                "streaming requires Relay telemetry and "
+                "streaming requires a configured standalone ATOF collector and "
                 "start_runtime(..., streaming=True)",
                 stage="invoke",
                 code="streaming_unavailable",
@@ -293,14 +302,67 @@ class Runtime:
         self._ensure_no_active_stream()
         self._ensure_invocable()
         payload = _run_request_payload(input=input, request=request)
+        request_id = payload["request_id"]
+        registration_ready = asyncio.Event()
         stream = InvokeStream(
-            self._invoke_payload(payload),
-            self._stream_listener,
-            request_id=payload["request_id"],
-            turn_index=len(self._invocations) + 1,
+            self._invoke_registered_payload(payload, registration_ready),
+            self._collector_client,
+            request_id=request_id,
+            registration_ready=registration_ready,
+            on_finalize=lambda: self._deregister_request(
+                request_id,
+                remove_queue=True,
+            ),
         )
         self._current_stream = stream
         return stream
+
+    async def _invoke_registered_payload(
+        self,
+        payload: dict[str, Any],
+        registration_ready: asyncio.Event,
+    ) -> RunResult:
+        request_id = payload["request_id"]
+        await self._register_request(request_id)
+        registration_ready.set()
+        try:
+            result = await self._invoke_payload(payload)
+        except BaseException as error:
+            try:
+                await self._deregister_request(request_id, remove_queue=False)
+            except Exception as cleanup_error:
+                error.add_note(
+                    f"ATOF collector deregistration failed: {cleanup_error}"
+                )
+            raise
+        await self._deregister_request(request_id, remove_queue=False)
+        return result
+
+    async def _register_request(self, request_id: str) -> None:
+        if self._collector_client is None:
+            return
+        # Registration can commit even if the response is lost or this task is
+        # cancelled, so record the cleanup obligation before sending the request.
+        self._registered_requests.add(request_id)
+        await self._collector_client.register(request_id)
+
+    async def _deregister_request(
+        self,
+        request_id: str,
+        *,
+        remove_queue: bool,
+    ) -> None:
+        if (
+            self._collector_client is None
+            or request_id not in self._registered_requests
+        ):
+            return
+        await self._collector_client.deregister(
+            request_id,
+            remove_queue=remove_queue,
+        )
+        if remove_queue:
+            self._registered_requests.discard(request_id)
 
     def invoke_openai_stream(
         self,
@@ -379,6 +441,7 @@ class Runtime:
         """
 
         if self._status is RuntimeStatus.STOPPED:
+            await self._close_streaming_resources()
             return
         if self._current_stream is not None and not self._current_stream._finalized:
             if not self._current_stream._task.done():
@@ -393,6 +456,7 @@ class Runtime:
             raise FabricStateError("runtime shutdown is already in progress")
         self._closing = True
         stopped = False
+        stop_error: BaseException | None = None
         try:
             native = self._client._require_native_module("stop")
 
@@ -408,21 +472,53 @@ class Runtime:
                 return result
 
             await _call_blocking(stop)
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as error:
             self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
+            stop_error = error
             raise
-        except FabricError:
+        except FabricError as error:
             self._status = RuntimeStatus.FAILED
+            stop_error = error
             raise
         except Exception as error:
             self._status = RuntimeStatus.FAILED
-            raise FabricRuntimeError(str(error), stage="stop") from error
+            stop_error = FabricRuntimeError(str(error), stage="stop")
+            raise stop_error from error
         else:
             self._status = RuntimeStatus.STOPPED
         finally:
             self._closing = False
-            if self._stream_listener is not None:
-                await self._stream_listener.close()
+            try:
+                await self._deregister_requests()
+            except Exception as cleanup_error:
+                if stop_error is not None:
+                    stop_error.add_note(f"runtime cleanup failed: {cleanup_error}")
+                else:
+                    logger.warning(
+                        "ATOF collector deregistration failed during runtime shutdown: %s",
+                        cleanup_error,
+                        exc_info=cleanup_error,
+                    )
+            finally:
+                await self._close_streaming_resources()
+
+    async def _deregister_requests(self) -> None:
+        errors: list[Exception] = []
+        for request_id in tuple(self._registered_requests):
+            try:
+                await self._deregister_request(request_id, remove_queue=True)
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise ExceptionGroup("ATOF collector deregistration failed", errors)
+
+    async def _close_streaming_resources(self) -> None:
+        try:
+            if self._collector_client is not None:
+                await self._collector_client.aclose()
+        finally:
+            if self._collector is not None:
+                await self._collector.aclose()
 
     def _absorb(self, result: RunResult) -> None:
         self._invocations.append(
@@ -455,8 +551,7 @@ class Runtime:
                 raise
             exc.add_note(f"runtime cleanup failed: {cleanup_error}")
         finally:
-            if self._stream_listener is not None:
-                await self._stream_listener.close()
+            await self._close_streaming_resources()
 
 
 def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:

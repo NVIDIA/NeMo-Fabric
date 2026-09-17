@@ -15,9 +15,5 @@ COPY vendor /opt/nemo-fabric-nooa
 RUN uv venv --python 3.12 /opt/nemo-fabric-venv \
     && uv pip install --python /opt/nemo-fabric-venv/bin/python \
         /opt/nemo-fabric-nooa/wheelhouse/*.whl \
-        "nemo-relay>=0.7.2,<0.8" \
-        /opt/nemo-fabric-nooa/labs-OO-Agents \
-        /opt/nemo-fabric-nooa/labs-OO-Agents/packages/nooa-cli \
-        /opt/nemo-fabric-nooa/labs-OO-Agents/packages/nooa-bench
-
-ENV PYTHONPATH=/opt/nemo-fabric-nooa/nooa-adapter/src
+    && uv pip install --python /opt/nemo-fabric-venv/bin/python \
+        "nemo-fabric-adapters-nooa[full]"

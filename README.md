@@ -155,9 +155,13 @@ integrations use the package expressions shown in each column:
 | [Hermes Agent](docs/integrations/harness/hermes.mdx) | Install Hermes Agent separately, then install `nemo-fabric[hermes-agent]` | Install Hermes Agent separately, then install `nemo-fabric-adapters-hermes` | `nemo-fabric-adapters-hermes` |
 | [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
 | [mini-SWE-agent](docs/integrations/harness/mini-swe-agent.mdx) | `nemo-fabric[mini-swe-agent]` | `nemo-fabric-adapters-mini-swe-agent[harness]` | `nemo-fabric-adapters-mini-swe-agent` |
+| [NOOA](adapters/python/nooa/README.md) | `nemo-fabric[nooa]` | `nemo-fabric-adapters-nooa[harness]` | `nemo-fabric-adapters-nooa` |
 | [Remote Agent](docs/integrations/harness/remote-agent.mdx) | `nemo-fabric[remote-agent]`* | `nemo-fabric-adapters-remote-agent[harness]`* | `nemo-fabric-adapters-remote-agent` |
 
 > * The Remote Agent adapter communicates with an independently deployed service. Its `harness` extra installs the adapter and HTTP client, but not the remote service.
+
+Install `nemo-fabric[streaming]` to include the matching collector for the
+default embedded NeMo Relay ATOF streaming path.
 
 The `nemo-fabric` package always installs the runtime. For harnesses available
 as Python packages, the root package extras install the corresponding adapter
@@ -211,7 +215,7 @@ selected adapter, and the harness inside an isolated task environment such as a
 Docker container or Daytona sandbox. Adapter discovery and task-path resolution
 occur inside that sandbox.
 
-Install `nemo-fabric[harbor]==0.3.0` in the host environment. For a Hermes
+Install `nemo-fabric[harbor]==0.4.0` in the host environment. For a Hermes
 Agent task, use a task image that installs Hermes Agent according to its
 installation guide, then install `nemo-fabric`, `nemo-fabric-adapters-hermes`,
 and optionally `nemo-fabric[relay]` in that environment. For Claude, Codex, or
@@ -279,9 +283,17 @@ harnesses and custom agents. Use these references to compare and build them:
 
 ## Roadmap
 
-- **OOAgents reference adapter:** Add a reference NeMo Fabric adapter for
-  [OOAgents](https://github.com/NVIDIA-NeMo/labs-OO-Agents).
-- **Remote-agent thin-client adapter:** Add a thin-client adapter for invoking
-  remotely hosted agents through the NeMo Fabric lifecycle.
-- **Third-party adapter registry:** Extend installed and explicit descriptor
-  discovery with a provider-backed registry and catalog experience.
+- **Expand the harness ecosystem:** Add support for
+  [OpenCode](https://opencode.ai/docs), [OpenClaw](https://docs.openclaw.ai),
+  and other high-priority first- and third-party harnesses through Fabric
+  normalized lifecycle and capability contracts.
+- **Sandbox-native execution with [NVIDIA OpenShell](https://docs.nvidia.com/openshell/about/overview):**
+  Enable seamless Fabric runtime execution within secure sandboxes.
+- **End-to-end [NVIDIA NemoClaw](https://docs.nvidia.com/nemoclaw/user-guide/openclaw/home) integration:**
+  Enable NemoClaw to use Fabric as a standard boundary for harness
+  configuration, execution, workspaces, artifacts, and telemetry.
+- **Enhanced session lifecycle management:** Provide explicit cold-start,
+  resume, and fork operations with stable session identifiers and
+  capability-aware errors.
+- **Composable sub-agent configuration:** Allow supported harnesses to
+  configure sub-agents through validated Fabric configuration.

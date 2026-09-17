@@ -85,6 +85,7 @@ _config = partial(
             "nvidia.fabric.langchain.deepagents",
             {
                 "deepagents": {
+                    "backend": {"type": "local_shell"},
                     "interrupt_on": {
                         "write_file": True,
                         "delete_file": {
@@ -219,6 +220,25 @@ def test_remote_agent_rejects_nonpositive_timeout(tmp_path: Path, setting: str):
             ),
             base_dir=tmp_path,
         )
+
+
+def test_remote_agent_accepts_relay_atof_for_invoke_stream(tmp_path: Path):
+    config = _config(
+        {
+            "base_url": "https://agents.example.test/v1",
+            "relay_streaming": True,
+        },
+        adapter_id="nvidia.fabric.remote-agent",
+    ).enable_relay()
+
+    plan = Fabric().plan(config, base_dir=tmp_path)
+
+    assert plan["telemetry_plan"]["relay_enabled"] is True
+    assert plan["telemetry_plan"]["providers"] == ["relay"]
+    assert plan["telemetry_plan"]["adapter_outputs"] == ["atof"]
+    assert (
+        plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -365,6 +385,18 @@ def test_remote_agent_rejects_nonpositive_timeout(tmp_path: Path, setting: str):
             {"deepagents": {"subagents": [{"name": "researcher"}]}},
             "harness.settings.deepagents.subagents.0",
             id="deepagents-subagent-required-fields",
+        ),
+        pytest.param(
+            "nvidia.fabric.langchain.deepagents",
+            {"deepagents": {"backend": {"type": "sandbox"}}},
+            "harness.settings.deepagents.backend.type",
+            id="deepagents-backend-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.langchain.deepagents",
+            {"deepagents": {"backend": {"type": "local_shell", "root_dir": "/tmp"}}},
+            "harness.settings.deepagents.backend.root_dir",
+            id="deepagents-backend-unknown-field",
         ),
         pytest.param(
             "nvidia.fabric.hermes",

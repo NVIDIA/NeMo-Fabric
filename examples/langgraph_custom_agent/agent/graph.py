@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 import json
+import operator
 import re
 from collections.abc import Mapping
 from typing import Any
+from typing import Annotated
 from typing import Literal
 from typing import NotRequired
 from typing import TypedDict
@@ -33,17 +35,28 @@ class LinkInspection(TypedDict):
     indicators: list[str]
 
 
+class Assessment(TypedDict):
+    """One completed email assessment retained for a later invocation."""
+
+    email: str
+    classification: RiskClassification
+    signals: list[str]
+    explanation: str
+
+
 class EmailAnalysisState(TypedDict):
-    """State accumulated while analyzing one email."""
+    """Current invocation state plus assessment history for one thread."""
 
     email: str
     signals: NotRequired[list[str]]
     link_inspections: NotRequired[list[LinkInspection]]
     classification: NotRequired[RiskClassification]
     explanation: NotRequired[str]
+    previous_classification: NotRequired[RiskClassification]
+    assessment_history: Annotated[list[Assessment], operator.add]
 
 
-def extract_signals(state: EmailAnalysisState) -> dict[str, list[str]]:
+def extract_signals(state: EmailAnalysisState) -> dict[str, Any]:
     """Extract a small deterministic set of common phishing signals."""
 
     email = state["email"].casefold()
@@ -67,7 +80,11 @@ def extract_signals(state: EmailAnalysisState) -> dict[str, list[str]]:
         )
     ):
         signals.append("account_threat")
-    return {"signals": signals}
+    update: dict[str, Any] = {"signals": signals}
+    history = state.get("assessment_history", [])
+    if history:
+        update["previous_classification"] = history[-1]["classification"]
+    return update
 
 
 def _tool_text(value: Any) -> str:
@@ -143,12 +160,15 @@ def build_email_phishing_graph(
     ) -> dict[str, str]:
         signals = ", ".join(state["signals"]) or "none"
         link_inspections = state.get("link_inspections", [])
+        history = state.get("assessment_history", [])
+        prior_assessments = json.dumps(history) if history else "none"
         response = await model.ainvoke(
             [
                 ("system", system_instruction),
                 (
                     "user",
                     "Explain this fixed email-risk assessment concisely.\n"
+                    f"Prior assessments: {prior_assessments}\n"
                     f"Classification: {state['classification']}\n"
                     f"Signals: {signals}\n"
                     f"Link inspections: {json.dumps(link_inspections)}\n"
@@ -161,10 +181,25 @@ def build_email_phishing_graph(
             raise TypeError("the explanation model must return text content")
         return {"explanation": response.content}
 
+    def record_assessment(
+        state: EmailAnalysisState,
+    ) -> dict[str, list[Assessment]]:
+        return {
+            "assessment_history": [
+                {
+                    "email": state["email"],
+                    "classification": state["classification"],
+                    "signals": list(state["signals"]),
+                    "explanation": state["explanation"],
+                }
+            ]
+        }
+
     builder = StateGraph(EmailAnalysisState)
     builder.add_node("extract_signals", extract_signals)
     builder.add_node("classify_risk", classify_risk)
     builder.add_node("explain_assessment", explain_assessment)
+    builder.add_node("record_assessment", record_assessment)
     builder.add_edge(START, "extract_signals")
     if url_inspector is None:
         builder.add_edge("extract_signals", "classify_risk")
@@ -173,5 +208,6 @@ def build_email_phishing_graph(
         builder.add_edge("extract_signals", "inspect_links")
         builder.add_edge("inspect_links", "classify_risk")
     builder.add_edge("classify_risk", "explain_assessment")
-    builder.add_edge("explain_assessment", END)
+    builder.add_edge("explain_assessment", "record_assessment")
+    builder.add_edge("record_assessment", END)
     return builder.compile()

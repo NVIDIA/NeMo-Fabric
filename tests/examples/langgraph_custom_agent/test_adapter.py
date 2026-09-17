@@ -99,7 +99,163 @@ def test_lifecycle_host_starts_once_invokes_repeatedly_and_stops(
         "response": "second explanation",
         "classification": "benign",
         "signals": [],
+        "previous_classification": "phishing",
     }
+
+
+def test_runtime_continuation_state_is_isolated_between_runtimes(
+    monkeypatch,
+    runtime_context_factory,
+    agent_config_mapping,
+):
+    model = FakeListChatModel(responses=["first explanation", "isolated explanation"])
+    monkeypatch.setattr(
+        runtime_module,
+        "resolve_agent_dependencies",
+        lambda _config: AgentDependencies(model, "Explain the assessment."),
+    )
+    config = AgentConfig.from_mapping(agent_config_mapping)
+    first_runtime = runtime_module.EmailPhishingRuntime()
+    second_runtime = runtime_module.EmailPhishingRuntime()
+    asyncio.run(
+        first_runtime.start(
+            {
+                "config": config,
+                "runtime_context": runtime_context_factory(
+                    "runtime-1", "runtime-start-1"
+                ),
+            }
+        )
+    )
+    asyncio.run(
+        second_runtime.start(
+            {
+                "config": config,
+                "runtime_context": runtime_context_factory(
+                    "runtime-2", "runtime-start-2"
+                ),
+            }
+        )
+    )
+
+    asyncio.run(
+        first_runtime.invoke(
+            *invocation(
+                runtime_context_factory("runtime-1", "invocation-1"),
+                "Urgent: verify your password immediately.",
+            )
+        )
+    )
+    isolated = asyncio.run(
+        second_runtime.invoke(
+            *invocation(
+                runtime_context_factory("runtime-2", "invocation-2"),
+                "Team lunch is at noon.",
+            )
+        )
+    )
+
+    assert "previous_classification" not in isolated.output
+    asyncio.run(first_runtime.stop())
+    asyncio.run(second_runtime.stop())
+
+
+def test_stop_discards_runtime_continuation_state(
+    monkeypatch,
+    runtime_context_factory,
+    agent_config_mapping,
+):
+    model = FakeListChatModel(responses=["first explanation", "fresh explanation"])
+    monkeypatch.setattr(
+        runtime_module,
+        "resolve_agent_dependencies",
+        lambda _config: AgentDependencies(model, "Explain the assessment."),
+    )
+    config = AgentConfig.from_mapping(agent_config_mapping)
+    runtime = runtime_module.EmailPhishingRuntime()
+    start_payload = {
+        "config": config,
+        "runtime_context": runtime_context_factory("runtime-1", "runtime-start"),
+    }
+
+    asyncio.run(runtime.start(start_payload))
+    asyncio.run(
+        runtime.invoke(
+            *invocation(
+                runtime_context_factory("runtime-1", "invocation-1"),
+                "Urgent: verify your password immediately.",
+            )
+        )
+    )
+    asyncio.run(runtime.stop())
+
+    asyncio.run(runtime.start(start_payload))
+    fresh = asyncio.run(
+        runtime.invoke(
+            *invocation(
+                runtime_context_factory("runtime-1", "invocation-2"),
+                "Team lunch is at noon.",
+            )
+        )
+    )
+
+    assert "previous_classification" not in fresh.output
+    asyncio.run(runtime.stop())
+
+
+def test_runtime_bounds_continuation_history(
+    monkeypatch,
+    runtime_context_factory,
+    agent_config_mapping,
+):
+    model = FakeListChatModel(
+        responses=["first explanation", "second explanation", "third explanation"]
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "resolve_agent_dependencies",
+        lambda _config: AgentDependencies(
+            model,
+            "Explain the assessment.",
+            max_history_entries=2,
+        ),
+    )
+    runtime = runtime_module.EmailPhishingRuntime()
+    asyncio.run(
+        runtime.start(
+            {
+                "config": AgentConfig.from_mapping(agent_config_mapping),
+                "runtime_context": runtime_context_factory(
+                    "runtime-1", "runtime-start"
+                ),
+            }
+        )
+    )
+
+    for number, email in enumerate(
+        (
+            "Urgent: verify your password immediately.",
+            "Team lunch is at noon.",
+            "Act now and sign in to avoid suspension.",
+        ),
+        start=1,
+    ):
+        asyncio.run(
+            runtime.invoke(
+                *invocation(
+                    runtime_context_factory(
+                        "runtime-1", f"invocation-{number}"
+                    ),
+                    email,
+                )
+            )
+        )
+
+    assert [
+        assessment["classification"]
+        for assessment in runtime._assessment_history
+    ] == ["benign", "phishing"]
+    asyncio.run(runtime.stop())
 
 
 def test_invocation_failure_propagates_to_lifecycle_host(
@@ -122,7 +278,7 @@ def test_invocation_failure_propagates_to_lifecycle_host(
     monkeypatch.setattr(
         runtime_module,
         "build_email_phishing_graph",
-        lambda *_args: FailingGraph(),
+        lambda *_args, **_kwargs: FailingGraph(),
     )
     runtime = runtime_module.EmailPhishingRuntime()
     asyncio.run(

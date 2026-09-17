@@ -28,7 +28,6 @@ from nemo_fabric import ToolsConfig
 from nemo_fabric import WorkflowConfig
 
 BASE_DIR = Path(__file__).resolve().parent
-NOOA_ADAPTER_DIR = BASE_DIR.parents[1] / "external" / "nooa"
 WORKSPACE = "./repos/my-service"
 SKILL_PATH = "./skills/code-review"
 PI_DESCRIPTOR = "../../adapters/typescript/pi/pi.fabric-adapter.json"
@@ -249,7 +248,6 @@ def nooa_config() -> FabricConfig:
     """Return the complete OO Agents CodingAgent variant."""
 
     config = base_config().model_copy(deep=True)
-    config.discovery = DiscoveryConfig(local_paths=[NOOA_ADAPTER_DIR])
     config.workflow = WorkflowConfig(
         target_id="nvidia.nooa.coding-agent",
         settings={},

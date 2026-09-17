@@ -14,6 +14,8 @@ pub enum AdapterConfigField {
     Models,
     ModelBaseUrl,
     ModelTemperature,
+    ModelTopP,
+    ModelMaxTokens,
     SystemInstructions,
     MaxTurns,
     EnabledTools,
@@ -48,6 +50,18 @@ Custom model endpoint.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ModelTemperature"}} /></pre>
 
 Model temperature.
+
+### `ModelTopP`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ModelTopP"}} /></pre>
+
+Model nucleus sampling probability.
+
+### `ModelMaxTokens`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ModelMaxTokens"}} /></pre>
+
+Maximum model response tokens.
 
 ### `SystemInstructions`
 

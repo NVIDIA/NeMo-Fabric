@@ -28,6 +28,7 @@ API_PATHS = {
     "openai-completions": "/chat/completions",
     "anthropic-messages": "/messages",
 }
+FABRIC_REQUEST_ID_METADATA = "nemo_fabric_request_id"
 
 
 def _api_url(base_url: str, api_type: str) -> str:
@@ -94,6 +95,26 @@ async def _sse_events(
         yield event, json.loads("\n".join(data))
 
 
+def _relay_streaming_enabled(
+    settings: dict[str, Any],
+    context: contract.RuntimeContext,
+) -> bool:
+    configured = settings.get("relay_streaming", False) is True
+    relay_enabled = context.telemetry is not None and context.telemetry.relay_enabled
+    if configured != relay_enabled:
+        reason = (
+            "requires Relay telemetry to be enabled"
+            if configured
+            else "must be explicitly enabled when Relay telemetry is configured"
+        )
+        raise lifecycle.LifecycleError(
+            "remote_agent_invalid_relay_configuration",
+            f"Remote Agent relay_streaming {reason}",
+            metadata={"field": "harness.settings.relay_streaming"},
+        )
+    return configured
+
+
 class RemoteAgentRuntime:
     """One HTTP client and transcript owned by a NeMo Fabric runtime."""
 
@@ -104,6 +125,7 @@ class RemoteAgentRuntime:
         self._runtime_id: str | None = None
         self._api_type = DEFAULT_API_TYPE
         self._messages: list[dict[str, str]] = []
+        self._relay_streaming = False
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
@@ -130,6 +152,15 @@ class RemoteAgentRuntime:
             adapter="Remote Agent",
             supported_modes={"replace"},
         )
+        self._relay_streaming = _relay_streaming_enabled(settings, context)
+        if self._relay_streaming is True and self._api_type == "anthropic-messages":
+            # According to a strict reading of https://platform.claude.com/docs/en/api/messages#metadata.user_id
+            # It appears that `user_id` is the only metadata field
+            raise lifecycle.LifecycleError(
+                "remote_agent_invalid_relay_configuration",
+                "Remote Agent relay_streaming supports only openai-responses and openai-completions",
+                metadata={"field": "harness.settings.api_type"},
+            )
         model = _selected_model(config)
         headers: dict[str, str] = {}
         if model.api_key_env is not None:
@@ -190,13 +221,18 @@ class RemoteAgentRuntime:
             )
 
         user_text = common_utils.normalize_user_input(request.input)
+        metadata = (
+            {FABRIC_REQUEST_ID_METADATA: context.request_id}
+            if self._relay_streaming
+            else None
+        )
         try:
             if self._api_type == "openai-responses":
-                text, usage = await self._invoke_responses(user_text)
+                text, usage = await self._invoke_responses(user_text, metadata)
             elif self._api_type == "openai-completions":
-                text, usage = await self._invoke_completions(user_text)
+                text, usage = await self._invoke_completions(user_text, metadata)
             else:
-                text, usage = await self._invoke_messages(user_text)
+                text, usage = await self._invoke_messages(user_text, metadata)
         except httpx.HTTPStatusError as error:
             return self._result_error(error.response.status_code)
         except httpx.RequestError as error:
@@ -233,12 +269,15 @@ class RemoteAgentRuntime:
         self._endpoint = None
         self._config = None
         self._runtime_id = None
+        self._relay_streaming = False
         self._messages = []
         if client is not None:
             await client.aclose()
 
     async def _invoke_responses(
-        self, user_text: str
+        self,
+        user_text: str,
+        metadata: dict[str, str] | None,
     ) -> tuple[str, contract.AgentUsage | None]:
         config = self._config
         if config is None:
@@ -253,9 +292,13 @@ class RemoteAgentRuntime:
             payload["instructions"] = config.instructions.system.content
         if model.temperature is not None:
             payload["temperature"] = model.temperature
-        async with self._client.stream(
-            "POST", self._endpoint, json=payload
-        ) as response:
+        if model.top_p is not None:
+            payload["top_p"] = model.top_p
+        if model.max_tokens is not None:
+            payload["max_output_tokens"] = model.max_tokens
+        if metadata is not None:
+            payload["metadata"] = metadata
+        async with self._client.stream("POST", self._endpoint, json=payload) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "response.completed":
@@ -269,7 +312,9 @@ class RemoteAgentRuntime:
         raise RuntimeError("remote agent response ended without completion")
 
     async def _invoke_completions(
-        self, user_text: str
+        self,
+        user_text: str,
+        metadata: dict[str, str] | None,
     ) -> tuple[str, contract.AgentUsage | None]:
         config = self._config
         if config is None:
@@ -284,6 +329,12 @@ class RemoteAgentRuntime:
         payload: dict[str, Any] = {"model": model.model, "messages": messages}
         if model.temperature is not None:
             payload["temperature"] = model.temperature
+        if model.top_p is not None:
+            payload["top_p"] = model.top_p
+        if model.max_tokens is not None:
+            payload["max_completion_tokens"] = model.max_tokens
+        if metadata is not None:
+            payload["metadata"] = metadata
         response = await self._client.post(self._endpoint, json=payload)
         response.raise_for_status()
         value = response.json()
@@ -295,7 +346,9 @@ class RemoteAgentRuntime:
         )
 
     async def _invoke_messages(
-        self, user_text: str
+        self,
+        user_text: str,
+        metadata: dict[str, str] | None,
     ) -> tuple[str, contract.AgentUsage | None]:
         config = self._config
         if config is None:
@@ -304,20 +357,21 @@ class RemoteAgentRuntime:
         payload: dict[str, Any] = {
             "model": model.model,
             "messages": [*self._messages, {"role": "user", "content": user_text}],
-            "max_tokens": model.settings.get(
-                "max_tokens", DEFAULT_ANTHROPIC_MAX_TOKENS
-            ),
+            "max_tokens": model.max_tokens
+            or model.settings.get("max_tokens", DEFAULT_ANTHROPIC_MAX_TOKENS),
             "stream": True,
         }
         if config.instructions and config.instructions.system:
             payload["system"] = config.instructions.system.content
         if model.temperature is not None:
             payload["temperature"] = model.temperature
+        if model.top_p is not None:
+            payload["top_p"] = model.top_p
+        if metadata is not None:
+            payload["metadata"] = metadata
         text = ""
         input_tokens = output_tokens = None
-        async with self._client.stream(
-            "POST", self._endpoint, json=payload
-        ) as response:
+        async with self._client.stream("POST", self._endpoint, json=payload) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "message_start":

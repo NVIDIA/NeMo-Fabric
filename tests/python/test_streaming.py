@@ -7,11 +7,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import threading
-import warnings
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -33,7 +32,8 @@ from nemo_fabric import (
     RunResult,
 )
 from nemo_fabric import client as client_mod
-from nemo_fabric.streaming import _AtofStreamListener, _with_stream_sink
+from nemo_fabric import streaming as streaming_mod
+from nemo_fabric.streaming import _with_stream_sink
 
 
 def _config(*, relay: bool = False) -> FabricConfig:
@@ -137,80 +137,28 @@ def native_client_fixture(
     return Fabric()
 
 
-async def _post_chunked(url: str, records: list[dict[str, Any]]) -> None:
-    host_port = url.removeprefix("http://").split("/", 1)[0]
-    host, port = host_port.split(":", 1)
-    reader, writer = await asyncio.open_connection(host, int(port))
-    writer.write(
-        b"POST /atof HTTP/1.1\r\n"
-        + f"Host: {host_port}\r\n".encode()
-        + b"Transfer-Encoding: chunked\r\n"
-        + b"Content-Type: application/x-ndjson\r\n\r\n"
-    )
-    for record in records:
-        payload = json.dumps(record).encode() + b"\n"
-        writer.write(f"{len(payload):x}\r\n".encode() + payload + b"\r\n")
-        await writer.drain()
-    writer.write(b"0\r\n\r\n")
-    await writer.drain()
-    assert await reader.readline() == b"HTTP/1.1 200 OK\r\n"
-    writer.close()
-    await writer.wait_closed()
-
-
-async def _open_chunked_upload(url: str) -> asyncio.StreamWriter:
-    host_port = url.removeprefix("http://").split("/", 1)[0]
-    host, port = host_port.split(":", 1)
-    _reader, writer = await asyncio.open_connection(host, int(port))
-    writer.write(
-        b"POST /atof HTTP/1.1\r\n"
-        + f"Host: {host_port}\r\n".encode()
-        + b"Transfer-Encoding: chunked\r\n"
-        + b"Content-Type: application/x-ndjson\r\n\r\n"
-    )
-    await writer.drain()
-    return writer
-
-
 async def _post_content_length(
     url: str,
     records: list[dict[str, Any]],
-    *,
-    expect_continue: bool = False,
 ) -> None:
-    host_port = url.removeprefix("http://").split("/", 1)[0]
-    host, port = host_port.split(":", 1)
-    reader, writer = await asyncio.open_connection(host, int(port))
+    parsed = urlsplit(url)
+    assert parsed.hostname is not None
+    assert parsed.port is not None
+    host_port = parsed.netloc
+    reader, writer = await asyncio.open_connection(parsed.hostname, parsed.port)
     payload = b"".join(json.dumps(record).encode() + b"\n" for record in records)
-    expect = b"Expect: 100-continue\r\n" if expect_continue else b""
     writer.write(
-        b"POST /atof HTTP/1.1\r\n"
+        f"POST {parsed.path} HTTP/1.1\r\n".encode()
         + f"Host: {host_port}\r\n".encode()
         + f"Content-Length: {len(payload)}\r\n".encode()
-        + expect
         + b"Content-Type: application/x-ndjson\r\n\r\n"
     )
     await writer.drain()
-    if expect_continue:
-        assert await reader.readline() == b"HTTP/1.1 100 Continue\r\n"
-        assert await reader.readline() == b"\r\n"
     writer.write(payload)
     await writer.drain()
     assert await reader.readline() == b"HTTP/1.1 200 OK\r\n"
     writer.close()
     await writer.wait_closed()
-
-
-async def _request_status(url: str, request: bytes) -> bytes:
-    host_port = url.removeprefix("http://").split("/", 1)[0]
-    host, port = host_port.split(":", 1)
-    reader, writer = await asyncio.open_connection(host, int(port))
-    writer.write(request)
-    await writer.drain()
-    status = await reader.readline()
-    writer.close()
-    await writer.wait_closed()
-    return status
 
 
 async def _wait_for(event: threading.Event, timeout: float = 2.0) -> bool:
@@ -244,24 +192,30 @@ async def test_start_runtime_injects_stream_sink_without_mutating_config(
     assert sinks[1]["transport"] == "ndjson"
     assert sinks[1]["url"].startswith("http://127.0.0.1:")
     assert runtime.supports_streaming is True
+    assert runtime._collector is not None
     assert len(config.relay.observability.atof.sinks) == 1
 
     await runtime.stop()
 
 
-async def test_start_runtime_uses_streaming_host_environment_variable(
+async def test_start_runtime_creates_runtime_owned_collectors(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    os.environ["NEMO_FABRIC_STREAMING_HOST"] = "0.0.0.0"
+    first = await native_client.start_runtime(_config(relay=True), streaming=True)
+    second = await native_client.start_runtime(_config(relay=True), streaming=True)
+    try:
+        first_plan, second_plan = (
+            json.loads(call.args[0]) for call in mock_native.plan_config.call_args_list
+        )
+        first_sink = first_plan["relay"]["observability"]["atof"]["sinks"][-1]
+        second_sink = second_plan["relay"]["observability"]["atof"]["sinks"][-1]
 
-    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
-
-    planned = json.loads(mock_native.plan_config.call_args.args[0])
-    stream_sink = planned["relay"]["observability"]["atof"]["sinks"][-1]
-    assert stream_sink["url"].startswith("http://0.0.0.0:")
-
-    await runtime.stop()
+        assert first._collector is not second._collector
+        assert first_sink["url"] != second_sink["url"]
+    finally:
+        await first.stop()
+        await second.stop()
 
 
 async def test_start_runtime_without_streaming_preserves_disabled_atof(
@@ -363,6 +317,15 @@ async def test_invoke_stream_yields_raw_records_and_returns_result_out_of_band(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
+    started = threading.Event()
+    release = threading.Event()
+
+    def invoke(plan_json: str, runtime_json: str, request_json: str) -> str:
+        started.set()
+        assert release.wait(timeout=2)
+        return json.dumps(_result(json.loads(request_json), json.loads(runtime_json)))
+
+    mock_native.invoke_runtime.side_effect = invoke
     runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
@@ -381,7 +344,9 @@ async def test_invoke_stream_yields_raw_records_and_returns_result_out_of_band(
 
     stream = runtime.invoke_stream(request=request)
     assert isinstance(stream, InvokeStream)
+    assert await _wait_for(started)
     await _post_content_length(endpoint, records)
+    release.set()
     streamed = [record async for record in stream]
     result = await stream.result()
 
@@ -392,46 +357,19 @@ async def test_invoke_stream_yields_raw_records_and_returns_result_out_of_band(
     await runtime.stop()
 
 
-async def test_invoke_stream_correlates_relay_gateway_turn_indexes(
-    native_client: Fabric,
-    mock_native: MagicMock,
-):
-    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
-    endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
-        "observability"
-    ]["atof"]["sinks"][-1]["url"]
-
-    for turn_index in (1, 2):
-        records = [
-            {
-                "kind": "scope",
-                "scope_category": "start",
-                "uuid": f"turn-{turn_index}",
-                "metadata": {
-                    "nemo_relay_scope_role": "turn",
-                    "turn_index": turn_index,
-                },
-            },
-            {
-                "kind": "mark",
-                "uuid": f"mark-{turn_index}",
-                "parent_uuid": f"turn-{turn_index}",
-            },
-        ]
-
-        stream = runtime.invoke_stream(input=f"turn {turn_index}")
-        await _post_content_length(endpoint, records)
-
-        assert [record async for record in stream] == records
-        assert (await stream.result()).status == "succeeded"
-
-    await runtime.stop()
-
-
 async def test_stream_must_be_finalized_before_another_turn(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
+    started = threading.Event()
+    release = threading.Event()
+
+    def invoke(plan_json: str, runtime_json: str, request_json: str) -> str:
+        started.set()
+        assert release.wait(timeout=2)
+        return json.dumps(_result(json.loads(request_json), json.loads(runtime_json)))
+
+    mock_native.invoke_runtime.side_effect = invoke
     runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
@@ -444,6 +382,7 @@ async def test_stream_must_be_finalized_before_another_turn(
         "metadata": {"nemo_fabric_request_id": request.request_id},
     }
     stream = runtime.invoke_stream(request=request)
+    assert await _wait_for(started)
     await _post_content_length(endpoint, [first])
 
     async for record in stream:
@@ -453,10 +392,10 @@ async def test_stream_must_be_finalized_before_another_turn(
     with pytest.raises(FabricStateError, match="streaming invocation is active"):
         runtime.invoke_stream(input="second")
 
+    release.set()
     await stream.aclose()
     second = runtime.invoke_stream(input="second")
-    with pytest.warns(RuntimeWarning, match="No Relay ATOF connection"):
-        assert [record async for record in second] == []
+    assert [record async for record in second] == []
     assert (await second.result()).status == "succeeded"
     await runtime.stop()
 
@@ -471,258 +410,9 @@ async def test_invoke_stream_validates_request_before_returning_stream(
         runtime.invoke_stream(input="input", request=request)
 
     stream = runtime.invoke_stream(input="valid")
-    with pytest.warns(RuntimeWarning, match="No Relay ATOF connection"):
-        assert [record async for record in stream] == []
+    assert [record async for record in stream] == []
     assert (await stream.result()).status == "succeeded"
     await runtime.stop()
-
-
-async def test_invoke_stream_warns_only_once_when_relay_never_connects(
-    native_client: Fabric,
-):
-    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
-
-    first = runtime.invoke_stream(input="first")
-    with pytest.warns(RuntimeWarning, match="able to reach 127.0.0.1"):
-        assert [record async for record in first] == []
-    assert (await first.result()).status == "succeeded"
-
-    second = runtime.invoke_stream(input="second")
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        assert [record async for record in second] == []
-    assert caught == []
-    assert (await second.result()).status == "succeeded"
-    await runtime.stop()
-
-
-async def test_invoke_stream_does_not_warn_after_relay_connects(
-    native_client: Fabric,
-    mock_native: MagicMock,
-):
-    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
-    endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
-        "observability"
-    ]["atof"]["sinks"][-1]["url"]
-
-    stream = runtime.invoke_stream(input="empty stream")
-    await _post_content_length(endpoint, [])
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        assert [record async for record in stream] == []
-
-    assert caught == []
-    assert (await stream.result()).status == "succeeded"
-    await runtime.stop()
-
-
-async def test_invoke_stream_warns_after_long_lived_relay_upload_disconnects(
-    native_client: Fabric,
-    mock_native: MagicMock,
-):
-    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
-    endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
-        "observability"
-    ]["atof"]["sinks"][-1]["url"]
-    writer = await _open_chunked_upload(endpoint)
-
-    first = runtime.invoke_stream(input="connected stream")
-    root = {
-        "kind": "scope",
-        "scope_category": "start",
-        "uuid": "turn-1",
-        "metadata": {
-            "nemo_relay_scope_role": "turn",
-            "turn_index": 1,
-        },
-    }
-    payload = json.dumps(root).encode() + b"\n"
-    writer.write(f"{len(payload):x}\r\n".encode() + payload + b"\r\n")
-    await writer.drain()
-
-    assert [record async for record in first] == [root]
-    assert (await first.result()).status == "succeeded"
-
-    writer.close()
-    await writer.wait_closed()
-    listener = runtime._stream_listener
-    while listener._active_atof_connections:
-        await asyncio.sleep(0)
-
-    second = runtime.invoke_stream(input="disconnected stream")
-    with pytest.warns(RuntimeWarning, match="No Relay ATOF connection"):
-        assert [record async for record in second] == []
-
-    assert (await second.result()).status == "succeeded"
-    await runtime.stop()
-
-
-async def test_invoke_stream_warns_when_long_lived_upload_drops_during_turn(
-    native_client: Fabric,
-    mock_native: MagicMock,
-):
-    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
-    endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
-        "observability"
-    ]["atof"]["sinks"][-1]["url"]
-    writer = await _open_chunked_upload(endpoint)
-    listener = runtime._stream_listener
-    while not listener._active_atof_connections:
-        await asyncio.sleep(0)
-
-    stream = runtime.invoke_stream(input="dropped stream")
-    writer.close()
-    await writer.wait_closed()
-    while listener._active_atof_connections:
-        await asyncio.sleep(0)
-
-    with pytest.warns(RuntimeWarning, match="No Relay ATOF connection"):
-        assert [record async for record in stream] == []
-
-    assert (await stream.result()).status == "succeeded"
-    await runtime.stop()
-
-
-async def test_invoke_stream_warns_when_long_lived_upload_truncates_turn(
-    native_client: Fabric,
-    mock_native: MagicMock,
-):
-    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
-    endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
-        "observability"
-    ]["atof"]["sinks"][-1]["url"]
-    writer = await _open_chunked_upload(endpoint)
-    listener = runtime._stream_listener
-    while not listener._active_atof_connections:
-        await asyncio.sleep(0)
-
-    stream = runtime.invoke_stream(input="truncated stream")
-    root = {
-        "kind": "scope",
-        "scope_category": "start",
-        "uuid": "turn-1",
-        "metadata": {
-            "nemo_relay_scope_role": "turn",
-            "turn_index": 1,
-        },
-    }
-    payload = json.dumps(root).encode() + b"\n"
-    writer.write(f"{len(payload):x}\r\n".encode() + payload + b"\r\n")
-    await writer.drain()
-    while listener.records.empty():
-        await asyncio.sleep(0)
-
-    writer.write(b"0\r\n")
-    await writer.drain()
-    writer.close()
-    await writer.wait_closed()
-    while listener._active_atof_connections:
-        await asyncio.sleep(0)
-
-    with pytest.warns(RuntimeWarning, match="streaming may be incomplete"):
-        assert [record async for record in stream] == [root]
-
-    assert (await stream.result()).status == "succeeded"
-    await runtime.stop()
-
-
-async def test_invoke_stream_does_not_warn_when_chunked_upload_ends_cleanly(
-    native_client: Fabric,
-    mock_native: MagicMock,
-):
-    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
-    endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
-        "observability"
-    ]["atof"]["sinks"][-1]["url"]
-    root = {
-        "kind": "scope",
-        "scope_category": "start",
-        "uuid": "turn-1",
-        "metadata": {
-            "nemo_relay_scope_role": "turn",
-            "turn_index": 1,
-        },
-    }
-
-    stream = runtime.invoke_stream(input="ended stream")
-    await _post_chunked(endpoint, [root])
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        assert [record async for record in stream] == [root]
-
-    assert caught == []
-    assert (await stream.result()).status == "succeeded"
-    await runtime.stop()
-
-
-async def test_invoke_stream_warns_when_records_do_not_match_active_turn(
-    native_client: Fabric,
-    mock_native: MagicMock,
-):
-    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
-    endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
-        "observability"
-    ]["atof"]["sinks"][-1]["url"]
-    stream = runtime.invoke_stream(input="unmatched stream")
-    await _post_content_length(
-        endpoint,
-        [
-            {
-                "kind": "scope",
-                "scope_category": "start",
-                "uuid": "unexpected-turn",
-                "metadata": {
-                    "nemo_relay_scope_role": "turn",
-                    "turn_index": 99,
-                },
-            }
-        ],
-    )
-
-    with pytest.warns(
-        RuntimeWarning, match="no record matched the active NeMo Fabric turn"
-    ):
-        assert [record async for record in stream] == []
-
-    assert (await stream.result()).status == "succeeded"
-
-    second = runtime.invoke_stream(input="another unmatched stream")
-    await _post_content_length(
-        endpoint,
-        [
-            {
-                "kind": "scope",
-                "scope_category": "start",
-                "uuid": "another-unexpected-turn",
-                "metadata": {
-                    "nemo_relay_scope_role": "turn",
-                    "turn_index": 99,
-                },
-            }
-        ],
-    )
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        assert [record async for record in second] == []
-
-    assert caught == []
-    assert (await second.result()).status == "succeeded"
-    await runtime.stop()
-
-
-async def test_stop_finalizes_completed_stream_after_result(
-    native_client: Fabric,
-):
-    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
-    stream = runtime.invoke_stream(input="hello")
-
-    assert (await stream.result()).status == "succeeded"
-    assert stream._finalized is False
-
-    await runtime.stop()
-
-    assert stream._finalized is True
 
 
 @pytest.mark.parametrize("relay", [False, True])
@@ -735,7 +425,7 @@ async def test_invoke_stream_requires_streaming_enabled_at_startup(
     assert runtime.supports_streaming is False
     with pytest.raises(
         FabricCapabilityError,
-        match=r"requires Relay telemetry.*streaming=True",
+        match=r"requires a configured standalone ATOF collector.*streaming=True",
     ) as caught:
         runtime.invoke_stream(input="hello")
 
@@ -753,6 +443,68 @@ async def test_context_manager_finalizes_unconsumed_stream(
         stream = runtime.invoke_stream(input="hello")
 
     assert (await stream.result()).status == "succeeded"
+
+
+async def test_aclose_bounds_collector_drain_when_stream_never_terminates(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    never = asyncio.Event()
+    registration_ready = asyncio.Event()
+    registration_ready.set()
+    mock_collector = MagicMock()
+
+    async def collector_records(_: str):
+        await never.wait()
+        yield {"uuid": "unreachable"}
+
+    async def invoke() -> RunResult:
+        return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
+
+    mock_collector.stream.side_effect = collector_records
+    monkeypatch.setattr(streaming_mod, "_FINALIZE_DRAIN_TIMEOUT_SECONDS", 0.01)
+    stream = InvokeStream(
+        invoke(),
+        mock_collector,
+        request_id="request-1",
+        registration_ready=registration_ready,
+    )
+
+    await asyncio.wait_for(stream.aclose(), timeout=0.1)
+
+    assert stream._finalized
+
+
+async def test_aclose_finalizes_when_collector_deregistration_fails(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    never = asyncio.Event()
+    registration_ready = asyncio.Event()
+    registration_ready.set()
+    mock_collector = MagicMock()
+    mock_finalize = AsyncMock(side_effect=RuntimeError("deregister failed"))
+
+    async def collector_records(_: str):
+        await never.wait()
+        yield {"uuid": "unreachable"}
+
+    async def invoke() -> RunResult:
+        return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
+
+    mock_collector.stream.side_effect = collector_records
+    monkeypatch.setattr(streaming_mod, "_FINALIZE_DRAIN_TIMEOUT_SECONDS", 0.01)
+    stream = InvokeStream(
+        invoke(),
+        mock_collector,
+        request_id="request-1",
+        registration_ready=registration_ready,
+        on_finalize=mock_finalize,
+    )
+
+    with pytest.raises(RuntimeError, match="deregister failed"):
+        await asyncio.wait_for(stream.aclose(), timeout=0.1)
+
+    assert stream._finalized
+    mock_finalize.assert_awaited_once()
 
 
 async def test_cancelled_aclose_keeps_turn_active_and_result_awaitable(
@@ -792,55 +544,76 @@ async def test_cancelled_aclose_keeps_turn_active_and_result_awaitable(
 
 
 async def test_cancelled_anext_does_not_consume_next_record():
-    listener = await _AtofStreamListener(maxsize=2).start()
     invocation_finished = asyncio.Event()
+    records: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+    async def collector_records(_: str):
+        while record := await records.get():
+            yield record
 
     async def invoke() -> RunResult:
         await invocation_finished.wait()
         return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
 
-    stream = InvokeStream(invoke(), listener)
+    registration_ready = asyncio.Event()
+    registration_ready.set()
+    mock_collector = MagicMock()
+    mock_collector.stream.side_effect = collector_records
+    stream = InvokeStream(
+        invoke(),
+        mock_collector,
+        request_id="request-1",
+        registration_ready=registration_ready,
+    )
     pending = asyncio.create_task(stream.__anext__())
     await asyncio.sleep(0)
     pending.cancel()
     with pytest.raises(asyncio.CancelledError):
         await pending
 
-    records = [{"uuid": "first"}, {"uuid": "second"}]
-    await _post_chunked(listener.url, records)
+    expected = [{"uuid": "first"}, {"uuid": "second"}]
+    for record in expected:
+        await records.put(record)
 
-    assert await stream.__anext__() == records[0]
-    assert await stream.__anext__() == records[1]
+    assert await stream.__anext__() == expected[0]
+    assert await stream.__anext__() == expected[1]
 
     invocation_finished.set()
+    await records.put(None)
     await stream.aclose()
-    await listener.close()
-
 
 async def test_cancelled_anext_retains_record_consumed_during_cancellation():
-    listener = await _AtofStreamListener(maxsize=1).start()
     invocation_finished = asyncio.Event()
+    records: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+    async def collector_records(_: str):
+        while record := await records.get():
+            yield record
 
     async def invoke() -> RunResult:
         await invocation_finished.wait()
         return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
 
-    stream = InvokeStream(invoke(), listener)
+    registration_ready = asyncio.Event()
+    registration_ready.set()
+    mock_collector = MagicMock()
+    mock_collector.stream.side_effect = collector_records
+    stream = InvokeStream(
+        invoke(),
+        mock_collector,
+        request_id="request-1",
+        registration_ready=registration_ready,
+    )
     record = {"uuid": "first"}
+    records.put_nowait(record)
+    shield = asyncio.shield
 
-    async def cancel_after_getter_completes(
-        tasks: set[asyncio.Task[Any]],
-        *,
-        return_when: str,
-    ) -> None:
-        assert return_when == asyncio.FIRST_COMPLETED
-        getter = next(task for task in tasks if task is not stream._task)
-        listener.records.put_nowait(record)
-        assert await getter == record
+    async def cancel_after_record_is_read(task: asyncio.Future[dict[str, Any]]):
+        assert await shield(task) == record
         raise asyncio.CancelledError
 
     with (
-        patch.object(asyncio, "wait", new=cancel_after_getter_completes),
+        patch.object(asyncio, "shield", new=cancel_after_record_is_read),
         pytest.raises(asyncio.CancelledError),
     ):
         await stream.__anext__()
@@ -848,267 +621,5 @@ async def test_cancelled_anext_retains_record_consumed_during_cancellation():
     assert await stream.__anext__() == record
 
     invocation_finished.set()
+    await records.put(None)
     await stream.aclose()
-    await listener.close()
-
-
-async def test_aclose_drains_backpressure_while_invocation_finishes():
-    listener = await _AtofStreamListener(maxsize=1).start()
-    producer_finished = asyncio.Event()
-
-    async def invoke() -> RunResult:
-        await producer_finished.wait()
-        return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
-
-    stream = InvokeStream(invoke(), listener)
-    records = [{"uuid": f"record-{index}"} for index in range(3)]
-
-    async def produce() -> None:
-        await _post_chunked(listener.url, records)
-        producer_finished.set()
-
-    producer = asyncio.create_task(produce())
-    while not listener.records.full():
-        await asyncio.sleep(0)
-    assert not producer.done()
-
-    await asyncio.wait_for(stream.aclose(), timeout=1)
-
-    assert producer.done()
-    assert (await stream.result()).status == "succeeded"
-    await listener.close()
-
-
-@pytest.mark.parametrize(
-    "current_metadata",
-    [
-        {"nemo_fabric_request_id": "request-2"},
-        {"nemo_relay_scope_role": "turn", "turn_index": 2},
-    ],
-)
-async def test_listener_correlates_records_to_active_turn(
-    current_metadata: dict[str, Any],
-):
-    listener = await _AtofStreamListener(maxsize=4).start()
-    listener.begin_stream(request_id="request-2", turn_index=2)
-    current = [
-        {
-            "kind": "scope",
-            "scope_category": "start",
-            "uuid": "current",
-            "metadata": current_metadata,
-        },
-        {
-            "kind": "scope",
-            "scope_category": "start",
-            "uuid": "child",
-            "parent_uuid": "current",
-        },
-        {"kind": "mark", "uuid": "mark", "parent_uuid": "child"},
-    ]
-
-    await _post_chunked(
-        listener.url,
-        [
-            {
-                "kind": "scope",
-                "scope_category": "start",
-                "uuid": "previous",
-                "metadata": {"nemo_fabric_request_id": "request-1"},
-            },
-            {"kind": "mark", "uuid": "late", "parent_uuid": "previous"},
-            *current,
-            {"kind": "mark", "uuid": "unrelated", "parent_uuid": "previous"},
-        ],
-    )
-
-    assert [await listener.records.get() for _ in current] == current
-    assert listener.records.empty()
-    listener.end_stream()
-    await listener.close()
-
-
-async def test_listener_correlates_upstream_hermes_turn_records():
-    listener = await _AtofStreamListener(maxsize=4).start()
-    listener.begin_stream(request_id="request-2", turn_index=2)
-    turn_id = "upstream-turn"
-    current = [
-        {
-            "kind": "mark",
-            "name": "hermes.turn.start",
-            "uuid": "turn-start",
-            "metadata": {
-                "platform": "fabric",
-                "task_id": "request-2",
-                "turn_id": turn_id,
-            },
-        },
-        {
-            "kind": "scope",
-            "scope_category": "start",
-            "uuid": "llm",
-            "parent_uuid": "session",
-            "metadata": {"turn_id": turn_id},
-        },
-        {"kind": "mark", "uuid": "llm-child", "parent_uuid": "llm"},
-        {
-            "kind": "mark",
-            "name": "hermes.turn.end",
-            "uuid": "turn-end",
-            "metadata": {
-                "platform": "fabric",
-                "task_id": "request-2",
-                "turn_id": turn_id,
-            },
-        },
-    ]
-
-    await _post_chunked(
-        listener.url,
-        [
-            {
-                "kind": "scope",
-                "scope_category": "start",
-                "uuid": "previous",
-                "metadata": {"nemo_fabric_request_id": "request-1"},
-            },
-            *current,
-        ],
-    )
-
-    assert [await listener.records.get() for _ in current] == current
-    assert listener.records.empty()
-    listener.end_stream()
-    await listener.close()
-
-
-async def test_listener_rejects_late_upstream_hermes_turn_marker():
-    listener = await _AtofStreamListener().start()
-    previous = {
-        "kind": "mark",
-        "name": "hermes.turn.start",
-        "uuid": "previous-turn",
-        "metadata": {
-            "platform": "fabric",
-            "task_id": "request-1",
-            "turn_id": "previous-turn",
-        },
-    }
-    listener.begin_stream(request_id="request-1")
-    await _post_chunked(listener.url, [previous])
-    assert await listener.records.get() == previous
-    listener.end_stream()
-
-    current = {
-        "kind": "mark",
-        "name": "hermes.turn.start",
-        "uuid": "current-turn",
-        "metadata": {
-            "platform": "fabric",
-            "task_id": "request-2",
-            "turn_id": "current-turn",
-        },
-    }
-    listener.begin_stream(request_id="request-2")
-    await _post_chunked(listener.url, [previous, current])
-
-    assert await listener.records.get() == current
-    assert listener.records.empty()
-    listener.end_stream()
-    await listener.close()
-
-
-async def test_listener_applies_byte_budget_backpressure():
-    record = {"uuid": "record", "payload": "x" * 16}
-    record_size = len(json.dumps(record).encode())
-    listener = await _AtofStreamListener(
-        maxsize=10,
-        max_bytes=record_size,
-        max_record_bytes=record_size,
-    ).start()
-    listener.begin_stream()
-
-    producer = asyncio.create_task(_post_chunked(listener.url, [record, record]))
-    while listener.records.empty():
-        await asyncio.sleep(0)
-    assert not producer.done()
-
-    assert await listener.records.get() == record
-    assert await listener.records.get() == record
-    await producer
-    listener.end_stream()
-    await listener.close()
-
-
-async def test_listener_rejects_oversized_record():
-    listener = await _AtofStreamListener(max_record_bytes=32).start()
-    listener.begin_stream(request_id="request-1")
-    payload = json.dumps({"payload": "x" * 64}).encode() + b"\n"
-    request = (
-        b"POST /atof HTTP/1.1\r\n"
-        + f"Content-Length: {len(payload)}\r\n".encode()
-        + b"Content-Type: application/x-ndjson\r\n\r\n"
-        + payload
-    )
-
-    assert await _request_status(listener.url, request) == (
-        b"HTTP/1.1 413 Content Too Large\r\n"
-    )
-    listener.end_stream()
-    with pytest.warns(
-        RuntimeWarning, match="no record matched the active NeMo Fabric turn"
-    ):
-        listener.warn_if_unavailable()
-    await listener.close()
-
-
-async def test_listener_accepts_atof_record_larger_than_default_read_limits():
-    listener = await _AtofStreamListener(maxsize=2).start()
-    listener.begin_stream()
-    record = {"uuid": "large", "payload": "x" * (600 * 1024)}
-
-    await _post_chunked(listener.url, [record])
-
-    assert await listener.records.get() == record
-    listener.end_stream()
-    await listener.close()
-
-
-async def test_listener_accepts_content_length_and_100_continue():
-    listener = await _AtofStreamListener(maxsize=2).start()
-    listener.begin_stream()
-    records = [{"uuid": "first"}, {"uuid": "second"}]
-
-    await _post_content_length(listener.url, records, expect_continue=True)
-
-    assert [await listener.records.get(), await listener.records.get()] == records
-    listener.end_stream()
-    await listener.close()
-
-
-@pytest.mark.parametrize(
-    ("raw_request", "expected"),
-    [
-        (
-            b"GET /atof HTTP/1.1\r\nContent-Length: 0\r\n\r\n",
-            b"HTTP/1.1 404 Not Found\r\n",
-        ),
-        (
-            b"POST /atof HTTP/1.1\r\n\r\n",
-            b"HTTP/1.1 411 Length Required\r\n",
-        ),
-        (
-            b"POST /atof HTTP/1.1\r\nContent-Length: invalid\r\n\r\n",
-            b"HTTP/1.1 400 Bad Request\r\n",
-        ),
-    ],
-)
-async def test_listener_rejects_invalid_http_requests(
-    raw_request: bytes,
-    expected: bytes,
-):
-    listener = await _AtofStreamListener().start()
-
-    assert await _request_status(listener.url, raw_request) == expected
-
-    await listener.close()

@@ -22,27 +22,26 @@ results, optional Relay telemetry, and cleanup.
 
 ## Prepare the Task Image
 
-Complete the [shared Harbor setup](../README.md#shared-host-setup), clone OO
-Agents beside this repository, and set a valid NVIDIA API key:
+Complete the [shared Harbor setup](../README.md#shared-host-setup) and set a
+valid NVIDIA API key:
 
 ```bash
 export NVIDIA_API_KEY="..."
-test -d ../labs-OO-Agents/.git
 ```
 
-Build source-consistent Fabric wheels, including a manylinux runtime wheel, and
-stage committed Fabric and NOOA source into the ignored Docker build
-context:
+Build source-consistent Fabric wheels, including the NOOA adapter and a
+manylinux runtime wheel, into the ignored Docker build context:
 
 ```bash
-./examples/harbor/nooa_bench/prepare.sh ../labs-OO-Agents
+./examples/harbor/nooa_bench/prepare.sh
 ```
 
-The task image installs `nemo-relay>=0.7.2,<0.8`, NOOA core, `nooa-cli`,
-`nooa-bench`, and the BenchAgent adapter. `prepare.sh` builds every NeMo Fabric wheel
-in a fresh temporary directory and uses Maturin with Zig for manylinux 2.17
-compatibility, so the Python 3.12 Debian task image does not depend on the
-glibc version installed in the host.
+The task image installs `nemo-fabric-adapters-nooa[full]` from the built wheel, while
+its package metadata installs the tested `nooa`, `nooa-cli`, `nooa-bench`, and
+Relay versions from PyPI. `prepare.sh` builds the required NeMo Fabric wheels in
+a fresh temporary directory and uses Maturin with Zig for manylinux 2.17
+compatibility, so the Python 3.12 Debian task image does not depend on the glibc
+version installed in the host.
 
 ## Run the Baseline
 
@@ -54,7 +53,6 @@ uv run --extra harbor harbor run \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
   --ak fabric_adapter_id=nvidia.fabric.nooa.bench-agent \
-  --ak fabric_config_bundle=examples/harbor/nooa_bench/.bundle \
   --ak fabric_workspace=/app \
   --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \
   --ak fabric_runtime_timeout_seconds=780 \
@@ -83,7 +81,6 @@ uv run --extra harbor harbor run \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
   --ak fabric_adapter_id=nvidia.fabric.nooa.bench-agent \
-  --ak fabric_config_bundle=examples/harbor/nooa_bench/.bundle \
   --ak fabric_workspace=/app \
   --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \
   --ak fabric_runtime_timeout_seconds=780 \
@@ -113,11 +110,11 @@ task instruction and verifier unchanged but adds an isolated Python 3.12
 environment for NeMo Fabric, NOOA, and Relay:
 
 ```bash
-./examples/harbor/nooa_bench/prepare_swebench.sh ../labs-OO-Agents
+./examples/harbor/nooa_bench/prepare_swebench.sh
 ```
 
-The helper also performs the source build from `prepare.sh`. It writes the
-prepared task and generated bundle only to ignored paths.
+The helper also performs the wheel build from `prepare.sh`. It writes the
+prepared task only to ignored paths.
 
 Run the task with Relay enabled:
 
@@ -133,7 +130,6 @@ uv run --extra harbor harbor run \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
   --ak fabric_adapter_id=nvidia.fabric.nooa.bench-agent \
-  --ak fabric_config_bundle=examples/harbor/nooa_bench/.bundle \
   --ak fabric_workspace=/testbed \
   --ak fabric_python=/opt/nemo-fabric-venv/bin/python \
   --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \

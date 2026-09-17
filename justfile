@@ -12,9 +12,13 @@ ref_name := ""
 # Linux wheel artifacts target this minimum glibc version for compatibility.
 linux_glibc_version := "2.17"
 
-python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/remote-agent"
+python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/remote-agent"
 
-python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/remote-agent"
+python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/remote-agent"
+
+# List Python package paths, one per line.
+python-package-paths:
+    @printf '%s\n' {{ python_packages }}
 
 bash_helpers := '''
 set -euo pipefail
@@ -320,8 +324,9 @@ build-python:
             --group adapters \
             "${editable_projects[@]}"
     else
-        uv sync --no-default-groups --group adapters \
+        uv sync --no-default-groups --group adapters --group collector \
             --reinstall-package nemo-fabric \
+            --reinstall-package nemo-fabric-collector \
             --reinstall-package nemo-fabric-runtime
     fi
 
@@ -347,12 +352,22 @@ install-typescript: install-typescript-contract install-typescript-adapters
 # The documented https://hermes-agent.nousresearch.com/install.sh script is
 # tied directly to Python 3.11, we also want to ensure that we are installing
 # into our Fabric virtualenv
-# f80f453ae0679347e38abc917c7f94f717bf96c5 aligns with Hermes Agent v0.20.1.
+# 29112bef099274229cadff79cdff7bf7b99c4b77 aligns with Hermes Agent v0.21.0.
+# metadata-propagate.patch forwards OpenAI request metadata into Hermes Relay
+# turn metadata. Remove it when the pinned Hermes revision includes that behavior.
+# Install the pinned Hermes Agent source with Fabric Relay metadata propagation.
 install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
-    hermes_commit="f80f453ae0679347e38abc917c7f94f717bf96c5"
+    hermes_commit="29112bef099274229cadff79cdff7bf7b99c4b77"
     hermes_checkout="$REPO_ROOT/external/hermes-agent"
+    hermes_patch="$REPO_ROOT/adapters/python/hermes/metadata-propagate.patch"
+    hermes_diff_pathspec=()
+
+    if [[ ! -f "$hermes_patch" ]]; then
+        echo "ERROR: Hermes Agent patch not found: $hermes_patch" >&2
+        exit 1
+    fi
 
     if [[ -e "$hermes_checkout" && ! -d "$hermes_checkout/.git" ]]; then
         echo "ERROR: expected a Git checkout at $hermes_checkout" >&2
@@ -362,14 +377,55 @@ install-hermes-agent:
         mkdir -p "$(dirname "$hermes_checkout")"
         git init --quiet "$hermes_checkout"
         git -C "$hermes_checkout" remote add origin https://github.com/NousResearch/hermes-agent.git
-    elif ! git -C "$hermes_checkout" diff --quiet || ! git -C "$hermes_checkout" diff --cached --quiet; then
-        echo "ERROR: Hermes Agent checkout has tracked changes: $hermes_checkout" >&2
-        exit 1
+    fi
+    # This revision contains two contributor metadata paths that differ only by
+    # case. Ignore the resulting false modification on case-insensitive filesystems.
+    if [[ "$(git -C "$hermes_checkout" config --bool core.ignorecase)" == "true" ]]; then
+        hermes_diff_pathspec=(-- . ":(exclude)contributors/emails/agent@Agents-Mac-mini.local")
     fi
     hermes_head="$(git -C "$hermes_checkout" rev-parse --verify HEAD 2>/dev/null || true)"
     if [[ "$hermes_head" != "$hermes_commit" ]]; then
+        if [[ -n "$hermes_head" ]] && { ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}" || ! git -C "$hermes_checkout" diff --cached --quiet; }; then
+            echo "ERROR: Hermes Agent checkout has tracked changes at an unpinned revision: $hermes_checkout" >&2
+            exit 1
+        fi
         git -C "$hermes_checkout" fetch --depth 1 origin "$hermes_commit"
         git -C "$hermes_checkout" checkout --quiet --detach FETCH_HEAD
+    fi
+    if ! git -C "$hermes_checkout" diff --cached --quiet; then
+        echo "ERROR: Hermes Agent checkout has staged changes: $hermes_checkout" >&2
+        exit 1
+    fi
+    if git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
+        if ! git -C "$hermes_checkout" apply --check "$hermes_patch"; then
+            echo "ERROR: Hermes Agent patch does not apply to $hermes_commit" >&2
+            exit 1
+        fi
+        git -C "$hermes_checkout" apply "$hermes_patch"
+    else
+        # Validate the already-applied patch without depending on Git's
+        # platform-specific diff serialization.
+        patch_reversed=false
+        restore_hermes_patch() {
+            if [[ "$patch_reversed" == true ]]; then
+                git -C "$hermes_checkout" apply "$hermes_patch" || \
+                    echo "ERROR: failed to restore Hermes Agent metadata patch" >&2
+            fi
+        }
+        trap restore_hermes_patch EXIT
+        if ! git -C "$hermes_checkout" apply --reverse --check "$hermes_patch"; then
+            echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
+            exit 1
+        fi
+        git -C "$hermes_checkout" apply --reverse "$hermes_patch"
+        patch_reversed=true
+        if ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
+            echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
+            exit 1
+        fi
+        git -C "$hermes_checkout" apply "$hermes_patch"
+        patch_reversed=false
+        trap - EXIT
     fi
     uv sync --inexact --reinstall-package hermes-agent
 
@@ -406,6 +462,14 @@ lock-python:
 # Normalize a release tag to the version used by package metadata.
 normalize-release-tag tag:
     @uv run --no-project --no-cache python scripts/ci/normalize_release_tag.py {{ quote(tag) }}
+
+# Convert a release tag to the PEP 440 version used by Python package metadata.
+release-tag-to-py-version tag:
+    #!/usr/bin/env bash
+    {{ bash_helpers }}
+    tag={{ quote(tag) }}
+    tag="$(just normalize-release-tag "$tag")"
+    semver_to_pep440 "$tag"
 
 # Apply a release version only to Cargo workspace metadata and Cargo.lock.
 # Tag publication uses this narrow recipe in a disposable checkout.
@@ -474,7 +538,7 @@ test-python:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" != "true" ]]; then
-        uv sync --no-default-groups --group adapters --group adapter-tests --group test --extra harbor --extra relay
+        uv sync --no-default-groups --group adapters --group adapter-tests --group collector --group test --extra harbor --extra relay
     fi
     uv run --no-sync pytest
 

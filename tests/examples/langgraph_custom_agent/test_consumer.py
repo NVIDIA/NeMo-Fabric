@@ -9,6 +9,9 @@ from examples.langgraph_custom_agent.consumer.config import FRONTIER_DEFAULT_MOD
 from examples.langgraph_custom_agent.consumer.config import PUBLIC_DEFAULT_MODEL
 from examples.langgraph_custom_agent.consumer.config import frontier_config
 from examples.langgraph_custom_agent.consumer.config import public_config
+from examples.langgraph_custom_agent.consumer.config import (
+    with_continuation_history_limit,
+)
 from examples.langgraph_custom_agent.consumer.config import with_relay
 from examples.langgraph_custom_agent.consumer.config import with_system_instruction
 from examples.langgraph_custom_agent.consumer.config import with_temperature
@@ -56,6 +59,17 @@ def test_system_instruction_variant_preserves_append_mode():
     )
 
     assert config.instructions.system.mode == "append"
+
+
+def test_continuation_history_limit_variant_is_additive_and_independent():
+    base = public_config()
+
+    bounded = with_continuation_history_limit(base, 7)
+
+    assert base.harness.settings == {}
+    assert bounded.harness.settings == {
+        "continuation": {"max_history_entries": 7}
+    }
 
 
 def test_relay_variant_is_additive_and_independent():

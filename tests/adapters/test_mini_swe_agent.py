@@ -126,6 +126,8 @@ def mini_payload_fixture(tmp_path: Path) -> dict:
                     "api_key_env": "TEST_MINI_API_KEY",
                     "base_url": "https://example.test/v1",
                     "temperature": 0.2,
+                    "top_p": 0.8,
+                    "max_tokens": 256,
                 }
             },
             "runtime": {"max_turns": 3},
@@ -263,6 +265,8 @@ def test_mini_swe_agent_descriptor_is_narrow_and_versioned():
             "models",
             "models.base_url",
             "models.temperature",
+            "models.top_p",
+            "models.max_tokens",
             "instructions.system",
             "runtime.max_turns",
         ],
@@ -309,6 +313,8 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
             "api_key": "test-key",
             "api_base": "https://example.test/v1",
             "temperature": 0.2,
+            "top_p": 0.8,
+            "max_tokens": 256,
         },
     )
     mock_mini["environment_factory"].assert_called_once_with(timeout=45)

@@ -271,6 +271,63 @@ def test_harbor_generated_config_maps_fabric_specific_options(tmp_path: Path):
     assert spec.config.relay.observability.atif.enabled is True
 
 
+def test_harbor_generated_config_names_the_model_credential(tmp_path: Path):
+    """Adapters read the key from the variable named in ``api_key_env``; the deepagents
+    adapter refuses a non-OpenAI provider without it, so Harbor runs against
+    build.nvidia.com need a way to set it."""
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.langchain.deepagents",
+        fabric_model_base_url="https://integrate.api.nvidia.com/v1",
+        fabric_model_api_key_env="NVIDIA_API_KEY",
+        model_name="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    )
+
+    model = agent._build_spec("fix it").config.models["default"]
+
+    assert model.provider == "nvidia"
+    assert model.model == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+    assert model.api_key_env == "NVIDIA_API_KEY"
+    assert model.base_url == "https://integrate.api.nvidia.com/v1"
+
+
+def test_harbor_model_credential_without_a_model_is_rejected(tmp_path: Path):
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.langchain.deepagents",
+        fabric_model_api_key_env="NVIDIA_API_KEY",
+    )
+
+    with pytest.raises(ValueError, match="model_api_key_env requires model_name"):
+        agent._build_spec("fix it")
+
+
+@pytest.mark.parametrize("name", ["", "   ", " NVIDIA_API_KEY", "NVIDIA_API_KEY "])
+def test_harbor_rejects_a_blank_or_padded_model_credential_name(
+    tmp_path: Path, name: str
+):
+    """The value is used verbatim as the variable key inside the container, while
+    ``--ae NAME=value`` binds the unpadded name; a padded value would never resolve."""
+    with pytest.raises(ValueError, match="fabric_model_api_key_env must be"):
+        FabricAgent(
+            logs_dir=tmp_path,
+            fabric_adapter_id="nvidia.fabric.langchain.deepagents",
+            fabric_model_api_key_env=name,
+        )
+
+
+def test_harbor_model_credential_name_is_keyword_only(tmp_path: Path):
+    """Existing callers pass the older options positionally; a new positional slot
+    would silently rebind them."""
+    import inspect
+
+    parameter = inspect.signature(FabricAgent.__init__).parameters[
+        "fabric_model_api_key_env"
+    ]
+
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+
+
 def test_harbor_requires_a_nonempty_adapter_id(tmp_path: Path):
     with pytest.raises(ValueError, match="must not be empty"):
         FabricAgent(
