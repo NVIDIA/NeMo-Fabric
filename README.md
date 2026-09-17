@@ -179,8 +179,9 @@ environment that owns the configuration, then install
 `nemo-fabric-adapters-pi` in the project where NeMo Fabric can discover its
 adapter descriptor. Install a compatible Pi SDK harness separately in that
 project; the adapter declares the Pi packages as optional peers so deployments
-control the harness version. Relay-enabled Pi runs also require a NeMo Relay
-0.9 CLI and an explicit path to the matching Relay Pi extension.
+control the harness version. Relay-enabled Pi runs also require
+`nemo-relay>=0.9.0,<0.10.0` and an explicit path to the matching Relay Pi
+extension.
 
 Capabilities vary by harness. Review the
 [configuration compatibility matrix](adapters/README.md#configuration-compatibility)

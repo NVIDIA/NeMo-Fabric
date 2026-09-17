@@ -69,18 +69,15 @@ The full build installs its own dependencies, so you do not need to run
 
 ### Install NeMo Relay
 
-Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.10.0` on `PATH`. Install the
-Relay 0.9 CLI separately from the npm adapter:
+Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.10.0` on `PATH`. Install it
+separately from the npm adapter:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.9.0,<0.10"
+pip install "nemo-relay-cli-bin>=0.9.0,<0.10.0"
 ```
 
-In a source checkout of NeMo Fabric, `uv run` prepends the repository's
-`.venv/bin` directory to `PATH`. If you installed the Claude or Codex extras,
-`.venv/bin/nemo-relay` is version 0.7.2 and shadows the separately installed
-0.9 CLI. Set `FABRIC_NEMO_RELAY_COMMAND` to the absolute path of the Pi-compatible
-binary so the adapter does not depend on `PATH` ordering:
+To select a specific Relay executable instead of relying on `PATH`, set
+`FABRIC_NEMO_RELAY_COMMAND` to its absolute path:
 
 ```bash
 FABRIC_NEMO_RELAY_COMMAND="/absolute/path/to/nemo-relay" uv run python your_app.py

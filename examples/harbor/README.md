@@ -74,9 +74,9 @@ version `0.4.0`.
 | --- | --- | --- |
 | Harbor host | `nemo-fabric[harbor]==0.4.0` | Harbor CLI, `FabricAgent`, and typed `FabricConfig` construction |
 | Claude task without Relay | `nemo-fabric[claude]==0.4.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
-| Claude task with Relay | `nemo-fabric[claude]==0.4.0` plus a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
-| Pi task with Relay | `nemo-fabric==0.4.0`, `nemo-fabric-adapters-pi@0.4.0`, a compatible Pi SDK harness, a NeMo Relay CLI in the `>=0.9.0,<0.10.0` range on `PATH`, and the matching Relay Pi extension | NeMo Fabric runner, Pi adapter and harness, and the adapter-managed Relay gateway and extension |
-| Hermes Agent task with Relay | Task image with Hermes Agent, `nemo-fabric==0.4.0`, `nemo-fabric-adapters-hermes==0.4.0`, and `nemo-relay>=0.7.2,<0.8` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
+| Claude task with Relay | `nemo-fabric[claude]==0.4.0` plus `nemo-relay>=0.9.0,<0.10.0` on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
+| Pi task with Relay | `nemo-fabric==0.4.0`, `nemo-fabric-adapters-pi@0.4.0`, a compatible Pi SDK harness, `nemo-relay>=0.9.0,<0.10.0` on `PATH`, and the matching Relay Pi extension | NeMo Fabric runner, Pi adapter and harness, and the adapter-managed Relay gateway and extension |
+| Hermes Agent task with Relay | Task image with Hermes Agent, `nemo-fabric==0.4.0`, `nemo-fabric-adapters-hermes==0.4.0`, and `nemo-relay>=0.9.0,<0.10.0` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
 | NOOA BenchAgent task | `nemo-fabric==0.4.0` and `nemo-fabric-adapters-nooa[harness]==0.4.0` | NeMo Fabric runner, the packaged BenchAgent adapter and descriptors, and tested NOOA harness packages |
 | NOOA BenchAgent task with Relay | `nemo-fabric==0.4.0` and `nemo-fabric-adapters-nooa[full]==0.4.0` | Baseline dependencies plus compatible Relay telemetry support |
 
