@@ -47,6 +47,7 @@ and NVIDIA NeMo Fabric repo conventions.
 - Flag stale commands, package names, APIs, bindings, repo paths, or support claims before stylistic issues
 - Keep docs aligned with current NeMo Fabric behavior, repo layout, and entry points
 - Apply NVIDIA technical-writing guidance where it improves clarity and consistency without watering down technical precision
+- For new documentation, use `\n` newline characters only to intentionally start a new paragraph or add space around a code block or section heading. Do not enforce a line length or reformat an entire document; apply this only to newly written text or the paragraph being edited.
 - The full product name is "NVIDIA NeMo Fabric".
   - The first usage of the name (typically in the title and H1 tag) should use the full product name.
   - All other uses of the name can use the shortened form "NeMo Fabric".

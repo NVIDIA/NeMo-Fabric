@@ -16,6 +16,10 @@ python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/
 
 python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/remote-agent"
 
+# List Python package paths, one per line.
+python-package-paths:
+    @printf '%s\n' {{ python_packages }}
+
 bash_helpers := '''
 set -euo pipefail
 
@@ -458,6 +462,14 @@ lock-python:
 # Normalize a release tag to the version used by package metadata.
 normalize-release-tag tag:
     @uv run --no-project --no-cache python scripts/ci/normalize_release_tag.py {{ quote(tag) }}
+
+# Convert a release tag to the PEP 440 version used by Python package metadata.
+release-tag-to-py-version tag:
+    #!/usr/bin/env bash
+    {{ bash_helpers }}
+    tag={{ quote(tag) }}
+    tag="$(just normalize-release-tag "$tag")"
+    semver_to_pep440 "$tag"
 
 # Apply a release version only to Cargo workspace metadata and Cargo.lock.
 # Tag publication uses this narrow recipe in a disposable checkout.

@@ -17,6 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
     "arguments",
     [
         ("normalize-release-tag",),
+        ("release-tag-to-py-version",),
         ("set-cargo-version",),
         ("set-version",),
         ("--set", "ref_name={payload}", "set-cargo-version"),
@@ -49,3 +50,22 @@ def test_release_tag_interpolation_does_not_execute_command_substitution(
 
     assert result.returncode != 0
     assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    ("release_tag", "expected_version"),
+    [
+        ("v1.2.3", "1.2.3"),
+        ("v1.2.3-rc.1", "1.2.3rc1"),
+    ],
+)
+def test_release_tag_to_py_version(release_tag: str, expected_version: str):
+    result = subprocess.run(
+        ["just", "release-tag-to-py-version", release_tag],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == f"{expected_version}\n"

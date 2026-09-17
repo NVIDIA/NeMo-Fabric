@@ -76,6 +76,31 @@ The tag text must match the version that the packaging jobs publish.
 Release tags for a frozen release line should be created from the matching
 `release/*` branch, not from `main`.
 
+
+## Patch Releases
+
+Cut a patch release from the existing release branch for that major and minor
+line. Do not create another release branch or run the code-freeze workflow.
+
+Set the exact patch version, previous stable tag, and existing release branch:
+
+```bash
+export RELEASE_VERSION=0.1.1
+export PREVIOUS_RELEASE_TAG=v0.1.0
+export RELEASE_BRANCH=release/0.1
+
+git fetch upstream "${RELEASE_BRANCH}" --tags
+git log --oneline "${PREVIOUS_RELEASE_TAG}..upstream/${RELEASE_BRANCH}"
+```
+
+Open the fix or release-preparation PR against `${RELEASE_BRANCH}`. The PR must
+contain the intended patch changes and run `just set-version <release-version>`
+so the release branch contains the final package version before tagging. Verify
+the commit range from `${PREVIOUS_RELEASE_TAG}` contains only changes intended
+for the patch release. Changes required on `main` should be handled separately;
+do not mix a forward merge into the patch release.
+
+
 ## Code Freeze
 
 When code freeze begins for a target release, create a release branch from the
@@ -104,28 +129,47 @@ following:
 New PRs that must go into the upcoming release must target the new `release/*`
 branch. Changes intended for later releases should continue to target `main`.
 
-## Patch Releases
 
-Cut a patch release from the existing release branch for that major and minor
-line. Do not create another release branch or run the code-freeze workflow.
+## Cut An RC Tag
 
-Set the exact patch version, previous stable tag, and existing release branch:
+RC Tags should be created when soon after code freeze to allow for QA testing of the upcoming release. The `create-rc-tag` skill automates this process.
 
 ```bash
-export RELEASE_VERSION=0.1.1
-export PREVIOUS_RELEASE_TAG=v0.1.0
+export RELEASE_VERSION=0.1.0-rc.1
 export RELEASE_BRANCH=release/0.1
+export RELEASE_TAG="v${RELEASE_VERSION}"
+echo "Cutting release tag ${RELEASE_TAG} for release branch ${RELEASE_BRANCH}"
 
 git fetch upstream "${RELEASE_BRANCH}" --tags
-git log --oneline "${PREVIOUS_RELEASE_TAG}..upstream/${RELEASE_BRANCH}"
+git switch "${RELEASE_BRANCH}"
+git pull --ff-only upstream "${RELEASE_BRANCH}"
+
+test -z "$(git status --porcelain)"
+RELEASE_SHA="$(git rev-parse HEAD)"
+REMOTE_RELEASE_SHA="$(git rev-parse "upstream/${RELEASE_BRANCH}^{commit}")"
+test "${RELEASE_SHA}" = "${REMOTE_RELEASE_SHA}"
+test "$(just normalize-release-tag "${RELEASE_TAG}")" = "${RELEASE_VERSION}"
+BASE_RELEASE_VERSION="${RELEASE_VERSION%%-*}"
+CURRENT_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+test "${CURRENT_VERSION}" = "${BASE_RELEASE_VERSION}"
+
+if git ls-remote --exit-code --tags upstream "refs/tags/${RELEASE_TAG}" >/dev/null; then
+  echo "Error: remote tag ${RELEASE_TAG} already exists" >&2
+  exit 1
+fi
+
+git tag -s -a \
+  -m "NVIDIA NeMo Fabric ${RELEASE_VERSION}" \
+  "${RELEASE_TAG}" \
+  "${RELEASE_SHA}"
+
+git tag -v "${RELEASE_TAG}"
+git show "${RELEASE_TAG}"
+test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "${RELEASE_SHA}"
+
+git push upstream "refs/tags/${RELEASE_TAG}"
 ```
 
-Open the fix or release-preparation PR against `${RELEASE_BRANCH}`. The PR must
-contain the intended patch changes and run `just set-version <release-version>`
-so the release branch contains the final package version before tagging. Verify
-the commit range from `${PREVIOUS_RELEASE_TAG}` contains only changes intended
-for the patch release. Changes required on `main` should be handled separately;
-do not mix a forward merge into the patch release.
 
 ## Before You Cut A Release
 
@@ -280,47 +324,6 @@ a maintainer can inspect and repair the registry state explicitly. Publication
 also fails rather than moving `latest` or `next` backward when cutting a patch
 from an older release line.
 
-## Cut An RC Tag
-
-After the release commit is merged and validated, create and push a signed,
-annotated tag. Set the complete release-candidate version; the release branch
-continues to carry its matching stable base version:
-
-```bash
-export RELEASE_VERSION=0.1.0-rc.1
-export RELEASE_BRANCH=release/0.1
-export RELEASE_TAG="v${RELEASE_VERSION}"
-echo "Cutting release tag ${RELEASE_TAG} for release branch ${RELEASE_BRANCH}"
-
-git fetch upstream "${RELEASE_BRANCH}" --tags
-git switch "${RELEASE_BRANCH}"
-git pull --ff-only upstream "${RELEASE_BRANCH}"
-
-test -z "$(git status --porcelain)"
-RELEASE_SHA="$(git rev-parse HEAD)"
-REMOTE_RELEASE_SHA="$(git rev-parse "upstream/${RELEASE_BRANCH}^{commit}")"
-test "${RELEASE_SHA}" = "${REMOTE_RELEASE_SHA}"
-test "$(just normalize-release-tag "${RELEASE_TAG}")" = "${RELEASE_VERSION}"
-BASE_RELEASE_VERSION="${RELEASE_VERSION%%-*}"
-CURRENT_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
-test "${CURRENT_VERSION}" = "${BASE_RELEASE_VERSION}"
-
-if git ls-remote --exit-code --tags upstream "refs/tags/${RELEASE_TAG}" >/dev/null; then
-  echo "Error: remote tag ${RELEASE_TAG} already exists" >&2
-  exit 1
-fi
-
-git tag -s -a \
-  -m "NVIDIA NeMo Fabric ${RELEASE_VERSION}" \
-  "${RELEASE_TAG}" \
-  "${RELEASE_SHA}"
-
-git tag -v "${RELEASE_TAG}"
-git show "${RELEASE_TAG}"
-test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "${RELEASE_SHA}"
-
-git push upstream "refs/tags/${RELEASE_TAG}"
-```
 
 
 ## Prepare Release Notes
@@ -529,3 +532,4 @@ After the release is live, verify:
 
 5. The Fern documentation site shows the expected version and release notes.
 6. The GitHub Release page is complete and accurate.
+
