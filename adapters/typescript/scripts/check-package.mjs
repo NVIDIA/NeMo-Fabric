@@ -45,6 +45,8 @@ const expectedByPackage = {
   "nemo-fabric-adapters-opencode": [
     "LICENSE",
     "README.md",
+    "dist/bun-version.d.ts",
+    "dist/bun-version.js",
     "dist/cli.d.ts",
     "dist/cli.js",
     "dist/configuration.d.ts",
