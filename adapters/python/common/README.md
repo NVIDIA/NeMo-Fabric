@@ -103,6 +103,11 @@ The runtime then receives an `AgentConfig` instance in `payload["config"]`.
 New adapters provide this loader; `FabricConfig` never crosses the supported
 southbound boundary.
 
+Adapters that call a non-streaming OpenAI-compatible Chat Completions endpoint
+can use `nemo_fabric_adapters.common.openai_chat`. The helper builds the common
+request fields and normalizes response text and token usage while the adapter
+continues to own its HTTP client, authentication, lifecycle, and error mapping.
+
 NeMo Fabric calls the factory once per local host to create one runtime instance and
 serializes invocations through that instance. The host keeps one event loop
 alive for the complete lifecycle so SDK clients, compiled graphs,

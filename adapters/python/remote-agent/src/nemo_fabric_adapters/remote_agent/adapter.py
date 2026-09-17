@@ -16,6 +16,7 @@ import httpx
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
 
 
@@ -298,7 +299,9 @@ class RemoteAgentRuntime:
             payload["max_output_tokens"] = model.max_tokens
         if metadata is not None:
             payload["metadata"] = metadata
-        async with self._client.stream("POST", self._endpoint, json=payload) as response:
+        async with self._client.stream(
+            "POST", self._endpoint, json=payload
+        ) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "response.completed":
@@ -326,23 +329,15 @@ class RemoteAgentRuntime:
                 0, {"role": "system", "content": config.instructions.system.content}
             )
         messages.append({"role": "user", "content": user_text})
-        payload: dict[str, Any] = {"model": model.model, "messages": messages}
-        if model.temperature is not None:
-            payload["temperature"] = model.temperature
-        if model.top_p is not None:
-            payload["top_p"] = model.top_p
-        if model.max_tokens is not None:
-            payload["max_completion_tokens"] = model.max_tokens
-        if metadata is not None:
-            payload["metadata"] = metadata
-        response = await self._client.post(self._endpoint, json=payload)
-        response.raise_for_status()
-        value = response.json()
-        usage = value.get("usage", {})
-        return value["choices"][0]["message"]["content"], _usage(
-            usage.get("prompt_tokens"),
-            usage.get("completion_tokens"),
-            usage.get("total_tokens"),
+        return await openai_chat.invoke(
+            self._client,
+            self._endpoint,
+            model=model.model,
+            messages=messages,
+            temperature=model.temperature,
+            top_p=model.top_p,
+            max_tokens=model.max_tokens,
+            metadata=metadata,
         )
 
     async def _invoke_messages(
@@ -371,7 +366,9 @@ class RemoteAgentRuntime:
             payload["metadata"] = metadata
         text = ""
         input_tokens = output_tokens = None
-        async with self._client.stream("POST", self._endpoint, json=payload) as response:
+        async with self._client.stream(
+            "POST", self._endpoint, json=payload
+        ) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "message_start":

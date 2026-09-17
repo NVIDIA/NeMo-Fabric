@@ -1,0 +1,99 @@
+---
+title: "Use the OpenClaw Adapter"
+description: "Run an isolated OpenClaw Gateway with NVIDIA NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the `nvidia.fabric.openclaw` adapter to let NeMo Fabric configure, start,
+invoke, and stop a local OpenClaw Gateway for each NeMo Fabric runtime.
+
+## Install OpenClaw and the Adapter
+
+OpenClaw is an npm package, not a Python dependency of the adapter. Install it
+separately, then install the NeMo Fabric runtime and adapter:
+
+```bash
+npm install --global openclaw
+pip install "nemo-fabric[openclaw]"
+```
+
+To install the adapter without the NeMo Fabric runtime, use
+`nemo-fabric-adapters-openclaw[harness]`. The `harness` and `full` extras do not
+install OpenClaw.
+
+## Configure the Adapter
+
+Select the adapter and, when necessary, specify the OpenClaw executable:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.openclaw",
+    settings={
+        "openclaw_command": "/opt/openclaw/bin/openclaw",
+        "startup_timeout_seconds": 30,
+    },
+)
+```
+
+Omit `openclaw_command` to resolve `openclaw` from `PATH`. A relative path that
+contains a directory is resolved from the NeMo Fabric base directory. The adapter
+uses the resolved executable for its version check, configuration validation,
+plugin inventory, Gateway startup, and Relay health check.
+
+The adapter accepts normalized model provider, model, base URL, temperature,
+`top_p`, `max_tokens`, replacement system instruction, workspace, skills, and
+MCP configuration. Normalized MCP authentication is not supported. For a
+custom OpenAI-compatible endpoint, set the model's `base_url` and, when needed,
+`api_key_env`.
+
+By default, the adapter chooses an available local base port. Set `port` to pin
+one. OpenClaw derives additional ports from the base port, so the adapter checks
+the required derived ports and verifies that the browser port range has
+capacity before startup. The largest accepted base port is 65425.
+
+## Execution and Isolation
+
+Before startup, the adapter writes a complete temporary `openclaw.json` and
+sets OpenClaw environment variables. It does not use the OpenClaw configuration
+RPC. The generated configuration:
+
+- binds the Gateway to loopback;
+- enables the OpenAI-compatible Chat Completions endpoint;
+- uses a cryptographically generated one-time Gateway token;
+- applies the normalized workspace, model, skills, and MCP servers;
+- disables OpenClaw anonymous telemetry; and
+- uses a unique temporary state directory.
+
+Each invocation sends a terminal request to `/v1/chat/completions` with the
+NeMo Fabric runtime ID as the stable OpenClaw session key. Runtime shutdown closes
+the HTTP client, terminates the Gateway process tree, and removes the temporary
+configuration and state directory.
+
+The adapter isolates the Gateway in its own process group and forwards `SIGINT`
+and `SIGTERM` on POSIX systems. On Linux, a parent-death supervisor terminates
+the Gateway process group if the adapter exits unexpectedly. On Windows, a
+kill-on-close Job Object owns the supervisor and Gateway process tree. macOS
+signal forwarding covers catchable termination signals but cannot handle
+`SIGKILL`.
+
+## Enable Relay ATIF
+
+Relay telemetry requires the external `nemo-relay-openclaw` npm plugin in the
+same OpenClaw installation:
+
+```bash
+openclaw plugins install npm:nemo-relay-openclaw
+```
+
+When Relay is enabled in `FabricConfig`, the adapter verifies that plugin ID
+`nemo-relay` is installed before startup and checks `nemoRelay.status` after the
+Gateway is ready. It fails startup rather than silently running without the
+requested telemetry.
+
+This initial adapter version supports Relay ATIF output only. Native
+OpenTelemetry, Relay OpenTelemetry and OpenInference output, Relay ATOF
+streaming, adapter-native response streaming, cancellation, and live updates
+are not supported.

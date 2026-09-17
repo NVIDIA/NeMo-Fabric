@@ -64,6 +64,7 @@ The following table shows the install target for each supported agent harness:
 | [LangChain Deep Agents](https://pypi.org/project/nemo-fabric-adapters-deepagents/) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
 | [mini-SWE-agent](https://pypi.org/project/nemo-fabric-adapters-mini-swe-agent/) | `nemo-fabric[mini-swe-agent]` | `nemo-fabric-adapters-mini-swe-agent[harness]` | `nemo-fabric-adapters-mini-swe-agent` |
 | [NOOA](https://pypi.org/project/nemo-fabric-adapters-nooa/) (Python 3.12–3.13) | `nemo-fabric[nooa]` | `nemo-fabric-adapters-nooa[harness]` | `nemo-fabric-adapters-nooa` |
+| [OpenClaw](https://pypi.org/project/nemo-fabric-adapters-openclaw/) | Install OpenClaw separately, then install `nemo-fabric[openclaw]` | Install OpenClaw separately, then install `nemo-fabric-adapters-openclaw[harness]` | `nemo-fabric-adapters-openclaw` |
 
 
 To install the NeMo Fabric runtime, adapter, and supported harness in one
@@ -75,6 +76,7 @@ pip install "nemo-fabric[codex]"
 pip install "nemo-fabric[deepagents]"
 pip install "nemo-fabric[mini-swe-agent]"
 pip install "nemo-fabric[nooa]"
+pip install "nemo-fabric[openclaw]"
 ```
 
 Hermes Agent 0.20 and later is not installable from PyPI. For this reason the Hermes Agent adapter does not provide a `harness` extra. Follow the
@@ -91,6 +93,7 @@ pip install "nemo-fabric-adapters-codex[harness]"
 pip install "nemo-fabric-adapters-deepagents[harness]"
 pip install "nemo-fabric-adapters-mini-swe-agent[harness]"
 pip install "nemo-fabric-adapters-nooa[harness]"
+pip install "nemo-fabric-adapters-openclaw[harness]"
 ```
 
 Every adapter package also provides an adapter-scoped `full` extra, which does
@@ -106,9 +109,11 @@ pip install nemo-fabric-adapters-deepagents
 pip install nemo-fabric-adapters-hermes
 pip install nemo-fabric-adapters-mini-swe-agent
 pip install nemo-fabric-adapters-nooa
+pip install nemo-fabric-adapters-openclaw
 ```
 
-The adapter distribution contains only adapter-owned runtime dependencies. It
+The OpenClaw package extras do not install OpenClaw; install its npm package
+separately. The adapter distribution contains only adapter-owned runtime dependencies. It
 does not install the NeMo Fabric runtime. For package-installable harnesses,
 select `harness` or `full` to install the harness. The Hermes adapter never
 installs Hermes Agent. If the runtime shares an environment with an existing

@@ -40,6 +40,10 @@ remote-agent = [
   "nemo-fabric[remote-agent]",
 ]
 
+openclaw = [
+  "nemo-fabric[openclaw]",
+]
+
 harbor = [
   "nemo-fabric[harbor]",
 ]
@@ -67,6 +71,7 @@ adapters = [
   # its optional subclass-based telemetry integration.
   "nemo-fabric-adapters-mini-swe-agent[relay]",
   "nemo-fabric-adapters-nooa; python_version >= '3.12' and python_version < '3.14'",
+  "nemo-fabric-adapters-openclaw[harness]",
   "nemo-fabric-adapters-remote-agent[harness]",
 ]
 
@@ -81,6 +86,7 @@ adapter-tests = [
   "nemo-fabric-adapters-hermes[full]; python_version < '3.14'",
   "nemo-fabric-adapters-mini-swe-agent[harness]",
   "nemo-fabric-adapters-nooa[full]; python_version >= '3.12' and python_version < '3.14'",
+  "nemo-fabric-adapters-openclaw[full]",
   "nemo-fabric-adapters-remote-agent[full]",
 ]
 
@@ -146,6 +152,7 @@ nemo-fabric-adapters-deepagents = { path = "adapters/python/deepagents", editabl
 nemo-fabric-adapters-hermes = { path = "adapters/python/hermes", editable = true }
 nemo-fabric-adapters-mini-swe-agent = { path = "adapters/python/mini-swe-agent", editable = true }
 nemo-fabric-adapters-nooa = { path = "adapters/python/nooa", editable = true }
+nemo-fabric-adapters-openclaw = { path = "adapters/python/openclaw", editable = true }
 nemo-fabric-adapters-remote-agent = { path = "adapters/python/remote-agent", editable = true }
 
 [tool.pytest.ini_options]

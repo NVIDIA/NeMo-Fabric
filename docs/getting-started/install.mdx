@@ -36,6 +36,7 @@ be managed separately.
 | `nemo-fabric-adapters-deepagents[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-mini-swe-agent[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-nooa[full]` | No | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-openclaw[full]` | No | No | Yes | No | No | No |
 | `nemo-fabric-adapters-hermes[relay]` | No | No | Yes | No | Yes | No |
 | `nemo-fabric-adapters-claude` | No | No | Yes | No | No | No |
 
@@ -79,6 +80,7 @@ pip install "nemo-fabric[codex]"
 pip install "nemo-fabric[deepagents]"
 pip install "nemo-fabric[mini-swe-agent]"
 pip install "nemo-fabric[nooa]"
+pip install "nemo-fabric[openclaw]"
 ```
 
 Each `nemo-fabric` harness extra installs the corresponding adapter package
@@ -93,6 +95,9 @@ pip install "nemo-fabric[claude,harbor,relay]"
 The NOOA extra supports Python 3.12 and 3.13 only. On another supported Python
 version, the command can succeed while its environment marker omits the NOOA
 adapter.
+
+The OpenClaw extra installs its adapter and HTTP client, but not OpenClaw.
+Install the `openclaw` npm package separately before using that adapter.
 
 The Claude and Codex harness extras install the `nemo-relay` CLI required for
 Relay-enabled runs. The root `relay` extra installs only the Relay Python
@@ -127,6 +132,7 @@ pip install "nemo-fabric-adapters-claude[harness]"
 pip install "nemo-fabric-adapters-codex[harness]"
 pip install "nemo-fabric-adapters-deepagents[harness]"
 pip install "nemo-fabric-adapters-nooa[harness]"
+pip install "nemo-fabric-adapters-openclaw[harness]"
 ```
 
 This installation mode keeps the runtime dependencies out of the adapter
@@ -135,6 +141,9 @@ environment's Python interpreter. A Python adapter and its Python harness must
 use the same interpreter. Use matching NeMo Fabric
 release versions for the runtime and adapter package unless a different pairing
 has been explicitly validated.
+
+The OpenClaw `harness` and `full` extras contain the adapter but do not install
+OpenClaw. Install the `openclaw` npm package separately.
 
 ### Add an Adapter to an Existing Harness Environment
 
@@ -147,6 +156,7 @@ pip install nemo-fabric-adapters-codex
 pip install nemo-fabric-adapters-deepagents
 pip install nemo-fabric-adapters-hermes
 pip install nemo-fabric-adapters-nooa
+pip install nemo-fabric-adapters-openclaw
 ```
 
 Bare adapter distributions install only adapter-owned dependencies. They do not

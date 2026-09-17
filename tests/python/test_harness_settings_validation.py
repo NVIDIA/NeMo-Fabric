@@ -31,6 +31,9 @@ ADAPTER_DESCRIPTORS = {
     "nvidia.fabric.hermes": (
         ROOT / "adapters" / "python" / "hermes" / "hermes.fabric-adapter.json"
     ),
+    "nvidia.fabric.openclaw": (
+        ROOT / "adapters" / "python" / "openclaw" / "openclaw.fabric-adapter.json"
+    ),
     "nvidia.fabric.remote-agent": (
         ROOT
         / "adapters"
@@ -129,6 +132,18 @@ _config = partial(
                 "terminal_timeout": 90,
             },
             id="hermes",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {
+                "openclaw_command": "/opt/openclaw/bin/openclaw",
+                "port": 19001,
+                "startup_timeout_seconds": 20,
+                "shutdown_timeout_seconds": 5,
+                "connect_timeout_seconds": 3,
+                "read_timeout_seconds": 300,
+            },
+            id="openclaw",
         ),
         pytest.param(
             "nvidia.fabric.remote-agent",
@@ -236,9 +251,18 @@ def test_remote_agent_accepts_relay_atof_for_invoke_stream(tmp_path: Path):
     assert plan["telemetry_plan"]["relay_enabled"] is True
     assert plan["telemetry_plan"]["providers"] == ["relay"]
     assert plan["telemetry_plan"]["adapter_outputs"] == ["atof"]
-    assert (
-        plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"]
-    )
+    assert plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"]
+
+
+def test_openclaw_accepts_relay_atif_without_streaming(tmp_path: Path):
+    config = _config({}, adapter_id="nvidia.fabric.openclaw").enable_relay()
+
+    plan = Fabric().plan(config, base_dir=tmp_path)
+
+    assert plan["telemetry_plan"]["relay_enabled"] is True
+    assert plan["telemetry_plan"]["providers"] == ["relay"]
+    assert plan["telemetry_plan"]["adapter_outputs"] == ["atif"]
+    assert not plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"]
 
 
 @pytest.mark.parametrize(

@@ -47,6 +47,7 @@ schemas come from independently registered Adapter Target Descriptors.
 | [Hermes Agent](python/hermes/README.md) | `nvidia.fabric.hermes` | `nemo-fabric-adapters-hermes` | 3.11-3.13 |
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | `nvidia.fabric.mini-swe-agent` | `nemo-fabric-adapters-mini-swe-agent` | 3.11+ |
 | [NOOA](python/nooa/README.md) | `nvidia.fabric.nooa`, `nvidia.fabric.nooa.bench-agent` | `nemo-fabric-adapters-nooa` | 3.12-3.13 |
+| [OpenClaw](python/openclaw/README.md) | `nvidia.fabric.openclaw` | `nemo-fabric-adapters-openclaw` | 3.11+ |
 | [Remote Agent](python/remote-agent/README.md) | `nvidia.fabric.remote-agent` | `nemo-fabric-adapters-remote-agent` | 3.11+ |
 
 Refer to the [Python adapter package guide](python/README.md) for source-layout,
@@ -87,6 +88,7 @@ integration shape and implement the minimum lifecycle.
 | [Hermes Agent](python/hermes/README.md) | Configurable provider, model, and base URL | `tools.enabled` and `tools.blocked` map to Hermes native toolset selectors | Normalized | Normalized | Not exposed |
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | Configured provider and model | Not exposed | Not exposed | Not exposed | Not exposed |
 | [NOOA](python/nooa/README.md) | Configured provider and model with optional base URL and temperature | Not exposed | InteractiveAgent: normalized whole servers; BenchAgent: not exposed | InteractiveAgent: normalized `skills.paths`; BenchAgent: not exposed | Not exposed |
+| [OpenClaw](python/openclaw/README.md) | Native OpenClaw providers or a configured OpenAI Chat Completions-compatible provider | OpenClaw native policy only | Normalized: stdio, HTTP, streamable HTTP, and SSE without normalized authentication | Normalized `skills.paths` | OpenClaw native behavior |
 | [Pi](typescript/pi/README.md) | One Pi-catalog provider and model with an optional base URL override | `tools.definitions`, `tools.enabled`, and `tools.blocked` cover built-ins, trusted local modules, and explicit extension tools | Not exposed | Normalized `skills.paths` | Not exposed |
 | [Remote Agent](python/remote-agent/README.md) | Configured remote HTTP API and model | Not exposed | Not exposed | Not exposed | Not exposed |
 
@@ -181,10 +183,12 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [Hermes Agent](python/hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes Agent NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | Conversation history | Adapter-owned subclass with NeMo Relay Python SDK scopes | Creates a fresh Relay plugin and request scope, emits step, model, and bash-action telemetry, and collects artifacts | Clears the agent and Relay state | Not implemented |
 | [NOOA](python/nooa/README.md) | InteractiveAgent queue dispatcher or BenchAgent task state | Adapter-owned Relay middleware and generated Relay configuration | InteractiveAgent dispatches queued requests; BenchAgent evaluates one task | Closes agent resources and Relay state | Not implemented |
+| [OpenClaw](python/openclaw/README.md) | OpenClaw Gateway session selected by Fabric runtime ID | External `nemo-relay-openclaw` plugin with ATIF output | Sends a terminal Chat Completions request to the isolated loopback Gateway | Terminates the Gateway process tree and removes its temporary config and state | Adapter-owned loopback service |
 | [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Not supported | Reuses the session and calls `prompt()` for ordered text input | Aborts work, emits extension shutdown, and disposes the session | Not implemented |
 | [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a shared ATOF collector | Registers the request ID, maps it into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |
 
-Telemetry output names use the descriptor contract values. Claude, Codex,
+Telemetry output names use the descriptor contract values. OpenClaw supports
+Relay ATIF through its external plugin. Claude, Codex,
 Hermes Agent, and mini-SWE-agent can emit NeMo Relay ATIF, OpenTelemetry, and
 OpenInference output. Deep Agents supports the same Relay outputs plus native
 OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry. The

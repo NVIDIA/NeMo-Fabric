@@ -156,6 +156,7 @@ integrations use the package expressions shown in each column:
 | [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
 | [mini-SWE-agent](docs/integrations/harness/mini-swe-agent.mdx) | `nemo-fabric[mini-swe-agent]` | `nemo-fabric-adapters-mini-swe-agent[harness]` | `nemo-fabric-adapters-mini-swe-agent` |
 | [NOOA](adapters/python/nooa/README.md) | `nemo-fabric[nooa]` | `nemo-fabric-adapters-nooa[harness]` | `nemo-fabric-adapters-nooa` |
+| [OpenClaw](docs/integrations/harness/openclaw.mdx) | Install OpenClaw separately, then install `nemo-fabric[openclaw]` | Install OpenClaw separately, then install `nemo-fabric-adapters-openclaw[harness]` | `nemo-fabric-adapters-openclaw` |
 | [Remote Agent](docs/integrations/harness/remote-agent.mdx) | `nemo-fabric[remote-agent]`* | `nemo-fabric-adapters-remote-agent[harness]`* | `nemo-fabric-adapters-remote-agent` |
 
 > * The Remote Agent adapter communicates with an independently deployed service. Its `harness` extra installs the adapter and HTTP client, but not the remote service.
