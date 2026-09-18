@@ -63,6 +63,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        if self.path != "/v1/chat/completions":
+            self.send_response(404)
+            self.end_headers()
+            return
         if self.headers.get("Authorization") != f"Bearer {token}":
             self.send_response(401)
             self.end_headers()
