@@ -22,6 +22,24 @@ def _entry(package: str, version: str, license_name: str) -> LicenseInventoryEnt
     return LicenseInventoryEntry(package=package, version=version, license=license_name)
 
 
+def test_rust_attribution_strips_trailing_license_whitespace():
+    rendered = license_diff.attributions_lockfile_md._render_rust_crate_attribution(
+        {
+            "id": "registry+demo",
+            "name": "demo",
+            "version": "1.0.0",
+            "repository": "https://example.com/demo",
+        },
+        license_id="MIT",
+        license_text="MIT License  \r\n\r\nPermission granted. \r\n",
+        workspace_members=set(),
+    )
+
+    assert rendered is not None
+    assert "MIT License\n\nPermission granted.\n" in rendered[2]
+    assert not any(line.endswith((" ", "\r")) for line in rendered[2].splitlines())
+
+
 def test_compare_inventories_classifies_dependency_changes():
     unchanged = _entry("unchanged", "1.0.0", "MIT")
     base = {

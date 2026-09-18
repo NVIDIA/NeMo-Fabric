@@ -16,6 +16,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from nemo_fabric import (
+    EnvironmentHandle,
+    EnvironmentReference,
     Fabric,
     FabricConfig,
     FabricConfigError,
@@ -77,6 +79,10 @@ def _runtime(runtime_id: str = "runtime-1") -> dict[str, Any]:
     }
 
 
+def _environment() -> dict[str, Any]:
+    return _runtime()["environment"]
+
+
 def _config() -> FabricConfig:
     return FabricConfig(
         metadata=MetadataConfig(name="demo"),
@@ -98,7 +104,10 @@ def mock_native_fixture() -> MagicMock:
     mock_native = MagicMock()
     mock_native.requests = []
     mock_native.plan_config.side_effect = lambda config_json, base_dir: json.dumps(_plan())
+    mock_native.prepare_environment.return_value = json.dumps(_environment())
+    mock_native.attach_environment.return_value = json.dumps(_environment())
     mock_native.start_runtime.return_value = json.dumps(_runtime())
+    mock_native.start_runtime_in.return_value = json.dumps(_runtime())
 
     def invoke(plan_json: str, runtime_json: str, request_json: str) -> str:
         request = json.loads(request_json)
@@ -167,6 +176,89 @@ async def test_start_runtime_supports_typed_source_and_base_dir(
 
     assert typed_runtime.runtime_id == "runtime-1"
     assert mock_native.plan_config.call_args.args[1] == "."
+
+
+async def test_explicit_environment_lifecycle_is_separate_from_runtime(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    environment = await native_client.prepare_environment(_config(), base_dir=".")
+
+    assert isinstance(environment, EnvironmentHandle)
+    assert environment.environment_id == "environment-1"
+
+    runtime = await native_client.start_runtime_in(
+        _config(),
+        environment,
+        base_dir=".",
+    )
+    await runtime.stop()
+
+    bound_environment = json.loads(mock_native.start_runtime_in.call_args.args[1])
+    assert bound_environment == environment.to_mapping()
+    mock_native.release_environment.assert_not_called()
+
+    await native_client.release_environment(environment)
+    mock_native.release_environment.assert_called_once_with(
+        json.dumps(environment.to_mapping())
+    )
+
+
+async def test_attach_environment_passes_a_typed_reference_to_native(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    reference = EnvironmentReference.from_mapping(
+        {
+            "provider": "openshell",
+            "resource": {
+                "sandbox_name": "fabric-demo",
+                "sandbox_id": "sandbox-id-1",
+            },
+        }
+    )
+
+    environment = await native_client.attach_environment(
+        _config(), reference, base_dir="."
+    )
+
+    assert isinstance(environment, EnvironmentHandle)
+    plan_json, reference_json = mock_native.attach_environment.call_args.args
+    attached_plan = json.loads(plan_json)
+    assert attached_plan["agent_name"] == "demo"
+    assert attached_plan["adapter"]["adapter_id"] == "test.fabric.shim"
+    assert json.loads(reference_json) == reference.to_mapping()
+
+
+async def test_attach_environment_rejects_raw_reference_mappings(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    with pytest.raises(FabricConfigError, match="EnvironmentReference.from_mapping"):
+        await native_client.attach_environment(
+            _config(),
+            {"provider": "openshell", "resource": {}},  # type: ignore[arg-type]
+        )
+
+    mock_native.attach_environment.assert_not_called()
+
+
+async def test_explicit_environment_methods_reject_raw_mappings(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    environment = _environment()
+
+    with pytest.raises(FabricConfigError, match="EnvironmentHandle.from_mapping"):
+        await native_client.start_runtime_in(
+            _config(),
+            environment,  # type: ignore[arg-type]
+        )
+    with pytest.raises(FabricConfigError, match="EnvironmentHandle.from_mapping"):
+        await native_client.release_environment(environment)  # type: ignore[arg-type]
+
+    mock_native.start_runtime_in.assert_not_called()
+    mock_native.release_environment.assert_not_called()
 
 
 async def test_start_runtime_preserves_start_stage(

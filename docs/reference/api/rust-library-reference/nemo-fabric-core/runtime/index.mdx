@@ -2,7 +2,7 @@
 title: "Module runtime"
 sidebar-title: "runtime"
 description: "Runtime invocation helpers."
-position: 124
+position: 128
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -17,6 +17,7 @@ Runtime invocation helpers.
 - [ArtifactManifest](struct-artifactmanifest.mdx): Manifest of run artifacts.
 - [ArtifactRef](struct-artifactref.mdx): Reference to one artifact.
 - [EnvironmentHandle](struct-environmenthandle.mdx): Resolved execution environment context.
+- [EnvironmentReference](struct-environmentreference.mdx): Provider-specific reference to an existing execution environment.
 - [ErrorInfo](struct-errorinfo.mdx): Normalized error metadata.
 - [FabricEvent](struct-fabricevent.mdx): NeMo Fabric lifecycle or progress event.
 - [InvocationHandle](struct-invocationhandle.mdx): One request sent to a runtime.
@@ -46,9 +47,12 @@ Runtime invocation helpers.
 
 ## Functions
 
+- [attach_environment](fn-attach-environment.mdx): Verify and attach to a caller-owned execution environment.
 - [invoke_openai_stream](fn-invoke-openai-stream.mdx): Invoke a started harness runtime and pass through native OpenAI chat-completion chunks.
 - [invoke_runtime](fn-invoke-runtime.mdx): Invoke a started harness runtime.
 - [prepare_environment](fn-prepare-environment.mdx): Resolve or attach to the execution environment context for a run plan.
+- [release_environment](fn-release-environment.mdx): Release or detach an environment returned by [`prepare_environment`](fn-prepare-environment.mdx) or [`attach_environment`](fn-attach-environment.mdx).
 - [run_plan](fn-run-plan.mdx): Invoke a NeMo Fabric run plan.
 - [start_runtime](fn-start-runtime.mdx): Start or connect to a harness runtime.
+- [start_runtime_in](fn-start-runtime-in.mdx): Start or connect to a harness runtime in an explicitly prepared or attached environment.
 - [stop_runtime](fn-stop-runtime.mdx): Stop or detach from a harness runtime.
