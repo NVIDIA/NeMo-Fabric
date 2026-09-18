@@ -40,7 +40,7 @@ just build-all
 
 The Pi variant supports Relay telemetry with `nemo-relay>=0.9.0,<0.10.0` and an
 explicit extension path. Pass
-`--variant pi --relay --pi-relay-extension-path <PATH>`; do not combine the Pi
+`--variant pi --relay --pi-relay-extension-path <PATH>` but do not combine the Pi
 variant with `--stream`.
 
 ## LangGraph Custom Agent
