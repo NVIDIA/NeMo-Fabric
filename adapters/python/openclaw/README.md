@@ -13,7 +13,7 @@ runtime and communicates with its OpenAI-compatible Chat Completions endpoint.
 Install OpenClaw separately through npm, then install the adapter:
 
 ```bash
-# Requires Node.js >=24.16.0 <25 or >=26.1.0.
+# Requires Node.js >=24.16.0 <25 or >=26.1.0, and npm 11.16+.
 npm install --global openclaw@latest --allow-scripts=openclaw
 pip install "nemo-fabric[openclaw]"
 ```
