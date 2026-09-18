@@ -161,7 +161,7 @@ processes.
 
 Local ATIF trajectories are finalized only after the Pi session closes and are
 therefore not included in `relay_artifacts`. The adapter does not wait for local
-ATIF during invocation; it collects per-invocation artifacts such as ATOF and
+ATIF during invocation. It collects per-invocation artifacts such as ATOF and
 returns the result. After runtime shutdown, retrieve the finalized file directly
 from the ATIF output directory. For the configuration above and the default
 filename template, it is written to
