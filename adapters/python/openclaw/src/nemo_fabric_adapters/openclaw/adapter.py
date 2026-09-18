@@ -425,7 +425,14 @@ async def _relay_plugin_root(
             "openclaw_relay_plugin_check_failed",
             "OpenClaw returned an invalid plugin inventory",
         ) from error
-    for plugin in value.get("plugins", []):
+    if not isinstance(value, dict) or not isinstance(value.get("plugins"), list):
+        raise lifecycle.LifecycleError(
+            "openclaw_relay_plugin_check_failed",
+            "OpenClaw returned an invalid plugin inventory",
+        )
+    for plugin in value["plugins"]:
+        if not isinstance(plugin, dict):
+            continue
         if plugin.get("id") != PLUGIN_ID:
             continue
         root = plugin.get("rootDir")

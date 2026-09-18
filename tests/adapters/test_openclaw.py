@@ -271,6 +271,42 @@ async def test_openclaw_command_cancellation_kills_and_reaps_process(
     assert process.communicate.await_count == 2
 
 
+@pytest.mark.parametrize("inventory", ["[]", '{"plugins": {}}'])
+async def test_openclaw_rejects_invalid_relay_plugin_inventory(
+    inventory: str, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(
+        adapter, "_command_output", AsyncMock(return_value=inventory)
+    )
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter._relay_plugin_root(Path("openclaw"), {}, timeout=30)
+
+    assert caught.value.code == "openclaw_relay_plugin_check_failed"
+
+
+async def test_openclaw_skips_invalid_relay_plugin_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    inventory = json.dumps(
+        {
+            "plugins": [
+                None,
+                "invalid",
+                {"id": "other"},
+                {"id": adapter.PLUGIN_ID, "rootDir": str(tmp_path)},
+            ]
+        }
+    )
+    monkeypatch.setattr(
+        adapter, "_command_output", AsyncMock(return_value=inventory)
+    )
+
+    root = await adapter._relay_plugin_root(Path("openclaw"), {}, timeout=30)
+
+    assert root == str(tmp_path.resolve())
+
+
 @pytest.mark.parametrize(
     ("authentication", "field"),
     [
