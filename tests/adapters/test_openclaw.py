@@ -101,6 +101,44 @@ def mock_openclaw_fixture(repo_root: Path) -> Path:
     return repo_root / "tests/_utils/mock_openclaw.py"
 
 
+def test_openclaw_port_availability_checks_one_port(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    mock_socket = MagicMock(spec=adapter.socket.socket)
+    monkeypatch.setattr(adapter.socket, "socket", MagicMock(return_value=mock_socket))
+
+    assert adapter._port_available(20_000)
+    mock_socket.bind.assert_called_once_with(("127.0.0.1", 20_000))
+    mock_socket.close.assert_called_once_with()
+
+
+def test_openclaw_selects_os_assigned_base_port(monkeypatch: pytest.MonkeyPatch):
+    mock_server = MagicMock(spec=adapter.socket.socket)
+    mock_server.__enter__.return_value = mock_server
+    mock_server.getsockname.return_value = ("127.0.0.1", 20_000)
+    mock_port_available = MagicMock(return_value=True)
+    monkeypatch.setattr(
+        adapter.socket, "create_server", MagicMock(return_value=mock_server)
+    )
+    monkeypatch.setattr(adapter, "_port_available", mock_port_available)
+
+    assert adapter._select_port({}) == 20_000
+    mock_port_available.assert_called_once_with(20_002)
+
+
+def test_openclaw_checks_configured_base_and_control_ports(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    mock_port_available = MagicMock(return_value=True)
+    monkeypatch.setattr(adapter, "_port_available", mock_port_available)
+
+    assert adapter._select_port({"port": 20_000}) == 20_000
+    assert [item.args[0] for item in mock_port_available.call_args_list] == [
+        20_000,
+        20_002,
+    ]
+
+
 @pytest.mark.skipif(
     sys.platform in {"darwin", "win32"}, reason="Workes locally, fails in CI"
 )

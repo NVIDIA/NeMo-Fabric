@@ -37,8 +37,6 @@ DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 10.0
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
 DEFAULT_READ_TIMEOUT_SECONDS = 600.0
 OPENCLAW_CHAT_MODEL = "openclaw/default"
-RANDOM_PORT_MIN = 20_000
-RANDOM_PORT_MAX = 64_000
 MAX_PORT_ATTEMPTS = 20
 SUPERVISOR_MODULE = "nemo_fabric_adapters.openclaw._supervisor"
 WINDOWS_START_BYTE = b"\x01"
@@ -106,32 +104,26 @@ def _resolve_command(settings: dict[str, Any], base_dir: Path) -> Path:
 
 
 def _port_available(port: int) -> bool:
-    sockets: list[socket.socket] = []
+    """Return whether one loopback TCP port is available."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        for candidate in (port, port + 2):
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sockets.append(sock)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(("127.0.0.1", candidate))
-        for candidate in range(port + 11, port + 111):
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                sock.bind(("127.0.0.1", candidate))
-            except OSError:
-                sock.close()
-                continue
-            sockets.append(sock)
-            return True
-        return False
-    except OSError:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("127.0.0.1", port))
+        return True
+    except (OSError, OverflowError):
         return False
     finally:
-        for sock in sockets:
-            sock.close()
+        sock.close()
 
 
 def _select_port(settings: dict[str, Any]) -> int:
+    """Select a base port with available Gateway and browser control ports.
+
+    OpenClaw derives the browser control port at base + 2. Managed browser CDP
+    ports are auto-allocated from base + 11 through base + 110, so they do not
+    need to be preflighted here. See "Port mapping (derived)":
+    https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived
+    """
     configured = settings.get("port")
     if configured is not None:
         if isinstance(configured, bool) or not isinstance(configured, int):
@@ -140,7 +132,7 @@ def _select_port(settings: dict[str, Any]) -> int:
                 "OpenClaw port must be an integer",
                 metadata={"field": "harness.settings.port"},
             )
-        if not _port_available(configured):
+        if not _port_available(configured) or not _port_available(configured + 2):
             raise lifecycle.LifecycleError(
                 "openclaw_port_unavailable",
                 f"OpenClaw port range derived from {configured} is unavailable",
@@ -148,11 +140,11 @@ def _select_port(settings: dict[str, Any]) -> int:
             )
         return configured
     for _ in range(MAX_PORT_ATTEMPTS):
-        candidate = RANDOM_PORT_MIN + secrets.randbelow(
-            RANDOM_PORT_MAX - RANDOM_PORT_MIN + 1
-        )
-        if _port_available(candidate):
-            return candidate
+        with socket.create_server(("127.0.0.1", 0)) as sock:
+            _, base_port = sock.getsockname()
+            if _port_available(base_port + 2):
+                return base_port
+
     raise lifecycle.LifecycleError(
         "openclaw_port_unavailable",
         "OpenClaw could not find an available local port range",
