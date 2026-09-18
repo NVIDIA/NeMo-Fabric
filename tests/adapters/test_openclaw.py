@@ -213,6 +213,41 @@ async def test_openclaw_invoke_rejects_exited_gateway(tmp_path: Path):
     runtime._client.stream.assert_not_called()
 
 
+async def test_openclaw_stop_continues_after_cleanup_failures(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock(side_effect=OSError("close failed"))
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    mock_process.wait = AsyncMock()
+    mock_temp_dir = MagicMock()
+    log_task = asyncio.create_task(asyncio.Event().wait())
+    mock_close_job = MagicMock(side_effect=OSError("close failed"))
+    monkeypatch.setattr(adapter.os, "killpg", MagicMock())
+    monkeypatch.setattr(adapter._windows_job, "close_job", mock_close_job)
+    runtime._client = mock_client
+    runtime._process = mock_process
+    runtime._windows_job = 1234
+    runtime._log_tasks = [log_task]
+    runtime._temp_dir = mock_temp_dir
+
+    await runtime.stop()
+
+    mock_client.aclose.assert_awaited_once_with()
+    mock_process.wait.assert_awaited_once_with()
+    mock_close_job.assert_called_once_with(1234)
+    assert log_task.cancelled()
+    mock_temp_dir.cleanup.assert_called_once_with()
+    assert runtime._client is None
+    assert runtime._process is None
+    assert runtime._windows_job is None
+    assert runtime._log_tasks == []
+    assert runtime._temp_dir is None
+
+
 async def test_openclaw_command_timeout_kills_and_reaps_process(
     monkeypatch: pytest.MonkeyPatch,
 ):

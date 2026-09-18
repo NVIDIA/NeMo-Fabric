@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import secrets
@@ -42,6 +43,9 @@ RANDOM_PORT_MAX = 64_000
 MAX_PORT_ATTEMPTS = 20
 SUPERVISOR_MODULE = "nemo_fabric_adapters.openclaw._supervisor"
 WINDOWS_START_BYTE = b"\x01"
+
+
+logger = logging.getLogger(__name__)
 
 
 def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
@@ -848,10 +852,19 @@ class OpenClawRuntime:
         return artifacts
 
     async def stop(self) -> None:
-        self._restore_signal_handlers()
+        try:
+            self._restore_signal_handlers()
+        except Exception:
+            logger.error(
+                "OpenClaw could not restore signal handlers during cleanup",
+                exc_info=True,
+            )
         client, self._client = self._client, None
-        if client is not None:
-            await client.aclose()
+        try:
+            if client is not None:
+                await client.aclose()
+        except Exception:
+            logger.error("OpenClaw could not close its HTTP client", exc_info=True)
         process, self._process = self._process, None
         try:
             if process is not None and process.returncode is None:
@@ -875,19 +888,32 @@ class OpenClawRuntime:
                         except ProcessLookupError:
                             pass
                     await process.wait()
-        finally:
-            windows_job, self._windows_job = self._windows_job, None
+        except Exception:
+            logger.error("OpenClaw Gateway process cleanup failed", exc_info=True)
+        windows_job, self._windows_job = self._windows_job, None
+        try:
             if windows_job is not None:
                 _windows_job.close_job(windows_job)
-        for task in self._log_tasks:
-            if not task.done():
-                task.cancel()
-        if self._log_tasks:
-            await asyncio.gather(*self._log_tasks, return_exceptions=True)
-        self._log_tasks = []
+        except Exception:
+            logger.error("OpenClaw could not close its Windows Job Object", exc_info=True)
+        log_tasks, self._log_tasks = self._log_tasks, []
+        try:
+            for task in log_tasks:
+                if not task.done():
+                    task.cancel()
+            if log_tasks:
+                await asyncio.gather(*log_tasks, return_exceptions=True)
+        except Exception:
+            logger.error("OpenClaw could not stop log-capture tasks", exc_info=True)
         temp_dir, self._temp_dir = self._temp_dir, None
-        if temp_dir is not None:
-            temp_dir.cleanup()
+        try:
+            if temp_dir is not None:
+                temp_dir.cleanup()
+        except Exception:
+            logger.error(
+                "OpenClaw could not remove its temporary Gateway configuration",
+                exc_info=True,
+            )
         self._config = None
         self._context = None
         self._command = None
