@@ -20,5 +20,4 @@ npm install --global openclaw@latest --allow-scripts=openclaw
 pip install "nemo-fabric[openclaw]"
 ```
 
-The optional `nemo-relay-openclaw` npm plugin enables Relay ATIF telemetry. The
-adapter does not install OpenClaw or the Relay plugin.
+The adapter does not install OpenClaw. Relay telemetry is not supported.

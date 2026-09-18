@@ -29,7 +29,7 @@ from nemo_fabric_adapters.openclaw import adapter
 from nemo_fabric_adapters.openclaw import _windows_job
 
 
-def _context(workspace: Path, *, relay: bool = False) -> RuntimeContext:
+def _context(workspace: Path) -> RuntimeContext:
     payload = {
         "runtime_id": "openclaw-runtime",
         "invocation_id": "openclaw-invocation",
@@ -44,8 +44,6 @@ def _context(workspace: Path, *, relay: bool = False) -> RuntimeContext:
         },
         "artifacts": {},
     }
-    if relay:
-        payload["telemetry"] = {"relay_enabled": True}
     return RuntimeContext.from_mapping(payload)
 
 
@@ -183,6 +181,7 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
         "allow": ["browser", "web_search"],
         "deny": ["exec"],
     }
+    assert "plugins" not in generated
     assert generated["mcp"]["servers"]["local"]["command"] == "python"
     assert generated["mcp"]["servers"]["remote"]["transport"] == ("streamable-http")
     assert generated["mcp"]["servers"]["remote"]["auth"] == "oauth"
@@ -307,42 +306,6 @@ async def test_openclaw_command_cancellation_kills_and_reaps_process(
 
     process.kill.assert_called_once_with()
     assert process.communicate.await_count == 2
-
-
-@pytest.mark.parametrize("inventory", ["[]", '{"plugins": {}}'])
-async def test_openclaw_rejects_invalid_relay_plugin_inventory(
-    inventory: str, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.setattr(
-        adapter, "_command_output", AsyncMock(return_value=inventory)
-    )
-
-    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        await adapter._relay_plugin_root(Path("openclaw"), {}, timeout=30)
-
-    assert caught.value.code == "openclaw_relay_plugin_check_failed"
-
-
-async def test_openclaw_skips_invalid_relay_plugin_entries(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    inventory = json.dumps(
-        {
-            "plugins": [
-                None,
-                "invalid",
-                {"id": "other"},
-                {"id": adapter.PLUGIN_ID, "rootDir": str(tmp_path)},
-            ]
-        }
-    )
-    monkeypatch.setattr(
-        adapter, "_command_output", AsyncMock(return_value=inventory)
-    )
-
-    root = await adapter._relay_plugin_root(Path("openclaw"), {}, timeout=30)
-
-    assert root == str(tmp_path.resolve())
 
 
 @pytest.mark.parametrize(
@@ -614,72 +577,6 @@ def test_openclaw_plan_rejects_mcp_service_account(tmp_path: Path):
     assert "mcp.auth.service_account" in str(caught.value)
 
 
-async def test_openclaw_requires_relay_plugin_when_relay_is_requested(
-    mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    context = _context(tmp_path, relay=True)
-    monkeypatch.setattr(
-        adapter.common_utils,
-        "load_relay_plugin_config",
-        lambda _payload: {
-            "version": 1,
-            "components": [
-                {
-                    "kind": "observability",
-                    "enabled": True,
-                    "config": {"version": 3, "atif": {"enabled": True}},
-                }
-            ],
-        },
-    )
-    runtime = adapter.OpenClawRuntime()
-
-    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        await runtime.start(
-            {
-                "config": _config(mock_openclaw),
-                "runtime_context": context.to_mapping(),
-                "base_dir": str(tmp_path),
-            }
-        )
-
-    assert caught.value.code == "openclaw_relay_plugin_missing"
-
-
-@pytest.mark.parametrize(
-    ("observability", "code"),
-    [
-        pytest.param(
-            {"atof": {"enabled": True}},
-            "openclaw_relay_streaming_unsupported",
-            id="relay-streaming",
-        ),
-        pytest.param(
-            {"opentelemetry": {"enabled": True, "endpoints": [{}]}},
-            "openclaw_relay_otel_unsupported",
-            id="relay-otel",
-        ),
-    ],
-)
-def test_openclaw_rejects_deferred_relay_modes(
-    observability: dict[str, object], code: str
-):
-    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        adapter._relay_plugin_config(
-            {
-                "components": [
-                    {
-                        "kind": "observability",
-                        "enabled": True,
-                        "config": observability,
-                    }
-                ]
-            }
-        )
-
-    assert caught.value.code == code
-
-
 def test_openclaw_descriptor_and_module_entrypoint(repo_root: Path):
     descriptor = json.loads(
         (repo_root / "adapters/python/openclaw/openclaw.fabric-adapter.json").read_text(
@@ -700,8 +597,5 @@ def test_openclaw_descriptor_and_module_entrypoint(repo_root: Path):
     assert "tools.blocked" in descriptor["config"]["accepts"]
     assert "mcp.auth.oauth2" in descriptor["config"]["accepts"]
     assert descriptor["capabilities"]["streaming"] is False
-    assert descriptor["telemetry"]["providers"]["relay"] == {
-        "outputs": ["atif"],
-        "integration_modes": ["hooks"],
-    }
+    assert "telemetry" not in descriptor
     assert result.returncode == 0, result.stderr

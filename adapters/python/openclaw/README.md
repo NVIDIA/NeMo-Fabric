@@ -13,14 +13,13 @@ runtime and communicates with its OpenAI-compatible Chat Completions endpoint.
 Install OpenClaw separately through npm, then install the adapter:
 
 ```bash
-npm install --global openclaw
+# Requires Node.js >=24.16.0 <25 or >=26.1.0.
+npm install --global openclaw@latest --allow-scripts=openclaw
 pip install "nemo-fabric[openclaw]"
 ```
 
-OpenClaw is not a Python dependency of the adapter. If `openclaw` is not on
-`PATH`, set `harness.settings.openclaw_command` to its executable path. A bare
-command is resolved through `PATH`; a relative path containing a directory is
-resolved from the NeMo Fabric base directory.
+OpenClaw is not a Python dependency of the adapter. If `openclaw` is not in
+`PATH`, set `harness.settings.openclaw_command` to the absolute path of the executable. A bare command is resolved through `PATH`; a relative path containing a directory is resolved from the NeMo Fabric base directory.
 
 ## Configuration
 
@@ -60,17 +59,4 @@ configuration. It rejects service accounts and OAuth fields that OpenClaw
 cannot represent, including pre-registered client credentials and custom
 authorization timeouts.
 
-## NeMo Relay
-
-The adapter advertises Relay ATIF output through the external
-`nemo-relay-openclaw` OpenClaw plugin. Install it in the same OpenClaw
-installation before requesting Relay telemetry:
-
-```bash
-openclaw plugins install npm:nemo-relay-openclaw
-```
-
-If Relay is requested and the plugin is unavailable or unhealthy, startup
-fails. This first implementation supports terminal invocation and Relay ATIF
-only; native OpenTelemetry, Relay OpenTelemetry, and Relay streaming are not
-supported.
+Relay telemetry and native OpenTelemetry are not supported.

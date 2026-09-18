@@ -37,7 +37,6 @@ DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 10.0
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
 DEFAULT_READ_TIMEOUT_SECONDS = 600.0
 OPENCLAW_CHAT_MODEL = "openclaw/default"
-PLUGIN_ID = "nemo-relay"
 RANDOM_PORT_MIN = 20_000
 RANDOM_PORT_MAX = 64_000
 MAX_PORT_ATTEMPTS = 20
@@ -243,32 +242,6 @@ def _mcp_config(config: contract.AgentConfig) -> dict[str, Any]:
     return result
 
 
-def _relay_plugin_config(plugin_config: dict[str, Any]) -> dict[str, Any]:
-    for component in plugin_config.get("components", []):
-        if not isinstance(component, dict) or not component.get("enabled", True):
-            continue
-        if component.get("kind") != "observability":
-            continue
-        observability = component.get("config") or {}
-        atof = observability.get("atof")
-        if isinstance(atof, dict) and atof.get("enabled"):
-            raise lifecycle.LifecycleError(
-                "openclaw_relay_streaming_unsupported",
-                "OpenClaw Relay streaming is not supported by this adapter version",
-            )
-        otel = observability.get("opentelemetry")
-        if isinstance(otel, dict) and otel.get("enabled"):
-            raise lifecycle.LifecycleError(
-                "openclaw_relay_otel_unsupported",
-                "OpenClaw Relay OpenTelemetry is not supported by this adapter version",
-            )
-    return {
-        "enabled": True,
-        "backend": "hooks",
-        "plugins": plugin_config,
-    }
-
-
 def _openclaw_config(
     config: contract.AgentConfig,
     context: contract.RuntimeContext,
@@ -276,8 +249,6 @@ def _openclaw_config(
     base_dir: Path,
     port: int,
     token_env: str,
-    relay_root: str | None,
-    relay_config: dict[str, Any] | None,
 ) -> dict[str, Any]:
     model = _selected_model(config)
     model_ref = f"{model.provider}/{model.model}"
@@ -352,18 +323,6 @@ def _openclaw_config(
         }
     if provider:
         result["models"] = {"providers": {model.provider: provider}}
-    if relay_root is not None and relay_config is not None:
-        result["plugins"] = {
-            "allow": [PLUGIN_ID],
-            "load": {"paths": [relay_root]},
-            "entries": {
-                PLUGIN_ID: {
-                    "enabled": True,
-                    "hooks": {"allowConversationAccess": True},
-                    "config": relay_config,
-                }
-            },
-        }
     return result
 
 
@@ -411,45 +370,6 @@ async def _kill_and_reap(process: asyncio.subprocess.Process) -> None:
         except ProcessLookupError:
             pass
     await process.communicate()
-
-
-async def _relay_plugin_root(
-    command: Path, env: dict[str, str], *, timeout: float
-) -> str:
-    try:
-        value = json.loads(
-            await _command_output(
-                command,
-                "plugins",
-                "list",
-                "--json",
-                env=env,
-                timeout=timeout,
-            )
-        )
-    except (json.JSONDecodeError, TypeError, ValueError) as error:
-        raise lifecycle.LifecycleError(
-            "openclaw_relay_plugin_check_failed",
-            "OpenClaw returned an invalid plugin inventory",
-        ) from error
-    if not isinstance(value, dict) or not isinstance(value.get("plugins"), list):
-        raise lifecycle.LifecycleError(
-            "openclaw_relay_plugin_check_failed",
-            "OpenClaw returned an invalid plugin inventory",
-        )
-    for plugin in value["plugins"]:
-        if not isinstance(plugin, dict):
-            continue
-        if plugin.get("id") != PLUGIN_ID:
-            continue
-        root = plugin.get("rootDir")
-        if plugin.get("status") == "error" or not isinstance(root, str) or not root:
-            break
-        return str(Path(root).resolve())
-    raise lifecycle.LifecycleError(
-        "openclaw_relay_plugin_missing",
-        "Relay was requested, but the nemo-relay-openclaw plugin is not installed",
-    )
 
 
 async def _capture_stream(
@@ -508,8 +428,6 @@ class OpenClawRuntime:
         self._temp_dir: tempfile.TemporaryDirectory[str] | None = None
         self._port: int | None = None
         self._token: str | None = None
-        self._relay_config: dict[str, Any] | None = None
-        self._base_dir: Path | None = None
         self._shutdown_timeout = DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
         self._previous_signal_handlers: dict[int, Any] = {}
         self._signal_handler: Any = None
@@ -526,8 +444,6 @@ class OpenClawRuntime:
         model = _selected_model(config)
         child_env = common_utils.virtualenv_subprocess_env()
         child_env.update(context.environment.env)
-        if context.telemetry is not None:
-            child_env.update(context.telemetry.env)
         if model.api_key_env is not None and not child_env.get(model.api_key_env):
             raise lifecycle.LifecycleError(
                 "openclaw_missing_api_key",
@@ -546,24 +462,10 @@ class OpenClawRuntime:
                 "Configured command did not identify itself as OpenClaw",
             )
 
-        plugin_config: dict[str, Any] | None = None
-        relay_config = None
-        relay_root = None
-        if context.telemetry is not None and context.telemetry.relay_enabled:
-            try:
-                plugin_config = common_utils.load_relay_plugin_config(payload)
-            except (OSError, RuntimeError, TypeError, ValueError) as error:
-                raise lifecycle.LifecycleError(
-                    "openclaw_invalid_relay_configuration",
-                    "OpenClaw could not load the Relay configuration",
-                ) from error
-            relay_config = _relay_plugin_config(plugin_config)
-            relay_root = await _relay_plugin_root(
-                command, child_env, timeout=startup_timeout
-            )
-
         port = _select_port(settings)
-        token = secrets.token_urlsafe(48) # Generate a one-time use token for the OpenClaw gateway
+        token = secrets.token_urlsafe(
+            48
+        )  # Generate a one-time use token for the OpenClaw gateway
         token_env = "OPENCLAW_GATEWAY_TOKEN"
         temp_dir = tempfile.TemporaryDirectory(prefix="nemo-fabric-openclaw-")
         state_dir = Path(temp_dir.name) / "state"
@@ -575,8 +477,6 @@ class OpenClawRuntime:
             base_dir=base_dir,
             port=port,
             token_env=token_env,
-            relay_root=relay_root,
-            relay_config=relay_config,
         )
         config_path.write_text(json.dumps(generated, indent=2) + "\n", encoding="utf-8")
         config_path.chmod(0o600)
@@ -584,9 +484,9 @@ class OpenClawRuntime:
             {
                 "OPENCLAW_CONFIG_PATH": str(config_path),
                 "OPENCLAW_STATE_DIR": str(state_dir),
-                "OPENCLAW_CONFIG_READONLY": "1", # Tells OpenClaw to treat the configuration as read-only
+                "OPENCLAW_CONFIG_READONLY": "1",  # Tells OpenClaw to treat the configuration as read-only
                 token_env: token,
-                "DO_NOT_TRACK": "1", # opt out of tracking
+                "DO_NOT_TRACK": "1",  # opt out of tracking
             }
         )
         self._temp_dir = temp_dir
@@ -651,18 +551,6 @@ class OpenClawRuntime:
             ]
             self._install_signal_handlers()
             await self._wait_ready(port, token, startup_timeout)
-            if relay_config is not None:
-                await _command_output(
-                    command,
-                    "gateway",
-                    "call",
-                    "nemoRelay.status",
-                    "--port",
-                    str(port),
-                    "--json",
-                    env=child_env,
-                    timeout=startup_timeout,
-                )
             self._client = httpx.AsyncClient(
                 headers={"authorization": f"Bearer {token}"},
                 http2=True,
@@ -689,8 +577,6 @@ class OpenClawRuntime:
         self._command = command
         self._port = port
         self._token = token
-        self._relay_config = plugin_config
-        self._base_dir = base_dir
 
     def _install_signal_handlers(self) -> None:
         if os.name == "nt":
@@ -831,29 +717,7 @@ class OpenClawRuntime:
             status=contract.AgentRunStatus.SUCCEEDED,
             output={"response": text},
             usage=usage,
-            artifacts=self._relay_artifacts(),
         )
-
-    def _relay_artifacts(self) -> list[contract.AgentArtifact]:
-        if self._relay_config is None or self._base_dir is None:
-            return []
-        artifacts: list[contract.AgentArtifact] = []
-        for index, item in enumerate(
-            common_utils.collect_relay_artifacts(self._relay_config), start=1
-        ):
-            try:
-                relative = Path(item["path"]).resolve().relative_to(self._base_dir)
-            except (KeyError, OSError, RuntimeError, ValueError):
-                continue
-            artifacts.append(
-                contract.AgentArtifact(
-                    name=f"openclaw-{item['kind']}-{index}",
-                    kind=item["kind"],
-                    path=relative,
-                    media_type="application/json",
-                )
-            )
-        return artifacts
 
     async def stop(self) -> None:
         try:
@@ -899,7 +763,9 @@ class OpenClawRuntime:
             if windows_job is not None:
                 _windows_job.close_job(windows_job)
         except Exception:
-            logger.error("OpenClaw could not close its Windows Job Object", exc_info=True)
+            logger.error(
+                "OpenClaw could not close its Windows Job Object", exc_info=True
+            )
         log_tasks, self._log_tasks = self._log_tasks, []
         try:
             for task in log_tasks:
@@ -923,8 +789,6 @@ class OpenClawRuntime:
         self._command = None
         self._port = None
         self._token = None
-        self._relay_config = None
-        self._base_dir = None
 
 
 def main() -> None:

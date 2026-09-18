@@ -42,7 +42,7 @@ harness = HarnessConfig(
 Omit `openclaw_command` to resolve `openclaw` from `PATH`. A relative path that
 contains a directory is resolved from the NeMo Fabric base directory. The adapter
 uses the resolved executable for its version check, configuration validation,
-plugin inventory, Gateway startup, and Relay health check.
+and Gateway startup.
 
 The adapter accepts normalized model provider, model, base URL, temperature,
 `top_p`, `max_tokens`, replacement system instruction, workspace, skills, and
@@ -80,21 +80,5 @@ kill-on-close Job Object owns the supervisor and Gateway process tree. macOS
 signal forwarding covers catchable termination signals but cannot handle
 `SIGKILL`.
 
-## Enable Relay ATIF
-
-Relay telemetry requires the external `nemo-relay-openclaw` npm plugin in the
-same OpenClaw installation:
-
-```bash
-openclaw plugins install npm:nemo-relay-openclaw
-```
-
-When Relay is enabled in `FabricConfig`, the adapter verifies that plugin ID
-`nemo-relay` is installed before startup and checks `nemoRelay.status` after the
-Gateway is ready. It fails startup rather than silently running without the
-requested telemetry.
-
-This initial adapter version supports Relay ATIF output only. Native
-OpenTelemetry, Relay OpenTelemetry and OpenInference output, Relay ATOF
-streaming, adapter-native response streaming, cancellation, and live updates
-are not supported.
+Relay telemetry, native OpenTelemetry, adapter-native response streaming,
+cancellation, and live updates are not supported.

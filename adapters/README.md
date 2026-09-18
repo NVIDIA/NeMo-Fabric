@@ -144,11 +144,11 @@ and additive extension maps because their support does not vary by adapter:
 | `skills.paths` | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes; BenchAgent: No | Yes | No | Yes | No |
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes; BenchAgent: No | Yes | No | No | No |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No; not implemented | No; not implemented | No | No | No |
-| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | Yes | Yes; external plugin with ATIF output | No | No | Yes, supports collector-backed ATOF streaming |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | No | Yes, supports collector-backed ATOF streaming |
 | `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No | No | No | No |
-| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No | No |
-| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | Yes | ATIF only; Relay OpenTelemetry and streaming are not supported | No | No | Uses the named external collector sink when selected; config is not sent to the remote service |
-| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | Yes | Yes; Relay OpenTelemetry and streaming components are rejected | No | No | Not sent to the remote service |
+| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No | No | No |
+| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | No | Uses the named external collector sink when selected; config is not sent to the remote service |
+| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | No | Not sent to the remote service |
 | Other additive `extensions` on typed config objects | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor |
 
 The selected model role is `default`, or the sole configured role when no
@@ -185,13 +185,12 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [Hermes Agent](python/hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes Agent NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | Conversation history | Adapter-owned subclass with NeMo Relay Python SDK scopes | Creates a fresh Relay plugin and request scope, emits step, model, and bash-action telemetry, and collects artifacts | Clears the agent and Relay state | Not implemented |
 | [NOOA](python/nooa/README.md) | InteractiveAgent queue dispatcher or BenchAgent task state | Adapter-owned Relay middleware and generated Relay configuration | InteractiveAgent dispatches queued requests; BenchAgent evaluates one task | Closes agent resources and Relay state | Not implemented |
-| [OpenClaw](python/openclaw/README.md) | OpenClaw Gateway session selected by Fabric runtime ID | External `nemo-relay-openclaw` plugin with ATIF output | Sends a terminal Chat Completions request to the isolated loopback Gateway | Terminates the Gateway process tree and removes its temporary config and state | Adapter-owned loopback service |
+| [OpenClaw](python/openclaw/README.md) | OpenClaw Gateway session selected by Fabric runtime ID | Not supported | Sends a terminal Chat Completions request to the isolated loopback Gateway | Terminates the Gateway process tree and removes its temporary config and state | Adapter-owned loopback service |
 | [OpenCode](typescript/opencode/README.md) | Embedded OpenCode host and session | Not supported | Reuses the session and calls `prompt()`, `wait()`, and `context()` for ordered text input | Removes the session and closes the host | Not implemented |
 | [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Not supported | Reuses the session and calls `prompt()` for ordered text input | Aborts work, emits extension shutdown, and disposes the session | Not implemented |
 | [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a shared ATOF collector | Registers the request ID, maps it into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |
 
-Telemetry output names use the descriptor contract values. OpenClaw supports
-Relay ATIF through its external plugin. Claude, Codex,
+Telemetry output names use the descriptor contract values. Claude, Codex,
 Hermes Agent, and mini-SWE-agent can emit NeMo Relay ATIF, OpenTelemetry, and
 OpenInference output. Deep Agents supports the same Relay outputs plus native
 OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry. The

@@ -254,15 +254,14 @@ def test_remote_agent_accepts_relay_atof_for_invoke_stream(tmp_path: Path):
     assert plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"]
 
 
-def test_openclaw_accepts_relay_atif_without_streaming(tmp_path: Path):
+def test_openclaw_rejects_relay(tmp_path: Path):
     config = _config({}, adapter_id="nvidia.fabric.openclaw").enable_relay()
 
-    plan = Fabric().plan(config, base_dir=tmp_path)
+    with pytest.raises(FabricConfigError) as caught:
+        Fabric().plan(config, base_dir=tmp_path)
 
-    assert plan["telemetry_plan"]["relay_enabled"] is True
-    assert plan["telemetry_plan"]["providers"] == ["relay"]
-    assert plan["telemetry_plan"]["adapter_outputs"] == ["atif"]
-    assert not plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"]
+    assert "telemetry.providers" in str(caught.value)
+    assert "relay" in str(caught.value)
 
 
 @pytest.mark.parametrize(

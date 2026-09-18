@@ -18,17 +18,9 @@ if args == ["--version"]:
 if args[:3] == ["config", "validate", "--json"]:
     with open(os.environ["OPENCLAW_CONFIG_PATH"], encoding="utf-8") as stream:
         value = json.load(stream)
-    with open(
-        os.environ["FAKE_OPENCLAW_CAPTURE"], "w", encoding="utf-8"
-    ) as stream:
+    with open(os.environ["FAKE_OPENCLAW_CAPTURE"], "w", encoding="utf-8") as stream:
         json.dump(value, stream)
     print(json.dumps({"valid": True}))
-    raise SystemExit(0)
-if args[:3] == ["plugins", "list", "--json"]:
-    print(json.dumps({"plugins": []}))
-    raise SystemExit(0)
-if args[:3] == ["gateway", "call", "nemoRelay.status"]:
-    print(json.dumps({"ok": True}))
     raise SystemExit(0)
 if args[:2] != ["gateway", "run"]:
     raise SystemExit(2)
@@ -73,9 +65,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         length = int(self.headers.get("Content-Length", "0"))
         request = json.loads(self.rfile.read(length))
-        with open(
-            os.environ["FAKE_OPENCLAW_REQUEST"], "w", encoding="utf-8"
-        ) as stream:
+        with open(os.environ["FAKE_OPENCLAW_REQUEST"], "w", encoding="utf-8") as stream:
             json.dump(request, stream)
         chunks = [
             {
