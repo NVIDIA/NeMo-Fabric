@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -93,6 +93,10 @@ test(
                         },
                       ],
                     },
+                    atif: {
+                      enabled: true,
+                      output_directory: join(root, "atif"),
+                    },
                   },
                 },
               ],
@@ -136,13 +140,25 @@ test(
         runtimeContext,
       });
       const result = await runtime.invoke({ input: "Reply with relay smoke ok." }, runtimeContext);
-      await runtime.stop();
-      runtime = undefined;
 
       assert.equal(result.status, "succeeded");
       assert.equal(result.output.response, "relay smoke ok");
       assert.equal(providerRequests.length, 1);
       assert.equal(providerRequests[0].model, "openai/gpt-oss-20b");
+      assert.equal(result.output.relay_artifacts.some((artifact) => artifact.kind === "atif"), false);
+
+      await runtime.stop();
+      runtime = undefined;
+
+      const atifDirectory = join(root, "atif", "relay-smoke");
+      const atifFiles = await readdir(atifDirectory);
+      assert.equal(atifFiles.length, 1);
+      const atif = JSON.parse(await readFile(join(atifDirectory, atifFiles[0]), "utf8"));
+      assert.equal(atif.agent.model_name, "openai/gpt-oss-20b");
+      assert.equal(
+        atif.extra.observed_events.some((event) => event.metadata?.hook_event_name === "turn_end"),
+        true,
+      );
       const atof = await readFile(join(root, "atof", "relay-smoke", "events.atof.jsonl"), "utf8");
       assert.match(atof, /session_start/u);
       assert.match(atof, /session_shutdown/u);
