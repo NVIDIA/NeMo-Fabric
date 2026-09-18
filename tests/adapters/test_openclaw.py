@@ -266,7 +266,8 @@ async def test_openclaw_stop_continues_after_cleanup_failures(
     mock_temp_dir = MagicMock()
     log_task = asyncio.create_task(asyncio.Event().wait())
     mock_close_job = MagicMock(side_effect=OSError("close failed"))
-    monkeypatch.setattr(adapter.os, "killpg", MagicMock())
+    if os.name != "nt":
+        monkeypatch.setattr(adapter.os, "killpg", MagicMock())
     monkeypatch.setattr(adapter._windows_job, "close_job", mock_close_job)
     runtime._client = mock_client
     runtime._process = mock_process
