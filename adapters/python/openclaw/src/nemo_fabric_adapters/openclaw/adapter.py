@@ -609,6 +609,7 @@ class OpenClawRuntime:
             self._client = httpx.AsyncClient(
                 headers={"authorization": f"Bearer {token}"},
                 http2=True,
+                trust_env=False,
                 timeout=httpx.Timeout(
                     connect=_positive_setting(
                         settings,
@@ -673,7 +674,7 @@ class OpenClawRuntime:
     async def _wait_ready(self, port: int, token: str, timeout: float) -> None:
         deadline = asyncio.get_running_loop().time() + timeout
         async with httpx.AsyncClient(
-            headers={"authorization": f"Bearer {token}"}, timeout=1.0
+            headers={"authorization": f"Bearer {token}"}, timeout=1.0, trust_env=False
         ) as client:
             while asyncio.get_running_loop().time() < deadline:
                 process = self._process

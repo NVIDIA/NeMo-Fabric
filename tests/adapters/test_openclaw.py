@@ -228,6 +228,10 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(capture))
     monkeypatch.setenv("FAKE_OPENCLAW_REQUEST", str(request_capture))
     monkeypatch.setenv("FAKE_OPENCLAW_CONFIG_READONLY", str(readonly_capture))
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"):
+        monkeypatch.setenv(name, "http://127.0.0.1:9")
+    monkeypatch.setenv("NO_PROXY", "")
+    monkeypatch.setenv("no_proxy", "")
     context = _context(tmp_path)
     runtime = adapter.OpenClawRuntime()
 
