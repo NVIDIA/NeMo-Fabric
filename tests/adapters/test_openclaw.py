@@ -156,12 +156,41 @@ def fake_openclaw_fixture(tmp_path: Path) -> Path:
                     request = json.loads(self.rfile.read(length))
                     with open(os.environ["FAKE_OPENCLAW_REQUEST"], "w", encoding="utf-8") as stream:
                         json.dump(request, stream)
-                    body = json.dumps({
-                        "choices": [{"message": {"content": "OpenClaw response"}}],
-                        "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
-                    }).encode()
+                    chunks = [
+                        {
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"content": "OpenClaw "},
+                                    "finish_reason": None,
+                                }
+                            ]
+                        },
+                        {
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"content": "response"},
+                                    "finish_reason": None,
+                                }
+                            ]
+                        },
+                        {
+                            "choices": [],
+                            "usage": {
+                                "prompt_tokens": 3,
+                                "completion_tokens": 2,
+                                "total_tokens": 5,
+                            },
+                        },
+                    ]
+                    body = "".join(
+                        f"data: {json.dumps(chunk)}\\n\\n" for chunk in chunks
+                    )
+                    body += "data: [DONE]\\n\\n"
+                    body = body.encode()
                     self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Type", "text/event-stream")
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
@@ -218,6 +247,8 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
         "temperature": 0.2,
         "top_p": 0.8,
         "max_completion_tokens": 64,
+        "stream": True,
+        "stream_options": {"include_usage": True},
         "user": "openclaw-runtime",
     }
     assert generated["gateway"]["bind"] == "loopback"
@@ -259,7 +290,7 @@ async def test_openclaw_invoke_rejects_exited_gateway(tmp_path: Path):
 
     assert caught.value.code == "openclaw_gateway_exited"
     assert caught.value.metadata == {"exit_code": 17}
-    runtime._client.post.assert_not_called()
+    runtime._client.stream.assert_not_called()
 
 
 def test_openclaw_resolves_relative_command_without_path_fallback(tmp_path: Path):
