@@ -25,10 +25,12 @@ resolved from the NeMo Fabric base directory.
 ## Configuration
 
 The adapter maps the selected model, replacement system instruction, workspace,
-skills, and MCP servers into a generated `openclaw.json` before starting the
-Gateway. It uses a generated one-time token, loopback binding, and an isolated
-temporary OpenClaw state directory. The Gateway is stopped and its temporary
-configuration is removed when the NeMo Fabric runtime stops.
+skills, tool policy, and MCP servers into a generated `openclaw.json` before
+starting the Gateway. `tools.enabled` maps to `tools.allow` and
+`tools.blocked` maps to `tools.deny`. It uses a generated one-time token,
+loopback binding, and an isolated temporary OpenClaw state directory. The
+Gateway is stopped and its temporary configuration is removed when the NeMo
+Fabric runtime stops.
 
 The adapter runs the Gateway in an isolated process group and forwards
 `SIGINT` and `SIGTERM` on POSIX systems. Linux adds a parent-death supervisor,
@@ -51,6 +53,12 @@ For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
 adapter generates an OpenClaw custom provider using the
 `openai-completions` API adapter. Set `api_key_env` when that provider requires
 an API key.
+
+Remote MCP servers support `authentication.type: oauth2` with dynamic client
+registration. The adapter maps `scopes` and `redirect_uri` to OpenClaw OAuth
+configuration. It rejects service accounts and OAuth fields that OpenClaw
+cannot represent, including pre-registered client credentials and custom
+authorization timeouts.
 
 ## NeMo Relay
 

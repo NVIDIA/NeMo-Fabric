@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 import pytest
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
+from nemo_fabric.errors import FabricConfigError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import RuntimeContext
@@ -67,6 +68,10 @@ def _config(command: Path, *, port: int | None = None) -> AgentConfig:
                 }
             },
             "skills": {"paths": ["skills"]},
+            "tools": {
+                "enabled": ["browser", "web_search"],
+                "blocked": ["exec"],
+            },
             "mcp": {
                 "servers": {
                     "local": {
@@ -81,6 +86,11 @@ def _config(command: Path, *, port: int | None = None) -> AgentConfig:
                         "url": "https://mcp.example.test/mcp",
                         "custom_headers": {"X-Test": "value"},
                         "blocked_tools": ["delete_*"],
+                        "authentication": {
+                            "type": "oauth2",
+                            "scopes": ["docs.read", "docs.write"],
+                            "redirect_uri": "http://127.0.0.1/oauth/callback",
+                        },
                     },
                 }
             },
@@ -275,8 +285,17 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert generated["models"]["providers"]["test"]["baseUrl"] == (
         "https://models.example.test/v1"
     )
+    assert generated["tools"] == {
+        "allow": ["browser", "web_search"],
+        "deny": ["exec"],
+    }
     assert generated["mcp"]["servers"]["local"]["command"] == "python"
     assert generated["mcp"]["servers"]["remote"]["transport"] == ("streamable-http")
+    assert generated["mcp"]["servers"]["remote"]["auth"] == "oauth"
+    assert generated["mcp"]["servers"]["remote"]["oauth"] == {
+        "scope": "docs.read docs.write",
+        "redirectUrl": "http://127.0.0.1/oauth/callback",
+    }
     assert not state_root.exists()
 
 
@@ -301,6 +320,66 @@ async def test_openclaw_invoke_rejects_exited_gateway(tmp_path: Path):
     )
     assert caught.value.metadata == {"exit_code": 17}
     runtime._client.stream.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("authentication", "field"),
+    [
+        pytest.param({"client_id": "fabric-client"}, "client_id", id="client-id"),
+        pytest.param(
+            {
+                "client_id": "fabric-client",
+                "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+            },
+            "client_secret_env",
+            id="client-secret",
+        ),
+        pytest.param({"client_name": "Fabric"}, "client_name", id="client-name"),
+        pytest.param(
+            {
+                "client_id": "fabric-client",
+                "enable_dynamic_registration": False,
+            },
+            "enable_dynamic_registration",
+            id="dynamic-registration",
+        ),
+        pytest.param(
+            {"token_endpoint_auth_method": "none"},
+            "token_endpoint_auth_method",
+            id="token-endpoint-auth-method",
+        ),
+        pytest.param(
+            {"authorization_timeout_seconds": 30},
+            "authorization_timeout_seconds",
+            id="authorization-timeout",
+        ),
+    ],
+)
+def test_openclaw_rejects_unmapped_mcp_oauth_fields(
+    authentication: dict[str, object], field: str
+):
+    config = AgentConfig.from_mapping(
+        {
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+            "mcp": {
+                "servers": {
+                    "remote": {
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example.test/mcp",
+                        "authentication": {"type": "oauth2", **authentication},
+                    }
+                }
+            },
+        }
+    )
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._mcp_config(config)
+
+    assert caught.value.code == "openclaw_unsupported_mcp_authentication"
+    assert caught.value.metadata == {
+        "field": f"mcp.servers.remote.authentication.{field}"
+    }
 
 
 def test_openclaw_resolves_relative_command_without_path_fallback(tmp_path: Path):
@@ -447,6 +526,19 @@ async def test_openclaw_plan_doctor_and_run_without_credentials(
                     "base_url": "https://models.example.test/v1",
                 }
             },
+            "tools": {"enabled": ["browser"], "blocked": ["exec"]},
+            "mcp": {
+                "servers": {
+                    "docs": {
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example.test/mcp",
+                        "authentication": {
+                            "type": "oauth2",
+                            "scopes": ["docs.read"],
+                        },
+                    }
+                }
+            },
             "environment": {"provider": "local", "workspace": "."},
         }
     )
@@ -460,6 +552,40 @@ async def test_openclaw_plan_doctor_and_run_without_credentials(
     assert report.status == "pass"
     assert result.status == "succeeded"
     assert result.output == {"response": "OpenClaw response"}
+
+
+def test_openclaw_plan_rejects_mcp_service_account(tmp_path: Path):
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "openclaw-service-account"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.openclaw",
+                "resolution": "preinstalled",
+            },
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+            "mcp": {
+                "servers": {
+                    "docs": {
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example.test/mcp",
+                        "authentication": {
+                            "type": "service_account",
+                            "client_id": "fabric-client",
+                            "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                            "token_url": "https://auth.example.test/token",
+                        },
+                    }
+                }
+            },
+            "environment": {"provider": "local", "workspace": "."},
+        }
+    )
+
+    with pytest.raises(FabricConfigError) as caught:
+        Fabric().plan(config, base_dir=tmp_path)
+
+    assert "mcp.servers.docs.authentication" in str(caught.value)
+    assert "mcp.auth.service_account" in str(caught.value)
 
 
 async def test_openclaw_requires_relay_plugin_when_relay_is_requested(
@@ -544,6 +670,9 @@ def test_openclaw_descriptor_and_module_entrypoint(repo_root: Path):
 
     assert descriptor["adapter_id"] == "nvidia.fabric.openclaw"
     assert descriptor["requirements"]["binaries"] == ["openclaw"]
+    assert "tools.enabled" in descriptor["config"]["accepts"]
+    assert "tools.blocked" in descriptor["config"]["accepts"]
+    assert "mcp.auth.oauth2" in descriptor["config"]["accepts"]
     assert descriptor["capabilities"]["streaming"] is False
     assert descriptor["telemetry"]["providers"]["relay"] == {
         "outputs": ["atif"],

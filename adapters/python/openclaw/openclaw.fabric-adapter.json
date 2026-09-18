@@ -78,7 +78,10 @@
       "models.top_p",
       "models.max_tokens",
       "instructions.system",
+      "tools.enabled",
+      "tools.blocked",
       "mcp",
+      "mcp.auth.oauth2",
       "skills"
     ],
     "system_instruction_modes": ["replace"]
