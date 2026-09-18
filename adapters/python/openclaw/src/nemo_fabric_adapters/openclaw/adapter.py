@@ -273,6 +273,7 @@ def _openclaw_config(
     config: contract.AgentConfig,
     context: contract.RuntimeContext,
     *,
+    base_dir: Path,
     port: int,
     token_env: str,
     relay_root: str | None,
@@ -316,7 +317,9 @@ def _openclaw_config(
     if config.skills and config.skills.paths:
         result["skills"] = {
             "load": {
-                "extraDirs": [str(Path(path).resolve()) for path in config.skills.paths]
+                "extraDirs": [
+                    str((base_dir / path).resolve()) for path in config.skills.paths
+                ]
             }
         }
     if config.tools is not None:
@@ -569,6 +572,7 @@ class OpenClawRuntime:
         generated = _openclaw_config(
             config,
             context,
+            base_dir=base_dir,
             port=port,
             token_env=token_env,
             relay_root=relay_root,

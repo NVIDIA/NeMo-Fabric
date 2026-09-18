@@ -173,6 +173,9 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert generated["agents"]["defaults"]["models"]["test/fabric-echo"] == {
         "params": {"temperature": 0.2, "topP": 0.8, "maxTokens": 64}
     }
+    assert generated["skills"]["load"]["extraDirs"] == [
+        str((tmp_path / "skills").resolve())
+    ]
     assert generated["models"]["providers"]["test"]["baseUrl"] == (
         "https://models.example.test/v1"
     )
