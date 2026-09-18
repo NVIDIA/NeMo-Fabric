@@ -15,6 +15,7 @@ import sys
 import time
 from contextlib import suppress
 from pathlib import Path
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
@@ -210,6 +211,64 @@ async def test_openclaw_invoke_rejects_exited_gateway(tmp_path: Path):
     )
     assert caught.value.metadata == {"exit_code": 17}
     runtime._client.stream.assert_not_called()
+
+
+async def test_openclaw_command_timeout_kills_and_reaps_process(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    process = MagicMock(spec=asyncio.subprocess.Process)
+    process.returncode = None
+
+    async def communicate() -> tuple[bytes, bytes]:
+        if process.returncode is None:
+            await asyncio.Event().wait()
+        return b"", b""
+
+    process.communicate = AsyncMock(side_effect=communicate)
+    process.kill.side_effect = lambda: setattr(process, "returncode", -9)
+    create_subprocess = AsyncMock(return_value=process)
+    monkeypatch.setattr(adapter.asyncio, "create_subprocess_exec", create_subprocess)
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter._command_output(
+            Path("openclaw"), "--version", env={}, timeout=0.01
+        )
+
+    assert caught.value.code == "openclaw_command_timeout"
+    assert caught.value.metadata == {"command": "--version", "timeout_seconds": 0.01}
+    process.kill.assert_called_once_with()
+    assert process.communicate.await_count == 2
+
+
+async def test_openclaw_command_cancellation_kills_and_reaps_process(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    process = MagicMock(spec=asyncio.subprocess.Process)
+    process.returncode = None
+    started = asyncio.Event()
+
+    async def communicate() -> tuple[bytes, bytes]:
+        if process.returncode is None:
+            started.set()
+            await asyncio.Event().wait()
+        return b"", b""
+
+    process.communicate = AsyncMock(side_effect=communicate)
+    process.kill.side_effect = lambda: setattr(process, "returncode", -9)
+    create_subprocess = AsyncMock(return_value=process)
+    monkeypatch.setattr(adapter.asyncio, "create_subprocess_exec", create_subprocess)
+    task = asyncio.create_task(
+        adapter._command_output(Path("openclaw"), "--version", env={}, timeout=30)
+    )
+    await started.wait()
+
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    process.kill.assert_called_once_with()
+    assert process.communicate.await_count == 2
 
 
 @pytest.mark.parametrize(

@@ -364,6 +364,7 @@ async def _command_output(
     command: Path,
     *args: str,
     env: dict[str, str],
+    timeout: float,
 ) -> str:
     process = await asyncio.create_subprocess_exec(
         str(command),
@@ -372,7 +373,20 @@ async def _command_output(
         stderr=asyncio.subprocess.PIPE,
         env=env,
     )
-    stdout, stderr = await process.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except TimeoutError as error:
+        await _kill_and_reap(process)
+        command_context = " ".join(args)
+        raise lifecycle.LifecycleError(
+            "openclaw_command_timeout",
+            f"OpenClaw command timed out after {timeout:g} seconds: {command_context}",
+            retryable=True,
+            metadata={"command": command_context, "timeout_seconds": timeout},
+        ) from error
+    except asyncio.CancelledError:
+        await _kill_and_reap(process)
+        raise
     if process.returncode != 0:
         detail = stderr.decode(errors="replace").strip()
         raise lifecycle.LifecycleError(
@@ -383,10 +397,28 @@ async def _command_output(
     return stdout.decode(errors="replace").strip()
 
 
-async def _relay_plugin_root(command: Path, env: dict[str, str]) -> str:
+async def _kill_and_reap(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is None:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+    await process.communicate()
+
+
+async def _relay_plugin_root(
+    command: Path, env: dict[str, str], *, timeout: float
+) -> str:
     try:
         value = json.loads(
-            await _command_output(command, "plugins", "list", "--json", env=env)
+            await _command_output(
+                command,
+                "plugins",
+                "list",
+                "--json",
+                env=env,
+                timeout=timeout,
+            )
         )
     except (json.JSONDecodeError, TypeError, ValueError) as error:
         raise lifecycle.LifecycleError(
@@ -488,7 +520,12 @@ class OpenClawRuntime:
                 f"OpenClaw API key environment variable {model.api_key_env} is not set",
             )
         command = _resolve_command(settings, base_dir)
-        version = await _command_output(command, "--version", env=child_env)
+        startup_timeout = _positive_setting(
+            settings, "startup_timeout_seconds", DEFAULT_STARTUP_TIMEOUT_SECONDS
+        )
+        version = await _command_output(
+            command, "--version", env=child_env, timeout=startup_timeout
+        )
         if "openclaw" not in version.lower():
             raise lifecycle.LifecycleError(
                 "openclaw_version_check_failed",
@@ -507,7 +544,9 @@ class OpenClawRuntime:
                     "OpenClaw could not load the Relay configuration",
                 ) from error
             relay_config = _relay_plugin_config(plugin_config)
-            relay_root = await _relay_plugin_root(command, child_env)
+            relay_root = await _relay_plugin_root(
+                command, child_env, timeout=startup_timeout
+            )
 
         port = _select_port(settings)
         token = secrets.token_urlsafe(48) # Generate a one-time use token for the OpenClaw gateway
@@ -541,7 +580,12 @@ class OpenClawRuntime:
                 settings, "shutdown_timeout_seconds", DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
             )
             await _command_output(
-                command, "config", "validate", "--json", env=child_env
+                command,
+                "config",
+                "validate",
+                "--json",
+                env=child_env,
+                timeout=startup_timeout,
             )
             if os.name == "nt":
                 try:
@@ -591,9 +635,6 @@ class OpenClawRuntime:
                 ),
             ]
             self._install_signal_handlers()
-            startup_timeout = _positive_setting(
-                settings, "startup_timeout_seconds", DEFAULT_STARTUP_TIMEOUT_SECONDS
-            )
             await self._wait_ready(port, token, startup_timeout)
             if relay_config is not None:
                 await _command_output(
@@ -605,6 +646,7 @@ class OpenClawRuntime:
                     str(port),
                     "--json",
                     env=child_env,
+                    timeout=startup_timeout,
                 )
             self._client = httpx.AsyncClient(
                 headers={"authorization": f"Bearer {token}"},

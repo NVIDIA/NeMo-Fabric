@@ -118,38 +118,38 @@ its harness. `No` means an explicitly configured value fails planning instead
 of being ignored. The following table groups provider-specific Relay subfields
 and additive extension maps because their support does not vary by adapter:
 
-| `FabricConfig` Field | Claude | Codex | Deep Agents | Hermes Agent | mini-SWE-agent | NOOA | OpenCode | Pi | Remote Agent |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `schema_version` | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `metadata.name`, `.description` | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema | Closed schema | No settings declared | Closed local-extension schema | Closed `base_url`, `api_type`, transport-timeout, and `relay_streaming` schema |
-| `workflow.target_id`, `.settings` | No | No | No | No | No | No | No | No | No |
-| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | Configured provider | Configured provider | OpenCode provider | Pi catalog provider | Configured provider |
-| `models.<role>.model` | Yes | Yes | Yes | Yes | Yes | Yes | Yes; passed to OpenCode | Yes; must exist in the Pi catalog | Yes |
-| `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | Yes | Yes; OpenAI-compatible Chat Completions endpoint | Yes; known catalog models only | No; use `harness.settings.base_url` |
-| `models.<role>.temperature` | No | No | Yes | Yes | Yes | Yes | No | No | Yes |
-| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | `client_type` | No keys declared | No keys declared | `max_tokens` for Anthropic Messages |
-| `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM | No | No | No | Yes; translated to the selected API protocol |
-| `instructions.system` | `replace`, `append` | `replace`; base instructions | `replace` | `replace` | `replace` | `replace` | No | `replace`; Pi base instructions | `replace` |
-| `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; iteration limit | Yes | No | No | No | No |
-| `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
-| `tools.definitions` | No | No | No | No | No | No | No | Yes; trusted local module factories | No |
-| `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No | No | No | Yes | No |
-| `skills.paths` | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes; BenchAgent: No | No | Yes | No |
-| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes; BenchAgent: No | No | No | No |
-| `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No; not implemented | No | No | No |
-| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | Yes, supports collector-backed ATOF streaming |
-| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No | No | No |
-| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No | No |
-| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | Uses the named external collector sink when selected; config is not sent to the remote service |
-| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | Not sent to the remote service |
-| Other additive `extensions` on typed config objects | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor |
+| `FabricConfig` Field | Claude | Codex | Deep Agents | Hermes Agent | mini-SWE-agent | NOOA | OpenClaw | OpenCode | Pi | Remote Agent |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `schema_version` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `metadata.name`, `.description` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema | Closed schema | Closed command, port, and timeout schema | No settings declared | Closed local-extension schema | Closed `base_url`, `api_type`, transport-timeout, and `relay_streaming` schema |
+| `workflow.target_id`, `.settings` | No | No | No | No | No | No | No | No | No | No |
+| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | Configured provider | Configured provider | OpenClaw provider; custom providers require an OpenAI Chat Completions-compatible `base_url` | OpenCode provider | Pi catalog provider | Configured provider |
+| `models.<role>.model` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes; passed to OpenCode | Yes; must exist in the Pi catalog | Yes |
+| `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes; OpenAI-compatible Chat Completions endpoint | Yes; known catalog models only | No; use `harness.settings.base_url` |
+| `models.<role>.temperature` | No | No | Yes | Yes | Yes | Yes | Yes | No | No | Yes |
+| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | `client_type` | No keys declared | No keys declared | No keys declared | `max_tokens` for Anthropic Messages |
+| `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM | No | Yes | No | No | Yes; translated to the selected API protocol |
+| `instructions.system` | `replace`, `append` | `replace`; base instructions | `replace` | `replace` | `replace` | `replace` | `replace` | No | `replace`; Pi base instructions | `replace` |
+| `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; iteration limit | Yes | No | No | No | No | No |
+| `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
+| `tools.definitions` | No | No | No | No | No | No | No | No | Yes; trusted local module factories | No |
+| `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No | No | Yes | No | Yes | No |
+| `skills.paths` | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes; BenchAgent: No | Yes | No | Yes | No |
+| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes; BenchAgent: No | Yes | No | No | No |
+| `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No; not implemented | No; not implemented | No | No | No |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | Yes | Yes; external plugin with ATIF output | No | No | Yes, supports collector-backed ATOF streaming |
+| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No | No | No | No |
+| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No | No |
+| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | Yes | ATIF only; Relay OpenTelemetry and streaming are not supported | No | No | Uses the named external collector sink when selected; config is not sent to the remote service |
+| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | Yes | Yes; Relay OpenTelemetry and streaming components are rejected | No | No | Not sent to the remote service |
+| Other additive `extensions` on typed config objects | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor |
 
 The selected model role is `default`, or the sole configured role when no
 `default` exists. More than one role without `default` fails planning.
