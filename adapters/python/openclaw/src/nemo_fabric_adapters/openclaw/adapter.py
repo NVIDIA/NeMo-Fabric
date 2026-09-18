@@ -461,7 +461,7 @@ class OpenClawRuntime:
             relay_root = await _relay_plugin_root(command, child_env)
 
         port = _select_port(settings)
-        token = secrets.token_urlsafe(48)
+        token = secrets.token_urlsafe(48) # Generate a one-time use token for the OpenClaw gateway
         token_env = "OPENCLAW_GATEWAY_TOKEN"
         temp_dir = tempfile.TemporaryDirectory(prefix="nemo-fabric-openclaw-")
         state_dir = Path(temp_dir.name) / "state"
@@ -481,8 +481,9 @@ class OpenClawRuntime:
             {
                 "OPENCLAW_CONFIG_PATH": str(config_path),
                 "OPENCLAW_STATE_DIR": str(state_dir),
+                "OPENCLAW_CONFIG_READONLY": "1", # Tells OpenClaw to treat the configuration as read-only
                 token_env: token,
-                "DO_NOT_TRACK": "1",
+                "DO_NOT_TRACK": "1", # opt out of tracking
             }
         )
         self._temp_dir = temp_dir
@@ -664,7 +665,8 @@ class OpenClawRuntime:
         if self._process.returncode is not None:
             raise lifecycle.LifecycleError(
                 "openclaw_gateway_exited",
-                "OpenClaw Gateway exited unexpectedly",
+                "OpenClaw Gateway exited unexpectedly "
+                f"with exit status {self._process.returncode}",
                 metadata={"exit_code": self._process.returncode},
             )
         if self._context is None or context.runtime_id != self._context.runtime_id:

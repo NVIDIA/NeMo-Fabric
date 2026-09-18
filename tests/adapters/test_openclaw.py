@@ -125,6 +125,9 @@ def fake_openclaw_fixture(tmp_path: Path) -> Path:
 
             port = int(args[args.index("--port") + 1])
             token = os.environ["OPENCLAW_GATEWAY_TOKEN"]
+            if readonly_path := os.environ.get("FAKE_OPENCLAW_CONFIG_READONLY"):
+                with open(readonly_path, "w", encoding="utf-8") as stream:
+                    stream.write(os.environ.get("OPENCLAW_CONFIG_READONLY", ""))
             if pid_path := os.environ.get("FAKE_OPENCLAW_PID"):
                 with open(pid_path, "w", encoding="utf-8") as stream:
                     stream.write(str(os.getpid()))
@@ -211,8 +214,10 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
 ):
     capture = tmp_path / "config.json"
     request_capture = tmp_path / "request.json"
+    readonly_capture = tmp_path / "config-readonly.txt"
     monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(capture))
     monkeypatch.setenv("FAKE_OPENCLAW_REQUEST", str(request_capture))
+    monkeypatch.setenv("FAKE_OPENCLAW_CONFIG_READONLY", str(readonly_capture))
     context = _context(tmp_path)
     runtime = adapter.OpenClawRuntime()
 
@@ -258,6 +263,7 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
         "id": "OPENCLAW_GATEWAY_TOKEN",
     }
     assert gateway_token not in capture.read_text(encoding="utf-8")
+    assert readonly_capture.read_text(encoding="utf-8") == "1"
     assert generated["gateway"]["http"]["endpoints"]["chatCompletions"] == {
         "enabled": True
     }
@@ -289,6 +295,10 @@ async def test_openclaw_invoke_rejects_exited_gateway(tmp_path: Path):
         await runtime.invoke(AgentRunRequest(input="Hello."), context)
 
     assert caught.value.code == "openclaw_gateway_exited"
+    assert (
+        caught.value.message
+        == "OpenClaw Gateway exited unexpectedly with exit status 17"
+    )
     assert caught.value.metadata == {"exit_code": 17}
     runtime._client.stream.assert_not_called()
 
