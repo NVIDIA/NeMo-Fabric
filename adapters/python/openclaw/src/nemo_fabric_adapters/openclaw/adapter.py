@@ -713,7 +713,7 @@ class OpenClawRuntime:
                 "OpenClaw Gateway request could not be completed",
                 retryable=True,
             ) from error
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        except Exception as error:
             raise lifecycle.LifecycleError(
                 "openclaw_invalid_response",
                 "OpenClaw Gateway returned an invalid response",
