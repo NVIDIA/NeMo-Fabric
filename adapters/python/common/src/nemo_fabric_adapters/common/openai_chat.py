@@ -72,16 +72,15 @@ async def invoke(
         "stream": True,
         "stream_options": {"include_usage": True},
     }
-    if temperature is not None:
-        payload["temperature"] = temperature
-    if top_p is not None:
-        payload["top_p"] = top_p
-    if max_tokens is not None:
-        payload["max_completion_tokens"] = max_tokens
-    if metadata is not None:
-        payload["metadata"] = metadata
-    if user is not None:
-        payload["user"] = user
+    for key_name, value in (
+        ("temperature", temperature),
+        ("top_p", top_p),
+        ("max_completion_tokens", max_tokens),
+        ("metadata", metadata),
+        ("user", user),
+    ):
+        if value is not None:
+            payload[key_name] = value
 
     text: list[str] = []
     usage: dict[str, Any] = {}
