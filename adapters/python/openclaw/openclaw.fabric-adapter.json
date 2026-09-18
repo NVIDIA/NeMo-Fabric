@@ -1,0 +1,95 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.openclaw",
+  "adapter_kind": "python",
+  "runner": {
+    "module": "nemo_fabric_adapters.openclaw.adapter"
+  },
+  "settings_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "openclaw_command": {
+        "type": "string",
+        "minLength": 1,
+        "description": "OpenClaw executable name or path. Relative paths containing a directory are resolved from the NeMo Fabric base directory."
+      },
+      "port": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65425,
+        "description": "Gateway base port. When omitted, the adapter selects an available local port range."
+      },
+      "startup_timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 30,
+        "description": "Maximum time to wait for the OpenClaw Gateway to become ready."
+      },
+      "shutdown_timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 10,
+        "description": "Maximum graceful Gateway shutdown time before forced termination."
+      },
+      "connect_timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 10,
+        "description": "Timeout for connecting to the local OpenClaw Gateway."
+      },
+      "read_timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 600,
+        "description": "Timeout between response bytes from the local OpenClaw Gateway."
+      }
+    },
+    "additionalProperties": false
+  },
+  "model_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "provider": {"type": "string", "minLength": 1},
+      "model": {"type": "string", "minLength": 1},
+      "api_key_env": {"type": "string", "minLength": 1},
+      "base_url": {"type": "string", "minLength": 1},
+      "temperature": {"type": "number"},
+      "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+      "max_tokens": {"type": "integer", "minimum": 1},
+      "settings": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "required": ["provider", "model"],
+    "additionalProperties": false
+  },
+  "requirements": {
+    "binaries": ["openclaw"]
+  },
+  "config": {
+    "accepts": [
+      "models",
+      "models.base_url",
+      "models.temperature",
+      "models.top_p",
+      "models.max_tokens",
+      "instructions.system",
+      "tools.enabled",
+      "tools.blocked",
+      "mcp",
+      "mcp.auth.oauth2",
+      "skills"
+    ],
+    "system_instruction_modes": ["replace"]
+  },
+  "capabilities": {
+    "service": false,
+    "streaming": false,
+    "updates": false,
+    "cancellation": false
+  }
+}
