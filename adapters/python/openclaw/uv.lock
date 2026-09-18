@@ -142,7 +142,6 @@ requires-dist = [
     { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
 ]
-provides-extras = ["harness", "full"]
 
 [[package]]
 name = "typing-extensions"
