@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -18,7 +18,6 @@ import {
   validateRelayObservabilityV3,
   writeRelayConfigs,
 } from "../dist/relay-config.js";
-import { expectsLocalAtif, snapshotAtifFiles, waitForFinalizedAtif } from "../dist/relay-artifacts.js";
 import {
   relayCliContract,
   startRelayGateway,
@@ -402,7 +401,7 @@ test("checks duplicate enabled Relay component kinds only when writing plugin co
   }
 });
 
-test("waits for an atomically finalized ATIF artifact and collects Relay files", async () => {
+test("collects Relay artifact files", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-artifacts-")));
   try {
     const atifDir = join(root, "atif");
@@ -427,23 +426,8 @@ test("waits for an atomically finalized ATIF artifact and collects Relay files",
         filename_template: "trajectory-{session_id}.atif.json",
       },
     });
-    const matchers = await prepareRelayAtifMatchers(pluginConfig);
-    const before = await snapshotAtifFiles(pluginConfig, matchers);
     const path = join(atifDir, "trajectory-session-1.atif.json");
-    const temporaryPath = join(atifDir, ".trajectory-session-1.atif.json.tmp");
-    await writeFile(temporaryPath, '{"session_id":"session-1"}', "utf8");
-    const finalize = new Promise((resolveFinalize, rejectFinalize) => {
-      setTimeout(() => void rename(temporaryPath, path).then(resolveFinalize, rejectFinalize), 10);
-    });
-
-    const [finalized] = await Promise.all([
-      waitForFinalizedAtif(pluginConfig, before, {
-        matchers,
-        timeoutMs: 500,
-      }),
-      finalize,
-    ]);
-    assert.equal(finalized, path);
+    await writeFile(path, '{"session_id":"session-1"}', "utf8");
     assert.deepEqual(await collectRelayArtifacts(pluginConfig), [
       { kind: "atif", path },
       { kind: "atof", path: join(atofDir, "events.atof.jsonl") },
@@ -472,7 +456,6 @@ test("collects ATIF templates with directory, metadata, or no placeholders", asy
       });
       const matchers = await prepareRelayAtifMatchers(pluginConfig);
       assert.equal(matchers[0].recursive, recursive);
-      assert.equal(expectsLocalAtif(pluginConfig, matchers), true);
       assert.deepEqual(await collectRelayArtifacts(pluginConfig, matchers), [{ kind: "atif", path }]);
     }
   } finally {
@@ -492,7 +475,6 @@ test("ignores disabled ATIF components when using prepared matchers", async () =
 
   const matchers = await prepareRelayAtifMatchers(pluginConfig);
   assert.deepEqual(matchers, []);
-  assert.equal(expectsLocalAtif(pluginConfig, matchers), false);
 });
 
 test("skips disabled components during output normalization and artifact collection", async () => {
@@ -632,20 +614,6 @@ test("does not make nested ATIF directory races strict", async () => {
   }
 });
 
-test("does not swallow ATIF snapshot directory failures", async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-atif-snapshot-")));
-  try {
-    const pluginConfig = observability({
-      atif: { enabled: true, output_directory: root, filename_template: "trajectory-{session_id}.json" },
-    });
-    const matchers = await prepareRelayAtifMatchers(pluginConfig);
-    await rm(root, { recursive: true, force: true });
-    await assert.rejects(snapshotAtifFiles(pluginConfig, matchers), /ENOENT/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
 test("collects default ATOF files and tolerates disappearing artifact directories", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-atof-")));
   try {
@@ -663,12 +631,6 @@ test("collects default ATOF files and tolerates disappearing artifact directorie
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
-
-test("skips local ATIF waiting for remote-storage configurations", () => {
-  assert.equal(expectsLocalAtif(observability({ atif: { enabled: true } })), true);
-  assert.equal(expectsLocalAtif(observability({ atif: { enabled: true, storage: [{ type: "http" }] } })), false);
-  assert.equal(expectsLocalAtif(observability({ atif: { enabled: false } })), false);
 });
 
 test("launches a foreground-group gateway with an isolated log and exact upstream arguments", async () => {

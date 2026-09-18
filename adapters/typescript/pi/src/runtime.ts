@@ -8,13 +8,6 @@
 import type { AgentRunRequest, AgentRunResult, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
-import {
-  ATIF_FINALIZATION_TIMEOUT_MS,
-  type AtifSnapshot,
-  expectsLocalAtif,
-  snapshotAtifFiles,
-  waitForFinalizedAtif,
-} from "./relay-artifacts.js";
 import { collectRelayArtifacts, type RelayArtifact } from "./relay-config.js";
 import type { PiRelayRuntime } from "./relay.js";
 
@@ -38,10 +31,6 @@ export interface PiSessionFactory {
   create(input: AdapterStartInput): Promise<PiSessionHandle>;
 }
 
-export interface PiAdapterRuntimeOptions {
-  atifFinalizationTimeoutMs?: number;
-}
-
 function failed(code: string, message: string): AgentRunResult {
   return {
     status: "failed",
@@ -53,7 +42,6 @@ function failed(code: string, message: string): AgentRunResult {
 async function withRelayOutput(
   result: AgentRunResult,
   relay: PiRelayRuntime | undefined,
-  artifacts?: RelayArtifact[],
 ): Promise<AgentRunResult> {
   if (relay === undefined) {
     return result;
@@ -64,29 +52,21 @@ async function withRelayOutput(
       : {};
   return {
     ...result,
-    output: { ...current, ...(await relay.output(artifacts)) },
+    output: { ...current, ...(await relay.output(await collectNonAtifArtifacts(relay))) },
   };
 }
 
 async function collectNonAtifArtifacts(relay: PiRelayRuntime): Promise<RelayArtifact[]> {
-  return (await collectRelayArtifacts(relay.pluginConfig, relay.atifMatchers)).filter(
-    (artifact) => artifact.kind !== "atif",
-  );
+  return collectRelayArtifacts(relay.pluginConfig, []);
 }
 
 export class PiAdapterRuntime implements AdapterRuntime {
   private readonly factory: PiSessionFactory;
-  private readonly atifFinalizationTimeoutMs: number;
   private session?: PiSessionHandle;
   private unusable = false;
 
-  constructor(factory: PiSessionFactory, options: PiAdapterRuntimeOptions = {}) {
+  constructor(factory: PiSessionFactory) {
     this.factory = factory;
-    const configuredTimeout = options.atifFinalizationTimeoutMs;
-    this.atifFinalizationTimeoutMs =
-      configuredTimeout !== undefined && Number.isFinite(configuredTimeout) && configuredTimeout >= 0
-        ? configuredTimeout
-        : ATIF_FINALIZATION_TIMEOUT_MS;
   }
 
   async start(input: AdapterStartInput): Promise<void> {
@@ -112,53 +92,9 @@ export class PiAdapterRuntime implements AdapterRuntime {
     }
 
     const relay = this.session.relay;
-    let atifBefore: AtifSnapshot | undefined;
-    let usableAtifMatchers = relay?.atifMatchers ?? [];
-    let atifSnapshotFailed = false;
-    if (relay !== undefined && expectsLocalAtif(relay.pluginConfig, relay.atifMatchers)) {
-      try {
-        atifBefore = await snapshotAtifFiles(relay.pluginConfig, relay.atifMatchers);
-      } catch (error) {
-        atifBefore = new Map();
-        atifSnapshotFailed = true;
-        usableAtifMatchers = [];
-        const detail = error instanceof Error ? `: ${error.message}` : "";
-        process.stderr.write(`NeMo Relay ATIF artifact snapshot failed${detail}\n`);
-      }
-    }
     const outcome = await this.session.prompt(request.input);
-    let relayArtifacts: RelayArtifact[] | undefined;
-    if (
-      outcome.accepted &&
-      relay !== undefined &&
-      atifBefore !== undefined &&
-      usableAtifMatchers.some((matcher) => matcher.local)
-    ) {
-      try {
-        const finalized = await waitForFinalizedAtif(relay.pluginConfig, atifBefore, {
-          matchers: usableAtifMatchers,
-          timeoutMs: this.atifFinalizationTimeoutMs,
-        });
-        if (finalized === undefined) {
-          process.stderr.write(
-            `NeMo Relay did not finalize an ATIF artifact within ${this.atifFinalizationTimeoutMs} ms\n`,
-          );
-          relayArtifacts = await collectNonAtifArtifacts(relay);
-        }
-      } catch (error) {
-        const detail = error instanceof Error ? `: ${error.message}` : "";
-        process.stderr.write(`NeMo Relay ATIF artifact finalization check failed${detail}\n`);
-        relayArtifacts = await collectNonAtifArtifacts(relay);
-      }
-    } else if (relay !== undefined && atifSnapshotFailed) {
-      relayArtifacts = await collectRelayArtifacts(relay.pluginConfig, usableAtifMatchers);
-    }
     if (!outcome.accepted) {
-      return withRelayOutput(
-        failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"),
-        relay,
-        relayArtifacts,
-      );
+      return withRelayOutput(failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"), relay);
     }
     if (outcome.shutdownRequested || outcome.stopReason === "aborted") {
       if (outcome.shutdownRequested) {
@@ -177,24 +113,21 @@ export class PiAdapterRuntime implements AdapterRuntime {
           },
         },
         relay,
-        relayArtifacts,
       );
     }
     if (outcome.stopReason === "error") {
       return withRelayOutput(
         failed("pi_model_error", outcome.errorMessage || "The Pi model invocation failed"),
         relay,
-        relayArtifacts,
       );
     }
     if (outcome.text === undefined || outcome.text.length === 0) {
       return withRelayOutput(
         failed("pi_no_assistant_response", "Pi completed without a final assistant text response"),
         relay,
-        relayArtifacts,
       );
     }
-    return withRelayOutput({ status: "succeeded", output: { response: outcome.text } }, relay, relayArtifacts);
+    return withRelayOutput({ status: "succeeded", output: { response: outcome.text } }, relay);
   }
 
   async stop(): Promise<void> {

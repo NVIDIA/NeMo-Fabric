@@ -225,95 +225,8 @@ test("adds Relay details to results and stops the Pi session before the gateway"
   assert.deepEqual(order, ["session", "relay"]);
 });
 
-test(
-  "an ATIF finalization timeout preserves ATOF without poisoning the runtime",
-  async (t) => {
-    const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-timeout-")));
-    const atifDir = join(root, "atif");
-    const atofDir = join(root, "atof");
-    await mkdir(atifDir);
-    await mkdir(atofDir);
-    const atofPath = join(atofDir, "events.atof.jsonl");
-    await writeFile(atofPath, "{}\n", "utf8");
-    let promptCount = 0;
-    const relay = {
-      pluginConfig: {
-        version: 1,
-        components: [
-          {
-            kind: "observability",
-            config: {
-              atof: {
-                enabled: true,
-                sinks: [{ type: "file", output_directory: atofDir, filename: "events.atof.jsonl" }],
-              },
-              atif: {
-                enabled: true,
-                output_directory: atifDir,
-                filename_template: "trajectory-{session_id}.atif.json",
-              },
-            },
-          },
-        ],
-      },
-      async output(artifacts) {
-        return {
-          relay_artifacts: artifacts ?? [{ kind: "atif", path: "unexpected" }],
-        };
-      },
-      async stop() {},
-    };
-    relay.atifMatchers = await prepareRelayAtifMatchers(relay.pluginConfig);
-    const factory = {
-      async create() {
-        return {
-          relay,
-          async prompt() {
-            promptCount += 1;
-            return { accepted: true, text: "ok", stopReason: "stop" };
-          },
-          async stop() {},
-        };
-      },
-    };
-    assert.equal(new PiAdapterRuntime(factory).atifFinalizationTimeoutMs, 5_000);
-    for (const invalidTimeout of [Number.NaN, Infinity, -1]) {
-      assert.equal(
-        new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: invalidTimeout }).atifFinalizationTimeoutMs,
-        5_000,
-      );
-    }
-    assert.equal(new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: 0 }).atifFinalizationTimeoutMs, 0);
-
-    const runtime = new PiAdapterRuntime(factory, { atifFinalizationTimeoutMs: 25 });
-    let stderr = "";
-    t.mock.method(process.stderr, "write", (chunk) => {
-      stderr += String(chunk);
-      return true;
-    });
-
-    try {
-      await runtime.start(startInput());
-      const startedAt = performance.now();
-      const timedOut = await runtime.invoke({ input: "trace me" }, context);
-      assert.ok(performance.now() - startedAt < 1_000, "configured timeout should reach ATIF finalization");
-      assert.equal(stderr, "NeMo Relay did not finalize an ATIF artifact within 25 ms\n");
-      assert.deepEqual(timedOut.output.relay_artifacts, [{ kind: "atof", path: atofPath }]);
-
-      relay.pluginConfig.components = [];
-      relay.atifMatchers = [];
-      const next = await runtime.invoke({ input: "still usable" }, context);
-      assert.equal(next.status, "succeeded");
-      assert.equal(promptCount, 2);
-    } finally {
-      await runtime.stop();
-      await rm(root, { recursive: true, force: true });
-    }
-  },
-);
-
-test("an ATIF snapshot failure preserves the prompt and excludes ATIF", async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-snapshot-failure-")));
+test("does not wait for local ATIF and preserves ATOF", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-artifacts-")));
   const atifDir = join(root, "atif");
   const atofDir = join(root, "atof");
   try {
@@ -364,10 +277,11 @@ test("an ATIF snapshot failure preserves the prompt and excludes ATIF", async ()
     });
 
     await runtime.start(startInput());
-    await rm(atifDir, { recursive: true, force: true });
+    const startedAt = performance.now();
     const first = await runtime.invoke({ input: "first" }, context);
     const second = await runtime.invoke({ input: "second" }, context);
 
+    assert.ok(performance.now() - startedAt < 1_000, "local ATIF must not delay invocations");
     assert.equal(first.status, "succeeded");
     assert.equal(second.status, "succeeded");
     assert.equal(promptCount, 2);
