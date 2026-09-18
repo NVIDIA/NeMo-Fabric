@@ -455,10 +455,11 @@ class OpenClawRuntime:
             )
 
         port = _select_port(settings)
-        token = secrets.token_urlsafe(
-            48
-        )  # Generate a one-time use token for the OpenClaw gateway
+
+        # Generate a one-time use token for the OpenClaw gateway
+        token = secrets.token_urlsafe(48)
         token_env = "OPENCLAW_GATEWAY_TOKEN"
+
         temp_dir = tempfile.TemporaryDirectory(prefix="nemo-fabric-openclaw-")
         state_dir = Path(temp_dir.name) / "state"
         state_dir.mkdir(mode=0o700)
