@@ -71,7 +71,7 @@ adapters = [
   # its optional subclass-based telemetry integration.
   "nemo-fabric-adapters-mini-swe-agent[relay]",
   "nemo-fabric-adapters-nooa; python_version >= '3.12' and python_version < '3.14'",
-  "nemo-fabric-adapters-openclaw[harness]",
+  "nemo-fabric-adapters-openclaw",
   "nemo-fabric-adapters-remote-agent[harness]",
 ]
 
@@ -86,7 +86,7 @@ adapter-tests = [
   "nemo-fabric-adapters-hermes[full]; python_version < '3.14'",
   "nemo-fabric-adapters-mini-swe-agent[harness]",
   "nemo-fabric-adapters-nooa[full]; python_version >= '3.12' and python_version < '3.14'",
-  "nemo-fabric-adapters-openclaw[full]",
+  "nemo-fabric-adapters-openclaw",
   "nemo-fabric-adapters-remote-agent[full]",
 ]
 

@@ -30,10 +30,6 @@ dependencies = [
   "httpx[http2]~=0.28",
 ]
 
-[project.optional-dependencies]
-harness = []
-full = []
-
 [project.urls]
 Repository = "https://github.com/NVIDIA/NeMo-Fabric"
 Homepage = "https://github.com/NVIDIA/NeMo-Fabric"

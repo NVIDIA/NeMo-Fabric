@@ -82,7 +82,7 @@ remote-agent = [
 ]
 
 openclaw = [
-  "nemo-fabric-adapters-openclaw[harness] == 0.4.0",
+  "nemo-fabric-adapters-openclaw == 0.4.0",
 ]
 
 harbor = [

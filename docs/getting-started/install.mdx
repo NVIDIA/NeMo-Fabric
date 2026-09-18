@@ -36,7 +36,7 @@ be managed separately.
 | `nemo-fabric-adapters-deepagents[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-mini-swe-agent[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-nooa[full]` | No | No | Yes | Yes | Yes | No |
-| `nemo-fabric-adapters-openclaw[full]` | No | No | Yes | No | No | No |
+| `nemo-fabric-adapters-openclaw` | No | No | Yes | No | No | No |
 | `nemo-fabric-adapters-hermes[relay]` | No | No | Yes | No | Yes | No |
 | `nemo-fabric-adapters-claude` | No | No | Yes | No | No | No |
 
@@ -132,7 +132,6 @@ pip install "nemo-fabric-adapters-claude[harness]"
 pip install "nemo-fabric-adapters-codex[harness]"
 pip install "nemo-fabric-adapters-deepagents[harness]"
 pip install "nemo-fabric-adapters-nooa[harness]"
-pip install "nemo-fabric-adapters-openclaw[harness]"
 ```
 
 This installation mode keeps the runtime dependencies out of the adapter
@@ -142,8 +141,9 @@ use the same interpreter. Use matching NeMo Fabric
 release versions for the runtime and adapter package unless a different pairing
 has been explicitly validated.
 
-The OpenClaw `harness` and `full` extras contain the adapter but do not install
-OpenClaw. Install the `openclaw` npm package separately.
+The OpenClaw adapter does not provide `harness` or `full` extras. Install
+`nemo-fabric-adapters-openclaw` directly and install the `openclaw` npm package
+separately.
 
 ### Add an Adapter to an Existing Harness Environment
 
