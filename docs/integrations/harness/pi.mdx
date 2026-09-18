@@ -152,6 +152,13 @@ the isolated Pi session. The result includes `relay_runtime` and
 OpenTelemetry, and OpenInference output from the Relay observability
 configuration.
 
+The adapter supports one Relay-enabled Pi runtime per adapter process because
+the Relay 0.9 extension receives its gateway and upstream configuration through
+process environment variables. NeMo Fabric starts each runtime in a separate
+adapter process, so concurrent NeMo Fabric runtimes remain isolated. Direct
+embedders must likewise place concurrent Relay-enabled Pi runtimes in separate
+processes.
+
 Local ATIF trajectories are finalized only after the Pi session closes and are
 therefore not included in `relay_artifacts`; the adapter's five-second
 per-invocation wait expires and logs a warning. After runtime shutdown, retrieve

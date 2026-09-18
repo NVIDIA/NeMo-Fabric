@@ -287,13 +287,15 @@ clean:
         adapters/typescript/node_modules \
         adapters/typescript/common/dist \
         adapters/typescript/pi/dist \
+        adapters/typescript/opencode/dist \
         adapters/python/*/build \
         adapters/python/*/dist \
         sdk/python/*/build \
         sdk/python/*/dist \
         adapter-contract/typescript/*.tgz \
         adapters/typescript/common/*.tgz \
-        adapters/typescript/pi/*.tgz
+        adapters/typescript/pi/*.tgz \
+        adapters/typescript/opencode/*.tgz
     find . \
         \( -path './.venv' -o -path './.git' \) -prune -o \
         -type d \( \
@@ -341,6 +343,10 @@ install-typescript-adapters:
 # Install the Pi adapter and its pinned SDK harness for source development.
 install-typescript-pi: install-typescript-contract
     npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-pi --include-workspace-root --ignore-scripts
+
+# Install the OpenCode adapter and its pinned SDK harness for source development.
+install-typescript-opencode: install-typescript-contract
+    npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-opencode --include-workspace-root --ignore-scripts
 
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters

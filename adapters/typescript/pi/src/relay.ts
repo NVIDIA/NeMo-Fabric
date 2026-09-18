@@ -35,6 +35,7 @@ const RELAY_ENV_NAMES = [
   "NEMO_RELAY_PI_OPENAI_UPSTREAM",
   "NEMO_RELAY_PI_ANTHROPIC_UPSTREAM",
 ] as const;
+let relayEnvironmentActive = false;
 
 export interface PiRelayModel {
   api: string;
@@ -100,7 +101,28 @@ function relayWorkingDirectory(input: AdapterStartInput): string {
   return resolve(input.runtimeContext.environment.workspace ?? input.baseDir);
 }
 
-function setRelayEnvironment(gatewayUrl: string, model: PiRelayModel): () => void {
+function reserveRelayEnvironment(): () => void {
+  if (relayEnvironmentActive) {
+    throw new LifecycleError(
+      "pi_relay_runtime_conflict",
+      "Only one Relay-enabled Pi runtime can run in an adapter process",
+    );
+  }
+  relayEnvironmentActive = true;
+  let released = false;
+  return () => {
+    if (!released) {
+      released = true;
+      relayEnvironmentActive = false;
+    }
+  };
+}
+
+function setRelayEnvironment(
+  gatewayUrl: string,
+  model: PiRelayModel,
+  releaseReservation: () => void,
+): () => void {
   const previous = new Map<string, string | undefined>();
   for (const name of RELAY_ENV_NAMES) {
     previous.set(name, process.env[name]);
@@ -112,13 +134,22 @@ function setRelayEnvironment(gatewayUrl: string, model: PiRelayModel): () => voi
   } else if (model.api === "anthropic-messages") {
     process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM = model.baseUrl;
   }
+  let restored = false;
   return () => {
-    for (const [name, value] of previous) {
-      if (value === undefined) {
-        delete process.env[name];
-      } else {
-        process.env[name] = value;
+    if (restored) {
+      return;
+    }
+    restored = true;
+    try {
+      for (const [name, value] of previous) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
       }
+    } finally {
+      releaseReservation();
     }
   };
 }
@@ -178,12 +209,11 @@ export class PiRelayRuntime {
     try {
       await this.stopGateway(this.child);
       this.stopped = true;
+      this.restoreEnvironment();
     } catch (error) {
       throw new LifecycleError("pi_relay_stop_failed", "NeMo Relay gateway failed to stop", {
         metadata: relayErrorMetadata(error, { gateway_log_path: this.launch.logPath }),
       });
-    } finally {
-      this.restoreEnvironment();
     }
   }
 }
@@ -270,15 +300,17 @@ export class PiRelayFactory implements PiRelayControllerFactory {
         : {}),
       ...(model.api === "anthropic-messages" ? { anthropicBaseUrl: model.baseUrl } : {}),
     };
+    const releaseEnvironment = reserveRelayEnvironment();
     let child: ChildProcess;
     try {
       child = await this.dependencies.startGateway(launch, relayWorkingDirectory(input));
     } catch (error) {
+      releaseEnvironment();
       throw new LifecycleError("pi_relay_start_failed", "NeMo Relay gateway failed to start", {
         metadata: relayErrorMetadata(error, { gateway_log_path: launch.logPath }),
       });
     }
-    const restoreEnvironment = setRelayEnvironment(launch.url, model);
+    const restoreEnvironment = setRelayEnvironment(launch.url, model, releaseEnvironment);
     return new PiRelayRuntime({
       extensionPath,
       pluginConfig,

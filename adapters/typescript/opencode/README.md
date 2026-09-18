@@ -1,0 +1,56 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# NVIDIA NeMo Fabric OpenCode Adapter
+
+This package provides the OpenCode v2 harness adapter for NVIDIA NeMo Fabric.
+It embeds `@opencode/sdk` in the adapter process and maps one NeMo Fabric
+runtime to one isolated OpenCode host and session.
+
+The adapter process runs with Bun 1.4.2 or newer. Install Bun before running
+NeMo Fabric with this adapter.
+
+To use a published adapter release, install the adapter and its compatible
+OpenCode SDK in the project that owns the NeMo Fabric configuration:
+
+```bash
+npm install nemo-fabric-adapters-opencode @opencode/core@2.0.3 @opencode/sdk@2.0.3
+```
+
+OpenCode Core and the OpenCode SDK are optional peers, exact-pinned to the
+supported OpenCode release. Starting the adapter without the compatible
+packages reports a stable harness-unavailable error.
+
+OpenCode 2.0.3 does not support npm's `install-strategy=nested`. The documented
+command requires npm's default hoisted layout.
+
+The adapter supports `models` and an optional `models.<role>.base_url`. The
+adapter selects the `default` model role or the only configured role, accepts
+plain-text input, and returns a terminal result with `output.response`. A
+configured `api_key_env` name is passed explicitly to OpenCode, including for
+native OpenCode providers, so it does not need to be that provider's usual
+environment-variable name. It must be a portable environment-variable
+identifier (for example, `NVIDIA_API_KEY`).
+A configured endpoint must implement the OpenAI-compatible Chat Completions
+protocol; it is a model-provider endpoint, not an OpenCode server endpoint.
+Remote endpoints must use HTTPS because requests include the provider
+credential; HTTP is permitted only for loopback endpoints used in local
+development and testing.
+For configured endpoints, the adapter omits OpenCode's `prompt_cache_key`
+extension so providers that implement the core protocol but reject that
+OpenAI-specific field remain compatible.
+The adapter does not expose streaming, Relay, MCP, skills, tool policy,
+subagents, system instructions, or model settings.
+It keeps the Fabric workspace as OpenCode's working location while disabling
+ambient OpenCode project and user configuration and instruction discovery.
+
+One Bun adapter process owns one embedded OpenCode host and session for each
+NeMo Fabric runtime. Ordered invocations reuse that session. Stopping the
+runtime removes the session and closes the host.
+
+When OpenCode reports a diff for an invocation and the runtime has an artifact
+root, the adapter writes it to a runtime- and invocation-scoped path beneath
+`opencode/` and returns it as a `patch` artifact. Without an artifact root, it
+returns no patch artifact.

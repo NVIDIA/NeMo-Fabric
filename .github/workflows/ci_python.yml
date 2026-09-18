@@ -118,6 +118,69 @@ jobs:
           set -euo pipefail
           just --set no_uv true test-python
 
+  opencode-e2e:
+    name: OpenCode E2E
+    if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Checkout Hermes Agent
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: 29112bef099274229cadff79cdff7bf7b99c4b77
+          path: external/hermes-agent
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: adapters/typescript/package-lock.json
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install just
+        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        with:
+          tool: just@1.50.0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+
+      - name: Create virtual environment
+        run: uv venv --python 3.12 .venv
+
+      - name: Install OpenCode adapter dependencies
+        run: |
+          just install-typescript-opencode
+          npm run build --prefix adapter-contract/typescript
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-opencode
+
+      - name: Run deterministic OpenCode E2E
+        run: |
+          uv sync --no-default-groups --group test
+          uv run --no-sync pytest tests/e2e/test_opencode.py -k local_openai_compatible -q
+
   build-wheels:
     name: Build wheels (${{ matrix.platform }})
     needs: [test]

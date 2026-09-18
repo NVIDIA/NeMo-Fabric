@@ -73,6 +73,17 @@ def typescript_project_fixture(tmp_path: Path) -> Path:
         },
     )
     _write_json(
+        tmp_path / "adapters/typescript/opencode/package.json",
+        {
+            "name": "nemo-fabric-adapters-opencode",
+            "version": "0.2.0",
+            "dependencies": {
+                "nemo-fabric-adapter-contract": "0.2.0",
+                "nemo-fabric-adapters-common": "0.2.0",
+            },
+        },
+    )
+    _write_json(
         tmp_path / "adapters/typescript/package-lock.json",
         {
             "name": "nemo-fabric-typescript-adapters",
@@ -93,6 +104,14 @@ def typescript_project_fixture(tmp_path: Path) -> Path:
                 },
                 "pi": {
                     "name": "nemo-fabric-adapters-pi",
+                    "version": "0.2.0",
+                    "dependencies": {
+                        "nemo-fabric-adapter-contract": "0.2.0",
+                        "nemo-fabric-adapters-common": "0.2.0",
+                    },
+                },
+                "opencode": {
+                    "name": "nemo-fabric-adapters-opencode",
                     "version": "0.2.0",
                     "dependencies": {
                         "nemo-fabric-adapter-contract": "0.2.0",
@@ -140,23 +159,33 @@ def test_updates_the_complete_typescript_package_graph(
     pi = json.loads(
         (typescript_project / "adapters/typescript/pi/package.json").read_text()
     )
+    opencode = json.loads(
+        (typescript_project / "adapters/typescript/opencode/package.json").read_text()
+    )
 
     assert contract["version"] == version
     assert contract_lock["version"] == version
     assert contract_lock["packages"][""]["version"] == version
     assert adapters["version"] == version
     assert adapters_lock["version"] == version
-    for workspace in ("", "../../adapter-contract/typescript", "common", "pi"):
+    for workspace in ("", "../../adapter-contract/typescript", "common", "pi", "opencode"):
         assert adapters_lock["packages"][workspace]["version"] == version
     assert common["version"] == version
     assert common["dependencies"]["nemo-fabric-adapter-contract"] == version
     assert pi["version"] == version
     assert pi["dependencies"]["nemo-fabric-adapter-contract"] == version
     assert pi["dependencies"]["nemo-fabric-adapters-common"] == version
+    assert opencode["version"] == version
+    assert opencode["dependencies"]["nemo-fabric-adapter-contract"] == version
+    assert opencode["dependencies"]["nemo-fabric-adapters-common"] == version
     assert adapters_lock["packages"]["common"]["dependencies"][
         "nemo-fabric-adapter-contract"
     ] == version
     assert adapters_lock["packages"]["pi"]["dependencies"] == {
+        "nemo-fabric-adapter-contract": version,
+        "nemo-fabric-adapters-common": version,
+    }
+    assert adapters_lock["packages"]["opencode"]["dependencies"] == {
         "nemo-fabric-adapter-contract": version,
         "nemo-fabric-adapters-common": version,
     }

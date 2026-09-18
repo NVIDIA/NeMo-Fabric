@@ -804,7 +804,7 @@ test("resolves relative Relay extension paths from the workspace without contain
   }
 });
 
-test("keeps non-Relay startup inert and restores Relay extension environment on stop", async () => {
+test("keeps non-Relay startup inert and allows one Relay runtime per process", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-runtime-")));
   const extensionPath = join(root, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
@@ -834,6 +834,7 @@ test("keeps non-Relay startup inert and restores Relay extension environment on 
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://ambient.invalid");
 
     const mockChild = new MockChild();
+    let startAttempts = 0;
     let stopAttempts = 0;
     const factory = new PiRelayFactory({
       async resolveCommand(baseDir, command) {
@@ -857,6 +858,7 @@ test("keeps non-Relay startup inert and restores Relay extension environment on 
         return 41001;
       },
       async startGateway() {
+        startAttempts += 1;
         return mockChild;
       },
       async stopGateway(child) {
@@ -867,24 +869,40 @@ test("keeps non-Relay startup inert and restores Relay extension environment on 
         }
       },
     });
-    const runtime = await factory.start(startInput(root, { extensionPath }), {
+    const input = startInput(root, { extensionPath });
+    const model = {
       api: "openai-responses",
       baseUrl: "https://api.openai.com/v1",
-    });
+    };
+    const runtime = await factory.start(input, model);
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://127.0.0.1:41001");
     assert.equal(process.env.NEMO_RELAY_PI_OPENAI_UPSTREAM, "https://api.openai.com/v1");
     assert.equal(process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM, undefined);
+    await assert.rejects(
+      factory.start(input, model),
+      (error) =>
+        error.code === "pi_relay_runtime_conflict" &&
+        error.message.includes("Only one Relay-enabled Pi runtime"),
+    );
+    assert.equal(startAttempts, 1);
     await assert.rejects(
       runtime.stop(),
       (error) => error.code === "pi_relay_stop_failed" && error.metadata.relay_error === "gateway still running",
     );
     assert.equal(stopAttempts, 1);
+    assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://127.0.0.1:41001");
     await runtime.stop();
     await runtime.stop();
     assert.equal(stopAttempts, 2);
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://ambient.invalid");
     assert.equal(process.env.NEMO_RELAY_PI_OPENAI_UPSTREAM, undefined);
     assert.equal(process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM, "https://ambient.invalid");
+
+    const restarted = await factory.start(input, model);
+    assert.equal(startAttempts, 2);
+    await restarted.stop();
+    assert.equal(stopAttempts, 3);
+    assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://ambient.invalid");
   } finally {
     for (const [name, value] of [
       ["NEMO_RELAY_PI_GATEWAY_URL", previous.gateway],

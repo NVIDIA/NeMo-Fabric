@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Validate the TypeScript packages from a consumer's perspective. This check
-// packs and installs the contract, common host, and Pi adapter in a temporary
-// project, verifies adapter-only behavior, then installs the consumer-managed
-// Pi harness and exercises the packaged lifecycle. check-package.mjs owns each
-// package's manifest policy and exact tarball contents.
+// packs and installs the contract, common host, and harness adapters in a
+// temporary project, verifies adapter-only behavior, then installs each
+// consumer-managed harness and exercises the packaged lifecycle.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -24,6 +23,7 @@ const packageRoots = [
   join(repositoryRoot, "adapter-contract/typescript"),
   join(repositoryRoot, "adapters/typescript/common"),
   join(repositoryRoot, "adapters/typescript/pi"),
+  join(repositoryRoot, "adapters/typescript/opencode"),
 ];
 
 function npm(args, cwd) {
@@ -61,6 +61,24 @@ function runPiCli(piRoot, consumerRoot, requests) {
   return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 
+function runOpenCodeCli(opencodeRoot, consumerRoot, requests) {
+  const invocation = spawnSync(process.env.BUN_EXECUTABLE ?? "bun", [join(opencodeRoot, "dist/cli.js")], {
+    cwd: consumerRoot,
+    encoding: "utf8",
+    input: `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`,
+    timeout: 60_000,
+  });
+  if (invocation.error) {
+    throw invocation.error;
+  }
+  if (invocation.status !== 0) {
+    throw new Error(
+      `Installed OpenCode CLI failed (status ${invocation.status}, signal ${invocation.signal}): ${invocation.stderr}`,
+    );
+  }
+  return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
 function startRequest(consumerRoot) {
   return {
     operation: "start",
@@ -76,6 +94,39 @@ function startRequest(consumerRoot) {
           },
         },
         tools: { enabled: [] },
+      },
+      runtime_context: {
+        artifacts: {},
+        environment: {
+          control_location: "external_control",
+          env: { TEST_API_KEY: "not-a-real-key" },
+          environment_id: "environment-install-check",
+          ownership: "caller_owned",
+          provider: "local",
+          workspace: consumerRoot,
+        },
+        invocation_id: "invocation-install-check",
+        request_id: "request-install-check",
+        runtime_id: "runtime-install-check",
+      },
+    },
+  };
+}
+
+function openCodeStartRequest(consumerRoot) {
+  return {
+    operation: "start",
+    payload: {
+      agent_name: "opencode-install-check",
+      base_dir: consumerRoot,
+      config: {
+        models: {
+          default: {
+            api_key_env: "TEST_API_KEY",
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        },
       },
       runtime_context: {
         artifacts: {},
@@ -170,6 +221,53 @@ try {
   ]);
   if (responses.length !== 2 || responses[0].outcome?.status !== "succeeded") {
     throw new Error(`Consumer-managed Pi harness failed to start: ${JSON.stringify(responses)}`);
+  }
+
+  const opencodeRoot = join(consumerRoot, "node_modules/nemo-fabric-adapters-opencode");
+  const opencodeDescriptor = JSON.parse(await readFile(join(opencodeRoot, "opencode.fabric-adapter.json"), "utf8"));
+  if (opencodeDescriptor.runner?.command !== "bun" || opencodeDescriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("Installed OpenCode descriptor does not reference its packaged Bun CLI");
+  }
+  if (await pathExists(join(consumerRoot, "node_modules/@opencode/sdk/package.json"))) {
+    throw new Error("Adapter-only install unexpectedly included @opencode/sdk");
+  }
+  if (await pathExists(join(consumerRoot, "node_modules/@opencode/core/package.json"))) {
+    throw new Error("Adapter-only install unexpectedly included @opencode/core");
+  }
+
+  const [invalidOpenCodeResponse] = runOpenCodeCli(opencodeRoot, consumerRoot, [{}]);
+  if (invalidOpenCodeResponse.outcome?.error?.code !== "lifecycle_invalid_operation") {
+    throw new Error(`Installed OpenCode CLI returned an unexpected response: ${JSON.stringify(invalidOpenCodeResponse)}`);
+  }
+
+  const [missingOpenCodeHarnessResponse] = runOpenCodeCli(opencodeRoot, consumerRoot, [openCodeStartRequest(consumerRoot)]);
+  if (missingOpenCodeHarnessResponse.outcome?.error?.code !== "opencode_harness_unavailable") {
+    throw new Error(
+      `Adapter-only install did not report the missing OpenCode harness: ${JSON.stringify(missingOpenCodeHarnessResponse)}`,
+    );
+  }
+
+  npm(
+    [
+      "install",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--package-lock=false",
+      "@opencode/core@2.0.3",
+      "@opencode/sdk@2.0.3",
+    ],
+    consumerRoot,
+  );
+  if (!(await pathExists(join(consumerRoot, "node_modules/@opencode/core/package.json")))) {
+    throw new Error("Consumer-managed OpenCode core harness was not installed at the adapter resolution level");
+  }
+  const opencodeResponses = runOpenCodeCli(opencodeRoot, consumerRoot, [
+    openCodeStartRequest(consumerRoot),
+    { operation: "stop", payload: { runtime_id: "runtime-install-check" } },
+  ]);
+  if (opencodeResponses.length !== 2 || opencodeResponses[0].outcome?.status !== "succeeded") {
+    throw new Error(`Consumer-managed OpenCode harness failed to start: ${JSON.stringify(opencodeResponses)}`);
   }
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });
