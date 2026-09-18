@@ -80,8 +80,6 @@ async def main() -> None:
         parser.error("--stream requires --relay")
     if args.stream and args.plan:
         parser.error("--stream cannot be combined with --plan")
-    if args.variant == "pi" and args.stream:
-        parser.error("the Pi adapter does not support Relay-backed streaming yet")
     if args.pi_relay_extension_path is not None and args.variant != "pi":
         parser.error("--pi-relay-extension-path requires --variant pi")
     if (
@@ -98,9 +96,7 @@ async def main() -> None:
     elif args.no_skills:
         config = with_skill_paths(config)
     if args.pi_relay_extension_path is not None:
-        config.harness.settings["relay_extension_path"] = (
-            args.pi_relay_extension_path
-        )
+        config.harness.settings["relay_extension_path"] = args.pi_relay_extension_path
     if args.relay:
         config = with_relay(config)
 

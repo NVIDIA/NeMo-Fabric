@@ -170,7 +170,7 @@ async def start_runtime(
 
 Start a stateful runtime for one or more ordered invocations.
 
-Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. With NVIDIA NeMo Relay enabled, ``streaming=True`` uses collector-backed streaming. By default, streaming starts an embedded collector. Set ``launch_collector=False`` to use an externally managed collector.
+Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. With NVIDIA NeMo Relay enabled, ``streaming=True`` uses collector-backed streaming. By default, streaming starts an embedded collector. Set ``launch_collector=False`` to use an externally managed collector. Pi requires the embedded collector because its ATOF records do not carry Fabric request IDs.
 
 
 
@@ -180,7 +180,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
  - <b>`base_dir`</b>:  Base directory for resolving relative paths.
  - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the runtime unless superseded by invocation overrides.
  - <b>`streaming`</b>:  Whether to enable collector-backed NeMo Relay ATOF  streaming for ``Runtime.invoke_stream()``.
- - <b>`launch_collector`</b>:  Whether to launch an embedded collector. ``None``  defaults to ``True`` when streaming is enabled. ``False`` uses  an externally managed collector. This argument cannot be set  unless ``streaming=True``.
+ - <b>`launch_collector`</b>:  Whether to launch an embedded collector. ``None``  defaults to ``True`` when streaming is enabled. ``False`` uses  an externally managed collector. Pi does not support ``False``.  This argument cannot be set unless ``streaming=True``.
 
 
 
@@ -191,7 +191,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
 
 **Raises:**
 
- - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid, streaming is  requested without NeMo Relay enabled, ``launch_collector`` is  set without streaming, or an external collector has no sink.
+ - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid, streaming is  requested without NeMo Relay enabled, ``launch_collector`` is  set without streaming, Pi is configured with an external  collector, or an external collector has no sink.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
  - <b>`FabricRuntimeError`</b>:  If runtime startup fails.
 

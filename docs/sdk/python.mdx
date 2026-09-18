@@ -641,7 +641,10 @@ Streaming has the following v0.1 constraints:
   `launch_collector=False` to use an externally managed collector. In that
   case, configure exactly one `nemo-fabric-stream` sink with an `http` or
   `https` collector base URL and `transport="ndjson"`; Fabric sends Relay to
-  `<base-url>/v1/atof`.
+  `<base-url>/v1/atof`. Pi is the exception: Pi streaming supports only the
+  default embedded collector. Do not set `launch_collector=False` for Pi
+  because its extension does not attach the NeMo Fabric request IDs required
+  for external correlation.
 - The default `streaming=False` leaves the existing NeMo Relay configuration
   unchanged; it neither enables nor disables ATOF. It also avoids collector
   startup and streaming control traffic for runtimes that use only ATIF,
@@ -666,17 +669,22 @@ Streaming has the following v0.1 constraints:
   terminal scope. In-process harnesses expose scope-level progress.
 - Reconstruct nested and parallel work with `uuid` and `parent_uuid`. Stream
   order alone does not define the Deep Agents scope tree.
-- Before invoking the agent, the runtime registers its request ID with the
-  collector. The collector routes the ATOF root scope carrying that request ID
-  and its descendants, based on UUID ancestry, to that invocation’s private
-  queue. With `relay_streaming: true`, Remote Agent services receive the ID as
-  `metadata.nemo_fabric_request_id` in the mapped request body and must carry it
-  into Relay metadata. Records that cannot be correlated to a registered
-  request are discarded.
-- An external collector can be shared by multiple Fabric runtimes. It must be
-  reachable by both Relay publishers and Fabric clients. Use HTTPS and its
-  configured authentication when it is deployed beyond a trusted local
-  boundary.
+- For request-correlated adapters, the runtime registers its request ID with
+  the collector before invoking the agent. The collector routes the ATOF root
+  scope carrying that request ID and its descendants, based on UUID ancestry,
+  to that invocation's private queue. With `relay_streaming: true`, Remote
+  Agent services receive the ID as `metadata.nemo_fabric_request_id` in the
+  mapped request body and must carry it into Relay metadata. Records that
+  cannot be correlated to a registered request are discarded. Pi instead
+  serializes both streaming and plain invocations behind one embedded-collector
+  lease. Streaming capture begins at the first `turn_start` and closes at
+  `agent_settled`. If output is interrupted or late, the collector discards the
+  remainder through that same terminal marker before allowing the next
+  invocation to start.
+- An external collector can be shared by multiple Fabric runtimes whose
+  adapters propagate request IDs. It must be reachable by both Relay
+  publishers and Fabric clients. Use HTTPS and its configured authentication
+  when it is deployed beyond a trusted local boundary.
 
 Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and
 require a release in the `>=0.7.2,<0.8` range. Their adapter `harness` and

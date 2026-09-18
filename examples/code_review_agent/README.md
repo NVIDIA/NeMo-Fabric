@@ -195,9 +195,12 @@ and pass the Relay Pi extension path explicitly:
 .venv/bin/python -m examples.code_review_agent \
   --variant pi \
   --relay \
+  --stream \
   --pi-relay-extension-path /path/to/NeMo-Relay/crates/cli/assets/pi-extension \
   --input "Review calculator.py"
 ```
 
-The Pi variant does not yet support Relay-backed streaming, so do not add
-`--stream`.
+The Pi variant uses the default embedded collector to collect ATOF records from
+every model turn, then prints one JSON document containing `atof_records` and
+the separate terminal `result`. Omit `--stream` to retain Relay artifacts
+without collecting records for that JSON output.

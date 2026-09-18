@@ -23,6 +23,7 @@ from nemo_fabric.errors import (
 from nemo_fabric.models import FabricConfig, RunRequest
 from nemo_fabric.runtime import (
     Runtime,
+    _PI_ADAPTER_ID,
     _call_blocking,
     _json_mapping,
     _run_native_lifecycle,
@@ -204,7 +205,9 @@ class Fabric:
         recursively merged below invocation-scoped overrides. With NVIDIA NeMo
         Relay enabled, ``streaming=True`` uses collector-backed streaming.
         By default, streaming starts an embedded collector. Set
-        ``launch_collector=False`` to use an externally managed collector.
+        ``launch_collector=False`` to use an externally managed collector. Pi
+        requires the embedded collector because its ATOF records do not carry
+        Fabric request IDs.
 
         Args:
             config: Complete typed ``FabricConfig``.
@@ -215,8 +218,8 @@ class Fabric:
                 streaming for ``Runtime.invoke_stream()``.
             launch_collector: Whether to launch an embedded collector. ``None``
                 defaults to ``True`` when streaming is enabled. ``False`` uses
-                an externally managed collector. This argument cannot be set
-                unless ``streaming=True``.
+                an externally managed collector. Pi does not support ``False``.
+                This argument cannot be set unless ``streaming=True``.
 
         Returns:
             An active ``Runtime``. Use it as an asynchronous context
@@ -225,7 +228,8 @@ class Fabric:
         Raises:
             FabricConfigError: If inputs or overrides are invalid, streaming is
                 requested without NeMo Relay enabled, ``launch_collector`` is
-                set without streaming, or an external collector has no sink.
+                set without streaming, Pi is configured with an external
+                collector, or an external collector has no sink.
             FabricNativeUnavailableError: If the native extension is not
                 installed.
             FabricRuntimeError: If runtime startup fails.
@@ -248,6 +252,16 @@ class Fabric:
             raise FabricConfigError("launch_collector requires streaming=True")
         if streaming and not _relay_enabled(config):
             raise FabricConfigError("streaming requires Relay telemetry to be enabled")
+        if (
+            streaming
+            and launch_collector is False
+            and config.harness is not None
+            and config.harness.adapter_id == _PI_ADAPTER_ID
+        ):
+            raise FabricConfigError(
+                "Pi Relay streaming requires the embedded collector; "
+                "launch_collector=False is not supported"
+            )
         if streaming:
             try:
                 if launch_collector is not False:
@@ -278,9 +292,7 @@ class Fabric:
                     runtime_config = config.model_copy(deep=True)
                 runtime_stream_sink = _configured_stream_sink(runtime_config)
                 if runtime_stream_sink is not None:
-                    runtime_stream_sink.url = (
-                        f"{collector_client.base_url}/v1/atof"
-                    )
+                    runtime_stream_sink.url = f"{collector_client.base_url}/v1/atof"
             except asyncio.CancelledError:
                 await close_streaming_resources()
                 raise
@@ -299,6 +311,15 @@ class Fabric:
             plan = await _call_blocking(
                 lambda: self.plan(runtime_config, base_dir=base_dir)
             )
+            if (
+                streaming
+                and launch_collector is False
+                and plan.adapter.adapter_id == _PI_ADAPTER_ID
+            ):
+                raise FabricConfigError(
+                    "Pi Relay streaming requires the embedded collector; "
+                    "launch_collector=False is not supported"
+                )
             native = self._require_native_module("start_runtime")
         except BaseException:
             await close_streaming_resources()

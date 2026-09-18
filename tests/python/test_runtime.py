@@ -10,7 +10,7 @@ import json
 import logging
 import threading
 from contextlib import AsyncExitStack
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -97,7 +97,9 @@ async def _wait_for(event: threading.Event, timeout: float = 2.0) -> bool:
 def mock_native_fixture() -> MagicMock:
     mock_native = MagicMock()
     mock_native.requests = []
-    mock_native.plan_config.side_effect = lambda config_json, base_dir: json.dumps(_plan())
+    mock_native.plan_config.side_effect = lambda config_json, base_dir: json.dumps(
+        _plan()
+    )
     mock_native.start_runtime.return_value = json.dumps(_runtime())
 
     def invoke(plan_json: str, runtime_json: str, request_json: str) -> str:
@@ -348,6 +350,7 @@ async def test_cancelled_registration_is_deregistered_during_shutdown(
     runtime = _runtime_wrapper(mock_native)
     runtime._collector_client = mock_collector
 
+    runtime._reserve_request_registration("request-1")
     registration = asyncio.create_task(runtime._register_request("request-1"))
     await registration_committed.wait()
     registration.cancel()
@@ -367,6 +370,148 @@ async def test_cancelled_registration_is_deregistered_during_shutdown(
     )
 
 
+async def test_cancelled_invocation_waits_for_registration_before_cleanup(
+    mock_native: MagicMock,
+):
+    registration_started = asyncio.Event()
+    finish_registration = asyncio.Event()
+    events: list[str] = []
+
+    async def register(request_id: str) -> None:
+        events.append(f"register-start:{request_id}")
+        registration_started.set()
+        await finish_registration.wait()
+        events.append(f"register-commit:{request_id}")
+
+    async def deregister(request_id: str, *, remove_queue: bool) -> None:
+        assert remove_queue is True
+        events.append(f"deregister:{request_id}")
+
+    mock_collector = MagicMock()
+    mock_collector.register = AsyncMock(side_effect=register)
+    mock_collector.deregister = AsyncMock(side_effect=deregister)
+    runtime = _runtime_wrapper(mock_native)
+    runtime._collector_client = mock_collector
+    invocation = asyncio.create_task(
+        runtime._invoke_registered_payload(
+            {"input": "hello", "request_id": "request-1"},
+            None,
+            capture_records=False,
+        )
+    )
+    await registration_started.wait()
+
+    invocation.cancel()
+    await asyncio.sleep(0)
+    invocation.cancel()
+    await asyncio.sleep(0)
+
+    assert not invocation.done()
+    mock_collector.deregister.assert_not_awaited()
+
+    finish_registration.set()
+    with pytest.raises(asyncio.CancelledError):
+        await invocation
+
+    assert events == [
+        "register-start:request-1",
+        "register-commit:request-1",
+        "deregister:request-1",
+    ]
+    assert runtime._registered_requests == set()
+    mock_native.invoke_runtime.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "phases",
+    [("outcome", "finalizer"), ("finalizer", "outcome")],
+)
+async def test_stream_registration_retires_after_both_cleanup_phases(
+    mock_native: MagicMock,
+    phases: tuple[
+        Literal["outcome", "finalizer"],
+        Literal["outcome", "finalizer"],
+    ],
+):
+    mock_collector = MagicMock()
+    mock_collector.deregister = AsyncMock()
+    runtime = _runtime_wrapper(mock_native)
+    runtime._collector_client = mock_collector
+    runtime._registered_requests.add("request-1")
+
+    first, second = phases
+    await runtime._finish_registered_request(
+        "request-1",
+        remove_queue=first == "finalizer",
+        pi_boundary="preserve" if first == "finalizer" else None,
+        stream_phase=first,
+    )
+    assert runtime._registered_requests == {"request-1"}
+
+    await runtime._finish_registered_request(
+        "request-1",
+        remove_queue=second == "finalizer",
+        pi_boundary="preserve" if second == "finalizer" else None,
+        stream_phase=second,
+    )
+
+    assert runtime._registered_requests == set()
+    assert runtime._stream_outcomes_finished == set()
+    assert runtime._stream_finalizers_finished == set()
+    assert mock_collector.deregister.await_count == 2
+
+
+async def test_cancelled_outcome_cleanup_finishes_before_reraising(
+    mock_native: MagicMock,
+):
+    deregistration_started = asyncio.Event()
+    finish_deregistration = asyncio.Event()
+
+    async def deregister(request_id: str, *, remove_queue: bool) -> None:
+        assert request_id == "request-1"
+        assert remove_queue is False
+        deregistration_started.set()
+        await finish_deregistration.wait()
+
+    mock_collector = MagicMock()
+    mock_collector.deregister = AsyncMock(side_effect=deregister)
+    runtime = _runtime_wrapper(mock_native)
+    runtime._collector_client = mock_collector
+    runtime._registered_requests.add("request-1")
+    cleanup = asyncio.create_task(
+        runtime._finish_registered_request(
+            "request-1",
+            remove_queue=False,
+            pi_boundary=None,
+            stream_phase="outcome",
+        )
+    )
+    await deregistration_started.wait()
+
+    cleanup.cancel()
+    await asyncio.sleep(0)
+    cleanup.cancel()
+    await asyncio.sleep(0)
+
+    assert not cleanup.done()
+    finish_deregistration.set()
+    with pytest.raises(asyncio.CancelledError):
+        await cleanup
+
+    assert runtime._registered_requests == {"request-1"}
+    assert runtime._stream_outcomes_finished == {"request-1"}
+    assert runtime._stream_finalizers_finished == set()
+
+    mock_collector.deregister.side_effect = None
+    await runtime._finish_registered_request(
+        "request-1",
+        remove_queue=True,
+        pi_boundary="preserve",
+        stream_phase="finalizer",
+    )
+    assert runtime._registered_requests == set()
+
+
 async def test_failed_registration_remains_tracked_until_cleanup_succeeds(
     mock_native: MagicMock,
 ):
@@ -379,11 +524,20 @@ async def test_failed_registration_remains_tracked_until_cleanup_succeeds(
     runtime = _runtime_wrapper(mock_native)
     runtime._collector_client = mock_collector
 
+    runtime._reserve_request_registration("request-1")
     with pytest.raises(FabricRuntimeError) as caught:
         await runtime._register_request("request-1")
 
     assert caught.value is registration_error
     assert runtime._registered_requests == {"request-1"}
+    with pytest.raises(FabricStateError, match="collector cleanup is still pending"):
+        await runtime._invoke_registered_payload(
+            {"input": "hello", "request_id": "request-1"},
+            None,
+            capture_records=False,
+        )
+    assert mock_collector.register.await_count == 1
+    mock_collector.deregister.assert_not_awaited()
 
     with pytest.raises(ExceptionGroup, match="deregistration failed"):
         await runtime._deregister_requests()
@@ -394,6 +548,85 @@ async def test_failed_registration_remains_tracked_until_cleanup_succeeds(
     await runtime._deregister_requests()
 
     assert runtime._registered_requests == set()
+
+
+def test_stream_rejects_request_id_with_pending_collector_cleanup(
+    mock_native: MagicMock,
+):
+    mock_collector = MagicMock()
+    mock_collector.deregister = AsyncMock()
+    runtime = _runtime_wrapper(mock_native)
+    runtime._collector_client = mock_collector
+    runtime._registered_requests.add("request-1")
+
+    with pytest.raises(FabricStateError, match="collector cleanup is still pending"):
+        runtime.invoke_stream(request=RunRequest(input="hello", request_id="request-1"))
+
+    mock_collector.register.assert_not_called()
+    mock_collector.deregister.assert_not_called()
+    assert runtime._registered_requests == {"request-1"}
+
+
+async def test_pi_stream_reserves_one_token_for_registration_and_cleanup(
+    mock_native: MagicMock,
+):
+    plan = _plan()
+    plan["config"]["harness"]["adapter_id"] = "nvidia.fabric.pi"
+    plan["adapter_descriptor"]["descriptor"].update(
+        {
+            "adapter_id": "nvidia.fabric.pi",
+            "harness": "pi",
+            "adapter_kind": "typescript",
+        }
+    )
+
+    streamed_tokens: list[str | None] = []
+
+    async def no_records(
+        _: str,
+        *,
+        registration_token: str | None = None,
+    ):
+        streamed_tokens.append(registration_token)
+        if False:
+            yield {}
+
+    mock_collector = MagicMock()
+    mock_collector.register = AsyncMock()
+    mock_collector.deregister = AsyncMock()
+    mock_collector.stream = no_records
+    client = Fabric()
+    client._native_module = lambda: mock_native  # type: ignore[method-assign]
+    runtime = Runtime(
+        client=client,
+        plan=plan,
+        runtime=_runtime(),
+        collector_client=mock_collector,
+    )
+
+    stream = runtime.invoke_stream(
+        request=RunRequest(input="hello", request_id="request-1")
+    )
+
+    assert runtime._registered_requests == {"request-1"}
+    token = runtime._registration_tokens["request-1"]
+    assert token
+
+    assert [record async for record in stream] == []
+    assert (await stream.result()).status == "succeeded"
+
+    mock_collector.register.assert_awaited_once_with(
+        "request-1",
+        correlation_mode="pi_turn_window",
+        capture_records=True,
+        registration_token=token,
+    )
+    assert mock_collector.deregister.await_count == 2
+    for call in mock_collector.deregister.await_args_list:
+        assert call.kwargs["registration_token"] == token
+    assert streamed_tokens == [token]
+    assert runtime._registered_requests == set()
+    assert runtime._registration_tokens == {}
 
 
 async def test_runtime_preserves_non_mapping_message_values(mock_native: MagicMock):
