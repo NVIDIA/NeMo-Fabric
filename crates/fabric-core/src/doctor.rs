@@ -428,12 +428,90 @@ fn adapter_kind_name(adapter_kind: AdapterKind) -> &'static str {
 fn command_available(binary: &str) -> bool {
     let path = Path::new(binary);
     if path.components().count() > 1 {
-        return path.is_file();
+        return explicit_command_available(path);
     }
     let Some(paths) = std::env::var_os("PATH") else {
         return false;
     };
-    std::env::split_paths(&paths).any(|dir| dir.join(binary).is_file())
+    command_available_on_path(binary, std::env::split_paths(&paths))
+}
+
+fn command_available_on_path(binary: &str, paths: impl IntoIterator<Item = PathBuf>) -> bool {
+    #[cfg(windows)]
+    {
+        paths.into_iter().any(|dir| {
+            let path = dir.join(binary);
+            if windows_command_has_extension(&path) {
+                executable_path_available(&path)
+            } else {
+                bare_command_available(&path)
+            }
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        paths
+            .into_iter()
+            .any(|dir| bare_command_available(&dir.join(binary)))
+    }
+}
+
+fn executable_path_available(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        if path.is_file() {
+            let Some(extension) = path.extension() else {
+                return true;
+            };
+            return extension
+                .to_str()
+                .is_some_and(windows_direct_command_extension);
+        }
+        if path.extension().is_some() {
+            return false;
+        }
+        return false;
+    }
+    #[cfg(not(windows))]
+    {
+        path.is_file()
+    }
+}
+
+#[cfg(windows)]
+fn bare_command_available(path: &Path) -> bool {
+    path.with_extension("exe").is_file()
+}
+
+#[cfg(windows)]
+fn explicit_command_available(path: &Path) -> bool {
+    if !windows_command_has_extension(path) && bare_command_available(path) {
+        return true;
+    }
+    executable_path_available(path)
+}
+
+#[cfg(windows)]
+fn windows_command_has_extension(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name.as_encoded_bytes().contains(&b'.'))
+}
+
+#[cfg(not(windows))]
+fn bare_command_available(path: &Path) -> bool {
+    executable_path_available(path)
+}
+
+#[cfg(not(windows))]
+fn explicit_command_available(path: &Path) -> bool {
+    executable_path_available(path)
+}
+
+#[cfg(windows)]
+fn windows_direct_command_extension(extension: &str) -> bool {
+    ["com", "exe", "bat", "cmd"]
+        .iter()
+        .any(|supported| extension.eq_ignore_ascii_case(supported))
 }
 
 struct BinaryRequirement {
@@ -657,5 +735,43 @@ mod tests {
                     == Some(&Value::String("instructions.system.mode".to_string()))
                 && check.message.contains("supported modes: replace")
         }));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_command_resolution_matches_runtime() {
+        let root = std::env::temp_dir().join(format!("nemo-fabric-doctor-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("create temporary command directory");
+        std::fs::write(root.join("bun.exe"), []).expect("create EXE fixture");
+        std::fs::write(root.join("com-only.com"), []).expect("create COM fixture");
+        std::fs::write(root.join("bat-only.bat"), []).expect("create batch fixture");
+        std::fs::write(root.join("cmd-only.cmd"), []).expect("create command fixture");
+        std::fs::write(root.join("ps1-only.ps1"), []).expect("create PowerShell fixture");
+        std::fs::write(root.join("vbs-only.vbs"), []).expect("create VBScript fixture");
+        std::fs::write(root.join("extensionless"), []).expect("create extensionless fixture");
+
+        assert!(bare_command_available(&root.join("bun")));
+        for name in ["com-only", "bat-only", "cmd-only", "ps1-only", "vbs-only"] {
+            assert!(!bare_command_available(&root.join(name)));
+        }
+        assert!(command_available_on_path("cmd-only.cmd", [root.clone()]));
+        assert!(command_available(&root.join("bun").to_string_lossy()));
+        assert!(command_available(
+            &root.join("extensionless").to_string_lossy()
+        ));
+        assert!(command_available(
+            &root.join("bat-only.bat").to_string_lossy()
+        ));
+        assert!(command_available(
+            &root.join("cmd-only.cmd").to_string_lossy()
+        ));
+        assert!(!command_available(
+            &root.join("ps1-only.ps1").to_string_lossy()
+        ));
+        assert!(!command_available(
+            &root.join("vbs-only.vbs").to_string_lossy()
+        ));
+
+        std::fs::remove_dir_all(root).expect("remove temporary command directory");
     }
 }

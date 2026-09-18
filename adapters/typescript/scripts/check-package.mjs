@@ -42,6 +42,24 @@ const expectedByPackage = {
     "package.json",
     "pi.fabric-adapter.json",
   ],
+  "nemo-fabric-adapters-opencode": [
+    "LICENSE",
+    "README.md",
+    "dist/bun-version.d.ts",
+    "dist/bun-version.js",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/configuration.d.ts",
+    "dist/configuration.js",
+    "dist/model-endpoint-proxy.d.ts",
+    "dist/model-endpoint-proxy.js",
+    "dist/opencode-sdk.d.ts",
+    "dist/opencode-sdk.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "opencode.fabric-adapter.json",
+    "package.json",
+  ],
 };
 const expectedFiles = expectedByPackage[manifest.name];
 if (expectedFiles === undefined) {
@@ -78,6 +96,34 @@ if (manifest.name === "nemo-fabric-adapters-pi") {
     }
     if (manifest.devDependencies?.[name] !== "0.84.2") {
       throw new Error(`The Pi harness package ${name} must be exact-pinned for development`);
+    }
+  }
+}
+if (manifest.name === "nemo-fabric-adapters-opencode") {
+  if (manifest.exports?.["./descriptor"] !== "./opencode.fabric-adapter.json") {
+    throw new Error("The OpenCode package must export its adapter descriptor");
+  }
+  const descriptor = JSON.parse(
+    await readFile(join(packageRoot, "opencode.fabric-adapter.json"), "utf8"),
+  );
+  if (descriptor.runner?.command !== "bun" || descriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("The OpenCode descriptor must run its packaged CLI with Bun");
+  }
+  if (manifest.engines?.bun !== ">=1.4.2" || manifest.engines?.node !== undefined) {
+    throw new Error("The OpenCode package must declare Bun, not Node.js, as its runtime engine");
+  }
+  if (manifest.dependencies?.["@opencode/sdk"] !== undefined) {
+    throw new Error("The OpenCode SDK must not be a production dependency");
+  }
+  for (const name of ["@opencode/core", "@opencode/sdk"]) {
+    if (manifest.peerDependencies?.[name] !== "2.0.3") {
+      throw new Error(`The OpenCode package must exact-pin its supported ${name} peer`);
+    }
+    if (manifest.peerDependenciesMeta?.[name]?.optional !== true) {
+      throw new Error(`The OpenCode package must declare ${name} as an optional peer`);
+    }
+    if (manifest.devDependencies?.[name] !== "2.0.3") {
+      throw new Error(`The OpenCode package must exact-pin ${name} for development`);
     }
   }
 }
