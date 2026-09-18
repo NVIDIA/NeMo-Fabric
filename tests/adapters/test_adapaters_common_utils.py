@@ -17,6 +17,18 @@ from unittest.mock import MagicMock
 
 import nemo_fabric_adapters.common.utils as common_utils
 import pytest
+from nemo_fabric import DiscoveryConfig
+from nemo_fabric import Fabric
+from nemo_fabric import FabricConfig
+from nemo_fabric import HarnessConfig
+from nemo_fabric import MetadataConfig
+from nemo_fabric import ModelConfig
+from nemo_fabric import RelayAtifConfig
+from nemo_fabric import RelayObservabilityConfig
+
+
+ROOT = Path(__file__).resolve().parents[2]
+CODEX_DESCRIPTOR = ROOT / "adapters/python/codex/codex.fabric-adapter.json"
 
 
 @pytest.mark.parametrize(
@@ -631,6 +643,45 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_v3_observability_con
         {"kind": "atof", "path": str(atof_file)},
         {"kind": "atif", "path": str(atif_file)},
     ]
+
+
+def test_load_relay_plugin_config_preserves_core_authored_atif_model_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    config = FabricConfig(
+        metadata=MetadataConfig(name="core-authored-relay-test"),
+        harness=HarnessConfig(adapter_id="nvidia.fabric.codex"),
+        discovery=DiscoveryConfig(local_paths=[CODEX_DESCRIPTOR]),
+        models={
+            "default": ModelConfig(provider="openai", model="gpt-5-codex")
+        },
+    )
+    config.enable_relay(
+        observability=RelayObservabilityConfig(
+            atif=RelayAtifConfig(enabled=True)
+        )
+    )
+    plan = Fabric().plan(config, base_dir=ROOT)
+    relay_config = plan.telemetry_plan["relay_config"]
+    config_path = tmp_path / "relay.json"
+    config_path.write_text(
+        json.dumps({"relay": {"config": relay_config}}), encoding="utf-8"
+    )
+    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(config_path))
+
+    plugin_config = common_utils.load_relay_plugin_config(
+        {
+            "agent_name": "core-authored-relay-test",
+            "base_dir": str(tmp_path),
+            "config": plan.agent_config,
+            "runtime_context": {"runtime_id": "runtime-current"},
+        }
+    )
+
+    assert (
+        plugin_config["components"][0]["config"]["atif"]["model_name"]
+        == "gpt-5-codex"
+    )
 
 
 def test_load_relay_plugin_config_keeps_empty_config_component_free(tmp_path: Path):
