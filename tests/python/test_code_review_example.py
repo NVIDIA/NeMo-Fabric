@@ -358,7 +358,8 @@ def test_pi_variant_projects_explicit_skill_and_tool_policy():
     assert plan.config.runtime.output_schema == "message"
 
 
-def test_pi_variant_requires_the_relay_extension_for_a_live_run():
+@pytest.mark.parametrize("stream", [False, True])
+def test_pi_variant_requires_the_relay_extension_for_a_live_run(stream: bool):
     completed = subprocess.run(
         [
             sys.executable,
@@ -367,6 +368,7 @@ def test_pi_variant_requires_the_relay_extension_for_a_live_run():
             "--variant",
             "pi",
             "--relay",
+            *(["--stream"] if stream else []),
         ],
         cwd=BASE_DIR.parents[1],
         text=True,
@@ -376,27 +378,6 @@ def test_pi_variant_requires_the_relay_extension_for_a_live_run():
 
     assert completed.returncode == 2
     assert "Pi Relay runs require --pi-relay-extension-path" in completed.stderr
-
-
-def test_pi_variant_rejects_relay_backed_streaming():
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "examples.code_review_agent",
-            "--variant",
-            "pi",
-            "--relay",
-            "--stream",
-        ],
-        cwd=BASE_DIR.parents[1],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert completed.returncode == 2
-    assert "Pi adapter does not support Relay-backed streaming yet" in completed.stderr
 
 
 @pytest.mark.parametrize(
@@ -454,9 +435,22 @@ async def test_example_entrypoint_shows_response_after_normalized_output(
     }
 
 
+@pytest.mark.parametrize(
+    "variant_options",
+    [
+        ["--variant", "nooa"],
+        [
+            "--variant",
+            "pi",
+            "--pi-relay-extension-path",
+            "/tmp/nemo-relay-pi-extension",
+        ],
+    ],
+)
 async def test_example_entrypoint_streams_relay_records_and_terminal_result(
     monkeypatch,
     capsys,
+    variant_options: list[str],
 ):
     result = MagicMock()
     result.output = RunOutput.from_mapping({"response": "streamed response"})
@@ -488,8 +482,7 @@ async def test_example_entrypoint_streams_relay_records_and_terminal_result(
         "argv",
         [
             "code_review_agent",
-            "--variant",
-            "nooa",
+            *variant_options,
             "--relay",
             "--stream",
             "--show-output",

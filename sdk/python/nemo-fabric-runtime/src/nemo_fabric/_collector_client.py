@@ -81,36 +81,70 @@ class _AtofCollectorClient:
             headers=headers,
         )
 
-    async def register(self, request_id: str) -> None:
+    async def register(
+        self,
+        request_id: str,
+        *,
+        correlation_mode: str | None = None,
+        capture_records: bool = True,
+        registration_token: str | None = None,
+    ) -> None:
+        payload = {"request_id": request_id}
+        if correlation_mode is not None:
+            payload["correlation_mode"] = correlation_mode
+        if not capture_records:
+            payload["capture_records"] = False
+        if registration_token is not None:
+            payload["registration_token"] = registration_token
         await self._request(
             "POST",
             "/v1/register",
             expected_status=201,
-            json={"request_id": request_id},
+            json=payload,
         )
 
-    async def deregister(self, request_id: str, *, remove_queue: bool) -> None:
+    async def deregister(
+        self,
+        request_id: str,
+        *,
+        remove_queue: bool,
+        pi_boundary: str | None = None,
+        registration_token: str | None = None,
+    ) -> None:
         encoded_request_id = quote(request_id, safe="")
+        params = {"remove_queue": "true" if remove_queue else "false"}
+        if pi_boundary is not None:
+            params["pi_boundary"] = pi_boundary
+        if registration_token is not None:
+            params["registration_token"] = registration_token
         await self._request(
             "DELETE",
             f"/v1/deregister-request/{encoded_request_id}",
             expected_status=204,
-            params={"remove_queue": "true" if remove_queue else "false"},
+            params=params,
         )
 
     async def stream(
         self,
         request_id: str,
+        *,
+        registration_token: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         encoded_request_id = quote(request_id, safe="")
         method = "GET"
         path = f"/v1/stream/{encoded_request_id}"
+        params = (
+            {"registration_token": registration_token}
+            if registration_token is not None
+            else None
+        )
         try:
             async with self._client.stream(
                 method,
                 f"{self.base_url}{path}",
                 headers={"Accept": "application/x-ndjson"},
                 timeout=self._stream_timeout,
+                params=params,
             ) as response:
                 if response.status_code != 200:
                     raise FabricRuntimeError(

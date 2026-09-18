@@ -84,8 +84,9 @@ The `nemo-fabric` package installs the runtime. The `relay` extra installs the
 NeMo Relay Python package, not the CLI required by Claude.
 Pi Relay configurations must set `runtime.artifacts` and
 `harness.settings.relay_extension_path`; relative extension paths resolve from
-the task's `environment.workspace`. The Pi adapter does not currently support
-Relay-backed `Runtime.invoke_stream()`.
+the task's `environment.workspace`. Applications that use Pi with Relay-backed
+`Runtime.invoke_stream()` must also install `nemo-fabric[streaming]` and use the
+default embedded collector.
 
 Hermes Agent 0.20 and later is no longer installable from PyPI. Prepare Hermes
 Agent task images by following the

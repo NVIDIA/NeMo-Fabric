@@ -256,8 +256,9 @@ directory; relative paths resolve from `environment.workspace`. Relay-enabled
 Pi configurations must also set `runtime.artifacts` so NeMo Fabric can provide
 the adapter-owned Relay configuration. Refer to the
 [Pi adapter guide](../integrations/harness/pi.mdx) for the complete
-configuration. Relay-backed `Runtime.invoke_stream()` correlation is not yet
-supported for Pi.
+configuration and the embedded collector streaming workflow. Do not set
+`launch_collector=False` for Pi streaming because the Pi extension does not
+attach the NeMo Fabric request IDs required by an externally managed collector.
 
 ## Source Installation Method
 
