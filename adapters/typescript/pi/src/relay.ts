@@ -239,87 +239,98 @@ export class PiRelayFactory implements PiRelayControllerFactory {
       return undefined;
     }
 
-    const extensionPath = await resolveRelayExtensionPath(input);
-    let executable: string;
-    try {
-      executable = await this.dependencies.resolveCommand(
-        input.baseDir,
-        process.env.FABRIC_NEMO_RELAY_COMMAND ?? process.env.FABRIC_TEST_NEMO_RELAY_COMMAND ?? "nemo-relay",
-      );
-    } catch (error) {
-      throw new LifecycleError(
-        "pi_relay_unavailable",
-        `NeMo Relay CLI executable was not found. ${RELAY_INSTALL_COMMAND}`,
-        { metadata: relayErrorMetadata(error) },
-      );
-    }
-    try {
-      await this.dependencies.checkContract(executable);
-    } catch (error) {
-      throw new LifecycleError(
-        "pi_relay_incompatible",
-        `The installed NeMo Relay CLI is incompatible. ${RELAY_INSTALL_COMMAND}`,
-        { metadata: relayErrorMetadata(error) },
-      );
-    }
-
-    let pluginConfig: RelayPluginConfig;
-    let atifMatchers: RelayAtifMatcher[];
-    let configPath: string;
-    let pluginConfigPath: string;
-    try {
-      pluginConfig = await this.dependencies.loadPluginConfig(input);
-      ({ configPath, pluginConfigPath } = await this.dependencies.writeConfigs(pluginConfig));
-      atifMatchers = await prepareRelayAtifMatchers(pluginConfig);
-    } catch (error) {
-      throw new LifecycleError(
-        "pi_relay_configuration_failed",
-        "NeMo Relay runtime configuration could not be prepared",
-        { metadata: relayErrorMetadata(error) },
-      );
-    }
-
-    const logPath = join(dirname(configPath), "gateway.log");
-    let port: number;
-    try {
-      port = await this.dependencies.findPort();
-    } catch (error) {
-      throw new LifecycleError("pi_relay_start_failed", "NeMo Relay gateway failed to start", {
-        metadata: relayErrorMetadata(error, { gateway_log_path: logPath }),
-      });
-    }
-    const bind = `127.0.0.1:${port}`;
-    const launch: RelayGatewayLaunch = {
-      executable,
-      configPath,
-      bind,
-      url: `http://${bind}`,
-      logPath,
-      ...(model.api === "openai-completions" || model.api === "openai-responses"
-        ? { openaiBaseUrl: model.baseUrl }
-        : {}),
-      ...(model.api === "anthropic-messages" ? { anthropicBaseUrl: model.baseUrl } : {}),
-    };
     const releaseEnvironment = reserveRelayEnvironment();
-    let child: ChildProcess;
+    let restoreEnvironment: (() => void) | undefined;
+    let started = false;
     try {
-      child = await this.dependencies.startGateway(launch, relayWorkingDirectory(input));
-    } catch (error) {
-      releaseEnvironment();
-      throw new LifecycleError("pi_relay_start_failed", "NeMo Relay gateway failed to start", {
-        metadata: relayErrorMetadata(error, { gateway_log_path: launch.logPath }),
+      const extensionPath = await resolveRelayExtensionPath(input);
+      let executable: string;
+      try {
+        executable = await this.dependencies.resolveCommand(
+          input.baseDir,
+          process.env.FABRIC_NEMO_RELAY_COMMAND ??
+            process.env.FABRIC_TEST_NEMO_RELAY_COMMAND ??
+            "nemo-relay",
+        );
+      } catch (error) {
+        throw new LifecycleError(
+          "pi_relay_unavailable",
+          `NeMo Relay CLI executable was not found. ${RELAY_INSTALL_COMMAND}`,
+          { metadata: relayErrorMetadata(error) },
+        );
+      }
+      try {
+        await this.dependencies.checkContract(executable);
+      } catch (error) {
+        throw new LifecycleError(
+          "pi_relay_incompatible",
+          `The installed NeMo Relay CLI is incompatible. ${RELAY_INSTALL_COMMAND}`,
+          { metadata: relayErrorMetadata(error) },
+        );
+      }
+
+      let pluginConfig: RelayPluginConfig;
+      let atifMatchers: RelayAtifMatcher[];
+      let configPath: string;
+      let pluginConfigPath: string;
+      try {
+        pluginConfig = await this.dependencies.loadPluginConfig(input);
+        ({ configPath, pluginConfigPath } = await this.dependencies.writeConfigs(pluginConfig));
+        atifMatchers = await prepareRelayAtifMatchers(pluginConfig);
+      } catch (error) {
+        throw new LifecycleError(
+          "pi_relay_configuration_failed",
+          "NeMo Relay runtime configuration could not be prepared",
+          { metadata: relayErrorMetadata(error) },
+        );
+      }
+
+      const logPath = join(dirname(configPath), "gateway.log");
+      let port: number;
+      try {
+        port = await this.dependencies.findPort();
+      } catch (error) {
+        throw new LifecycleError("pi_relay_start_failed", "NeMo Relay gateway failed to start", {
+          metadata: relayErrorMetadata(error, { gateway_log_path: logPath }),
+        });
+      }
+      const bind = `127.0.0.1:${port}`;
+      const launch: RelayGatewayLaunch = {
+        executable,
+        configPath,
+        bind,
+        url: `http://${bind}`,
+        logPath,
+        ...(model.api === "openai-completions" || model.api === "openai-responses"
+          ? { openaiBaseUrl: model.baseUrl }
+          : {}),
+        ...(model.api === "anthropic-messages" ? { anthropicBaseUrl: model.baseUrl } : {}),
+      };
+      let child: ChildProcess;
+      try {
+        child = await this.dependencies.startGateway(launch, relayWorkingDirectory(input));
+      } catch (error) {
+        throw new LifecycleError("pi_relay_start_failed", "NeMo Relay gateway failed to start", {
+          metadata: relayErrorMetadata(error, { gateway_log_path: launch.logPath }),
+        });
+      }
+      restoreEnvironment = setRelayEnvironment(launch.url, model, releaseEnvironment);
+      const runtime = new PiRelayRuntime({
+        extensionPath,
+        pluginConfig,
+        atifMatchers,
+        child,
+        launch,
+        pluginConfigPath,
+        restoreEnvironment,
+        stopGateway: this.dependencies.stopGateway,
       });
+      started = true;
+      return runtime;
+    } finally {
+      if (!started) {
+        (restoreEnvironment ?? releaseEnvironment)();
+      }
     }
-    const restoreEnvironment = setRelayEnvironment(launch.url, model, releaseEnvironment);
-    return new PiRelayRuntime({
-      extensionPath,
-      pluginConfig,
-      atifMatchers,
-      child,
-      launch,
-      pluginConfigPath,
-      restoreEnvironment,
-      stopGateway: this.dependencies.stopGateway,
-    });
   }
 }

@@ -804,6 +804,83 @@ test("resolves relative Relay extension paths from the workspace without contain
   }
 });
 
+test("reserves process-wide Relay state before asynchronous setup can interleave", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-interleaved-start-")));
+  const extensionPath = join(root, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  let continueFirstResolve;
+  const firstResolveBlocked = new Promise((resolve) => {
+    continueFirstResolve = resolve;
+  });
+  let firstResolveEntered;
+  const firstResolveStarted = new Promise((resolve) => {
+    firstResolveEntered = resolve;
+  });
+  let resolveAttempts = 0;
+  let stopAttempts = 0;
+  const factory = new PiRelayFactory({
+    async resolveCommand() {
+      resolveAttempts += 1;
+      if (resolveAttempts === 1) {
+        firstResolveEntered();
+        await firstResolveBlocked;
+      }
+      return "/opt/bin/nemo-relay";
+    },
+    async checkContract() {
+      return { version: [0, 9, 0] };
+    },
+    async loadPluginConfig() {
+      return { version: 1, components: [] };
+    },
+    async writeConfigs() {
+      return {
+        configPath: join(root, "relay-config", "config.toml"),
+        pluginConfigPath: join(root, "relay-config", "plugins.toml"),
+      };
+    },
+    async findPort() {
+      return 41001;
+    },
+    async startGateway() {
+      return new MockChild();
+    },
+    async stopGateway() {
+      stopAttempts += 1;
+    },
+  });
+  const input = startInput(root, { extensionPath });
+  const model = {
+    api: "openai-responses",
+    baseUrl: "https://api.openai.com/v1",
+  };
+  const settle = (promise) =>
+    promise.then(
+      (runtime) => ({ runtime }),
+      (error) => ({ error }),
+    );
+  const firstOutcomePromise = settle(factory.start(input, model));
+  try {
+    await firstResolveStarted;
+    const secondOutcome = await settle(factory.start(input, model));
+    continueFirstResolve();
+    const firstOutcome = await firstOutcomePromise;
+    try {
+      assert.equal(firstOutcome.error, undefined);
+      assert.equal(secondOutcome.runtime, undefined);
+      assert.equal(secondOutcome.error.code, "pi_relay_runtime_conflict");
+      assert.equal(resolveAttempts, 1);
+    } finally {
+      await firstOutcome.runtime?.stop();
+      await secondOutcome.runtime?.stop();
+    }
+    assert.equal(stopAttempts, 1);
+  } finally {
+    continueFirstResolve();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("keeps non-Relay startup inert and allows one Relay runtime per process", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-runtime-")));
   const extensionPath = join(root, "relay-extension.js");
@@ -931,6 +1008,10 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
       api: "openai-responses",
       baseUrl: "https://api.openai.com/v1",
     };
+    await assert.rejects(
+      new PiRelayFactory().start(startInput(root, { extensionPath: "missing" }), model),
+      (error) => error.code === "pi_relay_extension_not_found",
+    );
     await assert.rejects(
       new PiRelayFactory({
         async resolveCommand() {
