@@ -67,6 +67,17 @@ In addition to the evidence required by the public skill, include:
 - Wheel inspection when package data, dependencies, or extras change.
 - Deterministic CI coverage; keep credentialed live-target tests opt-in.
 
+For an adapter that packages or launches a third-party harness, also verify the
+repository integration rather than relying on the development workspace:
+
+- Install the packed artifact using the documented consumer command and verify
+  its required runtime and peer dependencies in that isolated environment.
+- When `doctor` checks an executable requirement, test its resolution on every
+  supported platform. Match the exact command-launch semantics rather than
+  assuming a platform's shell or extension-search behavior.
+- Do not commit generated reference changes caused solely by a local
+  tool-version difference.
+
 ## Validation
 
 Use `validate-change` to select the complete matrix. The common adapter checks

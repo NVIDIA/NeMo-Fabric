@@ -106,6 +106,24 @@ Python package's single model namespace. TypeScript types do not validate data
 received from a process or network boundary; validate untrusted values against
 the JSON Schemas included with the package.
 
+## Integrate an Upstream Harness Deliberately
+
+When an adapter wraps a third-party SDK, executable, service, or embedded
+runtime, establish the supported integration boundary before relying on it:
+
+- Identify the exact upstream release, required runtime, and documented
+  installation path. Verify that path in an isolated consumer environment;
+  do not infer it from a development workspace's dependency layout.
+- Check whether required upstream packages and executables can be resolved
+  before loading them. Report a missing requirement differently from a
+  dependency that was found but failed during import or initialization.
+- Decide whether the harness may discover project files, user-home
+  configuration, plugins, instructions, or credentials. If NeMo Fabric does
+  not declare that surface, disable discovery when the harness supports it
+  rather than depending on ambient host behavior.
+- If the adapter accepts a URL for an authenticated upstream endpoint, define
+  and test its transport and trust boundary.
+
 ## Map AgentConfig
 
 Accept a validated `AgentConfig` and translate each declared field once at the
@@ -288,6 +306,18 @@ Complete these checks before handing off an adapter:
 7. Test Relay correlation separately if telemetry support is claimed.
 8. Report the adapter package version, contract version, required-profile
    result, and every optional capability as supported or unsupported.
+
+When applicable, add focused evidence for the decisions above:
+
+- Run a real-harness regression with temporary project and user-home inputs
+  when configuration discovery could affect a NeMo Fabric runtime.
+- For a stateful harness, make a later result observably depend on an earlier
+  invocation; a test that merely invokes twice does not prove continuity.
+- Test a configured external endpoint against a local deterministic server when
+  its forwarding behavior is adapter-owned.
+- When the adapter owns an authenticated external connection, require evidence
+  of encrypted transport, certificate validation, and redirect handling that
+  does not forward credentials to another origin.
 
 Do not claim automated NeMo Fabric conformance until the published conformance
 suite exists and the exact adapter release passes it.
