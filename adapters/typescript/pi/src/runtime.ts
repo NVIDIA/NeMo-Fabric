@@ -5,8 +5,11 @@
 // to a PiSessionHandle and normalized results while keeping SDK construction
 // behind a factory for focused lifecycle testing.
 
-import type { AgentRunRequest, AgentRunResult, RuntimeContext } from "nemo-fabric-adapter-contract";
+import type { AgentRunRequest, AgentRunResult, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
+
+import { collectRelayArtifacts, type RelayArtifact } from "./relay-config.js";
+import type { PiRelayRuntime } from "./relay.js";
 
 export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | string;
 
@@ -19,6 +22,7 @@ export interface PiPromptOutcome {
 }
 
 export interface PiSessionHandle {
+  readonly relay?: PiRelayRuntime;
   prompt(text: string): Promise<PiPromptOutcome>;
   stop(): Promise<void>;
 }
@@ -33,6 +37,27 @@ function failed(code: string, message: string): AgentRunResult {
     output: null,
     error: { code, message, retryable: false },
   };
+}
+
+async function withRelayOutput(
+  result: AgentRunResult,
+  relay: PiRelayRuntime | undefined,
+): Promise<AgentRunResult> {
+  if (relay === undefined) {
+    return result;
+  }
+  const current: JsonObject =
+    typeof result.output === "object" && result.output !== null && !Array.isArray(result.output)
+      ? (result.output as JsonObject)
+      : {};
+  return {
+    ...result,
+    output: { ...current, ...(await relay.output(await collectNonAtifArtifacts(relay))) },
+  };
+}
+
+async function collectNonAtifArtifacts(relay: PiRelayRuntime): Promise<RelayArtifact[]> {
+  return collectRelayArtifacts(relay.pluginConfig, []);
 }
 
 export class PiAdapterRuntime implements AdapterRuntime {
@@ -60,44 +85,85 @@ export class PiAdapterRuntime implements AdapterRuntime {
       throw new LifecycleError("pi_runtime_unusable", "Pi adapter runtime cannot accept another invocation");
     }
     if (typeof request.input !== "string") {
-      return failed("pi_unsupported_input", "The Pi adapter accepts only plain-text input");
+      return withRelayOutput(
+        failed("pi_unsupported_input", "The Pi adapter accepts only plain-text input"),
+        this.session.relay,
+      );
     }
 
+    const relay = this.session.relay;
     const outcome = await this.session.prompt(request.input);
     if (!outcome.accepted) {
-      return failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run");
+      return withRelayOutput(failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"), relay);
     }
     if (outcome.shutdownRequested || outcome.stopReason === "aborted") {
       if (outcome.shutdownRequested) {
         this.unusable = true;
       }
-      return {
-        status: "cancelled",
-        output: null,
-        error: {
-          code: outcome.shutdownRequested ? "pi_extension_shutdown" : "pi_aborted",
-          message: outcome.shutdownRequested
-            ? "A Pi extension requested adapter shutdown"
-            : "The Pi invocation was aborted",
-          retryable: false,
+      return withRelayOutput(
+        {
+          status: "cancelled",
+          output: null,
+          error: {
+            code: outcome.shutdownRequested ? "pi_extension_shutdown" : "pi_aborted",
+            message: outcome.shutdownRequested
+              ? "A Pi extension requested adapter shutdown"
+              : "The Pi invocation was aborted",
+            retryable: false,
+          },
         },
-      };
+        relay,
+      );
     }
     if (outcome.stopReason === "error") {
-      return failed("pi_model_error", outcome.errorMessage || "The Pi model invocation failed");
+      return withRelayOutput(
+        failed("pi_model_error", outcome.errorMessage || "The Pi model invocation failed"),
+        relay,
+      );
     }
     if (outcome.text === undefined || outcome.text.length === 0) {
-      return failed("pi_no_assistant_response", "Pi completed without a final assistant text response");
+      return withRelayOutput(
+        failed("pi_no_assistant_response", "Pi completed without a final assistant text response"),
+        relay,
+      );
     }
-    return { status: "succeeded", output: { response: outcome.text } };
+    return withRelayOutput({ status: "succeeded", output: { response: outcome.text } }, relay);
   }
 
   async stop(): Promise<void> {
     const session = this.session;
-    this.session = undefined;
-    this.unusable = false;
     if (session !== undefined) {
-      await session.stop();
+      let failure: unknown;
+      try {
+        await session.stop();
+      } catch (error) {
+        failure = error;
+      }
+      try {
+        await session.relay?.stop();
+      } catch (error) {
+        if (failure === undefined) {
+          failure = error;
+        } else if (error instanceof LifecycleError) {
+          failure = new LifecycleError(error.code, "Pi session and NeMo Relay cleanup failed", {
+            retryable: error.retryable,
+            metadata: {
+              ...error.metadata,
+              session_error: failure instanceof Error ? failure.message : String(failure),
+            },
+          });
+        } else {
+          failure = new AggregateError([failure, error], "Pi session and NeMo Relay cleanup failed");
+        }
+      }
+      if (failure !== undefined) {
+        this.unusable = true;
+        // Retain the handle so a host retry can reach Relay cleanup that failed,
+        // but prevent another invocation from reaching a disposed Pi session.
+        throw failure;
+      }
+      this.session = undefined;
+      this.unusable = false;
     }
   }
 }

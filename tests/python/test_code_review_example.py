@@ -249,7 +249,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
             relay_enabled,
         )
         for variant, adapter_id in variants
-        for relay_enabled in ((False,) if variant == "pi" else (False, True))
+        for relay_enabled in (False, True)
     )
 
     for options, adapter_id, relay_enabled in cases:
@@ -358,7 +358,7 @@ def test_pi_variant_projects_explicit_skill_and_tool_policy():
     assert plan.config.runtime.output_schema == "message"
 
 
-def test_pi_variant_rejects_relay_before_planning():
+def test_pi_variant_requires_the_relay_extension_for_a_live_run():
     completed = subprocess.run(
         [
             sys.executable,
@@ -367,7 +367,6 @@ def test_pi_variant_rejects_relay_before_planning():
             "--variant",
             "pi",
             "--relay",
-            "--plan",
         ],
         cwd=BASE_DIR.parents[1],
         text=True,
@@ -376,7 +375,28 @@ def test_pi_variant_rejects_relay_before_planning():
     )
 
     assert completed.returncode == 2
-    assert "Pi adapter does not support Relay yet" in completed.stderr
+    assert "Pi Relay runs require --pi-relay-extension-path" in completed.stderr
+
+
+def test_pi_variant_rejects_relay_backed_streaming():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "pi",
+            "--relay",
+            "--stream",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "Pi adapter does not support Relay-backed streaming yet" in completed.stderr
 
 
 @pytest.mark.parametrize(
