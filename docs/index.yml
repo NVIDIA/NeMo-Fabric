@@ -74,6 +74,8 @@ navigation:
             path: ./integrations/harness/pi.mdx
           - page: Remote Agent
             path: ./integrations/harness/remote-agent.mdx
+          - page: OpenClaw
+            path: ./integrations/harness/openclaw.mdx
   - section: Reference
     contents:
       - section: API
