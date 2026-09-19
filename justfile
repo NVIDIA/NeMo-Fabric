@@ -358,22 +358,13 @@ install-typescript: install-typescript-contract install-typescript-adapters
 # The documented https://hermes-agent.nousresearch.com/install.sh script is
 # tied directly to Python 3.11, we also want to ensure that we are installing
 # into our Fabric virtualenv
-# 29112bef099274229cadff79cdff7bf7b99c4b77 aligns with Hermes Agent v0.21.0.
-# metadata-propagate.patch forwards OpenAI request metadata into Hermes Relay
-# turn metadata. Remove it when the pinned Hermes revision includes that behavior.
-# Install the pinned Hermes Agent source with Fabric Relay metadata propagation.
+# 47edd6455bbb66ac94e00be0ca3e888680f02882 is the head of NousResearch/hermes-agent#115343 (Relay 0.9 support on Hermes 0.21.3).
 install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
-    hermes_commit="29112bef099274229cadff79cdff7bf7b99c4b77"
+    hermes_commit="47edd6455bbb66ac94e00be0ca3e888680f02882"
     hermes_checkout="$REPO_ROOT/external/hermes-agent"
-    hermes_patch="$REPO_ROOT/adapters/python/hermes/metadata-propagate.patch"
     hermes_diff_pathspec=()
-
-    if [[ ! -f "$hermes_patch" ]]; then
-        echo "ERROR: Hermes Agent patch not found: $hermes_patch" >&2
-        exit 1
-    fi
 
     if [[ -e "$hermes_checkout" && ! -d "$hermes_checkout/.git" ]]; then
         echo "ERROR: expected a Git checkout at $hermes_checkout" >&2
@@ -398,40 +389,9 @@ install-hermes-agent:
         git -C "$hermes_checkout" fetch --depth 1 origin "$hermes_commit"
         git -C "$hermes_checkout" checkout --quiet --detach FETCH_HEAD
     fi
-    if ! git -C "$hermes_checkout" diff --cached --quiet; then
-        echo "ERROR: Hermes Agent checkout has staged changes: $hermes_checkout" >&2
+    if ! git -C "$hermes_checkout" diff --cached --quiet || ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
+        echo "ERROR: Hermes Agent checkout has tracked changes: $hermes_checkout" >&2
         exit 1
-    fi
-    if git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
-        if ! git -C "$hermes_checkout" apply --check "$hermes_patch"; then
-            echo "ERROR: Hermes Agent patch does not apply to $hermes_commit" >&2
-            exit 1
-        fi
-        git -C "$hermes_checkout" apply "$hermes_patch"
-    else
-        # Validate the already-applied patch without depending on Git's
-        # platform-specific diff serialization.
-        patch_reversed=false
-        restore_hermes_patch() {
-            if [[ "$patch_reversed" == true ]]; then
-                git -C "$hermes_checkout" apply "$hermes_patch" || \
-                    echo "ERROR: failed to restore Hermes Agent metadata patch" >&2
-            fi
-        }
-        trap restore_hermes_patch EXIT
-        if ! git -C "$hermes_checkout" apply --reverse --check "$hermes_patch"; then
-            echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
-            exit 1
-        fi
-        git -C "$hermes_checkout" apply --reverse "$hermes_patch"
-        patch_reversed=true
-        if ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
-            echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
-            exit 1
-        fi
-        git -C "$hermes_checkout" apply "$hermes_patch"
-        patch_reversed=false
-        trap - EXIT
     fi
     uv sync --inexact --reinstall-package hermes-agent
 

@@ -73,7 +73,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: NousResearch/hermes-agent
-          ref: 29112bef099274229cadff79cdff7bf7b99c4b77
+          ref: 47edd6455bbb66ac94e00be0ca3e888680f02882
           path: external/hermes-agent
           persist-credentials: false
 
@@ -136,7 +136,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: NousResearch/hermes-agent
-          ref: 29112bef099274229cadff79cdff7bf7b99c4b77
+          ref: 47edd6455bbb66ac94e00be0ca3e888680f02882
           path: external/hermes-agent
           persist-credentials: false
 
@@ -213,7 +213,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: NousResearch/hermes-agent
-          ref: 29112bef099274229cadff79cdff7bf7b99c4b77
+          ref: 47edd6455bbb66ac94e00be0ca3e888680f02882
           path: external/hermes-agent
           persist-credentials: false
 
