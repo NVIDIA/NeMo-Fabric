@@ -34,6 +34,10 @@ def finalize_hermes_relay_session(session_id: str) -> None:
         invoke_hook("on_session_finalize", session_id=session_id, platform="fabric")
     else:
         finalize_session(session_id=session_id, platform="fabric")
+    from nemo_relay import subscribers
+
+    # Relay enqueues subscriber work; the ATIF file is written by one, so wait for it.
+    subscribers.flush()
 
 
 def validate_hermes_telemetry_provider(runtime_context: RuntimeContext) -> None:

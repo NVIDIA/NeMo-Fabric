@@ -119,7 +119,7 @@ class EchoInteractiveAgent:
         await nemo_relay.tools.execute(
             "execute_python",
             {"code": "result = 'fixture'"},
-            lambda _args: {"result": "fixture"},
+            lambda _args: nemo_relay.ToolExecutionResult({"result": "fixture"}),
         )
         self.event_manager.emit(
             "AgentMessage",

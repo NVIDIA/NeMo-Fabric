@@ -1,23 +1,21 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Integration coverage for the Relay scope leak the Deep Agents adapter contains.
+"""Integration coverage for overlapping LangGraph runs on Relay's shared scope stack.
 
-The Deep Agents unit tests monkeypatch a context manager that raises, which is enough to
-pin result normalization but cannot reproduce the state leak: the real callback drops a
-run from ``_scope_handles`` *before* its pop fails, so the scope stays on Relay's shared
-stack and outlives the invocation. These tests drive the actual Relay callback and scope
-so that behavior is covered rather than assumed.
+Relay restores the stack after an out-of-order sibling pop. The Deep Agents adapter
+still captures a baseline and quarantines telemetry if a scope is ever stranded, so
+these tests drive the actual Relay callback and scope rather than a stub.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 import os
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from nemo_fabric_adapters.deepagents import adapter
@@ -31,12 +29,7 @@ from nemo_relay.integrations.langchain.callbacks import (  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def isolated_scope_stack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """Give each test its own Relay scope stack.
-
-    These tests strand a scope on purpose, and the stack is process-global, so without
-    isolation the damage would leak into every test that runs afterwards. ``ContextVar``
-    assignment is the only way to install a stack for the current context.
-    """
+    """Give each test its own Relay scope stack; the stack is process-global."""
 
     os.environ["XDG_CONFIG_HOME"] = str(tmp_path / "xdg-config")
     monkeypatch.chdir(tmp_path)
@@ -48,11 +41,7 @@ def isolated_scope_stack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
 
 async def _overlapping_chain_runs(handler: NemoRelayCallbackHandler) -> None:
-    """Close two sibling chain runs out of LIFO order, as LangGraph's tasks do.
-
-    A starts, B starts, A ends, B ends. Relay's stack requires B to close before A, so
-    A's pop is rejected.
-    """
+    """Close two sibling chain runs out of LIFO order, as LangGraph's tasks do."""
 
     run_a, run_b = uuid.uuid4(), uuid.uuid4()
     a_started, b_started, allow_b_end = (asyncio.Event() for _ in range(3))
@@ -74,44 +63,16 @@ async def _overlapping_chain_runs(handler: NemoRelayCallbackHandler) -> None:
     await asyncio.gather(asyncio.create_task(drive_a()), asyncio.create_task(drive_b()))
 
 
-async def test_overlapping_chain_runs_strand_a_scope_on_the_shared_stack(caplog):
-    """The documented failure, reproduced against the installed Relay."""
-
+async def test_overlapping_chain_runs_leave_the_shared_stack_restored():
     handler = NemoRelayCallbackHandler()
     baseline = nemo_relay.scope.get_handle()
 
-    with caplog.at_level(logging.ERROR):
-        with pytest.raises(RuntimeError, match="not at the top of the stack"):
-            with nemo_relay.scope.scope(
-                "deepagents-request", nemo_relay.ScopeType.Agent
-            ):
-                await _overlapping_chain_runs(handler)
+    with nemo_relay.scope.scope("deepagents-request", nemo_relay.ScopeType.Agent):
+        await _overlapping_chain_runs(handler)
 
-    # The callback stopped tracking the run before its pop failed...
     assert handler._scope_handles == {}
-    # ...but the scope is still on Relay's stack, and stays current after the turn.
-    current = nemo_relay.scope.get_handle()
-    assert current.uuid != baseline.uuid
-    assert current.name == "A"
-
-
-async def test_the_adapter_detects_the_stranded_scope():
-    """``_scope_top_unchanged`` is what turns that leak into a sticky quarantine.
-
-    Without a real stranded scope this cannot be exercised, which is why it lives here
-    rather than beside the monkeypatched unit tests.
-    """
-
-    handler = NemoRelayCallbackHandler()
-    baseline = adapter._current_scope_handle()
-    assert baseline is not None
+    assert nemo_relay.scope.get_handle().uuid == baseline.uuid
     assert adapter._scope_top_unchanged(baseline) is True
-
-    with pytest.raises(RuntimeError, match="not at the top of the stack"):
-        with nemo_relay.scope.scope("deepagents-request", nemo_relay.ScopeType.Agent):
-            await _overlapping_chain_runs(handler)
-
-    assert adapter._scope_top_unchanged(baseline) is False
 
 
 async def test_a_clean_turn_leaves_the_stack_restored():
@@ -145,8 +106,10 @@ class _NoopPlugin:
     """Stand-in for the Relay plugin, which needs a live gateway config to start."""
 
     @contextlib.asynccontextmanager
-    async def plugin(self, config: object):
-        yield {"diagnostics": [], "runtime_diagnostics": []}
+    async def activate(self, config: object):
+        yield SimpleNamespace(
+            report={"config": {"diagnostics": [], "runtime_diagnostics": []}}
+        )
 
 
 async def test_uuid_request_id_seeds_real_relay_parent(monkeypatch):
@@ -184,25 +147,15 @@ async def test_uuid_request_id_seeds_real_relay_parent(monkeypatch):
     assert nemo_relay.scope.get_handle().uuid == baseline.uuid
 
 
-async def test_a_poisoned_runtime_quarantines_its_next_turn(monkeypatch):
-    """Two ordered turns end to end: real scope, real callback, real stack.
-
-    The unit tests prove the quarantine against a monkeypatched context manager, which
-    by construction cannot show that the adapter reads the *same* state Relay actually
-    leaves behind. This drives the real callback overlap through the adapter's telemetry
-    path twice, so baseline capture, detection, and the sticky verdict are exercised
-    against Relay rather than against a stub. Only the plugin and the agent are stubbed:
-    the plugin needs a live gateway, and the agent is irrelevant to scope bookkeeping.
-    """
+async def test_overlapping_turns_stay_telemetry_clean(monkeypatch):
+    """Two ordered turns end to end: real scope, real callback, real stack."""
 
     async def fake_invoke(agent, user_message, thread_id, callbacks=None):
         if callbacks:
-            # Turn 1 runs the overlapping chain callbacks that strand a scope.
             await _overlapping_chain_runs(callbacks[0])
         return {"messages": []}, [], []
 
     monkeypatch.setattr(adapter, "invoke_compiled_agent", fake_invoke)
-
     recording_scope = _RecordingScope()
     runtime = adapter.DeepAgentsRuntime()
     runtime._agent = object()
@@ -212,31 +165,12 @@ async def test_a_poisoned_runtime_quarantines_its_next_turn(monkeypatch):
     runtime._relay_scope_type = nemo_relay.ScopeType
     runtime._callback_handler_type = NemoRelayCallbackHandler
 
-    first = await runtime._invoke_with_telemetry(
-        "hello",
-        "request-1",
-        "invocation-1",
-    )
+    first = await runtime._invoke_with_telemetry("hello", "request-1", "invocation-1")
     second = await runtime._invoke_with_telemetry(
-        "hello again",
-        "request-2",
-        "invocation-2",
+        "hello again", "request-2", "invocation-2"
     )
 
-    # Turn 1 completed, reported the real Relay fault, and poisoned the runtime.
-    assert first.error is None
-    assert "not at the top of the stack" in first.telemetry_error
-    assert runtime._telemetry_quarantine is not None
-
-    # Turn 2 is functionally fine, never opens a scope on the dirty stack, and cannot
-    # report itself telemetry-clean.
-    assert second.error is None
-    assert second.telemetry_error == runtime._telemetry_quarantine
-    assert "not at the top of the stack" not in second.telemetry_error
-    assert recording_scope.opened == ["deepagents-request"]
-    assert recording_scope.metadata == [
-        {
-            "nemo_fabric_request_id": "request-1",
-            "nemo_fabric_invocation_id": "invocation-1",
-        }
-    ]
+    assert (first.error, first.telemetry_error) == (None, None)
+    assert (second.error, second.telemetry_error) == (None, None)
+    assert runtime._telemetry_quarantine is None
+    assert recording_scope.opened == ["deepagents-request", "deepagents-request"]
