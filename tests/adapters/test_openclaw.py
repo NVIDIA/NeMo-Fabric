@@ -184,8 +184,7 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
         "temperature": 0.2,
         "top_p": 0.8,
         "max_completion_tokens": 64,
-        "stream": True,
-        "stream_options": {"include_usage": True},
+        "stream": False,
         "user": "openclaw-runtime",
     }
     assert generated["gateway"]["bind"] == "loopback"
@@ -202,7 +201,8 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert generated["agents"]["defaults"]["workspace"] == str(tmp_path)
     assert generated["agents"]["defaults"]["model"] == {"primary": "test/fabric-echo"}
     assert generated["agents"]["defaults"]["models"]["test/fabric-echo"] == {
-        "params": {"temperature": 0.2, "topP": 0.8, "maxTokens": 64}
+        "params": {"temperature": 0.2, "topP": 0.8, "maxTokens": 64},
+        "agentRuntime": {"id": "openclaw"},
     }
     assert generated["skills"]["load"]["extraDirs"] == [
         str((tmp_path / "skills").resolve())
