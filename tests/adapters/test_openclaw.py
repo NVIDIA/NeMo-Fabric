@@ -264,6 +264,33 @@ async def test_openclaw_invoke_rejects_exited_gateway(tmp_path: Path):
     runtime._client.stream.assert_not_called()
 
 
+async def test_openclaw_read_failure_is_not_retryable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    context = _context(tmp_path)
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    runtime._client = MagicMock()
+    runtime._config = _config(tmp_path / "openclaw")
+    runtime._context = context
+    runtime._port = 12345
+    runtime._process = mock_process
+    request = adapter.httpx.Request(
+        "POST", "http://127.0.0.1:12345/v1/chat/completions"
+    )
+    mock_invoke = AsyncMock(
+        side_effect=adapter.httpx.ReadError("response disconnected", request=request)
+    )
+    monkeypatch.setattr(adapter, "_invoke_gateway", mock_invoke)
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.invoke(AgentRunRequest(input="Hello."), context)
+
+    assert caught.value.code == "openclaw_transport_failed"
+    assert caught.value.retryable is False
+
+
 async def test_openclaw_stop_continues_after_cleanup_failures(
     monkeypatch: pytest.MonkeyPatch,
 ):

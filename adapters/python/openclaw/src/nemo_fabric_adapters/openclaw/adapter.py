@@ -728,7 +728,7 @@ class OpenClawRuntime:
             raise lifecycle.LifecycleError(
                 "openclaw_transport_failed",
                 "OpenClaw Gateway request could not be completed",
-                retryable=True,
+                retryable=False,
             ) from error
         except Exception as error:
             raise lifecycle.LifecycleError(
