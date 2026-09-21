@@ -66,9 +66,7 @@ custom OpenAI-compatible endpoint, set the model's `base_url` and, when needed,
 `api_key_env`.
 
 By default, the adapter chooses an available local base port. Set `port` to pin
-one. OpenClaw derives additional ports from the base port, so the adapter checks
-the required derived ports and verifies that the browser port range has
-capacity before startup. The largest accepted base port is 65425.
+one. OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the derived CDP range available when using OpenClaw browser features. The largest accepted base port is 65425.
 
 ## Execution and Isolation
 

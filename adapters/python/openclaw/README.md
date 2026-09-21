@@ -50,6 +50,8 @@ The following harness settings are supported:
 | `connect_timeout_seconds` | `10` | Local HTTP connection timeout. |
 | `read_timeout_seconds` | `600` | Local HTTP response timeout. |
 
+OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the derived CDP range available when using OpenClaw browser features.
+
 For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
 adapter generates an OpenClaw custom provider using the
 `openai-completions` API adapter. Set `api_key_env` when that provider requires
