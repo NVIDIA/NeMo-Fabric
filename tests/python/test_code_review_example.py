@@ -20,6 +20,7 @@ from examples.code_review_agent import codex_config
 from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import hermes_config
 from examples.code_review_agent import nooa_config
+from examples.code_review_agent import openclaw_config
 from examples.code_review_agent import pi_config
 from examples.code_review_agent import with_github_mcp
 from examples.code_review_agent import with_native_otel
@@ -40,9 +41,10 @@ def test_variant_builders_return_independent_complete_configs():
     claude = claude_config()
     deepagents = deepagents_config()
     nooa = nooa_config()
+    openclaw = openclaw_config()
     pi = pi_config()
 
-    for config in (base, hermes, codex, claude, deepagents, nooa, pi):
+    for config in (base, hermes, codex, claude, deepagents, nooa, openclaw, pi):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
@@ -85,6 +87,13 @@ def test_variant_builders_return_independent_complete_configs():
     assert nooa.workflow is not None
     assert nooa.workflow.target_id == "nvidia.nooa.coding-agent"
     assert nooa.skills is not None
+    assert openclaw.harness.adapter_id == "nvidia.fabric.openclaw"
+    assert openclaw.models["default"].provider == "nvidia"
+    assert openclaw.models["default"].api_key_env == "NVIDIA_API_KEY"
+    assert openclaw.skills is not None
+    assert openclaw.skills.paths == ["./skills/code-review"]
+    assert openclaw.tools is not None
+    assert openclaw.tools.enabled == ["read"]
     assert base.mcp is None
     assert base.skills is not None
     skill_path = BASE_DIR / base.skills.paths[0]
@@ -212,6 +221,7 @@ def test_variants_plan_from_complete_configs():
         codex_config(),
         claude_config(),
         deepagents_config(),
+        openclaw_config(),
         pi_config(),
     ):
         plan = client.plan(config, base_dir=BASE_DIR)
@@ -240,6 +250,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         ("claude", "nvidia.fabric.claude"),
         ("deepagents", "nvidia.fabric.langchain.deepagents"),
         ("nooa", "nvidia.fabric.nooa"),
+        ("openclaw", "nvidia.fabric.openclaw"),
         ("pi", "nvidia.fabric.pi"),
     )
     cases = tuple(
@@ -250,6 +261,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         )
         for variant, adapter_id in variants
         for relay_enabled in (False, True)
+        if variant != "openclaw" or not relay_enabled
     )
 
     for options, adapter_id, relay_enabled in cases:
@@ -397,6 +409,26 @@ def test_pi_variant_rejects_relay_backed_streaming():
 
     assert completed.returncode == 2
     assert "Pi adapter does not support Relay-backed streaming yet" in completed.stderr
+
+
+def test_openclaw_variant_rejects_relay_telemetry():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "openclaw",
+            "--relay",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "OpenClaw adapter does not support Relay telemetry" in completed.stderr
 
 
 @pytest.mark.parametrize(
