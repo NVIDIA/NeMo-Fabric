@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import uuid
+from collections.abc import Mapping
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -259,20 +260,51 @@ def native_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
     return config if isinstance(config, dict) else {}
 
 
-def relay_request_context(request_id: str) -> tuple[Any, dict[str, str]]:
-    """Use a UUID request ID as Relay's propagated root and preserve metadata."""
+#: Namespaced so a caller's own ``session_id`` cannot silently regroup its traces.
+SESSION_ROOT_CONTEXT_KEY = "relay_session_root"
+
+
+def _uuid_or_none(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        return None
+
+
+def session_root_id(context: Mapping[str, Any] | None) -> str | None:
+    """Return the caller's Relay session root, ignoring a non-UUID value."""
+
+    return _uuid_or_none(context.get(SESSION_ROOT_CONTEXT_KEY)) if context else None
+
+
+def relay_request_context(
+    request_id: str,
+    session_root: str | None = None,
+) -> tuple[Any, dict[str, str]]:
+    """Root Relay's propagation at the session and parent it at the request.
+
+    Relay takes ATIF session identity from the root, so without a session root each
+    request becomes its own session. Relay rejects a non-UUID root, so one is dropped
+    here rather than raised from inside telemetry setup.
+    """
 
     metadata = {"nemo_fabric_request_id": request_id}
-    try:
-        request_uuid = str(uuid.UUID(request_id))
-    except ValueError:
+    request_uuid = _uuid_or_none(request_id)
+    session_uuid = _uuid_or_none(session_root)
+
+    root_uuid = session_uuid or request_uuid
+    if root_uuid is None:
         return nullcontext(), metadata
+    if session_uuid is not None:
+        metadata["nemo_fabric_session_root"] = session_uuid
 
     from nemo_relay import PropagationContext
     from nemo_relay import create_scope_stack_from_propagation
     from nemo_relay import use_scope_stack
 
-    propagation = PropagationContext(request_uuid, root_uuid=request_uuid)
+    propagation = PropagationContext(request_uuid or root_uuid, root_uuid=root_uuid)
     stack = create_scope_stack_from_propagation(propagation)
     return use_scope_stack(stack), metadata
 

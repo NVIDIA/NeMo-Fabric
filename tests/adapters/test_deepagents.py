@@ -797,6 +797,44 @@ async def test_request_id_relay_correlation(
         assert fake_relay["used_propagation_stacks"] == fake_relay["propagation_stacks"]
 
 
+SESSION_ROOT = "018f47a4-0000-7d94-8e61-9f0f89b5d312"
+REQUEST_UUID = "018f47a4-3af7-7d94-8e61-9f0f89b5d312"
+
+
+@pytest.mark.parametrize(
+    ("request_id", "expected_parent"),
+    [(REQUEST_UUID, REQUEST_UUID), ("request-1", SESSION_ROOT)],
+)
+async def test_session_root_in_request_context_roots_relay_propagation(
+    tmp_path,
+    make_payload,
+    monkeypatch,
+    fake_relay,
+    request_id,
+    expected_parent,
+):
+    monkeypatch.setattr(
+        adapter.common_utils,
+        "load_relay_plugin_config",
+        lambda _payload: {"version": 1, "components": []},
+    )
+    payload = make_payload(tmp_path)
+    payload["request"]["request_id"] = request_id
+    payload["request"]["context"] = {
+        adapter.common_utils.SESSION_ROOT_CONTEXT_KEY: SESSION_ROOT
+    }
+    payload["runtime_context"]["telemetry"] = {
+        "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
+    }
+
+    await invoke_once(payload)
+
+    assert fake_relay["propagation_contexts"] == [(expected_parent, SESSION_ROOT)]
+    assert fake_relay["scope_metadata"][0]["nemo_fabric_session_root"] == SESSION_ROOT
+    assert fake_relay["used_propagation_stacks"] == fake_relay["propagation_stacks"]
+
+
 async def test_ambient_relay_config_fails_runtime_start_before_agent_creation(
     tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
 ):
