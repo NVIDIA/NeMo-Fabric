@@ -15,7 +15,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-ini
     && rm -f /tmp/rustup-init.sh
 ENV PATH=/root/.cargo/bin:$PATH
 
-RUN npm install --global openclaw@latest --allow-scripts=openclaw
+RUN npm install --global openclaw@2026.9.4 --allow-scripts=openclaw
 
 COPY vendor/nemo-fabric /opt/nemo-fabric
 RUN pip install --no-cache-dir \

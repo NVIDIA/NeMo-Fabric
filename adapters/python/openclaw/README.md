@@ -14,7 +14,7 @@ Install OpenClaw separately through npm, then install the adapter:
 
 ```bash
 # Requires Node.js >=24.16.0 <25 or >=26.1.0, and npm 11.16+.
-npm install --global openclaw@latest --allow-scripts=openclaw
+npm install --global openclaw@2026.9.4 --allow-scripts=openclaw
 pip install "nemo-fabric[openclaw]"
 ```
 
