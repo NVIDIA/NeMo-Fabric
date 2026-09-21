@@ -45,7 +45,8 @@ Follow these repository-specific requirements after applying the public skill:
    `[tool.uv.sources]`, `python_projects` in `justfile`, applicable catalogs,
    and CI enumerations. Ship its descriptor under
    `share/nemo-fabric/adapters/<name>`.
-5. Regenerate lockfiles and inspect the root and leaf wheel metadata. Verify
+5. Update `examples/code_review_agent/` to support the new adapter.
+6. Regenerate lockfiles and inspect the root and leaf wheel metadata. Verify
    root-to-leaf delegation and every published leaf extra.
 
 Keep descriptor claims, implementation, focused tests, public documentation,
