@@ -152,44 +152,6 @@ def _select_port(settings: dict[str, Any]) -> int:
     )
 
 
-def _mcp_oauth_config(
-    name: str, authentication: contract.McpAuthenticationConfig
-) -> dict[str, str]:
-    if isinstance(authentication, contract.McpServiceAccountConfig):
-        raise lifecycle.LifecycleError(
-            "openclaw_unsupported_mcp_authentication",
-            f"OpenClaw MCP server {name!r} does not support service_account authentication",
-            metadata={"field": f"mcp.servers.{name}.authentication.type"},
-        )
-
-    unsupported = {
-        "enable_dynamic_registration": not authentication.enable_dynamic_registration,
-        "client_secret_env": authentication.client_secret_env is not None,
-        "client_id": authentication.client_id is not None,
-        "client_name": authentication.client_name is not None,
-        "token_endpoint_auth_method": authentication.token_endpoint_auth_method
-        is not None,
-        "authorization_timeout_seconds": authentication.authorization_timeout_seconds
-        != 300,
-    }
-    for field, configured in unsupported.items():
-        if configured:
-            raise lifecycle.LifecycleError(
-                "openclaw_unsupported_mcp_authentication",
-                f"OpenClaw MCP server {name!r} authentication.{field} is not supported",
-                metadata={"field": f"mcp.servers.{name}.authentication.{field}"},
-            )
-
-    return {
-        key: value
-        for key, value in {
-            "scope": authentication.scope,
-            "redirectUrl": authentication.redirect_uri,
-        }.items()
-        if value is not None
-    }
-
-
 def _mcp_config(config: contract.AgentConfig) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for name, server in (config.mcp.servers if config.mcp else {}).items():
@@ -204,6 +166,12 @@ def _mcp_config(config: contract.AgentConfig) -> dict[str, Any]:
                 f"OpenClaw MCP server {name!r} uses unsupported transport {server.transport!r}",
                 metadata={"field": f"mcp.servers.{name}.transport"},
             )
+        if server.authentication is not None:
+            raise lifecycle.LifecycleError(
+                "openclaw_unsupported_mcp_authentication",
+                f"OpenClaw MCP server {name!r} does not support authentication",
+                metadata={"field": f"mcp.servers.{name}.authentication"},
+            )
         item: dict[str, Any] = {"enabled": True, "transport": transport}
         if transport == "stdio":
             item.update(command=server.url, args=server.args)
@@ -214,15 +182,6 @@ def _mcp_config(config: contract.AgentConfig) -> dict[str, Any]:
             if server.custom_headers:
                 common_utils.validate_http_headers(name, server.custom_headers)
                 item["headers"] = server.custom_headers
-        if server.authentication is not None:
-            if transport == "stdio":
-                raise lifecycle.LifecycleError(
-                    "openclaw_unsupported_mcp_authentication",
-                    f"OpenClaw MCP server {name!r} cannot use authentication with stdio transport",
-                    metadata={"field": f"mcp.servers.{name}.authentication"},
-                )
-            item["auth"] = "oauth"
-            item["oauth"] = _mcp_oauth_config(name, server.authentication)
         tool_filter: dict[str, list[str]] = {}
         if server.allowed_tools is not None:
             tool_filter["include"] = server.allowed_tools

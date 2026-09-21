@@ -53,10 +53,4 @@ adapter generates an OpenClaw custom provider using the
 `openai-completions` API adapter. Set `api_key_env` when that provider requires
 an API key.
 
-Remote MCP servers support `authentication.type: oauth2` with dynamic client
-registration. The adapter maps `scopes` and `redirect_uri` to OpenClaw OAuth
-configuration. It rejects service accounts and OAuth fields that OpenClaw
-cannot represent, including pre-registered client credentials and custom
-authorization timeouts.
-
 Relay telemetry and native OpenTelemetry are not supported.
