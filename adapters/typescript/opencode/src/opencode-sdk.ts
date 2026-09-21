@@ -53,6 +53,10 @@ const MCP_CONNECTION_TIMEOUT_MS = 35_000;
 const MCP_CONNECTION_POLL_INTERVAL_MS = 50;
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
 
+function loopbackHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "::1" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
+}
+
 /**
  * OpenCode's Promise SDK accepts embedding overrides. They set the
  * location-specific configuration and instruction services to OpenCode's
@@ -327,6 +331,12 @@ function selectMcpServers(
           "OpenCode streamable-HTTP MCP servers do not accept command arguments",
         );
       }
+      if (Object.keys(server.env ?? {}).length > 0) {
+        throw new LifecycleError(
+          "opencode_mcp_invalid_server",
+          "OpenCode streamable-HTTP MCP servers do not accept environment variables",
+        );
+      }
       let endpoint: URL;
       try {
         endpoint = new URL(server.url);
@@ -340,6 +350,12 @@ function selectMcpServers(
         throw new LifecycleError(
           "opencode_mcp_invalid_server",
           "OpenCode streamable-HTTP MCP servers require an HTTP or HTTPS URL",
+        );
+      }
+      if (endpoint.protocol === "http:" && !loopbackHostname(endpoint.hostname)) {
+        throw new LifecycleError(
+          "opencode_mcp_invalid_server",
+          "OpenCode streamable-HTTP MCP servers require HTTPS unless the endpoint is loopback",
         );
       }
       servers[name] = {
@@ -377,13 +393,32 @@ async function waitForMcpConnections(
   }
   const deadline = Date.now() + MCP_CONNECTION_TIMEOUT_MS;
   while (true) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new LifecycleError(
+        "opencode_mcp_connection_timeout",
+        "Timed out waiting for configured OpenCode MCP servers to connect",
+        { metadata: { servers } },
+      );
+    }
+    const signal = AbortSignal.timeout(remainingMs);
     let statusByServer: Map<string, string>;
     try {
-      const listed = await client.mcp.list({ location: { directory: workspace } });
+      const listed = await client.mcp.list(
+        { location: { directory: workspace } },
+        { signal },
+      );
       statusByServer = new Map(
         listed.data.map((server: { name: string; status: { status: string } }) => [server.name, server.status.status]),
       );
     } catch {
+      if (signal.aborted) {
+        throw new LifecycleError(
+          "opencode_mcp_connection_timeout",
+          "Timed out waiting for configured OpenCode MCP servers to connect",
+          { metadata: { servers } },
+        );
+      }
       throw new LifecycleError(
         "opencode_mcp_status_unavailable",
         "OpenCode could not determine the configured MCP connection status",
@@ -402,14 +437,15 @@ async function waitForMcpConnections(
     if (servers.every((name) => statusByServer.get(name) === "connected")) {
       return;
     }
-    if (Date.now() >= deadline) {
+    const pollDelayMs = Math.min(MCP_CONNECTION_POLL_INTERVAL_MS, deadline - Date.now());
+    if (pollDelayMs <= 0) {
       throw new LifecycleError(
         "opencode_mcp_connection_timeout",
         "Timed out waiting for configured OpenCode MCP servers to connect",
         { metadata: { servers } },
       );
     }
-    await new Promise((resolve) => setTimeout(resolve, MCP_CONNECTION_POLL_INTERVAL_MS));
+    await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
   }
 }
 

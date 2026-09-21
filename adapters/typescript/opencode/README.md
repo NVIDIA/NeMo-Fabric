@@ -54,6 +54,9 @@ Streamable-HTTP servers may define headers but not command arguments. Stdio
 servers may define command arguments and environment variables but not HTTP
 headers.
 
+Streamable-HTTP server URLs require HTTPS except for loopback development
+endpoints.
+
 Header values may reference `${NAME}`. Resolution checks `environment.env`
 first, then the parent process environment. Unresolved references fail startup.
 For MCP credentials, prefer parent-only variables so they are used to construct

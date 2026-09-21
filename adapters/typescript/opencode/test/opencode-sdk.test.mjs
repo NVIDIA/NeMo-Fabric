@@ -409,6 +409,7 @@ test("encodes configured skill paths literally before OpenCode parses configurat
 
 test("configures Fabric stdio and streamable-HTTP MCP servers for OpenCode", async () => {
   let capturedConfig;
+  let readinessSignal;
   const factory = new OpenCodeSdkSessionFactory(
     async () => ({
       OpenCode: {
@@ -416,7 +417,8 @@ test("configures Fabric stdio and streamable-HTTP MCP servers for OpenCode", asy
           capturedConfig = options.config.content;
           return {
             mcp: {
-              async list() {
+              async list(_input, requestOptions) {
+                readinessSignal = requestOptions.signal;
                 return {
                   data: [
                     { name: "local", status: { status: "connected" } },
@@ -477,6 +479,7 @@ test("configures Fabric stdio and streamable-HTTP MCP servers for OpenCode", asy
       },
     },
   });
+  assert.ok(readinessSignal instanceof AbortSignal);
   await handle.stop();
 });
 
@@ -745,6 +748,88 @@ test("rejects command arguments on streamable-HTTP MCP servers before loading th
   await assert.rejects(factory.create(input), (error) => error.code === "opencode_mcp_invalid_server");
 });
 
+test("rejects environment variables on streamable-HTTP MCP servers before loading the SDK", async () => {
+  const input = startInput();
+  input.config.mcp = {
+    servers: {
+      remote: {
+        transport: "streamable-http",
+        url: "https://mcp.example.test",
+        env: { MCP_TOKEN: "ignored-value" },
+      },
+    },
+  };
+  const factory = new OpenCodeSdkSessionFactory(async () => {
+    throw new Error("the SDK must not load for network MCP environment variables");
+  });
+
+  await assert.rejects(factory.create(input), (error) => error.code === "opencode_mcp_invalid_server");
+});
+
+test("rejects non-loopback HTTP MCP servers before expanding headers or loading the SDK", async () => {
+  const input = startInput();
+  input.runtimeContext.environment.env.MCP_ACCESS_TOKEN = "mcp-test-token";
+  input.config.mcp = {
+    servers: {
+      remote: {
+        transport: "streamable-http",
+        url: "http://mcp.example.test/mcp",
+        custom_headers: { Authorization: "Bearer ${MCP_ACCESS_TOKEN}" },
+      },
+    },
+  };
+  const factory = new OpenCodeSdkSessionFactory(async () => {
+    throw new Error("the SDK must not load for non-loopback HTTP MCP servers");
+  });
+
+  await assert.rejects(factory.create(input), (error) => error.code === "opencode_mcp_invalid_server");
+});
+
+test("accepts loopback HTTP and remote HTTPS MCP servers", async () => {
+  let capturedConfig;
+  const factory = new OpenCodeSdkSessionFactory(
+    async () => ({
+      OpenCode: {
+        async create(options) {
+          capturedConfig = options.config.content;
+          return {
+            mcp: {
+              async list() {
+                return {
+                  data: [
+                    { name: "loopback", status: { status: "connected" } },
+                    { name: "secure", status: { status: "connected" } },
+                  ],
+                };
+              },
+            },
+            sessions: {
+              async create() { return { id: "session-mcp-transport-policy" }; },
+              async remove() {},
+            },
+            async close() {},
+          };
+        },
+      },
+    }),
+  );
+  const input = startInput();
+  input.config.mcp = {
+    servers: {
+      loopback: { transport: "streamable-http", url: "http://127.0.0.1:8080/mcp" },
+      secure: { transport: "streamable-http", url: "https://mcp.example.test/mcp" },
+    },
+  };
+
+  const handle = await factory.create(input);
+
+  assert.deepEqual(JSON.parse(capturedConfig).mcp.servers, {
+    loopback: { type: "remote", url: "http://127.0.0.1:8080/mcp", oauth: false },
+    secure: { type: "remote", url: "https://mcp.example.test/mcp", oauth: false },
+  });
+  await handle.stop();
+});
+
 test("rejects custom HTTP headers on stdio MCP servers before loading the SDK", async () => {
   const input = startInput();
   input.config.mcp = {
@@ -835,6 +920,56 @@ test("fails startup when an HTTP or stdio MCP server cannot connect", async () =
         !error.message.includes("private connection detail"),
     );
     assert.equal(removed, true);
+  }
+});
+
+test("aborts a stalled MCP readiness request at the connection deadline", async () => {
+  const originalTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 0);
+    return controller.signal;
+  };
+  try {
+    const input = startInput();
+    input.config.mcp = {
+      servers: {
+        unavailable: { transport: "streamable-http", url: "http://127.0.0.1:1/mcp" },
+      },
+    };
+    let removed = false;
+    const factory = new OpenCodeSdkSessionFactory(
+      async () => ({
+        OpenCode: {
+          async create() {
+            return {
+              mcp: {
+                async list(_input, requestOptions) {
+                  if (requestOptions?.signal === undefined) {
+                    throw new Error("OpenCode request options did not include an abort signal");
+                  }
+                  return new Promise((_resolve, reject) => {
+                    requestOptions.signal.addEventListener("abort", () => reject(requestOptions.signal.reason), {
+                      once: true,
+                    });
+                  });
+                },
+              },
+              sessions: {
+                async create() { return { id: "session-mcp-timeout" }; },
+                async remove() { removed = true; },
+              },
+              async close() {},
+            };
+          },
+        },
+      }),
+    );
+
+    await assert.rejects(factory.create(input), (error) => error.code === "opencode_mcp_connection_timeout");
+    assert.equal(removed, true);
+  } finally {
+    AbortSignal.timeout = originalTimeout;
   }
 });
 
