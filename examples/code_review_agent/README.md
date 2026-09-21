@@ -174,7 +174,7 @@ it through the same `--variant` option. The variant discovers
 `nvidia.nooa.coding-agent` and uses the `NVIDIA_API_KEY` configured for the
 default demo.
 
-Its Relay integration requires `nemo-relay>=0.7.2,<0.8`. The `--stream` option
+Its Relay integration requires `nemo-relay>=0.9,<0.10`. The `--stream` option
 collects Relay ATOF records; it is not native model-response streaming.
 
 ### Pi (`pi`)

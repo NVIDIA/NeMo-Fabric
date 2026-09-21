@@ -49,9 +49,9 @@ def test_resolve_relay_command_rejects_missing_executable(monkeypatch, tmp_path)
 @pytest.mark.parametrize(
     ("output", "expected_version"),
     [
-        ("nemo-relay 0.7.2\n", (0, 7, 2)),
-        ("nemo-relay 0.7.2+build.1\n", (0, 7, 2)),
-        ("nemo-relay 0.7.99\n", (0, 7, 99)),
+        ("nemo-relay 0.9.0\n", (0, 9, 0)),
+        ("nemo-relay 0.9.0+build.1\n", (0, 9, 0)),
+        ("nemo-relay 0.9.99\n", (0, 9, 99)),
     ],
 )
 def test_relay_cli_contract_selects_compatible_contract(
@@ -71,9 +71,9 @@ def test_relay_cli_contract_selects_compatible_contract(
 @pytest.mark.parametrize(
     "output",
     [
-        "nemo-relay 0.7.1",
-        "nemo-relay 0.7.2-alpha.20260811",
-        "nemo-relay 0.8.0",
+        "nemo-relay 0.8.3",
+        "nemo-relay 0.9.0-alpha.20260811",
+        "nemo-relay 0.10.0",
         "nemo-relay 1.0.0",
     ],
 )
@@ -86,7 +86,7 @@ def test_relay_cli_contract_rejects_unsupported_version(monkeypatch, tmp_path, o
 
     with pytest.raises(
         relay_gateway.RelayGatewayError,
-        match=r"NeMo Fabric requires >=0\.7\.2,<0\.8\.0",
+        match=r"NeMo Fabric requires >=0\.9\.0,<0\.10\.0",
     ):
         relay_gateway.relay_cli_contract(tmp_path / "nemo-relay")
 

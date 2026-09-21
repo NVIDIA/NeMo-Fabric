@@ -90,5 +90,5 @@ hermes-agent = [
 ]
 
 relay = [
-  "nemo-relay>=0.7.2,<0.8",
+  "nemo-relay>=0.9,<0.10",
 ]

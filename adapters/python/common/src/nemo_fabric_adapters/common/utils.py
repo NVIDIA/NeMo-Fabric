@@ -334,11 +334,14 @@ def reject_inherited_relay_plugin_config(report: Any) -> None:
 
     if not isinstance(report, dict):
         raise RuntimeError("NeMo Relay did not return a plugin activation report")
-    diagnostics = report.get("diagnostics")
+    config_report = report.get("config")
+    diagnostics = (
+        config_report.get("diagnostics") if isinstance(config_report, dict) else None
+    )
     if not isinstance(diagnostics, list):
         raise RuntimeError("NeMo Relay returned an invalid plugin activation report")
     inherited = []
-    # Relay 0.7.2 exposes the source only in this message. Keep the system-policy
+    # Relay exposes the source only in this message. Keep the system-policy
     # allowlist exact and fail closed until Relay provides a structured source path.
     message_prefix = "inherited plugin configuration from discovered file: "
     system_config = Path("/etc/nemo-relay/plugins.toml")

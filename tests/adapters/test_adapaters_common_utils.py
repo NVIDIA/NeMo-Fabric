@@ -453,20 +453,26 @@ def test_reject_ambient_relay_plugin_config_reports_paths(
         common_utils.reject_ambient_relay_plugin_config()
 
 
-def test_reject_inherited_relay_plugin_config_allows_system_policy():
-    common_utils.reject_inherited_relay_plugin_config(
-        {
+def _inherited_report(message: str) -> dict[str, Any]:
+    return {
+        "config": {
             "diagnostics": [
                 {
                     "level": "warning",
                     "code": "plugin.configuration_inherited",
-                    "message": (
-                        "inherited plugin configuration from discovered file: "
-                        "/etc/nemo-relay/plugins.toml"
-                    ),
+                    "message": message,
                 }
             ]
         }
+    }
+
+
+def test_reject_inherited_relay_plugin_config_allows_system_policy():
+    common_utils.reject_inherited_relay_plugin_config(
+        _inherited_report(
+            "inherited plugin configuration from discovered file: "
+            "/etc/nemo-relay/plugins.toml"
+        )
     )
 
 
@@ -486,17 +492,7 @@ def test_reject_inherited_relay_plugin_config_allows_system_policy():
 )
 def test_reject_inherited_relay_plugin_config_rejects_unmanaged_sources(message):
     with pytest.raises(RuntimeError, match="user or project files"):
-        common_utils.reject_inherited_relay_plugin_config(
-            {
-                "diagnostics": [
-                    {
-                        "level": "warning",
-                        "code": "plugin.configuration_inherited",
-                        "message": message,
-                    }
-                ]
-            }
-        )
+        common_utils.reject_inherited_relay_plugin_config(_inherited_report(message))
 
 
 def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
@@ -928,7 +924,7 @@ def test_collect_relay_artifacts_ignores_malformed_paths(tmp_path: Path):
     assert common_utils.collect_relay_artifacts(plugin_config) == []
 
 
-def test_relay_0_7_validates_v3_plugin_config():
+def test_relay_validates_v3_plugin_config():
     from nemo_relay import plugin
 
     os.environ["TOKEN"] = "test-token"
@@ -967,10 +963,10 @@ def test_relay_0_7_validates_v3_plugin_config():
     }
 
     common_utils.validate_relay_observability_v3(plugin_config)
-    assert plugin.validate(plugin_config)["diagnostics"] == []
+    assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
 
 
-async def test_relay_0_7_initializes_v3_atof_atif_config(
+async def test_relay_initializes_v3_atof_atif_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -1014,12 +1010,12 @@ async def test_relay_0_7_initializes_v3_atof_atif_config(
         ],
     }
     common_utils.validate_relay_observability_v3(plugin_config)
-    assert plugin.validate(plugin_config)["diagnostics"] == []
-    async with plugin.plugin(plugin_config) as activation_report:
-        assert activation_report["diagnostics"] == []
+    assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
+    async with plugin.activate(plugin_config) as activation:
+        assert activation.report["config"]["diagnostics"] == []
 
 
-def test_relay_0_7_validates_all_v3_otlp_fields():
+def test_relay_validates_all_v3_otlp_fields():
     from nemo_relay import plugin
 
     os.environ["OTEL_TOKEN"] = "test-token"
@@ -1075,7 +1071,7 @@ def test_relay_0_7_validates_all_v3_otlp_fields():
     }
 
     common_utils.validate_relay_observability_v3(plugin_config)
-    assert plugin.validate(plugin_config)["diagnostics"] == []
+    assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
 
 
 def test_relay_validates_unknown_atof_sink_type():
@@ -1098,7 +1094,7 @@ def test_relay_validates_unknown_atof_sink_type():
         ],
     }
 
-    assert plugin.validate(plugin_config)["diagnostics"] == [
+    assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == [
         {
             "code": "observability.invalid_plugin_config",
             "component": "observability",
@@ -1188,7 +1184,7 @@ def test_validate_relay_observability_v3_matches_relay_implicit_version():
 
     common_utils.validate_relay_observability_v3(plugin_config)
 
-    assert plugin.validate(plugin_config)["diagnostics"] == []
+    assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
 
 
 @pytest.mark.parametrize(

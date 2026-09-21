@@ -175,7 +175,7 @@ def mock_relay_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict:
     @asynccontextmanager
     async def plugin_context(config):
         calls["plugin_configs"].append(config)
-        yield {"diagnostics": []}
+        yield SimpleNamespace(report={"config": {"diagnostics": []}})
 
     @contextmanager
     def request_scope(name, scope_type, **kwargs):
@@ -216,7 +216,7 @@ def mock_relay_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict:
     def tool_end(handle, output, **kwargs):
         calls["tool_ends"].append((handle, output, kwargs))
 
-    monkeypatch.setattr(nemo_relay.plugin, "plugin", plugin_context)
+    monkeypatch.setattr(nemo_relay.plugin, "activate", plugin_context)
     monkeypatch.setattr(nemo_relay, "PropagationContext", propagation_context)
     monkeypatch.setattr(
         nemo_relay,

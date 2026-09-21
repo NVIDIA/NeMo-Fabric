@@ -154,7 +154,9 @@ def test_native_otel_variants_match_adapter_contracts():
     deepagents = with_native_otel(deepagents_config())
     assert deepagents.telemetry is not None
     deepagents_config_payload = deepagents.telemetry.providers["native"].config
-    assert plugin.validate(deepagents_config_payload)["diagnostics"] == []
+    assert (
+        plugin.validate_exact(deepagents_config_payload)["config"]["diagnostics"] == []
+    )
 
     with pytest.raises(ValueError, match="does not support native OpenTelemetry"):
         with_native_otel(hermes_config())
@@ -201,7 +203,7 @@ def test_relay_otel_variants_author_v3_endpoints(
             }
         ],
     }
-    assert plugin.validate(plugin_config)["diagnostics"] == []
+    assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
 
 
 def test_variants_plan_from_complete_configs():
