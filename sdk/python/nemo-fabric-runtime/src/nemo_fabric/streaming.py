@@ -150,13 +150,10 @@ class InvokeStream:
 
     def _records_iterator(self) -> AsyncGenerator[dict[str, Any], None]:
         if self._records is None:
-            if self._registration_token is None:
-                self._records = self._collector_client.stream(self._request_id)
-            else:
-                self._records = self._collector_client.stream(
-                    self._request_id,
-                    registration_token=self._registration_token,
-                )
+            self._records = self._collector_client.stream(
+                self._request_id,
+                registration_token=self._registration_token,
+            )
         return self._records
 
     async def _next_record(self) -> dict[str, Any]:

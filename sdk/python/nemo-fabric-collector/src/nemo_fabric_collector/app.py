@@ -34,6 +34,8 @@ _QUEUE_MAX_BYTES = 16 * 1024 * 1024
 _QUEUE_MAXSIZE = 1024
 _QUEUE_PUT_TIMEOUT_SECONDS = 30.0
 _COMPLETION_WAIT_TIMEOUT_SECONDS = 1.0
+# TODO: Move Pi marker/lease semantics behind an adapter-agnostic
+# correlation strategy.
 _PI_TURN_WINDOW = "pi_turn_window"
 _PI_BOUNDARY_ACTIONS = frozenset({"preserve", "release", "wait"})
 _MAX_CANCELLED_REGISTRATION_TOKENS = 1024
@@ -177,6 +179,9 @@ class _RequestState:
     boundary_timed_out: bool = False
     boundary_generation: int | None = None
     registration_token: str | None = None
+    pi_records_seen: int = 0
+    turn_started: bool = False
+    completion_marker_seen: bool = False
     completion_seen: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -502,9 +507,29 @@ class AtofCollector:
                 # Pi has no Fabric request ID. Serialized leases guarantee that
                 # the first turn start, or a zero-turn terminal marker, belongs
                 # to this invocation rather than to a preceding agent run.
-                if not (_is_pi_turn_start(record) or _is_pi_completion(record)):
+                state.pi_records_seen += 1
+                turn_started = _is_pi_turn_start(record)
+                completed = _is_pi_completion(record)
+                if not (turn_started or completed):
                     return None
+                if turn_started:
+                    state.turn_started = True
+                else:
+                    state.completion_marker_seen = True
+                if completed and state.pi_records_seen > 1:
+                    logger.warning(
+                        "Pi ATOF records were dropped because no turn_start marker "
+                        "was observed before agent_settled",
+                        extra={
+                            "request_id": request_id,
+                            "dropped_record_count": state.pi_records_seen - 1,
+                        },
+                    )
                 state.routing_ready = True
+            elif state.correlation_mode == _PI_TURN_WINDOW:
+                state.pi_records_seen += 1
+                if _is_pi_completion(record):
+                    state.completion_marker_seen = True
             return request_id
 
         uuid = _record_uuid(record)
@@ -616,16 +641,49 @@ class AtofCollector:
                     return
                 state.boundary_timed_out = True
                 self._pi_boundary_ready.clear()
+                turn_started = state.turn_started
+                pi_records_seen = state.pi_records_seen
+                completion_marker_seen = state.completion_marker_seen
             # Do not hold the completed invocation open indefinitely. A later
             # registration fails closed until this invocation's ordered terminal
             # marker arrives; all records in that delayed batch are discarded.
-            logger.warning(
-                "Timed out waiting for the Pi ATOF invocation boundary",
-                extra={
-                    "request_id": request_id,
-                    "timeout_seconds": self._completion_wait_timeout,
-                },
-            )
+            if completion_marker_seen:
+                logger.warning(
+                    "Timed out waiting for the Pi ATOF invocation boundary; "
+                    "the agent_settled marker was observed but its delivery "
+                    "did not complete",
+                    extra={
+                        "request_id": request_id,
+                        "timeout_seconds": self._completion_wait_timeout,
+                        "expected_marker": "agent_settled",
+                        "observed_record_count": pi_records_seen,
+                    },
+                )
+            elif pi_records_seen:
+                expected_marker = (
+                    "agent_settled" if turn_started else "turn_start or agent_settled"
+                )
+                logger.warning(
+                    "Timed out waiting for the Pi ATOF invocation boundary; "
+                    "observed records did not contain the expected %s marker",
+                    expected_marker,
+                    extra={
+                        "request_id": request_id,
+                        "timeout_seconds": self._completion_wait_timeout,
+                        "expected_marker": expected_marker,
+                        "observed_record_count": pi_records_seen,
+                    },
+                )
+            else:
+                logger.warning(
+                    "Timed out waiting for the Pi ATOF invocation boundary; "
+                    "no ATOF records were observed",
+                    extra={
+                        "request_id": request_id,
+                        "timeout_seconds": self._completion_wait_timeout,
+                        "observed_record_count": 0,
+                    },
+                )
 
 
 def _record_size(record: dict[str, Any]) -> int:
@@ -917,8 +975,12 @@ def create_app(
     publish_token: str | None = None,
     control_token: str | None = None,
     standalone: bool = False,
+    completion_wait_timeout: float = _COMPLETION_WAIT_TIMEOUT_SECONDS,
 ) -> Starlette:
-    collector = collector or AtofCollector(standalone=standalone)
+    collector = collector or AtofCollector(
+        standalone=standalone,
+        completion_wait_timeout=completion_wait_timeout,
+    )
 
     @asynccontextmanager
     async def lifespan(_: Starlette) -> AsyncIterator[None]:

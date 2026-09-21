@@ -35,7 +35,6 @@ logger = logging.getLogger(__name__)
 
 _PI_ADAPTER_ID = "nvidia.fabric.pi"
 _PI_STREAM_CORRELATION_MODE = "pi_turn_window"
-_PI_NO_AGENT_RUN_ERROR_CODES = frozenset({"pi_prompt_rejected", "pi_unsupported_input"})
 
 
 class RuntimeStatus(str, Enum):
@@ -350,7 +349,9 @@ class Runtime:
                 on_finalize=lambda: self._finish_registered_request(
                     request_id,
                     remove_queue=True,
-                    pi_boundary="preserve",
+                    pi_boundary=(
+                        "preserve" if self._uses_pi_stream_correlation() else None
+                    ),
                     stream_phase="finalizer",
                 ),
             )
@@ -413,7 +414,7 @@ class Runtime:
             remove_queue=not capture_records,
             pi_boundary=(
                 "wait"
-                if self._pi_result_has_boundary(result)
+                if self._pi_result_started_turn(result)
                 else "release"
                 if self._uses_pi_stream_correlation()
                 else None
@@ -529,12 +530,10 @@ class Runtime:
                 deregistration.result()
             except Exception as cleanup_error:
                 error.add_note(f"ATOF collector deregistration failed: {cleanup_error}")
-            else:
-                if stream_phase is not None:
-                    self._finish_stream_cleanup_phase(request_id, stream_phase)
             raise
-        if stream_phase is not None:
-            self._finish_stream_cleanup_phase(request_id, stream_phase)
+        finally:
+            if stream_phase is not None:
+                self._finish_stream_cleanup_phase(request_id, stream_phase)
 
     def _finish_stream_cleanup_phase(
         self,
@@ -580,11 +579,16 @@ class Runtime:
             and self._plan.adapter.adapter_id == _PI_ADAPTER_ID
         )
 
-    def _pi_result_has_boundary(self, result: RunResult) -> bool:
+    def _pi_result_started_turn(self, result: RunResult) -> bool:
         if not self._uses_pi_stream_correlation():
             return False
-        error = result.error
-        return error is None or error.code not in _PI_NO_AGENT_RUN_ERROR_CODES
+        adapter_metadata = result.metadata.get("adapter")
+        if isinstance(adapter_metadata, Mapping):
+            turn_started = adapter_metadata.get("pi_turn_started")
+            if isinstance(turn_started, bool):
+                return turn_started
+        # Fail closed for older or malformed Pi results that lack the signal.
+        return True
 
     def invoke_openai_stream(
         self,

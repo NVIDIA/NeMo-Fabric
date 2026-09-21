@@ -15,6 +15,7 @@ export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" |
 
 export interface PiPromptOutcome {
   accepted: boolean;
+  turnStarted: boolean;
   text?: string;
   stopReason?: PiStopReason;
   errorMessage?: string;
@@ -42,16 +43,21 @@ function failed(code: string, message: string): AgentRunResult {
 async function withRelayOutput(
   result: AgentRunResult,
   relay: PiRelayRuntime | undefined,
+  turnStarted: boolean,
 ): Promise<AgentRunResult> {
+  const annotated = {
+    ...result,
+    extensions: { ...result.extensions, pi_turn_started: turnStarted },
+  };
   if (relay === undefined) {
-    return result;
+    return annotated;
   }
   const current: JsonObject =
     typeof result.output === "object" && result.output !== null && !Array.isArray(result.output)
       ? (result.output as JsonObject)
       : {};
   return {
-    ...result,
+    ...annotated,
     output: { ...current, ...(await relay.output(await collectNonAtifArtifacts(relay))) },
   };
 }
@@ -88,13 +94,18 @@ export class PiAdapterRuntime implements AdapterRuntime {
       return withRelayOutput(
         failed("pi_unsupported_input", "The Pi adapter accepts only plain-text input"),
         this.session.relay,
+        false,
       );
     }
 
     const relay = this.session.relay;
     const outcome = await this.session.prompt(request.input);
     if (!outcome.accepted) {
-      return withRelayOutput(failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"), relay);
+      return withRelayOutput(
+        failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"),
+        relay,
+        outcome.turnStarted,
+      );
     }
     if (outcome.shutdownRequested || outcome.stopReason === "aborted") {
       if (outcome.shutdownRequested) {
@@ -113,21 +124,28 @@ export class PiAdapterRuntime implements AdapterRuntime {
           },
         },
         relay,
+        outcome.turnStarted,
       );
     }
     if (outcome.stopReason === "error") {
       return withRelayOutput(
         failed("pi_model_error", outcome.errorMessage || "The Pi model invocation failed"),
         relay,
+        outcome.turnStarted,
       );
     }
     if (outcome.text === undefined || outcome.text.length === 0) {
       return withRelayOutput(
         failed("pi_no_assistant_response", "Pi completed without a final assistant text response"),
         relay,
+        outcome.turnStarted,
       );
     }
-    return withRelayOutput({ status: "succeeded", output: { response: outcome.text } }, relay);
+    return withRelayOutput(
+      { status: "succeeded", output: { response: outcome.text } },
+      relay,
+      outcome.turnStarted,
+    );
   }
 
   async stop(): Promise<void> {

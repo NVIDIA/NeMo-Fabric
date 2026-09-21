@@ -259,6 +259,53 @@ async def test_start_runtime_injects_stream_sink_without_mutating_config(
     await runtime.stop()
 
 
+async def test_start_runtime_plumbs_collector_completion_wait_timeout(
+    native_client: Fabric,
+):
+    collector_context = MagicMock()
+    collector_context.__aenter__ = AsyncMock(return_value="http://127.0.0.1:4318")
+    collector_context.__aexit__ = AsyncMock(return_value=False)
+
+    with patch(
+        "nemo_fabric_collector.serve_collector",
+        return_value=collector_context,
+    ) as mock_serve_collector:
+        runtime = await native_client.start_runtime(
+            _config(relay=True, adapter_id="nvidia.fabric.pi"),
+            streaming=True,
+            completion_wait_timeout=5.0,
+        )
+        assert runtime._collector_client is not None
+        assert runtime._collector_client._client.timeout.connect == 6.0
+        await runtime.stop()
+
+    mock_serve_collector.assert_called_once_with(
+        host="127.0.0.1",
+        port=0,
+        standalone=True,
+        completion_wait_timeout=5.0,
+    )
+
+
+@pytest.mark.parametrize(
+    "completion_wait_timeout",
+    [0, -1, float("inf"), float("nan"), True, "1"],
+)
+async def test_start_runtime_rejects_invalid_completion_wait_timeout(
+    native_client: Fabric,
+    completion_wait_timeout: Any,
+):
+    with pytest.raises(
+        FabricConfigError,
+        match="completion_wait_timeout must be a finite number greater than zero",
+    ):
+        await native_client.start_runtime(
+            _config(relay=True),
+            streaming=True,
+            completion_wait_timeout=completion_wait_timeout,
+        )
+
+
 async def test_start_runtime_creates_runtime_owned_collectors(
     native_client: Fabric,
     mock_native: MagicMock,
@@ -631,8 +678,9 @@ async def test_pi_stream_failure_preserves_boundary_until_native_finishes(
     runtime._collector_client.stream = collector_stream
     first_release.set()
     assert await _wait_for(first_returned)
-    while runtime._current_task is not None:
-        await asyncio.sleep(0)
+    async with asyncio.timeout(2):
+        while runtime._current_task is not None:
+            await asyncio.sleep(0)
     assert not first._task.done()
     with pytest.raises(FabricStateError, match="streaming invocation is active"):
         await runtime.stop()
@@ -663,38 +711,55 @@ async def test_pi_stream_failure_preserves_boundary_until_native_finishes(
     await runtime.stop()
 
 
+@pytest.mark.parametrize(
+    "error_code",
+    [
+        "pi_prompt_rejected",
+        "pi_unsupported_input",
+        "pi_aborted",
+        "pi_model_error",
+        "pi_no_assistant_response",
+        "pi_extension_shutdown",
+    ],
+)
 async def test_pi_no_agent_run_result_releases_plain_invoke_boundary(
     native_client: Fabric,
     mock_native: MagicMock,
+    error_code: str,
 ):
-    def unsupported(plan_json: str, runtime_json: str, request_json: str) -> str:
+    def no_agent_run(plan_json: str, runtime_json: str, request_json: str) -> str:
         result = _result(json.loads(request_json), json.loads(runtime_json))
         result.update(
             {
-                "status": "failed",
+                "status": (
+                    "cancelled"
+                    if error_code in {"pi_aborted", "pi_extension_shutdown"}
+                    else "failed"
+                ),
                 "output": None,
                 "error": {
-                    "code": "pi_unsupported_input",
-                    "message": "plain-text input required",
+                    "code": error_code,
+                    "message": "Pi stopped before starting an agent run",
                     "retryable": False,
                 },
+                "metadata": {"adapter": {"pi_turn_started": False}},
             }
         )
         return json.dumps(result)
 
-    mock_native.invoke_runtime.side_effect = unsupported
+    mock_native.invoke_runtime.side_effect = no_agent_run
     runtime = await native_client.start_runtime(
         _config(relay=True, adapter_id="nvidia.fabric.pi"),
         streaming=True,
     )
 
-    first = await runtime.invoke(input={"not": "text"})
-    second = await runtime.invoke(input={"still": "not text"})
+    first = await runtime.invoke(input="first")
+    second = await runtime.invoke(input="second")
 
     assert first.error is not None
-    assert first.error.code == "pi_unsupported_input"
+    assert first.error.code == error_code
     assert second.error is not None
-    assert second.error.code == "pi_unsupported_input"
+    assert second.error.code == error_code
     await runtime.stop()
 
 
@@ -754,7 +819,12 @@ async def test_interrupted_collector_stream_preserves_terminal_result():
     mock_collector = MagicMock()
     mock_finalize = AsyncMock()
 
-    async def interrupted_records(_: str):
+    async def interrupted_records(
+        _: str,
+        *,
+        registration_token: str | None = None,
+    ):
+        assert registration_token is None
         raise FabricRuntimeError(
             "Relay output was interrupted",
             stage="invoke",
@@ -789,7 +859,12 @@ async def test_aclose_waits_for_pending_invocation_after_stream_failure():
     mock_collector = MagicMock()
     mock_finalize = AsyncMock()
 
-    async def interrupted_records(_: str):
+    async def interrupted_records(
+        _: str,
+        *,
+        registration_token: str | None = None,
+    ):
+        assert registration_token is None
         raise FabricRuntimeError(
             "Relay output was interrupted",
             stage="invoke",
@@ -995,7 +1070,12 @@ async def test_aclose_bounds_collector_drain_when_stream_never_terminates(
     registration_ready.set()
     mock_collector = MagicMock()
 
-    async def collector_records(_: str):
+    async def collector_records(
+        _: str,
+        *,
+        registration_token: str | None = None,
+    ):
+        assert registration_token is None
         await never.wait()
         yield {"uuid": "unreachable"}
 
@@ -1025,7 +1105,12 @@ async def test_aclose_finalizes_when_collector_deregistration_fails(
     mock_collector = MagicMock()
     mock_finalize = AsyncMock(side_effect=RuntimeError("deregister failed"))
 
-    async def collector_records(_: str):
+    async def collector_records(
+        _: str,
+        *,
+        registration_token: str | None = None,
+    ):
+        assert registration_token is None
         await never.wait()
         yield {"uuid": "unreachable"}
 
@@ -1089,7 +1174,12 @@ async def test_cancelled_anext_does_not_consume_next_record():
     invocation_finished = asyncio.Event()
     records: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
-    async def collector_records(_: str):
+    async def collector_records(
+        _: str,
+        *,
+        registration_token: str | None = None,
+    ):
+        assert registration_token is None
         while record := await records.get():
             yield record
 
@@ -1129,7 +1219,12 @@ async def test_cancelled_anext_retains_record_consumed_during_cancellation():
     invocation_finished = asyncio.Event()
     records: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
-    async def collector_records(_: str):
+    async def collector_records(
+        _: str,
+        *,
+        registration_token: str | None = None,
+    ):
+        assert registration_token is None
         while record := await records.get():
             yield record
 

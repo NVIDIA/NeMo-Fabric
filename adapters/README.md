@@ -142,7 +142,7 @@ and additive extension maps because their support does not vary by adapter:
 | `skills.paths` | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes; BenchAgent: No | No | Yes | No |
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes; BenchAgent: No | No | No | No |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No; not implemented | No | No | No |
-| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | Yes | No | Yes, supports embedded collector-backed ATOF streaming | Yes, supports collector-backed ATOF streaming |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | Yes | No | Yes, supports embedded collector-backed Agent Trajectory Observability Format (ATOF) streaming | Yes, supports collector-backed ATOF streaming |
 | `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No | No | No |
 | `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | Declared-provider pass-through | No |
 | `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | Yes | No | Yes | Uses the named external collector sink when selected; config is not sent to the remote service |
@@ -171,9 +171,8 @@ without creating a compatibility requirement.
 All bundled adapters use a language-specific persistent adapter host with an
 ordered `start` → `invoke*` → `stop` protocol.
 
-NeMo Relay records raw events in Agent Trajectory Observability Format (ATOF)
-and produces normalized trajectories in Agent Trajectory Interchange Format
-(ATIF).
+NeMo Relay records raw events in ATOF and produces normalized trajectories in
+Agent Trajectory Interchange Format (ATIF).
 
 | Agent Harness | State Retained Across Turns | Relay Integration | Per-Turn Behavior | Stop Behavior | Remote Service |
 | --- | --- | --- | --- | --- | --- |
@@ -184,7 +183,7 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | Conversation history | Adapter-owned subclass with NeMo Relay Python SDK scopes | Creates a fresh Relay plugin and request scope, emits step, model, and bash-action telemetry, and collects artifacts | Clears the agent and Relay state | Not implemented |
 | [NOOA](python/nooa/README.md) | InteractiveAgent queue dispatcher or BenchAgent task state | Adapter-owned Relay middleware and generated Relay configuration | InteractiveAgent dispatches queued requests; BenchAgent evaluates one task | Closes agent resources and Relay state | Not implemented |
 | [OpenCode](typescript/opencode/README.md) | Embedded OpenCode host and session | Not supported | Reuses the session and calls `prompt()`, `wait()`, and `context()` for ordered text input | Removes the session and closes the host | Not implemented |
-| [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Runtime-owned Relay 0.9 CLI gateway and explicit Pi extension | Reuses the session and calls `prompt()` for ordered text input; with `streaming=True`, routes every model turn's ATOF through the embedded collector; `relay_artifacts` does not include local ATIF | Aborts work, emits extension shutdown so local ATIF finalizes on disk, disposes the session, and then stops the gateway | Not implemented |
+| [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Runtime-owned Relay 0.9 CLI gateway and explicit Pi extension | Reuses the session and calls `prompt()` for ordered text input; with `streaming=True`, routes model-turn ATOF for successful redirects and `model_redirect` marks for skipped redirects through the embedded collector; `relay_artifacts` does not include local ATIF | Aborts work, emits extension shutdown so local ATIF finalizes on disk, disposes the session, and then stops the gateway | Not implemented |
 | [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a shared ATOF collector | Registers the request ID, maps it into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |
 
 Telemetry output names use the descriptor contract values. Claude, Codex,

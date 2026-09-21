@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import math
 import os
 from collections.abc import Mapping
 from contextlib import AsyncExitStack
@@ -44,6 +45,9 @@ try:
     _native = importlib.import_module("nemo_fabric._native")
 except ImportError:
     _native = None
+
+
+_COLLECTOR_CONTROL_TIMEOUT_MARGIN_SECONDS = 1.0
 
 
 class Fabric:
@@ -198,6 +202,7 @@ class Fabric:
         overrides: Mapping[str, Any] | None = None,
         streaming: bool = False,
         launch_collector: bool | None = None,
+        completion_wait_timeout: float = 1.0,
     ) -> Runtime:
         """Start a stateful runtime for one or more ordered invocations.
 
@@ -220,6 +225,10 @@ class Fabric:
                 defaults to ``True`` when streaming is enabled. ``False`` uses
                 an externally managed collector. Pi does not support ``False``.
                 This argument cannot be set unless ``streaming=True``.
+            completion_wait_timeout: Maximum seconds the embedded collector
+                waits for a Pi ``agent_settled`` marker after invocation. Increase
+                this value when Relay delivery can be delayed. This value is
+                ignored when ``launch_collector=False``.
 
         Returns:
             An active ``Runtime``. Use it as an asynchronous context
@@ -254,6 +263,19 @@ class Fabric:
             raise FabricConfigError("streaming requires Relay telemetry to be enabled")
         if (
             streaming
+            and launch_collector is not False
+            and (
+                isinstance(completion_wait_timeout, bool)
+                or not isinstance(completion_wait_timeout, (int, float))
+                or not math.isfinite(completion_wait_timeout)
+                or completion_wait_timeout <= 0
+            )
+        ):
+            raise FabricConfigError(
+                "completion_wait_timeout must be a finite number greater than zero"
+            )
+        if (
+            streaming
             and launch_collector is False
             and config.harness is not None
             and config.harness.adapter_id == _PI_ADAPTER_ID
@@ -274,7 +296,12 @@ class Fabric:
                         ) from error
                     collector = AsyncExitStack()
                     collector_base_url = await collector.enter_async_context(
-                        serve_collector(host="127.0.0.1", port=0, standalone=True)
+                        serve_collector(
+                            host="127.0.0.1",
+                            port=0,
+                            standalone=True,
+                            completion_wait_timeout=float(completion_wait_timeout),
+                        )
                     )
                     runtime_config = _with_stream_sink(config, collector_base_url)
                     stream_sink = _configured_stream_sink(runtime_config)
@@ -287,7 +314,18 @@ class Fabric:
                             "external collector streaming requires a configured "
                             "nemo-fabric-stream collector sink"
                         )
-                collector_client = _AtofCollectorClient.from_sink(stream_sink)
+                collector_client = _AtofCollectorClient.from_sink(
+                    stream_sink,
+                    timeout_seconds=(
+                        max(
+                            stream_sink.timeout_millis / 1000,
+                            completion_wait_timeout
+                            + _COLLECTOR_CONTROL_TIMEOUT_MARGIN_SECONDS,
+                        )
+                        if launch_collector is not False
+                        else None
+                    ),
+                )
                 if runtime_config is config:
                     runtime_config = config.model_copy(deep=True)
                 runtime_stream_sink = _configured_stream_sink(runtime_config)
@@ -311,15 +349,6 @@ class Fabric:
             plan = await _call_blocking(
                 lambda: self.plan(runtime_config, base_dir=base_dir)
             )
-            if (
-                streaming
-                and launch_collector is False
-                and plan.adapter.adapter_id == _PI_ADAPTER_ID
-            ):
-                raise FabricConfigError(
-                    "Pi Relay streaming requires the embedded collector; "
-                    "launch_collector=False is not supported"
-                )
             native = self._require_native_module("start_runtime")
         except BaseException:
             await close_streaming_resources()

@@ -165,6 +165,7 @@ async def start_runtime(
     overrides: Mapping[str, Any] | None = None,
     streaming: bool = False,
     launch_collector: bool | None = None,
+    completion_wait_timeout: float = 1.0,
 ) -> Runtime
 ```
 
@@ -181,6 +182,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
  - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the runtime unless superseded by invocation overrides.
  - <b>`streaming`</b>:  Whether to enable collector-backed NeMo Relay ATOF  streaming for ``Runtime.invoke_stream()``.
  - <b>`launch_collector`</b>:  Whether to launch an embedded collector. ``None``  defaults to ``True`` when streaming is enabled. ``False`` uses  an externally managed collector. Pi does not support ``False``.  This argument cannot be set unless ``streaming=True``.
+ - <b>`completion_wait_timeout`</b>:  Maximum seconds the embedded collector  waits for a Pi ``agent_settled`` marker after invocation. Increase  this value when Relay delivery can be delayed. This value is  ignored when ``launch_collector=False``.
 
 
 

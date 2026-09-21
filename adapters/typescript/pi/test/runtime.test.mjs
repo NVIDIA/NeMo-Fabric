@@ -39,7 +39,7 @@ test("enforces the runtime start and invoke lifecycle guards", async () => {
     async create() {
       return {
         async prompt() {
-          return { accepted: true, text: "ok" };
+          return { accepted: true, turnStarted: true, text: "ok" };
         },
         async stop() {},
       };
@@ -63,7 +63,7 @@ test("normalizes successful plain-text prompts and reuses one session", async ()
       return {
         async prompt(text) {
           prompts.push(text);
-          return { accepted: true, text: `reply:${text}`, stopReason: "stop" };
+          return { accepted: true, turnStarted: true, text: `reply:${text}`, stopReason: "stop" };
         },
         async stop() {
           stopped = true;
@@ -78,8 +78,16 @@ test("normalizes successful plain-text prompts and reuses one session", async ()
   await runtime.stop();
 
   assert.deepEqual(prompts, ["one", "two"]);
-  assert.deepEqual(first, { status: "succeeded", output: { response: "reply:one" } });
-  assert.deepEqual(second, { status: "succeeded", output: { response: "reply:two" } });
+  assert.deepEqual(first, {
+    status: "succeeded",
+    output: { response: "reply:one" },
+    extensions: { pi_turn_started: true },
+  });
+  assert.deepEqual(second, {
+    status: "succeeded",
+    output: { response: "reply:two" },
+    extensions: { pi_turn_started: true },
+  });
   assert.equal(stopped, true);
 });
 
@@ -90,7 +98,7 @@ test("does not invoke Pi again after an extension requests shutdown", async () =
       return {
         async prompt() {
           promptCount += 1;
-          return { accepted: true, stopReason: "aborted", shutdownRequested: true };
+          return { accepted: true, turnStarted: false, stopReason: "aborted", shutdownRequested: true };
         },
         async stop() {},
       };
@@ -101,6 +109,7 @@ test("does not invoke Pi again after an extension requests shutdown", async () =
   const first = await runtime.invoke({ input: "stop" }, context);
   assert.equal(first.status, "cancelled");
   assert.equal(first.error.code, "pi_extension_shutdown");
+  assert.deepEqual(first.extensions, { pi_turn_started: false });
   await assert.rejects(
     runtime.invoke({ input: "again" }, context),
     (error) => error.code === "pi_runtime_unusable",
@@ -115,7 +124,7 @@ test("rejects non-text input without invoking Pi", async () => {
       return {
         async prompt() {
           prompted = true;
-          return { accepted: true, text: "unexpected" };
+          return { accepted: true, turnStarted: true, text: "unexpected" };
         },
         async stop() {},
       };
@@ -125,15 +134,21 @@ test("rejects non-text input without invoking Pi", async () => {
   const result = await runtime.invoke({ input: { task: "not yet supported" } }, context);
   assert.equal(result.status, "failed");
   assert.equal(result.error.code, "pi_unsupported_input");
+  assert.deepEqual(result.extensions, { pi_turn_started: false });
   assert.equal(prompted, false);
 });
 
 test("normalizes rejected, failed, empty, and aborted Pi outcomes", async () => {
   const outcomes = [
-    { accepted: false },
-    { accepted: true, stopReason: "error", errorMessage: "provider rejected the request" },
-    { accepted: true, stopReason: "stop" },
-    { accepted: true, stopReason: "aborted" },
+    { accepted: false, turnStarted: false },
+    {
+      accepted: true,
+      turnStarted: true,
+      stopReason: "error",
+      errorMessage: "provider rejected the request",
+    },
+    { accepted: true, turnStarted: true, stopReason: "stop" },
+    { accepted: true, turnStarted: false, stopReason: "aborted" },
   ];
   const runtime = new PiAdapterRuntime({
     async create() {
@@ -159,6 +174,15 @@ test("normalizes rejected, failed, empty, and aborted Pi outcomes", async () => 
   assert.equal(empty.error.code, "pi_no_assistant_response");
   assert.equal(aborted.status, "cancelled");
   assert.equal(aborted.error.code, "pi_aborted");
+  assert.deepEqual(
+    [rejected, failed, empty, aborted].map((result) => result.extensions),
+    [
+      { pi_turn_started: false },
+      { pi_turn_started: true },
+      { pi_turn_started: true },
+      { pi_turn_started: false },
+    ],
+  );
 });
 
 test("stop is safe before start and idempotent after start", async () => {
@@ -167,7 +191,7 @@ test("stop is safe before start and idempotent after start", async () => {
     async create() {
       return {
         async prompt() {
-          return { accepted: true, text: "ok" };
+          return { accepted: true, turnStarted: true, text: "ok" };
         },
         async stop() {
           stopCount += 1;
@@ -201,7 +225,7 @@ test("adds Relay details to results and stops the Pi session before the gateway"
       return {
         relay,
         async prompt() {
-          return { accepted: true, text: "ok", stopReason: "stop" };
+          return { accepted: true, turnStarted: true, text: "ok", stopReason: "stop" };
         },
         async stop() {
           order.push("session");
@@ -216,6 +240,7 @@ test("adds Relay details to results and stops the Pi session before the gateway"
 
   assert.deepEqual(result, {
     status: "succeeded",
+    extensions: { pi_turn_started: true },
     output: {
       response: "ok",
       relay_runtime: { enabled: true, gateway_url: "http://127.0.0.1:41000" },
@@ -269,7 +294,7 @@ test("does not wait for local ATIF and preserves ATOF", async () => {
           relay,
           async prompt() {
             promptCount += 1;
-            return { accepted: true, text: "ok", stopReason: "stop" };
+            return { accepted: true, turnStarted: true, text: "ok", stopReason: "stop" };
           },
           async stop() {},
         };
@@ -310,7 +335,7 @@ test("still stops Relay when Pi session shutdown fails", async () => {
           },
         },
         async prompt() {
-          return { accepted: true, text: "ok" };
+          return { accepted: true, turnStarted: true, text: "ok" };
         },
         async stop() {
           sessionStopAttempts += 1;
@@ -351,7 +376,7 @@ test("preserves both Pi session and Relay shutdown failures", async () => {
           },
         },
         async prompt() {
-          return { accepted: true, text: "ok" };
+          return { accepted: true, turnStarted: true, text: "ok" };
         },
         async stop() {
           throw sessionFailure;
@@ -389,7 +414,7 @@ test("preserves non-lifecycle cleanup failures in an AggregateError", async () =
           },
         },
         async prompt() {
-          return { accepted: true, text: "ok" };
+          return { accepted: true, turnStarted: true, text: "ok" };
         },
         async stop() {
           throw sessionFailure;
@@ -431,7 +456,7 @@ test("retries Relay cleanup when gateway shutdown fails", async () => {
         },
         async prompt() {
           promptCount += 1;
-          return { accepted: true, text: "ok" };
+          return { accepted: true, turnStarted: true, text: "ok" };
         },
         async stop() {
           sessionStopAttempts += 1;

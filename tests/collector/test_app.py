@@ -47,6 +47,15 @@ async def test_endpoints_do_not_require_tokens_when_authentication_is_disabled()
     assert deregistered.status_code == 204
 
 
+def test_create_app_configures_completion_wait_timeout():
+    application = create_app(
+        standalone=True,
+        completion_wait_timeout=2.5,
+    )
+
+    assert application.state.collector._completion_wait_timeout == 2.5
+
+
 @pytest.mark.parametrize(
     ("method", "path", "kwargs"),
     [

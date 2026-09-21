@@ -219,10 +219,13 @@ Pick the smallest lifecycle the consumer needs:
   control and stream endpoints. The bundled Pi adapter is limited to the
   default embedded collector because its Relay extension does not attach the
   NeMo Fabric request IDs required for external correlation; do not set
-  `launch_collector=False` for Pi streaming. The collector limits each
-  record to 1 MiB and each request queue to 1,024 records or 16 MiB of encoded
-  data. The `streaming=True` flag does not enable NeMo Relay by itself. Without
-  `streaming=True`, startup leaves the NeMo Relay configuration unchanged.
+  `launch_collector=False` for Pi streaming. The embedded collector waits one
+  second for a late Pi `agent_settled` marker by default; increase
+  `completion_wait_timeout` when Relay delivery can take longer. The collector
+  limits each record to 1 MiB and each request queue to 1,024 records or 16 MiB
+  of encoded data. The `streaming=True` flag does not enable NeMo Relay by
+  itself. Without `streaming=True`, startup leaves the NeMo Relay configuration
+  unchanged.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,

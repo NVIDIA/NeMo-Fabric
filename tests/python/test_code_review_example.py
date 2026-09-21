@@ -502,6 +502,12 @@ async def test_example_entrypoint_streams_relay_records_and_terminal_result(
     assert payload["result"]["status"] == "succeeded"
     mock_fabric.start_runtime.assert_awaited_once()
     assert mock_fabric.start_runtime.call_args.kwargs["streaming"] is True
+    if "--pi-relay-extension-path" in variant_options:
+        started_config = mock_fabric.start_runtime.call_args.args[0]
+        assert started_config.harness is not None
+        assert started_config.harness.settings["relay_extension_path"] == (
+            "/tmp/nemo-relay-pi-extension"
+        )
     runtime.invoke_stream.assert_called_once_with(input="review this")
     stream.result.assert_awaited_once_with()
     runtime_context.__aexit__.assert_awaited_once()

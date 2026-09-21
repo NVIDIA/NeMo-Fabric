@@ -51,6 +51,16 @@
     "required": ["provider", "model", "api_key_env"],
     "additionalProperties": false
   },
+  "extension_schemas": {
+    "run_result": {
+      "type": "object",
+      "properties": {
+        "pi_turn_started": {"type": "boolean"}
+      },
+      "required": ["pi_turn_started"],
+      "additionalProperties": false
+    }
+  },
   "tool_definition_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

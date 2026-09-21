@@ -14,6 +14,7 @@ from nemo_fabric_collector.app import (
     _AtofQueueClosed,
     _AtofQueueFull,
     _AtofRecordQueue,
+    _MAX_CANCELLED_REGISTRATION_TOKENS,
     _RecordTooLarge,
     _StreamAlreadyAttached,
     _SubscriptionPhase,
@@ -304,6 +305,42 @@ async def test_pi_registration_tombstone_prevents_late_commit():
     )
 
 
+async def test_pi_registration_tombstones_evict_the_oldest_entry_at_the_bound():
+    collector = AtofCollector(standalone=True)
+
+    for index in range(_MAX_CANCELLED_REGISTRATION_TOKENS + 1):
+        await collector.deregister(
+            RequestId(f"request-{index}"),
+            remove_queue=True,
+            pi_boundary="release",
+            registration_token=f"attempt-{index}",
+        )
+
+    assert len(collector._cancelled_registration_tokens) == (
+        _MAX_CANCELLED_REGISTRATION_TOKENS
+    )
+    assert (
+        RequestId("request-0"),
+        "attempt-0",
+    ) not in collector._cancelled_registration_tokens
+    assert (
+        RequestId(f"request-{_MAX_CANCELLED_REGISTRATION_TOKENS}"),
+        f"attempt-{_MAX_CANCELLED_REGISTRATION_TOKENS}",
+    ) in collector._cancelled_registration_tokens
+    with pytest.raises(RuntimeError, match="registration attempt was cancelled"):
+        await collector.register(
+            RequestId(f"request-{_MAX_CANCELLED_REGISTRATION_TOKENS}"),
+            correlation_mode="pi_turn_window",
+            registration_token=f"attempt-{_MAX_CANCELLED_REGISTRATION_TOKENS}",
+        )
+    await collector.register(
+        RequestId("request-0"),
+        correlation_mode="pi_turn_window",
+        registration_token="attempt-0",
+    )
+    assert RequestId("request-0") in collector.request_states
+
+
 async def test_pi_registration_tombstone_cancels_waiting_late_commit():
     collector = AtofCollector(standalone=True, completion_wait_timeout=0.1)
     first_id = RequestId("request-1")
@@ -462,6 +499,68 @@ async def test_pi_turn_window_routes_each_turn_through_agent_settled():
     assert await queue.get() == settled
     with pytest.raises(_AtofQueueClosed):
         await queue.get()
+
+
+async def test_pi_turn_window_logs_dropped_records_before_zero_turn_completion(
+    caplog: pytest.LogCaptureFixture,
+):
+    collector = AtofCollector(standalone=True, completion_wait_timeout=0.1)
+    request_id = RequestId("request-1")
+    await collector.register(request_id, correlation_mode="pi_turn_window")
+    unmatched = _pi_record("renamed_turn_start", uuid="turn-1", turn_seq=0)
+    settled = _pi_record("agent_settled", uuid="settled-1", turn_seq=0)
+
+    with caplog.at_level(logging.WARNING, logger="nemo_fabric_collector.app"):
+        await collector.route(unmatched, byte_size=1)
+        await collector.route(unmatched, byte_size=1)
+        await collector.route(settled, byte_size=1)
+        await collector.deregister(
+            request_id,
+            remove_queue=True,
+            pi_boundary="wait",
+        )
+
+    marker_warnings = [
+        record
+        for record in caplog.records
+        if "no turn_start marker was observed" in record.getMessage()
+    ]
+    assert len(marker_warnings) == 1
+    assert marker_warnings[0].request_id == request_id
+    assert marker_warnings[0].dropped_record_count == 2
+
+
+async def test_pi_turn_window_timeout_identifies_missing_completion_marker(
+    caplog: pytest.LogCaptureFixture,
+):
+    collector = AtofCollector(standalone=True, completion_wait_timeout=0.001)
+    request_id = RequestId("request-1")
+    await collector.register(request_id, correlation_mode="pi_turn_window")
+    await collector.route(
+        _pi_record("turn_start", kind="scope", uuid="turn-1", turn_seq=0),
+        byte_size=1,
+    )
+    await collector.route(
+        _pi_record("renamed_agent_settled", uuid="settled-1", turn_seq=0),
+        byte_size=1,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="nemo_fabric_collector.app"):
+        await collector.deregister(
+            request_id,
+            remove_queue=True,
+            pi_boundary="wait",
+        )
+
+    marker_warnings = [
+        record
+        for record in caplog.records
+        if "expected agent_settled marker" in record.getMessage()
+    ]
+    assert len(marker_warnings) == 1
+    assert marker_warnings[0].request_id == request_id
+    assert marker_warnings[0].expected_marker == "agent_settled"
+    assert marker_warnings[0].observed_record_count == 2
 
 
 async def test_pi_turn_window_drops_late_tail_before_next_turn(
@@ -687,7 +786,9 @@ async def test_pi_turn_window_accepts_zero_turn_completion():
     assert await queue.get() == settled
 
 
-async def test_pi_turn_window_releases_late_selected_completion_after_timeout():
+async def test_pi_turn_window_releases_late_selected_completion_after_timeout(
+    caplog: pytest.LogCaptureFixture,
+):
     collector = AtofCollector(
         standalone=True,
         queue_maxsize=1,
@@ -708,16 +809,25 @@ async def test_pi_turn_window_releases_late_selected_completion_after_timeout():
     await asyncio.sleep(0)
     assert not completion.done()
 
-    await collector.deregister(
-        first_id,
-        remove_queue=False,
-        pi_boundary="wait",
-    )
+    with caplog.at_level(logging.WARNING, logger="nemo_fabric_collector.app"):
+        await collector.deregister(
+            first_id,
+            remove_queue=False,
+            pi_boundary="wait",
+        )
     await completion
     await collector.register(
         RequestId("request-2"),
         correlation_mode="pi_turn_window",
     )
+    boundary_warnings = [
+        record
+        for record in caplog.records
+        if "agent_settled marker was observed" in record.getMessage()
+    ]
+    assert len(boundary_warnings) == 1
+    assert boundary_warnings[0].request_id == first_id
+    assert boundary_warnings[0].expected_marker == "agent_settled"
 
 
 async def test_pi_turn_window_observes_completion_dropped_by_backpressure():

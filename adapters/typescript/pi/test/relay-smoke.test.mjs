@@ -143,6 +143,7 @@ test(
 
       assert.equal(result.status, "succeeded");
       assert.equal(result.output.response, "relay smoke ok");
+      assert.equal(result.extensions.pi_turn_started, true);
       assert.equal(providerRequests.length, 1);
       assert.equal(providerRequests[0].model, "openai/gpt-oss-20b");
       assert.equal(result.output.relay_artifacts.some((artifact) => artifact.kind === "atif"), false);

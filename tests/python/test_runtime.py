@@ -461,6 +461,31 @@ async def test_stream_registration_retires_after_both_cleanup_phases(
     assert mock_collector.deregister.await_count == 2
 
 
+async def test_failed_stream_cleanup_still_retires_outcome_phase(
+    mock_native: MagicMock,
+):
+    mock_collector = MagicMock()
+    mock_collector.deregister = AsyncMock(
+        side_effect=RuntimeError("collector unavailable")
+    )
+    runtime = _runtime_wrapper(mock_native)
+    runtime._collector_client = mock_collector
+    runtime._registered_requests.add("request-1")
+    runtime._stream_finalizers_finished.add("request-1")
+
+    with pytest.raises(RuntimeError, match="collector unavailable"):
+        await runtime._finish_registered_request(
+            "request-1",
+            remove_queue=False,
+            pi_boundary=None,
+            stream_phase="outcome",
+        )
+
+    assert runtime._registered_requests == set()
+    assert runtime._stream_outcomes_finished == set()
+    assert runtime._stream_finalizers_finished == set()
+
+
 async def test_cancelled_outcome_cleanup_finishes_before_reraising(
     mock_native: MagicMock,
 ):
@@ -565,6 +590,65 @@ def test_stream_rejects_request_id_with_pending_collector_cleanup(
     mock_collector.register.assert_not_called()
     mock_collector.deregister.assert_not_called()
     assert runtime._registered_requests == {"request-1"}
+
+
+@pytest.mark.parametrize(
+    ("error_code", "metadata", "expected"),
+    [
+        ("pi_aborted", {"adapter": {"pi_turn_started": False}}, False),
+        ("pi_aborted", {"adapter": {"pi_turn_started": True}}, True),
+        ("pi_extension_shutdown", {"adapter": {"pi_turn_started": False}}, False),
+        ("pi_extension_shutdown", {"adapter": {"pi_turn_started": True}}, True),
+        ("pi_extension_shutdown", {}, True),
+        (
+            "pi_extension_shutdown",
+            {"adapter": {"pi_turn_started": "false"}},
+            True,
+        ),
+    ],
+)
+def test_pi_boundary_uses_explicit_turn_start_signal(
+    mock_native: MagicMock,
+    error_code: str,
+    metadata: dict[str, Any],
+    expected: bool,
+):
+    plan = _plan()
+    plan["config"]["harness"]["adapter_id"] = "nvidia.fabric.pi"
+    plan["adapter_descriptor"]["descriptor"].update(
+        {
+            "adapter_id": "nvidia.fabric.pi",
+            "harness": "pi",
+            "adapter_kind": "typescript",
+        }
+    )
+    runtime = Runtime(
+        client=MagicMock(),
+        plan=plan,
+        runtime=_runtime(),
+        collector_client=MagicMock(),
+    )
+    result = json.loads(
+        mock_native.invoke_runtime.side_effect(
+            "",
+            json.dumps(_runtime()),
+            json.dumps({"input": "hello", "request_id": "request-1"}),
+        )
+    )
+    result["metadata"] = metadata
+    result.update(
+        {
+            "status": "cancelled",
+            "output": None,
+            "error": {
+                "code": error_code,
+                "message": "Pi invocation was cancelled",
+                "retryable": False,
+            },
+        }
+    )
+
+    assert runtime._pi_result_started_turn(RunResult.from_mapping(result)) is expected
 
 
 async def test_pi_stream_reserves_one_token_for_registration_and_cleanup(

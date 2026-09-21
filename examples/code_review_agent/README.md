@@ -200,7 +200,8 @@ and pass the Relay Pi extension path explicitly:
   --input "Review calculator.py"
 ```
 
-The Pi variant uses the default embedded collector to collect ATOF records from
-every model turn, then prints one JSON document containing `atof_records` and
-the separate terminal `result`. Omit `--stream` to retain Relay artifacts
-without collecting records for that JSON output.
+The Pi variant uses the default embedded collector to collect model-turn ATOF
+records for successful Relay redirects and `model_redirect` marks for skipped
+redirects, then prints one JSON document containing `atof_records` and the
+separate terminal `result`. Omit `--stream` to retain Relay artifacts without
+collecting records for that JSON output.

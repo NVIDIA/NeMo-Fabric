@@ -72,6 +72,12 @@ def test_pi_descriptor_declares_the_supported_surface():
             "NeMo Relay 0.9 Pi extension"
         ),
     }
+    assert descriptor["extension_schemas"]["run_result"] == {
+        "type": "object",
+        "properties": {"pi_turn_started": {"type": "boolean"}},
+        "required": ["pi_turn_started"],
+        "additionalProperties": False,
+    }
     assert descriptor["telemetry"] == {
         "providers": {
             "relay": {"outputs": ["atif", "otel", "openinference"]},

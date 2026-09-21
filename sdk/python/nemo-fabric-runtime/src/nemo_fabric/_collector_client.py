@@ -37,7 +37,12 @@ class _AtofCollectorClient:
         self._stream_timeout = httpx.Timeout(timeout_seconds, read=None)
 
     @classmethod
-    def from_sink(cls, sink: RelayAtofStreamSinkConfig) -> _AtofCollectorClient:
+    def from_sink(
+        cls,
+        sink: RelayAtofStreamSinkConfig,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> _AtofCollectorClient:
         if sink.transport != "ndjson":
             raise FabricConfigError(
                 "Relay sink nemo-fabric-stream must use ndjson with the "
@@ -77,7 +82,11 @@ class _AtofCollectorClient:
             base_url=urlunsplit(
                 (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "")
             ),
-            timeout_seconds=sink.timeout_millis / 1000,
+            timeout_seconds=(
+                sink.timeout_millis / 1000
+                if timeout_seconds is None
+                else timeout_seconds
+            ),
             headers=headers,
         )
 
