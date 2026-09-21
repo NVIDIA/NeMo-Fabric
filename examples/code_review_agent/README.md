@@ -127,9 +127,10 @@ Keep any capability options from the previous section that the selected
 harness supports.
 
 Codex and Claude omit the default code-review skill; add
-`--skill-path ./skills/code-review` to retain it. For Relay, Codex and Claude
-require the NeMo Relay 0.7 CLI, Pi requires the NeMo Relay 0.9 CLI and its Pi
-extension, and Hermes Agent and Deep Agents use the Relay Python package.
+`--skill-path ./skills/code-review` to retain it. For Relay, Codex, Claude, and
+Pi require a NeMo Relay CLI in the `>=0.9,<0.10` range, Pi additionally requires
+its Relay Pi extension, and Hermes Agent and Deep Agents use the Relay Python
+package.
 Additional requirements appear in the corresponding subsections.
 
 For example, after installing Deep Agents, this command keeps the default skill
