@@ -756,7 +756,7 @@ class RelayObservabilityConfig(FabricBaseModel):
     @classmethod
     def _validate_version(cls, value: Any) -> Any:
         if not isinstance(value, int) or isinstance(value, bool) or value != 3:
-            raise ValueError("NeMo Relay 0.7 requires observability config version 3")
+            raise ValueError("NeMo Relay 0.9 requires observability config version 3")
         return value
 
     @model_validator(mode="after")
@@ -812,7 +812,7 @@ class RelayConfig(FabricBaseModel):
                     or version != 3
                 ):
                     raise ValueError(
-                        "NeMo Relay 0.7 requires observability config version 3 "
+                        "NeMo Relay 0.9 requires observability config version 3 "
                         f"for relay.components[{index}]"
                     )
             if "openinference" in config:

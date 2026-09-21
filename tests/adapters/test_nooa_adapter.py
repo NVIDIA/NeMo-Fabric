@@ -1506,7 +1506,7 @@ async def test_relay_lifecycle_correlates_once_and_collects_current_artifacts(
     monkeypatch.setattr(
         nooa_telemetry.importlib.metadata,
         "version",
-        MagicMock(return_value="0.7.2"),
+        MagicMock(return_value="0.9.0"),
     )
     monkeypatch.setattr(
         nooa_telemetry.common_utils,
@@ -1587,7 +1587,7 @@ async def test_relay_records_none_result_and_collects_artifacts(
     monkeypatch.setattr(
         nooa_telemetry.importlib.metadata,
         "version",
-        MagicMock(return_value="0.7.2"),
+        MagicMock(return_value="0.9.0"),
     )
     monkeypatch.setattr(
         nooa_telemetry.common_utils,
@@ -1662,7 +1662,7 @@ def test_relay_scope_comparison_handles_absent_baseline(
 
 
 @pytest.mark.usefixtures("nemo_relay")
-async def test_relay_072_emits_correlated_atof_and_atif(
+async def test_relay_090_emits_correlated_atof_and_atif(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -1710,6 +1710,11 @@ async def test_relay_072_emits_correlated_atof_and_atif(
         encoding="utf-8",
     )
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(config_path)
+    monkeypatch.setattr(
+        nooa_telemetry.importlib.metadata,
+        "version",
+        MagicMock(return_value="0.9.0"),
+    )
 
     install = MagicMock(return_value=MagicMock())
     nooa_module = types.ModuleType("nooa")
@@ -1761,7 +1766,7 @@ async def test_relay_scope_leak_preserves_result_and_quarantines_later_turns(
     monkeypatch.setattr(
         nooa_telemetry.importlib.metadata,
         "version",
-        MagicMock(return_value="0.7.2"),
+        MagicMock(return_value="0.9.0"),
     )
     monkeypatch.setattr(
         nooa_telemetry.common_utils,

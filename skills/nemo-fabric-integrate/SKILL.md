@@ -70,6 +70,14 @@ runtime assumptions but never installs harnesses or credentials at run time.
   not install Hermes Agent. Claude and Codex do not provide `relay`; their
   `harness` and `full` extras install the supported `nemo-relay` CLI alongside
   the harness SDK.
+- The npm-distributed Pi adapter requires a separately installed compatible Pi
+  SDK harness. Relay-enabled Pi runs also require
+  `nemo-relay>=0.9.0,<0.10.0`, `runtime.artifacts`, and
+  `harness.settings.relay_extension_path`. Relative
+  Relay extension paths resolve from `environment.workspace`. Set
+  `FABRIC_NEMO_RELAY_COMMAND` to an absolute path when `PATH` resolves to another
+  Relay version. Refer to the installation guide for the supported Relay
+  release and installation command.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise
