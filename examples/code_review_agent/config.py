@@ -277,6 +277,33 @@ def nooa_config() -> FabricConfig:
     return config
 
 
+def openclaw_config() -> FabricConfig:
+    """Return the complete OpenClaw adapter variant."""
+
+    config = base_config().model_copy(deep=True)
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.openclaw",
+        resolution="preinstalled",
+        settings={},
+    )
+    config.models = {"default": _nvidia_code_review_model()}
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content=CODE_REVIEW_INSTRUCTION)
+    )
+    config.tools = ToolsConfig(enabled=["read"])
+    config.runtime = RuntimeConfig(
+        input_schema="text",
+        output_schema="message",
+        artifacts="./artifacts/openclaw",
+    )
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=WORKSPACE,
+        artifacts="./artifacts/openclaw",
+    )
+    return config
+
+
 def with_opensandbox(base: FabricConfig) -> FabricConfig:
     """Return a copy configured for an externally controlled OpenSandbox."""
 
