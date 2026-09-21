@@ -25,11 +25,11 @@ OpenClaw is not a Python dependency of the adapter. If `openclaw` is not in
 
 The adapter maps the selected model, replacement system instruction, workspace,
 skills, tool policy, and MCP servers into a generated `openclaw.json` before
-starting the Gateway. `tools.enabled` maps to `tools.allow` and
-`tools.blocked` maps to `tools.deny`. It uses a generated one-time token,
-loopback binding, and an isolated temporary OpenClaw state directory. The
-Gateway is stopped and its temporary configuration is removed when the NeMo
-Fabric runtime stops.
+starting the Gateway. A non-empty `tools.enabled` list maps to `tools.allow`, an
+empty list maps to a wildcard `tools.deny` policy, and `tools.blocked` maps to
+`tools.deny`. It uses a generated one-time token, loopback binding, and an
+isolated temporary OpenClaw state directory. The Gateway is stopped and its
+temporary configuration is removed when the NeMo Fabric runtime stops.
 
 The adapter runs the Gateway in an isolated process group and forwards
 `SIGINT` and `SIGTERM` on POSIX systems. Linux adds a parent-death supervisor,

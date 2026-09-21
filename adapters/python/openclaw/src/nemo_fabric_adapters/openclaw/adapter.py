@@ -227,6 +227,7 @@ def _openclaw_config(
         "agents": {
             "defaults": {
                 "workspace": str(Path(workspace).resolve()),
+                "skipBootstrap": True,
                 "model": {"primary": model_ref},
                 "models": {
                     model_ref: {
@@ -250,10 +251,13 @@ def _openclaw_config(
         }
     if config.tools is not None:
         tools: dict[str, list[str]] = {}
-        if config.tools.enabled is not None:
-            tools["allow"] = config.tools.enabled
-        if config.tools.blocked:
-            tools["deny"] = config.tools.blocked
+        if config.tools.enabled == []:
+            tools["deny"] = ["*"]
+        else:
+            if config.tools.enabled is not None:
+                tools["allow"] = config.tools.enabled
+            if config.tools.blocked:
+                tools["deny"] = config.tools.blocked
         if tools:
             result["tools"] = tools
     mcp = _mcp_config(config)
