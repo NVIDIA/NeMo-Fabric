@@ -200,6 +200,7 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     }
     assert generated["agents"]["defaults"]["workspace"] == str(tmp_path)
     assert generated["agents"]["defaults"]["skipBootstrap"] is True
+    assert generated["agents"]["defaults"]["contextInjection"] == "never"
     assert generated["agents"]["defaults"]["model"] == {"primary": "test/fabric-echo"}
     assert generated["agents"]["defaults"]["models"]["test/fabric-echo"] == {
         "params": {"temperature": 0.2, "topP": 0.8, "maxTokens": 64},
@@ -220,6 +221,23 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert generated["mcp"]["servers"]["remote"]["transport"] == ("streamable-http")
     assert "auth" not in generated["mcp"]["servers"]["remote"]
     assert not state_root.exists()
+
+
+def test_openclaw_preserves_context_injection_without_system_instruction(
+    mock_openclaw: Path, tmp_path: Path
+):
+    config = _config(mock_openclaw)
+    config.instructions = None
+
+    generated = adapter._openclaw_config(
+        config,
+        _context(tmp_path),
+        base_dir=tmp_path,
+        port=20_000,
+        token_env="OPENCLAW_GATEWAY_TOKEN",
+    )
+
+    assert "contextInjection" not in generated["agents"]["defaults"]
 
 
 def test_openclaw_explicit_empty_enabled_tools_denies_all(

@@ -241,6 +241,8 @@ def _openclaw_config(
         "update": {"checkOnStart": False},
         "discovery": {"mdns": {"mode": "off"}},
     }
+    if config.instructions is not None and config.instructions.system is not None:
+        result["agents"]["defaults"]["contextInjection"] = "never"
     if config.skills and config.skills.paths:
         result["skills"] = {
             "load": {
