@@ -8,11 +8,26 @@ SPDX-License-Identifier: Apache-2.0 */}
 Use the `nvidia.fabric.openclaw` adapter to let NeMo Fabric configure, start,
 invoke, and stop a local OpenClaw Gateway for each NeMo Fabric runtime.
 
+The following diagram shows how the NeMo Fabric runtime uses the adapter to configure and invoke an isolated OpenClaw Gateway:
+
+```mermaid
+flowchart TB
+    Fabric["NeMo Fabric runtime"] -->|"Adapter contract<br/>JSON over stdio"| Adapter["OpenClaw adapter"]
+    Adapter -->|"Start with normalized configuration"| Gateway["OpenClaw Gateway process"]
+    Adapter -->|"Invoke through OpenAI-compatible Chat Completions<br/>over loopback HTTP"| Gateway
+    Gateway -->|"TypeScript"| Core["OpenClaw Gateway core"]
+    Core --> Native
+
+    subgraph Selected["Selected OpenClaw runtime"]
+        Native["Native OpenClaw runtime"]
+    end
+```
+
 ## Install OpenClaw and the Adapter
 
 Refer to the official OpenClaw [installation documentation](https://docs.openclaw.ai/install) for detailed installation and usage instructions. 
 
-To isntall OpenClaw from an npm package, then install the NeMo Fabric runtime and adapter run the following commands.
+To install OpenClaw from an npm package, then install the NeMo Fabric runtime and adapter run the following commands.
 
 ```bash
 # Requires Node.js >=24.16.0 <25 or >=26.1.0, and npm 11.16+
