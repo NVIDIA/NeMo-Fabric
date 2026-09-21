@@ -31,11 +31,13 @@ empty list maps to a wildcard `tools.deny` policy, and `tools.blocked` maps to
 isolated temporary OpenClaw state directory. The Gateway is stopped and its
 temporary configuration is removed when the NeMo Fabric runtime stops.
 
-The adapter runs the Gateway in an isolated process group and forwards
-`SIGINT` and `SIGTERM` on POSIX systems. Linux adds a parent-death supervisor,
-and Windows uses a kill-on-close Job Object, so abrupt adapter termination also
-stops the Gateway process tree. macOS signal forwarding covers catchable
-termination signals but cannot handle `SIGKILL`.
+The adapter runs the Gateway in an isolated process group, continuously checks
+its readiness endpoint, and forwards `SIGINT` and `SIGTERM` on POSIX systems.
+On Linux, the adapter uses `setpriv --pdeathsig SIGTERM` when `setpriv` is
+available so that the kernel signals the Gateway after abrupt adapter
+termination. Windows uses a kill-on-close Job Object for the Gateway process
+tree. Without `setpriv`, Linux has the same catchable-signal protection as
+macOS but cannot handle `SIGKILL`.
 
 The following harness settings are supported:
 

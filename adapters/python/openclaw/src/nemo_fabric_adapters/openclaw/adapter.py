@@ -35,10 +35,11 @@ DEFAULT_STARTUP_TIMEOUT_SECONDS = 30.0
 DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 10.0
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
 DEFAULT_READ_TIMEOUT_SECONDS = 600.0
+HEALTH_CHECK_INTERVAL_SECONDS = 2.0
+HEALTH_CHECK_TIMEOUT_SECONDS = 5.0
+HEALTH_CHECK_FAILURE_THRESHOLD = 3
 OPENCLAW_CHAT_MODEL = "openclaw/default"
 MAX_PORT_ATTEMPTS = 20
-SUPERVISOR_MODULE = "nemo_fabric_adapters.openclaw._supervisor"
-WINDOWS_START_BYTE = b"\x01"
 
 
 logger = logging.getLogger(__name__)
@@ -412,8 +413,6 @@ def _gateway_command(
     command: Path,
     *,
     port: int,
-    parent_pid: int,
-    shutdown_timeout: float,
 ) -> list[str]:
     gateway = [
         str(command),
@@ -426,19 +425,8 @@ def _gateway_command(
         "--auth",
         "token",
     ]
-    if sys.platform != "linux" and os.name != "nt":
-        return gateway
-    return [
-        sys.executable,
-        "-m",
-        SUPERVISOR_MODULE,
-        "--parent-pid",
-        str(parent_pid),
-        "--shutdown-timeout",
-        str(shutdown_timeout),
-        "--",
-        *gateway,
-    ]
+    setpriv = shutil.which("setpriv") if sys.platform == "linux" else None
+    return [setpriv, "--pdeathsig", "SIGTERM", "--", *gateway] if setpriv else gateway
 
 
 class OpenClawRuntime:
@@ -452,6 +440,10 @@ class OpenClawRuntime:
         self._process: asyncio.subprocess.Process | None = None
         self._log_tasks: list[asyncio.Task[None]] = []
         self._stderr_tail: deque[str] = deque(maxlen=50)
+        self._monitor_task: asyncio.Task[None] | None = None
+        self._gateway_failure: lifecycle.LifecycleError | None = None
+        self._gateway_failed = asyncio.Event()
+        self._stopping = False
         self._temp_dir: tempfile.TemporaryDirectory[str] | None = None
         self._port: int | None = None
         self._token: str | None = None
@@ -541,16 +533,10 @@ class OpenClawRuntime:
             gateway_command = _gateway_command(
                 command,
                 port=port,
-                parent_pid=os.getpid(),
-                shutdown_timeout=self._shutdown_timeout,
             )
             self._process = await asyncio.create_subprocess_exec(
                 *gateway_command,
-                stdin=(
-                    asyncio.subprocess.PIPE
-                    if os.name == "nt"
-                    else asyncio.subprocess.DEVNULL
-                ),
+                stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=child_env,
@@ -559,15 +545,10 @@ class OpenClawRuntime:
             if self._windows_job is not None:
                 try:
                     _windows_job.assign_process(self._windows_job, self._process.pid)
-                    if self._process.stdin is None:
-                        raise RuntimeError("Windows supervisor stdin was unavailable")
-                    self._process.stdin.write(WINDOWS_START_BYTE)
-                    await self._process.stdin.drain()
-                    self._process.stdin.close()
-                except (OSError, RuntimeError) as error:
+                except OSError as error:
                     raise lifecycle.LifecycleError(
                         "openclaw_process_supervision_failed",
-                        "OpenClaw could not join the Windows Job Object",
+                        "OpenClaw Gateway could not join the Windows Job Object",
                     ) from error
             self._log_tasks = [
                 asyncio.create_task(
@@ -596,6 +577,9 @@ class OpenClawRuntime:
                     pool=DEFAULT_CONNECT_TIMEOUT_SECONDS,
                 ),
             )
+            self._monitor_task = asyncio.create_task(
+                self._monitor_gateway(self._process, self._client, port)
+            )
         except BaseException:
             await self.stop()
             raise
@@ -605,6 +589,111 @@ class OpenClawRuntime:
         self._command = command
         self._port = port
         self._token = token
+
+    def _record_gateway_failure(
+        self,
+        code: str,
+        message: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        if self._gateway_failure is not None:
+            return
+        self._gateway_failure = lifecycle.LifecycleError(
+            code,
+            message,
+            metadata=metadata,
+        )
+        self._gateway_failed.set()
+
+    def _record_gateway_exit(self, returncode: int) -> None:
+        metadata: dict[str, Any] = {"exit_code": returncode}
+        detail = "\n".join(self._stderr_tail)[-2000:]
+        if detail:
+            metadata["detail"] = detail
+        self._record_gateway_failure(
+            "openclaw_gateway_exited",
+            f"OpenClaw Gateway exited unexpectedly with exit status {returncode}",
+            metadata=metadata,
+        )
+
+    async def _monitor_gateway(
+        self,
+        process: asyncio.subprocess.Process,
+        client: httpx.AsyncClient,
+        port: int,
+    ) -> None:
+        process_wait = asyncio.create_task(process.wait())
+        failed_health_checks = 0
+        try:
+            while True:
+                done, _ = await asyncio.wait(
+                    {process_wait}, timeout=HEALTH_CHECK_INTERVAL_SECONDS
+                )
+                if process_wait in done:
+                    returncode = process_wait.result()
+                    if not self._stopping:
+                        await asyncio.sleep(0)
+                        self._record_gateway_exit(returncode)
+                    return
+                try:
+                    response = await asyncio.wait_for(
+                        client.get(f"http://127.0.0.1:{port}/readyz"),
+                        timeout=HEALTH_CHECK_TIMEOUT_SECONDS,
+                    )
+                    healthy = response.status_code == 200
+                except (httpx.RequestError, TimeoutError):
+                    healthy = False
+                failed_health_checks = 0 if healthy else failed_health_checks + 1
+                if failed_health_checks >= HEALTH_CHECK_FAILURE_THRESHOLD:
+                    self._record_gateway_failure(
+                        "openclaw_gateway_unhealthy",
+                        "OpenClaw Gateway failed consecutive health checks",
+                        metadata={"failed_health_checks": failed_health_checks},
+                    )
+                    return
+        finally:
+            if not process_wait.done():
+                process_wait.cancel()
+            await asyncio.gather(process_wait, return_exceptions=True)
+
+    async def _invoke_monitored_gateway(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        *,
+        messages: list[dict[str, str]],
+        temperature: float | None,
+        top_p: float | None,
+        max_tokens: int | None,
+        user: str,
+    ) -> tuple[str, contract.AgentUsage | None]:
+        if self._gateway_failure is not None:
+            raise self._gateway_failure
+        invoke_task = asyncio.create_task(
+            _invoke_gateway(
+                client,
+                url,
+                messages=messages,
+                temperature=temperature,
+                top_p=top_p,
+                max_tokens=max_tokens,
+                user=user,
+            )
+        )
+        failure_task = asyncio.create_task(self._gateway_failed.wait())
+        try:
+            await asyncio.wait(
+                {invoke_task, failure_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if self._gateway_failure is not None:
+                raise self._gateway_failure
+            return await invoke_task
+        finally:
+            for task in (invoke_task, failure_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(invoke_task, failure_task, return_exceptions=True)
 
     def _install_signal_handlers(self) -> None:
         if os.name == "nt":
@@ -684,12 +773,9 @@ class OpenClawRuntime:
                 "openclaw_not_started", "OpenClaw runtime is not started"
             )
         if self._process.returncode is not None:
-            raise lifecycle.LifecycleError(
-                "openclaw_gateway_exited",
-                "OpenClaw Gateway exited unexpectedly "
-                f"with exit status {self._process.returncode}",
-                metadata={"exit_code": self._process.returncode},
-            )
+            self._record_gateway_exit(self._process.returncode)
+        if self._gateway_failure is not None:
+            raise self._gateway_failure
         if self._context is None or context.runtime_id != self._context.runtime_id:
             raise lifecycle.LifecycleError(
                 "openclaw_runtime_mismatch",
@@ -709,7 +795,7 @@ class OpenClawRuntime:
         )
         model = _selected_model(self._config)
         try:
-            text, usage = await _invoke_gateway(
+            text, usage = await self._invoke_monitored_gateway(
                 self._client,
                 f"http://127.0.0.1:{self._port}/v1/chat/completions",
                 messages=messages,
@@ -718,6 +804,8 @@ class OpenClawRuntime:
                 max_tokens=model.max_tokens,
                 user=context.runtime_id,
             )
+        except lifecycle.LifecycleError:
+            raise
         except httpx.HTTPStatusError as error:
             return contract.AgentRunResult(
                 status=contract.AgentRunStatus.FAILED,
@@ -748,6 +836,7 @@ class OpenClawRuntime:
 
     async def stop(self) -> None:
         cancellation: asyncio.CancelledError | None = None
+        self._stopping = True
         try:
             self._restore_signal_handlers()
         except Exception:
@@ -755,6 +844,16 @@ class OpenClawRuntime:
                 "OpenClaw could not restore signal handlers during cleanup",
                 exc_info=True,
             )
+        monitor_task, self._monitor_task = self._monitor_task, None
+        try:
+            if monitor_task is not None:
+                if not monitor_task.done():
+                    monitor_task.cancel()
+                await asyncio.gather(monitor_task, return_exceptions=True)
+        except asyncio.CancelledError as error:
+            cancellation = cancellation or error
+        except Exception:
+            logger.error("OpenClaw could not stop its monitor task", exc_info=True)
         client, self._client = self._client, None
         try:
             if client is not None:
@@ -826,6 +925,8 @@ class OpenClawRuntime:
         self._command = None
         self._port = None
         self._token = None
+        self._gateway_failure = None
+        self._gateway_failed.clear()
         if cancellation is not None:
             raise cancellation
 

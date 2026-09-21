@@ -88,12 +88,13 @@ NeMo Fabric runtime ID as the stable OpenClaw session key. Runtime shutdown clos
 the HTTP client, terminates the Gateway process tree, and removes the temporary
 configuration and state directory.
 
-The adapter isolates the Gateway in its own process group and forwards `SIGINT`
-and `SIGTERM` on POSIX systems. On Linux, a parent-death supervisor terminates
-the Gateway process group if the adapter exits unexpectedly. On Windows, a
-kill-on-close Job Object owns the supervisor and Gateway process tree. macOS
-signal forwarding covers catchable termination signals but cannot handle
-`SIGKILL`.
+The adapter isolates the Gateway in its own process group, continuously checks
+its readiness endpoint, and forwards `SIGINT` and `SIGTERM` on POSIX systems.
+On Linux, the adapter uses `setpriv --pdeathsig SIGTERM` when `setpriv` is
+available so that the kernel signals the Gateway after abrupt adapter
+termination. Windows uses a kill-on-close Job Object for the Gateway process
+tree. Without `setpriv`, Linux has the same catchable-signal protection as
+macOS but cannot handle `SIGKILL`.
 
 Relay telemetry, native OpenTelemetry, adapter-native response streaming,
 cancellation, and live updates are not supported.

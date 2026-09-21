@@ -9,6 +9,7 @@ import asyncio
 import ctypes
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -132,6 +133,49 @@ def test_openclaw_checks_configured_base_and_control_ports(
         20_000,
         20_002,
     ]
+
+
+@pytest.mark.parametrize(
+    ("platform", "setpriv", "expected_prefix"),
+    [
+        pytest.param(
+            "linux",
+            "/usr/bin/setpriv",
+            ["/usr/bin/setpriv", "--pdeathsig", "SIGTERM", "--"],
+            id="linux-with-setpriv",
+        ),
+        pytest.param("linux", None, [], id="linux-without-setpriv"),
+        pytest.param("darwin", "/usr/bin/setpriv", [], id="non-linux"),
+    ],
+)
+def test_openclaw_gateway_command_uses_setpriv_on_linux_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    setpriv: str | None,
+    expected_prefix: list[str],
+):
+    mock_which = MagicMock(return_value=setpriv)
+    monkeypatch.setattr(adapter.sys, "platform", platform)
+    monkeypatch.setattr(adapter.shutil, "which", mock_which)
+
+    command = adapter._gateway_command(Path("/usr/bin/openclaw"), port=20_000)
+
+    assert command == [
+        *expected_prefix,
+        "/usr/bin/openclaw",
+        "gateway",
+        "run",
+        "--port",
+        "20000",
+        "--bind",
+        "loopback",
+        "--auth",
+        "token",
+    ]
+    if platform == "linux":
+        mock_which.assert_called_once_with("setpriv")
+    else:
+        mock_which.assert_not_called()
 
 
 @pytest.mark.skipif(
@@ -328,6 +372,82 @@ async def test_openclaw_read_failure_is_not_retryable(
 
     assert caught.value.code == "openclaw_transport_failed"
     assert caught.value.retryable is False
+
+
+async def test_openclaw_process_exit_fails_active_invocation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    context = _context(tmp_path)
+    runtime = adapter.OpenClawRuntime()
+    process_exited = asyncio.Event()
+    invocation_started = asyncio.Event()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+
+    async def wait_for_process():
+        await process_exited.wait()
+        return 17
+
+    async def wait_for_gateway(*_args, **_kwargs):
+        invocation_started.set()
+        await asyncio.Event().wait()
+
+    mock_process.wait = AsyncMock(side_effect=wait_for_process)
+    mock_client = MagicMock(spec=adapter.httpx.AsyncClient)
+    mock_client.get = AsyncMock()
+    mock_invoke = AsyncMock(side_effect=wait_for_gateway)
+    monkeypatch.setattr(adapter, "_invoke_gateway", mock_invoke)
+    runtime._client = mock_client
+    runtime._config = _config(tmp_path / "openclaw")
+    runtime._context = context
+    runtime._port = 12345
+    runtime._process = mock_process
+    runtime._stderr_tail.append("gateway crashed")
+    runtime._monitor_task = asyncio.create_task(
+        runtime._monitor_gateway(mock_process, mock_client, 12345)
+    )
+
+    invoke_task = asyncio.create_task(
+        runtime.invoke(AgentRunRequest(input="Hello."), context)
+    )
+    await invocation_started.wait()
+    process_exited.set()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await asyncio.wait_for(invoke_task, timeout=1)
+
+    assert caught.value.code == "openclaw_gateway_exited"
+    assert caught.value.metadata == {
+        "exit_code": 17,
+        "detail": "gateway crashed",
+    }
+    assert mock_invoke.await_count == 1
+
+
+async def test_openclaw_health_monitor_detects_unresponsive_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+
+    async def block_forever(*_args, **_kwargs):
+        await asyncio.Event().wait()
+
+    mock_process.wait = AsyncMock(side_effect=block_forever)
+    mock_client = MagicMock(spec=adapter.httpx.AsyncClient)
+    mock_client.get = AsyncMock(side_effect=block_forever)
+    monkeypatch.setattr(adapter, "HEALTH_CHECK_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(adapter, "HEALTH_CHECK_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(adapter, "HEALTH_CHECK_FAILURE_THRESHOLD", 1)
+
+    await asyncio.wait_for(
+        runtime._monitor_gateway(mock_process, mock_client, 12345), timeout=1
+    )
+
+    assert runtime._gateway_failure is not None
+    assert runtime._gateway_failure.code == "openclaw_gateway_unhealthy"
+    assert runtime._gateway_failure.retryable is False
+    assert runtime._gateway_failure.metadata == {"failed_health_checks": 1}
 
 
 async def test_openclaw_stop_continues_after_cleanup_failures(
@@ -602,7 +722,10 @@ def test_windows_job_assigns_process_and_enables_kill_on_close(
     mock_kernel32.AssignProcessToJobObject.assert_called_once_with(job, process_handle)
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Linux parent-death signal")
+@pytest.mark.skipif(
+    sys.platform != "linux" or shutil.which("setpriv") is None,
+    reason="Linux setpriv parent-death signal",
+)
 def test_linux_parent_death_stops_openclaw_gateway(mock_openclaw: Path, tmp_path: Path):
     capture = tmp_path / "config.json"
     request_capture = tmp_path / "request.json"
