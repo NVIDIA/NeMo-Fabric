@@ -136,9 +136,11 @@ At runtime, OpenCode receives only required operating-system variables,
 explicit Fabric `environment.env` values, and the selected model credential.
 Other variables inherited by the Fabric process are not exposed to OpenCode.
 
-The adapter is non-interactive. It denies OpenCode requests to read `.env`
-files (except `.env.example`), access outside the workspace, or ask follow-up
-questions, rather than waiting for an approval that Fabric cannot supply.
+The adapter is non-interactive. It denies OpenCode's direct `read` permission
+for `.env` files (except `.env.example`), access outside the workspace, or
+follow-up questions rather than waiting for an approval that Fabric cannot
+supply. These rules are not a filesystem sandbox and do not prevent shell tools
+from reading files in the workspace.
 
 The adapter accepts plain-text input and returns the final response in
 `output.response`. Streaming, Relay, tool policy, subagents,
