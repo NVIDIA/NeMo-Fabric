@@ -427,6 +427,17 @@ relay_config.enable_relay(
 )
 ```
 
+`RelayAtifConfig.model_name` is an optional ATIF-only override. When you omit
+it, NeMo Fabric writes the selected `default` model, or the only configured
+model, into the Relay plugin configuration. If `config.models` is empty, the
+resolved configuration uses `"unknown"`, matching the adapter fallback.
+Multiple model roles without `default` fail planning before telemetry
+resolution.
+The derived label preserves `ModelConfig.model` exactly, including provider
+prefixes such as `openai/gpt-5-codex`. Adapter-specific wire-model translation
+does not change this telemetry label. Set the override explicitly only when the
+trajectory must use a different label.
+
 Additional NeMo Relay plugin components can be supplied generically with
 `RelayComponentConfig` when their component package is available in the runtime
 environment.
