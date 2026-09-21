@@ -259,6 +259,27 @@ def test_openclaw_explicit_empty_enabled_tools_denies_all(
     assert generated["tools"] == {"deny": ["*"]}
 
 
+def test_openclaw_explicit_empty_mcp_allowed_tools_excludes_all():
+    config = AgentConfig.from_mapping(
+        {
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+            "mcp": {
+                "servers": {
+                    "docs": {
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example.test/mcp",
+                        "allowed_tools": [],
+                    }
+                }
+            },
+        }
+    )
+
+    generated = adapter._mcp_config(config)
+
+    assert generated["docs"]["toolFilter"] == {"exclude": ["*"]}
+
+
 async def test_openclaw_invoke_rejects_exited_gateway(tmp_path: Path):
     context = _context(tmp_path)
     runtime = adapter.OpenClawRuntime()

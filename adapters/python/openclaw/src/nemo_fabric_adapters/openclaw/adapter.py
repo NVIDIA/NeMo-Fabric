@@ -182,10 +182,13 @@ def _mcp_config(config: contract.AgentConfig) -> dict[str, Any]:
                 common_utils.validate_http_headers(name, server.custom_headers)
                 item["headers"] = server.custom_headers
         tool_filter: dict[str, list[str]] = {}
-        if server.allowed_tools is not None:
-            tool_filter["include"] = server.allowed_tools
-        if server.blocked_tools:
-            tool_filter["exclude"] = server.blocked_tools
+        if server.allowed_tools == []:
+            tool_filter["exclude"] = ["*"]
+        else:
+            if server.allowed_tools is not None:
+                tool_filter["include"] = server.allowed_tools
+            if server.blocked_tools:
+                tool_filter["exclude"] = server.blocked_tools
         if tool_filter:
             item["toolFilter"] = tool_filter
         result[name] = item
