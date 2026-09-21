@@ -89,6 +89,114 @@ def test_relay_request_context(
         assert used_stacks == [created_context]
 
 
+SESSION_UUID = "018f47a4-0000-7d94-8e61-9f0f89b5d312"
+REQUEST_UUID = "018f47a4-3af7-7d94-8e61-9f0f89b5d312"
+
+
+def _stub_relay(monkeypatch: pytest.MonkeyPatch) -> tuple[MagicMock, list[Any]]:
+    relay = ModuleType("nemo_relay")
+    propagation_context = MagicMock(
+        side_effect=lambda parent_uuid, root_uuid=None: SimpleNamespace(
+            parent_uuid=parent_uuid,
+            root_uuid=root_uuid,
+        )
+    )
+    used_stacks: list[Any] = []
+
+    @contextmanager
+    def use_stack(stack):
+        used_stacks.append(stack)
+        yield stack
+
+    relay.PropagationContext = propagation_context
+    relay.create_scope_stack_from_propagation = MagicMock(side_effect=lambda ctx: ctx)
+    relay.use_scope_stack = use_stack
+    monkeypatch.setitem(sys.modules, "nemo_relay", relay)
+    return propagation_context, used_stacks
+
+
+def test_relay_request_context_roots_at_the_session(monkeypatch: pytest.MonkeyPatch):
+    propagation_context, used_stacks = _stub_relay(monkeypatch)
+
+    request_context, metadata = common_utils.relay_request_context(
+        REQUEST_UUID, SESSION_UUID
+    )
+    with request_context:
+        pass
+
+    propagation_context.assert_called_once_with(REQUEST_UUID, root_uuid=SESSION_UUID)
+    assert metadata == {
+        "nemo_fabric_request_id": REQUEST_UUID,
+        "nemo_fabric_session_root": SESSION_UUID,
+    }
+    assert used_stacks[0].root_uuid == SESSION_UUID
+    assert used_stacks[0].parent_uuid == REQUEST_UUID
+
+
+def test_relay_request_context_sessions_a_non_uuid_request(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    propagation_context, used_stacks = _stub_relay(monkeypatch)
+
+    request_context, metadata = common_utils.relay_request_context(
+        "request-1", SESSION_UUID
+    )
+    with request_context:
+        pass
+
+    propagation_context.assert_called_once_with(SESSION_UUID, root_uuid=SESSION_UUID)
+    assert metadata["nemo_fabric_request_id"] == "request-1"
+    assert used_stacks[0].root_uuid == SESSION_UUID
+
+
+@pytest.mark.parametrize("session_root", ["agent-session-TnDtpPhP", "", "not a uuid"])
+def test_relay_request_context_drops_a_non_uuid_session_root(
+    session_root: str, monkeypatch: pytest.MonkeyPatch
+):
+    propagation_context, used_stacks = _stub_relay(monkeypatch)
+
+    request_context, metadata = common_utils.relay_request_context(
+        REQUEST_UUID, session_root
+    )
+    with request_context:
+        pass
+
+    propagation_context.assert_called_once_with(REQUEST_UUID, root_uuid=REQUEST_UUID)
+    assert "nemo_fabric_session_root" not in metadata
+    assert used_stacks[0].root_uuid == REQUEST_UUID
+
+
+def test_two_requests_share_one_session_root(monkeypatch: pytest.MonkeyPatch):
+    _, used_stacks = _stub_relay(monkeypatch)
+    second_request = "018f47a4-9999-7d94-8e61-9f0f89b5d312"
+
+    for request_id in (REQUEST_UUID, second_request):
+        context, _ = common_utils.relay_request_context(request_id, SESSION_UUID)
+        with context:
+            pass
+
+    assert [stack.root_uuid for stack in used_stacks] == [SESSION_UUID, SESSION_UUID]
+    assert [stack.parent_uuid for stack in used_stacks] == [
+        REQUEST_UUID,
+        second_request,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("context", "expected"),
+    [
+        ({common_utils.SESSION_ROOT_CONTEXT_KEY: SESSION_UUID}, SESSION_UUID),
+        ({common_utils.SESSION_ROOT_CONTEXT_KEY: "agent-session-TnDtpPhP"}, None),
+        ({common_utils.SESSION_ROOT_CONTEXT_KEY: 7}, None),
+        ({"session_id": SESSION_UUID}, None),
+        ({}, None),
+        (None, None),
+    ],
+)
+def test_session_root_id(context: dict[str, Any] | None, expected: str | None):
+    assert common_utils.session_root_id(context) == expected
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [

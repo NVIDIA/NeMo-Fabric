@@ -735,6 +735,7 @@ class DeepAgentsRuntime:
                 user_message,
                 request_id,
                 runtime_context.invocation_id,
+                common_utils.session_root_id(request.context),
             )
 
         if outcome.error is None:
@@ -807,6 +808,7 @@ class DeepAgentsRuntime:
         user_message: str,
         request_id: str,
         invocation_id: str,
+        session_root: str | None = None,
     ) -> TurnOutcome:
         """Run one turn inside the Relay plugin/scope, isolating telemetry faults.
 
@@ -836,7 +838,7 @@ class DeepAgentsRuntime:
                 # turn, which would lose one of the two.
                 try:
                     request_context, metadata = common_utils.relay_request_context(
-                        request_id
+                        request_id, session_root
                     )
                     metadata["nemo_fabric_invocation_id"] = invocation_id
                     with request_context:
