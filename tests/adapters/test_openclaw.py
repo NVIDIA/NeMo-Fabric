@@ -366,6 +366,74 @@ async def test_openclaw_stop_continues_after_cleanup_failures(
     assert runtime._temp_dir is None
 
 
+@pytest.mark.parametrize("phase", ["client", "process", "logs"])
+async def test_openclaw_stop_completes_cleanup_before_propagating_cancellation(
+    monkeypatch: pytest.MonkeyPatch, phase: str
+):
+    runtime = adapter.OpenClawRuntime()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def block_cleanup(*_args, **_kwargs):
+        entered.set()
+        await release.wait()
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock(
+        side_effect=block_cleanup if phase == "client" else None
+    )
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    process_wait_calls = 0
+
+    async def wait_for_process():
+        nonlocal process_wait_calls
+        process_wait_calls += 1
+        if phase == "process" and process_wait_calls == 1:
+            await block_cleanup()
+
+    mock_process.wait = AsyncMock(side_effect=wait_for_process)
+    if os.name != "nt":
+        monkeypatch.setattr(adapter.os, "killpg", MagicMock())
+
+    if phase == "logs":
+        monkeypatch.setattr(adapter.asyncio, "gather", block_cleanup)
+
+    log_task = asyncio.create_task(asyncio.Event().wait())
+    await asyncio.sleep(0)
+    mock_temp_dir = MagicMock()
+    runtime._client = mock_client
+    runtime._process = mock_process
+    runtime._log_tasks = [log_task]
+    runtime._temp_dir = mock_temp_dir
+
+    stop_task = asyncio.create_task(runtime.stop())
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    stop_task.cancel()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.shield(stop_task), timeout=0.2)
+    finally:
+        release.set()
+        with suppress(asyncio.CancelledError):
+            await stop_task
+
+    mock_client.aclose.assert_awaited_once_with()
+    assert mock_process.wait.await_count >= 1
+    if phase == "process":
+        if os.name == "nt":
+            mock_process.kill.assert_called_once_with()
+        else:
+            adapter.os.killpg.assert_any_call(1234, signal.SIGKILL)
+    assert log_task.cancelled()
+    mock_temp_dir.cleanup.assert_called_once_with()
+    assert runtime._client is None
+    assert runtime._process is None
+    assert runtime._log_tasks == []
+    assert runtime._temp_dir is None
+
+
 async def test_openclaw_command_timeout_kills_and_reaps_process(
     monkeypatch: pytest.MonkeyPatch,
 ):

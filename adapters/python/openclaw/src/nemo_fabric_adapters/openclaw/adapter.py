@@ -747,6 +747,7 @@ class OpenClawRuntime:
         )
 
     async def stop(self) -> None:
+        cancellation: asyncio.CancelledError | None = None
         try:
             self._restore_signal_handlers()
         except Exception:
@@ -758,6 +759,8 @@ class OpenClawRuntime:
         try:
             if client is not None:
                 await client.aclose()
+        except asyncio.CancelledError as error:
+            cancellation = cancellation or error
         except Exception:
             logger.error("OpenClaw could not close its HTTP client", exc_info=True)
         process, self._process = self._process, None
@@ -774,7 +777,9 @@ class OpenClawRuntime:
                     await asyncio.wait_for(
                         process.wait(), timeout=self._shutdown_timeout
                     )
-                except TimeoutError:
+                except (TimeoutError, asyncio.CancelledError) as error:
+                    if isinstance(error, asyncio.CancelledError):
+                        cancellation = cancellation or error
                     if os.name == "nt":
                         process.kill()
                     else:
@@ -782,7 +787,10 @@ class OpenClawRuntime:
                             os.killpg(process.pid, signal.SIGKILL)
                         except ProcessLookupError:
                             pass
-                    await process.wait()
+                    try:
+                        await process.wait()
+                    except asyncio.CancelledError as error:
+                        cancellation = cancellation or error
         except Exception:
             logger.error("OpenClaw Gateway process cleanup failed", exc_info=True)
         windows_job, self._windows_job = self._windows_job, None
@@ -800,6 +808,8 @@ class OpenClawRuntime:
                     task.cancel()
             if log_tasks:
                 await asyncio.gather(*log_tasks, return_exceptions=True)
+        except asyncio.CancelledError as error:
+            cancellation = cancellation or error
         except Exception:
             logger.error("OpenClaw could not stop log-capture tasks", exc_info=True)
         temp_dir, self._temp_dir = self._temp_dir, None
@@ -816,6 +826,8 @@ class OpenClawRuntime:
         self._command = None
         self._port = None
         self._token = None
+        if cancellation is not None:
+            raise cancellation
 
 
 def main() -> None:
