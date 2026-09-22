@@ -34,7 +34,7 @@ The adapter supports the following configuration:
   may use any portable environment-variable name.
 - **Instructions:** Supports `instructions.system` with `mode: replace`.
 - **Skills:** Each `skills.paths` entry must be a directory containing `SKILL.md`.
-  Startup verifies that every skill loads and that names are unique.
+  Startup verifies that only those `SKILL.md` files load and that names are unique.
 - **MCP:** Supports `stdio` and `streamable-http`. Startup fails if a configured
   server cannot connect.
 
@@ -63,6 +63,9 @@ For MCP credentials, prefer parent-only variables so they are used to construct
 the header without being added to OpenCode's tool environment.
 
 SSE, MCP authentication objects, and per-server tool filters are unsupported.
+MCP elicitation is also unsupported. Configure only non-interactive MCP servers:
+NeMo Fabric cannot reply to an elicitation request, so it can block an
+invocation until its configured timeout.
 
 ### Runtime Behavior
 

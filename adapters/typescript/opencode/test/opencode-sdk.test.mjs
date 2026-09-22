@@ -321,6 +321,94 @@ test("rejects a configured skill that OpenCode did not load", async () => {
   }
 });
 
+test("rejects Markdown files and nested skills discovered outside configured skill paths", async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), "fabric-opencode-unexpected-skills-"));
+  const skillDirectory = join(baseDir, "skills", "review");
+  const nestedDirectory = join(skillDirectory, "examples", "experimental");
+  try {
+    await mkdir(nestedDirectory, { recursive: true });
+    await Promise.all([
+      writeFile(join(skillDirectory, "SKILL.md"), "---\nname: review\n---\nReview the change.\n", "utf8"),
+      writeFile(join(skillDirectory, "README.md"), "---\nname: readme\n---\nUnexpected skill.\n", "utf8"),
+      writeFile(join(nestedDirectory, "SKILL.md"), "---\nname: experimental\n---\nUnexpected skill.\n", "utf8"),
+    ]);
+    const factory = new OpenCodeSdkSessionFactory(async () => ({
+      OpenCode: {
+        async create() {
+          return {
+            plugin: { async awaitActivation() {} },
+            skill: {
+              async list() {
+                return {
+                  data: [
+                    { name: "review", location: await realpath(join(skillDirectory, "SKILL.md")) },
+                    { name: "readme", location: await realpath(join(skillDirectory, "README.md")) },
+                    { name: "experimental", location: await realpath(join(nestedDirectory, "SKILL.md")) },
+                  ],
+                };
+              },
+            },
+            sessions: {
+              async create() { throw new Error("unexpected skills must fail before session creation"); },
+              async remove() {},
+            },
+            async close() {},
+          };
+        },
+      },
+    }));
+    const input = startInput();
+    input.baseDir = baseDir;
+    input.config.skills = { paths: ["skills/review"] };
+
+    await assert.rejects(factory.create(input), (error) => error.code === "opencode_skill_unexpected");
+  } finally {
+    await rm(baseDir, { recursive: true, force: true });
+  }
+});
+
+test("allows OpenCode built-in skills outside configured Fabric skill directories", async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), "fabric-opencode-built-in-skills-"));
+  const skillDirectory = join(baseDir, "skills", "review");
+  try {
+    await mkdir(skillDirectory, { recursive: true });
+    await writeFile(join(skillDirectory, "SKILL.md"), "---\nname: review\n---\nReview the change.\n", "utf8");
+    const factory = new OpenCodeSdkSessionFactory(async () => ({
+      OpenCode: {
+        async create() {
+          return {
+            plugin: { async awaitActivation() {} },
+            skill: {
+              async list() {
+                return {
+                  data: [
+                    { name: "review", location: await realpath(join(skillDirectory, "SKILL.md")) },
+                    { name: "opencode", location: "/opencode-core/skills/opencode/SKILL.md" },
+                  ],
+                };
+              },
+            },
+            sessions: {
+              async create() { return { id: "session-built-in-skill" }; },
+              async remove() {},
+            },
+            async close() {},
+          };
+        },
+      },
+    }));
+    const input = startInput();
+    input.baseDir = baseDir;
+    input.config.skills = { paths: ["skills/review"] };
+
+    const handle = await factory.create(input);
+
+    await handle.stop();
+  } finally {
+    await rm(baseDir, { recursive: true, force: true });
+  }
+});
+
 test("rejects configured skills with duplicate loaded names", async () => {
   const baseDir = await mkdtemp(join(tmpdir(), "fabric-opencode-duplicate-skills-"));
   const first = join(baseDir, "skills", "first");
@@ -920,6 +1008,57 @@ test("fails startup when an HTTP or stdio MCP server cannot connect", async () =
         !error.message.includes("private connection detail"),
     );
     assert.equal(removed, true);
+  }
+});
+
+test("allows an MCP server that connects and lists tools within OpenCode's combined defaults", async () => {
+  const originalNow = Date.now;
+  let now = 0;
+  Date.now = () => now;
+  try {
+    const input = startInput();
+    input.config.mcp = {
+      servers: {
+        slow: { transport: "streamable-http", url: "http://127.0.0.1:1/mcp" },
+      },
+    };
+    let statusChecks = 0;
+    const factory = new OpenCodeSdkSessionFactory(
+      async () => ({
+        OpenCode: {
+          async create() {
+            return {
+              mcp: {
+                async list() {
+                  statusChecks += 1;
+                  if (statusChecks === 1) {
+                    now = 30_000;
+                    return { data: [{ name: "slow", status: { status: "pending" } }] };
+                  }
+                  if (statusChecks === 2) {
+                    now = 45_000;
+                    return { data: [{ name: "slow", status: { status: "pending" } }] };
+                  }
+                  return { data: [{ name: "slow", status: { status: "connected" } }] };
+                },
+              },
+              sessions: {
+                async create() { return { id: "session-mcp-slow-startup" }; },
+                async remove() {},
+              },
+              async close() {},
+            };
+          },
+        },
+      }),
+    );
+
+    const handle = await factory.create(input);
+
+    assert.equal(statusChecks, 3);
+    await handle.stop();
+  } finally {
+    Date.now = originalNow;
   }
 });
 

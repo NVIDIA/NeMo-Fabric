@@ -10,7 +10,7 @@ import type { AdapterStartInput } from "nemo-fabric-adapters-common";
 import { LifecycleError } from "nemo-fabric-adapters-common";
 import { randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { selectModel, selectSystemInstruction } from "./configuration.js";
 import { ModelEndpointProxy } from "./model-endpoint-proxy.js";
@@ -49,7 +49,9 @@ const NONINTERACTIVE_SESSION_PERMISSIONS = [
   { action: "read", resource: "*.env.example", effect: "allow" },
   { action: "question", resource: "*", effect: "deny" },
 ] as const;
-const MCP_CONNECTION_TIMEOUT_MS = 35_000;
+// OpenCode allows 30 seconds each for MCP transport startup and initial tool
+// catalog discovery. Keep the Fabric readiness deadline aligned with both.
+const MCP_CONNECTION_TIMEOUT_MS = 65_000;
 const MCP_CONNECTION_POLL_INTERVAL_MS = 50;
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
 
@@ -211,6 +213,21 @@ async function verifyLoadedSkills(
       )
       .map((skill) => [skill.location, skill]),
   );
+  const configuredLocations = new Set(configured.map((skill) => skill.location));
+  const hasUnexpectedConfiguredSkill = Array.from(byLocation.keys()).some(
+    (location) =>
+      !configuredLocations.has(location) &&
+      configured.some((skill) => {
+        const relativeLocation = relative(skill.directory, location);
+        return relativeLocation !== ".." && !relativeLocation.startsWith(`..${sep}`) && !isAbsolute(relativeLocation);
+      }),
+  );
+  if (hasUnexpectedConfiguredSkill) {
+    throw new LifecycleError(
+      "opencode_skill_unexpected",
+      "OpenCode loaded a skill that was not configured by NeMo Fabric",
+    );
+  }
   const configuredSkills = configured.map((skill) => byLocation.get(skill.location));
   if (configuredSkills.some((skill) => skill === undefined)) {
     throw new LifecycleError(
