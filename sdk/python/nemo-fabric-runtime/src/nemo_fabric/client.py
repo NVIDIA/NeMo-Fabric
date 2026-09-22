@@ -212,7 +212,7 @@ class Fabric:
         By default, streaming starts an embedded collector. Set
         ``launch_collector=False`` to use an externally managed collector. Pi
         requires the embedded collector because its ATOF records do not carry
-        Fabric request IDs.
+        NeMo Fabric request IDs.
 
         Args:
             config: Complete typed ``FabricConfig``.

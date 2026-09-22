@@ -39,6 +39,7 @@ _COMPLETION_WAIT_TIMEOUT_SECONDS = 1.0
 _PI_TURN_WINDOW = "pi_turn_window"
 _PI_BOUNDARY_ACTIONS = frozenset({"preserve", "release", "wait"})
 _MAX_CANCELLED_REGISTRATION_TOKENS = 1024
+_MAX_PI_COMPLETION_TOMBSTONES = 1024
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,9 @@ class _RequestState:
     boundary_preserved: bool = False
     boundary_timed_out: bool = False
     boundary_generation: int | None = None
+    prior_turn_seq: int | None = None
+    latest_turn_seq: int | None = None
+    completion_key: tuple[int, ScopeUuid] | None = None
     registration_token: str | None = None
     pi_records_seen: int = 0
     turn_started: bool = False
@@ -214,6 +218,9 @@ class AtofCollector:
         self._pi_boundary_ready.set()
         self._pi_boundary_generation = 0
         self._pi_boundary_owner: int | None = None
+        self._pi_boundary_turn_seq: int | None = None
+        self._pi_quarantined_turn_seq: int | None = None
+        self._pi_completion_tombstones: dict[tuple[int, ScopeUuid], None] = {}
         self._cancelled_registration_tokens: dict[tuple[RequestId, str], None] = {}
 
     async def register(
@@ -277,6 +284,7 @@ class AtofCollector:
                 routing_ready=correlation_mode != _PI_TURN_WINDOW,
                 capture_records=capture_records,
                 boundary_generation=boundary_generation,
+                prior_turn_seq=self._pi_boundary_turn_seq,
                 registration_token=registration_token,
             )
             if correlation_mode == _PI_TURN_WINDOW:
@@ -435,6 +443,15 @@ class AtofCollector:
         if state.capture_records:
             try:
                 await queue.put(record, byte_size=byte_size)
+            except asyncio.CancelledError:
+                if pi_completion:
+                    await self._rollback_pi_completion_reservation(
+                        request_id,
+                        queue,
+                        state,
+                        record,
+                    )
+                raise
             except _AtofQueueClosed:
                 # Preserve the successful publisher response for a partially
                 # processed NDJSON payload rather than causing a retry that could
@@ -453,13 +470,22 @@ class AtofCollector:
                     return
 
         if pi_completion:
+            # Once the terminal record has entered the queue (or reached a
+            # handled terminal queue state), publish completion before another
+            # await can deliver cancellation. Cancellation during put() rolls
+            # the reservation back instead.
+            state.completion_seen.set()
+            if state.boundary_timed_out and not self.request_uuids:
+                # The timed-out request may already have removed its routes.
+                # Resolve its generation-owned quarantine before cancellation
+                # can interrupt the post-delivery lock acquisition below.
+                self._resolve_pi_boundary(state)
             async with self.state_lock:
                 current = (
                     self.request_states.get(request_id) is state
                     and self.request_messages.get(request_id) is queue
                 )
                 if current:
-                    state.completion_seen.set()
                     if state.boundary_timed_out and not self.request_uuids:
                         # The terminal marker was selected before the timeout
                         # but could not enter a backpressured queue until its
@@ -472,6 +498,38 @@ class AtofCollector:
                     # collector.
                     self._resolve_pi_boundary(state)
 
+    async def _rollback_pi_completion_reservation(
+        self,
+        request_id: RequestId,
+        queue: _AtofRecordQueue,
+        state: _RequestState,
+        record: dict[str, Any],
+    ) -> None:
+        turn_seq = _pi_turn_seq(record)
+        completion_uuid = _record_uuid(record)
+        completion_key = (
+            (turn_seq, completion_uuid)
+            if turn_seq is not None and completion_uuid is not None
+            else None
+        )
+        async with self.state_lock:
+            current = (
+                self.request_states.get(request_id) is state
+                and self.request_messages.get(request_id) is queue
+            )
+            if (
+                not current
+                or completion_key is None
+                or state.completion_key != completion_key
+                or state.completion_seen.is_set()
+            ):
+                return
+            state.completion_key = None
+            state.completion_marker_seen = False
+            state.pi_records_seen -= 1
+            if not state.turn_started:
+                state.routing_ready = False
+
     async def close(self) -> None:
         async with self.state_lock:
             queues = tuple(self.request_messages.values())
@@ -481,6 +539,9 @@ class AtofCollector:
             self.request_states.clear()
             self._cancelled_registration_tokens.clear()
             self._pi_boundary_owner = None
+            self._pi_boundary_turn_seq = None
+            self._pi_quarantined_turn_seq = None
+            self._pi_completion_tombstones.clear()
             self._pi_boundary_ready.set()
             for queue in queues:
                 queue.close(
@@ -491,12 +552,46 @@ class AtofCollector:
     def _route_request(self, record: dict[str, Any]) -> RequestId | None:
         if self._standalone:
             if len(self.request_uuids) == 0:
-                if not self._pi_boundary_ready.is_set() and _is_pi_completion(record):
-                    # A previous Pi batch arrived after its bounded completion
-                    # wait. Drop the entire batch and reopen registration only
-                    # at its ordered terminal marker.
-                    self._pi_boundary_owner = None
-                    self._pi_boundary_ready.set()
+                boundary_timed_out = not self._pi_boundary_ready.is_set()
+                if _is_pi_turn_start(record):
+                    turn_seq = _pi_turn_seq(record)
+                    if turn_seq is not None and (
+                        self._pi_boundary_turn_seq is None
+                        or turn_seq > self._pi_boundary_turn_seq
+                    ):
+                        self._advance_pi_turn_seq(turn_seq)
+                        if boundary_timed_out and (
+                            self._pi_quarantined_turn_seq is None
+                            or turn_seq > self._pi_quarantined_turn_seq
+                        ):
+                            self._pi_quarantined_turn_seq = turn_seq
+                if _is_pi_completion(record):
+                    turn_seq = _pi_turn_seq(record)
+                    completion_uuid = _record_uuid(record)
+                    if (
+                        turn_seq is not None
+                        and completion_uuid is not None
+                        and (turn_seq, completion_uuid)
+                        not in self._pi_completion_tombstones
+                        and (
+                            self._pi_boundary_turn_seq is None
+                            or turn_seq >= self._pi_boundary_turn_seq
+                        )
+                        and (
+                            not boundary_timed_out
+                            or turn_seq == self._pi_quarantined_turn_seq
+                            or self._pi_quarantined_turn_seq is None
+                        )
+                    ):
+                        self._remember_pi_completion(turn_seq, completion_uuid)
+                        if boundary_timed_out:
+                            # A previous Pi batch arrived after its bounded
+                            # completion wait. Drop the batch and reopen
+                            # registration only at its ordered terminal marker.
+                            self._advance_pi_turn_seq(turn_seq)
+                            self._pi_quarantined_turn_seq = None
+                            self._pi_boundary_owner = None
+                            self._pi_boundary_ready.set()
                 return None
 
             request_id = next(iter(self.request_uuids))
@@ -507,6 +602,37 @@ class AtofCollector:
                 state.pi_records_seen += 1
                 turn_started = _is_pi_turn_start(record)
                 completed = _is_pi_completion(record)
+                turn_seq = _pi_turn_seq(record) if turn_started or completed else None
+                if turn_started:
+                    if turn_seq is None or (
+                        state.prior_turn_seq is not None
+                        and turn_seq <= state.prior_turn_seq
+                    ):
+                        return None
+                    if (
+                        state.latest_turn_seq is not None
+                        and turn_seq <= state.latest_turn_seq
+                    ):
+                        return None
+                    state.latest_turn_seq = turn_seq
+                elif completed:
+                    completion_uuid = _record_uuid(record)
+                    if (
+                        turn_seq is None
+                        or completion_uuid is None
+                        or (turn_seq, completion_uuid) in self._pi_completion_tombstones
+                        or state.completion_key is not None
+                    ):
+                        return None
+                    if state.turn_started:
+                        if turn_seq != state.latest_turn_seq:
+                            return None
+                    elif (
+                        state.prior_turn_seq is not None
+                        and turn_seq < state.prior_turn_seq
+                    ):
+                        return None
+                    state.completion_key = (turn_seq, completion_uuid)
                 if not state.routing_ready:
                     # Pi has no Fabric request ID. Serialized leases guarantee that
                     # the first turn start, or a zero-turn terminal marker, belongs
@@ -570,8 +696,28 @@ class AtofCollector:
             state.boundary_generation is not None
             and self._pi_boundary_owner == state.boundary_generation
         ):
+            if state.turn_started and state.latest_turn_seq is not None:
+                self._advance_pi_turn_seq(state.latest_turn_seq)
+            if state.completion_key is not None:
+                self._remember_pi_completion(*state.completion_key)
+            self._pi_quarantined_turn_seq = None
             self._pi_boundary_owner = None
             self._pi_boundary_ready.set()
+
+    def _advance_pi_turn_seq(self, turn_seq: int) -> None:
+        if self._pi_boundary_turn_seq is None or turn_seq > self._pi_boundary_turn_seq:
+            self._pi_boundary_turn_seq = turn_seq
+
+    def _remember_pi_completion(
+        self,
+        turn_seq: int,
+        completion_uuid: ScopeUuid,
+    ) -> None:
+        key = (turn_seq, completion_uuid)
+        self._pi_completion_tombstones[key] = None
+        while len(self._pi_completion_tombstones) > _MAX_PI_COMPLETION_TOMBSTONES:
+            oldest = next(iter(self._pi_completion_tombstones))
+            self._pi_completion_tombstones.pop(oldest)
 
     def _remember_cancelled_registration(
         self,
@@ -639,6 +785,8 @@ class AtofCollector:
                 state.boundary_timed_out = True
                 self._pi_boundary_ready.clear()
                 turn_started = state.turn_started
+                if turn_started and state.latest_turn_seq is not None:
+                    self._pi_quarantined_turn_seq = state.latest_turn_seq
                 pi_records_seen = state.pi_records_seen
                 completion_marker_seen = state.completion_marker_seen
             # Do not hold the completed invocation open indefinitely. A later
@@ -734,6 +882,13 @@ def _is_pi_completion(record: dict[str, Any]) -> bool:
         and metadata.get("agent_kind") == "pi"
         and metadata.get("hook_event_name") == "agent_settled"
     )
+
+
+def _pi_turn_seq(record: dict[str, Any]) -> int | None:
+    value = _record_metadata(record).get("turn_seq")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
 
 
 def _collector(request: Request) -> AtofCollector:

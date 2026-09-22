@@ -694,9 +694,9 @@ Streaming has the following v0.1 constraints:
   `agent_settled`. If output is interrupted or late, the collector discards the
   remainder through that same terminal marker before allowing the next
   invocation to start.
-- An external collector can be shared by multiple Fabric runtimes whose
+- An external collector can be shared by multiple NeMo Fabric runtimes whose
   adapters propagate request IDs. It must be reachable by both Relay
-  publishers and Fabric clients. Use HTTPS and its configured authentication
+  publishers and NeMo Fabric clients. Use HTTPS and its configured authentication
   when it is deployed beyond a trusted local boundary.
 
 Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and

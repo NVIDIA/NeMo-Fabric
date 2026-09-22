@@ -171,7 +171,7 @@ async def start_runtime(
 
 Start a stateful runtime for one or more ordered invocations.
 
-Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. With NVIDIA NeMo Relay enabled, ``streaming=True`` uses collector-backed streaming. By default, streaming starts an embedded collector. Set ``launch_collector=False`` to use an externally managed collector. Pi requires the embedded collector because its ATOF records do not carry Fabric request IDs.
+Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. With NVIDIA NeMo Relay enabled, ``streaming=True`` uses collector-backed streaming. By default, streaming starts an embedded collector. Set ``launch_collector=False`` to use an externally managed collector. Pi requires the embedded collector because its ATOF records do not carry NeMo Fabric request IDs.
 
 
 
