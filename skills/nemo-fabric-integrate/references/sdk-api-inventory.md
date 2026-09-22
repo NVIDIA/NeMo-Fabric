@@ -25,7 +25,7 @@ The following table lists the `Fabric` methods and when to use each:
 | `plan(config, *, base_dir=...)` | No | You need the selected adapter, capability routing, and runtime capabilities before running. | `RunPlan` |
 | `doctor(config, *, base_dir=...)` | Yes | You need preflight diagnostics for adapter resolution, capability routing, declared requirements, and environment assumptions. | `DoctorReport` |
 | `run(config, *, base_dir=..., input=... \| request=...)` | Yes | You need one complete start, invoke, result, and stop cycle. | `RunResult` |
-| `start_runtime(config, *, base_dir=..., overrides=..., streaming=False, launch_collector=None, completion_wait_timeout=1.0)` | Yes | You need state across multiple ordered invocations. Pass `streaming=True` with NVIDIA NeMo Relay enabled only to provision `invoke_stream(...)`. | `Runtime` |
+| `start_runtime(config, *, base_dir=..., overrides=..., streaming=False)` | Yes | You need state across multiple ordered invocations. Pass `streaming=True` with NVIDIA NeMo Relay enabled only to provision `invoke_stream(...)`. | `Runtime` |
 
 `input` and `request` on `run(...)` are mutually exclusive. Use `input=...` for
 the common case; use `request=RunRequest(...)` when the invocation needs a
