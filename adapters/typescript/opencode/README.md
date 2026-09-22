@@ -26,7 +26,9 @@ packages reports a stable harness-unavailable error.
 OpenCode 2.0.3 does not support npm's `install-strategy=nested`. The documented
 command requires npm's default hoisted layout.
 
-## Supported configuration
+## Supported Configuration
+
+The adapter supports the following configuration:
 
 - **Models:** Selects the `default` role, or the only configured role. `api_key_env`
   may use any portable environment-variable name.
@@ -36,17 +38,17 @@ command requires npm's default hoisted layout.
 - **MCP:** Supports `stdio` and `streamable-http`. Startup fails if a configured
   server cannot connect.
 
-### Model endpoints
+### Model Endpoints
 
 `models.<role>.base_url` must point to an OpenAI-compatible Chat Completions
-endpoint, not an OpenCode server. Remote endpoints require HTTPS; HTTP is
+endpoint, not an OpenCode server. Remote endpoints require HTTPS. HTTP is
 allowed only for loopback development endpoints.
 
 `temperature` and `top_p` are supported only with `base_url`. The adapter removes
 OpenCode's `prompt_cache_key` extension for compatibility with providers that
 implement only the core protocol.
 
-### MCP configuration
+### MCP Configuration
 
 Streamable-HTTP servers may define headers but not command arguments. Stdio
 servers may define command arguments and environment variables but not HTTP
@@ -59,7 +61,7 @@ the header without being added to OpenCode's tool environment.
 
 SSE, MCP authentication objects, and per-server tool filters are unsupported.
 
-### Runtime behavior
+### Runtime Behavior
 
 The adapter accepts plain-text input and returns the final response in
 `output.response`. It uses the Fabric workspace while disabling ambient OpenCode

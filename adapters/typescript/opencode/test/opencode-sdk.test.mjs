@@ -214,7 +214,7 @@ test("encodes system instructions literally before OpenCode parses configuration
     }),
   );
   const input = startInput();
-  const instruction = "Preserve {env:OPENCODE_TEST_KEY} and {file:/tmp/fabric-secret} literally.";
+  const instruction = "Preserve {env:OPENCODE_TEST_KEY}, {file:/tmp/fabric-secret}, $&, $`, and $' literally.";
   input.config.instructions = { system: { content: instruction, mode: "replace" } };
 
   const handle = await factory.create(input);

@@ -74,12 +74,14 @@ commands above create the descriptor's `dist/cli.js` runner.
 
 ## Supported Configuration
 
+The adapter supports the following configuration:
+
 - **Models:** Selects the `default` role, or the only configured role.
   `api_key_env` may use any portable environment-variable name. When no
   endpoint is configured, the provider and model must be supported by the
   installed OpenCode SDK.
 - **Instructions:** Supports `instructions.system` with `mode: replace`.
-  A replacement instruction replaces OpenCode's base prompt; OpenCode may still
+  A replacement instruction replaces OpenCode's base prompt. OpenCode may still
   append runtime context.
 - **Skills:** Each `skills.paths` entry must be a directory containing `SKILL.md`.
   Startup verifies that every skill loads and that names are unique.
@@ -100,6 +102,9 @@ buffers and rewrites request bodies up to 16 MiB. Larger requests receive HTTP
 413 rather than consuming unbounded adapter memory.
 
 `temperature` and `top_p` are supported only with `base_url`.
+
+To configure a loopback OpenAI-compatible endpoint for development, set
+`base_url` as follows:
 
 ```python
 config.models["default"].base_url = "http://127.0.0.1:8080/v1"

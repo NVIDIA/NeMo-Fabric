@@ -143,7 +143,8 @@ function hostConfigContent(
     ...(Object.keys(configuredMcpServers).length === 0 ? {} : { mcp: { servers: configuredMcpServers } }),
   });
   for (const [placeholder, value] of literals) {
-    content = content.replace(JSON.stringify(placeholder), JSON.stringify(value).replaceAll("{", "\\u007b"));
+    const encoded = JSON.stringify(value).replaceAll("{", "\\u007b");
+    content = content.replace(JSON.stringify(placeholder), () => encoded);
   }
   return content;
 }
