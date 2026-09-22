@@ -137,7 +137,7 @@ _config = partial(
             "nvidia.fabric.openclaw",
             {
                 "openclaw_command": "/opt/openclaw/bin/openclaw",
-                "port": 19001,
+                "port_range": {"start": 19001, "end": 19111},
                 "startup_timeout_seconds": 20,
                 "shutdown_timeout_seconds": 5,
                 "connect_timeout_seconds": 3,

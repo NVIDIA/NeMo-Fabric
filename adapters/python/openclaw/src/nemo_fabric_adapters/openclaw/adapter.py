@@ -43,6 +43,8 @@ HEALTH_CHECK_FAILURE_THRESHOLD = 3
 OPENCLAW_CHAT_MODEL = "openclaw/default"
 SUPPORTED_OPENCLAW_VERSIONS = frozenset({"2026.9.4"})
 MAX_PORT_ATTEMPTS = 20
+MAX_DERIVED_PORT_OFFSET = 110
+MAX_TCP_PORT = 65_535
 
 
 logger = logging.getLogger(__name__)
@@ -147,25 +149,52 @@ def _select_port(settings: dict[str, Any]) -> int:
     need to be preflighted here. See "Port mapping (derived)":
     https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived
     """
-    configured = settings.get("port")
-    if configured is not None:
-        if isinstance(configured, bool) or not isinstance(configured, int):
+    configured_range = settings.get("port_range")
+    if configured_range is not None:
+        if not isinstance(configured_range, dict) or set(configured_range) != {
+            "start",
+            "end",
+        }:
             raise lifecycle.LifecycleError(
                 "openclaw_invalid_configuration",
-                "OpenClaw port must be an integer",
-                metadata={"field": "harness.settings.port"},
+                "OpenClaw port_range must contain integer start and end fields",
+                metadata={"field": "harness.settings.port_range"},
             )
-        if not _port_available(configured) or not _port_available(configured + 2):
+        start = configured_range["start"]
+        end = configured_range["end"]
+        if (
+            isinstance(start, bool)
+            or not isinstance(start, int)
+            or isinstance(end, bool)
+            or not isinstance(end, int)
+            or start < 1
+            or end > MAX_TCP_PORT
+            or end - start < MAX_DERIVED_PORT_OFFSET
+        ):
             raise lifecycle.LifecycleError(
-                "openclaw_port_unavailable",
-                f"OpenClaw port range derived from {configured} is unavailable",
-                metadata={"port": configured},
+                "openclaw_invalid_configuration",
+                "OpenClaw port_range must be a valid TCP range spanning at least 111 ports",
+                metadata={"field": "harness.settings.port_range"},
             )
-        return configured
+        candidate_count = end - MAX_DERIVED_PORT_OFFSET - start + 1
+        first_offset = secrets.randbelow(candidate_count)
+        for attempt in range(min(MAX_PORT_ATTEMPTS, candidate_count)):
+            candidate = start + (first_offset + attempt) % candidate_count
+            if _port_available(candidate) and _port_available(candidate + 2):
+                return candidate
+        raise lifecycle.LifecycleError(
+            "openclaw_port_unavailable",
+            "OpenClaw could not find an available base port in the configured range",
+            metadata={"port_range": configured_range},
+            retryable=True,
+        )
+
     for _ in range(MAX_PORT_ATTEMPTS):
         with socket.create_server(("127.0.0.1", 0)) as sock:
             _, base_port = sock.getsockname()
-            if _port_available(base_port + 2):
+            if base_port + MAX_DERIVED_PORT_OFFSET <= MAX_TCP_PORT and _port_available(
+                base_port + 2
+            ):
                 return base_port
 
     raise lifecycle.LifecycleError(

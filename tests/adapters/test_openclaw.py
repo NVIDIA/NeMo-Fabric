@@ -48,10 +48,8 @@ def _context(workspace: Path) -> RuntimeContext:
     return RuntimeContext.from_mapping(payload)
 
 
-def _config(command: Path, *, port: int | None = None) -> AgentConfig:
+def _config(command: Path) -> AgentConfig:
     settings: dict[str, object] = {"openclaw_command": str(command)}
-    if port is not None:
-        settings["port"] = port
     return AgentConfig.from_mapping(
         {
             "harness": {"settings": settings},
@@ -122,17 +120,59 @@ def test_openclaw_selects_os_assigned_base_port(monkeypatch: pytest.MonkeyPatch)
     mock_port_available.assert_called_once_with(20_002)
 
 
-def test_openclaw_checks_configured_base_and_control_ports(
+def test_openclaw_retries_os_assigned_port_without_full_derived_range(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    high_server = MagicMock(spec=adapter.socket.socket)
+    high_server.__enter__.return_value = high_server
+    high_server.getsockname.return_value = ("127.0.0.1", 65_500)
+    valid_server = MagicMock(spec=adapter.socket.socket)
+    valid_server.__enter__.return_value = valid_server
+    valid_server.getsockname.return_value = ("127.0.0.1", 20_000)
+    mock_port_available = MagicMock(return_value=True)
+    monkeypatch.setattr(
+        adapter.socket,
+        "create_server",
+        MagicMock(side_effect=[high_server, valid_server]),
+    )
+    monkeypatch.setattr(adapter, "_port_available", mock_port_available)
+
+    assert adapter._select_port({}) == 20_000
+    mock_port_available.assert_called_once_with(20_002)
+
+
+def test_openclaw_selects_base_inside_configured_port_range(
     monkeypatch: pytest.MonkeyPatch,
 ):
     mock_port_available = MagicMock(return_value=True)
     monkeypatch.setattr(adapter, "_port_available", mock_port_available)
+    monkeypatch.setattr(adapter.secrets, "randbelow", MagicMock(return_value=7))
 
-    assert adapter._select_port({"port": 20_000}) == 20_000
+    assert (
+        adapter._select_port({"port_range": {"start": 20_000, "end": 20_120}}) == 20_007
+    )
     assert [item.args[0] for item in mock_port_available.call_args_list] == [
-        20_000,
-        20_002,
+        20_007,
+        20_009,
     ]
+    assert 20_007 + adapter.MAX_DERIVED_PORT_OFFSET <= 20_120
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"port_range": {"start": 20_000}},
+        {"port_range": {"start": 20_000, "end": 20_109}},
+        {"port_range": {"start": True, "end": 20_110}},
+        {"port_range": {"start": 65_425, "end": 65_536}},
+    ],
+)
+def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._select_port(settings)
+
+    assert caught.value.code == "openclaw_invalid_configuration"
+    assert caught.value.metadata == {"field": "harness.settings.port_range"}
 
 
 def test_openclaw_accepts_supported_version():

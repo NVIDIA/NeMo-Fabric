@@ -44,13 +44,13 @@ The following harness settings are supported:
 | Setting | Default | Description |
 | --- | --- | --- |
 | `openclaw_command` | `openclaw` | Executable name or path. |
-| `port` | Random available range | Gateway base port. |
+| `port_range` | Random available range | Inclusive consumer-allocated range with `start` and `end` fields; it must span at least 111 ports. |
 | `startup_timeout_seconds` | `30` | Gateway readiness timeout. |
 | `shutdown_timeout_seconds` | `10` | Graceful shutdown timeout. |
 | `connect_timeout_seconds` | `10` | Local HTTP connection timeout. |
 | `read_timeout_seconds` | `600` | Local HTTP response timeout. |
 
-OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the derived CDP range available when using OpenClaw browser features.
+OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. Set `port_range` when the consumer reserves a port range before configuring Fabric; the adapter selects a base whose complete derived footprint fits inside that range. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime when using OpenClaw browser features.
 
 For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
 adapter generates an OpenClaw custom provider using the
