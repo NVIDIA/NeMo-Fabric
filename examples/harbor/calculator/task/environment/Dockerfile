@@ -3,6 +3,8 @@
 
 FROM python:3.12-slim-bookworm
 
+COPY --from=node:24.16.0-bookworm-slim /usr/local /usr/local
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential curl git pkg-config libssl-dev \
@@ -13,13 +15,17 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-ini
     && rm -f /tmp/rustup-init.sh
 ENV PATH=/root/.cargo/bin:$PATH
 
+RUN npm install --global openclaw@2026.9.4 --allow-scripts=openclaw
+
 COPY vendor/nemo-fabric /opt/nemo-fabric
 RUN pip install --no-cache-dir \
+        -e /opt/nemo-fabric/adapter-contract/python \
         -e /opt/nemo-fabric/sdk/python/nemo-fabric-runtime \
         -e /opt/nemo-fabric/adapters/python/common \
         -e /opt/nemo-fabric/adapters/python/claude \
         -e /opt/nemo-fabric/adapters/python/hermes \
-        -e "/opt/nemo-fabric/sdk/python/nemo-fabric[claude,hermes-agent,relay]"
+        -e /opt/nemo-fabric/adapters/python/openclaw \
+        -e "/opt/nemo-fabric/sdk/python/nemo-fabric[claude,hermes-agent,openclaw,relay]"
 
 COPY calculator.py /app/calculator.py
 COPY fabric /opt/fabric-calculator

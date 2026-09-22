@@ -119,7 +119,9 @@ async def test_remote_agent_invokes_supported_protocol(
         "anthropic-messages": "max_tokens",
     }[api_type]
     assert captured[-1][max_tokens_field] == 64
-    assert captured[-1].get("stream", False) is (api_type != "openai-completions")
+    assert captured[-1]["stream"] is True
+    if api_type == "openai-completions":
+        assert captured[-1]["stream_options"] == {"include_usage": True}
     assert captured[-1]["messages" if api_type != "openai-responses" else "input"]
 
 
@@ -407,7 +409,7 @@ async def test_remote_agent_maps_timeout_and_closes_client(
 ):
     request = httpx.Request("POST", "https://agents.example.test/v1/chat/completions")
     mock_client = MagicMock()
-    mock_client.post = AsyncMock(
+    mock_client.stream = MagicMock(
         side_effect=httpx.ReadTimeout("remote agent timed out", request=request)
     )
     mock_client.aclose = AsyncMock()

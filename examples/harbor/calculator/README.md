@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 This self-contained calculator task is the fastest way to check the complete
 Harbor → `FabricAgent` → NeMo Fabric → verifier path. Start with the deterministic,
 credential-free scripted run, then use the same task to try Hermes Agent, Relay
-telemetry, or Claude. `FabricAgent` translates Harbor options into a complete
+telemetry, OpenClaw, or Claude. `FabricAgent` translates Harbor options into a complete
 typed `FabricConfig`; Harbor owns the task, container, verifier, reward,
 concurrency, and run layout.
 
@@ -20,8 +20,8 @@ same shell. Commit the NeMo Fabric revision you want to run because the build co
 is created from `HEAD`.
 
 The credential-free smoke does not require an API key. Export `NVIDIA_API_KEY`
-for Hermes Agent runs or `ANTHROPIC_API_KEY` for the Claude run before using that
-harness. The first image build can take several minutes.
+for Hermes Agent and OpenClaw runs or `ANTHROPIC_API_KEY` for the Claude run
+before using that harness. The first image build can take several minutes.
 
 ## Prepare the Build Context
 
@@ -30,7 +30,6 @@ its Docker context. Export committed `HEAD` so the image installs the exact
 NeMo Fabric revision from your checkout:
 
 ```bash
-set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 CALCULATOR_DIR="$PWD/examples/harbor/calculator"
@@ -134,7 +133,33 @@ find "$RUNS_DIR/fabric-hermes-relay" \
   -print -exec python -m json.tool {} \;
 ```
 
-## 4. Claude
+## 4. OpenClaw
+
+The task image installs Node.js, OpenClaw, and the OpenClaw adapter. This run
+uses the NVIDIA API through OpenClaw's OpenAI-compatible provider.
+
+```bash
+: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running OpenClaw}"
+
+uv run --extra harbor harbor run \
+  --path "$TASK_DIR" \
+  --agent nemo_fabric.integrations.harbor:FabricAgent \
+  --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
+  --ak fabric_adapter_id=nvidia.fabric.openclaw \
+  --ak fabric_config_base_dir=/opt/fabric-calculator \
+  --ak fabric_workspace=/app \
+  --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \
+  --ak fabric_model_api_key_env=NVIDIA_API_KEY \
+  --ak fabric_runtime_timeout_seconds=600 \
+  --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
+  --job-name fabric-openclaw \
+  --jobs-dir "$RUNS_DIR" \
+  --n-concurrent 1 \
+  --n-attempts 1 \
+  --force-build
+```
+
+## 5. Claude
 
 The Claude Agent SDK supplies its compatible Claude Code executable. Harbor
 passes the API key into the task environment. NeMo Fabric forwards the supported

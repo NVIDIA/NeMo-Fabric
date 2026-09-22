@@ -177,6 +177,10 @@ default demo.
 Its Relay integration requires `nemo-relay>=0.7.2,<0.8`. The `--stream` option
 collects Relay ATOF records; it is not native model-response streaming.
 
+### OpenClaw (`openclaw`)
+
+Install Node.js and OpenClaw, then install the [OpenClaw adapter](../../adapters/python/openclaw/README.md). This variant uses the `NVIDIA_API_KEY` configured for the default demo and retains the default code-review skill. OpenClaw does not currently support Relay telemetry.
+
 ### Pi (`pi`)
 
 Install Node.js 22.19 or later, and follow the

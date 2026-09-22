@@ -286,11 +286,15 @@ def test_claude_calculator_run_uses_current_adapter_contract():
     assert config.runtime.timeout_seconds == 600
     assert config.models["default"].provider == "anthropic"
     dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
+    assert "-e /opt/nemo-fabric/adapter-contract/python" in dockerfile
     assert "-e /opt/nemo-fabric/adapters/python/claude" in dockerfile
     assert "-e /opt/nemo-fabric/adapters/python/hermes" in dockerfile
+    assert "-e /opt/nemo-fabric/adapters/python/openclaw" in dockerfile
     assert "-e /opt/nemo-fabric/sdk/python/nemo-fabric-runtime" in dockerfile
     assert '-e "/opt/nemo-fabric/sdk/python/nemo-fabric[' in dockerfile
-    assert "nemo-fabric[claude,hermes-agent,relay]" in dockerfile
+    assert "nemo-fabric[claude,hermes-agent,openclaw,relay]" in dockerfile
+    assert "node:24.16.0-bookworm-slim" in dockerfile
+    assert "npm install --global openclaw@2026.9.4 --allow-scripts=openclaw" in dockerfile
     assert "@openai/codex" not in dockerfile
 
 
@@ -330,8 +334,8 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     declared_extras = set(sdk_project["optional-dependencies"])
 
     assert "run.sh" not in calculator
-    assert calculator.count(" harbor run \\") == 4
-    assert calculator.count("uv run --extra harbor harbor run \\") == 4
+    assert calculator.count(" harbor run \\") == 5
+    assert calculator.count("uv run --extra harbor harbor run \\") == 5
     assert "uv run --extra harbor --extra" not in calculator
     assert landing.count("uv run --extra harbor harbor run") == 0
     assert swebench.count("uv run --extra harbor harbor run") == 5
@@ -346,6 +350,8 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "fabric_workspace=/app" in calculator
     assert "--model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" in calculator
     assert "--model anthropic/claude-sonnet-4-5" in calculator
+    assert "fabric_adapter_id=nvidia.fabric.openclaw" in calculator
+    assert "fabric_model_api_key_env=NVIDIA_API_KEY" in calculator
     assert 'CALCULATOR_DIR="$PWD/examples/harbor/calculator"' in calculator
     assert "calculator/README.md" in landing
     assert "swebench/README.md" in landing
