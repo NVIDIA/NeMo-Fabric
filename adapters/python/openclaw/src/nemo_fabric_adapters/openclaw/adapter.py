@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -40,10 +41,31 @@ HEALTH_CHECK_INTERVAL_SECONDS = 2.0
 HEALTH_CHECK_TIMEOUT_SECONDS = 5.0
 HEALTH_CHECK_FAILURE_THRESHOLD = 3
 OPENCLAW_CHAT_MODEL = "openclaw/default"
+SUPPORTED_OPENCLAW_VERSIONS = frozenset({"2026.9.4"})
 MAX_PORT_ATTEMPTS = 20
 
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_openclaw_version(output: str) -> None:
+    match = re.search(r"(?im)^OpenClaw\s+(\d+\.\d+\.\d+)(?:\s|$)", output)
+    if match is None:
+        raise lifecycle.LifecycleError(
+            "openclaw_version_check_failed",
+            "Configured command did not report a recognizable OpenClaw version",
+        )
+    version = match.group(1)
+    if version not in SUPPORTED_OPENCLAW_VERSIONS:
+        supported = ", ".join(sorted(SUPPORTED_OPENCLAW_VERSIONS))
+        raise lifecycle.LifecycleError(
+            "openclaw_unsupported_version",
+            f"OpenClaw {version} is not supported; install OpenClaw {supported}",
+            metadata={
+                "detected_version": version,
+                "supported_versions": sorted(SUPPORTED_OPENCLAW_VERSIONS),
+            },
+        )
 
 
 def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
@@ -435,11 +457,7 @@ class OpenClawRuntime:
         version = await _command_output(
             command, "--version", env=child_env, timeout=startup_timeout
         )
-        if "openclaw" not in version.lower():
-            raise lifecycle.LifecycleError(
-                "openclaw_version_check_failed",
-                "Configured command did not identify itself as OpenClaw",
-            )
+        _validate_openclaw_version(version)
 
         port = _select_port(settings)
 

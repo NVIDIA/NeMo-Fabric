@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 args = sys.argv[1:]
 if args == ["--version"]:
-    print("OpenClaw 2099.1.0")
+    print("OpenClaw 2026.9.4 (fabric test)")
     raise SystemExit(0)
 if args[:3] == ["config", "validate", "--json"]:
     with open(os.environ["OPENCLAW_CONFIG_PATH"], encoding="utf-8") as stream:

@@ -135,6 +135,29 @@ def test_openclaw_checks_configured_base_and_control_ports(
     ]
 
 
+def test_openclaw_accepts_supported_version():
+    adapter._validate_openclaw_version("OpenClaw 2026.9.4 (3a9d69d)")
+
+
+def test_openclaw_rejects_unsupported_version():
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._validate_openclaw_version("OpenClaw 2026.9.5 (abcdef0)")
+
+    assert caught.value.code == "openclaw_unsupported_version"
+    assert caught.value.metadata == {
+        "detected_version": "2026.9.5",
+        "supported_versions": ["2026.9.4"],
+    }
+
+
+@pytest.mark.parametrize("output", ["not-openclaw 2026.9.4", "OpenClaw development"])
+def test_openclaw_rejects_unrecognized_version_output(output: str):
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._validate_openclaw_version(output)
+
+    assert caught.value.code == "openclaw_version_check_failed"
+
+
 @pytest.mark.parametrize(
     ("platform", "setpriv", "expected_prefix"),
     [
