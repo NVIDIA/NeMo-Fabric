@@ -26,25 +26,47 @@ packages reports a stable harness-unavailable error.
 OpenCode 2.0.3 does not support npm's `install-strategy=nested`. The documented
 command requires npm's default hoisted layout.
 
-The adapter supports `models` and an optional `models.<role>.base_url`. The
-adapter selects the `default` model role or the only configured role, accepts
-plain-text input, and returns a terminal result with `output.response`. A
-configured `api_key_env` name is passed explicitly to OpenCode, including for
-native OpenCode providers, so it does not need to be that provider's usual
-environment-variable name. It must be a portable environment-variable
-identifier (for example, `NVIDIA_API_KEY`).
-A configured endpoint must implement the OpenAI-compatible Chat Completions
-protocol; it is a model-provider endpoint, not an OpenCode server endpoint.
-Remote endpoints must use HTTPS because requests include the provider
-credential; HTTP is permitted only for loopback endpoints used in local
-development and testing.
-For configured endpoints, the adapter omits OpenCode's `prompt_cache_key`
-extension so providers that implement the core protocol but reject that
-OpenAI-specific field remain compatible.
-The adapter does not expose streaming, Relay, MCP, skills, tool policy,
-subagents, system instructions, or model settings.
-It keeps the Fabric workspace as OpenCode's working location while disabling
-ambient OpenCode project and user configuration and instruction discovery.
+## Supported configuration
+
+- **Models:** Selects the `default` role, or the only configured role. `api_key_env`
+  may use any portable environment-variable name.
+- **Instructions:** Supports `instructions.system` with `mode: replace`.
+- **Skills:** Each `skills.paths` entry must be a directory containing `SKILL.md`.
+  Startup verifies that every skill loads and that names are unique.
+- **MCP:** Supports `stdio` and `streamable-http`. Startup fails if a configured
+  server cannot connect.
+
+### Model endpoints
+
+`models.<role>.base_url` must point to an OpenAI-compatible Chat Completions
+endpoint, not an OpenCode server. Remote endpoints require HTTPS; HTTP is
+allowed only for loopback development endpoints.
+
+`temperature` and `top_p` are supported only with `base_url`. The adapter removes
+OpenCode's `prompt_cache_key` extension for compatibility with providers that
+implement only the core protocol.
+
+### MCP configuration
+
+Streamable-HTTP servers may define headers but not command arguments. Stdio
+servers may define command arguments and environment variables but not HTTP
+headers.
+
+Header values may reference `${NAME}`. Resolution checks `environment.env`
+first, then the parent process environment. Unresolved references fail startup.
+For MCP credentials, prefer parent-only variables so they are used to construct
+the header without being added to OpenCode's tool environment.
+
+SSE, MCP authentication objects, and per-server tool filters are unsupported.
+
+### Runtime behavior
+
+The adapter accepts plain-text input and returns the final response in
+`output.response`. It uses the Fabric workspace while disabling ambient OpenCode
+project configuration, user configuration, and instruction discovery.
+
+Streaming, Relay, tool policy, subagents, provider-specific model settings, and
+`max_tokens` are not supported.
 
 One Bun adapter process owns one embedded OpenCode host and session for each
 NeMo Fabric runtime. Ordered invocations reuse that session. Stopping the

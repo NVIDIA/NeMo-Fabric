@@ -71,6 +71,65 @@ test("selects an HTTPS OpenAI-compatible endpoint when configured", () => {
   );
 });
 
+test("selects sampling settings for an OpenAI-compatible endpoint", () => {
+  assert.deepEqual(
+    selectModel({
+      models: {
+        default: {
+          provider: "local-test",
+          model: "test-model",
+          api_key_env: "LOCAL_TEST_KEY",
+          base_url: "http://127.0.0.1:8080/v1",
+          temperature: 0.25,
+          top_p: 0.8,
+        },
+      },
+    }),
+    {
+      provider: "local-test",
+      model: "test-model",
+      apiKeyEnv: "LOCAL_TEST_KEY",
+      baseUrl: "http://127.0.0.1:8080/v1",
+      sampling: { temperature: 0.25, topP: 0.8 },
+    },
+  );
+});
+
+test("rejects sampling settings for native OpenCode providers", () => {
+  assert.throws(
+    () =>
+      selectModel({
+        models: {
+          default: {
+            provider: "openai",
+            model: "gpt-4.1-mini",
+            api_key_env: "OPENAI_API_KEY",
+            temperature: 0.25,
+          },
+        },
+      }),
+    (error) => error.code === "opencode_sampling_requires_base_url",
+  );
+});
+
+test("rejects unsupported OpenCode maximum-token settings", () => {
+  assert.throws(
+    () =>
+      selectModel({
+        models: {
+          default: {
+            provider: "local-test",
+            model: "test-model",
+            api_key_env: "LOCAL_TEST_KEY",
+            base_url: "http://127.0.0.1:8080/v1",
+            max_tokens: 128,
+          },
+        },
+      }),
+    (error) => error.code === "opencode_max_tokens_unsupported",
+  );
+});
+
 test("rejects missing and ambiguous OpenCode model selection", () => {
   assert.throws(() => selectModel({}), (error) => error.code === "opencode_model_required");
   assert.throws(
