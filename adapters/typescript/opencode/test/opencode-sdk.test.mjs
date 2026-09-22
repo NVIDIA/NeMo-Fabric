@@ -15,7 +15,7 @@ function startInput() {
     baseDir: "/fallback",
     config: {
       models: {
-        default: { provider: "openai", model: "gpt-4.1-mini", api_key_env: "OPENCODE_TEST_KEY" },
+        default: { provider: "nvidia", model: "nvidia/nemotron-3.5-lightning-30b-a3b", api_key_env: "OPENCODE_TEST_KEY" },
       },
     },
     runtimeContext: {
@@ -184,7 +184,7 @@ test("passes replace system instructions through OpenCode's build agent", async 
 
   assert.deepEqual(JSON.parse(capturedConfig), {
     providers: {
-      openai: {
+      nvidia: {
         settings: { apiKey: "{env:OPENCODE_TEST_KEY}" },
       },
     },
@@ -268,7 +268,7 @@ test("configures validated Fabric skill directories for OpenCode", async () => {
 
     assert.deepEqual(JSON.parse(capturedConfig), {
       providers: {
-        openai: {
+        nvidia: {
           settings: { apiKey: "{env:OPENCODE_TEST_KEY}" },
         },
       },
@@ -547,7 +547,7 @@ test("configures Fabric stdio and streamable-HTTP MCP servers for OpenCode", asy
 
   assert.deepEqual(JSON.parse(capturedConfig), {
     providers: {
-      openai: {
+      nvidia: {
         settings: { apiKey: "{env:OPENCODE_TEST_KEY}" },
       },
     },
@@ -1419,7 +1419,7 @@ test("creates, invokes, and cleans up one embedded OpenCode session", async () =
             directory: "/workspace",
             project: false,
             content: JSON.stringify({
-              providers: { openai: { settings: { apiKey: "{env:OPENCODE_TEST_KEY}" } } },
+              providers: { nvidia: { settings: { apiKey: "{env:OPENCODE_TEST_KEY}" } } },
             }),
           },
           fs: { filewatcher: false },
@@ -1431,7 +1431,7 @@ test("creates, invokes, and cleans up one embedded OpenCode session", async () =
         "session.create",
         {
           location: { directory: "/workspace" },
-          model: { providerID: "openai", id: "gpt-4.1-mini" },
+          model: { providerID: "nvidia", id: "nvidia/nemotron-3.5-lightning-30b-a3b" },
           permissions: [
             { action: "external_directory", resource: "*", effect: "deny" },
             { action: "read", resource: "*.env", effect: "deny" },
@@ -1533,7 +1533,7 @@ test("uses a configured credential name for a native OpenCode provider", async (
   await handle.stop();
 
   assert.deepEqual(JSON.parse(createOptions.config.content), {
-    providers: { openai: { settings: { apiKey: "{env:OPENCODE_TEST_KEY}" } } },
+    providers: { nvidia: { settings: { apiKey: "{env:OPENCODE_TEST_KEY}" } } },
   });
 });
 
@@ -1666,8 +1666,8 @@ test("configures sampling for an OpenAI-compatible OpenCode provider endpoint", 
 
   const input = startInput();
   input.config.models.default = {
-    provider: "local-test",
-    model: "test-model",
+    provider: "nvidia",
+    model: "nvidia/nemotron-3.5-lightning-30b-a3b",
     api_key_env: "OPENCODE_TEST_KEY",
     base_url: "http://127.0.0.1:8080/v1",
     temperature: 0.25,
@@ -1676,11 +1676,13 @@ test("configures sampling for an OpenAI-compatible OpenCode provider endpoint", 
   const handle = await factory.create(input);
   await handle.stop();
 
-  const provider = JSON.parse(createOptions.config.content).providers["local-test"];
+  const provider = JSON.parse(createOptions.config.content).providers.nvidia;
   assert.equal(provider.package, "aisdk:@ai-sdk/openai-compatible");
   assert.equal(provider.settings.apiKey, "{env:OPENCODE_TEST_KEY}");
   assert.equal(new URL(provider.settings.baseURL).hostname, "127.0.0.1");
-  assert.deepEqual(provider.models, { "test-model": { body: { temperature: 0.25, top_p: 0.8 } } });
+  assert.deepEqual(provider.models, {
+    "nvidia/nemotron-3.5-lightning-30b-a3b": { body: { temperature: 0.25, top_p: 0.8 } },
+  });
 });
 
 test("restores the environment lease when startup cleanup also fails", async () => {

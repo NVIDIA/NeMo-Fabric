@@ -129,11 +129,11 @@ and additive extension maps because their support does not vary by adapter:
 | `models.<role>.model` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes; passed to OpenCode | Yes; must exist in the Pi catalog | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes; OpenAI-compatible Chat Completions endpoint | Yes; known catalog models only | No; use `harness.settings.base_url` |
-| `models.<role>.temperature` | No | No | Yes | Yes | Yes | Yes | Yes | Yes; OpenAI-compatible `base_url` only | No | Yes |
+| `models.<role>.temperature` | No | No | Yes | Yes | Yes | Yes | Yes | Yes: OpenAI-compatible `base_url` only | No | Yes |
 | `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | `client_type` | No keys declared | No keys declared | No keys declared | `max_tokens` for Anthropic Messages |
-| `models.<role>.top_p` | No | No | Yes | Yes | Yes; passed through LiteLLM | No | Yes | Yes; OpenAI-compatible `base_url` only | No | Yes; translated to the selected API protocol |
-| `models.<role>.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM | No | Yes | No | No | Yes; translated to the selected API protocol |
-| `instructions.system` | `replace`, `append` | `replace`; base instructions | `replace` | `replace` | `replace` | `replace` | `replace` | `replace`; OpenCode base instructions | `replace`; Pi base instructions | `replace` |
+| `models.<role>.top_p` | No | No | Yes | Yes | Yes: passed through LiteLLM | No | Yes | Yes: OpenAI-compatible `base_url` only | No | Yes: translated to the selected API protocol |
+| `models.<role>.max_tokens` | No | No | Yes | Yes | Yes: passed through LiteLLM | No | Yes | No | No | Yes: translated to the selected API protocol |
+| `instructions.system` | `replace`, `append` | `replace` with base instructions | `replace` | `replace` | `replace` | `replace` | `replace` | `replace` with OpenCode base instructions | `replace` with Pi base instructions | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
 | `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; iteration limit | Yes | No | No | No | No | No |
@@ -142,8 +142,8 @@ and additive extension maps because their support does not vary by adapter:
 | `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
 | `tools.definitions` | No | No | No | No | No | No | No | No | Yes; trusted local module factories | No |
 | `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No | No | Yes | No | Yes | No |
-| `skills.paths` | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes; BenchAgent: No | Yes | Yes | Yes | No |
-| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes; BenchAgent: No | Yes | Yes; stdio `args` and `env`, streamable HTTP `custom_headers` | No | No |
+| `skills.paths` | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes, BenchAgent: No | Yes | Yes | Yes | No |
+| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes, BenchAgent: No | Yes | Yes: stdio `args` and `env`, streamable HTTP `custom_headers` | No | No |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No; not implemented | No; not implemented | No | No | No |
 | `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | Yes | Yes, supports collector-backed ATOF streaming |
 | `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No | No | No | No |

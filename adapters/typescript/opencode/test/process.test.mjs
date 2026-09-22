@@ -103,7 +103,7 @@ function openAiStream(text) {
       id: "chatcmpl-opencode-test",
       object: "chat.completion.chunk",
       created: 0,
-      model: "fabric-echo",
+      model: "nvidia/nemotron-3.5-lightning-30b-a3b",
       choices: [{ index: 0, delta, finish_reason: finishReason }],
     })}\n\n`;
   return `${chunk({ role: "assistant" })}${chunk({ content: text })}${chunk({}, "stop")}data: [DONE]\n\n`;
@@ -115,7 +115,7 @@ function openAiToolCall(name, input) {
       id: "chatcmpl-opencode-tool-test",
       object: "chat.completion.chunk",
       created: 0,
-      model: "fabric-echo",
+      model: "nvidia/nemotron-3.5-lightning-30b-a3b",
       choices: [{ index: 0, delta, finish_reason: finishReason }],
     })}\n\n`;
   return `${chunk({
