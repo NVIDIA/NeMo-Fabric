@@ -558,7 +558,7 @@ async def test_cancelled_compensating_cleanup_finishes_before_reraising():
             raise RuntimeError("outcome cleanup failed")
         assert deregistration_count == 3
         assert remove_queue is True
-        assert pi_boundary == "release"
+        assert pi_boundary == "quarantine"
         compensation_started.set()
         await finish_compensation.wait()
 
@@ -714,11 +714,11 @@ def test_stream_rejects_request_id_with_pending_collector_cleanup(
         ("pi_aborted", {"adapter": {"pi_turn_started": True}}, True),
         ("pi_extension_shutdown", {"adapter": {"pi_turn_started": False}}, False),
         ("pi_extension_shutdown", {"adapter": {"pi_turn_started": True}}, True),
-        ("pi_extension_shutdown", {}, False),
+        ("pi_extension_shutdown", {}, None),
         (
             "pi_extension_shutdown",
             {"adapter": {"pi_turn_started": "false"}},
-            False,
+            None,
         ),
     ],
 )
@@ -726,7 +726,7 @@ def test_pi_boundary_uses_explicit_turn_start_signal(
     mock_native: MagicMock,
     error_code: str,
     metadata: dict[str, Any],
-    expected: bool,
+    expected: bool | None,
 ):
     plan = _plan()
     plan["config"]["harness"]["adapter_id"] = "nvidia.fabric.pi"
@@ -764,6 +764,49 @@ def test_pi_boundary_uses_explicit_turn_start_signal(
     )
 
     assert runtime._pi_result_started_turn(RunResult.from_mapping(result)) is expected
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        ({"adapter": {"pi_turn_count": 3}}, 3),
+        ({"adapter": {"pi_turn_count": 0}}, 0),
+        ({"adapter": {"pi_turn_count": -1}}, None),
+        ({"adapter": {"pi_turn_count": True}}, None),
+        ({"adapter": {"pi_turn_count": "3"}}, None),
+        ({}, None),
+    ],
+)
+def test_pi_boundary_validates_turn_count(
+    mock_native: MagicMock,
+    metadata: dict[str, Any],
+    expected: int | None,
+):
+    plan = _plan()
+    plan["config"]["harness"]["adapter_id"] = "nvidia.fabric.pi"
+    plan["adapter_descriptor"]["descriptor"].update(
+        {
+            "adapter_id": "nvidia.fabric.pi",
+            "harness": "pi",
+            "adapter_kind": "typescript",
+        }
+    )
+    runtime = Runtime(
+        client=MagicMock(),
+        plan=plan,
+        runtime=_runtime(),
+        collector_client=MagicMock(),
+    )
+    result = json.loads(
+        mock_native.invoke_runtime.side_effect(
+            "",
+            json.dumps(_runtime()),
+            json.dumps({"input": "hello", "request_id": "request-1"}),
+        )
+    )
+    result["metadata"] = metadata
+
+    assert runtime._pi_result_turn_count(RunResult.from_mapping(result)) == expected
 
 
 async def test_pi_stream_reserves_one_token_for_registration_and_cleanup(

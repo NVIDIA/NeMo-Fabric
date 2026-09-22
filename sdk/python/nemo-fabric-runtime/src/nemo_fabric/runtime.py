@@ -85,9 +85,7 @@ class Runtime:
 
         self._plan = plan if isinstance(plan, RunPlan) else RunPlan.from_mapping(plan)
         self._runtime = (
-            runtime
-            if isinstance(runtime, RuntimeHandle)
-            else RuntimeHandle.from_mapping(runtime)
+            runtime if isinstance(runtime, RuntimeHandle) else RuntimeHandle.from_mapping(runtime)
         )
         self._client = client
         self._overrides = _json_mapping(overrides, "runtime overrides")
@@ -275,9 +273,7 @@ class Runtime:
                 try:
                     await _call_blocking(stop_after_cancel)
                 except asyncio.CancelledError:
-                    self._status = (
-                        RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
-                    )
+                    self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
                     raise
                 except Exception:
                     self._status = RuntimeStatus.FAILED
@@ -410,16 +406,12 @@ class Runtime:
             except Exception as cleanup_error:
                 error.add_note(f"ATOF collector deregistration failed: {cleanup_error}")
             raise
+        pi_boundary, pi_turn_count = self._pi_result_boundary(result)
         await self._finish_registered_request(
             request_id,
             remove_queue=not capture_records,
-            pi_boundary=(
-                "wait"
-                if self._pi_result_started_turn(result)
-                else "release"
-                if self._uses_pi_stream_correlation()
-                else None
-            ),
+            pi_boundary=pi_boundary,
+            pi_turn_count=pi_turn_count,
             stream_phase="outcome" if capture_records else None,
         )
         return result
@@ -479,6 +471,7 @@ class Runtime:
         *,
         remove_queue: bool,
         pi_boundary: str | None = None,
+        pi_turn_count: int | None = None,
         finalize_registration: bool = False,
     ) -> None:
         if (
@@ -487,11 +480,16 @@ class Runtime:
         ):
             return
         if self._plan.adapter.adapter_id == _PI_ADAPTER_ID:
+            pi_options: dict[str, Any] = {
+                "pi_boundary": pi_boundary,
+                "registration_token": self._registration_tokens.get(request_id),
+            }
+            if pi_turn_count is not None:
+                pi_options["pi_turn_count"] = pi_turn_count
             await self._collector_client.deregister(
                 request_id,
                 remove_queue=remove_queue,
-                pi_boundary=pi_boundary,
-                registration_token=self._registration_tokens.get(request_id),
+                **pi_options,
             )
         else:
             await self._collector_client.deregister(
@@ -507,6 +505,7 @@ class Runtime:
         *,
         remove_queue: bool,
         pi_boundary: str | None,
+        pi_turn_count: int | None = None,
         stream_phase: Literal["outcome", "finalizer"] | None = None,
     ) -> None:
         cleanup_succeeded = False
@@ -516,6 +515,7 @@ class Runtime:
                 request_id,
                 remove_queue=remove_queue,
                 pi_boundary=pi_boundary,
+                pi_turn_count=pi_turn_count,
                 finalize_registration=stream_phase is None,
             )
         )
@@ -552,7 +552,9 @@ class Runtime:
                 await self._finish_registered_request(
                     request_id,
                     remove_queue=True,
-                    pi_boundary="release",
+                    pi_boundary=(
+                        "quarantine" if self._uses_pi_stream_correlation() else None
+                    ),
                 )
             except BaseException as compensation_error:
                 if isinstance(compensation_error, asyncio.CancelledError):
@@ -625,17 +627,40 @@ class Runtime:
             and self._plan.adapter.adapter_id == _PI_ADAPTER_ID
         )
 
-    def _pi_result_started_turn(self, result: RunResult) -> bool:
+    def _pi_result_boundary(
+        self,
+        result: RunResult,
+    ) -> tuple[str | None, int | None]:
         if not self._uses_pi_stream_correlation():
-            return False
+            return None, None
+        turn_started = self._pi_result_started_turn(result)
+        if turn_started is True:
+            return "wait", self._pi_result_turn_count(result)
+        if turn_started is False:
+            return "release", None
+        return "quarantine", None
+
+    def _pi_result_started_turn(self, result: RunResult) -> bool | None:
+        if not self._uses_pi_stream_correlation():
+            return None
         adapter_metadata = result.metadata.get("adapter")
         if isinstance(adapter_metadata, Mapping):
             turn_started = adapter_metadata.get("pi_turn_started")
             if isinstance(turn_started, bool):
                 return turn_started
-        # Only a positive signal can justify waiting for a terminal hook. Older
-        # or malformed Pi results may omit the extension and never emit one.
-        return False
+        return None
+
+    def _pi_result_turn_count(self, result: RunResult) -> int | None:
+        adapter_metadata = result.metadata.get("adapter")
+        if isinstance(adapter_metadata, Mapping):
+            turn_count = adapter_metadata.get("pi_turn_count")
+            if (
+                isinstance(turn_count, int)
+                and not isinstance(turn_count, bool)
+                and turn_count >= 0
+            ):
+                return turn_count
+        return None
 
     def invoke_openai_stream(
         self,
@@ -860,9 +885,7 @@ def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:
     try:
         return json.loads(json.dumps(dict(value), allow_nan=False))
     except (TypeError, ValueError) as error:
-        raise FabricConfigError(
-            f"{name} must contain JSON-compatible values"
-        ) from error
+        raise FabricConfigError(f"{name} must contain JSON-compatible values") from error
 
 
 def _merge_overrides(
@@ -912,9 +935,7 @@ async def _run_native_lifecycle(
         try:
             try:
                 result = json.loads(
-                    native.invoke_runtime(
-                        plan_json, runtime_json, json.dumps(dict(request))
-                    )
+                    native.invoke_runtime(plan_json, runtime_json, json.dumps(dict(request)))
                 )
             except Exception as error:
                 invoke_error = error

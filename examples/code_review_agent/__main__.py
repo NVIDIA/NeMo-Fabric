@@ -100,7 +100,9 @@ async def main() -> None:
     elif args.no_skills:
         config = with_skill_paths(config)
     if args.pi_relay_extension_path is not None:
-        config.harness.settings["relay_extension_path"] = args.pi_relay_extension_path
+        config.harness.settings["relay_extension_path"] = (
+            args.pi_relay_extension_path
+        )
     if args.relay:
         config = with_relay(config)
 

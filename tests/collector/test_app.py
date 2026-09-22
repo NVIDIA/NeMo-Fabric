@@ -356,6 +356,29 @@ async def test_deregister_rejects_invalid_pi_boundary(
     assert response.status_code == 400
 
 
+@pytest.mark.parametrize(
+    ("query", "detail"),
+    [
+        ("pi_boundary=wait&pi_turn_count=-1", "pi_turn_count must be a nonnegative integer"),
+        ("pi_boundary=wait&pi_turn_count=one", "pi_turn_count must be a nonnegative integer"),
+        ("pi_boundary=release&pi_turn_count=1", "pi_turn_count requires pi_boundary=wait"),
+        ("pi_turn_count=1", "pi_turn_count requires pi_boundary=wait"),
+    ],
+)
+async def test_deregister_rejects_invalid_pi_turn_count(
+    collector_client: httpx.AsyncClient,
+    query: str,
+    detail: str,
+):
+    response = await collector_client.delete(
+        f"/v1/deregister-request/request-1?{query}",
+        headers={"Authorization": f"Bearer {CONTROL_TOKEN}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": detail}
+
+
 async def test_deregister_rejects_pi_boundary_for_generic_registration(
     collector_client: httpx.AsyncClient,
 ):

@@ -291,21 +291,42 @@ async def test_start_runtime_plumbs_collector_completion_wait_timeout(
     "completion_wait_timeout",
     [0, -1, float("inf"), float("nan"), True, "1"],
 )
-@pytest.mark.parametrize("streaming", [False, True])
 async def test_start_runtime_rejects_invalid_completion_wait_timeout(
     native_client: Fabric,
     completion_wait_timeout: Any,
-    streaming: bool,
 ):
     with pytest.raises(
         FabricConfigError,
         match="completion_wait_timeout must be a finite number greater than zero",
     ):
         await native_client.start_runtime(
-            _config(relay=streaming),
-            streaming=streaming,
+            _config(relay=True, adapter_id="nvidia.fabric.pi"),
+            streaming=True,
             completion_wait_timeout=completion_wait_timeout,
         )
+
+
+async def test_start_runtime_ignores_completion_wait_timeout_without_streaming(
+    native_client: Fabric,
+):
+    runtime = await native_client.start_runtime(
+        _config(),
+        completion_wait_timeout=0,
+    )
+
+    await runtime.stop()
+
+
+async def test_start_runtime_ignores_completion_wait_timeout_for_non_pi_streaming(
+    native_client: Fabric,
+):
+    runtime = await native_client.start_runtime(
+        _config(relay=True),
+        streaming=True,
+        completion_wait_timeout=0,
+    )
+
+    await runtime.stop()
 
 
 async def test_start_runtime_creates_runtime_owned_collectors(
@@ -450,6 +471,7 @@ async def test_collector_client_omits_inactive_pi_control_fields():
             "request-2",
             remove_queue=False,
             pi_boundary="wait",
+            pi_turn_count=2,
             registration_token="attempt-2",
         )
     finally:
@@ -469,8 +491,30 @@ async def test_collector_client_omits_inactive_pi_control_fields():
     assert client._request.await_args_list[3].kwargs["params"] == {
         "remove_queue": "false",
         "pi_boundary": "wait",
+        "pi_turn_count": "2",
         "registration_token": "attempt-2",
     }
+
+
+async def test_collector_client_preserves_error_detail():
+    client = _AtofCollectorClient(
+        base_url="http://collector.test",
+        timeout_seconds=1,
+        headers={},
+    )
+    response = MagicMock(status_code=409)
+    response.json.return_value = {
+        "detail": "previous Pi invocation boundary is unresolved"
+    }
+    client._client.request = AsyncMock(return_value=response)
+    try:
+        with pytest.raises(
+            FabricRuntimeError,
+            match="previous Pi invocation boundary is unresolved",
+        ):
+            await client.register("request-1")
+    finally:
+        await client.aclose()
 
 
 def test_with_stream_sink_replaces_reserved_sink_and_preserves_user_sinks():
@@ -556,7 +600,16 @@ async def test_pi_like_streaming_captures_sibling_turns_across_invocations(
             started.set()
             assert release.wait(timeout=2)
         result = _result(request, json.loads(runtime_json))
-        result["metadata"] = {"adapter": {"pi_turn_started": True}}
+        result["metadata"] = {
+            "adapter": {
+                "pi_turn_started": True,
+                "pi_turn_count": {
+                    "request-pi-first": 2,
+                    "request-pi-plain": 3,
+                    "request-pi-second": 4,
+                }[request["request_id"]],
+            }
+        }
         return json.dumps(result)
 
     mock_native.invoke_runtime.side_effect = invoke
@@ -646,7 +699,14 @@ async def test_pi_stream_failure_preserves_boundary_until_native_finishes(
             second_started.set()
             assert second_release.wait(timeout=2)
         result = _result(request, json.loads(runtime_json))
-        result["metadata"] = {"adapter": {"pi_turn_started": True}}
+        result["metadata"] = {
+            "adapter": {
+                "pi_turn_started": True,
+                "pi_turn_count": (
+                    1 if request["request_id"] == "request-pi-first" else 2
+                ),
+            }
+        }
         return json.dumps(result)
 
     mock_native.invoke_runtime.side_effect = invoke
@@ -748,7 +808,9 @@ async def test_pi_no_agent_run_result_releases_plain_invoke_boundary(
                     "message": "Pi stopped before starting an agent run",
                     "retryable": False,
                 },
-                "metadata": {"adapter": {"pi_turn_started": False}},
+                "metadata": {
+                    "adapter": {"pi_turn_started": False, "pi_turn_count": 0}
+                },
             }
         )
         return json.dumps(result)
@@ -769,7 +831,7 @@ async def test_pi_no_agent_run_result_releases_plain_invoke_boundary(
     await runtime.stop()
 
 
-async def test_pi_result_without_turn_signal_releases_plain_invoke_boundary(
+async def test_pi_result_without_turn_signal_quarantines_telemetry_only(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
@@ -805,6 +867,67 @@ async def test_pi_result_without_turn_signal_releases_plain_invoke_boundary(
     await runtime.stop()
 
 
+@pytest.mark.parametrize(
+    ("status", "error_code"),
+    [
+        ("succeeded", None),
+        ("cancelled", "pi_aborted"),
+        ("failed", "pi_model_error"),
+        ("failed", "pi_no_assistant_response"),
+        ("cancelled", "pi_extension_shutdown"),
+    ],
+)
+async def test_pi_missing_completion_does_not_block_later_invocations(
+    native_client: Fabric,
+    mock_native: MagicMock,
+    status: str,
+    error_code: str | None,
+):
+    turn_count = 0
+
+    def invoke(plan_json: str, runtime_json: str, request_json: str) -> str:
+        nonlocal turn_count
+        turn_count += 1
+        result = _result(json.loads(request_json), json.loads(runtime_json))
+        result["metadata"] = {
+            "adapter": {
+                "pi_turn_started": True,
+                "pi_turn_count": turn_count,
+            }
+        }
+        if error_code is not None:
+            result.update(
+                {
+                    "status": status,
+                    "output": None,
+                    "error": {
+                        "code": error_code,
+                        "message": "Pi stopped after starting an agent run",
+                        "retryable": False,
+                    },
+                }
+            )
+        return json.dumps(result)
+
+    mock_native.invoke_runtime.side_effect = invoke
+    runtime = await native_client.start_runtime(
+        _config(relay=True, adapter_id="nvidia.fabric.pi"),
+        streaming=True,
+        completion_wait_timeout=0.01,
+    )
+
+    stream = runtime.invoke_stream(input="first")
+    assert [record async for record in stream] == []
+    assert (await stream.result()).status == status
+
+    for prompt in ("second", "third", "fourth"):
+        assert (await runtime.invoke(input=prompt)).status == status
+
+    assert mock_native.invoke_runtime.call_count == 4
+    assert runtime.status.value == "active"
+    await runtime.stop()
+
+
 async def test_failed_stream_cleanup_compensates_before_next_invoke(
     native_client: Fabric,
     mock_native: MagicMock,
@@ -821,7 +944,9 @@ async def test_failed_stream_cleanup_compensates_before_next_invoke(
                     "message": "Pi stopped before starting an agent run",
                     "retryable": False,
                 },
-                "metadata": {"adapter": {"pi_turn_started": False}},
+                "metadata": {
+                    "adapter": {"pi_turn_started": False, "pi_turn_count": 0}
+                },
             }
         )
         return json.dumps(result)
@@ -869,7 +994,7 @@ async def test_failed_stream_cleanup_compensates_before_next_invoke(
 
     assert [
         call.kwargs["pi_boundary"] for call in mock_deregister.await_args_list[:3]
-    ] == ["release", "preserve", "release"]
+    ] == ["release", "preserve", "quarantine"]
     assert runtime._registered_requests == set()
     second = await runtime.invoke(input="second")
     assert second.error is not None

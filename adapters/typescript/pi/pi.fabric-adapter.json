@@ -55,9 +55,10 @@
     "run_result": {
       "type": "object",
       "properties": {
+        "pi_turn_count": {"type": "integer", "minimum": 0},
         "pi_turn_started": {"type": "boolean"}
       },
-      "required": ["pi_turn_started"],
+      "required": ["pi_turn_count", "pi_turn_started"],
       "additionalProperties": false
     }
   },

@@ -719,6 +719,45 @@ async def test_pi_turn_window_zero_turn_does_not_advance_turn_sequence():
     )
 
 
+async def test_pi_turn_window_uses_count_after_lost_turn_start():
+    collector = AtofCollector(standalone=True, completion_wait_timeout=0.1)
+    first_id = RequestId("request-1")
+    await collector.register(first_id, correlation_mode="pi_turn_window")
+    await collector.route(
+        _pi_record("agent_settled", uuid="settled-1", turn_seq=0),
+        byte_size=1,
+    )
+    await collector.deregister(
+        first_id,
+        remove_queue=True,
+        pi_boundary="wait",
+        pi_turn_count=1,
+    )
+
+    second_id = RequestId("request-2")
+    await collector.register(second_id, correlation_mode="pi_turn_window")
+    queue = collector.request_messages[second_id]
+    await collector.route(
+        _pi_record("turn_start", kind="scope", uuid="late-turn-1", turn_seq=0),
+        byte_size=1,
+    )
+    assert queue.empty()
+
+    turn = _pi_record("turn_start", kind="scope", uuid="turn-2", turn_seq=1)
+    settled = _pi_record("agent_settled", uuid="settled-2", turn_seq=1)
+    await collector.route(turn, byte_size=1)
+    await collector.route(settled, byte_size=1)
+    await collector.deregister(
+        second_id,
+        remove_queue=False,
+        pi_boundary="wait",
+        pi_turn_count=2,
+    )
+
+    assert await queue.get() == turn
+    assert await queue.get() == settled
+
+
 async def test_pi_turn_window_logs_dropped_records_before_zero_turn_completion(
     caplog: pytest.LogCaptureFixture,
 ):
@@ -792,58 +831,63 @@ async def test_pi_turn_window_drops_late_tail_before_next_turn(
             first_id,
             remove_queue=False,
             pi_boundary="wait",
+            pi_turn_count=2,
         )
     assert "Timed out waiting for the Pi ATOF invocation boundary" in caplog.text
 
     second_id = RequestId("request-2")
-    registration = asyncio.create_task(
-        collector.register(second_id, correlation_mode="pi_turn_window")
-    )
-    await asyncio.sleep(0)
-    assert not registration.done()
-    late_turn = _pi_record(
-        "turn_start",
-        kind="scope",
-        uuid="late-turn-1",
-        turn_seq=0,
-    )
-    late_model = {
-        "kind": "scope",
-        "uuid": "late-model-1",
-        "parent_uuid": "late-turn-1",
-    }
-    late_settled = _pi_record("agent_settled", uuid="late-settled-1", turn_seq=0)
-    for record in (late_turn, late_model, late_settled):
-        await collector.route(record, byte_size=1)
-    await registration
-
+    await collector.register(second_id, correlation_mode="pi_turn_window")
     queue = collector.request_messages[second_id]
+    for turn_seq in (0, 1):
+        late_turn = _pi_record(
+            "turn_start",
+            kind="scope",
+            uuid=f"late-turn-{turn_seq}",
+            turn_seq=turn_seq,
+        )
+        late_model = {
+            "kind": "scope",
+            "uuid": f"late-model-{turn_seq}",
+            "parent_uuid": f"late-turn-{turn_seq}",
+        }
+        late_settled = _pi_record(
+            "agent_settled",
+            uuid=f"late-settled-{turn_seq}",
+            turn_seq=turn_seq,
+        )
+        for record in (late_turn, late_model, late_settled):
+            await collector.route(record, byte_size=1)
+    assert queue.empty()
+
     second_turn = _pi_record(
         "turn_start",
         kind="scope",
         uuid="turn-2",
-        turn_seq=1,
+        turn_seq=2,
     )
-    second_settled = _pi_record("agent_settled", uuid="settled-2", turn_seq=1)
-
-    await collector.route(second_turn, byte_size=1)
-    await collector.route(second_settled, byte_size=1)
+    second_model = {
+        "kind": "scope",
+        "uuid": "model-2",
+        "parent_uuid": "turn-2",
+    }
+    second_settled = _pi_record("agent_settled", uuid="settled-2", turn_seq=2)
+    for record in (second_turn, second_model, second_settled):
+        await collector.route(record, byte_size=1)
     await collector.deregister(
         second_id,
         remove_queue=False,
         pi_boundary="wait",
+        pi_turn_count=3,
     )
 
     assert await queue.get() == second_turn
+    assert await queue.get() == second_model
     assert await queue.get() == second_settled
     with pytest.raises(_AtofQueueClosed):
         await queue.get()
 
 
-@pytest.mark.parametrize("late_turn_seq", [0, 1])
-async def test_pi_turn_window_late_completion_releases_timed_out_boundary(
-    late_turn_seq: int,
-):
+async def test_pi_turn_window_unknown_boundary_recovers_from_later_turn_count():
     collector = AtofCollector(standalone=True, completion_wait_timeout=0.001)
     first_id = RequestId("request-1")
     await collector.register(first_id, correlation_mode="pi_turn_window")
@@ -870,22 +914,44 @@ async def test_pi_turn_window_late_completion_releases_timed_out_boundary(
     )
 
     third_id = RequestId("request-3")
-    registration = asyncio.create_task(
-        collector.register(third_id, correlation_mode="pi_turn_window")
+    await collector.register(third_id, correlation_mode="pi_turn_window")
+    third_queue = collector.request_messages[third_id]
+    for record in (
+        _pi_record("turn_start", kind="scope", uuid="turn-2", turn_seq=1),
+        _pi_record("agent_settled", uuid="settled-2", turn_seq=1),
+    ):
+        await collector.route(record, byte_size=1)
+    assert third_queue.empty()
+    await collector.deregister(
+        third_id,
+        remove_queue=True,
+        pi_boundary="wait",
+        pi_turn_count=2,
     )
-    await asyncio.sleep(0)
-    assert not registration.done()
 
+    fourth_id = RequestId("request-4")
+    await collector.register(fourth_id, correlation_mode="pi_turn_window")
+    fourth_queue = collector.request_messages[fourth_id]
     await collector.route(
-        _pi_record("agent_settled", uuid="settled-2", turn_seq=late_turn_seq),
+        _pi_record("agent_settled", uuid="late-settled-2", turn_seq=1),
         byte_size=1,
     )
-    await asyncio.wait_for(registration, timeout=0.1)
+    turn = _pi_record("turn_start", kind="scope", uuid="turn-3", turn_seq=2)
+    settled = _pi_record("agent_settled", uuid="settled-3", turn_seq=2)
+    await collector.route(turn, byte_size=1)
+    await collector.route(settled, byte_size=1)
+    await collector.deregister(
+        fourth_id,
+        remove_queue=False,
+        pi_boundary="wait",
+        pi_turn_count=3,
+    )
 
-    assert third_id in collector.request_states
+    assert await fourth_queue.get() == turn
+    assert await fourth_queue.get() == settled
 
 
-async def test_pi_turn_window_rejects_reuse_while_boundary_is_unresolved():
+async def test_pi_turn_window_admits_reuse_after_missing_completion():
     collector = AtofCollector(standalone=True, completion_wait_timeout=0.001)
     await collector.register(
         RequestId("request-1"),
@@ -895,13 +961,86 @@ async def test_pi_turn_window_rejects_reuse_while_boundary_is_unresolved():
         RequestId("request-1"),
         remove_queue=True,
         pi_boundary="wait",
+        pi_turn_count=1,
     )
 
-    with pytest.raises(RuntimeError, match="boundary is unresolved"):
-        await collector.register(
-            RequestId("request-2"),
-            correlation_mode="pi_turn_window",
-        )
+    await collector.register(
+        RequestId("request-2"),
+        correlation_mode="pi_turn_window",
+    )
+    assert RequestId("request-2") in collector.request_states
+
+
+async def test_pi_quarantine_uses_observed_completion_boundary():
+    collector = AtofCollector(standalone=True, completion_wait_timeout=0.1)
+    first_id = RequestId("request-1")
+    await collector.register(first_id, correlation_mode="pi_turn_window")
+    await collector.route(
+        _pi_record("turn_start", kind="scope", uuid="turn-1", turn_seq=0),
+        byte_size=1,
+    )
+    await collector.route(
+        _pi_record("agent_settled", uuid="settled-1", turn_seq=0),
+        byte_size=1,
+    )
+    await collector.deregister(
+        first_id,
+        remove_queue=True,
+        pi_boundary="quarantine",
+    )
+
+    second_id = RequestId("request-2")
+    await collector.register(second_id, correlation_mode="pi_turn_window")
+    second_queue = collector.request_messages[second_id]
+    turn = _pi_record("turn_start", kind="scope", uuid="turn-2", turn_seq=1)
+    await collector.route(turn, byte_size=1)
+
+    assert await second_queue.get() == turn
+    await collector.deregister(
+        second_id,
+        remove_queue=True,
+        pi_boundary="release",
+    )
+
+
+async def test_stale_recovery_cannot_poison_newer_pi_lease():
+    collector = AtofCollector(standalone=True, completion_wait_timeout=0.001)
+    first_id = RequestId("request-1")
+    await collector.register(first_id, correlation_mode="pi_turn_window")
+    first_stream = await collector.attach_stream(first_id)
+    assert first_stream is not None
+    first_queue, first_stream_token = first_stream
+    await collector.deregister(
+        first_id,
+        remove_queue=False,
+        pi_boundary="wait",
+        pi_turn_count=1,
+    )
+
+    second_id = RequestId("request-2")
+    await collector.register(second_id, correlation_mode="pi_turn_window")
+    second_owner = collector._pi_boundary_owner
+    recovery_mode = collector._pi_recovery_mode
+    turn_seq = collector._pi_boundary_turn_seq
+
+    await collector.deregister(
+        first_id,
+        remove_queue=False,
+        pi_boundary="wait",
+        pi_turn_count=100,
+    )
+
+    assert collector._pi_boundary_owner == second_owner
+    assert collector._pi_recovery_mode is recovery_mode
+    assert collector._pi_boundary_turn_seq == turn_seq
+    assert not collector._pi_boundary_ready.is_set()
+
+    await collector.deregister(
+        second_id,
+        remove_queue=True,
+        pi_boundary="release",
+    )
+    await collector.detach_stream(first_id, first_queue, first_stream_token)
 
 
 async def test_pi_turn_window_discards_plain_invoke_records():
@@ -1190,7 +1329,8 @@ async def test_pi_completion_cancelled_post_put_releases_removed_timeout(
         pi_boundary="wait",
     )
     assert state.boundary_timed_out is True
-    assert not collector._pi_boundary_ready.is_set()
+    assert collector._pi_boundary_ready.is_set()
+    assert collector._pi_boundary_owner is None
 
     await collector.state_lock.acquire()
     return_from_put.set()
@@ -1202,7 +1342,6 @@ async def test_pi_completion_cancelled_post_put_releases_removed_timeout(
 
     assert collector._pi_boundary_ready.is_set()
     assert collector._pi_boundary_owner is None
-    assert (0, ScopeUuid("settled-1")) in collector._pi_completion_tombstones
     await collector.register(
         RequestId("request-2"),
         correlation_mode="pi_turn_window",
@@ -1316,21 +1455,25 @@ async def test_released_completion_does_not_reopen_new_pi_lease(
         second_id,
         remove_queue=True,
         pi_boundary="wait",
+        pi_turn_count=1,
     )
+    third_id = RequestId("request-3")
+    await collector.register(
+        third_id,
+        correlation_mode="pi_turn_window",
+    )
+    third_owner = collector._pi_boundary_owner
+
     finish_put.set()
     await old_completion
 
-    third_registration = asyncio.create_task(
-        collector.register(
-            RequestId("request-3"),
-            correlation_mode="pi_turn_window",
-        )
+    assert collector._pi_boundary_owner == third_owner
+    assert not collector._pi_boundary_ready.is_set()
+    await collector.deregister(
+        third_id,
+        remove_queue=True,
+        pi_boundary="release",
     )
-    await asyncio.sleep(0)
-    assert not third_registration.done()
-    third_registration.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await third_registration
 
 
 async def test_collector_close_wakes_waiting_consumer():

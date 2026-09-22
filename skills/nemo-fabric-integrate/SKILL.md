@@ -209,11 +209,12 @@ Pick the smallest lifecycle the consumer needs:
   embedded collector with one active registration and routes records for that
   invocation to its queue. Pi serializes streaming and plain invocations behind
   one collector lease. Streaming capture opens at the first `turn_start` and
-  drains through `agent_settled`; interrupted or late output is discarded under
-  the same lease before the next invocation starts. Set `launch_collector=False`
-  to use an externally managed collector; configure
-  its base URL as the
-  `nemo-fabric-stream` sink with `transport="ndjson"`. That collector routes the
+  drains through `agent_settled`. If Relay output is interrupted or late, the
+  collector waits for a bounded interval, then admits the next native invocation
+  and uses Pi's cumulative turn count to discard ambiguous delayed records until
+  a higher `turn_start` arrives. Set `launch_collector=False` to use an externally
+  managed collector; configure its base URL as the `nemo-fabric-stream` sink with
+  `transport="ndjson"`. That collector routes the
   matching ATOF root scope and its descendants by request ID and UUID ancestry.
   The runtime directs Relay to `<base-url>/v1/atof` and uses the collector
   control and stream endpoints. The bundled Pi adapter is limited to the

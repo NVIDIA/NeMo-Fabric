@@ -24,9 +24,10 @@ The adapter supports:
 - Slash commands registered by those explicit extensions
 - NeMo Relay 0.9 telemetry through a runtime-owned gateway and an explicitly
   configured Relay Pi extension
-- Live model-turn ATOF records for successful Relay redirects and
-  `model_redirect` marks for skipped redirects through the default embedded
-  NeMo Fabric collector
+- Live model-turn ATOF records for successful Relay redirects through the
+  default embedded NeMo Fabric collector. Startup `model_redirect` marks remain
+  in the configured Relay ATOF artifacts and are not included in per-invocation
+  `invoke_stream()` records
 - Ordered plain-text invocations with a `{ "response": "..." }` terminal
   output, Relay runtime details, and collected ATOF artifacts
 
@@ -156,8 +157,10 @@ results do not prevent subsequent turns.
 
 Session, turn, and tool telemetry does not depend on model redirection. Model
 telemetry is available only when Relay supports the selected model API and the
-gateway upstream matches the model endpoint. A skipped redirect is recorded as
-a `model_redirect` mark with the reason.
+gateway upstream matches the model endpoint. Relay records a skipped redirect
+as a `model_redirect` mark with the reason in configured ATOF artifacts. Pi
+emits its startup redirect marks before NeMo Fabric registers an invocation, so
+they are not included in the per-invocation records from `invoke_stream()`.
 
 Install the matching collector for the embedded streaming path:
 
@@ -166,8 +169,7 @@ pip install "nemo-fabric[streaming]"
 ```
 
 Start the runtime with streaming enabled to consume live model-turn ATOF
-records for successful Relay redirects and `model_redirect` marks for skipped
-redirects in one Pi invocation:
+records for successful Relay redirects in one Pi invocation:
 
 ```python
 from nemo_fabric import Fabric
@@ -185,11 +187,13 @@ starting another invocation; the same runtime can then alternate
 `invoke_stream()` and `invoke()` calls. The embedded collector serializes both
 methods behind one Pi invocation lease. Streaming capture begins at the first
 Pi `turn_start` and closes at `agent_settled`. If Relay output is interrupted or
-late, the collector discards the remaining records through that same terminal
-marker before allowing another invocation to start. Increase
-`completion_wait_timeout` from its one-second default when Relay delivery can
-take longer. Use the default embedded collector for Pi streaming. The Pi
-extension does not attach NeMo Fabric request IDs, so
+late, the collector waits for a bounded interval, then admits the next native
+invocation and uses Pi's cumulative turn count to discard ambiguous delayed
+records until a higher `turn_start` arrives. This can thin the ATOF stream but
+does not block later invocations. Increase `completion_wait_timeout` from its
+one-second default when Relay delivery can take longer. Use the default embedded
+collector for Pi streaming. The Pi extension does not attach NeMo Fabric
+request IDs, so
 `start_runtime(..., streaming=True, launch_collector=False)` cannot correlate
 its records through an externally managed collector.
 
@@ -249,10 +253,11 @@ path explicitly:
   --input "Review calculator.py"
 ```
 
-The command collects model-turn ATOF records for successful Relay redirects and
-`model_redirect` marks for skipped redirects, then prints one JSON document
-containing `atof_records` and the separate terminal `result`. MCP is not
-currently supported.
+The command collects per-invocation model-turn ATOF records for successful Relay
+redirects, then prints one JSON document containing `atof_records` and the
+separate terminal `result`. Redirect-decision marks remain in configured Relay
+ATOF artifacts; Pi's startup marks are not included in `atof_records`. MCP is
+not currently supported.
 
 ## Dependency Rationale
 

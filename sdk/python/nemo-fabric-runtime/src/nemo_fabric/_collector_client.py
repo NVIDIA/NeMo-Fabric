@@ -118,12 +118,15 @@ class _AtofCollectorClient:
         *,
         remove_queue: bool,
         pi_boundary: str | None = None,
+        pi_turn_count: int | None = None,
         registration_token: str | None = None,
     ) -> None:
         encoded_request_id = quote(request_id, safe="")
         params = {"remove_queue": "true" if remove_queue else "false"}
         if pi_boundary is not None:
             params["pi_boundary"] = pi_boundary
+        if pi_turn_count is not None:
+            params["pi_turn_count"] = str(pi_turn_count)
         if registration_token is not None:
             params["registration_token"] = registration_token
         await self._request(
@@ -214,9 +217,22 @@ class _AtofCollectorClient:
                 code="collector_request_failed",
             ) from error
         if response.status_code != expected_status:
+            detail = _response_error_detail(response)
+            detail_suffix = f": {detail}" if detail is not None else ""
             raise FabricRuntimeError(
                 f"ATOF collector returned HTTP {response.status_code} for "
-                f"{method} {path}; expected HTTP {expected_status}",
+                f"{method} {path}; expected HTTP {expected_status}{detail_suffix}",
                 stage="invoke",
                 code="collector_request_failed",
             )
+
+
+def _response_error_detail(response: httpx.Response) -> str | None:
+    try:
+        payload = response.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    detail = payload.get("detail")
+    return detail if isinstance(detail, str) and detail else None

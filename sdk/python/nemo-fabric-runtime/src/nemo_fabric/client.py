@@ -228,7 +228,7 @@ class Fabric:
             completion_wait_timeout: Maximum seconds the embedded collector
                 waits for a Pi ``agent_settled`` marker after invocation. Increase
                 this value when Relay delivery can be delayed. This value is
-                ignored when ``launch_collector=False``.
+                ignored unless Pi streaming uses the embedded collector.
 
         Returns:
             An active ``Runtime``. Use it as an asynchronous context
@@ -248,6 +248,10 @@ class Fabric:
         collector: AsyncExitStack | None = None
         collector_client: _AtofCollectorClient | None = None
         runtime_config = config
+        uses_pi_adapter = (
+            config.harness is not None
+            and config.harness.adapter_id == _PI_ADAPTER_ID
+        )
 
         async def close_streaming_resources() -> None:
             try:
@@ -261,7 +265,7 @@ class Fabric:
             raise FabricConfigError("launch_collector requires streaming=True")
         if streaming and not _relay_enabled(config):
             raise FabricConfigError("streaming requires Relay telemetry to be enabled")
-        if launch_collector is not False and (
+        if streaming and launch_collector is not False and uses_pi_adapter and (
             isinstance(completion_wait_timeout, bool)
             or not isinstance(completion_wait_timeout, (int, float))
             or not math.isfinite(completion_wait_timeout)
@@ -270,11 +274,15 @@ class Fabric:
             raise FabricConfigError(
                 "completion_wait_timeout must be a finite number greater than zero"
             )
+        effective_completion_wait_timeout = (
+            float(completion_wait_timeout)
+            if streaming and launch_collector is not False and uses_pi_adapter
+            else 1.0
+        )
         if (
             streaming
             and launch_collector is False
-            and config.harness is not None
-            and config.harness.adapter_id == _PI_ADAPTER_ID
+            and uses_pi_adapter
         ):
             raise FabricConfigError(
                 "Pi Relay streaming requires the embedded collector; "
@@ -296,7 +304,7 @@ class Fabric:
                             host="127.0.0.1",
                             port=0,
                             standalone=True,
-                            completion_wait_timeout=float(completion_wait_timeout),
+                            completion_wait_timeout=effective_completion_wait_timeout,
                         )
                     )
                     runtime_config = _with_stream_sink(config, collector_base_url)
@@ -315,7 +323,7 @@ class Fabric:
                     timeout_seconds=(
                         max(
                             stream_sink.timeout_millis / 1000,
-                            completion_wait_timeout
+                            effective_completion_wait_timeout
                             + _COLLECTOR_CONTROL_TIMEOUT_MARGIN_SECONDS,
                         )
                         if launch_collector is not False
@@ -326,7 +334,9 @@ class Fabric:
                     runtime_config = config.model_copy(deep=True)
                 runtime_stream_sink = _configured_stream_sink(runtime_config)
                 if runtime_stream_sink is not None:
-                    runtime_stream_sink.url = f"{collector_client.base_url}/v1/atof"
+                    runtime_stream_sink.url = (
+                        f"{collector_client.base_url}/v1/atof"
+                    )
             except asyncio.CancelledError:
                 await close_streaming_resources()
                 raise

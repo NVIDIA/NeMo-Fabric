@@ -74,8 +74,11 @@ def test_pi_descriptor_declares_the_supported_surface():
     }
     assert descriptor["extension_schemas"]["run_result"] == {
         "type": "object",
-        "properties": {"pi_turn_started": {"type": "boolean"}},
-        "required": ["pi_turn_started"],
+        "properties": {
+            "pi_turn_count": {"type": "integer", "minimum": 0},
+            "pi_turn_started": {"type": "boolean"},
+        },
+        "required": ["pi_turn_count", "pi_turn_started"],
         "additionalProperties": False,
     }
     assert descriptor["telemetry"] == {

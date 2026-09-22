@@ -362,12 +362,23 @@ class PiSdkSessionHandle implements PiSessionHandle {
   readonly relay?: PiRelayRuntime;
   private readonly session: AgentSession;
   private readonly state: { shutdownRequested: boolean };
+  private readonly unsubscribeTurnCounter: () => void;
   private stopped = false;
+  private cumulativeTurnCount = 0;
 
   constructor(session: AgentSession, state: { shutdownRequested: boolean }, relay?: PiRelayRuntime) {
     this.session = session;
     this.state = state;
     this.relay = relay;
+    this.unsubscribeTurnCounter = this.session.subscribe((event) => {
+      if (event.type === "turn_start") {
+        this.cumulativeTurnCount += 1;
+      }
+    });
+  }
+
+  get turnCount(): number {
+    return this.cumulativeTurnCount;
   }
 
   async prompt(text: string): Promise<PiPromptOutcome> {
@@ -398,6 +409,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
     return {
       accepted,
       turnStarted,
+      turnCount: this.cumulativeTurnCount,
       text: finalAssistant === undefined ? undefined : promptText(finalAssistant),
       stopReason: finalAssistant?.stopReason,
       errorMessage: finalAssistant?.errorMessage,
@@ -418,6 +430,11 @@ class PiSdkSessionHandle implements PiSessionHandle {
     }
     try {
       await this.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    } catch (error) {
+      failure ??= error;
+    }
+    try {
+      this.unsubscribeTurnCounter();
     } catch (error) {
       failure ??= error;
     }

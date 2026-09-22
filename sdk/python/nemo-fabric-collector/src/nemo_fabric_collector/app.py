@@ -37,7 +37,7 @@ _COMPLETION_WAIT_TIMEOUT_SECONDS = 1.0
 # TODO: Move Pi marker/lease semantics behind an adapter-agnostic
 # correlation strategy.
 _PI_TURN_WINDOW = "pi_turn_window"
-_PI_BOUNDARY_ACTIONS = frozenset({"preserve", "release", "wait"})
+_PI_BOUNDARY_ACTIONS = frozenset({"preserve", "quarantine", "release", "wait"})
 _MAX_CANCELLED_REGISTRATION_TOKENS = 1024
 _MAX_PI_COMPLETION_TOMBSTONES = 1024
 
@@ -58,6 +58,12 @@ class _SubscriptionPhase(Enum):
     DISCONNECTED = auto()
     DRAINING = auto()
     CLOSED = auto()
+
+
+class _PiRecoveryMode(Enum):
+    NORMAL = auto()
+    KNOWN_BOUNDARY = auto()
+    UNKNOWN_BOUNDARY = auto()
 
 
 class _TerminationReason(Enum):
@@ -179,6 +185,7 @@ class _RequestState:
     boundary_preserved: bool = False
     boundary_timed_out: bool = False
     boundary_generation: int | None = None
+    recovery_mode: _PiRecoveryMode = _PiRecoveryMode.NORMAL
     prior_turn_seq: int | None = None
     latest_turn_seq: int | None = None
     completion_key: tuple[int, ScopeUuid] | None = None
@@ -219,6 +226,7 @@ class AtofCollector:
         self._pi_boundary_generation = 0
         self._pi_boundary_owner: int | None = None
         self._pi_boundary_turn_seq: int | None = None
+        self._pi_recovery_mode = _PiRecoveryMode.NORMAL
         self._pi_quarantined_turn_seq: int | None = None
         self._pi_completion_tombstones: dict[tuple[int, ScopeUuid], None] = {}
         self._cancelled_registration_tokens: dict[tuple[RequestId, str], None] = {}
@@ -284,6 +292,7 @@ class AtofCollector:
                 routing_ready=correlation_mode != _PI_TURN_WINDOW,
                 capture_records=capture_records,
                 boundary_generation=boundary_generation,
+                recovery_mode=self._pi_recovery_mode,
                 prior_turn_seq=self._pi_boundary_turn_seq,
                 registration_token=registration_token,
             )
@@ -343,11 +352,23 @@ class AtofCollector:
         *,
         remove_queue: bool,
         pi_boundary: str | None = None,
+        pi_turn_count: int | None = None,
         registration_token: str | None = None,
     ) -> None:
         if pi_boundary is not None and pi_boundary not in _PI_BOUNDARY_ACTIONS:
             raise RuntimeError(f"unsupported Pi boundary action {pi_boundary!r}")
-        if pi_boundary == "wait":
+        if pi_turn_count is not None and (
+            isinstance(pi_turn_count, bool)
+            or not isinstance(pi_turn_count, int)
+            or pi_turn_count < 0
+        ):
+            raise RuntimeError("pi_turn_count must be a nonnegative integer")
+        if pi_turn_count is not None and pi_boundary != "wait":
+            raise RuntimeError("pi_turn_count requires the wait Pi boundary action")
+        if pi_boundary == "wait" and await self._pi_completion_wait_required(
+            request_id,
+            registration_token,
+        ):
             await self._wait_for_completion(request_id, registration_token)
         async with self.state_lock:
             queue = self.request_messages.get(request_id)
@@ -401,12 +422,28 @@ class AtofCollector:
                 # Native invocation failures and Pi results that never started
                 # an agent run have no terminal hook to await.
                 self._resolve_pi_boundary(state)
-            elif pi_boundary == "wait" and (
-                not state.boundary_timed_out or state.completion_seen.is_set()
-            ):
-                # Publish lease availability only after its routes are removed,
-                # so a waiting registration cannot race the completed owner.
-                self._resolve_pi_boundary(state)
+            elif pi_boundary == "quarantine":
+                # An observed completion is trustworthy even if adapter
+                # metadata is missing. Otherwise keep admitting native calls,
+                # but discard ambiguous Pi telemetry until a later result
+                # supplies an exact counter.
+                if state.completion_seen.is_set():
+                    self._resolve_pi_boundary(state)
+                else:
+                    self._set_pi_recovery(state, pi_turn_count=None)
+            elif pi_boundary == "wait":
+                if state.boundary_timed_out or (
+                    state.recovery_mode is not _PiRecoveryMode.NORMAL
+                    and not state.completion_seen.is_set()
+                ):
+                    self._set_pi_recovery(state, pi_turn_count=pi_turn_count)
+                else:
+                    # Publish lease availability only after its routes are
+                    # removed, so a waiting registration cannot race the owner.
+                    self._resolve_pi_boundary(
+                        state,
+                        pi_turn_count=pi_turn_count,
+                    )
 
             if remove_queue:
                 state.phase = _SubscriptionPhase.CLOSED
@@ -540,6 +577,7 @@ class AtofCollector:
             self._cancelled_registration_tokens.clear()
             self._pi_boundary_owner = None
             self._pi_boundary_turn_seq = None
+            self._pi_recovery_mode = _PiRecoveryMode.NORMAL
             self._pi_quarantined_turn_seq = None
             self._pi_completion_tombstones.clear()
             self._pi_boundary_ready.set()
@@ -552,6 +590,8 @@ class AtofCollector:
     def _route_request(self, record: dict[str, Any]) -> RequestId | None:
         if self._standalone:
             if len(self.request_uuids) == 0:
+                if self._pi_recovery_mode is not _PiRecoveryMode.NORMAL:
+                    return None
                 boundary_timed_out = not self._pi_boundary_ready.is_set()
                 if _is_pi_turn_start(record):
                     turn_seq = _pi_turn_seq(record)
@@ -603,6 +643,20 @@ class AtofCollector:
                 turn_started = _is_pi_turn_start(record)
                 completed = _is_pi_completion(record)
                 turn_seq = _pi_turn_seq(record) if turn_started or completed else None
+                if state.recovery_mode is _PiRecoveryMode.UNKNOWN_BOUNDARY:
+                    return None
+                if state.recovery_mode is _PiRecoveryMode.KNOWN_BOUNDARY:
+                    if (
+                        not turn_started
+                        or turn_seq is None
+                        or (
+                            state.prior_turn_seq is not None
+                            and turn_seq <= state.prior_turn_seq
+                        )
+                    ):
+                        return None
+                    state.recovery_mode = _PiRecoveryMode.NORMAL
+                    self._pi_recovery_mode = _PiRecoveryMode.NORMAL
                 if turn_started:
                     if turn_seq is None or (
                         state.prior_turn_seq is not None
@@ -691,18 +745,106 @@ class AtofCollector:
         self.uuid_to_request[uuid] = request_id
         return True
 
-    def _resolve_pi_boundary(self, state: _RequestState) -> None:
+    def _resolve_pi_boundary(
+        self,
+        state: _RequestState,
+        *,
+        pi_turn_count: int | None = None,
+    ) -> None:
         if (
             state.boundary_generation is not None
             and self._pi_boundary_owner == state.boundary_generation
         ):
             if state.turn_started and state.latest_turn_seq is not None:
                 self._advance_pi_turn_seq(state.latest_turn_seq)
+            elif pi_turn_count is not None and state.completion_key is not None:
+                self._advance_pi_turn_seq(state.completion_key[0])
+            expected_turn_seq = (
+                pi_turn_count - 1
+                if isinstance(pi_turn_count, int)
+                and not isinstance(pi_turn_count, bool)
+                and pi_turn_count > 0
+                else None
+            )
+            observed_turn_seqs = (
+                state.prior_turn_seq,
+                state.latest_turn_seq,
+                state.completion_key[0] if state.completion_key is not None else None,
+                self._pi_boundary_turn_seq,
+            )
+            if expected_turn_seq is not None and all(
+                turn_seq is None or expected_turn_seq >= turn_seq
+                for turn_seq in observed_turn_seqs
+            ):
+                self._advance_pi_turn_seq(expected_turn_seq)
             if state.completion_key is not None:
                 self._remember_pi_completion(*state.completion_key)
             self._pi_quarantined_turn_seq = None
             self._pi_boundary_owner = None
             self._pi_boundary_ready.set()
+
+    def _set_pi_recovery(
+        self,
+        state: _RequestState,
+        *,
+        pi_turn_count: int | None,
+    ) -> None:
+        if (
+            state.boundary_generation is None
+            or self._pi_boundary_owner != state.boundary_generation
+        ):
+            return
+        expected_turn_seq = (
+            pi_turn_count - 1
+            if isinstance(pi_turn_count, int)
+            and not isinstance(pi_turn_count, bool)
+            and pi_turn_count > 0
+            else None
+        )
+        valid_count = expected_turn_seq is not None
+        if valid_count and state.prior_turn_seq is not None:
+            valid_count = expected_turn_seq > state.prior_turn_seq
+        if valid_count and state.latest_turn_seq is not None:
+            valid_count = expected_turn_seq >= state.latest_turn_seq
+        if valid_count and self._pi_boundary_turn_seq is not None:
+            valid_count = expected_turn_seq >= self._pi_boundary_turn_seq
+
+        if valid_count:
+            assert expected_turn_seq is not None
+            self._advance_pi_turn_seq(expected_turn_seq)
+            self._pi_recovery_mode = _PiRecoveryMode.KNOWN_BOUNDARY
+        else:
+            self._pi_recovery_mode = _PiRecoveryMode.UNKNOWN_BOUNDARY
+            logger.warning(
+                "Pi ATOF streaming entered degraded mode because the invocation "
+                "boundary could not be determined",
+                extra={
+                    "pi_turn_count": pi_turn_count,
+                    "prior_turn_seq": state.prior_turn_seq,
+                    "latest_turn_seq": state.latest_turn_seq,
+                },
+            )
+        self._pi_quarantined_turn_seq = None
+        self._pi_boundary_owner = None
+        self._pi_boundary_ready.set()
+
+    async def _pi_completion_wait_required(
+        self,
+        request_id: RequestId,
+        registration_token: str | None,
+    ) -> bool:
+        async with self.state_lock:
+            state = self.request_states.get(request_id)
+            return bool(
+                state is not None
+                and state.correlation_mode == _PI_TURN_WINDOW
+                and state.recovery_mode is _PiRecoveryMode.NORMAL
+                and state.boundary_generation == self._pi_boundary_owner
+                and (
+                    registration_token is None
+                    or state.registration_token == registration_token
+                )
+            )
 
     def _advance_pi_turn_seq(self, turn_seq: int) -> None:
         if self._pi_boundary_turn_seq is None or turn_seq > self._pi_boundary_turn_seq:
@@ -789,9 +931,10 @@ class AtofCollector:
                     self._pi_quarantined_turn_seq = state.latest_turn_seq
                 pi_records_seen = state.pi_records_seen
                 completion_marker_seen = state.completion_marker_seen
-            # Do not hold the completed invocation open indefinitely. A later
-            # registration fails closed until this invocation's ordered terminal
-            # marker arrives; all records in that delayed batch are discarded.
+            # Do not hold the completed invocation open indefinitely. The
+            # invocation result supplies an exact cumulative turn counter when
+            # possible; deregistration uses it to fence delayed records while
+            # allowing the next native invocation to proceed.
             if completion_marker_seen:
                 logger.warning(
                     "Timed out waiting for the Pi ATOF invocation boundary; "
@@ -1027,8 +1170,19 @@ async def deregister(request: Request) -> Response:
     if pi_boundary is not None and pi_boundary not in _PI_BOUNDARY_ACTIONS:
         return _error_response(
             400,
-            "pi_boundary must be preserve, release, or wait",
+            "pi_boundary must be preserve, quarantine, release, or wait",
         )
+    raw_pi_turn_count = request.query_params.get("pi_turn_count")
+    pi_turn_count = None
+    if raw_pi_turn_count is not None:
+        if not raw_pi_turn_count.isdecimal():
+            return _error_response(400, "pi_turn_count must be a nonnegative integer")
+        pi_turn_count = int(raw_pi_turn_count)
+        if pi_boundary != "wait":
+            return _error_response(
+                400,
+                "pi_turn_count requires pi_boundary=wait",
+            )
     registration_token = request.query_params.get("registration_token")
     if registration_token is not None and (
         not registration_token
@@ -1044,6 +1198,7 @@ async def deregister(request: Request) -> Response:
             request_id,
             remove_queue=remove_queue,
             pi_boundary=pi_boundary,
+            pi_turn_count=pi_turn_count,
             registration_token=registration_token,
         )
     except RuntimeError as error:
