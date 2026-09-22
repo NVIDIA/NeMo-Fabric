@@ -503,32 +503,29 @@ class AtofCollector:
             state = self.request_states.get(request_id)
             if state is None:
                 return None
-            if state.correlation_mode == _PI_TURN_WINDOW and not state.routing_ready:
-                # Pi has no Fabric request ID. Serialized leases guarantee that
-                # the first turn start, or a zero-turn terminal marker, belongs
-                # to this invocation rather than to a preceding agent run.
+            if state.correlation_mode == _PI_TURN_WINDOW:
                 state.pi_records_seen += 1
                 turn_started = _is_pi_turn_start(record)
                 completed = _is_pi_completion(record)
-                if not (turn_started or completed):
-                    return None
+                if not state.routing_ready:
+                    # Pi has no Fabric request ID. Serialized leases guarantee that
+                    # the first turn start, or a zero-turn terminal marker, belongs
+                    # to this invocation rather than to a preceding agent run.
+                    if not (turn_started or completed):
+                        return None
+                    if completed and state.pi_records_seen > 1:
+                        logger.warning(
+                            "Pi ATOF records were dropped because no turn_start marker "
+                            "was observed before agent_settled",
+                            extra={
+                                "request_id": request_id,
+                                "dropped_record_count": state.pi_records_seen - 1,
+                            },
+                        )
+                    state.routing_ready = True
                 if turn_started:
                     state.turn_started = True
-                else:
-                    state.completion_marker_seen = True
-                if completed and state.pi_records_seen > 1:
-                    logger.warning(
-                        "Pi ATOF records were dropped because no turn_start marker "
-                        "was observed before agent_settled",
-                        extra={
-                            "request_id": request_id,
-                            "dropped_record_count": state.pi_records_seen - 1,
-                        },
-                    )
-                state.routing_ready = True
-            elif state.correlation_mode == _PI_TURN_WINDOW:
-                state.pi_records_seen += 1
-                if _is_pi_completion(record):
+                if completed:
                     state.completion_marker_seen = True
             return request_id
 

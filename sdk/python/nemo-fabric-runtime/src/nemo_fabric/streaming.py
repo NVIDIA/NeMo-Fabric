@@ -57,6 +57,7 @@ class InvokeStream:
         self._on_finalize = on_finalize
         self._finalize_lock = asyncio.Lock()
         self._finish_stream_lock = asyncio.Lock()
+        self._failed_invocation_drain_deadline: float | None = None
         try:
             self._task = asyncio.create_task(invoke)
         except BaseException:
@@ -167,6 +168,38 @@ class InvokeStream:
             )
         task = self._next_record_task
         try:
+            if not task.done() and not self._task.done():
+                await asyncio.wait(
+                    {task, self._task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            invocation_failed = self._task.done() and (
+                self._task.cancelled() or self._task.exception() is not None
+            )
+            if invocation_failed and self._failed_invocation_drain_deadline is None:
+                self._failed_invocation_drain_deadline = (
+                    asyncio.get_running_loop().time() + _FINALIZE_DRAIN_TIMEOUT_SECONDS
+                )
+            if task.done():
+                return await asyncio.shield(task)
+            if invocation_failed:
+                assert self._failed_invocation_drain_deadline is not None
+                remaining = max(
+                    0.0,
+                    self._failed_invocation_drain_deadline
+                    - asyncio.get_running_loop().time(),
+                )
+                done, _ = await asyncio.wait(
+                    {task},
+                    timeout=remaining,
+                )
+                if task in done:
+                    return await asyncio.shield(task)
+                task.cancel()
+                try:
+                    return await task
+                except (asyncio.CancelledError, StopAsyncIteration):
+                    raise StopAsyncIteration from None
             return await asyncio.shield(task)
         except asyncio.CancelledError:
             if task.done() and not task.cancelled():

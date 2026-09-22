@@ -461,29 +461,144 @@ async def test_stream_registration_retires_after_both_cleanup_phases(
     assert mock_collector.deregister.await_count == 2
 
 
-async def test_failed_stream_cleanup_still_retires_outcome_phase(
-    mock_native: MagicMock,
-):
-    mock_collector = MagicMock()
-    mock_collector.deregister = AsyncMock(
-        side_effect=RuntimeError("collector unavailable")
+async def test_failed_stream_cleanup_retires_phase_and_preserves_obligation():
+    plan = _plan()
+    plan["config"]["harness"]["adapter_id"] = "nvidia.fabric.pi"
+    plan["adapter_descriptor"]["descriptor"].update(
+        {
+            "adapter_id": "nvidia.fabric.pi",
+            "harness": "pi",
+            "adapter_kind": "typescript",
+        }
     )
-    runtime = _runtime_wrapper(mock_native)
-    runtime._collector_client = mock_collector
-    runtime._registered_requests.add("request-1")
-    runtime._stream_finalizers_finished.add("request-1")
+    mock_collector = MagicMock()
+    mock_collector.deregister = AsyncMock()
+    runtime = Runtime(
+        client=MagicMock(),
+        plan=plan,
+        runtime=_runtime(),
+        collector_client=mock_collector,
+    )
+    runtime._reserve_request_registration("request-1")
+    registration_token = runtime._registration_tokens["request-1"]
 
-    with pytest.raises(RuntimeError, match="collector unavailable"):
+    await runtime._finish_registered_request(
+        "request-1",
+        remove_queue=True,
+        pi_boundary="preserve",
+        stream_phase="finalizer",
+    )
+
+    mock_collector.deregister.side_effect = RuntimeError("collector unavailable")
+
+    with pytest.raises(RuntimeError, match="collector unavailable") as caught:
         await runtime._finish_registered_request(
             "request-1",
             remove_queue=False,
-            pi_boundary=None,
+            pi_boundary="wait",
             stream_phase="outcome",
         )
 
-    assert runtime._registered_requests == set()
+    assert mock_collector.deregister.await_count == 3
+    assert any(
+        "compensating deregistration failed" in note for note in caught.value.__notes__
+    )
+    assert runtime._registered_requests == {"request-1"}
+    assert runtime._registration_tokens == {"request-1": registration_token}
     assert runtime._stream_outcomes_finished == set()
     assert runtime._stream_finalizers_finished == set()
+    assert runtime._stream_cleanup_failed == {"request-1"}
+
+    mock_collector.deregister.side_effect = None
+    await runtime._deregister_requests()
+
+    assert mock_collector.deregister.await_count == 4
+    assert mock_collector.deregister.await_args_list[-1].kwargs == {
+        "remove_queue": True,
+        "pi_boundary": "release",
+        "registration_token": registration_token,
+    }
+    assert runtime._registered_requests == set()
+    assert runtime._registration_tokens == {}
+    assert runtime._stream_cleanup_failed == set()
+
+
+async def test_cancelled_compensating_cleanup_finishes_before_reraising():
+    plan = _plan()
+    plan["config"]["harness"]["adapter_id"] = "nvidia.fabric.pi"
+    plan["adapter_descriptor"]["descriptor"].update(
+        {
+            "adapter_id": "nvidia.fabric.pi",
+            "harness": "pi",
+            "adapter_kind": "typescript",
+        }
+    )
+    compensation_started = asyncio.Event()
+    finish_compensation = asyncio.Event()
+    deregistration_count = 0
+
+    async def deregister(
+        request_id: str,
+        *,
+        remove_queue: bool,
+        pi_boundary: str,
+        registration_token: str,
+    ) -> None:
+        nonlocal deregistration_count
+        assert request_id == "request-1"
+        assert registration_token
+        deregistration_count += 1
+        if deregistration_count == 1:
+            assert remove_queue is True
+            assert pi_boundary == "preserve"
+            return
+        if deregistration_count == 2:
+            assert remove_queue is False
+            assert pi_boundary == "wait"
+            raise RuntimeError("outcome cleanup failed")
+        assert deregistration_count == 3
+        assert remove_queue is True
+        assert pi_boundary == "release"
+        compensation_started.set()
+        await finish_compensation.wait()
+
+    mock_collector = MagicMock()
+    mock_collector.deregister = AsyncMock(side_effect=deregister)
+    runtime = Runtime(
+        client=MagicMock(),
+        plan=plan,
+        runtime=_runtime(),
+        collector_client=mock_collector,
+    )
+    runtime._reserve_request_registration("request-1")
+    await runtime._finish_registered_request(
+        "request-1",
+        remove_queue=True,
+        pi_boundary="preserve",
+        stream_phase="finalizer",
+    )
+
+    cleanup = asyncio.create_task(
+        runtime._finish_registered_request(
+            "request-1",
+            remove_queue=False,
+            pi_boundary="wait",
+            stream_phase="outcome",
+        )
+    )
+    await compensation_started.wait()
+    cleanup.cancel()
+    await asyncio.sleep(0)
+    assert not cleanup.done()
+
+    finish_compensation.set()
+    with pytest.raises(asyncio.CancelledError) as caught:
+        await cleanup
+
+    assert any("outcome cleanup failed" in note for note in caught.value.__notes__)
+    assert runtime._registered_requests == set()
+    assert runtime._registration_tokens == {}
+    assert runtime._stream_cleanup_failed == set()
 
 
 async def test_cancelled_outcome_cleanup_finishes_before_reraising(
@@ -599,11 +714,11 @@ def test_stream_rejects_request_id_with_pending_collector_cleanup(
         ("pi_aborted", {"adapter": {"pi_turn_started": True}}, True),
         ("pi_extension_shutdown", {"adapter": {"pi_turn_started": False}}, False),
         ("pi_extension_shutdown", {"adapter": {"pi_turn_started": True}}, True),
-        ("pi_extension_shutdown", {}, True),
+        ("pi_extension_shutdown", {}, False),
         (
             "pi_extension_shutdown",
             {"adapter": {"pi_turn_started": "false"}},
-            True,
+            False,
         ),
     ],
 )

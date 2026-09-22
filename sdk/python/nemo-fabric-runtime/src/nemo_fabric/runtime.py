@@ -102,6 +102,7 @@ class Runtime:
         self._registration_tokens: dict[str, str] = {}
         self._stream_outcomes_finished: set[str] = set()
         self._stream_finalizers_finished: set[str] = set()
+        self._stream_cleanup_failed: set[str] = set()
         self._closing = False
 
     @property
@@ -508,6 +509,8 @@ class Runtime:
         pi_boundary: str | None,
         stream_phase: Literal["outcome", "finalizer"] | None = None,
     ) -> None:
+        cleanup_succeeded = False
+        cleanup_error: BaseException | None = None
         deregistration = asyncio.create_task(
             self._deregister_request(
                 request_id,
@@ -518,6 +521,7 @@ class Runtime:
         )
         try:
             await asyncio.shield(deregistration)
+            cleanup_succeeded = True
         except asyncio.CancelledError as error:
             # Retain cleanup ownership until the bounded collector request
             # finishes so cancellation cannot reopen a correlation race.
@@ -528,31 +532,72 @@ class Runtime:
                     continue
             try:
                 deregistration.result()
-            except Exception as cleanup_error:
-                error.add_note(f"ATOF collector deregistration failed: {cleanup_error}")
-            raise
-        finally:
-            if stream_phase is not None:
-                self._finish_stream_cleanup_phase(request_id, stream_phase)
+            except BaseException as deregistration_error:
+                error.add_note(
+                    f"ATOF collector deregistration failed: {deregistration_error}"
+                )
+            else:
+                cleanup_succeeded = True
+            cleanup_error = error
+        except BaseException as error:
+            cleanup_error = error
+
+        compensate = stream_phase is not None and self._finish_stream_cleanup_phase(
+            request_id,
+            stream_phase,
+            cleanup_succeeded=cleanup_succeeded,
+        )
+        if compensate:
+            try:
+                await self._finish_registered_request(
+                    request_id,
+                    remove_queue=True,
+                    pi_boundary="release",
+                )
+            except BaseException as compensation_error:
+                if isinstance(compensation_error, asyncio.CancelledError):
+                    if cleanup_error is not None:
+                        compensation_error.add_note(
+                            "ATOF collector deregistration failed before "
+                            f"compensating cleanup: {cleanup_error}"
+                        )
+                    raise
+                if cleanup_error is None:
+                    raise
+                cleanup_error.add_note(
+                    "ATOF collector compensating deregistration failed: "
+                    f"{compensation_error}"
+                )
+        if cleanup_error is not None:
+            raise cleanup_error
 
     def _finish_stream_cleanup_phase(
         self,
         request_id: str,
         phase: Literal["outcome", "finalizer"],
-    ) -> None:
+        *,
+        cleanup_succeeded: bool,
+    ) -> bool:
         if request_id not in self._registered_requests:
-            return
+            return False
         finished = (
             self._stream_outcomes_finished
             if phase == "outcome"
             else self._stream_finalizers_finished
         )
         finished.add(request_id)
+        if not cleanup_succeeded:
+            self._stream_cleanup_failed.add(request_id)
         if (
             request_id in self._stream_outcomes_finished
             and request_id in self._stream_finalizers_finished
         ):
+            self._stream_outcomes_finished.discard(request_id)
+            self._stream_finalizers_finished.discard(request_id)
+            if request_id in self._stream_cleanup_failed:
+                return True
             self._discard_request_registration(request_id)
+        return False
 
     def _reserve_request_registration(self, request_id: str) -> None:
         if self._collector_client is None:
@@ -572,6 +617,7 @@ class Runtime:
         self._registration_tokens.pop(request_id, None)
         self._stream_outcomes_finished.discard(request_id)
         self._stream_finalizers_finished.discard(request_id)
+        self._stream_cleanup_failed.discard(request_id)
 
     def _uses_pi_stream_correlation(self) -> bool:
         return (
@@ -587,8 +633,9 @@ class Runtime:
             turn_started = adapter_metadata.get("pi_turn_started")
             if isinstance(turn_started, bool):
                 return turn_started
-        # Fail closed for older or malformed Pi results that lack the signal.
-        return True
+        # Only a positive signal can justify waiting for a terminal hook. Older
+        # or malformed Pi results may omit the extension and never emit one.
+        return False
 
     def invoke_openai_stream(
         self,

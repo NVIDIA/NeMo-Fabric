@@ -786,6 +786,23 @@ async def test_pi_turn_window_accepts_zero_turn_completion():
     assert await queue.get() == settled
 
 
+async def test_pi_turn_window_tracks_turn_start_after_zero_turn_open():
+    collector = AtofCollector(standalone=True, completion_wait_timeout=0.1)
+    request_id = RequestId("request-1")
+    await collector.register(request_id, correlation_mode="pi_turn_window")
+
+    await collector.route(
+        _pi_record("agent_settled", uuid="settled-1", turn_seq=0),
+        byte_size=1,
+    )
+    await collector.route(
+        _pi_record("turn_start", kind="scope", uuid="turn-1", turn_seq=1),
+        byte_size=1,
+    )
+
+    assert collector.request_states[request_id].turn_started is True
+
+
 async def test_pi_turn_window_releases_late_selected_completion_after_timeout(
     caplog: pytest.LogCaptureFixture,
 ):

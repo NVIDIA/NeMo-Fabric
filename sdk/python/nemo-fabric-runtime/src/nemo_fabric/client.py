@@ -261,15 +261,11 @@ class Fabric:
             raise FabricConfigError("launch_collector requires streaming=True")
         if streaming and not _relay_enabled(config):
             raise FabricConfigError("streaming requires Relay telemetry to be enabled")
-        if (
-            streaming
-            and launch_collector is not False
-            and (
-                isinstance(completion_wait_timeout, bool)
-                or not isinstance(completion_wait_timeout, (int, float))
-                or not math.isfinite(completion_wait_timeout)
-                or completion_wait_timeout <= 0
-            )
+        if launch_collector is not False and (
+            isinstance(completion_wait_timeout, bool)
+            or not isinstance(completion_wait_timeout, (int, float))
+            or not math.isfinite(completion_wait_timeout)
+            or completion_wait_timeout <= 0
         ):
             raise FabricConfigError(
                 "completion_wait_timeout must be a finite number greater than zero"
