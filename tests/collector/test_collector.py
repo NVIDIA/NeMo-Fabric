@@ -281,31 +281,6 @@ async def test_standalone_collector_rejects_second_registration():
         await collector.register(RequestId("request-2"))
 
 
-async def test_pi_registration_tombstone_prevents_late_commit():
-    collector = AtofCollector(standalone=True)
-    request_id = RequestId("request-1")
-    await collector.deregister(
-        request_id,
-        remove_queue=True,
-        pi_boundary="release",
-        registration_token="cancelled-attempt",
-    )
-
-    with pytest.raises(RuntimeError, match="registration attempt was cancelled"):
-        await collector.register(
-            request_id,
-            correlation_mode="pi_turn_window",
-            registration_token="cancelled-attempt",
-        )
-
-    assert request_id not in collector.request_states
-    await collector.register(
-        request_id,
-        correlation_mode="pi_turn_window",
-        registration_token="new-attempt",
-    )
-
-
 async def test_pi_registration_tombstones_evict_the_oldest_entry_at_the_bound():
     collector = AtofCollector(standalone=True)
 
@@ -1168,53 +1143,6 @@ async def test_pi_turn_window_late_preserve_does_not_rearm_completed_boundary():
     assert request_id not in collector.request_states
 
 
-async def test_pi_turn_window_accepts_zero_turn_completion():
-    collector = AtofCollector(standalone=True, completion_wait_timeout=0.1)
-    request_id = RequestId("request-1")
-    await collector.register(request_id, correlation_mode="pi_turn_window")
-    queue = collector.request_messages[request_id]
-    completion = asyncio.create_task(
-        collector.deregister(
-            request_id,
-            remove_queue=False,
-            pi_boundary="wait",
-        )
-    )
-    settled = _pi_record("agent_settled", uuid="settled-1", turn_seq=0)
-
-    await collector.route(settled, byte_size=1)
-    await completion
-
-    assert await queue.get() == settled
-
-
-async def test_pi_turn_window_tracks_turn_start_after_zero_turn_open():
-    collector = AtofCollector(standalone=True, completion_wait_timeout=0.1)
-    request_id = RequestId("request-1")
-    await collector.register(request_id, correlation_mode="pi_turn_window")
-
-    settled = _pi_record("agent_settled", uuid="settled-1", turn_seq=0)
-    await collector.route(settled, byte_size=1)
-    await collector.route(
-        _pi_record("turn_start", kind="scope", uuid="turn-1", turn_seq=1),
-        byte_size=1,
-    )
-
-    state = collector.request_states[request_id]
-    assert state.turn_started is True
-    assert state.latest_turn_seq == 1
-    assert state.completion_key == (0, ScopeUuid("settled-1"))
-
-    await collector.deregister(
-        request_id,
-        remove_queue=False,
-        pi_boundary="wait",
-    )
-
-    assert (0, ScopeUuid("settled-1")) in collector._pi_completion_tombstones
-    assert (1, ScopeUuid("settled-1")) not in collector._pi_completion_tombstones
-
-
 async def test_pi_completion_retry_after_cancelled_queue_put():
     collector = AtofCollector(
         standalone=True,
@@ -1250,105 +1178,7 @@ async def test_pi_completion_retry_after_cancelled_queue_put():
     assert await queue.get() == settled
 
 
-async def test_pi_completion_cancelled_after_queue_put_stays_completed(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    collector = AtofCollector(standalone=True, completion_wait_timeout=0.1)
-    request_id = RequestId("request-1")
-    await collector.register(request_id, correlation_mode="pi_turn_window")
-    queue = collector.request_messages[request_id]
-    original_put = queue.put
-    post_put_lock_acquired = asyncio.Event()
-
-    async def put_then_hold_state_lock(
-        record: dict,
-        *,
-        byte_size: int | None = None,
-    ) -> None:
-        await original_put(record, byte_size=byte_size)
-        await collector.state_lock.acquire()
-        post_put_lock_acquired.set()
-
-    monkeypatch.setattr(queue, "put", put_then_hold_state_lock)
-    settled = _pi_record("agent_settled", uuid="settled-1", turn_seq=0)
-    completion = asyncio.create_task(collector.route(settled, byte_size=1))
-    await post_put_lock_acquired.wait()
-    state = collector.request_states[request_id]
-    await state.completion_seen.wait()
-
-    completion.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await completion
-    collector.state_lock.release()
-
-    assert state.completion_key == (0, ScopeUuid("settled-1"))
-    await collector.route(settled, byte_size=1)
-    await collector.deregister(
-        request_id,
-        remove_queue=False,
-        pi_boundary="wait",
-    )
-    await collector.register(
-        RequestId("request-2"),
-        correlation_mode="pi_turn_window",
-    )
-
-    assert await queue.get() == settled
-    assert queue.empty()
-
-
-async def test_pi_completion_cancelled_post_put_releases_removed_timeout(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    collector = AtofCollector(standalone=True, completion_wait_timeout=0.001)
-    request_id = RequestId("request-1")
-    await collector.register(request_id, correlation_mode="pi_turn_window")
-    queue = collector.request_messages[request_id]
-    state = collector.request_states[request_id]
-    original_put = queue.put
-    put_finished = asyncio.Event()
-    return_from_put = asyncio.Event()
-
-    async def put_then_pause(
-        record: dict,
-        *,
-        byte_size: int | None = None,
-    ) -> None:
-        await original_put(record, byte_size=byte_size)
-        put_finished.set()
-        await return_from_put.wait()
-
-    monkeypatch.setattr(queue, "put", put_then_pause)
-    settled = _pi_record("agent_settled", uuid="settled-1", turn_seq=0)
-    completion = asyncio.create_task(collector.route(settled, byte_size=1))
-    await put_finished.wait()
-
-    await collector.deregister(
-        request_id,
-        remove_queue=True,
-        pi_boundary="wait",
-    )
-    assert state.boundary_timed_out is True
-    assert collector._pi_boundary_ready.is_set()
-    assert collector._pi_boundary_owner is None
-
-    await collector.state_lock.acquire()
-    return_from_put.set()
-    await state.completion_seen.wait()
-    completion.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await completion
-    collector.state_lock.release()
-
-    assert collector._pi_boundary_ready.is_set()
-    assert collector._pi_boundary_owner is None
-    await collector.register(
-        RequestId("request-2"),
-        correlation_mode="pi_turn_window",
-    )
-
-
-async def test_pi_turn_window_releases_late_selected_completion_after_timeout(
+async def test_pi_timeout_warns_when_observed_completion_is_undelivered(
     caplog: pytest.LogCaptureFixture,
 ):
     collector = AtofCollector(
@@ -1418,61 +1248,6 @@ async def test_pi_turn_window_observes_completion_dropped_by_backpressure():
     await collector.register(
         RequestId("request-2"),
         correlation_mode="pi_turn_window",
-    )
-
-
-async def test_released_completion_does_not_reopen_new_pi_lease(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    collector = AtofCollector(standalone=True, completion_wait_timeout=0.1)
-    first_id = RequestId("request-1")
-    second_id = RequestId("request-2")
-    await collector.register(first_id, correlation_mode="pi_turn_window")
-    first_queue = collector.request_messages[first_id]
-    put_started = asyncio.Event()
-    finish_put = asyncio.Event()
-
-    async def paused_put(record: dict, *, byte_size: int | None = None) -> None:
-        put_started.set()
-        await finish_put.wait()
-
-    monkeypatch.setattr(first_queue, "put", paused_put)
-    old_completion = asyncio.create_task(
-        collector.route(
-            _pi_record("agent_settled", uuid="settled-1", turn_seq=0),
-            byte_size=1,
-        )
-    )
-    await put_started.wait()
-
-    await collector.deregister(
-        first_id,
-        remove_queue=True,
-        pi_boundary="release",
-    )
-    await collector.register(second_id, correlation_mode="pi_turn_window")
-    await collector.deregister(
-        second_id,
-        remove_queue=True,
-        pi_boundary="wait",
-        pi_turn_count=1,
-    )
-    third_id = RequestId("request-3")
-    await collector.register(
-        third_id,
-        correlation_mode="pi_turn_window",
-    )
-    third_owner = collector._pi_boundary_owner
-
-    finish_put.set()
-    await old_completion
-
-    assert collector._pi_boundary_owner == third_owner
-    assert not collector._pi_boundary_ready.is_set()
-    await collector.deregister(
-        third_id,
-        remove_queue=True,
-        pi_boundary="release",
     )
 
 

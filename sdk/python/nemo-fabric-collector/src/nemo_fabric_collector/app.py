@@ -227,7 +227,6 @@ class AtofCollector:
         self._pi_boundary_owner: int | None = None
         self._pi_boundary_turn_seq: int | None = None
         self._pi_recovery_mode = _PiRecoveryMode.NORMAL
-        self._pi_quarantined_turn_seq: int | None = None
         self._pi_completion_tombstones: dict[tuple[int, ScopeUuid], None] = {}
         self._cancelled_registration_tokens: dict[tuple[RequestId, str], None] = {}
 
@@ -507,33 +506,9 @@ class AtofCollector:
                     return
 
         if pi_completion:
-            # Once the terminal record has entered the queue (or reached a
-            # handled terminal queue state), publish completion before another
-            # await can deliver cancellation. Cancellation during put() rolls
-            # the reservation back instead.
+            # Publish completion. Cancellation during put() rolls the
+            # reservation back instead.
             state.completion_seen.set()
-            if state.boundary_timed_out and not self.request_uuids:
-                # The timed-out request may already have removed its routes.
-                # Resolve its generation-owned quarantine before cancellation
-                # can interrupt the post-delivery lock acquisition below.
-                self._resolve_pi_boundary(state)
-            async with self.state_lock:
-                current = (
-                    self.request_states.get(request_id) is state
-                    and self.request_messages.get(request_id) is queue
-                )
-                if current:
-                    if state.boundary_timed_out and not self.request_uuids:
-                        # The terminal marker was selected before the timeout
-                        # but could not enter a backpressured queue until its
-                        # routes were removed. Do not reopen a newer Pi lease.
-                        self._resolve_pi_boundary(state)
-                elif not self.request_uuids:
-                    # A record selected for a timed-out request can finish
-                    # queueing after that request is removed. It still closes
-                    # the quarantine unless another Pi lease already owns the
-                    # collector.
-                    self._resolve_pi_boundary(state)
 
     async def _rollback_pi_completion_reservation(
         self,
@@ -578,7 +553,6 @@ class AtofCollector:
             self._pi_boundary_owner = None
             self._pi_boundary_turn_seq = None
             self._pi_recovery_mode = _PiRecoveryMode.NORMAL
-            self._pi_quarantined_turn_seq = None
             self._pi_completion_tombstones.clear()
             self._pi_boundary_ready.set()
             for queue in queues:
@@ -592,7 +566,6 @@ class AtofCollector:
             if len(self.request_uuids) == 0:
                 if self._pi_recovery_mode is not _PiRecoveryMode.NORMAL:
                     return None
-                boundary_timed_out = not self._pi_boundary_ready.is_set()
                 if _is_pi_turn_start(record):
                     turn_seq = _pi_turn_seq(record)
                     if turn_seq is not None and (
@@ -600,11 +573,6 @@ class AtofCollector:
                         or turn_seq > self._pi_boundary_turn_seq
                     ):
                         self._advance_pi_turn_seq(turn_seq)
-                        if boundary_timed_out and (
-                            self._pi_quarantined_turn_seq is None
-                            or turn_seq > self._pi_quarantined_turn_seq
-                        ):
-                            self._pi_quarantined_turn_seq = turn_seq
                 if _is_pi_completion(record):
                     turn_seq = _pi_turn_seq(record)
                     completion_uuid = _record_uuid(record)
@@ -617,21 +585,8 @@ class AtofCollector:
                             self._pi_boundary_turn_seq is None
                             or turn_seq >= self._pi_boundary_turn_seq
                         )
-                        and (
-                            not boundary_timed_out
-                            or turn_seq == self._pi_quarantined_turn_seq
-                            or self._pi_quarantined_turn_seq is None
-                        )
                     ):
                         self._remember_pi_completion(turn_seq, completion_uuid)
-                        if boundary_timed_out:
-                            # A previous Pi batch arrived after its bounded
-                            # completion wait. Drop the batch and reopen
-                            # registration only at its ordered terminal marker.
-                            self._advance_pi_turn_seq(turn_seq)
-                            self._pi_quarantined_turn_seq = None
-                            self._pi_boundary_owner = None
-                            self._pi_boundary_ready.set()
                 return None
 
             request_id = next(iter(self.request_uuids))
@@ -779,7 +734,6 @@ class AtofCollector:
                 self._advance_pi_turn_seq(expected_turn_seq)
             if state.completion_key is not None:
                 self._remember_pi_completion(*state.completion_key)
-            self._pi_quarantined_turn_seq = None
             self._pi_boundary_owner = None
             self._pi_boundary_ready.set()
 
@@ -824,7 +778,6 @@ class AtofCollector:
                     "latest_turn_seq": state.latest_turn_seq,
                 },
             )
-        self._pi_quarantined_turn_seq = None
         self._pi_boundary_owner = None
         self._pi_boundary_ready.set()
 
@@ -925,10 +878,7 @@ class AtofCollector:
                 ):
                     return
                 state.boundary_timed_out = True
-                self._pi_boundary_ready.clear()
                 turn_started = state.turn_started
-                if turn_started and state.latest_turn_seq is not None:
-                    self._pi_quarantined_turn_seq = state.latest_turn_seq
                 pi_records_seen = state.pi_records_seen
                 completion_marker_seen = state.completion_marker_seen
             # Do not hold the completed invocation open indefinitely. The

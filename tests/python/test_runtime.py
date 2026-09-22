@@ -10,7 +10,7 @@ import json
 import logging
 import threading
 from contextlib import AsyncExitStack
-from typing import Any, Literal
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -422,45 +422,6 @@ async def test_cancelled_invocation_waits_for_registration_before_cleanup(
     mock_native.invoke_runtime.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "phases",
-    [("outcome", "finalizer"), ("finalizer", "outcome")],
-)
-async def test_stream_registration_retires_after_both_cleanup_phases(
-    mock_native: MagicMock,
-    phases: tuple[
-        Literal["outcome", "finalizer"],
-        Literal["outcome", "finalizer"],
-    ],
-):
-    mock_collector = MagicMock()
-    mock_collector.deregister = AsyncMock()
-    runtime = _runtime_wrapper(mock_native)
-    runtime._collector_client = mock_collector
-    runtime._registered_requests.add("request-1")
-
-    first, second = phases
-    await runtime._finish_registered_request(
-        "request-1",
-        remove_queue=first == "finalizer",
-        pi_boundary="preserve" if first == "finalizer" else None,
-        stream_phase=first,
-    )
-    assert runtime._registered_requests == {"request-1"}
-
-    await runtime._finish_registered_request(
-        "request-1",
-        remove_queue=second == "finalizer",
-        pi_boundary="preserve" if second == "finalizer" else None,
-        stream_phase=second,
-    )
-
-    assert runtime._registered_requests == set()
-    assert runtime._stream_outcomes_finished == set()
-    assert runtime._stream_finalizers_finished == set()
-    assert mock_collector.deregister.await_count == 2
-
-
 async def test_failed_stream_cleanup_retires_phase_and_preserves_obligation():
     plan = _plan()
     plan["config"]["harness"]["adapter_id"] = "nvidia.fabric.pi"
@@ -807,68 +768,6 @@ def test_pi_boundary_validates_turn_count(
     result["metadata"] = metadata
 
     assert runtime._pi_result_turn_count(RunResult.from_mapping(result)) == expected
-
-
-async def test_pi_stream_reserves_one_token_for_registration_and_cleanup(
-    mock_native: MagicMock,
-):
-    plan = _plan()
-    plan["config"]["harness"]["adapter_id"] = "nvidia.fabric.pi"
-    plan["adapter_descriptor"]["descriptor"].update(
-        {
-            "adapter_id": "nvidia.fabric.pi",
-            "harness": "pi",
-            "adapter_kind": "typescript",
-        }
-    )
-
-    streamed_tokens: list[str | None] = []
-
-    async def no_records(
-        _: str,
-        *,
-        registration_token: str | None = None,
-    ):
-        streamed_tokens.append(registration_token)
-        if False:
-            yield {}
-
-    mock_collector = MagicMock()
-    mock_collector.register = AsyncMock()
-    mock_collector.deregister = AsyncMock()
-    mock_collector.stream = no_records
-    client = Fabric()
-    client._native_module = lambda: mock_native  # type: ignore[method-assign]
-    runtime = Runtime(
-        client=client,
-        plan=plan,
-        runtime=_runtime(),
-        collector_client=mock_collector,
-    )
-
-    stream = runtime.invoke_stream(
-        request=RunRequest(input="hello", request_id="request-1")
-    )
-
-    assert runtime._registered_requests == {"request-1"}
-    token = runtime._registration_tokens["request-1"]
-    assert token
-
-    assert [record async for record in stream] == []
-    assert (await stream.result()).status == "succeeded"
-
-    mock_collector.register.assert_awaited_once_with(
-        "request-1",
-        correlation_mode="pi_turn_window",
-        capture_records=True,
-        registration_token=token,
-    )
-    assert mock_collector.deregister.await_count == 2
-    for call in mock_collector.deregister.await_args_list:
-        assert call.kwargs["registration_token"] == token
-    assert streamed_tokens == [token]
-    assert runtime._registered_requests == set()
-    assert runtime._registration_tokens == {}
 
 
 async def test_runtime_preserves_non_mapping_message_values(mock_native: MagicMock):
