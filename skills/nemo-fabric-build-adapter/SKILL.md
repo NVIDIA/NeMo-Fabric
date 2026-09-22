@@ -122,7 +122,10 @@ runtime, establish the supported integration boundary before relying on it:
   not declare that surface, disable discovery when the harness supports it
   rather than depending on ambient host behavior.
 - If the adapter accepts a URL for an authenticated upstream endpoint, define
-  and test its transport and trust boundary.
+  and test its transport and trust boundary. Decide whether the URL is trusted
+  operator configuration. Trusted custom-provider URLs do not require a fixed
+  allowlist. If lower-trust input can control the destination, enforce and test
+  an origin or network policy before sending credentials.
 
 ## Map AgentConfig
 
