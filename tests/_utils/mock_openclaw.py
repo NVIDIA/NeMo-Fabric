@@ -67,28 +67,33 @@ class Handler(BaseHTTPRequestHandler):
         request = json.loads(self.rfile.read(length))
         with open(os.environ["FAKE_OPENCLAW_REQUEST"], "w", encoding="utf-8") as stream:
             json.dump(request, stream)
-        body = json.dumps(
+        chunks = [
             {
-                "object": "chat.completion",
+                "object": "chat.completion.chunk",
                 "choices": [
                     {
                         "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": "OpenClaw response",
-                        },
-                        "finish_reason": "stop",
+                        "delta": {"content": "OpenClaw response"},
+                        "finish_reason": None,
                     }
                 ],
+            },
+            {
+                "object": "chat.completion.chunk",
+                "choices": [],
                 "usage": {
                     "prompt_tokens": 3,
                     "completion_tokens": 2,
                     "total_tokens": 5,
                 },
-            }
+            },
+        ]
+        body = (
+            "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks)
+            + "data: [DONE]\n\n"
         ).encode()
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "text/event-stream")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

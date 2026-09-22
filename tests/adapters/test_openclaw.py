@@ -158,11 +158,12 @@ def test_openclaw_gateway_command_uses_setpriv_on_linux_when_available(
     monkeypatch.setattr(adapter.sys, "platform", platform)
     monkeypatch.setattr(adapter.shutil, "which", mock_which)
 
-    command = adapter._gateway_command(Path("/usr/bin/openclaw"), port=20_000)
+    openclaw = Path("/usr/bin/openclaw")
+    command = adapter._gateway_command(openclaw, port=20_000)
 
     assert command == [
         *expected_prefix,
-        "/usr/bin/openclaw",
+        str(openclaw),
         "gateway",
         "run",
         "--port",
@@ -228,7 +229,8 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
         "temperature": 0.2,
         "top_p": 0.8,
         "max_completion_tokens": 64,
-        "stream": False,
+        "stream": True,
+        "stream_options": {"include_usage": True},
         "user": "openclaw-runtime",
     }
     assert generated["gateway"]["bind"] == "loopback"

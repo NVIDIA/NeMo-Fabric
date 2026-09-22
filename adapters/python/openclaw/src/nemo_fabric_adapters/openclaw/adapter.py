@@ -27,6 +27,7 @@ import httpx
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openclaw import _windows_job
 
@@ -301,57 +302,16 @@ async def _invoke_gateway(
     max_tokens: int | None,
     user: str,
 ) -> tuple[str, contract.AgentUsage | None]:
-    payload: dict[str, Any] = {
-        "model": OPENCLAW_CHAT_MODEL,
-        "messages": messages,
-        "stream": False,
-        "user": user,
-    }
-    for name, value in (
-        ("temperature", temperature),
-        ("top_p", top_p),
-        ("max_completion_tokens", max_tokens),
-    ):
-        if value is not None:
-            payload[name] = value
-
-    response = await client.post(url, json=payload)
-    response.raise_for_status()
-    value = response.json()
-    if not isinstance(value, dict) or "error" in value:
-        raise ValueError("Chat Completions returned an error or invalid response")
-
-    choices = value.get("choices")
-    if not isinstance(choices, list):
-        raise TypeError("Chat Completions choices must be an array")
-    choice = None
-    for item in choices:
-        if not isinstance(item, dict):
-            raise TypeError("Chat Completions choice must be an object")
-        if item.get("index", 0) == 0:
-            choice = item
-            break
-    if choice is None:
-        raise ValueError("Chat Completions response has no primary choice")
-    message = choice.get("message")
-    if not isinstance(message, dict):
-        raise TypeError("Chat Completions message must be an object")
-    content = message.get("content")
-    if not isinstance(content, str):
-        raise TypeError("Chat Completions content must be a string")
-
-    usage_value = value.get("usage")
-    if usage_value is None:
-        usage = None
-    elif isinstance(usage_value, dict):
-        usage = contract.AgentUsage(
-            input_tokens=usage_value.get("prompt_tokens"),
-            output_tokens=usage_value.get("completion_tokens"),
-            total_tokens=usage_value.get("total_tokens"),
-        )
-    else:
-        raise TypeError("Chat Completions usage must be an object")
-    return content, usage
+    return await openai_chat.invoke(
+        client,
+        url,
+        model=OPENCLAW_CHAT_MODEL,
+        messages=messages,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+        user=user,
+    )
 
 
 async def _command_output(
