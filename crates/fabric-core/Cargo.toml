@@ -5,6 +5,7 @@
 name = "nemo-fabric-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Core config and runtime contract for NeMo Fabric."

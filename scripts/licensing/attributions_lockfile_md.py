@@ -375,6 +375,7 @@ def _rust_license_files(crate: dict[str, Any]) -> list[tuple[str, str]]:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             text = path.read_text(encoding="utf-8", errors="replace")
+        text = _clean_license_text(text)
         label = path.name if path.parent == package_dir else str(path)
         if _is_useful_license_text(text):
             texts.append((label, text))
@@ -437,6 +438,7 @@ def _render_rust_crate_attribution(
     repo = str(crate.get("repository") or "").strip()
     if not repo:
         repo = f"https://crates.io/crates/{name}"
+    license_text = _clean_license_text(license_text)
 
     rendered = "".join(
         [
