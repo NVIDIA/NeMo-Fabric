@@ -68,6 +68,8 @@ navigation:
       path: ../pages-dev/integrations/harness/deepagents.mdx
     - page: mini-SWE-agent
       path: ../pages-dev/integrations/harness/mini-swe-agent.mdx
+    - page: OpenClaw
+      path: ../pages-dev/integrations/harness/openclaw.mdx
     - page: OpenCode
       path: ../pages-dev/integrations/harness/opencode.mdx
     - page: Pi
