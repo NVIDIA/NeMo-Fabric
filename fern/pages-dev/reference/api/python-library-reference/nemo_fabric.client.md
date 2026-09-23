@@ -165,12 +165,13 @@ async def start_runtime(
     overrides: Mapping[str, Any] | None = None,
     streaming: bool = False,
     launch_collector: bool | None = None,
+    completion_wait_timeout: float = 1.0,
 ) -> Runtime
 ```
 
 Start a stateful runtime for one or more ordered invocations.
 
-Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. With NVIDIA NeMo Relay enabled, ``streaming=True`` uses collector-backed streaming. By default, streaming starts an embedded collector. Set ``launch_collector=False`` to use an externally managed collector.
+Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. With NVIDIA NeMo Relay enabled, ``streaming=True`` uses collector-backed streaming. By default, streaming starts an embedded collector. Set ``launch_collector=False`` to use an externally managed collector. Pi requires the embedded collector because its ATOF records do not carry NeMo Fabric request IDs.
 
 
 
@@ -180,7 +181,8 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
  - <b>`base_dir`</b>:  Base directory for resolving relative paths.
  - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the runtime unless superseded by invocation overrides.
  - <b>`streaming`</b>:  Whether to enable collector-backed NeMo Relay ATOF  streaming for ``Runtime.invoke_stream()``.
- - <b>`launch_collector`</b>:  Whether to launch an embedded collector. ``None``  defaults to ``True`` when streaming is enabled. ``False`` uses  an externally managed collector. This argument cannot be set  unless ``streaming=True``.
+ - <b>`launch_collector`</b>:  Whether to launch an embedded collector. ``None``  defaults to ``True`` when streaming is enabled. ``False`` uses  an externally managed collector. Pi does not support ``False``.  This argument cannot be set unless ``streaming=True``.
+ - <b>`completion_wait_timeout`</b>:  Maximum seconds the embedded collector  waits for a Pi ``agent_settled`` marker after invocation. Increase  this value when Relay delivery can be delayed. This value is  ignored unless Pi streaming uses the embedded collector.
 
 
 
@@ -191,7 +193,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
 
 **Raises:**
 
- - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid, streaming is  requested without NeMo Relay enabled, ``launch_collector`` is  set without streaming, or an external collector has no sink.
+ - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid, streaming is  requested without NeMo Relay enabled, ``launch_collector`` is  set without streaming, Pi is configured with an external  collector, or an external collector has no sink.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
  - <b>`FabricRuntimeError`</b>:  If runtime startup fails.
 

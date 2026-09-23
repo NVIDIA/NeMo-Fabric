@@ -172,8 +172,49 @@ results do not prevent subsequent turns.
 
 Session, turn, and tool telemetry does not depend on model redirection. Model
 telemetry is available only when Relay supports the selected model API and the
-gateway upstream matches the model endpoint. A skipped redirect is recorded as
-a `model_redirect` mark with the reason.
+gateway upstream matches the model endpoint. Relay records a skipped redirect
+as a `model_redirect` mark with the reason in configured ATOF artifacts. Pi
+emits its startup redirect marks before NeMo Fabric registers an invocation, so
+they are not included in the per-invocation records from `invoke_stream()`.
+
+Install the matching collector for the embedded streaming path:
+
+```bash
+pip install "nemo-fabric[streaming]"
+```
+
+Start the runtime with streaming enabled to consume live model-turn ATOF
+records for successful Relay redirects in one Pi invocation:
+
+```python
+from nemo_fabric import Fabric
+
+async with await Fabric().start_runtime(config, streaming=True) as runtime:
+    stream = runtime.invoke_stream(input="Review the latest patch")
+    async for record in stream:
+        print(record)
+    result = await stream.result()
+```
+
+The terminal `RunResult` remains separate from the ATOF records. Fully consume
+each stream, or call `await stream.aclose()` if iteration stops early, before
+starting another invocation. The same runtime can then alternate
+`invoke_stream()` and `invoke()` calls. The embedded collector serializes both
+methods behind one Pi invocation lease. Streaming capture begins at the first
+Pi `turn_start` and closes at `agent_settled`. If Relay output is interrupted or
+late, the collector waits for a bounded interval, then admits the next native
+invocation and uses Pi's cumulative turn count to discard ambiguous delayed
+records until a higher `turn_start` arrives. This can thin the ATOF stream but
+does not block later invocations. Increase `completion_wait_timeout` from its
+one-second default when Relay delivery can take longer. Use the default embedded
+collector for Pi streaming. The Pi extension does not attach NeMo Fabric
+request IDs, so
+`start_runtime(..., streaming=True, launch_collector=False)` cannot correlate
+its records through an externally managed collector.
+
+This Relay-backed path runs the adapter's ordinary `invoke` operation. It is
+independent of native OpenAI streaming, so the adapter descriptor's
+`capabilities.streaming` value remains `false`.
 
 ## Configure a NeMo Fabric Tool Definition
 
@@ -228,11 +269,9 @@ skills, extensions, custom tools, or workspace.
 ## Current Limitations
 
 The current adapter does not expose MCP, native OpenAI streaming, caller-driven
-cancellation, or remote-service execution. Relay-backed
-`Runtime.invoke_stream()` correlation is not yet supported for Pi. Enabling a
-third-party extension can add extension-defined skills, prompts, or themes even
-though ambient Pi resources remain disabled. The Relay extension does not add
-those resources.
+cancellation, or remote-service execution. Enabling a third-party extension
+can add extension-defined skills, prompts, or themes even though ambient Pi
+resources remain disabled. The Relay extension does not add those resources.
 
 The Relay Pi hook route is available only on the loopback gateway and does not
 authenticate hook posts. Treat the loopback port as a local trust boundary.
