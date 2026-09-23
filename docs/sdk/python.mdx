@@ -652,7 +652,7 @@ Streaming has the following v0.1 constraints:
   `launch_collector=False` to use an externally managed collector. In that
   case, configure exactly one `nemo-fabric-stream` sink with an `http` or
   `https` collector base URL and `transport="ndjson"`; Fabric sends Relay to
-  `<base-url>/v1/atof`. Pi is the exception: Pi streaming supports only the
+  `<base-url>/v1/atof`. Pi is the exception as Pi streaming supports only the
   default embedded collector. Do not set `launch_collector=False` for Pi
   because its extension does not attach the NeMo Fabric request IDs required
   for external correlation. The embedded collector waits one second for a late
