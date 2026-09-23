@@ -113,12 +113,13 @@ flowchart TB
   Runtime --> Invoke2 --> Result2
 ```
 
-Most application code works with four objects:
+Most application code works with five objects:
 
 | Concept | What It Represents | How Consumers Use It |
 | --- | --- | --- |
 | `FabricConfig` | Typed configuration for the harness, models, runtime, and capabilities. | Construct it from application config before planning or running. |
 | `RunPlan` | The canonical config and path context, selected adapter, and declared capabilities. | Inspect it before starting work when adapter selection or feature support matters. |
+| `Service` | A NeMo Fabric-owned or caller-owned adapter service shared by one or more runtimes. | Prepare or attach it, pass it to `start_runtime(...)`, then release it after all connected runtimes stop. |
 | `Runtime` | The Python object for one logical, stateful harness execution. | Use it to send ordered invocations and stop the execution. Use it as an async context manager for cleanup. |
 | `RunResult` | The normalized outcome of one invocation. | Read its status, output, error, usage, events, artifacts, and correlation IDs. |
 
@@ -146,10 +147,13 @@ operation carries the resolved configuration and capability plan. Each
 subsequent `AdapterInvocation` carries only `runtime_context` and `request`.
 
 Third-party local adapters must implement the persistent local-host contract.
-NeMo Fabric does not currently define a remote-service adapter contract. A
-crashed persistent host is terminal for that runtime. The same applies when the
-host exceeds the protocol response timeout. NeMo Fabric does not silently
-respawn the host or replay a request.
+Adapters that advertise service support can also prepare a NeMo Fabric-owned service
+or attach to a caller-owned service. Multiple runtimes can connect to one
+service while retaining distinct runtime IDs and harness sessions. Service
+handles are process-local in this release and must not be persisted for cold
+resume. A crashed persistent host is terminal for its runtime or service. The
+same applies when the host exceeds the protocol response timeout. NeMo Fabric
+does not silently respawn the host or replay a request.
 
 Harness-native threads, sessions, and conversations remain adapter-owned state
 associated with the NeMo Fabric runtime. They are not additional NeMo Fabric lifecycle
@@ -448,9 +452,9 @@ uses this pattern for complete Hermes Agent, Codex, Deep Agents,
 environment, MCP, and telemetry variants.
 
 If a config contains relative paths, pass a `base_dir` to `plan(...)`,
-`doctor(...)`, `run(...)`, or `start_runtime(...)`. The base
-directory anchors skills, workspaces, artifacts, and other relative paths to
-the caller's package or job layout.
+`doctor(...)`, `run(...)`, `prepare_service(...)`, `attach_service(...)`, or
+`start_runtime(...)`. The base directory anchors skills, workspaces, artifacts,
+and other relative paths to the caller's package or job layout.
 
 ## API Inventory
 
@@ -465,11 +469,73 @@ The following table summarizes the SDK entry points and runtime methods:
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
 | `Fabric.doctor(config, *, base_dir=...)` | Yes | You need preflight diagnostics for adapter resolution, capability routing, declared requirements, and environment assumptions. | Checks can inspect local binaries, environment variables, and files without starting a runtime. |
 | `Fabric.run(config, base_dir=..., input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | `base_dir` is optional. Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
-| `Fabric.start_runtime(config, ..., streaming=False, launch_collector=None, completion_wait_timeout=1.0)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use `streaming=True` with NeMo Relay enabled only to provision Relay ATOF streaming. |
+| `Fabric.prepare_service(config, base_dir=...)` | Yes | NeMo Fabric should configure, start, and supervise a shared adapter service. | Returns a NeMo Fabric-owned `Service`. Release stops the service after every connected runtime stops. |
+| `Fabric.attach_service(config, reference, base_dir=...)` | Yes | A deployment system already owns the service. | Returns a caller-owned `Service`. Release detaches NeMo Fabric without stopping the external service. |
+| `Fabric.start_runtime(config, ..., streaming=False, launch_collector=None, completion_wait_timeout=1.0, service=...)` | Yes | You need state across multiple ordered invocations, optionally on a shared service. | Returns a `Runtime`. Use `streaming=True` with NeMo Relay enabled only to provision Relay ATOF streaming. |
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
 | `Runtime.invoke_openai_stream(...)` | No | You need adapter-native OpenAI Chat Completions chunks for one turn. | Requires descriptor `capabilities.streaming`. Returns an async `OpenAIInvokeStream`; await `stream.result()` for the separate terminal `RunResult`. |
 | `Runtime.invoke_stream(...)` | No | You need live ATOF records generated by NeMo Relay for one turn. | Returns an async `InvokeStream`; await `stream.result()` for the terminal `RunResult`. |
 | `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
+| `Service.release()` | Yes | You need to stop a prepared service or detach from an attached service. | Fails while any connected runtime remains active. Called automatically when using `async with`. |
+
+## Shared Services
+
+Use `prepare_service(...)` when NeMo Fabric should create and supervise a
+long-lived service. Start independent runtimes against the returned service,
+then stop every runtime before releasing it.
+
+```python
+import asyncio
+
+from nemo_fabric import Fabric
+
+
+async def main():
+    fabric = Fabric()
+    async with await fabric.prepare_service(config) as service:
+        async with await fabric.start_runtime(config, service=service) as first:
+            async with await fabric.start_runtime(config, service=service) as second:
+                first_result = await first.invoke(input="Inspect the repository")
+                second_result = await second.invoke(input="Review the latest patch")
+
+
+asyncio.run(main())
+```
+
+Use `attach_service(...)` when another system owns deployment and supervision.
+The adapter defines the required `ServiceReference.connection` fields. The
+reference contains locators and secret references, not secret values. Releasing
+an attachment only removes NeMo Fabric-owned clients and temporary state.
+
+```python
+import asyncio
+
+from nemo_fabric import Fabric, ServiceReference
+
+
+async def main():
+    reference = ServiceReference.from_mapping(
+        {
+            "adapter_id": "nvidia.fabric.openclaw",
+            "service_type": "openclaw_gateway",
+            "connection": {
+                "gateway_url": "https://openclaw.example.com",
+                "gateway_token_env": "OPENCLAW_GATEWAY_TOKEN",
+            },
+        }
+    )
+
+    fabric = Fabric()
+    async with await fabric.attach_service(config, reference) as service:
+        async with await fabric.start_runtime(config, service=service) as runtime:
+            result = await runtime.invoke(input="Review the latest patch")
+
+
+asyncio.run(main())
+```
+
+`Service.handle` is safe to inspect but is valid only in the process that
+created it. Cold-resume behavior will be defined separately.
 
 ## Single-Invocation Runs
 

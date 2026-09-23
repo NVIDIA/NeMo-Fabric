@@ -42,6 +42,45 @@ def __init__() -> None
 ---
 
 
+### <kbd>method</kbd> `attach_service`
+
+```python
+async def attach_service(
+    config: FabricConfig,
+    reference: ServiceReference,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> Service
+```
+
+Validate and attach to a caller-owned long-lived service.
+
+The adapter validates the reference against the normalized configuration and writes any resolved credentials only to private, process-local connection material. Releasing the returned service detaches NeMo Fabric without stopping the caller-owned service.
+
+
+
+**Args:**
+
+ - <b>`config`</b>:  Complete typed ``FabricConfig``.
+ - <b>`reference`</b>:  Adapter-specific endpoint and credential references.  Do not include credential values.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths.
+
+
+
+**Returns:**
+ An active caller-owned ``Service``. Use it as an asynchronous context manager to guarantee detach.
+
+
+
+**Raises:**
+
+ - <b>`FabricConfigError`</b>:  If the reference, plan, or adapter configuration  is invalid.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
+ - <b>`FabricRuntimeError`</b>:  If attachment or validation fails.
+
+---
+
+
 ### <kbd>method</kbd> `doctor`
 
 ```python
@@ -114,6 +153,43 @@ Planning resolves the selected adapter and reports optional runtime capabilities
 ---
 
 
+### <kbd>method</kbd> `prepare_service`
+
+```python
+async def prepare_service(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> Service
+```
+
+Create and supervise a Fabric-owned long-lived service.
+
+The selected adapter maps the normalized configuration into its service configuration. The returned handle is process-local and can be shared by multiple runtimes created from the same resolved plan.
+
+
+
+**Args:**
+
+ - <b>`config`</b>:  Complete typed ``FabricConfig``.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths.
+
+
+
+**Returns:**
+ An active Fabric-owned ``Service``. Use it as an asynchronous context manager to guarantee shutdown.
+
+
+
+**Raises:**
+
+ - <b>`FabricConfigError`</b>:  If planning or adapter configuration is invalid.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
+ - <b>`FabricRuntimeError`</b>:  If service startup fails.
+
+---
+
+
 ### <kbd>method</kbd> `run`
 
 ```python
@@ -166,6 +242,7 @@ async def start_runtime(
     streaming: bool = False,
     launch_collector: bool | None = None,
     completion_wait_timeout: float = 1.0,
+    service: Service | None = None,
 ) -> Runtime
 ```
 
@@ -183,6 +260,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
  - <b>`streaming`</b>:  Whether to enable collector-backed NeMo Relay ATOF  streaming for ``Runtime.invoke_stream()``.
  - <b>`launch_collector`</b>:  Whether to launch an embedded collector. ``None``  defaults to ``True`` when streaming is enabled. ``False`` uses  an externally managed collector. Pi does not support ``False``.  This argument cannot be set unless ``streaming=True``.
  - <b>`completion_wait_timeout`</b>:  Maximum seconds the embedded collector  waits for a Pi ``agent_settled`` marker after invocation. Increase  this value when Relay delivery can be delayed. This value is  ignored unless Pi streaming uses the embedded collector.
+ - <b>`service`</b>:  Optional prepared or attached service. When supplied, the  runtime connects to that service instead of creating its own.
 
 
 
