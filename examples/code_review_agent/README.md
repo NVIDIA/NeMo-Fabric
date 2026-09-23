@@ -207,6 +207,6 @@ and pass the Relay Pi extension path explicitly:
 The Pi variant uses the default embedded collector to collect per-invocation
 model-turn ATOF records for successful Relay redirects, then prints one JSON
 document containing `atof_records` and the separate terminal `result`. Relay
-retains redirect-decision marks in configured ATOF artifacts; Pi's startup
+retains redirect-decision marks in configured ATOF artifacts, while Pi's startup
 `model_redirect` marks are not included in `atof_records`. Omit `--stream` to
 retain Relay artifacts without collecting records for that JSON output.
