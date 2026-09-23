@@ -63,7 +63,7 @@ For MCP credentials, prefer parent-only variables so they are used to construct
 the header without being added to OpenCode's tool environment.
 
 SSE, MCP authentication objects, and per-server tool filters are unsupported.
-MCP elicitation is also unsupported. Configure only non-interactive MCP servers:
+MCP elicitation is also unsupported. Configure only non-interactive MCP servers as
 NeMo Fabric cannot reply to an elicitation request, so it can block an
 invocation until its configured timeout.
 
