@@ -198,7 +198,7 @@ async with await Fabric().start_runtime(config, streaming=True) as runtime:
 
 The terminal `RunResult` remains separate from the ATOF records. Fully consume
 each stream, or call `await stream.aclose()` if iteration stops early, before
-starting another invocation; the same runtime can then alternate
+starting another invocation. The same runtime can then alternate
 `invoke_stream()` and `invoke()` calls. The embedded collector serializes both
 methods behind one Pi invocation lease. Streaming capture begins at the first
 Pi `turn_start` and closes at `agent_settled`. If Relay output is interrupted or
