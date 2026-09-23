@@ -14,8 +14,8 @@ multi-task run.
 ## Before You Start
 
 Complete the shared host setup in the [Harbor landing page](../README.md#shared-host-setup),
-then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes Agent runs or
-`ANTHROPIC_API_KEY` for Claude runs before using that harness.
+then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes Agent or
+OpenCode runs, or `ANTHROPIC_API_KEY` for Claude runs before using that harness.
 
 ## Prepare the Task Bundle
 
@@ -97,6 +97,75 @@ uv run --extra harbor harbor run \
 For a self-hosted OpenAI-compatible model, change `--model` and add
 `--ak fabric_model_base_url=<url>`. The server must support automatic tool
 calling; a successful plain chat completion is not sufficient for SWE-Bench.
+
+## Run One Task with OpenCode
+
+Prepare the task with the OpenCode adapter from the current checkout. The
+SWE-Bench task image requires `linux/amd64`:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+
+export FABRIC_AGENT='nemo_fabric.integrations.harbor:FabricAgent'
+export FABRIC_BUNDLE="$PWD/examples/harbor/swebench"
+export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
+export DOCKER_DEFAULT_PLATFORM=linux/amd64
+
+./examples/harbor/swebench/prepare_opencode_swebench.sh
+
+export OPENCODE_SWEBENCH_TASK="$RUNS_DIR/prepared-django__django-13741-opencode"
+export OPENCODE_JOB_NAME="django-13741-opencode-$(date +%Y%m%d-%H%M%S)"
+```
+
+Verify the prepared image without credentials or a model call:
+
+```bash
+uv run --extra harbor harbor run \
+  --path "$OPENCODE_SWEBENCH_TASK" \
+  --agent "$FABRIC_AGENT" \
+  --ak fabric_adapter_id=nvidia.fabric.opencode \
+  --ak fabric_config_bundle="$FABRIC_BUNDLE" \
+  --ak fabric_config_target=/opt/nemo-fabric-config \
+  --ak fabric_python=/opt/nemo-fabric-venv/bin/python \
+  --install-only \
+  --job-name "${OPENCODE_JOB_NAME}-install" \
+  --jobs-dir "$RUNS_DIR" \
+  --n-concurrent 1 \
+  --force-build
+```
+
+Run the prepared task with NVIDIA's OpenAI-compatible endpoint:
+
+```bash
+: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running OpenCode}"
+
+uv run --extra harbor harbor run \
+  --path "$OPENCODE_SWEBENCH_TASK" \
+  --agent "$FABRIC_AGENT" \
+  --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
+  --ak fabric_adapter_id=nvidia.fabric.opencode \
+  --ak fabric_config_bundle="$FABRIC_BUNDLE" \
+  --ak fabric_config_target=/opt/nemo-fabric-config \
+  --ak fabric_python=/opt/nemo-fabric-venv/bin/python \
+  --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \
+  --ak fabric_model_api_key_env=NVIDIA_API_KEY \
+  --ak fabric_runtime_timeout_seconds=1800 \
+  --ak fabric_timeout_sec=1900 \
+  --ae 'NVIDIA_API_KEY=${NVIDIA_API_KEY}' \
+  --job-name "$OPENCODE_JOB_NAME" \
+  --jobs-dir "$RUNS_DIR" \
+  --n-concurrent 1 \
+  --n-attempts 1 \
+  --max-retries 1 \
+  --force-build
+```
+
+Inspect the OpenCode result with its generated job name:
+
+```bash
+uv run --extra harbor python -m json.tool \
+  "$RUNS_DIR/$OPENCODE_JOB_NAME/result.json"
+```
 
 ## Run the Same Task with Claude
 

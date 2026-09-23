@@ -20,6 +20,7 @@ CALCULATOR_FABRIC_ROOT = CALCULATOR_ROOT / "task" / "environment" / "fabric"
 SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
 SWEBENCH_README = SWEBENCH_ROOT / "README.md"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
+SWEBENCH_OPENCODE_DOCKERFILE = SWEBENCH_ROOT / "opencode" / "Dockerfile"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
     ROOT
@@ -339,7 +340,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert '--ak "fabric_config_bundle=$TASK_DIR/environment/fabric"' in calculator
     assert "uv run --extra harbor --extra" not in calculator
     assert landing.count("uv run --extra harbor harbor run") == 0
-    assert swebench.count("uv run --extra harbor harbor run") == 5
+    assert swebench.count("uv run --extra harbor harbor run") == 7
     assert "--agent-import-path" not in landing + calculator + swebench
     assert "fabric_config_path" not in calculator
     assert "fabric_config_path" not in landing
@@ -375,6 +376,20 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "PIP_FIND_LINKS" not in swebench
     assert 'PATH=/tmp/nemo-fabric-config/.relay/bin:$PATH' in swebench
     assert "--dataset swe-bench/swe-bench-verified" in swebench
+    for value in (
+        '--path "$OPENCODE_SWEBENCH_TASK"',
+        "fabric_adapter_id=nvidia.fabric.opencode",
+        "fabric_config_target=/opt/nemo-fabric-config",
+        "fabric_python=/opt/nemo-fabric-venv/bin/python",
+    ):
+        assert swebench.count(value) == 2
+    assert "--job-name django-13741-opencode-install" not in swebench
+    assert "--job-name django-13741-opencode" not in swebench
+    assert 'OPENCODE_JOB_NAME="django-13741-opencode-$(date +%Y%m%d-%H%M%S)"' in swebench
+    assert '--job-name "${OPENCODE_JOB_NAME}-install"' in swebench
+    assert '--job-name "$OPENCODE_JOB_NAME"' in swebench
+    assert '"$RUNS_DIR/$OPENCODE_JOB_NAME/result.json"' in swebench
+    assert "export JOB_NAME=django-13741-hermes" in swebench
     for flag in (
         "--path",
         "--agent",
@@ -414,6 +429,25 @@ def test_swebench_setup_pins_a_supported_relay_cli():
 
     assert f"NEMO_RELAY_VERSION={minimum}" in swebench
     assert '--install-dir "$FABRIC_BUNDLE/.relay/bin"' in swebench
+
+
+def test_swebench_opencode_image_uses_locked_npm_dependencies():
+    dockerfile = SWEBENCH_OPENCODE_DOCKERFILE.read_text(encoding="utf-8")
+
+    assert dockerfile.count("npm ci --prefix") == 2
+    assert dockerfile.count("--ignore-scripts") == 2
+    assert "package-lock.json" in dockerfile
+    assert "npm install --prefix /opt/nemo-fabric-config" not in dockerfile
+    assert "--no-package-lock" not in dockerfile
+    assert "/opt/nemo-fabric-config/adapters/opencode/" in dockerfile
+    assert "/opt/nemo-fabric-js/adapters/typescript/opencode/." in dockerfile
+    assert "ln -s" in dockerfile
+    assert "/opt/nemo-fabric-config/node_modules" in dockerfile
+    assert (
+        "ln -s \\\n"
+        "        /opt/nemo-fabric-js/adapters/typescript/opencode"
+        not in dockerfile
+    )
 
 
 def test_harbor_calculator_setup_and_solution_fail_fast():

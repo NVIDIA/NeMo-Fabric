@@ -17,7 +17,7 @@ you want to exercise.
 | --- | --- |
 | [Calculator walkthrough](calculator/README.md) | Validate the complete integration and Harbor reward with a deterministic, credential-free smoke test, then optionally run the same task with the LLM-backed Hermes Agent, OpenClaw, or Claude harness. |
 | [NVIDIA-labs Object Oriented Agents (NOOA) BenchAgent walkthrough](nooa_bench/README.md) | Run a benchmark-native custom agent through `FabricAgent`, verify the Harbor reward and Relay artifacts, and progress to a real SWE-Bench task. |
-| [SWE-Bench walkthrough](swebench/README.md) | Run Hermes Agent and Claude experiments with skills, MCP servers, tool policy, Relay telemetry, and SWE-Bench verification. |
+| [SWE-Bench walkthrough](swebench/README.md) | Run Hermes Agent, OpenCode, and Claude experiments with skills, MCP servers, tool policy, Relay telemetry, and SWE-Bench verification. |
 
 The calculator's scripted run is useful for validating a new checkout or
 environment without calling an LLM. Its Hermes Agent, OpenClaw, and Claude
