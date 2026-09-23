@@ -212,7 +212,7 @@ Pick the smallest lifecycle the consumer needs:
   collector; configure its base URL as the `nemo-fabric-stream` sink with
   `transport="ndjson"`. The runtime directs Relay to `<base-url>/v1/atof` and
   uses the collector control and stream endpoints. The bundled Pi adapter requires
-  the embedded collector; do not set `launch_collector=False` for Pi streaming.
+  the embedded collector. Do not set `launch_collector=False` for Pi streaming.
   The embedded collector waits up to `completion_wait_timeout` seconds (1.0 by
   default) for a late `agent_settled` marker. The collector limits each record to
   1 MiB and each request queue to 1,024 records or 16 MiB of encoded
