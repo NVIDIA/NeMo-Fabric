@@ -15,6 +15,8 @@ export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" |
 
 export interface PiPromptOutcome {
   accepted: boolean;
+  turnStarted: boolean;
+  turnCount: number;
   text?: string;
   stopReason?: PiStopReason;
   errorMessage?: string;
@@ -23,8 +25,8 @@ export interface PiPromptOutcome {
 
 export interface PiSessionHandle {
   readonly relay?: PiRelayRuntime;
+  readonly turnCount?: number;
   prompt(text: string): Promise<PiPromptOutcome>;
-  selectModel?(name: string): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -43,16 +45,22 @@ function failed(code: string, message: string): AgentRunResult {
 async function withRelayOutput(
   result: AgentRunResult,
   relay: PiRelayRuntime | undefined,
+  turnStarted: boolean,
+  turnCount: number,
 ): Promise<AgentRunResult> {
+  const annotated = {
+    ...result,
+    extensions: { ...result.extensions, pi_turn_count: turnCount, pi_turn_started: turnStarted },
+  };
   if (relay === undefined) {
-    return result;
+    return annotated;
   }
   const current: JsonObject =
     typeof result.output === "object" && result.output !== null && !Array.isArray(result.output)
       ? (result.output as JsonObject)
       : {};
   return {
-    ...result,
+    ...annotated,
     output: { ...current, ...(await relay.output(await collectNonAtifArtifacts(relay))) },
   };
 }
@@ -64,6 +72,7 @@ async function collectNonAtifArtifacts(relay: PiRelayRuntime): Promise<RelayArti
 export class PiAdapterRuntime implements AdapterRuntime {
   private readonly factory: PiSessionFactory;
   private session?: PiSessionHandle;
+  private turnCount = 0;
   private unusable = false;
 
   constructor(factory: PiSessionFactory) {
@@ -75,6 +84,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
       throw new LifecycleError("pi_already_started", "Pi adapter runtime is already started");
     }
     this.session = await this.factory.create(input);
+    this.turnCount = 0;
     this.unusable = false;
   }
 
@@ -85,21 +95,39 @@ export class PiAdapterRuntime implements AdapterRuntime {
     if (this.unusable) {
       throw new LifecycleError("pi_runtime_unusable", "Pi adapter runtime cannot accept another invocation");
     }
+    if (typeof request.input !== "string") {
+      const observedTurnCount = this.session.turnCount;
+      if (observedTurnCount !== undefined) {
+        if (!Number.isInteger(observedTurnCount) || observedTurnCount < this.turnCount) {
+          throw new LifecycleError("pi_invalid_turn_count", "Pi returned an invalid cumulative turn count");
+        }
+        this.turnCount = observedTurnCount;
+      }
+      return withRelayOutput(
+        failed("pi_unsupported_input", "The Pi adapter accepts only plain-text input"),
+        this.session.relay,
+        false,
+        this.turnCount,
+      );
+    }
+
     const relay = this.session.relay;
-    let prompt = request.input;
-    if (typeof prompt === "object" && prompt !== null && !Array.isArray(prompt)
-        && Object.keys(prompt).length === 2 && typeof prompt.prompt === "string"
-        && typeof prompt.model === "string" && this.session.selectModel) {
-      try { await this.session.selectModel(prompt.model); }
-      catch { return withRelayOutput(failed("pi_model_selection_failed", "The requested Pi model choice could not be selected"), relay); }
-      prompt = prompt.prompt;
+    const outcome = await this.session.prompt(request.input);
+    if (
+      !Number.isInteger(outcome.turnCount) ||
+      outcome.turnCount < this.turnCount ||
+      (outcome.turnStarted ? outcome.turnCount === this.turnCount : outcome.turnCount !== this.turnCount)
+    ) {
+      throw new LifecycleError("pi_invalid_turn_count", "Pi returned an invalid cumulative turn count");
     }
-    if (typeof prompt !== "string") {
-      return withRelayOutput(failed("pi_unsupported_input", "Pi requires text or an object containing prompt and model"), relay);
-    }
-    const outcome = await this.session.prompt(prompt);
+    this.turnCount = outcome.turnCount;
     if (!outcome.accepted) {
-      return withRelayOutput(failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"), relay);
+      return withRelayOutput(
+        failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"),
+        relay,
+        outcome.turnStarted,
+        outcome.turnCount,
+      );
     }
     if (outcome.shutdownRequested || outcome.stopReason === "aborted") {
       if (outcome.shutdownRequested) {
@@ -118,21 +146,32 @@ export class PiAdapterRuntime implements AdapterRuntime {
           },
         },
         relay,
+        outcome.turnStarted,
+        outcome.turnCount,
       );
     }
     if (outcome.stopReason === "error") {
       return withRelayOutput(
         failed("pi_model_error", outcome.errorMessage || "The Pi model invocation failed"),
         relay,
+        outcome.turnStarted,
+        outcome.turnCount,
       );
     }
     if (outcome.text === undefined || outcome.text.length === 0) {
       return withRelayOutput(
         failed("pi_no_assistant_response", "Pi completed without a final assistant text response"),
         relay,
+        outcome.turnStarted,
+        outcome.turnCount,
       );
     }
-    return withRelayOutput({ status: "succeeded", output: { response: outcome.text } }, relay);
+    return withRelayOutput(
+      { status: "succeeded", output: { response: outcome.text } },
+      relay,
+      outcome.turnStarted,
+      outcome.turnCount,
+    );
   }
 
   async stop(): Promise<void> {

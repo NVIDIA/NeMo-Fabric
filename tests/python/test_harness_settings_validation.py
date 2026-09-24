@@ -31,6 +31,9 @@ ADAPTER_DESCRIPTORS = {
     "nvidia.fabric.hermes": (
         ROOT / "adapters" / "python" / "hermes" / "hermes.fabric-adapter.json"
     ),
+    "nvidia.fabric.openclaw": (
+        ROOT / "adapters" / "python" / "openclaw" / "openclaw.fabric-adapter.json"
+    ),
     "nvidia.fabric.remote-agent": (
         ROOT
         / "adapters"
@@ -131,6 +134,30 @@ _config = partial(
             id="hermes",
         ),
         pytest.param(
+            "nvidia.fabric.openclaw",
+            {
+                "openclaw_command": "/opt/openclaw/bin/openclaw",
+                "port_range": {"start": 19001, "end": 19111},
+                "startup_timeout_seconds": 20,
+                "shutdown_timeout_seconds": 5,
+                "connect_timeout_seconds": 3,
+                "read_timeout_seconds": 300,
+                "channel_config": {
+                    "channels": {"telegram": {"enabled": True}},
+                    "bindings": [
+                        {
+                            "agentId": "default",
+                            "match": {
+                                "channel": "telegram",
+                                "accountId": "*",
+                            },
+                        }
+                    ],
+                },
+            },
+            id="openclaw",
+        ),
+        pytest.param(
             "nvidia.fabric.remote-agent",
             {
                 "base_url": "https://agents.example.test/v1",
@@ -177,6 +204,17 @@ def test_settings_schema_defaults_are_not_applied(
     )
 
     assert plan.config.harness.settings == {}
+
+
+def test_openclaw_rejects_agent_runtime_setting(tmp_path: Path):
+    with pytest.raises(FabricConfigError, match="harness.settings.agent_runtime"):
+        Fabric().plan(
+            _config(
+                {"agent_runtime": "codex"},
+                adapter_id="nvidia.fabric.openclaw",
+            ),
+            base_dir=tmp_path,
+        )
 
 
 def test_remote_agent_settings_schema_default_is_not_applied(tmp_path: Path):
@@ -236,9 +274,17 @@ def test_remote_agent_accepts_relay_atof_for_invoke_stream(tmp_path: Path):
     assert plan["telemetry_plan"]["relay_enabled"] is True
     assert plan["telemetry_plan"]["providers"] == ["relay"]
     assert plan["telemetry_plan"]["adapter_outputs"] == ["atof"]
-    assert (
-        plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"]
-    )
+    assert plan["adapter_descriptor"]["descriptor"]["capabilities"]["streaming"]
+
+
+def test_openclaw_rejects_relay(tmp_path: Path):
+    config = _config({}, adapter_id="nvidia.fabric.openclaw").enable_relay()
+
+    with pytest.raises(FabricConfigError) as caught:
+        Fabric().plan(config, base_dir=tmp_path)
+
+    assert "telemetry.providers" in str(caught.value)
+    assert "relay" in str(caught.value)
 
 
 @pytest.mark.parametrize(

@@ -40,6 +40,7 @@ class InvokeStream:
         *,
         request_id: str,
         registration_ready: asyncio.Event,
+        registration_token: str | None = None,
         on_finalize: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """lazydocs: ignore"""
@@ -47,6 +48,7 @@ class InvokeStream:
         self._collector_client = collector_client
         self._request_id = request_id
         self._registration_ready = registration_ready
+        self._registration_token = registration_token
         self._records: AsyncGenerator[dict[str, Any], None] | None = None
         self._next_record_task: asyncio.Task[dict[str, Any]] | None = None
         self._pending_record: dict[str, Any] | None = None
@@ -54,6 +56,8 @@ class InvokeStream:
         self._finalized = False
         self._on_finalize = on_finalize
         self._finalize_lock = asyncio.Lock()
+        self._finish_stream_lock = asyncio.Lock()
+        self._failed_invocation_drain_deadline: float | None = None
         try:
             self._task = asyncio.create_task(invoke)
         except BaseException:
@@ -100,6 +104,14 @@ class InvokeStream:
 
         self._closed = True
         await self._finalize()
+        if not self._task.done():
+            try:
+                await asyncio.shield(self._task)
+            except asyncio.CancelledError:
+                if not self._task.cancelled():
+                    raise
+            except Exception:
+                pass
 
     async def _finalize(self) -> None:
         async with self._finalize_lock:
@@ -139,7 +151,10 @@ class InvokeStream:
 
     def _records_iterator(self) -> AsyncGenerator[dict[str, Any], None]:
         if self._records is None:
-            self._records = self._collector_client.stream(self._request_id)
+            self._records = self._collector_client.stream(
+                self._request_id,
+                registration_token=self._registration_token,
+            )
         return self._records
 
     async def _next_record(self) -> dict[str, Any]:
@@ -153,6 +168,38 @@ class InvokeStream:
             )
         task = self._next_record_task
         try:
+            if not task.done() and not self._task.done():
+                await asyncio.wait(
+                    {task, self._task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            invocation_failed = self._task.done() and (
+                self._task.cancelled() or self._task.exception() is not None
+            )
+            if invocation_failed and self._failed_invocation_drain_deadline is None:
+                self._failed_invocation_drain_deadline = (
+                    asyncio.get_running_loop().time() + _FINALIZE_DRAIN_TIMEOUT_SECONDS
+                )
+            if task.done():
+                return await asyncio.shield(task)
+            if invocation_failed:
+                assert self._failed_invocation_drain_deadline is not None
+                remaining = max(
+                    0.0,
+                    self._failed_invocation_drain_deadline
+                    - asyncio.get_running_loop().time(),
+                )
+                done, _ = await asyncio.wait(
+                    {task},
+                    timeout=remaining,
+                )
+                if task in done:
+                    return await asyncio.shield(task)
+                task.cancel()
+                try:
+                    return await task
+                except (asyncio.CancelledError, StopAsyncIteration):
+                    raise StopAsyncIteration from None
             return await asyncio.shield(task)
         except asyncio.CancelledError:
             if task.done() and not task.cancelled():
@@ -179,21 +226,35 @@ class InvokeStream:
                 await waiter
 
     async def _finish_stream(self) -> None:
-        if self._finalized:
-            return
-        try:
-            if self._next_record_task is not None:
-                self._next_record_task.cancel()
-                with suppress(asyncio.CancelledError, StopAsyncIteration):
-                    await self._next_record_task
-                self._next_record_task = None
-            if self._records is not None:
-                await self._records.aclose()
-                self._records = None
-            if self._on_finalize is not None:
-                await self._on_finalize()
-        finally:
-            self._finalized = True
+        async with self._finish_stream_lock:
+            if self._finalized:
+                return
+            stream_error: BaseException | None = None
+            try:
+                if self._next_record_task is not None:
+                    self._next_record_task.cancel()
+                    with suppress(asyncio.CancelledError, StopAsyncIteration):
+                        await self._next_record_task
+                    self._next_record_task = None
+                if self._records is not None:
+                    await self._records.aclose()
+                    self._records = None
+            except BaseException as error:
+                stream_error = error
+            try:
+                if self._on_finalize is not None:
+                    await self._on_finalize()
+            except BaseException as cleanup_error:
+                if stream_error is None:
+                    stream_error = cleanup_error
+                else:
+                    stream_error.add_note(
+                        f"ATOF collector stream cleanup failed: {cleanup_error}"
+                    )
+            finally:
+                self._finalized = True
+            if stream_error is not None:
+                raise stream_error
 
 
 def _relay_enabled(config: FabricConfig) -> bool:

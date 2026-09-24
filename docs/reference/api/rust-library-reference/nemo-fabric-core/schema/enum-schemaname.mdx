@@ -24,6 +24,8 @@ pub enum SchemaName {
     RuntimeContext,
     EnvironmentHandle,
     RuntimeHandle,
+    ServiceReference,
+    ServiceHandle,
     InvocationHandle,
     RunRequest,
     RunResult,
@@ -115,6 +117,18 @@ Environment handle schema.
 
 Runtime handle schema.
 
+### `ServiceReference`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ServiceReference"}} /></pre>
+
+Caller-supplied reference to an already-running service.
+
+### `ServiceHandle`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ServiceHandle"}} /></pre>
+
+Prepared or attached service handle schema.
+
 ### `InvocationHandle`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "InvocationHandle"}} /></pre>
@@ -159,7 +173,7 @@ NeMo Fabric lifecycle event schema.
 
 #### `ALL`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">19</a>]"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">21</a>]"}} /></pre>
 
 All public schemas in stable output order.
 

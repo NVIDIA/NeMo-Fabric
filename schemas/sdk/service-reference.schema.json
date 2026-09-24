@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Caller-supplied reference to an already-running service.",
+  "properties": {
+    "adapter_id": {
+      "description": "Adapter that understands and connects to the service.",
+      "type": "string"
+    },
+    "connection": {
+      "additionalProperties": true,
+      "description": "Non-secret connection fields and credential references.",
+      "type": "object"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "description": "Adapter-specific caller-owned service metadata.",
+      "type": "object"
+    },
+    "service_type": {
+      "description": "Stable service type understood by the selected adapter.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "adapter_id",
+    "service_type"
+  ],
+  "title": "ServiceReference",
+  "type": "object"
+}

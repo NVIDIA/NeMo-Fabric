@@ -12,7 +12,8 @@ from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from copy import deepcopy
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
+from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -31,6 +32,9 @@ from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
 
 
 logger = logging.getLogger(__name__)
+
+_PI_ADAPTER_ID = "nvidia.fabric.pi"
+_PI_STREAM_CORRELATION_MODE = "pi_turn_window"
 
 
 class RuntimeStatus(str, Enum):
@@ -81,9 +85,7 @@ class Runtime:
 
         self._plan = plan if isinstance(plan, RunPlan) else RunPlan.from_mapping(plan)
         self._runtime = (
-            runtime
-            if isinstance(runtime, RuntimeHandle)
-            else RuntimeHandle.from_mapping(runtime)
+            runtime if isinstance(runtime, RuntimeHandle) else RuntimeHandle.from_mapping(runtime)
         )
         self._client = client
         self._overrides = _json_mapping(overrides, "runtime overrides")
@@ -95,6 +97,10 @@ class Runtime:
         self._collector = collector
         self._collector_client = collector_client
         self._registered_requests: set[str] = set()
+        self._registration_tokens: dict[str, str] = {}
+        self._stream_outcomes_finished: set[str] = set()
+        self._stream_finalizers_finished: set[str] = set()
+        self._stream_cleanup_failed: set[str] = set()
         self._closing = False
 
     @property
@@ -184,6 +190,21 @@ class Runtime:
         self._ensure_no_active_stream()
         self._ensure_invocable()
         payload = _run_request_payload(input=input, request=request)
+        if self._uses_pi_stream_correlation():
+            self._reserve_request_registration(payload["request_id"])
+            current_task = asyncio.current_task()
+            self._current_task = current_task
+            try:
+                return await self._invoke_registered_payload(
+                    payload,
+                    registration_ready=None,
+                    capture_records=False,
+                    invocation_claimed=True,
+                    registration_reserved=True,
+                )
+            finally:
+                if self._current_task is current_task:
+                    self._current_task = None
         return await self._invoke_payload(payload)
 
     async def _invoke_payload(
@@ -192,9 +213,11 @@ class Runtime:
         *,
         openai_stream_transport: Mapping[str, Any] | None = None,
         absorb_result: bool = True,
+        invocation_claimed: bool = False,
     ) -> RunResult:
-        self._ensure_invocable()
-        self._current_task = asyncio.current_task()
+        if not invocation_claimed:
+            self._ensure_invocable()
+            self._current_task = asyncio.current_task()
         try:
             merged = _merge_overrides(self._overrides, payload.get("overrides"))
             if merged:
@@ -250,9 +273,7 @@ class Runtime:
                 try:
                     await _call_blocking(stop_after_cancel)
                 except asyncio.CancelledError:
-                    self._status = (
-                        RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
-                    )
+                    self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
                     raise
                 except Exception:
                     self._status = RuntimeStatus.FAILED
@@ -273,7 +294,8 @@ class Runtime:
         except Exception as error:
             raise FabricRuntimeError(str(error), stage="invoke") from error
         finally:
-            self._current_task = None
+            if not invocation_claimed:
+                self._current_task = None
 
     def invoke_stream(
         self,
@@ -308,63 +330,337 @@ class Runtime:
         payload = _run_request_payload(input=input, request=request)
         request_id = payload["request_id"]
         registration_ready = asyncio.Event()
-        stream = InvokeStream(
-            self._invoke_registered_payload(payload, registration_ready),
-            self._collector_client,
-            request_id=request_id,
-            registration_ready=registration_ready,
-            on_finalize=lambda: self._deregister_request(
-                request_id,
-                remove_queue=True,
-            ),
-        )
+        self._reserve_request_registration(request_id)
+        try:
+            stream = InvokeStream(
+                self._invoke_registered_payload(
+                    payload,
+                    registration_ready,
+                    capture_records=True,
+                    registration_reserved=True,
+                ),
+                self._collector_client,
+                request_id=request_id,
+                registration_ready=registration_ready,
+                registration_token=self._registration_tokens.get(request_id),
+                on_finalize=lambda: self._finish_registered_request(
+                    request_id,
+                    remove_queue=True,
+                    pi_boundary=(
+                        "preserve" if self._uses_pi_stream_correlation() else None
+                    ),
+                    stream_phase="finalizer",
+                ),
+            )
+        except BaseException:
+            self._discard_request_registration(request_id)
+            raise
         self._current_stream = stream
         return stream
 
     async def _invoke_registered_payload(
         self,
         payload: dict[str, Any],
-        registration_ready: asyncio.Event,
+        registration_ready: asyncio.Event | None,
+        *,
+        capture_records: bool,
+        invocation_claimed: bool = False,
+        registration_reserved: bool = False,
     ) -> RunResult:
         request_id = payload["request_id"]
-        await self._register_request(request_id)
-        registration_ready.set()
+        if not registration_reserved:
+            self._reserve_request_registration(request_id)
         try:
-            result = await self._invoke_payload(payload)
+            await self._finish_request_registration(
+                request_id,
+                capture_records=capture_records,
+            )
         except BaseException as error:
             try:
-                await self._deregister_request(request_id, remove_queue=False)
+                await self._finish_registered_request(
+                    request_id,
+                    remove_queue=True,
+                    pi_boundary="release",
+                    stream_phase="outcome" if capture_records else None,
+                )
+            except Exception as cleanup_error:
+                error.add_note(
+                    f"ATOF collector registration cleanup failed: {cleanup_error}"
+                )
+            raise
+        if registration_ready is not None:
+            registration_ready.set()
+        try:
+            result = await self._invoke_payload(
+                payload,
+                invocation_claimed=invocation_claimed,
+            )
+        except BaseException as error:
+            try:
+                await self._finish_registered_request(
+                    request_id,
+                    remove_queue=not capture_records,
+                    pi_boundary="release",
+                    stream_phase="outcome" if capture_records else None,
+                )
             except Exception as cleanup_error:
                 error.add_note(f"ATOF collector deregistration failed: {cleanup_error}")
             raise
-        await self._deregister_request(request_id, remove_queue=False)
+        pi_boundary, pi_turn_count = self._pi_result_boundary(result)
+        await self._finish_registered_request(
+            request_id,
+            remove_queue=not capture_records,
+            pi_boundary=pi_boundary,
+            pi_turn_count=pi_turn_count,
+            stream_phase="outcome" if capture_records else None,
+        )
         return result
 
-    async def _register_request(self, request_id: str) -> None:
+    async def _finish_request_registration(
+        self,
+        request_id: str,
+        *,
+        capture_records: bool,
+    ) -> None:
+        registration = asyncio.create_task(
+            self._register_request(
+                request_id,
+                capture_records=capture_records,
+            )
+        )
+        try:
+            await asyncio.shield(registration)
+        except asyncio.CancelledError as error:
+            # A cancelled HTTP client does not guarantee that the collector
+            # stopped handling its POST. Wait for the bounded request to settle
+            # before cleanup so a late registration cannot follow its DELETE.
+            while not registration.done():
+                try:
+                    await asyncio.shield(registration)
+                except asyncio.CancelledError:
+                    continue
+            try:
+                registration.result()
+            except Exception as registration_error:
+                error.add_note(
+                    f"ATOF collector registration failed: {registration_error}"
+                )
+            raise
+
+    async def _register_request(
+        self,
+        request_id: str,
+        *,
+        capture_records: bool = True,
+    ) -> None:
         if self._collector_client is None:
             return
-        # Registration can commit even if the response is lost or this task is
-        # cancelled, so record the cleanup obligation before sending the request.
-        self._registered_requests.add(request_id)
-        await self._collector_client.register(request_id)
+        if self._plan.adapter.adapter_id == _PI_ADAPTER_ID:
+            await self._collector_client.register(
+                request_id,
+                correlation_mode=_PI_STREAM_CORRELATION_MODE,
+                capture_records=capture_records,
+                registration_token=self._registration_tokens[request_id],
+            )
+        else:
+            await self._collector_client.register(request_id)
 
     async def _deregister_request(
         self,
         request_id: str,
         *,
         remove_queue: bool,
+        pi_boundary: str | None = None,
+        pi_turn_count: int | None = None,
+        finalize_registration: bool = False,
     ) -> None:
         if (
             self._collector_client is None
             or request_id not in self._registered_requests
         ):
             return
-        await self._collector_client.deregister(
-            request_id,
-            remove_queue=remove_queue,
+        if self._plan.adapter.adapter_id == _PI_ADAPTER_ID:
+            pi_options: dict[str, Any] = {
+                "pi_boundary": pi_boundary,
+                "registration_token": self._registration_tokens.get(request_id),
+            }
+            if pi_turn_count is not None:
+                pi_options["pi_turn_count"] = pi_turn_count
+            await self._collector_client.deregister(
+                request_id,
+                remove_queue=remove_queue,
+                **pi_options,
+            )
+        else:
+            await self._collector_client.deregister(
+                request_id,
+                remove_queue=remove_queue,
+            )
+        if finalize_registration:
+            self._discard_request_registration(request_id)
+
+    async def _finish_registered_request(
+        self,
+        request_id: str,
+        *,
+        remove_queue: bool,
+        pi_boundary: str | None,
+        pi_turn_count: int | None = None,
+        stream_phase: Literal["outcome", "finalizer"] | None = None,
+    ) -> None:
+        cleanup_succeeded = False
+        cleanup_error: BaseException | None = None
+        deregistration = asyncio.create_task(
+            self._deregister_request(
+                request_id,
+                remove_queue=remove_queue,
+                pi_boundary=pi_boundary,
+                pi_turn_count=pi_turn_count,
+                finalize_registration=stream_phase is None,
+            )
         )
-        if remove_queue:
-            self._registered_requests.discard(request_id)
+        try:
+            await asyncio.shield(deregistration)
+            cleanup_succeeded = True
+        except asyncio.CancelledError as error:
+            # Retain cleanup ownership until the bounded collector request
+            # finishes so cancellation cannot reopen a correlation race.
+            while not deregistration.done():
+                try:
+                    await asyncio.shield(deregistration)
+                except asyncio.CancelledError:
+                    continue
+            try:
+                deregistration.result()
+            except BaseException as deregistration_error:
+                error.add_note(
+                    f"ATOF collector deregistration failed: {deregistration_error}"
+                )
+            else:
+                cleanup_succeeded = True
+            cleanup_error = error
+        except BaseException as error:
+            cleanup_error = error
+
+        compensate = stream_phase is not None and self._finish_stream_cleanup_phase(
+            request_id,
+            stream_phase,
+            cleanup_succeeded=cleanup_succeeded,
+        )
+        if compensate:
+            try:
+                await self._finish_registered_request(
+                    request_id,
+                    remove_queue=True,
+                    pi_boundary=(
+                        "quarantine" if self._uses_pi_stream_correlation() else None
+                    ),
+                )
+            except BaseException as compensation_error:
+                if isinstance(compensation_error, asyncio.CancelledError):
+                    if cleanup_error is not None:
+                        compensation_error.add_note(
+                            "ATOF collector deregistration failed before "
+                            f"compensating cleanup: {cleanup_error}"
+                        )
+                    raise
+                if cleanup_error is None:
+                    raise
+                cleanup_error.add_note(
+                    "ATOF collector compensating deregistration failed: "
+                    f"{compensation_error}"
+                )
+        if cleanup_error is not None:
+            raise cleanup_error
+
+    def _finish_stream_cleanup_phase(
+        self,
+        request_id: str,
+        phase: Literal["outcome", "finalizer"],
+        *,
+        cleanup_succeeded: bool,
+    ) -> bool:
+        if request_id not in self._registered_requests:
+            return False
+        finished = (
+            self._stream_outcomes_finished
+            if phase == "outcome"
+            else self._stream_finalizers_finished
+        )
+        finished.add(request_id)
+        if not cleanup_succeeded:
+            self._stream_cleanup_failed.add(request_id)
+        if (
+            request_id in self._stream_outcomes_finished
+            and request_id in self._stream_finalizers_finished
+        ):
+            self._stream_outcomes_finished.discard(request_id)
+            self._stream_finalizers_finished.discard(request_id)
+            if request_id in self._stream_cleanup_failed:
+                return True
+            self._discard_request_registration(request_id)
+        return False
+
+    def _reserve_request_registration(self, request_id: str) -> None:
+        if self._collector_client is None:
+            return
+        if request_id in self._registered_requests:
+            raise FabricStateError(
+                f"collector cleanup is still pending for request_id {request_id!r}"
+            )
+        # Reserve synchronously so a streamed invocation owns all subsequent
+        # registration and cleanup callbacks before its background task starts.
+        self._registered_requests.add(request_id)
+        if self._plan.adapter.adapter_id == _PI_ADAPTER_ID:
+            self._registration_tokens[request_id] = uuid4().hex
+
+    def _discard_request_registration(self, request_id: str) -> None:
+        self._registered_requests.discard(request_id)
+        self._registration_tokens.pop(request_id, None)
+        self._stream_outcomes_finished.discard(request_id)
+        self._stream_finalizers_finished.discard(request_id)
+        self._stream_cleanup_failed.discard(request_id)
+
+    def _uses_pi_stream_correlation(self) -> bool:
+        return (
+            self._collector_client is not None
+            and self._plan.adapter.adapter_id == _PI_ADAPTER_ID
+        )
+
+    def _pi_result_boundary(
+        self,
+        result: RunResult,
+    ) -> tuple[str | None, int | None]:
+        if not self._uses_pi_stream_correlation():
+            return None, None
+        turn_started = self._pi_result_started_turn(result)
+        if turn_started is True:
+            return "wait", self._pi_result_turn_count(result)
+        if turn_started is False:
+            return "release", None
+        return "quarantine", None
+
+    def _pi_result_started_turn(self, result: RunResult) -> bool | None:
+        if not self._uses_pi_stream_correlation():
+            return None
+        adapter_metadata = result.metadata.get("adapter")
+        if isinstance(adapter_metadata, Mapping):
+            turn_started = adapter_metadata.get("pi_turn_started")
+            if isinstance(turn_started, bool):
+                return turn_started
+        return None
+
+    def _pi_result_turn_count(self, result: RunResult) -> int | None:
+        adapter_metadata = result.metadata.get("adapter")
+        if isinstance(adapter_metadata, Mapping):
+            turn_count = adapter_metadata.get("pi_turn_count")
+            if (
+                isinstance(turn_count, int)
+                and not isinstance(turn_count, bool)
+                and turn_count >= 0
+            ):
+                return turn_count
+        return None
 
     def invoke_openai_stream(
         self,
@@ -413,7 +709,9 @@ class Runtime:
         self._status = RuntimeStatus.FAILED
 
     def _ensure_no_active_stream(self) -> None:
-        if self._current_stream is not None and not self._current_stream._finalized:
+        if self._current_stream is not None and (
+            not self._current_stream._finalized or not self._current_stream._task.done()
+        ):
             raise FabricStateError(
                 "a streaming invocation is active; fully consume it or call "
                 "`await stream.aclose()` before starting another turn"
@@ -445,12 +743,12 @@ class Runtime:
         if self._status is RuntimeStatus.STOPPED:
             await self._close_streaming_resources()
             return
+        if self._current_stream is not None and not self._current_stream._task.done():
+            raise FabricStateError(
+                "cannot stop while a streaming invocation is active; consume "
+                "the stream or await `stream.result()` or `stream.aclose()`"
+            )
         if self._current_stream is not None and not self._current_stream._finalized:
-            if not self._current_stream._task.done():
-                raise FabricStateError(
-                    "cannot stop while a streaming invocation is active; consume "
-                    "the stream or await `stream.result()` or `stream.aclose()`"
-                )
             await self._current_stream.aclose()
         if self._current_task is not None:
             raise FabricStateError("cannot stop while a turn is in flight")
@@ -508,7 +806,12 @@ class Runtime:
         errors: list[Exception] = []
         for request_id in tuple(self._registered_requests):
             try:
-                await self._deregister_request(request_id, remove_queue=True)
+                await self._deregister_request(
+                    request_id,
+                    remove_queue=True,
+                    pi_boundary="release",
+                    finalize_registration=True,
+                )
             except Exception as error:
                 errors.append(error)
         if errors:
@@ -545,7 +848,10 @@ class Runtime:
         traceback: object,
     ) -> None:
         try:
-            if self._current_stream is not None and not self._current_stream._finalized:
+            if self._current_stream is not None and (
+                not self._current_stream._finalized
+                or not self._current_stream._task.done()
+            ):
                 await self._current_stream.aclose()
             await self.stop()
         except Exception as cleanup_error:
@@ -579,9 +885,7 @@ def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:
     try:
         return json.loads(json.dumps(dict(value), allow_nan=False))
     except (TypeError, ValueError) as error:
-        raise FabricConfigError(
-            f"{name} must contain JSON-compatible values"
-        ) from error
+        raise FabricConfigError(f"{name} must contain JSON-compatible values") from error
 
 
 def _merge_overrides(
@@ -631,9 +935,7 @@ async def _run_native_lifecycle(
         try:
             try:
                 result = json.loads(
-                    native.invoke_runtime(
-                        plan_json, runtime_json, json.dumps(dict(request))
-                    )
+                    native.invoke_runtime(plan_json, runtime_json, json.dumps(dict(request)))
                 )
             except Exception as error:
                 invoke_error = error

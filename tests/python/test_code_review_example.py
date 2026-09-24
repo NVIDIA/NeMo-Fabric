@@ -3,10 +3,12 @@
 
 """Contract tests for the code-review example."""
 
+import asyncio
 import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
@@ -20,6 +22,7 @@ from examples.code_review_agent import codex_config
 from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import hermes_config
 from examples.code_review_agent import nooa_config
+from examples.code_review_agent import openclaw_config
 from examples.code_review_agent import pi_config
 from examples.code_review_agent import with_github_mcp
 from examples.code_review_agent import with_native_otel
@@ -40,9 +43,10 @@ def test_variant_builders_return_independent_complete_configs():
     claude = claude_config()
     deepagents = deepagents_config()
     nooa = nooa_config()
+    openclaw = openclaw_config()
     pi = pi_config()
 
-    for config in (base, hermes, codex, claude, deepagents, nooa, pi):
+    for config in (base, hermes, codex, claude, deepagents, nooa, openclaw, pi):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
@@ -85,6 +89,13 @@ def test_variant_builders_return_independent_complete_configs():
     assert nooa.workflow is not None
     assert nooa.workflow.target_id == "nvidia.nooa.coding-agent"
     assert nooa.skills is not None
+    assert openclaw.harness.adapter_id == "nvidia.fabric.openclaw"
+    assert openclaw.models["default"].provider == "nvidia"
+    assert openclaw.models["default"].api_key_env == "NVIDIA_API_KEY"
+    assert openclaw.skills is not None
+    assert openclaw.skills.paths == ["./skills/code-review"]
+    assert openclaw.tools is not None
+    assert openclaw.tools.enabled == ["read"]
     assert base.mcp is None
     assert base.skills is not None
     skill_path = BASE_DIR / base.skills.paths[0]
@@ -212,6 +223,7 @@ def test_variants_plan_from_complete_configs():
         codex_config(),
         claude_config(),
         deepagents_config(),
+        openclaw_config(),
         pi_config(),
     ):
         plan = client.plan(config, base_dir=BASE_DIR)
@@ -240,6 +252,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         ("claude", "nvidia.fabric.claude"),
         ("deepagents", "nvidia.fabric.langchain.deepagents"),
         ("nooa", "nvidia.fabric.nooa"),
+        ("openclaw", "nvidia.fabric.openclaw"),
         ("pi", "nvidia.fabric.pi"),
     )
     cases = tuple(
@@ -250,6 +263,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         )
         for variant, adapter_id in variants
         for relay_enabled in (False, True)
+        if variant != "openclaw" or not relay_enabled
     )
 
     for options, adapter_id, relay_enabled in cases:
@@ -358,7 +372,8 @@ def test_pi_variant_projects_explicit_skill_and_tool_policy():
     assert plan.config.runtime.output_schema == "message"
 
 
-def test_pi_variant_requires_the_relay_extension_for_a_live_run():
+@pytest.mark.parametrize("stream", [False, True])
+def test_pi_variant_requires_the_relay_extension_for_a_live_run(stream: bool):
     completed = subprocess.run(
         [
             sys.executable,
@@ -367,6 +382,7 @@ def test_pi_variant_requires_the_relay_extension_for_a_live_run():
             "--variant",
             "pi",
             "--relay",
+            *(["--stream"] if stream else []),
         ],
         cwd=BASE_DIR.parents[1],
         text=True,
@@ -378,16 +394,15 @@ def test_pi_variant_requires_the_relay_extension_for_a_live_run():
     assert "Pi Relay runs require --pi-relay-extension-path" in completed.stderr
 
 
-def test_pi_variant_rejects_relay_backed_streaming():
+def test_openclaw_variant_rejects_relay_telemetry():
     completed = subprocess.run(
         [
             sys.executable,
             "-m",
             "examples.code_review_agent",
             "--variant",
-            "pi",
+            "openclaw",
             "--relay",
-            "--stream",
         ],
         cwd=BASE_DIR.parents[1],
         text=True,
@@ -396,7 +411,7 @@ def test_pi_variant_rejects_relay_backed_streaming():
     )
 
     assert completed.returncode == 2
-    assert "Pi adapter does not support Relay-backed streaming yet" in completed.stderr
+    assert "OpenClaw adapter does not support Relay telemetry" in completed.stderr
 
 
 @pytest.mark.parametrize(
@@ -454,9 +469,155 @@ async def test_example_entrypoint_shows_response_after_normalized_output(
     }
 
 
+async def test_openclaw_example_shares_service_and_configures_telegram(
+    monkeypatch,
+    capsys,
+):
+    service = MagicMock(service_id="service-1")
+    service_context = MagicMock(name="service_context")
+    service_context.__aenter__ = AsyncMock(return_value=service)
+    service_context.__aexit__ = AsyncMock(return_value=None)
+
+    runtime_contexts = []
+    results = []
+    for index in range(2):
+        result = MagicMock()
+        result.to_mapping.return_value = {
+            "status": "succeeded",
+            "runtime": index,
+        }
+        results.append(result)
+        runtime = MagicMock()
+        runtime.invoke = AsyncMock(return_value=result)
+        runtime_context = MagicMock(name=f"runtime_context_{index}")
+        runtime_context.__aenter__ = AsyncMock(return_value=runtime)
+        runtime_context.__aexit__ = AsyncMock(return_value=None)
+        runtime_contexts.append(runtime_context)
+
+    mock_fabric = MagicMock()
+    mock_fabric.prepare_service = AsyncMock(return_value=service_context)
+    mock_fabric.start_runtime = AsyncMock(side_effect=runtime_contexts)
+    mock_sleep = AsyncMock()
+    monkeypatch.setattr(main_module, "Fabric", lambda: mock_fabric)
+    monkeypatch.setattr(
+        main_module,
+        "asyncio",
+        SimpleNamespace(
+            create_task=asyncio.create_task,
+            gather=asyncio.gather,
+            sleep=mock_sleep,
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "code_review_agent",
+            "--variant",
+            "openclaw",
+            "--service",
+            "--runtime-count",
+            "2",
+            "--telegram-token-env",
+            "TELEGRAM_BOT_TOKEN",
+            "--telegram-allow-from",
+            "123456789",
+            "--service-duration-seconds",
+            "120",
+        ],
+    )
+
+    await main_module.main()
+
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert captured.err == (
+        "OpenClaw Telegram channel is active. You can message the bot while "
+        "Fabric runtimes are running or during the service-only interval.\n"
+        "NeMo Fabric runtimes stopped. "
+        "OpenClaw service service-1 remains active for 120 seconds.\n"
+    )
+    assert output["service_id"] == "service-1"
+    assert len(output["results"]) == 2
+    prepared_config = mock_fabric.prepare_service.call_args.args[0]
+    assert prepared_config.harness.settings["channel_config"] == {
+        "channels": {
+            "telegram": {
+                "accounts": {
+                    "default": {
+                        "botToken": {
+                            "source": "env",
+                            "provider": "default",
+                            "id": "TELEGRAM_BOT_TOKEN",
+                        },
+                        "dmPolicy": "allowlist",
+                        "allowFrom": ["123456789"],
+                    }
+                }
+            }
+        },
+        "bindings": [
+            {
+                "agentId": "default",
+                "match": {"channel": "telegram", "accountId": "default"},
+            }
+        ],
+    }
+    assert mock_fabric.start_runtime.await_count == 2
+    assert all(
+        call.kwargs["service"] is service
+        for call in mock_fabric.start_runtime.await_args_list
+    )
+    mock_sleep.assert_awaited_once_with(120.0)
+    service_context.__aexit__.assert_awaited_once()
+    for runtime_context in runtime_contexts:
+        runtime_context.__aexit__.assert_awaited_once()
+
+
+async def test_openclaw_example_drains_invocations_before_cancelled_cleanup():
+    all_started = asyncio.Event()
+    started = 0
+    cleaned = 0
+
+    async def invoke(*, input):
+        nonlocal cleaned, started
+        started += 1
+        if started == 2:
+            all_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.sleep(0)
+            cleaned += 1
+
+    mock_runtimes = [MagicMock(invoke=AsyncMock(side_effect=invoke)) for _ in range(2)]
+
+    task = asyncio.create_task(main_module._invoke_runtimes(mock_runtimes, "review"))
+    await all_started.wait()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert cleaned == 2
+
+
+@pytest.mark.parametrize(
+    "variant_options",
+    [
+        ["--variant", "nooa"],
+        [
+            "--variant",
+            "pi",
+            "--pi-relay-extension-path",
+            "/tmp/nemo-relay-pi-extension",
+        ],
+    ],
+)
 async def test_example_entrypoint_streams_relay_records_and_terminal_result(
     monkeypatch,
     capsys,
+    variant_options: list[str],
 ):
     result = MagicMock()
     result.output = RunOutput.from_mapping({"response": "streamed response"})
@@ -488,8 +649,7 @@ async def test_example_entrypoint_streams_relay_records_and_terminal_result(
         "argv",
         [
             "code_review_agent",
-            "--variant",
-            "nooa",
+            *variant_options,
             "--relay",
             "--stream",
             "--show-output",
@@ -509,6 +669,12 @@ async def test_example_entrypoint_streams_relay_records_and_terminal_result(
     assert payload["result"]["status"] == "succeeded"
     mock_fabric.start_runtime.assert_awaited_once()
     assert mock_fabric.start_runtime.call_args.kwargs["streaming"] is True
+    if "--pi-relay-extension-path" in variant_options:
+        started_config = mock_fabric.start_runtime.call_args.args[0]
+        assert started_config.harness is not None
+        assert started_config.harness.settings["relay_extension_path"] == (
+            "/tmp/nemo-relay-pi-extension"
+        )
     runtime.invoke_stream.assert_called_once_with(input="review this")
     stream.result.assert_awaited_once_with()
     runtime_context.__aexit__.assert_awaited_once()

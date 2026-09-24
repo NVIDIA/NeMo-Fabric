@@ -983,6 +983,7 @@ Applications should treat ``runtime_binding`` as opaque. NeMo Fabric validates t
  - <b>`harness`</b>:  Stable harness identifier.
  - <b>`adapter_kind`</b>:  Adapter execution mechanism.
  - <b>`adapter_id`</b>:  Optional NeMo Fabric adapter identifier.
+ - <b>`service_id`</b>:  Optional service used by this runtime.
  - <b>`environment`</b>:  Prepared environment snapshot.
 
 
@@ -999,7 +1000,163 @@ The mapping exposes the following typed fields:
 | `harness` | `str` |
 | `adapter_kind` | `str` |
 | `adapter_id` | `str \| None` |
+| `service_id` | `str \| None` |
 | `environment` | `Mapping[str, Any]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `ServiceReference`
+
+Reference to an already-running caller-owned service.
+
+``adapter_id`` selects the adapter that understands the service type and connection fields.
+
+``connection`` contains endpoints and credential references such as an environment-variable name. It must not contain credential values.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `adapter_id` | `str` |
+| `service_type` | `str` |
+| `connection` | `Mapping[str, Any]` |
+| `metadata` | `Mapping[str, Any]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `ServiceHandle`
+
+Opaque identity and binding for one prepared or attached service.
+
+``service_id`` identifies the process-local Fabric service lifecycle, not the underlying remote deployment. ``service_binding`` is opaque and must be returned unchanged when the handle is used. ``adapter_id`` identifies the adapter that created or attached to the service, and ``service_type`` is that adapter's stable service kind. ``ownership`` is ``fabric_owned`` or ``caller_owned``. ``connection`` is a sanitized summary that never contains credential values, while ``metadata`` contains adapter-reported version and readiness information.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `service_id` | `str` |
+| `service_binding` | `str` |
+| `adapter_id` | `str` |
+| `service_type` | `str` |
+| `ownership` | `str` |
+| `connection` | `Mapping[str, Any]` |
+| `metadata` | `Mapping[str, Any]` |
 
 ### <kbd>method</kbd> `__init__`
 

@@ -8,8 +8,41 @@ import { join } from "node:path";
 import test from "node:test";
 import { createServer } from "node:http";
 
-import { PiSdkSessionFactory, resolveCustomTools } from "../dist/pi-sdk.js";
+import {
+  modelAwareCompactionReserveTokens,
+  PiSdkSessionFactory,
+  resolveCustomTools,
+  withCustomBaseUrl,
+} from "../dist/pi-sdk.js";
 import { PiAdapterRuntime } from "../dist/runtime.js";
+
+test("uses standard content when replaying reasoning through a custom model proxy", () => {
+  const catalogModel = {
+    api: "openai-completions",
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    compat: { supportsStore: false },
+  };
+
+  assert.deepEqual(withCustomBaseUrl(catalogModel, "http://model-proxy:10240"), {
+    api: "openai-completions",
+    baseUrl: "http://model-proxy:10240",
+    compat: { supportsStore: false, requiresThinkingAsText: true },
+  });
+  assert.strictEqual(withCustomBaseUrl(catalogModel, undefined), catalogModel);
+  assert.strictEqual(withCustomBaseUrl(catalogModel, ""), catalogModel);
+  assert.deepEqual(withCustomBaseUrl(catalogModel, "http://model-proxy:10240", false), {
+    api: "openai-completions",
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    compat: { supportsStore: false, requiresThinkingAsText: true },
+  });
+});
+
+test("reserves output capacity without consuming more than half the context window", () => {
+  assert.equal(modelAwareCompactionReserveTokens(16_384, 65_536, 262_144), 65_536);
+  assert.equal(modelAwareCompactionReserveTokens(65_536, 32_768, 262_144), 65_536);
+  assert.equal(modelAwareCompactionReserveTokens(16_384, 131_072, 131_072), 65_536);
+  assert.equal(modelAwareCompactionReserveTokens(16_384, 65_536, 0), 65_536);
+});
 
 test("rejects append system instructions before loading the Pi harness", async () => {
   const factory = new PiSdkSessionFactory();

@@ -16,7 +16,7 @@ use crate::error::{FabricError, Result};
 use crate::runtime::{
     AdapterInvocation, ArtifactManifest, EnvironmentHandle, ErrorInfo, FabricEvent,
     InvocationHandle, OpenAiStreamInvocation, OpenAiStreamRecord, RunRequest, RunResult,
-    RuntimeContext, RuntimeHandle,
+    RuntimeContext, RuntimeHandle, ServiceHandle, ServiceReference,
 };
 use crate::{AgentRunRequest, AgentRunResult};
 
@@ -49,6 +49,10 @@ pub enum SchemaName {
     EnvironmentHandle,
     /// Runtime handle schema.
     RuntimeHandle,
+    /// Caller-supplied reference to an already-running service.
+    ServiceReference,
+    /// Prepared or attached service handle schema.
+    ServiceHandle,
     /// Invocation handle schema.
     InvocationHandle,
     /// Runtime request schema.
@@ -65,7 +69,7 @@ pub enum SchemaName {
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 21] = [
         Self::Agent,
         Self::AgentConfig,
         Self::AgentRunRequest,
@@ -79,6 +83,8 @@ impl SchemaName {
         Self::RuntimeContext,
         Self::EnvironmentHandle,
         Self::RuntimeHandle,
+        Self::ServiceReference,
+        Self::ServiceHandle,
         Self::InvocationHandle,
         Self::RunRequest,
         Self::RunResult,
@@ -103,6 +109,8 @@ impl SchemaName {
             Self::RuntimeContext => "runtime-context",
             Self::EnvironmentHandle => "environment-handle",
             Self::RuntimeHandle => "runtime-handle",
+            Self::ServiceReference => "service-reference",
+            Self::ServiceHandle => "service-handle",
             Self::InvocationHandle => "invocation-handle",
             Self::RunRequest => "run-request",
             Self::RunResult => "run-result",
@@ -154,6 +162,8 @@ impl SchemaName {
             "runtime-context" | "runtime_context" => Ok(Self::RuntimeContext),
             "environment-handle" | "environment_handle" => Ok(Self::EnvironmentHandle),
             "runtime-handle" | "runtime_handle" => Ok(Self::RuntimeHandle),
+            "service-reference" | "service_reference" => Ok(Self::ServiceReference),
+            "service-handle" | "service_handle" => Ok(Self::ServiceHandle),
             "invocation-handle" | "invocation_handle" => Ok(Self::InvocationHandle),
             "run-request" | "run_request" => Ok(Self::RunRequest),
             "run-result" | "run_result" => Ok(Self::RunResult),
@@ -187,6 +197,8 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
         SchemaName::RuntimeContext => to_value(schema_for!(RuntimeContext)),
         SchemaName::EnvironmentHandle => to_value(schema_for!(EnvironmentHandle)),
         SchemaName::RuntimeHandle => to_value(schema_for!(RuntimeHandle)),
+        SchemaName::ServiceReference => to_value(schema_for!(ServiceReference)),
+        SchemaName::ServiceHandle => to_value(schema_for!(ServiceHandle)),
         SchemaName::InvocationHandle => to_value(schema_for!(InvocationHandle)),
         SchemaName::RunRequest => to_value(schema_for!(RunRequest)),
         SchemaName::RunResult => to_value(schema_for!(RunResult)),

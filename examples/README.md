@@ -40,8 +40,11 @@ just build-all
 
 The Pi variant supports Relay telemetry with `nemo-relay>=0.9.0,<0.10.0` and an
 explicit extension path. Pass
-`--variant pi --relay --pi-relay-extension-path <PATH>` but do not combine the Pi
-variant with `--stream`.
+`--variant pi --relay --stream --pi-relay-extension-path <PATH>` to collect
+per-invocation model-turn ATOF records for successful Relay redirects, then
+print one JSON document containing `atof_records` and the separate terminal
+`result`. Relay retains redirect-decision marks in configured ATOF artifacts, while
+Pi's startup `model_redirect` marks are not included in `atof_records`.
 
 ## LangGraph Custom Agent
 

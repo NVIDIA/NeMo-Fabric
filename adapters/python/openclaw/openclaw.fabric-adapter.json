@@ -5,211 +5,132 @@
   "runner": {
     "module": "nemo_fabric_adapters.openclaw.adapter"
   },
-  "requirements": {
-    "binaries": [
-      "node"
-    ]
-  },
   "settings_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
-    "additionalProperties": false,
     "properties": {
-      "agent_name": {
-        "type": "string",
-        "pattern": "^[a-z][a-z0-9-]{0,39}$",
-        "default": "main"
-      },
-      "cli": {
+      "openclaw_command": {
         "type": "string",
         "minLength": 1,
-        "default": "/app/openclaw.mjs"
+        "description": "OpenClaw executable name or path. Relative paths containing a directory are resolved from the NeMo Fabric base directory."
       },
-      "home": {
+      "agent_id": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "default": "default",
+        "description": "OpenClaw agent selected for NeMo Fabric-originated invocations."
       },
-      "timeout_seconds": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 86400,
-        "default": 260
-      },
-      "native_config": {
+      "channel_config": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
-          "gateway": {
-            "type": "object"
-          },
-          "plugins": {
-            "type": "object"
-          },
-          "diagnostics": {
-            "type": "object"
-          },
-          "tools": {
-            "type": "object"
-          },
-          "agents": {
+          "channels": {
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "defaults": {
-                "type": "object",
-                "not": {
-                  "anyOf": [
-                    {
-                      "required": [
-                        "model"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "workspace"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "timeoutSeconds"
-                      ]
-                    }
-                  ]
-                }
-              }
+            "minProperties": 1,
+            "additionalProperties": {"type": "object"}
+          },
+          "bindings": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "agentId": {"type": "string", "minLength": 1},
+                "match": {"type": "object"}
+              },
+              "required": ["agentId", "match"],
+              "additionalProperties": true
             }
-          },
-          "memory": {
-            "type": "object"
-          },
-          "cron": {
-            "type": "object"
-          },
-          "update": {
-            "type": "object"
-          }
-        }
-      }
-    }
-  },
-  "model_schema": {
-    "type": "object",
-    "additionalProperties": false,
-    "properties": {
-      "provider": {
-        "type": "string",
-        "minLength": 1
-      },
-      "model": {
-        "type": "string",
-        "minLength": 1
-      },
-      "base_url": {
-        "type": "string",
-        "minLength": 1
-      },
-      "api_key_env": {
-        "type": "string",
-        "minLength": 1
-      },
-      "max_tokens": {
-        "type": "integer",
-        "minimum": 1
-      },
-      "settings": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "api": {
-            "type": "string",
-            "enum": [
-              "openai-completions",
-              "openai-responses",
-              "anthropic-messages"
-            ]
-          },
-          "model_metadata": {
-            "type": "object"
-          },
-          "reasoning_effort": {
-            "type": "string",
-            "enum": [
-              "off",
-              "minimal",
-              "low",
-              "medium",
-              "high",
-              "xhigh",
-              "adaptive"
-            ]
-          }
-        }
-      },
-      "api": {
-        "type": "string",
-        "enum": [
-          "openai-completions",
-          "openai-responses",
-          "anthropic-messages"
-        ]
-      }
-    },
-    "required": [
-      "provider",
-      "model",
-      "base_url"
-    ],
-    "anyOf": [
-      {
-        "required": [
-          "api"
-        ]
-      },
-      {
-        "properties": {
-          "settings": {
-            "required": [
-              "api"
-            ]
           }
         },
-        "required": [
-          "settings"
-        ]
+        "required": ["channels", "bindings"],
+        "additionalProperties": false,
+        "description": "OpenClaw-native channels and bindings for NeMo Fabric-owned services. Every binding must target the configured agent. Managed runtimes reject channel configuration."
+      },
+      "port_range": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65425
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 111,
+            "maximum": 65535
+          }
+        },
+        "required": ["start", "end"],
+        "additionalProperties": false,
+        "description": "Inclusive consumer-allocated port range. The adapter selects a Gateway base port whose complete derived footprint through base + 110 fits within the range. When omitted, the adapter selects an available local range."
+      },
+      "startup_timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 30,
+        "description": "Maximum time to wait for the OpenClaw Gateway to become ready."
+      },
+      "shutdown_timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 10,
+        "description": "Maximum graceful Gateway shutdown time before forced termination."
+      },
+      "connect_timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 10,
+        "description": "Timeout for connecting to the local OpenClaw Gateway."
+      },
+      "read_timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 600,
+        "description": "Timeout between response bytes from the local OpenClaw Gateway."
       }
-    ]
+    },
+    "additionalProperties": false
   },
+  "model_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "provider": {"type": "string", "minLength": 1},
+      "model": {"type": "string", "minLength": 1},
+      "api_key_env": {"type": "string", "minLength": 1},
+      "base_url": {"type": "string", "minLength": 1},
+      "temperature": {"type": "number"},
+      "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+      "max_tokens": {"type": "integer", "minimum": 1},
+      "settings": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "required": ["provider", "model"],
+    "additionalProperties": false
+  },
+  "requirements": {},
   "config": {
     "accepts": [
       "models",
       "models.base_url",
+      "models.temperature",
+      "models.top_p",
       "models.max_tokens",
+      "instructions.system",
       "tools.enabled",
-      "tools.blocked"
+      "tools.blocked",
+      "mcp",
+      "skills"
     ],
-    "generates": [
-      ".openclaw/openclaw.json"
-    ]
+    "system_instruction_modes": ["replace"]
   },
   "capabilities": {
-    "service": false,
+    "service": true,
     "streaming": false,
     "updates": false,
     "cancellation": false
-  },
-  "extension_schemas": {
-    "model": {
-      "type": "object",
-      "properties": {
-        "api": {
-          "type": "string",
-          "enum": [
-            "openai-completions",
-            "openai-responses",
-            "anthropic-messages"
-          ]
-        }
-      },
-      "additionalProperties": false
-    }
   }
 }

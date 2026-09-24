@@ -47,6 +47,15 @@ async def test_endpoints_do_not_require_tokens_when_authentication_is_disabled()
     assert deregistered.status_code == 204
 
 
+def test_create_app_configures_completion_wait_timeout():
+    application = create_app(
+        standalone=True,
+        completion_wait_timeout=2.5,
+    )
+
+    assert application.state.collector._completion_wait_timeout == 2.5
+
+
 @pytest.mark.parametrize(
     ("method", "path", "kwargs"),
     [
@@ -149,6 +158,24 @@ async def test_register_rejects_invalid_and_duplicate_request_ids(
     assert created.status_code == 201
     assert created.json() == {"request_id": "request-1", "status": "ready"}
     assert duplicate.status_code == 409
+
+
+@pytest.mark.parametrize("correlation_mode", [[], {}])
+async def test_register_rejects_non_string_correlation_modes(
+    collector_client: httpx.AsyncClient,
+    correlation_mode: object,
+):
+    response = await collector_client.post(
+        "/v1/register",
+        headers={"Authorization": f"Bearer {CONTROL_TOKEN}"},
+        json={
+            "request_id": "request-1",
+            "correlation_mode": correlation_mode,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "correlation_mode is not supported"}
 
 
 async def test_standalone_register_rejects_second_request_id():
@@ -316,6 +343,62 @@ async def test_deregister_rejects_invalid_remove_queue(
     )
 
     assert response.status_code == 400
+
+
+async def test_deregister_rejects_invalid_pi_boundary(
+    collector_client: httpx.AsyncClient,
+):
+    response = await collector_client.delete(
+        "/v1/deregister-request/request-1?pi_boundary=sometimes",
+        headers={"Authorization": f"Bearer {CONTROL_TOKEN}"},
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    ("query", "detail"),
+    [
+        ("pi_boundary=wait&pi_turn_count=-1", "pi_turn_count must be a nonnegative integer"),
+        ("pi_boundary=wait&pi_turn_count=one", "pi_turn_count must be a nonnegative integer"),
+        ("pi_boundary=release&pi_turn_count=1", "pi_turn_count requires pi_boundary=wait"),
+        ("pi_turn_count=1", "pi_turn_count requires pi_boundary=wait"),
+    ],
+)
+async def test_deregister_rejects_invalid_pi_turn_count(
+    collector_client: httpx.AsyncClient,
+    query: str,
+    detail: str,
+):
+    response = await collector_client.delete(
+        f"/v1/deregister-request/request-1?{query}",
+        headers={"Authorization": f"Bearer {CONTROL_TOKEN}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": detail}
+
+
+async def test_deregister_rejects_pi_boundary_for_generic_registration(
+    collector_client: httpx.AsyncClient,
+):
+    headers = {"Authorization": f"Bearer {CONTROL_TOKEN}"}
+    registered = await collector_client.post(
+        "/v1/register",
+        headers=headers,
+        json={"request_id": "request-1"},
+    )
+
+    response = await collector_client.delete(
+        "/v1/deregister-request/request-1?pi_boundary=wait",
+        headers=headers,
+    )
+
+    assert registered.status_code == 201
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Pi boundary actions require the Pi correlation mode"
+    }
 
 
 async def test_atof_rejects_oversized_record(collector_client: httpx.AsyncClient):

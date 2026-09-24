@@ -38,6 +38,18 @@ async function listen(server) {
   return `http://127.0.0.1:${address.port}`;
 }
 
+async function waitForRecord(records, predicate, timeoutMillis = 1_000) {
+  const deadline = Date.now() + timeoutMillis;
+  while (Date.now() < deadline) {
+    const match = records.find(({ record }) => predicate(record));
+    if (match !== undefined) {
+      return match;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`Relay did not deliver the expected ATOF record within ${timeoutMillis} ms`);
+}
+
 test(
   "runs the released Relay CLI and shipped Pi extension end to end",
   { skip: relayCommand === undefined ? "set FABRIC_TEST_NEMO_RELAY_COMMAND to the released CLI" : false },
@@ -47,6 +59,7 @@ test(
     const piAgentDir = join(root, "pi-agent");
     const runtimeConfigPath = join(root, "relay-runtime.json");
     const providerRequests = [];
+    const atofRecords = [];
     const upstream = createServer(async (request, response) => {
       if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
         response.writeHead(404).end();
@@ -62,6 +75,28 @@ test(
       response.end(openAiStream("relay smoke ok"));
     });
     const upstreamUrl = await listen(upstream);
+    const collector = createServer(async (request, response) => {
+      if (request.method !== "POST" || request.url !== "/v1/atof") {
+        response.writeHead(404).end();
+        return;
+      }
+      let buffer = "";
+      for await (const chunk of request) {
+        buffer += (Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)).toString("utf8");
+        let newline = buffer.indexOf("\n");
+        while (newline >= 0) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          atofRecords.push({ receivedAt: Date.now(), record: JSON.parse(line) });
+          newline = buffer.indexOf("\n");
+        }
+      }
+      if (buffer.trim().length > 0) {
+        atofRecords.push({ receivedAt: Date.now(), record: JSON.parse(buffer) });
+      }
+      response.writeHead(200).end();
+    });
+    const collectorUrl = await listen(collector);
     const previousConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;
     let runtime;
     try {
@@ -90,6 +125,11 @@ test(
                           type: "file",
                           output_directory: join(root, "atof"),
                           filename: "events.atof.jsonl",
+                        },
+                        {
+                          type: "stream",
+                          url: `${collectorUrl}/v1/atof`,
+                          transport: "ndjson",
                         },
                       ],
                     },
@@ -139,13 +179,35 @@ test(
         },
         runtimeContext,
       });
-      const result = await runtime.invoke({ input: "Reply with relay smoke ok." }, runtimeContext);
+      const first = await runtime.invoke({ input: "Reply with relay smoke ok." }, runtimeContext);
+      const firstCompletedAt = Date.now();
+      const firstSettled = await waitForRecord(
+        atofRecords,
+        (record) =>
+          record.metadata?.hook_event_name === "agent_settled" &&
+          record.metadata?.turn_seq === 0,
+      );
+      const second = await runtime.invoke({ input: "Reply with relay smoke ok again." }, runtimeContext);
+      const secondCompletedAt = Date.now();
+      const secondSettled = await waitForRecord(
+        atofRecords,
+        (record) =>
+          record.metadata?.hook_event_name === "agent_settled" &&
+          record.metadata?.turn_seq === 1,
+      );
 
-      assert.equal(result.status, "succeeded");
-      assert.equal(result.output.response, "relay smoke ok");
-      assert.equal(providerRequests.length, 1);
+      assert.equal(first.status, "succeeded");
+      assert.equal(first.output.response, "relay smoke ok");
+      assert.deepEqual(first.extensions, { pi_turn_count: 1, pi_turn_started: true });
+      assert.equal(second.status, "succeeded");
+      assert.equal(second.output.response, "relay smoke ok");
+      assert.deepEqual(second.extensions, { pi_turn_count: 2, pi_turn_started: true });
+      assert.ok(firstSettled.receivedAt - firstCompletedAt < 1_000);
+      assert.ok(secondSettled.receivedAt - secondCompletedAt < 1_000);
+      assert.equal(providerRequests.length, 2);
       assert.equal(providerRequests[0].model, "openai/gpt-oss-20b");
-      assert.equal(result.output.relay_artifacts.some((artifact) => artifact.kind === "atif"), false);
+      assert.equal(first.output.relay_artifacts.some((artifact) => artifact.kind === "atif"), false);
+      assert.equal(second.output.relay_artifacts.some((artifact) => artifact.kind === "atif"), false);
 
       await runtime.stop();
       runtime = undefined;
@@ -170,6 +232,7 @@ test(
         process.env.FABRIC_RELAY_CONFIG_PATH = previousConfigPath;
       }
       await new Promise((resolve) => upstream.close(resolve));
+      await new Promise((resolve) => collector.close(resolve));
       await rm(root, { recursive: true, force: true });
     }
   },

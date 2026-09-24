@@ -254,6 +254,34 @@ pub enum FabricError {
         /// Runtime handle id.
         runtime_id: String,
     },
+    /// A service handle was used with a different plan or was modified.
+    #[error(
+        "service handle does not match run plan for `{field}`: expected `{expected}` but found `{actual}` (service `{service_id}`)"
+    )]
+    ServiceHandleMismatch {
+        /// Mismatched service handle field.
+        field: &'static str,
+        /// Expected value.
+        expected: String,
+        /// Actual value.
+        actual: String,
+        /// Service handle id.
+        service_id: String,
+    },
+    /// A service cannot be released while runtimes still use it.
+    #[error("service `{service_id}` has active runtimes: {runtime_ids:?}")]
+    ServiceInUse {
+        /// Service handle id.
+        service_id: String,
+        /// Active runtime ids.
+        runtime_ids: Vec<String>,
+    },
+    /// A service handle is not active in this process.
+    #[error("service `{service_id}` is not active in this process")]
+    ServiceNotActive {
+        /// Service handle id.
+        service_id: String,
+    },
     /// An environment provider is not runnable for the selected adapter in this POC.
     #[error("environment provider `{provider}` is not implemented for adapter `{adapter_kind:?}`")]
     UnsupportedEnvironmentProvider {

@@ -5,10 +5,10 @@
 
 Run the credentialed smoke test with:
 RUN_FABRIC_OPENCODE_INTEGRATION=1 \\
-OPENCODE_LIVE_PROVIDER=openai \\
-OPENCODE_LIVE_MODEL=<model> \\
-OPENCODE_LIVE_API_KEY_ENV=OPENAI_API_KEY \\
-OPENCODE_LIVE_BASE_URL=https://example.com/v1 \\
+OPENCODE_LIVE_PROVIDER=nvidia \\
+OPENCODE_LIVE_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b \\
+OPENCODE_LIVE_API_KEY_ENV=NVIDIA_API_KEY \\
+OPENCODE_LIVE_BASE_URL=https://integrate.api.nvidia.com/v1 \\
 pytest tests/e2e/test_opencode.py
 """
 
@@ -47,8 +47,8 @@ def opencode_config(api_server: str, workspace: Path) -> FabricConfig:
         discovery=DiscoveryConfig(local_paths=[DESCRIPTOR]),
         models={
             "default": ModelConfig(
-                provider="fabric-test",
-                model="fabric-echo",
+                provider="nvidia",
+                model="nvidia/nemotron-3.5-lightning-30b-a3b",
                 api_key_env="OPENCODE_E2E_KEY",
                 base_url=f"{api_server}/v1",
             )

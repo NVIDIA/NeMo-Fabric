@@ -1672,6 +1672,7 @@ class RuntimeHandle(FabricMapping):
         harness: Stable harness identifier.
         adapter_kind: Adapter execution mechanism.
         adapter_id: Optional NeMo Fabric adapter identifier.
+        service_id: Optional service used by this runtime.
         environment: Prepared environment snapshot.
     """
 
@@ -1681,6 +1682,7 @@ class RuntimeHandle(FabricMapping):
     harness: str
     adapter_kind: str
     adapter_id: str | None
+    service_id: str | None
     environment: Mapping[str, Any]
     _fields = frozenset(
         {
@@ -1690,6 +1692,7 @@ class RuntimeHandle(FabricMapping):
             "harness",
             "adapter_kind",
             "adapter_id",
+            "service_id",
             "environment",
         }
     )
@@ -1707,7 +1710,91 @@ class RuntimeHandle(FabricMapping):
             data[field] = _required_text(data.get(field), field.replace("_", " "))
         if data.get("adapter_id") is not None:
             data["adapter_id"] = _required_text(data["adapter_id"], "adapter id")
+        if data.get("service_id") is not None:
+            data["service_id"] = _required_text(data["service_id"], "service id")
+        else:
+            data["service_id"] = None
         data["environment"] = _mapping(data.get("environment"), "environment")
+        return data
+
+
+class ServiceReference(FabricMapping):
+    """Reference to an already-running caller-owned service.
+
+    ``adapter_id`` selects the adapter that understands the service type and
+    connection fields.
+
+    ``connection`` contains endpoints and credential references such as an
+    environment-variable name. It must not contain credential values.
+    """
+
+    adapter_id: str
+    service_type: str
+    connection: Mapping[str, Any]
+    metadata: Mapping[str, Any]
+    _fields = frozenset({"adapter_id", "service_type", "connection", "metadata"})
+    _json_fields = frozenset({"connection", "metadata"})
+    _omit_if_empty = frozenset({"connection", "metadata"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["adapter_id"] = _required_text(data.get("adapter_id"), "adapter id")
+        data["service_type"] = _required_text(data.get("service_type"), "service type")
+        data["connection"] = _mapping(data.get("connection", {}), "connection")
+        data["metadata"] = _mapping(data.get("metadata", {}), "metadata")
+        return data
+
+
+class ServiceHandle(FabricMapping):
+    """Opaque identity and binding for one prepared or attached service.
+
+    ``service_id`` identifies the process-local Fabric service lifecycle, not
+    the underlying remote deployment. ``service_binding`` is opaque and must
+    be returned unchanged when the handle is used. ``adapter_id`` identifies
+    the adapter that created or attached to the service, and ``service_type``
+    is that adapter's stable service kind. ``ownership`` is ``fabric_owned``
+    or ``caller_owned``. ``connection`` is a sanitized summary that never
+    contains credential values, while ``metadata`` contains adapter-reported
+    version and readiness information.
+    """
+
+    service_id: str
+    service_binding: str
+    adapter_id: str
+    service_type: str
+    ownership: str
+    connection: Mapping[str, Any]
+    metadata: Mapping[str, Any]
+    _fields = frozenset(
+        {
+            "service_id",
+            "service_binding",
+            "adapter_id",
+            "service_type",
+            "ownership",
+            "connection",
+            "metadata",
+        }
+    )
+    _json_fields = frozenset({"connection", "metadata"})
+    _omit_if_empty = frozenset({"connection", "metadata"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        for field in (
+            "service_id",
+            "service_binding",
+            "adapter_id",
+            "service_type",
+            "ownership",
+        ):
+            data[field] = _required_text(data.get(field), field.replace("_", " "))
+        if data["ownership"] not in {"fabric_owned", "caller_owned"}:
+            raise FabricConfigError(
+                "service ownership must be fabric_owned or caller_owned"
+            )
+        data["connection"] = _mapping(data.get("connection", {}), "connection")
+        data["metadata"] = _mapping(data.get("metadata", {}), "metadata")
         return data
 
 
