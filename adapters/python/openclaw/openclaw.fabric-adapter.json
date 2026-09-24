@@ -46,6 +46,38 @@
         "additionalProperties": false,
         "description": "OpenClaw-native channels and bindings for NeMo Fabric-owned services. Every binding must target the configured agent. Managed runtimes reject channel configuration."
       },
+      "port": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65425,
+        "description": "Fixed Gateway base port. The adapter also requires the derived browser control port, base + 2, to be free. Mutually exclusive with port_range."
+      },
+      "state_dir": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Directory that retains OpenClaw state, gateway.log, and the interface-token credential across runtimes; relative paths resolve from the NeMo Fabric base directory. The adapter regenerates openclaw.json there at each start. When omitted, state and a one-time token live in a temporary directory removed at stop. POSIX hosts only."
+      },
+      "native_config": {
+        "type": "object",
+        "properties": {
+          "models": false,
+          "gateway": {
+            "type": "object",
+            "properties": {"mode": false, "port": false, "bind": false, "auth": false, "http": false}
+          },
+          "agents": {
+            "type": "object",
+            "properties": {
+              "entries": false,
+              "defaults": {
+                "type": "object",
+                "properties": {"workspace": false, "model": false, "models": false}
+              }
+            }
+          }
+        },
+        "description": "Additional openclaw.json sections, such as plugins, tools.web, tools.toolSearch, diagnostics, agents.defaults.heartbeat, and gateway.controlUi. They override adapter defaults but cannot change configuration that NeMo Fabric owns, including the Gateway listener, models, workspace, tools.allow, tools.deny, MCP, and skills."
+      },
       "port_range": {
         "type": "object",
         "properties": {
@@ -89,6 +121,22 @@
         "description": "Timeout between response bytes from the local OpenClaw Gateway."
       }
     },
+    "dependentSchemas": {"port": {"properties": {"port_range": false}}},
+    "if": {
+      "properties": {
+        "native_config": {
+          "properties": {
+            "gateway": {
+              "properties": {"controlUi": {"properties": {"enabled": {"const": true}}, "required": ["enabled"]}},
+              "required": ["controlUi"]
+            }
+          },
+          "required": ["gateway"]
+        }
+      },
+      "required": ["native_config"]
+    },
+    "then": {"required": ["state_dir"]},
     "additionalProperties": false
   },
   "model_schema": {
@@ -102,13 +150,26 @@
       "temperature": {"type": "number"},
       "top_p": {"type": "number", "minimum": 0, "maximum": 1},
       "max_tokens": {"type": "integer", "minimum": 1},
+      "api": {"enum": ["openai-completions", "openai-responses", "anthropic-messages"]},
       "settings": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "model_metadata": {
+            "type": "object",
+            "properties": {"id": false, "name": false, "maxTokens": false},
+            "description": "OpenClaw model catalog fields for a model with base_url, such as contextWindow and reasoning."
+          },
+          "reasoning_effort": {
+            "type": "string",
+            "minLength": 1,
+            "description": "OpenClaw default thinking level for the selected model."
+          }
+        },
         "additionalProperties": false
       }
     },
     "required": ["provider", "model"],
+    "dependentRequired": {"api": ["base_url"]},
     "additionalProperties": false
   },
   "requirements": {},
@@ -116,6 +177,7 @@
     "accepts": [
       "models",
       "models.base_url",
+      "models.api",
       "models.temperature",
       "models.top_p",
       "models.max_tokens",
