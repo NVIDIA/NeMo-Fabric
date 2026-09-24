@@ -201,7 +201,10 @@ def test_planning_checks_native_settings_before_startup(tmp_path: Path):
         _plan(tmp_path, {"port": 18800, "port_range": {"start": 20000, "end": 20200}})
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="state_dir requires a POSIX host")
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="The mock Gateway lifecycle runs only on Linux CI, as in test_openclaw.py",
+)
 async def test_state_dir_retains_state_credential_and_log(
     repo_root: Path, tmp_path: Path, monkeypatch
 ):
@@ -227,12 +230,7 @@ async def test_state_dir_retains_state_credential_and_log(
     }
 
     runtime = adapter.OpenClawRuntime()
-    try:
-        await runtime.start(payload)
-    except lifecycle.LifecycleError as error:
-        log = state / "gateway.log"
-        output = log.read_text(errors="replace") if log.exists() else "<no gateway.log>"
-        raise AssertionError(f"{error}; gateway output: {output[-2000:]}") from error
+    await runtime.start(payload)
     try:
         token = (state / "interface-token").read_text(encoding="ascii")
         assert runtime._token == token
