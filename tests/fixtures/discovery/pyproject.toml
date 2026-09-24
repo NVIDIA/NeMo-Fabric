@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fabric-discovery-fixture"
 version = "0.0.1"
-description = "Credential-free Fabric-owned discovery integration fixture"
+description = "Credential-free NVIDIA NeMo Fabric adapter for discovery and planning tests"
 requires-python = ">=3.11"
 
 [tool.setuptools]

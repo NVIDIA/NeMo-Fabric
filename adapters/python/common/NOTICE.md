@@ -3,9 +3,12 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Adapted source
+# Adapted Source
 
-Native integration code was adapted on 2026-09-24 from NemoClaw revision
-9146224da4, `image/fabric/`: interfaces.py.
-Original NVIDIA Apache-2.0 notices are retained. Native behavior now consumes
-Fabric public contracts; deployment lifecycle stays in NemoClaw.
+The retained interface credential in `credentials.py` was adapted from NVIDIA
+NemoClaw revision `9146224da4`: `image/fabric/interfaces.py`. The original
+NVIDIA Apache-2.0 notices are retained.
+
+Modified on 2026-09-24: adapters that expose native interfaces share the
+credential, which is now published atomically and read without following
+links or blocking on non-regular files.
