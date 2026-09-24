@@ -11,10 +11,11 @@ in-memory Pi session.
 
 The adapter supports:
 
-- One explicit Pi-known model selected from the `default` role or the sole
-  configured role
+- Every configured model role, with the `default` role or the sole role
+  active at startup; refer to [Model Roles](#model-roles)
+- Pi catalog models, or models defined by `models.<role>.settings.model_metadata`
 - Runtime API-key credentials named by `models.<role>.api_key_env`
-- Optional `models.<role>.base_url`
+- Optional `models.<role>.base_url` and `models.<role>.api`
 - Optional replacement system instructions
 - Tool allow and block policy
 - NeMo Fabric custom tools loaded through normalized `tools.definitions`
@@ -28,8 +29,9 @@ The adapter supports:
   default embedded NeMo Fabric collector. Startup `model_redirect` marks remain
   in the configured Relay ATOF artifacts and are not included in per-invocation
   `invoke_stream()` records
-- Ordered plain-text invocations with a `{ "response": "..." }` terminal
-  output, Relay runtime details, and collected ATOF artifacts
+- Ordered invocations whose input is plain text or `{ "prompt": "...",
+  "model": "<role>" }`, with a `{ "response": "..." }` terminal output, Relay
+  runtime details, and collected ATOF artifacts
 
 Ambient Pi settings, context files, packages, extensions, skills, prompts,
 themes, model files, credentials, and session files are disabled. Explicitly
@@ -113,6 +115,44 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.pi")
 
 For a source build, set `discovery.local_paths` to
 `adapters/typescript/pi/pi.fabric-adapter.json` instead.
+
+## Model Roles
+
+Each role in `models` becomes a Pi model in one session. A role whose provider
+and model are in the Pi catalog needs no metadata; `base_url` replaces its
+endpoint and `api` its wire protocol. For any other model, set
+`models.<role>.settings.model_metadata` to one Pi `models.json` model entry,
+such as `contextWindow`, `maxTokens`, `reasoning`, and `input`. Pi validates
+the entry and supplies its defaults; NeMo Fabric supplies the model `id` and
+`baseUrl`, and `api` may come from either `models.<role>.api` or the entry,
+but not both with different values.
+
+Every role requires `api_key_env`. The selected role keeps its provider name;
+another role that defines its own model uses the provider `<provider>-<role>`,
+and roles with identical configuration share one model.
+
+An invocation with `{ "prompt": "...", "model": "<role>" }` switches the session
+to that role before sending the prompt. The conversation is kept, the compaction
+reserve follows the active model, and the role stays active for later
+plain-text invocations. An undeclared role fails before inference. While NeMo
+Relay telemetry is enabled, the session stays on the selected role.
+
+```json
+{
+  "models": {
+    "default": {
+      "provider": "openai",
+      "model": "Qwen/Qwen3-4B",
+      "base_url": "http://127.0.0.1:8000/v1",
+      "api": "openai-completions",
+      "api_key_env": "LOCAL_MODEL_KEY",
+      "settings": {
+        "model_metadata": {"contextWindow": 32768, "maxTokens": 2048, "reasoning": false}
+      }
+    }
+  }
+}
+```
 
 ## Configure NeMo Relay
 

@@ -158,6 +158,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
                 "temperature": {"type": "number"},
                 "api_key_env": {"type": "string", "minLength": 1},
                 "base_url": {"type": "string", "minLength": 1},
+                "api": {"enum": ["anthropic-messages"]},
                 "settings": {
                     "type": "object",
                     "properties": {},
@@ -228,6 +229,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
             "accepts": [
                 "models",
                 "models.base_url",
+                "models.api",
                 "instructions.system",
                 "runtime.max_turns",
                 "tools.enabled",

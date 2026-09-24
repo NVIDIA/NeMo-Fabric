@@ -676,6 +676,7 @@ The model defines the following fields:
 | `top_p` | `float \| None` | No | `None` | `Strict(strict=True), Ge(ge=0), Le(le=1)` | — |
 | `max_tokens` | `int \| None` | No | `None` | `Strict(strict=True), Gt(gt=0), Le(le=18446744073709551615)` | — |
 | `base_url` | `str \| None` | No | `None` | `MinLen(min_length=1)` | — |
+| `api` | `Literal['openai-completions', 'openai-responses', 'anthropic-messages'] \| None` | No | `None` | — | Wire protocol spoken by the model endpoint. Adapters that accept `models.api` map it to their native provider configuration. |
 | `settings` | `dict[str, Any]` | No | `dict()` | — | — |
 
 ---

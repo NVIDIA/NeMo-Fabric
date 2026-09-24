@@ -59,12 +59,21 @@ the Gateway. A non-empty `tools.enabled` list maps to `tools.allow`, an empty
 list maps to a wildcard `tools.deny` policy, and `tools.blocked` maps to
 `tools.deny`. It uses a generated one-time token, loopback binding, and an
 isolated temporary OpenClaw state directory. The Gateway is stopped and its
-temporary configuration is removed when the NeMo Fabric runtime stops.
+temporary configuration is removed when the NeMo Fabric runtime stops, unless
+`state_dir` retains it as described in [Retain Native State](#retain-native-state).
 
-For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
-adapter generates an OpenClaw custom provider using the
-`openai-completions` API adapter. Set `api_key_env` when that provider requires
-an API key.
+For custom providers, set `models.<role>.base_url` and, optionally,
+`models.<role>.api`: `openai-completions` (the default), `openai-responses`, or
+`anthropic-messages`. The adapter generates an OpenClaw custom provider for that
+endpoint. Set `api_key_env` when the provider requires an API key. For such a
+model, `models.<role>.settings.model_metadata` adds OpenClaw catalog fields such
+as `contextWindow` and `reasoning`, and `models.<role>.settings.reasoning_effort`
+on the selected role sets OpenClaw's default thinking level.
+
+The selected role, `models.default` or the sole role, is the agent's primary
+model. Every other role also becomes a model that OpenClaw can switch to, named
+by its role as an alias. A role with its own endpoint gets a provider named
+`<provider>-<role>`, and roles with identical configuration share one model.
 
 ### Harness Settings
 
@@ -76,7 +85,10 @@ The following settings are specific to the OpenClaw adapter:
 | `openclaw_command` | `openclaw` | Executable name or path. |
 | `agent_id` | `default` | OpenClaw agent for NeMo Fabric-originated invocations. |
 | `channel_config` | None | OpenClaw-native `channels` and `bindings` for a prepared service. Every binding must target `agent_id`. Managed runtimes reject this setting. |
+| `port` | None | Fixed Gateway base port. `port + 2` must also be free. Mutually exclusive with `port_range`. |
 | `port_range` | Random available range | Inclusive consumer-allocated range with `start` and `end` fields; it must span at least 111 ports. |
+| `state_dir` | Temporary directory | Directory that retains native state across runtimes. Refer to [Retain Native State](#retain-native-state). |
+| `native_config` | None | Additional `openclaw.json` sections. Refer to [Native Configuration](#native-configuration). |
 | `startup_timeout_seconds` | `30` | Gateway startup timeout. |
 | `shutdown_timeout_seconds` | `10` | Graceful shutdown timeout. |
 | `connect_timeout_seconds` | `10` | Local HTTP connection timeout. |
@@ -85,6 +97,34 @@ The following settings are specific to the OpenClaw adapter:
 OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. Set `port_range` when the consumer reserves a port range before configuring NeMo Fabric; the adapter selects a base whose complete derived footprint fits inside that range. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime when using OpenClaw browser features.
 
 Relay telemetry and native OpenTelemetry are not supported.
+
+### Native Configuration
+
+`harness.settings.native_config` adds OpenClaw configuration that NeMo Fabric
+does not derive, such as `plugins`, `tools.web`, `tools.toolSearch`,
+`diagnostics`, `agents.defaults.heartbeat`, and `gateway.controlUi`. These
+sections can override adapter defaults, such as the disabled control UI and
+telemetry, but a value that differs from one NeMo Fabric owns fails before
+startup. NeMo Fabric owns the Gateway listener (`gateway.mode`, `port`, `bind`,
+`auth`, and `http`), `models`, `agents.entries`, the agent workspace and
+models, and whatever `tools`, `mcp`, and `skills` values it generates.
+Planning rejects the listener, `models`, and agent fields directly.
+
+The control UI requires `state_dir`, because the browser signs in with the
+retained interface token. When `gateway.controlUi.allowedOrigins` is omitted,
+the adapter allows the Gateway's loopback origins.
+
+### Retain Native State
+
+Set `harness.settings.state_dir` to keep OpenClaw's native state, such as
+sessions, memory, and channel pairing, across runtimes. The directory holds
+`openclaw.json`, which the adapter regenerates at each start and OpenClaw treats
+as read-only, `gateway.log` with the Gateway's output, and `interface-token`,
+the Gateway credential for API and control UI clients. The token is created
+once with owner-only permissions. Only one runtime can use a state directory at
+a time, and `state_dir` is supported only on POSIX hosts. Relative paths resolve
+from the NeMo Fabric base directory. Change the configuration through
+`FabricConfig` and `native_config` rather than by editing `openclaw.json`.
 
 ## Use a NeMo Fabric-Owned Service
 

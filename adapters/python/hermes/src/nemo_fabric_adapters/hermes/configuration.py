@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
 from typing import Any
@@ -14,8 +15,18 @@ from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
+from nemo_fabric_adapter_contract.models import RuntimeContext
 import nemo_fabric_adapters.common.utils as common_utils
 
+
+API_SERVER_MODE = "api_server"
+
+# Normalized model protocols and the Hermes api_mode that implements each.
+HERMES_API_MODES = {
+    "openai-completions": "chat_completions",
+    "openai-responses": "codex_responses",
+    "anthropic-messages": "anthropic_messages",
+}
 
 PROVIDER_DEFAULT_API_KEY_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -70,6 +81,39 @@ def _api_key_env(model_config: AgentModelConfig) -> str:
     return default
 
 
+def api_mode(config: AgentConfig) -> str | None:
+    """Hermes api_mode for the selected model, or None to let Hermes infer it."""
+
+    api = _selected_model(config).api
+    return None if api is None else HERMES_API_MODES[api]
+
+
+def api_server_mode(config: AgentConfig) -> bool:
+    return _settings(config).get("mode") == API_SERVER_MODE
+
+
+def artifact_root(runtime_context: RuntimeContext, base_dir: str) -> Path:
+    root = runtime_context.artifacts.root
+    if root:
+        artifact_root = Path(str(root))
+        if not artifact_root.is_absolute():
+            artifact_root = Path(base_dir) / artifact_root
+        return artifact_root.resolve()
+    return Path(base_dir).resolve() / "artifacts"
+
+
+def runtime_home(runtime_context: RuntimeContext, base_dir: str) -> Path:
+    """Native Hermes home owned by one runtime under the artifact root."""
+
+    return (
+        artifact_root(runtime_context, base_dir)
+        / ".fabric"
+        / "hermes"
+        / "runtimes"
+        / runtime_context.runtime_id
+    )
+
+
 def disabled_toolsets(config: AgentConfig) -> list[str]:
     return config.tools.blocked if config.tools is not None else []
 
@@ -93,6 +137,7 @@ def build_hermes_config(
                 "provider": model_config.provider,
                 "default": model_config.model,
                 "base_url": model_config.base_url,
+                "api_mode": api_mode(agent_config),
             }
         ),
         "agent": common_utils.without_none(
@@ -109,6 +154,21 @@ def build_hermes_config(
             }
         ),
     }
+
+    if api_server_mode(agent_config) and model_config.base_url:
+        # The Hermes API server resolves provider credentials independently of
+        # AIAgent. Register the explicit endpoint as a native custom provider
+        # that references the key's environment variable instead of its value.
+        config["model"]["provider"] = "custom:fabric"
+        config["providers"] = {
+            "fabric": common_utils.without_none(
+                {
+                    "base_url": model_config.base_url,
+                    "api_mode": api_mode(agent_config),
+                    "key_env": _api_key_env(model_config),
+                }
+            )
+        }
 
     skill_dirs = (
         [str(path) for path in agent_config.skills.paths]
@@ -127,6 +187,8 @@ def build_hermes_config(
 
     if enabled_toolsets is not None:
         config["platform_toolsets"] = {"cli": enabled_toolsets}
+        if api_server_mode(agent_config):
+            config["platform_toolsets"]["api_server"] = enabled_toolsets
 
     plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
     if relay_enabled and "observability/nemo_relay" not in plugins:
@@ -134,6 +196,14 @@ def build_hermes_config(
     if plugins:
         config["plugins"] = {"enabled": plugins}
 
+    native = settings.get("native_config", {})
+    conflicts = set(native) & set(config)
+    if conflicts:
+        raise ValueError(
+            "native_config conflicts with NeMo Fabric-owned fields: "
+            f"{sorted(conflicts)}"
+        )
+    config.update(copy.deepcopy(native))
     return config
 
 

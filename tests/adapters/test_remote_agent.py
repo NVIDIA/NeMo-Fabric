@@ -500,3 +500,63 @@ def test_remote_agent_descriptor_and_module_entrypoint(repo_root: Path):
         "integration_modes": ["remote_service"],
     }
     assert result.returncode == 0, result.stderr
+
+
+async def test_public_model_endpoint_and_protocol_are_consumed(api_server, repo_root):
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {}},
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "fabric-echo",
+                    "base_url": f"{api_server}/v1",
+                    "api": "openai-completions",
+                }
+            },
+        }
+    )
+    runtime = adapter.RemoteAgentRuntime()
+    context = _context()
+    await runtime.start(
+        {
+            "config": config,
+            "runtime_context": context.to_mapping(),
+            "base_dir": str(repo_root),
+        }
+    )
+    try:
+        result = await runtime.invoke(AgentRunRequest(input="Hello."), context)
+        assert result.status == "succeeded"
+        assert runtime._endpoint == f"{api_server}/v1/chat/completions"
+    finally:
+        await runtime.stop()
+
+
+def test_planning_requires_an_endpoint_in_the_model_or_settings(tmp_path: Path):
+    from nemo_fabric import Fabric
+    from nemo_fabric import FabricConfig
+    from nemo_fabric.errors import FabricConfigError
+
+    def plan(settings: dict, model: dict) -> None:
+        Fabric().plan(
+            FabricConfig.from_mapping(
+                {
+                    "metadata": {"name": "remote-endpoint"},
+                    "harness": {
+                        "adapter_id": "nvidia.fabric.remote-agent",
+                        "settings": settings,
+                    },
+                    "models": {
+                        "default": {"provider": "openai", "model": "agent", **model}
+                    },
+                }
+            ),
+            base_dir=tmp_path,
+        )
+
+    endpoint = "https://agent.example.test/v1"
+    plan({"base_url": endpoint}, {})
+    plan({}, {"base_url": endpoint})
+    with pytest.raises(FabricConfigError, match="nvidia.fabric.remote-agent"):
+        plan({}, {})

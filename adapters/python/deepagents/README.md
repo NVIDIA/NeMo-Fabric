@@ -38,6 +38,10 @@ Any other provider is constructed through
 `langchain.chat_models.init_chat_model`, so LangChain-supported backends do not
 require adapter-specific branches.
 
+The optional `models.<role>.api` field must match the provider: use
+`openai-completions` with `openai`, `nvidia`, or `openai-compatible`, and
+`anthropic-messages` with `anthropic`. Planning rejects other combinations.
+
 `models.<role>.api_key_env` names the environment variable holding the API key,
 and defaults to `OPENAI_API_KEY` only for the native `openai` provider. Every
 other provider must set `api_key_env` explicitly (a missing one is a normalized
@@ -90,6 +94,9 @@ NeMo Fabric maps the following into the harness:
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.
+  The package includes a Brave web search MCP server: declare a `stdio` server
+  that runs `python -m nemo_fabric_adapters.deepagents.brave_search` with
+  `BRAVE_API_KEY` in its environment to add a `web_search` tool.
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.
@@ -383,3 +390,4 @@ config.enable_relay(
     ),
 )
 ```
+

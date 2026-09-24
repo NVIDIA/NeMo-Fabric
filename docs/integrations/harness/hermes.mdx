@@ -76,6 +76,8 @@ The Hermes descriptor validates the following `harness.settings` fields:
 | `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
 | `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
+| `mode` | `sdk` or `api_server` | `sdk` | Embeds the Hermes SDK, or runs Hermes' native API server as described in [Run Hermes as an API Server](#run-hermes-as-an-api-server). |
+| `native_config` | object | none | Adds Hermes `config.yaml` sections that NeMo Fabric does not derive: `web`, `approvals`, `plugins`, and `display`. NeMo Fabric-owned sections are rejected. |
 
 For example:
 
@@ -97,6 +99,33 @@ harness = HarnessConfig(
 Use `runtime.max_turns` to set the Hermes agent-loop budget. The adapter maps
 that normalized field to `AIAgent.max_iterations`; `max_iterations` is not a
 Hermes harness setting.
+
+## Run Hermes as an API Server
+
+Set `harness.settings.mode` to `api_server` to run Hermes' native
+OpenAI-compatible API server in a supervised child process. Each invocation
+becomes a Responses API request that continues the previous response. In this
+mode, `harness.settings.interfaces.api.port` selects the loopback API port and
+`harness.settings.interfaces.dashboard` serves the Hermes dashboard and browser
+TUI. Both require a retained interface token.
+
+Set `harness.settings.state_dir` to retain Hermes configuration, state, the
+`interface-token` credential, and `api.log` across runtimes. Without it,
+native state belongs to the runtime. Planning rejects `interfaces` and
+`state_dir` in `sdk` mode.
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.hermes",
+    settings={
+        "mode": "api_server",
+        "state_dir": "/srv/hermes",
+        "interfaces": {"api": {"port": 8643}, "dashboard": {"port": 18800}},
+    },
+)
+```
 
 ## Understand the Runtime Lifecycle
 

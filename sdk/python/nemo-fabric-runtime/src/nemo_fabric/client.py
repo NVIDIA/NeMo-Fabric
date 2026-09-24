@@ -21,7 +21,7 @@ from nemo_fabric.errors import (
     FabricNativeUnavailableError,
     FabricRuntimeError,
 )
-from nemo_fabric.models import FabricConfig, RunRequest
+from nemo_fabric.models import DiscoveryConfig, FabricConfig, RunRequest
 from nemo_fabric.runtime import (
     Runtime,
     _PI_ADAPTER_ID,
@@ -38,6 +38,7 @@ from nemo_fabric.streaming import (
     _with_stream_sink,
 )
 from nemo_fabric.types import (
+    DescriptorCatalog,
     DoctorReport,
     RunPlan,
     RunResult,
@@ -73,6 +74,42 @@ class Fabric:
 
     def __init__(self) -> None:
         pass
+
+    def discover(
+        self,
+        *,
+        discovery: DiscoveryConfig | None = None,
+        base_dir: str | os.PathLike[str] | None = None,
+    ) -> DescriptorCatalog:
+        """Return the adapter and target descriptors that planning can select.
+
+        The catalog uses the same registry as ``plan()``: bundled descriptors,
+        descriptors installed in the selected Python environment, and any
+        ``discovery.local_paths``. Entries are sorted by exact identifier and
+        keep every source of an identical descriptor. Malformed or ambiguous
+        metadata raises ``FabricConfigError``. Discovery does not import
+        adapter runners, start runtimes, or check whether declared requirements
+        are installed.
+
+        Args:
+            discovery: Optional typed explicit local descriptor paths.
+            base_dir: Base directory for resolving relative paths.
+        """
+        native = self._require_native_module("discover")
+        if discovery is not None and not isinstance(discovery, DiscoveryConfig):
+            raise FabricConfigError("discovery must be a DiscoveryConfig")
+        try:
+            raw = native.discover_descriptors(
+                None
+                if discovery is None
+                else discovery.model_dump_json(exclude_none=True),
+                _base_dir_arg(base_dir),
+            )
+            return DescriptorCatalog.from_mapping(json.loads(raw))
+        except FabricError:
+            raise
+        except Exception as error:
+            raise FabricConfigError(str(error)) from error
 
     def plan(
         self,

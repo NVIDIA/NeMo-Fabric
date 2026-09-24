@@ -15,6 +15,7 @@
       "temperature": {"type": "number"},
       "api_key_env": {"type": "string", "minLength": 1},
       "base_url": {"type": "string", "minLength": 1},
+      "api": {"enum": ["openai-completions", "openai-responses"]},
       "settings": {
         "type": "object",
         "properties": {
@@ -27,6 +28,16 @@
       }
     },
     "required": ["provider", "model"],
+    "allOf": [
+      {
+        "if": {"required": ["api"], "properties": {"api": {"const": "openai-completions"}}},
+        "then": {"properties": {"provider": {"enum": ["openai", "nvidia"]}}}
+      },
+      {
+        "if": {"required": ["api"], "properties": {"api": {"const": "openai-responses"}}},
+        "then": {"properties": {"provider": {"enum": ["openai"]}}}
+      }
+    ],
     "additionalProperties": false
   },
   "settings_schema": {
@@ -40,11 +51,13 @@
     "accepts": [
       "models",
       "models.base_url",
+      "models.api",
       "models.temperature",
       "instructions.system",
       "skills",
       "mcp"
-    ]
+    ],
+    "schema": {"type": "object", "required": ["workflow"]}
   },
   "telemetry": {
     "providers": {

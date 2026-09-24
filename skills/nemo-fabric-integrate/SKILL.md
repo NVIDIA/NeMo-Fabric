@@ -288,6 +288,10 @@ Fully consume the stream or call `await stream.aclose()` before starting another
 turn. Awaiting `stream.result()` also drains and discards unread native OpenAI
 chunks, so consume the iterator first when the application needs every chunk.
 
+## Discover Before Selecting
+
+Use `Fabric().discover(discovery=DiscoveryConfig(local_paths=[...]), base_dir=base)` when the consumer needs available adapter IDs, target IDs, or adapter-owned schemas before constructing a complete configuration. Omit `discovery` to use bundled and installed descriptors. The returned `DescriptorCatalog` has `adapters` and `targets`; each entry exposes canonical `descriptor` and `provenance` JSON snapshots. Select the exact `descriptor["adapter_id"]`; do not derive aliases or maintain a separate capability list. Discovery uses the planning registry, keeps every source of an identical descriptor, and fails on malformed or ambiguous records. It does not import runners or establish runtime readiness. Discovery does not remember its paths: when the selected adapter came from `local_paths`, put the same paths in `FabricConfig.discovery` and use the same `base_dir` when planning and running.
+
 ## Validate Before Running
 
 Resolve and diagnose before spending work on a runtime, especially in a new
@@ -407,3 +411,8 @@ Link to these canonical sources instead of duplicating them:
   inside a private transient run specification at the task-process boundary.
   Follow the code-review example for consumer integration code; Harbor's
   transport representation is an internal process-boundary contract.
+
+To plan for another environment, such as an image, Rust hosts can pass the
+`DescriptorCatalog` discovered there to `resolve_run_plan_from_descriptors`.
+`FabricError::UnverifiedAdapterCapability` distinguishes a missing adapter
+schema from a rejected value; report it as unknown rather than supported.

@@ -22,6 +22,7 @@ import sys
 import tempfile
 import threading
 from collections import deque
+from contextlib import suppress
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -33,6 +34,7 @@ from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
+from nemo_fabric_adapters.common.credentials import interface_token
 from nemo_fabric_adapters.openclaw import _windows_job
 
 
@@ -50,6 +52,8 @@ SUPPORTED_OPENCLAW_VERSIONS = frozenset({"2026.9.4"})
 MAX_PORT_ATTEMPTS = 20
 MAX_DERIVED_PORT_OFFSET = 110
 MAX_TCP_PORT = 65_535
+GATEWAY_LOG = "gateway.log"
+STATE_LOCK = "adapter.lock"
 
 
 logger = logging.getLogger(__name__)
@@ -111,7 +115,10 @@ def _validate_attach_config(config: contract.AgentConfig) -> None:
     for name in (
         "openclaw_command",
         "channel_config",
+        "port",
         "port_range",
+        "state_dir",
+        "native_config",
         "startup_timeout_seconds",
         "shutdown_timeout_seconds",
     ):
@@ -314,6 +321,26 @@ def _select_port(settings: dict[str, Any]) -> int:
     need to be preflighted here. See "Port mapping (derived)":
     https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived
     """
+    port = settings.get("port")
+    if port is not None:
+        if (
+            isinstance(port, bool)
+            or not isinstance(port, int)
+            or not 1 <= port <= MAX_TCP_PORT - MAX_DERIVED_PORT_OFFSET
+        ):
+            raise lifecycle.LifecycleError(
+                "openclaw_invalid_configuration",
+                "OpenClaw port must leave room for its derived ports",
+                metadata={"field": "harness.settings.port"},
+            )
+        if not (_port_available(port) and _port_available(port + 2)):
+            raise lifecycle.LifecycleError(
+                "openclaw_port_unavailable",
+                f"OpenClaw port {port} or its browser control port {port + 2} is in use",
+                metadata={"field": "harness.settings.port", "port": port},
+                retryable=True,
+            )
+        return port
     configured_range = settings.get("port_range")
     if configured_range is not None:
         if not isinstance(configured_range, dict) or set(configured_range) != {
@@ -413,6 +440,134 @@ def _mcp_config(config: contract.AgentConfig) -> dict[str, Any]:
     return result
 
 
+def _model_params(model: contract.AgentModelConfig) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in {
+            "temperature": model.temperature,
+            "topP": model.top_p,
+            "maxTokens": model.max_tokens,
+        }.items()
+        if value is not None
+    }
+
+
+def _role_models(
+    config: contract.AgentConfig,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Return the primary model ref, agent model entries, and providers.
+
+    Every model role becomes a model that OpenClaw can select, with the
+    selected role as the primary model. The selected role keeps its provider
+    name; another role with its own endpoint gets a role-specific provider.
+    Roles identical to an earlier role share its model.
+    """
+
+    selected = _selected_model(config)
+    roles = sorted(config.models.items(), key=lambda item: item[1] is not selected)
+    refs: list[tuple[contract.AgentModelConfig, str, str]] = []
+    providers: dict[str, Any] = {}
+    for role, model in roles:
+        if any(model == known for known, _, _ in refs):
+            continue
+        if model.api is not None and model.base_url is None:
+            raise lifecycle.LifecycleError(
+                "openclaw_invalid_configuration",
+                "OpenClaw models.api applies only to a model with base_url",
+                metadata={"field": f"models.{role}.api"},
+            )
+        model_id = _model_id(model)
+        key = (
+            model.provider
+            if model is selected or model.base_url is None
+            else f"{model.provider}-{role}"
+        )
+        provider: dict[str, Any] = {}
+        if model.base_url is not None:
+            entry = {
+                **model.settings.get("model_metadata", {}),
+                "id": model_id,
+                "name": model_id,
+            }
+            if model.max_tokens is not None:
+                entry["maxTokens"] = model.max_tokens
+            provider.update(
+                {
+                    "baseUrl": model.base_url,
+                    "api": model.api or "openai-completions",
+                    "models": [entry],
+                }
+            )
+        if model.api_key_env is not None:
+            provider["apiKey"] = {
+                "source": "env",
+                "provider": "default",
+                "id": model.api_key_env,
+            }
+        if provider:
+            if providers.get(key, provider) != provider:
+                raise lifecycle.LifecycleError(
+                    "openclaw_invalid_configuration",
+                    f"OpenClaw model roles configure provider {key!r} differently",
+                    metadata={"field": f"models.{role}"},
+                )
+            providers[key] = provider
+        refs.append((model, f"{key}/{model_id}", role))
+
+    entries: dict[str, Any] = {}
+    for model, ref, role in refs:
+        params = _model_params(model)
+        entry: dict[str, Any] = (
+            {"params": params} if model is selected or params else {}
+        )
+        entry["agentRuntime"] = {"id": "openclaw"}
+        if len(refs) > 1:
+            entry["alias"] = role
+        entries[ref] = entry
+    return refs[0][1], entries, providers
+
+
+def _overlay(
+    base: dict[str, Any], overlay: dict[str, Any], *, owned: bool, path: str = ""
+) -> dict[str, Any]:
+    """Deep-merge overlay into base; owned values cannot differ from base."""
+
+    result = copy.deepcopy(base)
+    for key, value in overlay.items():
+        field = f"{path}.{key}" if path else key
+        current = result.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            result[key] = _overlay(current, value, owned=owned, path=field)
+        elif owned and key in result and current != value:
+            raise lifecycle.LifecycleError(
+                "openclaw_native_config_conflict",
+                f"harness.settings.native_config.{field} conflicts with "
+                "configuration that NeMo Fabric owns",
+                metadata={"field": f"harness.settings.native_config.{field}"},
+            )
+        else:
+            result[key] = copy.deepcopy(value)
+    return result
+
+
+def _native_config(settings: dict[str, Any]) -> dict[str, Any]:
+    value = settings.get("native_config", {})
+    if not isinstance(value, dict):
+        raise lifecycle.LifecycleError(
+            "openclaw_invalid_configuration",
+            "OpenClaw native_config must be an object",
+            metadata={"field": "harness.settings.native_config"},
+        )
+    if "models" in value:
+        raise lifecycle.LifecycleError(
+            "openclaw_native_config_conflict",
+            "harness.settings.native_config.models conflicts with NeMo Fabric "
+            "model roles",
+            metadata={"field": "harness.settings.native_config.models"},
+        )
+    return value
+
+
 def _openclaw_config(
     config: contract.AgentConfig,
     context: contract.RuntimeContext,
@@ -422,20 +577,26 @@ def _openclaw_config(
     token_env: str,
     service_mode: bool = False,
 ) -> dict[str, Any]:
-    model = _selected_model(config)
-    model_id = _model_id(model)
-    model_ref = f"{model.provider}/{model_id}"
-    params = {
-        key: value
-        for key, value in {
-            "temperature": model.temperature,
-            "topP": model.top_p,
-            "maxTokens": model.max_tokens,
-        }.items()
-        if value is not None
-    }
+    """Generate openclaw.json from NeMo Fabric configuration.
+
+    NeMo Fabric owns the gateway lifecycle, workspace, models, tools, MCP, and
+    skills. ``harness.settings.native_config`` adds other OpenClaw sections
+    and can override the adapter's defaults, such as a disabled control UI,
+    but a value that differs from an owned one is rejected.
+    """
+
+    settings = config.harness.settings if config.harness else {}
+    selected = _selected_model(config)
+    primary, model_entries, providers = _role_models(config)
     workspace = context.environment.workspace or "."
-    result: dict[str, Any] = {
+    defaults: dict[str, Any] = {
+        "gateway": {"controlUi": {"enabled": False}},
+        "agents": {"defaults": {"skipBootstrap": True}},
+        "telemetry": {"enabled": False},
+        "update": {"checkOnStart": False},
+        "discovery": {"mdns": {"mode": "off"}},
+    }
+    owned: dict[str, Any] = {
         "gateway": {
             "mode": "local",
             "port": port,
@@ -444,32 +605,25 @@ def _openclaw_config(
                 "mode": "token",
                 "token": {"source": "env", "provider": "default", "id": token_env},
             },
-            "controlUi": {"enabled": False},
             "http": {"endpoints": {"chatCompletions": {"enabled": True}}},
         },
         "agents": {
             "defaults": {
                 "workspace": str(Path(workspace).resolve()),
-                "skipBootstrap": True,
-                "model": {"primary": model_ref},
-                "models": {
-                    model_ref: {
-                        "params": params,
-                        "agentRuntime": {"id": "openclaw"},
-                    }
-                },
+                "model": {"primary": primary},
+                "models": model_entries,
             }
         },
-        "telemetry": {"enabled": False},
-        "update": {"checkOnStart": False},
-        "discovery": {"mdns": {"mode": "off"}},
     }
-    agent_id = _agent_id(config.harness.settings if config.harness else {})
-    result["agents"]["entries"] = {agent_id: {}}
+    agent_id = _agent_id(settings)
+    owned["agents"]["entries"] = {agent_id: {}}
     if config.instructions is not None and config.instructions.system is not None:
-        result["agents"]["defaults"]["contextInjection"] = "never"
+        owned["agents"]["defaults"]["contextInjection"] = "never"
+    reasoning_effort = selected.settings.get("reasoning_effort")
+    if reasoning_effort is not None:
+        owned["agents"]["defaults"]["thinkingDefault"] = reasoning_effort
     if config.skills and config.skills.paths:
-        result["skills"] = {
+        owned["skills"] = {
             "load": {
                 "extraDirs": [
                     str((base_dir / path).resolve()) for path in config.skills.paths
@@ -486,32 +640,13 @@ def _openclaw_config(
             if config.tools.blocked:
                 tools["deny"] = config.tools.blocked
         if tools:
-            result["tools"] = tools
+            owned["tools"] = tools
     mcp = _mcp_config(config)
     if mcp:
-        result["mcp"] = {"servers": mcp}
-    provider: dict[str, Any] = {}
-    if model.base_url is not None:
-        provider.update(
-            {
-                "baseUrl": model.base_url,
-                "api": "openai-completions",
-                "models": [{"id": model_id, "name": model_id}],
-            }
-        )
-        if model.max_tokens is not None:
-            provider["models"][0]["maxTokens"] = model.max_tokens
-    if model.api_key_env is not None:
-        provider["apiKey"] = {
-            "source": "env",
-            "provider": "default",
-            "id": model.api_key_env,
-        }
-    if provider:
-        result["models"] = {"providers": {model.provider: provider}}
-    channel_config = _channel_config(
-        config.harness.settings if config.harness else {}, agent_id=agent_id
-    )
+        owned["mcp"] = {"servers": mcp}
+    if providers:
+        owned["models"] = {"providers": providers}
+    channel_config = _channel_config(settings, agent_id=agent_id)
     if channel_config is not None:
         if not service_mode:
             raise lifecycle.LifecycleError(
@@ -519,7 +654,15 @@ def _openclaw_config(
                 "OpenClaw chat channels require prepare_service() or an externally configured attached service",
                 metadata={"field": "harness.settings.channel_config"},
             )
-        result.update(channel_config)
+        owned.update(channel_config)
+    configured = _overlay(defaults, _native_config(settings), owned=False)
+    result = _overlay(configured, owned, owned=True)
+    control_ui = result["gateway"]["controlUi"]
+    if control_ui.get("enabled"):
+        control_ui.setdefault(
+            "allowedOrigins",
+            [f"http://127.0.0.1:{port}", f"http://localhost:{port}"],
+        )
     return result
 
 
@@ -595,12 +738,29 @@ async def _kill_and_reap(process: asyncio.subprocess.Process) -> None:
 
 
 async def _capture_stream(
-    stream: asyncio.StreamReader | None, tail: deque[str]
+    stream: asyncio.StreamReader | None, tail: deque[str], log: Any = None
 ) -> None:
     if stream is None:
         return
     while line := await stream.readline():
         tail.append(line.decode(errors="replace").rstrip())
+        if log is not None:
+            log.write(line)
+            log.flush()
+
+
+def _write_private(path: Path, text: str) -> None:
+    """Atomically replace path with owner-only text."""
+
+    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            output.write(text)
+        os.replace(temporary, path)
+    except BaseException:
+        with suppress(FileNotFoundError):
+            os.unlink(temporary)
+        raise
 
 
 def _gateway_command(
@@ -735,6 +895,8 @@ class OpenClawRuntime:
         self._gateway_failed = asyncio.Event()
         self._stopping = False
         self._temp_dir: tempfile.TemporaryDirectory[str] | None = None
+        self._state_lock: Any = None
+        self._gateway_log: Any = None
         self._port: int | None = None
         self._token: str | None = None
         self._gateway_url: str | None = None
@@ -793,35 +955,28 @@ class OpenClawRuntime:
 
         port = _select_port(settings)
 
-        # Generate a one-time use token for the OpenClaw gateway
-        token = secrets.token_urlsafe(48)
         token_env = "OPENCLAW_GATEWAY_TOKEN"
-
-        temp_dir = tempfile.TemporaryDirectory(prefix="nemo-fabric-openclaw-")
-        state_dir = Path(temp_dir.name) / "state"
-        state_dir.mkdir(mode=0o700)
-        config_path = Path(temp_dir.name) / "openclaw.json"
-        generated = _openclaw_config(
-            config,
-            context,
-            base_dir=base_dir,
-            port=port,
-            token_env=token_env,
-            service_mode=service is not None and service.get("operation") == "prepare",
-        )
-        config_path.write_text(json.dumps(generated, indent=2) + "\n", encoding="utf-8")
-        config_path.chmod(0o600)
-        child_env.update(
-            {
-                "OPENCLAW_CONFIG_PATH": str(config_path),
-                "OPENCLAW_STATE_DIR": str(state_dir),
-                "OPENCLAW_CONFIG_READONLY": "1",  # Tells OpenClaw to treat the configuration as read-only
-                token_env: token,
-                "DO_NOT_TRACK": "1",  # opt out of tracking
-            }
-        )
-        self._temp_dir = temp_dir
         try:
+            state_dir, config_path, token = self._prepare_state(settings, base_dir)
+            generated = _openclaw_config(
+                config,
+                context,
+                base_dir=base_dir,
+                port=port,
+                token_env=token_env,
+                service_mode=service is not None
+                and service.get("operation") == "prepare",
+            )
+            _write_private(config_path, json.dumps(generated, indent=2) + "\n")
+            child_env.update(
+                {
+                    "OPENCLAW_CONFIG_PATH": str(config_path),
+                    "OPENCLAW_STATE_DIR": str(state_dir),
+                    "OPENCLAW_CONFIG_READONLY": "1",  # Tells OpenClaw to treat the configuration as read-only
+                    token_env: token,
+                    "DO_NOT_TRACK": "1",  # opt out of tracking
+                }
+            )
             self._shutdown_timeout = _positive_setting(
                 settings, "shutdown_timeout_seconds", DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
             )
@@ -863,10 +1018,14 @@ class OpenClawRuntime:
                     ) from error
             self._log_tasks = [
                 asyncio.create_task(
-                    _capture_stream(self._process.stdout, deque(maxlen=10))
+                    _capture_stream(
+                        self._process.stdout, deque(maxlen=10), self._gateway_log
+                    )
                 ),
                 asyncio.create_task(
-                    _capture_stream(self._process.stderr, self._stderr_tail)
+                    _capture_stream(
+                        self._process.stderr, self._stderr_tail, self._gateway_log
+                    )
                 ),
             ]
             self._install_signal_handlers()
@@ -916,6 +1075,49 @@ class OpenClawRuntime:
                 openclaw_version=version,
             )
         return None
+
+    def _prepare_state(
+        self, settings: dict[str, Any], base_dir: Path
+    ) -> tuple[Path, Path, str]:
+        """Return the state directory, config path, and gateway token.
+
+        Without state_dir, state and a one-time token live in a temporary
+        directory removed at stop. With it, OpenClaw state, openclaw.json,
+        gateway.log, and a retained interface token persist there, and one
+        runtime at a time owns the directory.
+        """
+
+        retained = settings.get("state_dir")
+        if not retained:
+            self._temp_dir = tempfile.TemporaryDirectory(prefix="nemo-fabric-openclaw-")
+            root = Path(self._temp_dir.name)
+            state_dir = root / "state"
+            state_dir.mkdir(mode=0o700)
+            return state_dir, root / "openclaw.json", secrets.token_urlsafe(48)
+        if os.name == "nt":
+            raise lifecycle.LifecycleError(
+                "openclaw_state_dir_unsupported",
+                "OpenClaw state_dir is supported only on POSIX hosts",
+                metadata={"field": "harness.settings.state_dir"},
+            )
+        import fcntl
+
+        state_dir = (base_dir / retained).resolve()
+        state_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+        lock = (state_dir / STATE_LOCK).open("a")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            lock.close()
+            raise lifecycle.LifecycleError(
+                "openclaw_state_in_use",
+                "OpenClaw state_dir is in use by another runtime",
+                metadata={"field": "harness.settings.state_dir"},
+            ) from None
+        self._state_lock = lock
+        self._gateway_log = (state_dir / GATEWAY_LOG).open("ab")
+        token = interface_token(state_dir, create=True)
+        return state_dir, state_dir / "openclaw.json", token
 
     def _client_for(self, settings: dict[str, Any], token: str) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -1458,6 +1660,14 @@ class OpenClawRuntime:
                 "OpenClaw could not remove its temporary Gateway configuration",
                 exc_info=True,
             )
+        for handle in (self._gateway_log, self._state_lock):
+            try:
+                if handle is not None:
+                    handle.close()
+            except Exception:
+                logger.error("OpenClaw could not close retained state", exc_info=True)
+        self._gateway_log = None
+        self._state_lock = None
         self._config = None
         self._context = None
         self._command = None

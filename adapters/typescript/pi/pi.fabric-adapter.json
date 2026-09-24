@@ -13,6 +13,7 @@
     "accepts": [
       "models",
       "models.base_url",
+      "models.api",
       "instructions.system",
       "tools.definitions",
       "tools.enabled",
@@ -46,7 +47,19 @@
       "provider": {"type": "string", "minLength": 1},
       "model": {"type": "string", "minLength": 1},
       "api_key_env": {"type": "string", "minLength": 1},
-      "base_url": {"type": ["string", "null"], "format": "uri"}
+      "base_url": {"type": ["string", "null"], "format": "uri"},
+      "api": {"enum": ["openai-completions", "openai-responses", "anthropic-messages"]},
+      "settings": {
+        "type": "object",
+        "properties": {
+          "model_metadata": {
+            "type": "object",
+            "properties": {"id": false, "baseUrl": false},
+            "description": "One Pi models.json model entry for a model that the Pi catalog does not contain. NeMo Fabric supplies its id and baseUrl."
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "required": ["provider", "model", "api_key_env"],
     "additionalProperties": false

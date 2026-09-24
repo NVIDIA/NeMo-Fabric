@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "NeMo Fabric config models and loading helpers."
-position: 128
+position: 132
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -40,6 +40,7 @@ NeMo Fabric config models and loading helpers.
 - [CapabilityPlan](struct-capabilityplan.mdx): Resolved capability configuration.
 - [CapabilityRoute](struct-capabilityroute.mdx): One capability execution assignment.
 - [CapabilityTargetPlan](struct-capabilitytargetplan.mdx): Capabilities routed to one target.
+- [DescriptorCatalog](struct-descriptorcatalog.mdx): Adapter and target descriptors available for planning, with every source.
 - [DescriptorProvenance](struct-descriptorprovenance.mdx): One physical source for a discovered descriptor record.
 - [DiscoveryConfig](struct-discoveryconfig.mdx): Explicit descriptor discovery inputs.
 - [EnvironmentConfig](struct-environmentconfig.mdx): Execution environment configuration.
@@ -93,6 +94,7 @@ NeMo Fabric config models and loading helpers.
 - [McpAuthenticationConfig](enum-mcpauthenticationconfig.mdx): MCP server authentication configuration.
 - [McpExposure](enum-mcpexposure.mdx): MCP exposure strategy.
 - [McpTransport](enum-mcptransport.mdx): MCP server transport.
+- [ModelApi](enum-modelapi.mdx): Wire protocol spoken by a model endpoint.
 - [OAuthTokenEndpointAuthMethod](enum-oauthtokenendpointauthmethod.mdx): OAuth client authentication method used at the token endpoint.
 - [RelayAtifStorageConfig](enum-relayatifstorageconfig.mdx): Relay ATIF remote storage configuration.
 - [RelayAtofMode](enum-relayatofmode.mdx): Relay ATOF file mode.
@@ -108,6 +110,8 @@ NeMo Fabric config models and loading helpers.
 
 ## Functions
 
+- [discover_descriptors](fn-discover-descriptors.mdx): Discover every adapter and target descriptor that planning would see.
 - [load_adapter_descriptor](fn-load-adapter-descriptor.mdx): Load an adapter descriptor from JSON package metadata.
 - [load_adapter_target_descriptor](fn-load-adapter-target-descriptor.mdx): Load an Adapter Target Descriptor from declarative JSON metadata.
 - [resolve_run_plan_from_config](fn-resolve-run-plan-from-config.mdx): Resolve a typed NVIDIA NeMo Fabric config into a runnable plan.
+- [resolve_run_plan_from_descriptors](fn-resolve-run-plan-from-descriptors.mdx): Resolve configuration against an explicit descriptor catalog.

@@ -81,6 +81,30 @@ The adapter validates the reference against the normalized configuration and wri
 ---
 
 
+### <kbd>method</kbd> `discover`
+
+```python
+def discover(
+    *,
+    discovery: DiscoveryConfig | None = None,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> DescriptorCatalog
+```
+
+Return the adapter and target descriptors that planning can select.
+
+The catalog uses the same registry as ``plan()``: bundled descriptors, descriptors installed in the selected Python environment, and any ``discovery.local_paths``. Entries are sorted by exact identifier and keep every source of an identical descriptor. Malformed or ambiguous metadata raises ``FabricConfigError``. Discovery does not import adapter runners, start runtimes, or check whether declared requirements are installed.
+
+
+
+**Args:**
+
+ - <b>`discovery`</b>:  Optional typed explicit local descriptor paths.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths.
+
+---
+
+
 ### <kbd>method</kbd> `doctor`
 
 ```python

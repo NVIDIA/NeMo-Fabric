@@ -280,6 +280,15 @@ class ModelConfig(FabricBaseModel):
         le=(1 << 64) - 1,
     )
     base_url: str | None = Field(default=None, min_length=1)
+    api: Literal["openai-completions", "openai-responses", "anthropic-messages"] | None = (
+        Field(
+            default=None,
+            description=(
+                "Wire protocol spoken by the model endpoint. Adapters that accept "
+                "`models.api` map it to their native provider configuration."
+            ),
+        )
+    )
     settings: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("provider")

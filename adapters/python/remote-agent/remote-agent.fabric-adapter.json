@@ -44,7 +44,6 @@
         "description": "Whether the remote service accepts NeMo Fabric request correlation metadata and publishes ATOF to the configured Relay stream sink."
       }
     },
-    "required": ["base_url"],
     "additionalProperties": false
   },
   "model_schema": {
@@ -57,6 +56,8 @@
       "temperature": {"type": "number"},
       "top_p": {"type": "number", "minimum": 0, "maximum": 1},
       "max_tokens": {"type": "integer", "minimum": 1},
+      "base_url": {"type": "string", "minLength": 1},
+      "api": {"enum": ["openai-completions", "openai-responses", "anthropic-messages"]},
       "settings": {
         "type": "object",
         "properties": {
@@ -72,12 +73,27 @@
   "config": {
     "accepts": [
       "models",
+      "models.base_url",
+      "models.api",
       "models.temperature",
       "models.top_p",
       "models.max_tokens",
       "instructions.system"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": ["replace"],
+    "schema": {
+      "anyOf": [
+        {
+          "properties": {"harness": {"properties": {"settings": {"required": ["base_url"]}}, "required": ["settings"]}},
+          "required": ["harness"]
+        },
+        {
+          "properties": {"models": {"minProperties": 1, "additionalProperties": {"required": ["base_url"]}}},
+          "required": ["models"]
+        }
+      ],
+      "description": "The agent API root comes from harness.settings.base_url or from base_url on every model role."
+    }
   },
   "capabilities": {
     "service": false,

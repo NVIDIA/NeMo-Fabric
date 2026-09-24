@@ -247,3 +247,21 @@ Review the canonical schema for exact fields, defaults, and constraints.
 </Card>
 
 </CardGroup>
+
+## Model Protocols
+
+`models.<role>.api` is a normalized field for the wire protocol of the model
+endpoint: `openai-completions`, `openai-responses`, or `anthropic-messages`.
+Declare `models.api` in `config.accepts` when the adapter maps it to native
+provider configuration; the value reaches the adapter as `AgentModelConfig.api`.
+Because `model_schema` validates normalized model fields together, an adapter
+can restrict the protocols it speaks and the provider and protocol
+combinations it supports. For example, a harness that only speaks Anthropic
+Messages declares `"api": {"enum": ["anthropic-messages"]}`. Consumers set the
+protocol once and do not translate it per harness.
+
+Consumers planning for another environment, such as an image, can pass its
+`DescriptorCatalog` to the Rust `resolve_run_plan_from_descriptors` function.
+It performs the same validation and does not discover local fallback adapters.
+
+The optional `config.schema` is an adapter-owned JSON Schema over the complete public `FabricConfig`. NeMo Fabric validates it during planning, before native startup, with the same schema machinery as settings and model schemas. A failure reports the failing configuration path, such as `workflow`. Use it for required selections and constraints that span configuration areas; for example, NOOA declares `{"type":"object","required":["workflow"]}`. Consumers can inspect those requirements, but NeMo Fabric enforces the schema.

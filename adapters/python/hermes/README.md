@@ -135,3 +135,48 @@ model, skills, MCP, tools, telemetry, and runtime behavior through complete
 typed `FabricConfig` values and ordinary Python composition. The adapter
 descriptor describes adapter capabilities; it is not an agent configuration.
 Add descriptor fields only when NeMo Fabric core or the SDK actually uses them.
+
+## API Server Mode
+
+By default (`harness.settings.mode: sdk`), the adapter embeds the Hermes SDK in
+the adapter process. Set `harness.settings.mode` to `api_server` to run Hermes'
+native OpenAI-compatible API server in a supervised child process instead. Each
+invocation becomes a Responses API request that continues the previous response,
+and `instructions.system` is sent as the request's `instructions`.
+
+In this mode the adapter also accepts:
+
+- `harness.settings.state_dir`: a directory that retains Hermes' `config.yaml`,
+  native state, the `interface-token` credential, and `api.log` across
+  runtimes. Relative paths resolve from the NeMo Fabric base directory. When
+  omitted, native state is scoped to the runtime under the artifact root. A
+  retained `config.yaml` whose NeMo Fabric-owned sections differ from the
+  current configuration stops startup instead of being overwritten, and only one
+  runtime can use a state directory at a time.
+- `harness.settings.interfaces.api.port`: the loopback API port, `8642` by
+  default.
+- `harness.settings.interfaces.dashboard`: serve the Hermes dashboard, with
+  `port` (default `18789`), `internalPort` (default `19119`), and
+  `tui.enabled` for browser chat. The dashboard is disabled unless this object
+  is present; set `enabled: false` to keep a declaration without serving it.
+
+Both interfaces listen on loopback and require the retained interface token.
+Planning rejects `state_dir` and `interfaces` in `sdk` mode.
+
+If an invocation's outcome is unknown, for example because the connection
+failed, the adapter stops Hermes and rejects later invocations rather than
+replaying the turn. A response that Hermes reports as unsuccessful returns a
+failed result and keeps the runtime usable.
+
+## Native Configuration
+
+`harness.settings.native_config` adds Hermes `config.yaml` sections that NeMo
+Fabric does not derive from `FabricConfig`: `web`, `approvals`, `plugins`,
+and `display`. Sections that NeMo Fabric owns, such as `model`, are rejected.
+`models.<role>.api` selects the Hermes `api_mode`.
+
+The package includes a native Tavily web search and extraction plugin under
+`nemo_fabric_adapters/hermes/plugins/tavily/`. Copy it into Hermes' plugin
+directory as `plugins/web/tavily`, enable it with
+`harness.settings.plugins_enabled: [web/tavily]`, select it with
+`native_config.web`, and provide `TAVILY_API_KEY` in the runtime environment.

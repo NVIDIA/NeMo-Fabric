@@ -55,9 +55,62 @@
         "exclusiveMinimum": 0,
         "default": 60,
         "description": "Maximum number of seconds for a Hermes terminal operation."
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["sdk", "api_server"],
+        "default": "sdk",
+        "description": "Run Hermes in process through its SDK, or as its native API server. api_server mode can also serve the Hermes dashboard and browser TUI."
+      },
+      "state_dir": {
+        "type": "string",
+        "minLength": 1,
+        "description": "api_server mode only. Directory that retains Hermes configuration, state, the interface token, and api.log across runtimes; relative paths resolve from the NeMo Fabric base directory. When omitted, native state is scoped to the runtime."
+      },
+      "interfaces": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "object",
+            "properties": {"port": {"type": "integer", "minimum": 1, "maximum": 65535}},
+            "additionalProperties": false,
+            "description": "Loopback port of the Hermes API server; defaults to 8642."
+          },
+          "dashboard": {
+            "type": "object",
+            "properties": {
+              "enabled": {"type": "boolean", "default": true},
+              "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+              "internalPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+              "tui": {
+                "type": "object",
+                "properties": {"enabled": {"type": "boolean"}},
+                "required": ["enabled"],
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false,
+            "description": "Serve the Hermes dashboard on the loopback port (default 18789), forwarded to Hermes on internalPort (default 19119). Omit to disable it."
+          }
+        },
+        "additionalProperties": false,
+        "description": "api_server mode only. Native Hermes interfaces bound to loopback and authenticated with the retained interface token."
+      },
+      "native_config": {
+        "type": "object",
+        "properties": {
+          "web": {"type": "object"},
+          "approvals": {"type": "object"},
+          "plugins": {"type": "object"},
+          "display": {"type": "object"}
+        },
+        "additionalProperties": false,
+        "description": "Hermes config.yaml sections that NeMo Fabric does not derive from FabricConfig. Sections that NeMo Fabric owns are rejected."
       }
     },
     "required": [],
+    "if": {"properties": {"mode": {"const": "api_server"}}, "required": ["mode"]},
+    "else": {"properties": {"interfaces": false, "state_dir": false}},
     "additionalProperties": false
   },
   "extension_schemas": {
@@ -74,6 +127,7 @@
     "accepts": [
       "models",
       "models.base_url",
+      "models.api",
       "models.temperature",
       "models.top_p",
       "models.max_tokens",

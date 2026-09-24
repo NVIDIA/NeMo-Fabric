@@ -43,7 +43,28 @@ hermes_mcp_server_config = configuration.hermes_mcp_server_config
 def main() -> None:
     """Serve the persistent local-host lifecycle protocol."""
 
-    lifecycle.serve(HermesRuntime, config_loader=AgentConfig.from_mapping)
+    lifecycle.serve(HermesModeRuntime, config_loader=AgentConfig.from_mapping)
+
+
+class HermesModeRuntime:
+    """Embed the Hermes SDK, or run Hermes' API server when configured."""
+
+    async def start(self, payload):
+        if configuration.api_server_mode(payload["config"]):
+            from nemo_fabric_adapters.hermes.api_server import HermesApiServerRuntime
+
+            self.runtime = HermesApiServerRuntime()
+        else:
+            self.runtime = HermesRuntime()
+        await self.runtime.start(payload)
+
+    async def invoke(self, request, context):
+        return await self.runtime.invoke(request, context)
+
+    async def stop(self):
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            await runtime.stop()
 
 
 class HermesRuntime:
@@ -95,12 +116,8 @@ class HermesRuntime:
             model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
-            self._hermes_home = (
-                _artifact_root(runtime_context, common_utils.base_dir(payload))
-                / ".fabric"
-                / "hermes"
-                / "runtimes"
-                / runtime_context.runtime_id
+            self._hermes_home = configuration.runtime_home(
+                runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
             os.environ["HOME"] = str(self._hermes_home)
@@ -188,6 +205,7 @@ class HermesRuntime:
                         base_url=model_config.base_url,
                         api_key=api_key,
                         provider=model_config.provider,
+                        api_mode=configuration.api_mode(agent_config),
                         model=model_config.model,
                         max_iterations=int(max_iterations),
                         enabled_toolsets=self._enabled_toolsets,
@@ -535,16 +553,6 @@ class HermesRuntime:
                 "hermes_runtime_stop_failed",
                 "Hermes runtime failed to stop cleanly",
             ) from errors[0]
-
-
-def _artifact_root(runtime_context: RuntimeContext, base_dir: str) -> Path:
-    root = runtime_context.artifacts.root
-    if root:
-        artifact_root = Path(str(root))
-        if not artifact_root.is_absolute():
-            artifact_root = Path(base_dir) / artifact_root
-        return artifact_root.resolve()
-    return Path(base_dir).resolve() / "artifacts"
 
 
 def _invoke_hermes_turn(

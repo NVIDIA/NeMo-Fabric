@@ -74,8 +74,17 @@ The adapter supports only OpenClaw's default `openclaw` agent runtime.
 The adapter accepts normalized model provider, model, base URL, temperature,
 `top_p`, `max_tokens`, replacement system instruction, workspace, skills, and
 MCP configuration. Normalized MCP authentication is not supported. For a
-custom OpenAI-compatible endpoint, set the model's `base_url` and, when needed,
-`api_key_env`.
+custom endpoint, set the model's `base_url`, its `api` protocol when it is not
+OpenAI Chat Completions, and, when needed, `api_key_env`. Every model role
+becomes a model that OpenClaw can switch to, with the selected role as the
+primary model.
+
+`harness.settings.native_config` adds OpenClaw configuration that NeMo Fabric
+does not derive, such as plugins, web search, tool search, diagnostics, and the
+control UI. It cannot change configuration that NeMo Fabric owns, such as the
+Gateway listener, models, or workspace. Set `harness.settings.state_dir` to
+retain OpenClaw state, `gateway.log`, and the `interface-token` credential
+across runtimes; the control UI requires it.
 
 For a NeMo Fabric-owned service, `harness.settings.channel_config` accepts
 OpenClaw-native `channels` and `bindings`. This supports multiple accounts for
@@ -84,7 +93,8 @@ Every binding must target the configured `agent_id`; OpenClaw validates the
 nested channel settings. Chat-channel traffic goes directly between the
 channel and OpenClaw rather than through a NeMo Fabric runtime.
 
-By default, the adapter chooses an available local port range. Set `port_range`
+By default, the adapter chooses an available local port range. Set `port` to
+use a fixed Gateway port, or set `port_range`
 to an inclusive consumer-allocated range with `start` and `end` fields. The
 range must span at least 111 ports. OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime or service when using OpenClaw browser features.
 

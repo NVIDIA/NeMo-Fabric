@@ -291,3 +291,9 @@ Complete these checks before handing off an adapter:
 
 Do not claim automated NeMo Fabric conformance until the published conformance
 suite exists and the exact adapter release passes it.
+
+`models.<role>.api` is a normalized wire-protocol field. Declare `models.api`
+in `config.accepts` when the adapter maps it to native provider configuration,
+and constrain supported values and provider combinations in `model_schema`.
+NeMo Fabric passes it as `AgentModelConfig.api`; the adapter owns the native
+mapping, so consumers do not translate protocols per harness.

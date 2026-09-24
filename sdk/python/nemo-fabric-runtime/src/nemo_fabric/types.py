@@ -1325,6 +1325,77 @@ class FabricMapping(Mapping[str, Any]):
         return self.to_mapping()
 
 
+class _ResolvedDescriptor(FabricMapping):
+    """Descriptor metadata and every registry source that supplied it.
+
+    lazydocs: ignore
+    """
+
+    _fields = frozenset({"descriptor", "provenance"})
+    _json_fields = _fields
+    _kind = "descriptor"
+    _id_field = "id"
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        descriptor = _mapping(data.get("descriptor"), f"{cls._kind} descriptor")
+        _required_text(descriptor.get(cls._id_field), cls._id_field)
+        provenance = data.get("provenance")
+        if not isinstance(provenance, list) or not provenance:
+            raise FabricConfigError(f"{cls._kind} provenance must be a non-empty list")
+        data["descriptor"] = descriptor
+        data["provenance"] = [
+            _mapping(item, f"{cls._kind} provenance") for item in provenance
+        ]
+        return data
+
+
+class ResolvedAdapterDescriptor(_ResolvedDescriptor):
+    """Canonical adapter metadata and every registry source that supplied it.
+
+    Descriptor fields, including adapter-owned JSON Schemas and extensions,
+    remain unchanged. Accessors return copies of their JSON values.
+    """
+
+    _kind = "adapter"
+    _id_field = "adapter_id"
+
+
+class ResolvedAdapterTargetDescriptor(_ResolvedDescriptor):
+    """Canonical target metadata and every registry source that supplied it.
+
+    Descriptor fields, including adapter-owned JSON Schemas and extensions,
+    remain unchanged. Accessors return copies of their JSON values.
+    """
+
+    _kind = "target"
+
+
+class DescriptorCatalog(FabricMapping):
+    """Adapter and target descriptors that planning can select, with their sources.
+
+    ``Fabric.discover()`` returns this catalog. Its ``to_mapping()`` form is
+    the catalog accepted by the Rust ``resolve_run_plan_from_descriptors``
+    function, so a host can read it where adapters are installed and plan
+    elsewhere. Descriptor metadata does not establish that an adapter is
+    installed or ready.
+    """
+
+    _fields = frozenset({"adapters", "targets"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["adapters"] = tuple(
+            ResolvedAdapterDescriptor.from_mapping(item)
+            for item in data.get("adapters", [])
+        )
+        data["targets"] = tuple(
+            ResolvedAdapterTargetDescriptor.from_mapping(item)
+            for item in data.get("targets", [])
+        )
+        return data
+
+
 class AdapterInfo(FabricMapping):
     """Resolved adapter identity attached to a run plan.
 

@@ -397,7 +397,7 @@ fn rust_models(model: Option<&ModelConfig>) -> String {
         .map(|value| format!("Some({}.to_string())", rust_string(value)))
         .unwrap_or_else(|| "None".to_string());
     format!(
-        "BTreeMap::from_iter([(\"default\".to_string(), nemo_fabric_core::ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, top_p: {top_p}, max_tokens: {max_tokens}, api_key_env: {api_key}, base_url: {base_url}, settings: {}, extensions: BTreeMap::new() }})])",
+        "BTreeMap::from_iter([(\"default\".to_string(), nemo_fabric_core::ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, top_p: {top_p}, max_tokens: {max_tokens}, api_key_env: {api_key}, base_url: {base_url}, api: None, settings: {}, extensions: BTreeMap::new() }})])",
         rust_string(&model.provider),
         rust_string(&model.model),
         rust_settings(&model.settings),

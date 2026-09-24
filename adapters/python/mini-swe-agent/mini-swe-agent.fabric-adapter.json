@@ -16,6 +16,7 @@
       "max_tokens": {"type": "integer", "minimum": 1},
       "api_key_env": {"type": "string", "minLength": 1},
       "base_url": {"type": "string", "minLength": 1},
+      "api": {"enum": ["openai-completions"]},
       "settings": {
         "type": "object",
         "properties": {},
@@ -23,6 +24,7 @@
       }
     },
     "required": ["provider", "model"],
+    "allOf": [{"if": {"required": ["api"]}, "then": {"properties": {"provider": {"const": "openai"}}}}],
     "additionalProperties": false
   },
   "settings_schema": {
@@ -43,6 +45,7 @@
     "accepts": [
       "models",
       "models.base_url",
+      "models.api",
       "models.temperature",
       "models.top_p",
       "models.max_tokens",

@@ -464,10 +464,41 @@
       ],
       "type": "object"
     },
+    "ModelApi": {
+      "description": "Wire protocol spoken by a model endpoint.",
+      "oneOf": [
+        {
+          "const": "openai-completions",
+          "description": "OpenAI Chat Completions.",
+          "type": "string"
+        },
+        {
+          "const": "openai-responses",
+          "description": "OpenAI Responses.",
+          "type": "string"
+        },
+        {
+          "const": "anthropic-messages",
+          "description": "Anthropic Messages.",
+          "type": "string"
+        }
+      ]
+    },
     "ModelConfig": {
       "additionalProperties": true,
       "description": "Model configuration.",
       "properties": {
+        "api": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelApi"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional wire protocol spoken by the model endpoint.\n\nAdapters that accept `models.api` map it to their native provider\nconfiguration; their `model_schema` can restrict the supported values."
+        },
         "api_key_env": {
           "description": "Optional environment variable containing an API key.",
           "type": [

@@ -130,6 +130,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",
+        "models.api",
         "models.temperature",
         "models.top_p",
         "models.max_tokens",
@@ -1148,7 +1149,7 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
 
 def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
     assert (
-        adapter._artifact_root(
+        adapter.configuration.artifact_root(
             _runtime_context(artifact_root="run-artifacts"),
             str(tmp_path),
         )
@@ -1390,6 +1391,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         base_url=None,
         api_key="secret",
         provider="test-provider",
+        api_mode=None,
         model="test-model",
         max_iterations=90,
         enabled_toolsets=[],
@@ -1576,6 +1578,6 @@ def test_main_serves_persistent_runtime(monkeypatch):
     adapter.main()
 
     serve.assert_called_once_with(
-        adapter.HermesRuntime,
+        adapter.HermesModeRuntime,
         config_loader=AgentConfig.from_mapping,
     )
