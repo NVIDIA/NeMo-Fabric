@@ -84,7 +84,8 @@
   "config": {
     "accepts": [
       "models",
-      "models.base_url"
+      "models.base_url",
+      "models.api"
     ]
   },
   "capabilities": {

@@ -59,7 +59,7 @@ async def test_service_mode_persists_native_config_and_quarantines_failed_turn(
                     "model": "fixture",
                     "base_url": "https://fixture.invalid",
                     "api_key_env": "FIXTURE_KEY",
-                    "extensions": {"api": "openai-responses"},
+                    "api": "openai-responses",
                 }
             },
         }

@@ -1700,6 +1700,7 @@ def test_descriptor_has_no_codex_binary_requirement():
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",
+        "models.api",
         "instructions.system",
         "mcp",
         "mcp.auth.oauth2",

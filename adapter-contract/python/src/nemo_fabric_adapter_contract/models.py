@@ -150,6 +150,9 @@ class AgentModelConfig(AgentContractBlock):
     top_p: float | None = _optional()
     max_tokens: int | None = _optional()
     base_url: str | None = _optional()
+    api: Literal["openai-completions", "openai-responses", "anthropic-messages"] | None = (
+        _optional()
+    )
     settings: dict[str, JsonValue] = _json_dict()
 
     def _validate(self) -> None:

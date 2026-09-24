@@ -48,6 +48,12 @@ Legacy adapter descriptors that instead accept either name through
 descriptor-advertised normalized mapping takes precedence over this compatibility
 route.
 
+`models.<role>.api` states the wire protocol of the model endpoint:
+`openai-completions`, `openai-responses`, or `anthropic-messages`. Set it from
+what the endpoint speaks, not from the harness. Adapters that declare
+`models.api` map it natively and can restrict provider and protocol
+combinations; other adapters fail planning when it is configured.
+
 Omit `instructions.system` to preserve the harness's native system instruction.
 When present, `InstructionConfig.mode` defaults to `replace`; set it to
 `append` only when the selected adapter descriptor advertises that mode.

@@ -137,13 +137,117 @@ def install_fake_client(
 
 
 def test_claude_descriptor_is_narrow_and_versioned():
-    descriptor = json.loads((ROOT / "adapters/python/claude/claude.fabric-adapter.json").read_text())
-    assert descriptor["contract_version"] == "fabric.adapter/v1alpha2"
-    assert descriptor["adapter_id"] == "nvidia.fabric.claude"
-    assert descriptor["adapter_kind"] == "python"
-    assert descriptor["extension_schemas"]["model"]["properties"]["api"]["enum"] == ["anthropic-messages"]
-    assert descriptor["settings_schema"]["additionalProperties"] is False
-    assert descriptor["config"]["system_instruction_modes"] == ["replace", "append"]
+    descriptor_path = (
+        ROOT / "adapters" / "python" / "claude" / "claude.fabric-adapter.json"
+    )
+    descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+
+    assert descriptor == {
+        "contract_version": "fabric.adapter/v1alpha2",
+        "adapter_id": "nvidia.fabric.claude",
+        "adapter_kind": "python",
+        "runner": {
+            "module": "nemo_fabric_adapters.claude.adapter",
+        },
+        "model_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "minLength": 1},
+                "model": {"type": "string", "minLength": 1},
+                "temperature": {"type": "number"},
+                "api_key_env": {"type": "string", "minLength": 1},
+                "base_url": {"type": "string", "minLength": 1},
+                "api": {"enum": ["anthropic-messages"]},
+                "settings": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["provider", "model"],
+            "if": {
+                "properties": {"provider": {"const": "anthropic"}},
+                "required": ["provider"],
+            },
+            "else": {
+                "required": ["base_url", "api_key_env"],
+            },
+            "additionalProperties": False,
+        },
+        "settings_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "setting_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["user", "project", "local"],
+                    },
+                    "default": [],
+                    "description": "Claude settings scopes to load.",
+                },
+                "max_budget_usd": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": (
+                        "Maximum amount in US dollars that Claude may spend during "
+                        "one invocation."
+                    ),
+                },
+                "permission_mode": {
+                    "type": "string",
+                    "enum": [
+                        "default",
+                        "acceptEdits",
+                        "bypassPermissions",
+                        "plan",
+                        "dontAsk",
+                        "auto",
+                    ],
+                    "description": "Claude permission handling mode.",
+                },
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+        "extension_schemas": {
+            "run_error": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "subtype": {"type": "string"},
+                    "api_error_status": {"type": "integer"},
+                    "exit_code": {"type": "integer"},
+                    "timeout_seconds": {"type": "number", "minimum": 0},
+                },
+                "additionalProperties": False,
+            }
+        },
+        "config": {
+            "accepts": [
+                "models",
+                "models.base_url",
+                "models.api",
+                "instructions.system",
+                "runtime.max_turns",
+                "tools.enabled",
+                "tools.blocked",
+                "mcp",
+                "skills",
+            ],
+            "system_instruction_modes": ["replace", "append"],
+        },
+        "telemetry": {
+            "providers": {
+                "relay": {
+                    "outputs": ["atif", "otel", "openinference"],
+                    "integration_modes": ["hooks", "gateway"],
+                }
+            }
+        },
+    }
 
 
 @pytest.fixture(name="claude_payload")

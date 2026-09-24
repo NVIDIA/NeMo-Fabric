@@ -188,6 +188,7 @@ def test_bench_descriptor_is_a_closed_harness_adapter(tmp_path: Path):
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",
+        "models.api",
         "models.temperature",
         "instructions.system",
     ]

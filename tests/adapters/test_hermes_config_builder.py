@@ -96,7 +96,7 @@ def test_native_features_preserve_public_model_ownership():
                 "default": {
                     "provider": "openai",
                     "model": "test",
-                    "extensions": {"api": "openai-responses"},
+                    "api": "openai-responses",
                 }
             },
         }

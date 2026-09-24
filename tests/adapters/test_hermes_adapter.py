@@ -130,6 +130,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",
+        "models.api",
         "models.temperature",
         "models.top_p",
         "models.max_tokens",
@@ -141,7 +142,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "mcp.auth.oauth2",
         "skills",
     ]
-    assert "api" in descriptor["extension_schemas"]["model"]["properties"]
+    assert "model" not in descriptor["extension_schemas"]
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
 
 

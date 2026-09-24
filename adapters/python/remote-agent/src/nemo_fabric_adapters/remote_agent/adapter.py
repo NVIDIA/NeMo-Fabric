@@ -133,7 +133,7 @@ class RemoteAgentRuntime:
         context = contract.RuntimeContext.from_mapping(payload["runtime_context"])
         settings = config.harness.settings if config.harness is not None else {}
         model = _selected_model(config)
-        api = model.extensions.get("api")
+        api = model.api
         if api is not None and settings.get("api_type", api) != api:
             raise lifecycle.LifecycleError(
                 "remote_agent_invalid_configuration",

@@ -9,56 +9,25 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "provider": {
-        "type": "string",
-        "minLength": 1
-      },
-      "model": {
-        "type": "string",
-        "minLength": 1
-      },
-      "temperature": {
-        "type": "number"
-      },
-      "api_key_env": {
-        "type": "string",
-        "minLength": 1
-      },
-      "base_url": {
-        "type": "string",
-        "minLength": 1
-      },
+      "provider": {"type": "string", "minLength": 1},
+      "model": {"type": "string", "minLength": 1},
+      "temperature": {"type": "number"},
+      "api_key_env": {"type": "string", "minLength": 1},
+      "base_url": {"type": "string", "minLength": 1},
+      "api": {"enum": ["anthropic-messages"]},
       "settings": {
         "type": "object",
         "properties": {},
         "additionalProperties": false
-      },
-      "api": {
-        "type": "string",
-        "enum": [
-          "anthropic-messages"
-        ]
       }
     },
-    "required": [
-      "provider",
-      "model"
-    ],
+    "required": ["provider", "model"],
     "if": {
-      "properties": {
-        "provider": {
-          "const": "anthropic"
-        }
-      },
-      "required": [
-        "provider"
-      ]
+      "properties": {"provider": {"const": "anthropic"}},
+      "required": ["provider"]
     },
     "else": {
-      "required": [
-        "base_url",
-        "api_key_env"
-      ]
+      "required": ["base_url", "api_key_env"]
     },
     "additionalProperties": false
   },
@@ -70,11 +39,7 @@
         "type": "array",
         "items": {
           "type": "string",
-          "enum": [
-            "user",
-            "project",
-            "local"
-          ]
+          "enum": ["user", "project", "local"]
         },
         "default": [],
         "description": "Claude settings scopes to load."
@@ -105,31 +70,10 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "subtype": {
-          "type": "string"
-        },
-        "api_error_status": {
-          "type": "integer"
-        },
-        "exit_code": {
-          "type": "integer"
-        },
-        "timeout_seconds": {
-          "type": "number",
-          "minimum": 0
-        }
-      },
-      "additionalProperties": false
-    },
-    "model": {
-      "type": "object",
-      "properties": {
-        "api": {
-          "type": "string",
-          "enum": [
-            "anthropic-messages"
-          ]
-        }
+        "subtype": {"type": "string"},
+        "api_error_status": {"type": "integer"},
+        "exit_code": {"type": "integer"},
+        "timeout_seconds": {"type": "number", "minimum": 0}
       },
       "additionalProperties": false
     }
@@ -138,6 +82,7 @@
     "accepts": [
       "models",
       "models.base_url",
+      "models.api",
       "instructions.system",
       "runtime.max_turns",
       "tools.enabled",
@@ -145,23 +90,13 @@
       "mcp",
       "skills"
     ],
-    "system_instruction_modes": [
-      "replace",
-      "append"
-    ]
+    "system_instruction_modes": ["replace", "append"]
   },
   "telemetry": {
     "providers": {
       "relay": {
-        "outputs": [
-          "atif",
-          "otel",
-          "openinference"
-        ],
-        "integration_modes": [
-          "hooks",
-          "gateway"
-        ]
+        "outputs": ["atif", "otel", "openinference"],
+        "integration_modes": ["hooks", "gateway"]
       }
     }
   }

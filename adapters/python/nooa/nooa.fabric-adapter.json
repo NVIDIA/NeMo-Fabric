@@ -2,9 +2,7 @@
   "contract_version": "fabric.adapter/v1alpha2",
   "adapter_id": "nvidia.fabric.nooa",
   "adapter_kind": "python",
-  "target_types": [
-    "workflow"
-  ],
+  "target_types": ["workflow"],
   "runner": {
     "module": "nemo_fabric_adapters.nooa.adapter"
   },
@@ -12,96 +10,35 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "provider": {
-        "type": "string",
-        "minLength": 1
-      },
-      "model": {
-        "type": "string",
-        "minLength": 1
-      },
-      "temperature": {
-        "type": "number"
-      },
-      "api_key_env": {
-        "type": "string",
-        "minLength": 1
-      },
-      "base_url": {
-        "type": "string",
-        "minLength": 1
-      },
+      "provider": {"type": "string", "minLength": 1},
+      "model": {"type": "string", "minLength": 1},
+      "temperature": {"type": "number"},
+      "api_key_env": {"type": "string", "minLength": 1},
+      "base_url": {"type": "string", "minLength": 1},
+      "api": {"enum": ["openai-completions", "openai-responses"]},
       "settings": {
         "type": "object",
         "properties": {
           "client_type": {
             "type": "string",
-            "enum": [
-              "completion",
-              "responses"
-            ]
+            "enum": ["completion", "responses"]
           }
         },
         "additionalProperties": false
-      },
-      "api": {
-        "type": "string",
-        "enum": [
-          "openai-completions",
-          "openai-responses"
-        ]
       }
     },
-    "required": [
-      "provider",
-      "model"
-    ],
-    "additionalProperties": false,
+    "required": ["provider", "model"],
     "allOf": [
       {
-        "if": {
-          "required": [
-            "api"
-          ],
-          "properties": {
-            "api": {
-              "const": "openai-completions"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "provider": {
-              "enum": [
-                "openai",
-                "nvidia"
-              ]
-            }
-          }
-        }
+        "if": {"required": ["api"], "properties": {"api": {"const": "openai-completions"}}},
+        "then": {"properties": {"provider": {"enum": ["openai", "nvidia"]}}}
       },
       {
-        "if": {
-          "required": [
-            "api"
-          ],
-          "properties": {
-            "api": {
-              "const": "openai-responses"
-            }
-          }
-        },
-        "then": {
-          "properties": {
-            "provider": {
-              "enum": [
-                "openai"
-              ]
-            }
-          }
-        }
+        "if": {"required": ["api"], "properties": {"api": {"const": "openai-responses"}}},
+        "then": {"properties": {"provider": {"enum": ["openai"]}}}
       }
-    ]
+    ],
+    "additionalProperties": false
   },
   "settings_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -114,26 +51,18 @@
     "accepts": [
       "models",
       "models.base_url",
+      "models.api",
       "models.temperature",
       "instructions.system",
       "skills",
       "mcp"
     ],
-    "schema": {
-      "type": "object",
-      "required": [
-        "workflow"
-      ]
-    }
+    "schema": {"type": "object", "required": ["workflow"]}
   },
   "telemetry": {
     "providers": {
       "relay": {
-        "outputs": [
-          "atif",
-          "otel",
-          "openinference"
-        ]
+        "outputs": ["atif", "otel", "openinference"]
       }
     }
   },
@@ -142,20 +71,5 @@
     "service": false,
     "streaming": false,
     "updates": false
-  },
-  "extension_schemas": {
-    "model": {
-      "type": "object",
-      "properties": {
-        "api": {
-          "type": "string",
-          "enum": [
-            "openai-completions",
-            "openai-responses"
-          ]
-        }
-      },
-      "additionalProperties": false
-    }
   }
 }

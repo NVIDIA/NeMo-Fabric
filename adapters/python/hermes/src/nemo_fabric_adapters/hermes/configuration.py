@@ -73,7 +73,7 @@ def _api_key_env(model_config: AgentModelConfig) -> str:
 
 def api_mode(config: AgentConfig) -> str | None:
     model = _selected_model(config)
-    protocol = model.extensions.get("api")
+    protocol = model.api
     modes = {
         "openai-completions": "chat_completions",
         "openai-responses": "codex_responses",

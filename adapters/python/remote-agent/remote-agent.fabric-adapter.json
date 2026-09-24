@@ -50,73 +50,37 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "provider": {
-        "type": "string",
-        "minLength": 1
-      },
-      "model": {
-        "type": "string",
-        "minLength": 1
-      },
-      "api_key_env": {
-        "type": "string",
-        "minLength": 1
-      },
-      "temperature": {
-        "type": "number"
-      },
-      "top_p": {
-        "type": "number",
-        "minimum": 0,
-        "maximum": 1
-      },
-      "max_tokens": {
-        "type": "integer",
-        "minimum": 1
-      },
+      "provider": {"type": "string", "minLength": 1},
+      "model": {"type": "string", "minLength": 1},
+      "api_key_env": {"type": "string", "minLength": 1},
+      "temperature": {"type": "number"},
+      "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+      "max_tokens": {"type": "integer", "minimum": 1},
+      "base_url": {"type": "string", "minLength": 1},
+      "api": {"enum": ["openai-completions", "openai-responses", "anthropic-messages"]},
       "settings": {
         "type": "object",
         "properties": {
-          "max_tokens": {
-            "type": "integer",
-            "minimum": 1
-          }
+          "max_tokens": {"type": "integer", "minimum": 1}
         },
         "additionalProperties": false
-      },
-      "api": {
-        "type": "string",
-        "enum": [
-          "openai-completions",
-          "openai-responses",
-          "anthropic-messages"
-        ]
-      },
-      "base_url": {
-        "type": "string",
-        "pattern": "^https?://",
-        "minLength": 1
       }
     },
-    "required": [
-      "provider",
-      "model"
-    ],
+    "required": ["provider", "model"],
     "additionalProperties": false
   },
   "requirements": {},
   "config": {
     "accepts": [
       "models",
+      "models.base_url",
+      "models.api",
       "models.temperature",
       "models.top_p",
       "models.max_tokens",
-      "instructions.system",
-      "models.base_url"
+      "instructions.system"
     ],
-    "system_instruction_modes": [
-      "replace"
-    ]
+    "system_instruction_modes": ["replace"]
   },
   "capabilities": {
     "service": false,
@@ -127,29 +91,9 @@
   "telemetry": {
     "providers": {
       "relay": {
-        "outputs": [
-          "atof"
-        ],
-        "integration_modes": [
-          "remote_service"
-        ]
+        "outputs": ["atof"],
+        "integration_modes": ["remote_service"]
       }
-    }
-  },
-  "extension_schemas": {
-    "model": {
-      "type": "object",
-      "properties": {
-        "api": {
-          "type": "string",
-          "enum": [
-            "openai-completions",
-            "openai-responses",
-            "anthropic-messages"
-          ]
-        }
-      },
-      "additionalProperties": false
     }
   }
 }

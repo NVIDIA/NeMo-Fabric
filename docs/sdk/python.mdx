@@ -214,6 +214,7 @@ Relay subfields:
 | `models.<role>.model` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes |
+| `models.<role>.api` | `anthropic-messages` | `openai-responses` | `openai-completions` or `anthropic-messages`, matching the provider | Any; maps to Hermes `api_mode` | `openai-completions` with `openai` |
 | `models.<role>.temperature` | No | No | Yes | Yes | Yes |
 | `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared |
 | `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM |

@@ -204,7 +204,7 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
     api_key = os.environ[api_key_env]
 
     provider = model_config.provider
-    api = model_config.extensions.get("api")
+    api = model_config.api
     expected_api = (
         "openai-completions"
         if provider in OPENAI_COMPATIBLE_PROVIDERS

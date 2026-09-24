@@ -9,89 +9,40 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "provider": {
-        "type": "string",
-        "minLength": 1
-      },
-      "model": {
-        "type": "string",
-        "minLength": 1
-      },
-      "temperature": {
-        "type": "number"
-      },
-      "top_p": {
-        "type": "number",
-        "minimum": 0,
-        "maximum": 1
-      },
-      "max_tokens": {
-        "type": "integer",
-        "minimum": 1
-      },
-      "api_key_env": {
-        "type": "string",
-        "minLength": 1
-      },
-      "base_url": {
-        "type": "string",
-        "minLength": 1
-      },
+      "provider": {"type": "string", "minLength": 1},
+      "model": {"type": "string", "minLength": 1},
+      "temperature": {"type": "number"},
+      "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+      "max_tokens": {"type": "integer", "minimum": 1},
+      "api_key_env": {"type": "string", "minLength": 1},
+      "base_url": {"type": "string", "minLength": 1},
+      "api": {"enum": ["openai-completions", "anthropic-messages"]},
       "settings": {
         "type": "object",
         "properties": {},
         "additionalProperties": false
-      },
-      "api": {
-        "type": "string",
-        "enum": [
-          "openai-completions",
-          "anthropic-messages"
-        ]
       }
     },
-    "required": [
-      "provider",
-      "model"
-    ],
-    "additionalProperties": false,
+    "required": ["provider", "model"],
     "allOf": [
       {
-        "if": {
-          "required": [
-            "api"
-          ]
-        },
+        "if": {"required": ["api"]},
         "then": {
           "anyOf": [
             {
               "properties": {
-                "provider": {
-                  "enum": [
-                    "openai",
-                    "nvidia",
-                    "openai-compatible"
-                  ]
-                },
-                "api": {
-                  "const": "openai-completions"
-                }
+                "provider": {"enum": ["openai", "nvidia", "openai-compatible"]},
+                "api": {"const": "openai-completions"}
               }
             },
             {
-              "properties": {
-                "provider": {
-                  "const": "anthropic"
-                },
-                "api": {
-                  "const": "anthropic-messages"
-                }
-              }
+              "properties": {"provider": {"const": "anthropic"}, "api": {"const": "anthropic-messages"}}
             }
           ]
         }
       }
-    ]
+    ],
+    "additionalProperties": false
   },
   "settings_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -114,12 +65,7 @@
                   "minItems": 1,
                   "items": {
                     "type": "string",
-                    "enum": [
-                      "approve",
-                      "edit",
-                      "reject",
-                      "respond"
-                    ]
+                    "enum": ["approve", "edit", "reject", "respond"]
                   },
                   "description": "Human decisions allowed for this tool call."
                 },
@@ -132,9 +78,7 @@
                   "description": "JSON Schema for editable tool arguments."
                 }
               },
-              "required": [
-                "allowed_decisions"
-              ],
+              "required": ["allowed_decisions"],
               "additionalProperties": false
             }
           ]
@@ -180,11 +124,7 @@
             "description": "JSON Schema for this subagent's structured response."
           }
         },
-        "required": [
-          "name",
-          "description",
-          "system_prompt"
-        ],
+        "required": ["name", "description", "system_prompt"],
         "additionalProperties": false
       },
       "async_subagent": {
@@ -221,11 +161,7 @@
             "description": "Additional string-valued HTTP headers sent to the Agent Protocol server."
           }
         },
-        "required": [
-          "name",
-          "description",
-          "graph_id"
-        ],
+        "required": ["name", "description", "graph_id"],
         "additionalProperties": false
       }
     },
@@ -243,9 +179,7 @@
                 "description": "Selects the adapter-owned LocalShellBackend."
               }
             },
-            "required": [
-              "type"
-            ],
+            "required": ["type"],
             "additionalProperties": false,
             "description": "Optional backend selection. Local shell execution runs directly on the adapter host without process isolation."
           },
@@ -284,6 +218,7 @@
     "accepts": [
       "models",
       "models.base_url",
+      "models.api",
       "models.temperature",
       "models.top_p",
       "models.max_tokens",
@@ -294,40 +229,16 @@
       "mcp",
       "skills"
     ],
-    "system_instruction_modes": [
-      "replace"
-    ]
+    "system_instruction_modes": ["replace"]
   },
   "telemetry": {
     "providers": {
       "relay": {
-        "outputs": [
-          "atif",
-          "otel",
-          "openinference"
-        ]
+        "outputs": ["atif", "otel", "openinference"]
       },
       "native": {
-        "outputs": [
-          "otel",
-          "openinference"
-        ]
+        "outputs": ["otel", "openinference"]
       }
-    }
-  },
-  "extension_schemas": {
-    "model": {
-      "type": "object",
-      "properties": {
-        "api": {
-          "type": "string",
-          "enum": [
-            "openai-completions",
-            "anthropic-messages"
-          ]
-        }
-      },
-      "additionalProperties": false
     }
   }
 }

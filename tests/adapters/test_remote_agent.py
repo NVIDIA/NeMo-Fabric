@@ -511,7 +511,7 @@ async def test_public_model_endpoint_and_protocol_are_consumed(api_server, repo_
                     "provider": "openai",
                     "model": "fabric-echo",
                     "base_url": f"{api_server}/v1",
-                    "extensions": {"api": "openai-completions"},
+                    "api": "openai-completions",
                 }
             },
         }

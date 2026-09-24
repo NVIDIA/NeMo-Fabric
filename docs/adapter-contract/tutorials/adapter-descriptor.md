@@ -248,14 +248,17 @@ Review the canonical schema for exact fields, defaults, and constraints.
 
 </CardGroup>
 
-## Model protocol constraints
+## Model Protocols
 
-An adapter can declare a model `api` extension with
-`extension_schemas.model.properties.api`. The value passes unchanged to
-`AgentModelConfig.extensions.api`; the adapter owns native protocol mapping.
-When a declared extension also appears in `model_schema.properties`, planning
-validates it together with the standard model fields. This supports constraints
-such as provider and wire-protocol combinations without consumer-side lists.
+`models.<role>.api` is a normalized field for the wire protocol of the model
+endpoint: `openai-completions`, `openai-responses`, or `anthropic-messages`.
+Declare `models.api` in `config.accepts` when the adapter maps it to native
+provider configuration; the value reaches the adapter as `AgentModelConfig.api`.
+Because `model_schema` validates normalized model fields together, an adapter
+can restrict the protocols it speaks and the provider and protocol
+combinations it supports. For example, a harness that only speaks Anthropic
+Messages declares `"api": {"enum": ["anthropic-messages"]}`. Consumers set the
+protocol once and do not translate it per harness.
 
 Consumers planning for another environment, such as an image, can pass its
 `DescriptorCatalog` to the Rust `resolve_run_plan_from_descriptors` function.

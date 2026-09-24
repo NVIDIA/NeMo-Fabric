@@ -76,6 +76,10 @@ export type McpAuthenticationConfig =
  * OAuth client authentication method used at the token endpoint.
  */
 export type OAuthTokenEndpointAuthMethod = "none" | "client_secret_post" | "client_secret_basic";
+/**
+ * Wire protocol spoken by a model endpoint.
+ */
+export type ModelApi = "openai-completions" | "openai-responses" | "anthropic-messages";
 
 /**
  * Configuration projected southbound to one adapter target.
@@ -227,6 +231,10 @@ export interface AgentMcpServerConfig {
  * Configuration for one named model role projected to an adapter target.
  */
 export interface AgentModelConfig {
+  /**
+   * Optional wire protocol spoken by the model endpoint.
+   */
+  api?: ModelApi | null;
   /**
    * Environment variable containing the provider credential.
    */

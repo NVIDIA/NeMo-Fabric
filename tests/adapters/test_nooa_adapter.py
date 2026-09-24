@@ -213,6 +213,7 @@ def test_descriptor_and_registered_target_declare_the_shared_boundary():
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",
+        "models.api",
         "models.temperature",
         "instructions.system",
         "skills",
@@ -1874,7 +1875,7 @@ async def test_public_model_protocol_selects_native_client(
                 "default": {
                     "provider": "openai",
                     "model": "test",
-                    "extensions": {"api": api},
+                    "api": api,
                 }
             }
         }

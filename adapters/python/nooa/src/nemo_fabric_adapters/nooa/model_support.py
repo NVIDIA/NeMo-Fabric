@@ -107,7 +107,7 @@ async def build_models(config: AgentConfig) -> dict[str, Any]:
                 )
             settings = dict(model.settings)
             client_type = settings.pop("client_type", None)
-            api = model.extensions.get("api")
+            api = model.api
             if api is not None:
                 native_type = {
                     "openai-completions": "completion",

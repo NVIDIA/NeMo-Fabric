@@ -19,14 +19,7 @@
           },
           "effort": {
             "type": "string",
-            "enum": [
-              "none",
-              "minimal",
-              "low",
-              "medium",
-              "high",
-              "xhigh"
-            ],
+            "enum": ["none", "minimal", "low", "medium", "high", "xhigh"],
             "description": "Hermes model reasoning effort."
           }
         },
@@ -65,25 +58,11 @@
       },
       "api_mode": {
         "type": "string",
-        "enum": [
-          "chat_completions",
-          "codex_responses",
-          "anthropic_messages"
-        ],
+        "enum": ["chat_completions", "codex_responses", "anthropic_messages"],
         "description": "Explicit native Hermes wire protocol."
       },
-      "mode": {
-        "type": "string",
-        "enum": [
-          "sdk",
-          "service"
-        ],
-        "default": "sdk"
-      },
-      "home": {
-        "type": "string",
-        "minLength": 1
-      },
+      "mode": {"type": "string", "enum": ["sdk", "service"], "default": "sdk"},
+      "home": {"type": "string", "minLength": 1},
       "interfaces": {
         "type": "object",
         "additionalProperties": false,
@@ -91,42 +70,20 @@
           "api": {
             "type": "object",
             "additionalProperties": false,
-            "properties": {
-              "port": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 65535
-              }
-            }
+            "properties": {"port": {"type": "integer", "minimum": 1, "maximum": 65535}}
           },
           "dashboard": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "enabled": {
-                "type": "boolean"
-              },
-              "port": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 65535
-              },
-              "internalPort": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 65535
-              },
+              "enabled": {"type": "boolean"},
+              "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+              "internalPort": {"type": "integer", "minimum": 1, "maximum": 65535},
               "tui": {
                 "type": "object",
                 "additionalProperties": false,
-                "properties": {
-                  "enabled": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "enabled"
-                ]
+                "properties": {"enabled": {"type": "boolean"}},
+                "required": ["enabled"]
               }
             }
           }
@@ -136,18 +93,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "web": {
-            "type": "object"
-          },
-          "approvals": {
-            "type": "object"
-          },
-          "plugins": {
-            "type": "object"
-          },
-          "display": {
-            "type": "object"
-          }
+          "web": {"type": "object"},
+          "approvals": {"type": "object"},
+          "plugins": {"type": "object"},
+          "display": {"type": "object"}
         }
       }
     },
@@ -159,23 +108,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "provider": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
-    "model": {
-      "type": "object",
-      "properties": {
-        "api": {
-          "type": "string",
-          "enum": [
-            "openai-completions",
-            "openai-responses",
-            "anthropic-messages"
-          ]
-        }
+        "provider": {"type": "string"}
       },
       "additionalProperties": false
     }
@@ -184,6 +117,7 @@
     "accepts": [
       "models",
       "models.base_url",
+      "models.api",
       "models.temperature",
       "models.top_p",
       "models.max_tokens",
@@ -195,9 +129,7 @@
       "mcp.auth.oauth2",
       "skills"
     ],
-    "system_instruction_modes": [
-      "replace"
-    ]
+    "system_instruction_modes": ["replace"]
   },
   "telemetry": {
     "providers": {
