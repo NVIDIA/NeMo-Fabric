@@ -143,6 +143,11 @@ export type AdapterConfigSupport = {
    */
   generates?: string[];
   /**
+   * Optional adapter-owned JSON Schema over the complete public FabricConfig.
+   * Declares required selections and constraints spanning configuration areas.
+   */
+  schema?: JsonObject | null;
+  /**
    * Exact system-instruction modes supported by this adapter.
    *
    * An omitted value preserves compatibility with descriptors that predate

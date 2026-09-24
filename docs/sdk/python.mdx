@@ -23,25 +23,30 @@ For installation and a package-backed example, start with the
 
 ## Discover Adapters Before Configuration
 
-Call `Fabric.discover()` to inspect the canonical descriptors visible to the selected Python environment before constructing a complete `FabricConfig`. Each immutable `ResolvedAdapterDescriptor` contains the adapter's descriptor and all discovery provenance. Use its exact `adapter_id` for selection; filenames and package names do not define aliases.
+Call `Fabric.discover()` to inspect the adapters and targets that planning can select in the current Python environment, before you construct a complete `FabricConfig`. It returns an immutable `DescriptorCatalog`. Its `adapters` and `targets` contain one `ResolvedAdapterDescriptor` or `ResolvedAdapterTargetDescriptor` per identifier, with the canonical descriptor and every source that supplied it. Select adapters by their exact `adapter_id`; filenames and package names do not define aliases.
 
 ```python
 from nemo_fabric import DiscoveryConfig, Fabric
 
 fabric = Fabric()
-for record in fabric.discover():
-    descriptor = record.descriptor
+catalog = fabric.discover()
+for adapter in catalog.adapters:
+    descriptor = adapter.descriptor
     print(descriptor["adapter_id"], descriptor.get("settings_schema"))
-    print(record.provenance)
+    print(adapter.provenance)
+for target in catalog.targets:
+    print(target.descriptor["id"], target.descriptor["adapter_id"])
 
 # Add source descriptors during adapter development.
-records = fabric.discover(
+catalog = fabric.discover(
     discovery=DiscoveryConfig(local_paths=["./adapter-metadata"]),
     base_dir="/workspace/project",
 )
 ```
 
-Discovery uses the same registry as planning: bundled records, installed package records, and explicit local paths. Results are sorted by adapter ID. Identical records retain all provenance; conflicting records for an ID and malformed adapter records fail discovery. Adapter-owned schemas and extension fields retain their canonical values. Discovery does not import runners, start runtimes, install dependencies, or establish runtime readiness. Pass the chosen configuration to `plan()` for schema and capability validation, then use `doctor()` to check declared requirements.
+Discovery uses the same registry as planning: bundled descriptors, descriptors installed in the selected Python environment, and explicit local paths. Entries are sorted by identifier. Identical descriptors keep all of their sources. A conflicting or malformed descriptor makes discovery fail instead of disappearing from the catalog. Adapter-owned schemas and extension fields keep their canonical values. Discovery does not import runners, start runtimes, install dependencies, or establish runtime readiness. Pass the chosen configuration to `plan()` for schema and capability validation, then use `doctor()` to check declared requirements.
+
+`catalog.to_mapping()` is the JSON form of the Rust `DescriptorCatalog`. A Rust host can read a catalog where adapters are installed, such as inside an image, and plan elsewhere with `nemo_fabric_core::resolve_run_plan_from_descriptors`.
 
 ## Start With One Run
 

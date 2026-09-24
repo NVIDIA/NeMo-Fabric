@@ -51,13 +51,14 @@ from nemo_fabric.streaming import InvokeStream
 from nemo_fabric.types import AdapterInfo
 from nemo_fabric.types import ArtifactManifest
 from nemo_fabric.types import ArtifactRef
+from nemo_fabric.types import DescriptorCatalog
 from nemo_fabric.types import DoctorCheck
 from nemo_fabric.types import DoctorReport
 from nemo_fabric.types import ErrorInfo
 from nemo_fabric.types import FabricEvent
-from nemo_fabric.types import RunOutput
 from nemo_fabric.types import ResolvedAdapterDescriptor
 from nemo_fabric.types import ResolvedAdapterTargetDescriptor
+from nemo_fabric.types import RunOutput
 from nemo_fabric.types import RunPlan
 from nemo_fabric.types import RunResult
 from nemo_fabric.types import RunUsage
@@ -71,6 +72,7 @@ __all__ = [
     "AdapterInfo",
     "ArtifactManifest",
     "ArtifactRef",
+    "DescriptorCatalog",
     "DoctorCheck",
     "DoctorReport",
     "DiscoveryConfig",
@@ -108,10 +110,10 @@ __all__ = [
     "FabricNativeUnavailableError",
     "FabricRuntimeError",
     "FabricStateError",
-    "RunOutput",
-    "RunPlan",
     "ResolvedAdapterDescriptor",
     "ResolvedAdapterTargetDescriptor",
+    "RunOutput",
+    "RunPlan",
     "RunRequest",
     "RunResult",
     "RunUsage",

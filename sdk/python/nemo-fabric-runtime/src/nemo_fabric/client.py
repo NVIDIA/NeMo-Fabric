@@ -38,9 +38,8 @@ from nemo_fabric.streaming import (
     _with_stream_sink,
 )
 from nemo_fabric.types import (
+    DescriptorCatalog,
     DoctorReport,
-    ResolvedAdapterDescriptor,
-    ResolvedAdapterTargetDescriptor,
     RunPlan,
     RunResult,
     ServiceHandle,
@@ -81,69 +80,32 @@ class Fabric:
         *,
         discovery: DiscoveryConfig | None = None,
         base_dir: str | os.PathLike[str] | None = None,
-    ) -> tuple[ResolvedAdapterDescriptor, ...]:
-        """Enumerate canonical adapters using the same registry as planning.
+    ) -> DescriptorCatalog:
+        """Return the adapter and target descriptors that planning can select.
 
-        Results are sorted by exact adapter identifier and retain every source
-        for identical descriptors. Malformed or ambiguous adapter metadata
-        raises ``FabricConfigError``. Discovery does not import adapter runners,
-        start runtimes, or check whether declared requirements are installed.
+        The catalog uses the same registry as ``plan()``: bundled descriptors,
+        descriptors installed in the selected Python environment, and any
+        ``discovery.local_paths``. Entries are sorted by exact identifier and
+        keep every source of an identical descriptor. Malformed or ambiguous
+        metadata raises ``FabricConfigError``. Discovery does not import
+        adapter runners, start runtimes, or check whether declared requirements
+        are installed.
 
         Args:
-            discovery: Optional typed explicit local descriptor paths. Bundled
-                and selected Python environment descriptors are also included.
+            discovery: Optional typed explicit local descriptor paths.
             base_dir: Base directory for resolving relative paths.
         """
         native = self._require_native_module("discover")
         if discovery is not None and not isinstance(discovery, DiscoveryConfig):
             raise FabricConfigError("discovery must be a DiscoveryConfig")
         try:
-            raw = native.discover_adapters(
+            raw = native.discover_descriptors(
                 None
                 if discovery is None
                 else discovery.model_dump_json(exclude_none=True),
                 _base_dir_arg(base_dir),
             )
-            return tuple(
-                ResolvedAdapterDescriptor.from_mapping(item) for item in json.loads(raw)
-            )
-        except FabricError:
-            raise
-        except Exception as error:
-            raise FabricConfigError(str(error)) from error
-
-    def discover_targets(
-        self,
-        *,
-        discovery: DiscoveryConfig | None = None,
-        base_dir: str | os.PathLike[str] | None = None,
-    ) -> tuple[ResolvedAdapterTargetDescriptor, ...]:
-        """Enumerate canonical targets using the same registry as planning.
-
-        Results are sorted by exact target identifier and retain every source
-        for identical descriptors. Malformed or ambiguous adapter metadata
-        raises ``FabricConfigError``. Discovery does not import adapter runners,
-        start runtimes, or check whether declared requirements are installed.
-
-        Args:
-            discovery: Optional typed explicit local descriptor paths. Bundled
-                and selected Python environment descriptors are also included.
-            base_dir: Base directory for resolving relative paths.
-        """
-        native = self._require_native_module("discover")
-        if discovery is not None and not isinstance(discovery, DiscoveryConfig):
-            raise FabricConfigError("discovery must be a DiscoveryConfig")
-        try:
-            raw = native.discover_adapter_targets(
-                None
-                if discovery is None
-                else discovery.model_dump_json(exclude_none=True),
-                _base_dir_arg(base_dir),
-            )
-            return tuple(
-                ResolvedAdapterTargetDescriptor.from_mapping(item)
-                for item in json.loads(raw)
-            )
+            return DescriptorCatalog.from_mapping(json.loads(raw))
         except FabricError:
             raise
         except Exception as error:

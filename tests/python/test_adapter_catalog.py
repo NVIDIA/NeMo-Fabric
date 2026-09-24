@@ -3,7 +3,6 @@
 """Public discovery exposes the same canonical metadata used by planning."""
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -33,13 +32,16 @@ def isolated_installed_descriptor_root(monkeypatch, tmp_path):
     )
 
 
-def test_discovery_and_plan_share_settings_and_model_contracts(tmp_path):
-    os.environ.pop("ADAPTER_PYTHON", None)
-    discovery = DiscoveryConfig(local_paths=[FIXTURE])
-    records = Fabric().discover(discovery=discovery, base_dir=tmp_path)
-    record = next(
-        item for item in records if item.descriptor["adapter_id"] == ADAPTER_ID
+def _adapter(catalog):
+    return next(
+        item for item in catalog.adapters if item.descriptor["adapter_id"] == ADAPTER_ID
     )
+
+
+def test_discovery_and_plan_share_settings_and_model_contracts(tmp_path, monkeypatch):
+    monkeypatch.delenv("ADAPTER_PYTHON", raising=False)
+    discovery = DiscoveryConfig(local_paths=[FIXTURE])
+    record = _adapter(Fabric().discover(discovery=discovery, base_dir=tmp_path))
     assert "fabric_discovery_fixture" not in sys.modules
     assert (
         record.descriptor["settings_schema"]
@@ -84,15 +86,13 @@ def test_discovery_rejects_ambiguous_and_malformed_metadata(tmp_path):
 def test_discovery_deduplicates_identical_records_and_keeps_all_sources(tmp_path):
     duplicate = tmp_path / "renamed.fabric-adapter.json"
     duplicate.write_bytes(FIXTURE.read_bytes())
-    records = Fabric().discover(
+    catalog = Fabric().discover(
         discovery=DiscoveryConfig(local_paths=[FIXTURE, duplicate])
     )
-    record = next(
-        item for item in records if item.descriptor["adapter_id"] == ADAPTER_ID
-    )
+    record = _adapter(catalog)
     assert len(record.provenance) == 2
-    assert [item.descriptor["adapter_id"] for item in records] == sorted(
-        item.descriptor["adapter_id"] for item in records
+    assert [item.descriptor["adapter_id"] for item in catalog.adapters] == sorted(
+        item.descriptor["adapter_id"] for item in catalog.adapters
     )
     value = record.descriptor
     value["adapter_id"] = "mutated"
@@ -126,10 +126,7 @@ def test_discovery_uses_the_same_installed_root_as_planning(tmp_path, monkeypatc
             else original_get_path(name, *args, **kwargs)
         ),
     )
-    records = Fabric().discover()
-    record = next(
-        item for item in records if item.descriptor["adapter_id"] == ADAPTER_ID
-    )
+    record = _adapter(Fabric().discover())
     assert record.provenance[0]["source"] == "installed_package"
     config = FabricConfig.from_mapping(
         {
@@ -147,9 +144,9 @@ def test_discovery_rejects_missing_paths_and_untyped_configuration(tmp_path):
         Fabric().discover(discovery={"local_paths": []})
 
 
-async def test_fabric_only_adapter_runs_with_authored_settings(tmp_path):
-    os.environ["PYTHONPATH"] = str(FIXTURE.parent)
-    os.environ["ADAPTER_PYTHON"] = sys.executable
+async def test_fabric_only_adapter_runs_with_authored_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHONPATH", str(FIXTURE.parent))
+    monkeypatch.setenv("ADAPTER_PYTHON", sys.executable)
     config = FabricConfig.from_mapping(
         {
             "metadata": {"name": "fabric-only"},
@@ -169,16 +166,36 @@ async def test_fabric_only_adapter_runs_with_authored_settings(tmp_path):
     }
 
 
-def test_discovered_workflow_target_is_plannable_without_source_reconstruction():
-    records = Fabric().discover_targets()
+def test_discovered_workflow_target_is_plannable_without_source_reconstruction(
+    monkeypatch,
+):
+    monkeypatch.delenv("ADAPTER_PYTHON", raising=False)
+    catalog = Fabric().discover()
     target = next(
         item
-        for item in records
-        if item.to_mapping()["descriptor"]["id"] == "nvidia.nooa.coding-agent"
+        for item in catalog.targets
+        if item.descriptor["id"] == "nvidia.nooa.coding-agent"
     )
-    assert target.to_mapping()["provenance"]
-    assert target.to_mapping()["descriptor"]["adapter_id"] == "nvidia.fabric.nooa"
+    assert target.provenance
+    assert target.descriptor["adapter_id"] == "nvidia.fabric.nooa"
     config = FabricConfig.from_mapping(
-        {"metadata": {"name": "discovered-workflow"}, "workflow": {"target_id": "nvidia.nooa.coding-agent"}}
+        {
+            "metadata": {"name": "discovered-workflow"},
+            "workflow": {"target_id": "nvidia.nooa.coding-agent"},
+        }
     )
     assert Fabric().plan(config)["adapter_target_descriptor"] == target.to_mapping()
+
+
+def test_catalog_mapping_round_trips_for_snapshot_planning(tmp_path, monkeypatch):
+    monkeypatch.delenv("ADAPTER_PYTHON", raising=False)
+    catalog = Fabric().discover(
+        discovery=DiscoveryConfig(local_paths=[FIXTURE]), base_dir=tmp_path
+    )
+    mapping = catalog.to_mapping()
+    assert set(mapping) == {"adapters", "targets"}
+    assert type(catalog).from_mapping(json.loads(json.dumps(mapping))) == catalog
+    with pytest.raises(FabricConfigError, match="adapter provenance"):
+        type(catalog).from_mapping(
+            {"adapters": [{**mapping["adapters"][0], "provenance": []}]}
+        )

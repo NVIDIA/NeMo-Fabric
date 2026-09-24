@@ -257,8 +257,8 @@ When a declared extension also appears in `model_schema.properties`, planning
 validates it together with the standard model fields. This supports constraints
 such as provider and wire-protocol combinations without consumer-side lists.
 
-Consumers planning remote image metadata can call the Rust
-`resolve_run_plan_from_descriptors` function with an explicit inventory. It
-performs the same validation and does not discover local fallback adapters.
+Consumers planning for another environment, such as an image, can pass its
+`DescriptorCatalog` to the Rust `resolve_run_plan_from_descriptors` function.
+It performs the same validation and does not discover local fallback adapters.
 
-The optional `config.schema` is an adapter-owned JSON Schema over the complete public `FabricConfig`. Fabric validates it before native startup, using the same schema machinery as settings and model schemas. Use it for required selectors and constraints spanning configuration areas; for example NOOA declares `{"type":"object","required":["workflow"]}`. Consumers may inspect those required fields, but Fabric remains responsible for enforcing the schema.
+The optional `config.schema` is an adapter-owned JSON Schema over the complete public `FabricConfig`. NeMo Fabric validates it during planning, before native startup, with the same schema machinery as settings and model schemas. A failure reports the failing configuration path, such as `workflow`. Use it for required selections and constraints that span configuration areas; for example, NOOA declares `{"type":"object","required":["workflow"]}`. Consumers can inspect those requirements, but NeMo Fabric enforces the schema.

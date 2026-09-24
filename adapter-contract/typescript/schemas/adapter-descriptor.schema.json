@@ -98,6 +98,14 @@
           },
           "type": "array"
         },
+        "schema": {
+          "additionalProperties": true,
+          "description": "Optional adapter-owned JSON Schema over the complete public FabricConfig.\nDeclares required selections and constraints spanning configuration areas.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "system_instruction_modes": {
           "description": "Exact system-instruction modes supported by this adapter.\n\nAn omitted value preserves compatibility with descriptors that predate\nmode discovery and means `replace` when `instructions.system` is accepted.",
           "items": {

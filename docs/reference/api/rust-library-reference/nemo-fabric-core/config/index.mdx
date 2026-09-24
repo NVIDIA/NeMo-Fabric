@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "NeMo Fabric config models and loading helpers."
-position: 132
+position: 131
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -40,6 +40,7 @@ NeMo Fabric config models and loading helpers.
 - [CapabilityPlan](struct-capabilityplan.mdx): Resolved capability configuration.
 - [CapabilityRoute](struct-capabilityroute.mdx): One capability execution assignment.
 - [CapabilityTargetPlan](struct-capabilitytargetplan.mdx): Capabilities routed to one target.
+- [DescriptorCatalog](struct-descriptorcatalog.mdx): Adapter and target descriptors available for planning, with every source.
 - [DescriptorProvenance](struct-descriptorprovenance.mdx): One physical source for a discovered descriptor record.
 - [DiscoveryConfig](struct-discoveryconfig.mdx): Explicit descriptor discovery inputs.
 - [EnvironmentConfig](struct-environmentconfig.mdx): Execution environment configuration.
@@ -108,10 +109,8 @@ NeMo Fabric config models and loading helpers.
 
 ## Functions
 
-- [discover_adapter_targets_with_adapter_directories](fn-discover-adapter-targets-with-adapter-directories.mdx): Enumerate canonical workflow and agent targets from the planning registry.
-- [discover_adapters](fn-discover-adapters.mdx): Enumerate canonical adapter descriptors without selecting or starting a runtime.
-- [discover_adapters_with_adapter_directories](fn-discover-adapters-with-adapter-directories.mdx): Enumerate descriptors with the caller's installed package-data directories.
+- [discover_descriptors](fn-discover-descriptors.mdx): Discover every adapter and target descriptor that planning would see.
 - [load_adapter_descriptor](fn-load-adapter-descriptor.mdx): Load an adapter descriptor from JSON package metadata.
 - [load_adapter_target_descriptor](fn-load-adapter-target-descriptor.mdx): Load an Adapter Target Descriptor from declarative JSON metadata.
 - [resolve_run_plan_from_config](fn-resolve-run-plan-from-config.mdx): Resolve a typed NVIDIA NeMo Fabric config into a runnable plan.
-- [resolve_run_plan_from_descriptors](fn-resolve-run-plan-from-descriptors.mdx): Resolve configuration against an explicit descriptor snapshot.
+- [resolve_run_plan_from_descriptors](fn-resolve-run-plan-from-descriptors.mdx): Resolve configuration against an explicit descriptor catalog.

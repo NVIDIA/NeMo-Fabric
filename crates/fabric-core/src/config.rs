@@ -703,101 +703,124 @@ impl DescriptorRegistry {
             .iter()
             .find(|diagnostic| diagnostic.kind == kind && diagnostic.id.as_deref() == Some(id))
     }
-}
 
-/// Enumerate canonical adapter descriptors without selecting or starting a runtime.
-///
-/// Uses the same bundled and explicit-local registry as planning, ordered by exact
-/// adapter ID. Identical records retain all provenance; malformed or ambiguous
-/// adapter records fail discovery. Descriptor metadata does not prove readiness.
-pub fn discover_adapters(
-    discovery: Option<&DiscoveryConfig>,
-    context: ResolveContext,
-) -> Result<Vec<ResolvedAdapterDescriptor>> {
-    discover_adapters_with_adapter_directories(discovery, context, &[])
-}
-
-/// Enumerate descriptors with the caller's installed package-data directories.
-///
-/// Python callers supply the selected interpreter's `share/nemo-fabric` root.
-/// No adapter modules are imported and no dependencies are installed.
-pub fn discover_adapters_with_adapter_directories(
-    discovery: Option<&DiscoveryConfig>,
-    context: ResolveContext,
-    installed_roots: &[PathBuf],
-) -> Result<Vec<ResolvedAdapterDescriptor>> {
-    let registry = discovery_registry(discovery, &context, installed_roots)?;
-    if let Some(diagnostic) = registry
-        .diagnostics
-        .iter()
-        .find(|item| item.kind == DescriptorKind::Adapter)
-    {
-        return Err(FabricError::InvalidAdapterDescriptor {
-            path: diagnostic.path.clone(),
-            message: diagnostic.message.clone(),
-        });
-    }
-    registry
-        .adapters
-        .keys()
-        .map(|id| {
-            let record = registry.adapter(id)?;
-            Ok(ResolvedAdapterDescriptor {
-                provenance: record.provenance.clone(),
-                descriptor: record.descriptor.clone(),
-            })
-        })
-        .collect()
-}
-
-/// Enumerate canonical workflow and agent targets from the planning registry.
-pub fn discover_adapter_targets_with_adapter_directories(
-    discovery: Option<&DiscoveryConfig>,
-    context: ResolveContext,
-    installed_roots: &[PathBuf],
-) -> Result<Vec<ResolvedAdapterTargetDescriptor>> {
-    let registry = discovery_registry(discovery, &context, installed_roots)?;
-    if let Some(diagnostic) = registry
-        .diagnostics
-        .iter()
-        .find(|item| item.kind == DescriptorKind::Target)
-    {
-        return Err(FabricError::InvalidAdapterTargetDescriptor {
-            path: diagnostic.path.clone(),
-            message: diagnostic.message.clone(),
-        });
-    }
-    registry
-        .targets
-        .keys()
-        .map(|id| {
-            let record = registry.target(id)?;
-            Ok(ResolvedAdapterTargetDescriptor {
-                provenance: record.provenance.clone(),
-                descriptor: record.descriptor.clone(),
-            })
-        })
-        .collect()
-}
-
-fn discovery_registry(
-    discovery: Option<&DiscoveryConfig>,
-    context: &ResolveContext,
-    installed_roots: &[PathBuf],
-) -> Result<DescriptorRegistry> {
-    for (index, path) in discovery
-        .into_iter()
-        .flat_map(|discovery| &discovery.local_paths)
-        .enumerate()
-    {
-        if path.as_os_str().is_empty() {
-            return invalid_config(
-                format!("discovery.local_paths.{index}"),
-                "descriptor paths must not be empty",
-            );
+    /// Register exactly the supplied records, without scanning any location.
+    fn from_catalog(catalog: &DescriptorCatalog) -> Result<Self> {
+        let mut registry = Self::default();
+        for record in &catalog.adapters {
+            let Some(primary) = record.provenance.first() else {
+                return invalid_config("adapters.provenance", "must not be empty");
+            };
+            validate_adapter_descriptor_shape(&record.descriptor, &primary.path)?;
+            for provenance in &record.provenance {
+                Self::insert_record(
+                    &mut registry.adapters,
+                    record.descriptor.adapter_id.clone(),
+                    record.descriptor.clone(),
+                    provenance.clone(),
+                );
+            }
         }
+        for record in &catalog.targets {
+            let Some(primary) = record.provenance.first() else {
+                return invalid_config("targets.provenance", "must not be empty");
+            };
+            validate_adapter_target_descriptor_shape(&record.descriptor, &primary.path)?;
+            for provenance in &record.provenance {
+                Self::insert_record(
+                    &mut registry.targets,
+                    record.descriptor.id.clone(),
+                    record.descriptor.clone(),
+                    provenance.clone(),
+                );
+            }
+        }
+        Ok(registry)
     }
-    DescriptorRegistry::from_discovery(discovery, &context.base_dir, installed_roots)
+
+    /// Every canonical record, failing on malformed or ambiguous metadata.
+    fn catalog(&self) -> Result<DescriptorCatalog> {
+        if let Some(diagnostic) = self.diagnostics.first() {
+            let (path, message) = (diagnostic.path.clone(), diagnostic.message.clone());
+            return Err(match diagnostic.kind {
+                DescriptorKind::Adapter => FabricError::InvalidAdapterDescriptor { path, message },
+                DescriptorKind::Target => {
+                    FabricError::InvalidAdapterTargetDescriptor { path, message }
+                }
+            });
+        }
+        let adapters = self
+            .adapters
+            .keys()
+            .map(|id| {
+                let record = self.adapter(id)?;
+                Ok(ResolvedAdapterDescriptor {
+                    provenance: record.provenance.clone(),
+                    descriptor: record.descriptor.clone(),
+                })
+            })
+            .collect::<Result<_>>()?;
+        let targets = self
+            .targets
+            .keys()
+            .map(|id| {
+                let record = self.target(id)?;
+                Ok(ResolvedAdapterTargetDescriptor {
+                    provenance: record.provenance.clone(),
+                    descriptor: record.descriptor.clone(),
+                })
+            })
+            .collect::<Result<_>>()?;
+        Ok(DescriptorCatalog { adapters, targets })
+    }
+}
+
+/// Adapter and target descriptors available for planning, with every source.
+///
+/// [`discover_descriptors`] produces a catalog from the local registry, and
+/// [`resolve_run_plan_from_descriptors`] plans against one. A host can therefore
+/// read a catalog where adapters are installed, such as an image, and plan
+/// elsewhere with the same validation. Descriptor metadata does not establish
+/// that an adapter is installed or ready.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DescriptorCatalog {
+    /// Adapter descriptors, ordered by exact adapter ID.
+    #[serde(default)]
+    pub adapters: Vec<ResolvedAdapterDescriptor>,
+    /// Workflow and agent target descriptors, ordered by exact target ID.
+    #[serde(default)]
+    pub targets: Vec<ResolvedAdapterTargetDescriptor>,
+}
+
+/// Discover every adapter and target descriptor that planning would see.
+///
+/// Uses the bundled and `discovery.local_paths` registry without importing
+/// runners, installing dependencies, or starting a runtime. Identical records
+/// keep all of their sources; malformed or ambiguous records fail discovery
+/// rather than disappearing from the catalog.
+pub fn discover_descriptors(
+    discovery: Option<&DiscoveryConfig>,
+    context: ResolveContext,
+) -> Result<DescriptorCatalog> {
+    discover_descriptors_with_adapter_directories(discovery, context, &[])
+}
+
+/// Discover descriptors, including additional installed package-data roots.
+///
+/// This is an internal integration surface for hosts that know the selected
+/// environment's package data directories, such as the Python SDK. Callers
+/// should otherwise use [`discover_descriptors`].
+#[doc(hidden)]
+pub fn discover_descriptors_with_adapter_directories(
+    discovery: Option<&DiscoveryConfig>,
+    context: ResolveContext,
+    adapter_directories: &[PathBuf],
+) -> Result<DescriptorCatalog> {
+    if let Some(discovery) = discovery {
+        validate_discovery(discovery)?;
+    }
+    let base_dir = absolute_base_dir(context.base_dir)?;
+    DescriptorRegistry::from_discovery(discovery, &base_dir, adapter_directories)?.catalog()
 }
 
 fn descriptor_paths<T>(candidates: &[DescriptorRecord<T>]) -> Vec<PathBuf> {
@@ -1961,6 +1984,18 @@ pub fn load_adapter_target_descriptor(path: impl AsRef<Path>) -> Result<AdapterT
     Ok(descriptor)
 }
 
+fn validate_discovery(discovery: &DiscoveryConfig) -> Result<()> {
+    for (index, path) in discovery.local_paths.iter().enumerate() {
+        if path.to_string_lossy().trim().is_empty() {
+            return invalid_config(
+                format!("discovery.local_paths.{index}"),
+                "must contain at least one non-whitespace character",
+            );
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
     if config.harness.is_none() && config.workflow.is_none() {
         return invalid_config(
@@ -1979,14 +2014,7 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
         return invalid_config("workflow.target_id", "must be a non-empty string");
     }
     if let Some(discovery) = &config.discovery {
-        for (index, path) in discovery.local_paths.iter().enumerate() {
-            if path.to_string_lossy().trim().is_empty() {
-                return invalid_config(
-                    format!("discovery.local_paths.{index}"),
-                    "must contain at least one non-whitespace character",
-                );
-            }
-        }
+        validate_discovery(discovery)?;
     }
     if config.runtime.max_turns == Some(0) {
         return invalid_config("runtime.max_turns", "must be greater than zero");
@@ -2435,49 +2463,21 @@ pub fn resolve_run_plan_from_config(
     resolve_run_plan_from_config_with_adapter_directories(config, context, &[])
 }
 
-/// Resolve configuration against an explicit descriptor snapshot.
+/// Resolve configuration against an explicit descriptor catalog.
 ///
-/// Hosts use this for metadata read from a selected remote environment or image.
-/// Only the supplied inventory participates: this never scans local packages or
-/// `config.discovery` paths, imports runners, or starts a runtime. Validation and
-/// normalized configuration projection are identical to ordinary planning.
+/// Hosts use this with a catalog read from the selected environment or image,
+/// for example one produced there by [`discover_descriptors`]. Only the
+/// supplied catalog participates: this never scans bundled or installed
+/// descriptors or `config.discovery` paths, imports runners, or starts a
+/// runtime. Validation and configuration projection match ordinary planning.
 pub fn resolve_run_plan_from_descriptors(
     config: FabricConfig,
     context: ResolveContext,
-    adapters: &[ResolvedAdapterDescriptor],
-    targets: &[ResolvedAdapterTargetDescriptor],
+    catalog: &DescriptorCatalog,
 ) -> Result<RunPlan> {
     validate_config(&config)?;
     let base_dir = absolute_base_dir(context.base_dir)?;
-    let mut registry = DescriptorRegistry::default();
-    for record in adapters {
-        if record.provenance.is_empty() {
-            return invalid_config("descriptors.provenance", "must not be empty");
-        }
-        for provenance in &record.provenance {
-            validate_adapter_descriptor_shape(&record.descriptor, &provenance.path)?;
-            DescriptorRegistry::insert_record(
-                &mut registry.adapters,
-                record.descriptor.adapter_id.clone(),
-                record.descriptor.clone(),
-                provenance.clone(),
-            );
-        }
-    }
-    for record in targets {
-        if record.provenance.is_empty() {
-            return invalid_config("descriptors.provenance", "must not be empty");
-        }
-        for provenance in &record.provenance {
-            validate_adapter_target_descriptor_shape(&record.descriptor, &provenance.path)?;
-            DescriptorRegistry::insert_record(
-                &mut registry.targets,
-                record.descriptor.id.clone(),
-                record.descriptor.clone(),
-                provenance.clone(),
-            );
-        }
-    }
+    let registry = DescriptorRegistry::from_catalog(catalog)?;
     resolve_run_plan_with_registry(config, base_dir, &registry, true)
 }
 
@@ -2573,10 +2573,12 @@ fn resolve_run_plan_with_registry(
             .expect("validated descriptor schema");
         let value = serde_json::to_value(&config).expect("serializable public config");
         if let Some(error) = validator.iter_errors(&value).next() {
+            let field = schema_error_path(&error, "");
+            let field = field.trim_start_matches('.');
             return Err(FabricError::AdapterCompatibility {
                 adapter_id: resolved.descriptor.adapter_id.clone(),
-                field: "config.schema".to_string(),
-                reason: error.to_string(),
+                field: if field.is_empty() { "config" } else { field }.to_string(),
+                reason: schema_error_reason(&error, "adapter configuration schema"),
             });
         }
     }
@@ -3199,11 +3201,14 @@ pub(crate) fn validate_workflow(
             .keys()
             .min()
             .expect("non-empty settings have a key");
-        return invalid_workflow(
-            resolved,
-            format!("workflow.settings.{name}"),
-            "the resolved target descriptor does not declare a settings_schema",
-        );
+        return Err(FabricError::UnverifiedAdapterCapability {
+            adapter_id: resolved.descriptor.adapter_id.clone(),
+            field: format!("workflow.settings.{name}"),
+            reason: format!(
+                "target descriptor {} does not declare a settings_schema",
+                resolved.primary().path.display()
+            ),
+        });
     };
 
     let schema = Value::Object(schema.clone());
@@ -4278,33 +4283,80 @@ mod tests {
     use super::*;
 
     #[test]
-    fn public_discovery_uses_the_same_descriptor_and_constraints_as_planning() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/discovery");
+    fn discovered_catalog_plans_exactly_like_local_discovery() {
+        let root = repository_root().join("tests/fixtures/discovery");
         let discovery = DiscoveryConfig {
             local_paths: vec![root.clone()],
             extensions: BTreeMap::new(),
         };
-        let records = discover_adapters(Some(&discovery), ResolveContext::new(&root))
-            .expect("discover without loading runner");
+        let catalog = discover_descriptors(Some(&discovery), ResolveContext::new(&root))
+            .expect("discover without loading runners");
         assert!(
-            records
+            catalog
+                .adapters
                 .windows(2)
                 .all(|pair| pair[0].descriptor.adapter_id < pair[1].descriptor.adapter_id)
         );
-        let record = records
+        assert!(
+            catalog
+                .targets
+                .iter()
+                .any(|target| target.descriptor.id == "nvidia.nooa.coding-agent"),
+            "bundled targets are part of the same catalog"
+        );
+        let record = catalog
+            .adapters
             .iter()
             .find(|record| record.descriptor.adapter_id == "org.fabric.fixture.discoverable")
             .expect("new adapter discovered by exact ID");
+        assert_eq!(record.primary().source, DescriptorSource::ExplicitLocal);
+
         let mut config = typed_config("org.fabric.fixture.discoverable");
         config.skills = None;
-        config.discovery = Some(discovery);
         config.harness.as_mut().unwrap().settings =
             serde_json::from_value(serde_json::json!({"mode":"advanced", "budget":2})).unwrap();
-        let plan = resolve_run_plan_from_config(config.clone(), ResolveContext::new(&root))
+        let snapshot =
+            resolve_run_plan_from_descriptors(config.clone(), ResolveContext::new(&root), &catalog)
+                .expect("the discovered catalog is a complete planning input");
+        config.discovery = Some(discovery);
+        let local = resolve_run_plan_from_config(config.clone(), ResolveContext::new(&root))
             .expect("valid settings plan");
-        assert_eq!(&plan.adapter_descriptor.unwrap(), record);
+        assert_eq!(local.adapter_descriptor.as_ref(), Some(record));
+        assert_eq!(snapshot.adapter_descriptor, local.adapter_descriptor);
+
         config.harness.as_mut().unwrap().settings.remove("budget");
         assert!(resolve_run_plan_from_config(config, ResolveContext::new(&root)).is_err());
+    }
+
+    #[test]
+    fn discovery_fails_on_any_malformed_descriptor() {
+        struct RemoveDirOnDrop(PathBuf);
+
+        impl Drop for RemoveDirOnDrop {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let root = std::env::temp_dir().join(format!(
+            "nemo-fabric-malformed-target-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create descriptor root");
+        let _cleanup = RemoveDirOnDrop(root.clone());
+        let target = root.join("broken.fabric-target.json");
+        std::fs::write(&target, r#"{"id":"broken"}"#).expect("write malformed target");
+        let discovery = DiscoveryConfig {
+            local_paths: vec![target],
+            extensions: BTreeMap::new(),
+        };
+        let error = discover_descriptors(Some(&discovery), ResolveContext::new(&root))
+            .expect_err("a malformed target must not be silently omitted");
+        assert!(matches!(
+            error,
+            FabricError::InvalidAdapterTargetDescriptor { .. }
+        ));
     }
 
     #[test]
@@ -5374,7 +5426,14 @@ mod tests {
         let mut config = typed_config("nvidia.fabric.nooa");
         let error = resolve_run_plan_from_config(config.clone(), ResolveContext::new("."))
             .expect_err("NOOA requires a workflow selection before native startup");
-        assert!(error.to_string().contains("workflow"), "{error}");
+        assert!(
+            matches!(
+                &error,
+                FabricError::AdapterCompatibility { adapter_id, field, .. }
+                    if adapter_id == "nvidia.fabric.nooa" && field == "workflow"
+            ),
+            "config.schema failures report the configuration path: {error}"
+        );
         config.workflow = Some(
             serde_json::from_value(serde_json::json!({"target_id":"nvidia.nooa.coding-agent"}))
                 .unwrap(),
@@ -5394,26 +5453,21 @@ mod tests {
             "harness": {"adapter_id": "org.fabric.fixture.discoverable", "settings": {"mode": "advanced", "budget": 4}},
             "models": {"default": {"provider": "openai", "model": "fixture-model"}}
         })).unwrap();
-        let plan = resolve_run_plan_from_descriptors(
-            config.clone(),
-            ResolveContext::new("."),
-            std::slice::from_ref(&adapter),
-            &[],
-        )
-        .unwrap();
+        let catalog = DescriptorCatalog {
+            adapters: vec![adapter],
+            targets: Vec::new(),
+        };
+        let plan =
+            resolve_run_plan_from_descriptors(config.clone(), ResolveContext::new("."), &catalog)
+                .unwrap();
         assert_eq!(
             plan.config.harness.as_ref().unwrap().settings,
             config.harness.as_ref().unwrap().settings
         );
         config.harness.as_mut().unwrap().settings.remove("budget");
         assert!(
-            resolve_run_plan_from_descriptors(
-                config.clone(),
-                ResolveContext::new("."),
-                std::slice::from_ref(&adapter),
-                &[]
-            )
-            .is_err()
+            resolve_run_plan_from_descriptors(config.clone(), ResolveContext::new("."), &catalog)
+                .is_err()
         );
         config
             .harness
@@ -5423,17 +5477,16 @@ mod tests {
             .insert("budget".into(), serde_json::json!(4));
         config.models.get_mut("default").unwrap().model = "invalid".into();
         assert!(
-            resolve_run_plan_from_descriptors(
-                config.clone(),
-                ResolveContext::new("."),
-                &[adapter],
-                &[]
-            )
-            .is_err()
+            resolve_run_plan_from_descriptors(config.clone(), ResolveContext::new("."), &catalog)
+                .is_err()
         );
         config.harness.as_mut().unwrap().adapter_id = "nvidia.fabric.hermes".into();
         assert!(matches!(
-            resolve_run_plan_from_descriptors(config, ResolveContext::new("."), &[], &[]),
+            resolve_run_plan_from_descriptors(
+                config,
+                ResolveContext::new("."),
+                &DescriptorCatalog::default()
+            ),
             Err(FabricError::UnknownAdapter { .. })
         ));
     }
@@ -5453,14 +5506,12 @@ mod tests {
         descriptor.model_schema.as_mut().unwrap().insert("if".into(), serde_json::json!({"properties":{"provider":{"const":"openai"}},"required":["provider"]}));
         descriptor.model_schema.as_mut().unwrap().insert("then".into(), serde_json::json!({"properties":{"api":{"const":"openai-completions"}},"required":["api"]}));
         let config: FabricConfig = serde_json::from_value(serde_json::json!({"schema_version":"fabric.agent/v1alpha1","metadata":{"name":"api-check"},"runtime":{},"harness":{"adapter_id":"org.fabric.fixture.discoverable","settings":{"mode":"simple"}},"models":{"default":{"provider":"openai","model":"fixture-model","api":"openai-completions"}}})).unwrap();
-        let adapter = resolved_adapter(path, descriptor);
-        resolve_run_plan_from_descriptors(
-            config.clone(),
-            ResolveContext::new("."),
-            std::slice::from_ref(&adapter),
-            &[],
-        )
-        .unwrap();
+        let catalog = DescriptorCatalog {
+            adapters: vec![resolved_adapter(path, descriptor)],
+            targets: Vec::new(),
+        };
+        resolve_run_plan_from_descriptors(config.clone(), ResolveContext::new("."), &catalog)
+            .unwrap();
         let mut invalid = config;
         invalid
             .models
@@ -5469,8 +5520,7 @@ mod tests {
             .extensions
             .insert("api".into(), serde_json::json!("anthropic-messages"));
         assert!(
-            resolve_run_plan_from_descriptors(invalid, ResolveContext::new("."), &[adapter], &[])
-                .is_err()
+            resolve_run_plan_from_descriptors(invalid, ResolveContext::new("."), &catalog).is_err()
         );
     }
 
@@ -6998,8 +7048,8 @@ mod tests {
             .expect_err("settings without a target schema must fail");
         assert!(matches!(
             error,
-            FabricError::InvalidWorkflow { workflow_path, .. }
-                if workflow_path == "workflow.settings.llm_name"
+            FabricError::UnverifiedAdapterCapability { field, .. }
+                if field == "workflow.settings.llm_name"
         ));
 
         config.workflow.as_mut().expect("workflow").settings.clear();
