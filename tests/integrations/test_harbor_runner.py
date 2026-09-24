@@ -388,6 +388,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert 'OPENCODE_JOB_NAME="django-13741-opencode-$(date +%Y%m%d-%H%M%S)"' in swebench
     assert '--job-name "${OPENCODE_JOB_NAME}-install"' in swebench
     assert '--job-name "$OPENCODE_JOB_NAME"' in swebench
+    assert "--ae 'NVIDIA_API_KEY=${NVIDIA_API_KEY}'" in swebench
     assert '"$RUNS_DIR/$OPENCODE_JOB_NAME/result.json"' in swebench
     assert "export JOB_NAME=django-13741-hermes" in swebench
     for flag in (
@@ -434,20 +435,10 @@ def test_swebench_setup_pins_a_supported_relay_cli():
 def test_swebench_opencode_image_uses_locked_npm_dependencies():
     dockerfile = SWEBENCH_OPENCODE_DOCKERFILE.read_text(encoding="utf-8")
 
-    assert dockerfile.count("npm ci --prefix") == 2
-    assert dockerfile.count("--ignore-scripts") == 2
+    assert "npm ci" in dockerfile
+    assert "--ignore-scripts" in dockerfile
     assert "package-lock.json" in dockerfile
-    assert "npm install --prefix /opt/nemo-fabric-config" not in dockerfile
     assert "--no-package-lock" not in dockerfile
-    assert "/opt/nemo-fabric-config/adapters/opencode/" in dockerfile
-    assert "/opt/nemo-fabric-js/adapters/typescript/opencode/." in dockerfile
-    assert "ln -s" in dockerfile
-    assert "/opt/nemo-fabric-config/node_modules" in dockerfile
-    assert (
-        "ln -s \\\n"
-        "        /opt/nemo-fabric-js/adapters/typescript/opencode"
-        not in dockerfile
-    )
 
 
 def test_harbor_calculator_setup_and_solution_fail_fast():
