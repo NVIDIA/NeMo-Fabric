@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fabric-discovery-fixture"
+version = "0.0.1"
+description = "Credential-free Fabric-owned discovery integration fixture"
+requires-python = ">=3.11"
+
+[tool.setuptools]
+py-modules = ["fabric_discovery_fixture"]
+
+[tool.setuptools.data-files]
+"share/nemo-fabric/adapters/discovery-fixture" = ["future.fabric-adapter.json"]

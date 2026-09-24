@@ -20,7 +20,7 @@ from nemo_fabric.errors import (
     FabricNativeUnavailableError,
     FabricRuntimeError,
 )
-from nemo_fabric.models import FabricConfig, RunRequest
+from nemo_fabric.models import DiscoveryConfig, FabricConfig, RunRequest
 from nemo_fabric.runtime import (
     Runtime,
     _call_blocking,
@@ -35,6 +35,8 @@ from nemo_fabric.streaming import (
 )
 from nemo_fabric.types import (
     DoctorReport,
+    ResolvedAdapterDescriptor,
+    ResolvedAdapterTargetDescriptor,
     RunPlan,
     RunResult,
 )
@@ -64,6 +66,79 @@ class Fabric:
 
     def __init__(self) -> None:
         pass
+
+    def discover(
+        self,
+        *,
+        discovery: DiscoveryConfig | None = None,
+        base_dir: str | os.PathLike[str] | None = None,
+    ) -> tuple[ResolvedAdapterDescriptor, ...]:
+        """Enumerate canonical adapters using the same registry as planning.
+
+        Results are sorted by exact adapter identifier and retain every source
+        for identical descriptors. Malformed or ambiguous adapter metadata
+        raises ``FabricConfigError``. Discovery does not import adapter runners,
+        start runtimes, or check whether declared requirements are installed.
+
+        Args:
+            discovery: Optional typed explicit local descriptor paths. Bundled
+                and selected Python environment descriptors are also included.
+            base_dir: Base directory for resolving relative paths.
+        """
+        native = self._require_native_module("discover")
+        if discovery is not None and not isinstance(discovery, DiscoveryConfig):
+            raise FabricConfigError("discovery must be a DiscoveryConfig")
+        try:
+            raw = native.discover_adapters(
+                None
+                if discovery is None
+                else discovery.model_dump_json(exclude_none=True),
+                _base_dir_arg(base_dir),
+            )
+            return tuple(
+                ResolvedAdapterDescriptor.from_mapping(item) for item in json.loads(raw)
+            )
+        except FabricError:
+            raise
+        except Exception as error:
+            raise FabricConfigError(str(error)) from error
+
+    def discover_targets(
+        self,
+        *,
+        discovery: DiscoveryConfig | None = None,
+        base_dir: str | os.PathLike[str] | None = None,
+    ) -> tuple[ResolvedAdapterTargetDescriptor, ...]:
+        """Enumerate canonical targets using the same registry as planning.
+
+        Results are sorted by exact target identifier and retain every source
+        for identical descriptors. Malformed or ambiguous adapter metadata
+        raises ``FabricConfigError``. Discovery does not import adapter runners,
+        start runtimes, or check whether declared requirements are installed.
+
+        Args:
+            discovery: Optional typed explicit local descriptor paths. Bundled
+                and selected Python environment descriptors are also included.
+            base_dir: Base directory for resolving relative paths.
+        """
+        native = self._require_native_module("discover")
+        if discovery is not None and not isinstance(discovery, DiscoveryConfig):
+            raise FabricConfigError("discovery must be a DiscoveryConfig")
+        try:
+            raw = native.discover_adapter_targets(
+                None
+                if discovery is None
+                else discovery.model_dump_json(exclude_none=True),
+                _base_dir_arg(base_dir),
+            )
+            return tuple(
+                ResolvedAdapterTargetDescriptor.from_mapping(item)
+                for item in json.loads(raw)
+            )
+        except FabricError:
+            raise
+        except Exception as error:
+            raise FabricConfigError(str(error)) from error
 
     def plan(
         self,
@@ -278,9 +353,7 @@ class Fabric:
                     runtime_config = config.model_copy(deep=True)
                 runtime_stream_sink = _configured_stream_sink(runtime_config)
                 if runtime_stream_sink is not None:
-                    runtime_stream_sink.url = (
-                        f"{collector_client.base_url}/v1/atof"
-                    )
+                    runtime_stream_sink.url = f"{collector_client.base_url}/v1/atof"
             except asyncio.CancelledError:
                 await close_streaming_resources()
                 raise

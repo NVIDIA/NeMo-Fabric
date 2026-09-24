@@ -19,7 +19,14 @@
           },
           "effort": {
             "type": "string",
-            "enum": ["none", "minimal", "low", "medium", "high", "xhigh"],
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
             "description": "Hermes model reasoning effort."
           }
         },
@@ -55,6 +62,93 @@
         "exclusiveMinimum": 0,
         "default": 60,
         "description": "Maximum number of seconds for a Hermes terminal operation."
+      },
+      "api_mode": {
+        "type": "string",
+        "enum": [
+          "chat_completions",
+          "codex_responses",
+          "anthropic_messages"
+        ],
+        "description": "Explicit native Hermes wire protocol."
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "sdk",
+          "service"
+        ],
+        "default": "sdk"
+      },
+      "home": {
+        "type": "string",
+        "minLength": 1
+      },
+      "interfaces": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "api": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              }
+            }
+          },
+          "dashboard": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "internalPort": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "tui": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "native_config": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "web": {
+            "type": "object"
+          },
+          "approvals": {
+            "type": "object"
+          },
+          "plugins": {
+            "type": "object"
+          },
+          "display": {
+            "type": "object"
+          }
+        }
       }
     },
     "required": [],
@@ -65,7 +159,23 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "provider": {"type": "string"}
+        "provider": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "model": {
+      "type": "object",
+      "properties": {
+        "api": {
+          "type": "string",
+          "enum": [
+            "openai-completions",
+            "openai-responses",
+            "anthropic-messages"
+          ]
+        }
       },
       "additionalProperties": false
     }
@@ -85,7 +195,9 @@
       "mcp.auth.oauth2",
       "skills"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": [
+      "replace"
+    ]
   },
   "telemetry": {
     "providers": {

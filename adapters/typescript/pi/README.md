@@ -229,3 +229,11 @@ create divergent implementations.
 
 `typescript` and `@types/node` are exact-pinned build inputs and are absent from
 the published production dependency graph.
+
+## Declared model roles
+
+Native custom model fields live in `models.<role>.settings.model_metadata`. The
+adapter loads and validates them through Pi's native model loader. A model `api`
+extension selects the wire protocol. Models use separate credential namespaces.
+Invoke with `{ "prompt": "...", "model": "<role>" }` to select a declared role
+without losing conversation history; ordinary text uses the current session.

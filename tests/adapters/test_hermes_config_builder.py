@@ -68,3 +68,51 @@ def test_write_hermes_config_round_trips_without_pyyaml(
     )
 
     assert json.loads(config_path.read_text(encoding="utf-8")) == config
+
+
+def test_explicit_native_api_mode_is_preserved_in_hermes_configuration():
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {"api_mode": "codex_responses"}},
+            "models": {"default": {"provider": "openai", "model": "test-model"}},
+        }
+    )
+    assert (
+        configuration.build_hermes_config(config, workspace=".")["model"]["api_mode"]
+        == "codex_responses"
+    )
+
+
+def test_native_features_preserve_public_model_ownership():
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {
+                "settings": {
+                    "native_config": {"web": {"backend": "tavily"}},
+                    "interfaces": {"api": {"port": 8765}},
+                }
+            },
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "test",
+                    "extensions": {"api": "openai-responses"},
+                }
+            },
+        }
+    )
+    native = configuration.build_hermes_config(config, workspace="/workspace")
+    assert native["web"] == {"backend": "tavily"}
+    assert native["model"]["api_mode"] == "codex_responses"
+
+
+def test_service_tool_allowlist_reaches_native_api_server():
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {"mode": "service"}},
+            "models": {"default": {"provider": "openai", "model": "test"}},
+            "tools": {"enabled": ["terminal"]},
+        }
+    )
+    native = configuration.build_hermes_config(config, workspace=".")
+    assert native["platform_toolsets"]["api_server"] == ["terminal"]

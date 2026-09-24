@@ -52,8 +52,7 @@ all provenance. Different records with the same ID are ambiguous and fail
 planning. Explicit paths that do not exist, files with an unrecognized suffix,
 and malformed records fail when selection depends on them.
 
-The v1alpha2 registry resolves adapters and targets by exact ID. It does not
-provide a human-facing catalog or presentation metadata.
+The v1alpha2 registry resolves adapters and targets by exact ID. `Fabric.discover()` enumerates canonical Adapter Descriptors and provenance without requiring a complete configuration. `Fabric.discover_targets()` enumerates target descriptors through the same registry. Snapshot consumers pass both lists unchanged to `resolve_run_plan_from_descriptors`; missing targets never fall back to the consumer filesystem. Enumeration fails for malformed or ambiguous adapter records, because every returned adapter must resolve unambiguously. It does not supply presentation metadata, import adapter runners, or check runtime readiness.
 
 Planning performs these steps before target code starts:
 

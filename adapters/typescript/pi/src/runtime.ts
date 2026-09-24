@@ -24,6 +24,7 @@ export interface PiPromptOutcome {
 export interface PiSessionHandle {
   readonly relay?: PiRelayRuntime;
   prompt(text: string): Promise<PiPromptOutcome>;
+  selectModel?(name: string): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -84,15 +85,19 @@ export class PiAdapterRuntime implements AdapterRuntime {
     if (this.unusable) {
       throw new LifecycleError("pi_runtime_unusable", "Pi adapter runtime cannot accept another invocation");
     }
-    if (typeof request.input !== "string") {
-      return withRelayOutput(
-        failed("pi_unsupported_input", "The Pi adapter accepts only plain-text input"),
-        this.session.relay,
-      );
-    }
-
     const relay = this.session.relay;
-    const outcome = await this.session.prompt(request.input);
+    let prompt = request.input;
+    if (typeof prompt === "object" && prompt !== null && !Array.isArray(prompt)
+        && Object.keys(prompt).length === 2 && typeof prompt.prompt === "string"
+        && typeof prompt.model === "string" && this.session.selectModel) {
+      try { await this.session.selectModel(prompt.model); }
+      catch { return withRelayOutput(failed("pi_model_selection_failed", "The requested Pi model choice could not be selected"), relay); }
+      prompt = prompt.prompt;
+    }
+    if (typeof prompt !== "string") {
+      return withRelayOutput(failed("pi_unsupported_input", "Pi requires text or an object containing prompt and model"), relay);
+    }
+    const outcome = await this.session.prompt(prompt);
     if (!outcome.accepted) {
       return withRelayOutput(failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"), relay);
     }

@@ -29,7 +29,7 @@ That system is the **Adapter Target**.
 
 **Consumers** use the Python SDK and typed `FabricConfig` to compose experiment
 variants, plan and run targets, and receive normalized results, artifact
-manifests, and telemetry references.
+manifests, and telemetry references. `Fabric.discover()` enumerates canonical adapter descriptors and their sources before a consumer selects an adapter or supplies its settings.
 
 **Adapter developers** use the versioned adapter contract to receive
 `AgentConfig`, `RuntimeContext`, and `AgentRunRequest`, translate the Fabric
@@ -298,3 +298,9 @@ harnesses and custom agents. Use these references to compare and build them:
   capability-aware errors.
 - **Composable sub-agent configuration:** Allow supported harnesses to
   configure sub-agents through validated Fabric configuration.
+
+Adapter discovery exposes canonical schemas through `Fabric.discover()`. Rust
+consumers can validate a remote descriptor snapshot with
+`resolve_run_plan_from_descriptors`, preserving missing native metadata as an
+explicit unverified capability. The [adapter guide](adapters/README.md) includes
+OpenClaw gateway ownership and Hermes native API/dashboard mode.

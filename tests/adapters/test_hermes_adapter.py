@@ -141,7 +141,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "mcp.auth.oauth2",
         "skills",
     ]
-    assert "model" not in descriptor["extension_schemas"]
+    assert "api" in descriptor["extension_schemas"]["model"]["properties"]
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
 
 
@@ -523,7 +523,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
                 "transport": "sse",
             },
         },
-        "platform_toolsets": {"cli": ["git"]},
+        "platform_toolsets": {"cli": ["git"], "api_server": ["git"]},
         "plugins": {"enabled": ["custom/plugin", "observability/nemo_relay"]},
     }
 
@@ -652,7 +652,10 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
             "transport": "streamable-http",
         },
     }
-    assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
+    assert config["platform_toolsets"] == {
+        "cli": ["git", "shell"],
+        "api_server": ["git", "shell"],
+    }
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
     assert observability["atof"]["sinks"][0]["output_directory"] == str(
         tmp_path / "relay" / "atof" / "runtime-matrix"
@@ -1073,7 +1076,7 @@ def test_summarize_hermes_config():
             "skills": {"external_dirs": ["skills"]},
             "mcp_servers": {"z": {}, "a": {}},
             "plugins": {"enabled": ["observability/nemo_relay"]},
-            "platform_toolsets": {"cli": ["git"]},
+            "platform_toolsets": {"cli": ["git"], "api_server": ["git"]},
         }
     ) == {
         "model": {"default": "demo"},
@@ -1081,7 +1084,7 @@ def test_summarize_hermes_config():
         "skill_dirs": ["skills"],
         "mcp_servers": ["a", "z"],
         "plugins": ["observability/nemo_relay"],
-        "platform_toolsets": {"cli": ["git"]},
+        "platform_toolsets": {"cli": ["git"], "api_server": ["git"]},
         "disabled_toolsets": [],
     }
 
@@ -1390,6 +1393,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         base_url=None,
         api_key="secret",
         provider="test-provider",
+        api_mode=None,
         model="test-model",
         max_iterations=90,
         enabled_toolsets=[],
@@ -1576,6 +1580,6 @@ def test_main_serves_persistent_runtime(monkeypatch):
     adapter.main()
 
     serve.assert_called_once_with(
-        adapter.HermesRuntime,
+        adapter.HermesModeRuntime,
         config_loader=AgentConfig.from_mapping,
     )

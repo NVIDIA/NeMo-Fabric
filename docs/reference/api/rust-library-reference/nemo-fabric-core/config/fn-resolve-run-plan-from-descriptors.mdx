@@ -1,0 +1,16 @@
+---
+title: "Function resolve_run_plan_from_descriptors"
+sidebar-title: "resolve_run_plan_from_descriptors"
+description: "Resolve configuration against an explicit descriptor snapshot."
+position: 77
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn resolve_run_plan_from_descriptors(\n    config: <a href=\"struct-fabricconfig.mdx\">FabricConfig</a>,\n    context: <a href=\"struct-resolvecontext.mdx\">ResolveContext</a>,\n    adapters: &amp;[<a href=\"struct-resolvedadapterdescriptor.mdx\">ResolvedAdapterDescriptor</a>],\n    targets: &amp;[<a href=\"struct-resolvedadaptertargetdescriptor.mdx\">ResolvedAdapterTargetDescriptor</a>],\n) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"struct-runplan.mdx\">RunPlan</a>&gt;"}} /></pre>
+
+Resolve configuration against an explicit descriptor snapshot.
+
+Hosts use this for metadata read from a selected remote environment or image. Only the supplied inventory participates: this never scans local packages or `config.discovery` paths, imports runners, or starts a runtime. Validation and normalized configuration projection are identical to ordinary planning.

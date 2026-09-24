@@ -383,3 +383,9 @@ config.enable_relay(
     ),
 )
 ```
+
+The optional Brave MCP integration runs as
+`python -m nemo_fabric_adapters.deepagents.brave_search` with a deployment-provided
+`BRAVE_API_KEY`. Declare it through Fabric's public MCP server configuration.
+The adapter declares supported `model.api` protocol extensions and rejects
+incompatible provider/protocol combinations during planning.

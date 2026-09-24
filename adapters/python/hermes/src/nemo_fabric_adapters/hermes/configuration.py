@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -70,6 +71,24 @@ def _api_key_env(model_config: AgentModelConfig) -> str:
     return default
 
 
+def api_mode(config: AgentConfig) -> str | None:
+    model = _selected_model(config)
+    protocol = model.extensions.get("api")
+    modes = {
+        "openai-completions": "chat_completions",
+        "openai-responses": "codex_responses",
+        "anthropic-messages": "anthropic_messages",
+    }
+    native = _settings(config).get("api_mode")
+    if protocol is None:
+        return native
+    if protocol not in modes:
+        raise ValueError("unsupported Hermes model API")
+    if native is not None and native != modes[protocol]:
+        raise ValueError("Hermes api_mode conflicts with the model API")
+    return modes[protocol]
+
+
 def disabled_toolsets(config: AgentConfig) -> list[str]:
     return config.tools.blocked if config.tools is not None else []
 
@@ -93,6 +112,7 @@ def build_hermes_config(
                 "provider": model_config.provider,
                 "default": model_config.model,
                 "base_url": model_config.base_url,
+                "api_mode": api_mode(agent_config),
             }
         ),
         "agent": common_utils.without_none(
@@ -110,6 +130,21 @@ def build_hermes_config(
         ),
     }
 
+    if settings.get("mode") == "service" and model_config.base_url:
+        # Hermes service auth resolves provider IDs independently of AIAgent.
+        # Register the explicit endpoint using Hermes' native provider contract;
+        # retain an environment reference rather than persisting its secret.
+        config["model"]["provider"] = "custom:fabric"
+        config["providers"] = {
+            "fabric": common_utils.without_none(
+                {
+                    "base_url": model_config.base_url,
+                    "api_mode": api_mode(agent_config),
+                    "key_env": _api_key_env(model_config),
+                }
+            )
+        }
+
     skill_dirs = (
         [str(path) for path in agent_config.skills.paths]
         if agent_config.skills is not None
@@ -126,7 +161,10 @@ def build_hermes_config(
         }
 
     if enabled_toolsets is not None:
-        config["platform_toolsets"] = {"cli": enabled_toolsets}
+        config["platform_toolsets"] = {
+            "cli": enabled_toolsets,
+            "api_server": enabled_toolsets,
+        }
 
     plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
     if relay_enabled and "observability/nemo_relay" not in plugins:
@@ -134,6 +172,13 @@ def build_hermes_config(
     if plugins:
         config["plugins"] = {"enabled": plugins}
 
+    native = settings.get("native_config", {})
+    conflicts = set(native) & set(config)
+    if conflicts:
+        raise ValueError(
+            f"native_config conflicts with Fabric-owned fields: {sorted(conflicts)}"
+        )
+    config.update(copy.deepcopy(native))
     return config
 
 

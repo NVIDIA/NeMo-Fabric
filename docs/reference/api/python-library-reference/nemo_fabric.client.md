@@ -42,6 +42,54 @@ def __init__() -> None
 ---
 
 
+### <kbd>method</kbd> `discover`
+
+```python
+def discover(
+    *,
+    discovery: DiscoveryConfig | None = None,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> tuple[ResolvedAdapterDescriptor, ...]
+```
+
+Enumerate canonical adapters using the same registry as planning.
+
+Results are sorted by exact adapter identifier and retain every source for identical descriptors. Malformed or ambiguous adapter metadata raises ``FabricConfigError``. Discovery does not import adapter runners, start runtimes, or check whether declared requirements are installed.
+
+
+
+**Args:**
+
+ - <b>`discovery`</b>:  Optional typed explicit local descriptor paths. Bundled  and selected Python environment descriptors are also included.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths.
+
+---
+
+
+### <kbd>method</kbd> `discover_targets`
+
+```python
+def discover_targets(
+    *,
+    discovery: DiscoveryConfig | None = None,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> tuple[ResolvedAdapterTargetDescriptor, ...]
+```
+
+Enumerate canonical targets using the same registry as planning.
+
+Results are sorted by exact target identifier and retain every source for identical descriptors. Malformed or ambiguous adapter metadata raises ``FabricConfigError``. Discovery does not import adapter runners, start runtimes, or check whether declared requirements are installed.
+
+
+
+**Args:**
+
+ - <b>`discovery`</b>:  Optional typed explicit local descriptor paths. Bundled  and selected Python environment descriptors are also included.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths.
+
+---
+
+
 ### <kbd>method</kbd> `doctor`
 
 ```python

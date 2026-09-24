@@ -291,3 +291,8 @@ Complete these checks before handing off an adapter:
 
 Do not claim automated NeMo Fabric conformance until the published conformance
 suite exists and the exact adapter release passes it.
+
+Model protocol extensions belong to adapters. Declare `api` in
+`extension_schemas.model`; include it in `model_schema.properties` when native
+model/provider constraints depend on it. Fabric passes it unchanged through
+`AgentModelConfig.extensions.api`. Consumers should not translate native APIs.

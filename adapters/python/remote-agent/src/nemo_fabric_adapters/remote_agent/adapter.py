@@ -131,14 +131,28 @@ class RemoteAgentRuntime:
         config: contract.AgentConfig = payload["config"]
         context = contract.RuntimeContext.from_mapping(payload["runtime_context"])
         settings = config.harness.settings if config.harness is not None else {}
-        self._api_type = settings.get("api_type", DEFAULT_API_TYPE)
+        model = _selected_model(config)
+        api = model.extensions.get("api")
+        if api is not None and settings.get("api_type", api) != api:
+            raise lifecycle.LifecycleError(
+                "remote_agent_invalid_configuration",
+                "Remote Agent api_type conflicts with model api",
+            )
+        self._api_type = api or settings.get("api_type", DEFAULT_API_TYPE)
         if self._api_type not in API_PATHS:
             raise lifecycle.LifecycleError(
                 "remote_agent_invalid_configuration",
                 "Remote Agent api_type is not supported",
                 metadata={"field": "harness.settings.api_type"},
             )
-        base_url = settings.get("base_url")
+        base_url = model.base_url or settings.get("base_url")
+        if model.base_url is not None and settings.get(
+            "base_url", model.base_url
+        ).rstrip("/") != model.base_url.rstrip("/"):
+            raise lifecycle.LifecycleError(
+                "remote_agent_invalid_configuration",
+                "Remote Agent base_url conflicts with model base_url",
+            )
         if not isinstance(base_url, str) or not base_url.startswith(
             ("http://", "https://")
         ):
@@ -161,7 +175,6 @@ class RemoteAgentRuntime:
                 "Remote Agent relay_streaming supports only openai-responses and openai-completions",
                 metadata={"field": "harness.settings.api_type"},
             )
-        model = _selected_model(config)
         headers: dict[str, str] = {}
         if model.api_key_env is not None:
             try:
@@ -298,7 +311,9 @@ class RemoteAgentRuntime:
             payload["max_output_tokens"] = model.max_tokens
         if metadata is not None:
             payload["metadata"] = metadata
-        async with self._client.stream("POST", self._endpoint, json=payload) as response:
+        async with self._client.stream(
+            "POST", self._endpoint, json=payload
+        ) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "response.completed":
@@ -371,7 +386,9 @@ class RemoteAgentRuntime:
             payload["metadata"] = metadata
         text = ""
         input_tokens = output_tokens = None
-        async with self._client.stream("POST", self._endpoint, json=payload) as response:
+        async with self._client.stream(
+            "POST", self._endpoint, json=payload
+        ) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "message_start":

@@ -31,10 +31,12 @@ pub use config::{
     ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, ResolvedAdapterTargetDescriptor,
     RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
     TelemetryProvider, TelemetryProviderConfig, ToolDefinitionConfig, ToolsConfig, WorkflowConfig,
-    WorkflowEntrypointConfig, WorkflowTargetSpec, load_adapter_descriptor,
+    WorkflowEntrypointConfig, WorkflowTargetSpec,
+    discover_adapter_targets_with_adapter_directories, discover_adapters,
+    discover_adapters_with_adapter_directories, load_adapter_descriptor,
     load_adapter_target_descriptor, resolve_diagnostic_plan_from_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories, resolve_run_plan_from_config,
-    resolve_run_plan_from_config_with_adapter_directories,
+    resolve_run_plan_from_config_with_adapter_directories, resolve_run_plan_from_descriptors,
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};

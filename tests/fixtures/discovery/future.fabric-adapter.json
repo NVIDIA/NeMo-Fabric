@@ -1,0 +1,107 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "org.fabric.fixture.discoverable",
+  "adapter_kind": "python",
+  "runner": {
+    "module": "fabric_discovery_fixture"
+  },
+  "settings_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "mode": {
+        "type": "string",
+        "enum": [
+          "simple",
+          "advanced"
+        ],
+        "default": "simple"
+      },
+      "budget": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 8
+      }
+    },
+    "required": [
+      "mode"
+    ],
+    "if": {
+      "properties": {
+        "mode": {
+          "const": "advanced"
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    },
+    "then": {
+      "required": [
+        "budget"
+      ]
+    }
+  },
+  "model_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "provider": {
+        "const": "openai"
+      },
+      "model": {
+        "type": "string",
+        "pattern": "^fixture-[a-z]+$"
+      },
+      "base_url": {
+        "type": "string"
+      },
+      "api_key_env": {
+        "type": "string"
+      },
+      "settings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "variant": {
+            "enum": [
+              "native"
+            ],
+            "default": "native"
+          }
+        }
+      },
+      "api": {
+        "const": "openai-completions"
+      }
+    },
+    "required": [
+      "provider",
+      "model"
+    ]
+  },
+  "config": {
+    "accepts": [
+      "models",
+      "models.base_url"
+    ]
+  },
+  "capabilities": {
+    "service": false,
+    "streaming": false,
+    "updates": false,
+    "cancellation": false
+  },
+  "extension_schemas": {
+    "model": {
+      "type": "object",
+      "properties": {
+        "api": {
+          "const": "openai-completions"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

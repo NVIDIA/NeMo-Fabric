@@ -247,3 +247,18 @@ Review the canonical schema for exact fields, defaults, and constraints.
 </Card>
 
 </CardGroup>
+
+## Model protocol constraints
+
+An adapter can declare a model `api` extension with
+`extension_schemas.model.properties.api`. The value passes unchanged to
+`AgentModelConfig.extensions.api`; the adapter owns native protocol mapping.
+When a declared extension also appears in `model_schema.properties`, planning
+validates it together with the standard model fields. This supports constraints
+such as provider and wire-protocol combinations without consumer-side lists.
+
+Consumers planning remote image metadata can call the Rust
+`resolve_run_plan_from_descriptors` function with an explicit inventory. It
+performs the same validation and does not discover local fallback adapters.
+
+The optional `config.schema` is an adapter-owned JSON Schema over the complete public `FabricConfig`. Fabric validates it before native startup, using the same schema machinery as settings and model schemas. Use it for required selectors and constraints spanning configuration areas; for example NOOA declares `{"type":"object","required":["workflow"]}`. Consumers may inspect those required fields, but Fabric remains responsible for enforcing the schema.

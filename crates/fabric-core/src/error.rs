@@ -172,6 +172,19 @@ pub enum FabricError {
         /// Compatibility failure.
         reason: String,
     },
+    /// Metadata is insufficient to establish an adapter capability.
+    ///
+    /// Planning still fails closed; observers can distinguish this gap from a
+    /// declared schema rejecting the supplied value.
+    #[error("adapter `{adapter_id}` has unverified configuration at `{field}`: {reason}")]
+    UnverifiedAdapterCapability {
+        /// Selected adapter id.
+        adapter_id: String,
+        /// Canonical configuration path.
+        field: String,
+        /// Missing metadata needed for validation.
+        reason: String,
+    },
     /// A requested schema is not known.
     #[error("unknown schema `{schema}`; available schemas: {available:?}")]
     UnknownSchema {

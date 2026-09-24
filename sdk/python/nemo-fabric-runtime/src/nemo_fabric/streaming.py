@@ -87,9 +87,7 @@ class InvokeStream:
             try:
                 await self._finish_stream()
             except Exception as cleanup_error:
-                error.add_note(
-                    f"ATOF collector stream cleanup failed: {cleanup_error}"
-                )
+                error.add_note(f"ATOF collector stream cleanup failed: {cleanup_error}")
             raise
 
     async def result(self) -> RunResult:
@@ -233,9 +231,7 @@ def _configured_stream_sink(
         )
     sink = matches[0]
     if not isinstance(sink, RelayAtofStreamSinkConfig):
-        raise FabricConfigError(
-            "Relay sink nemo-fabric-stream must be a stream sink"
-        )
+        raise FabricConfigError("Relay sink nemo-fabric-stream must be a stream sink")
     if sink.transport not in {"http_post", "ndjson"}:
         raise FabricConfigError(
             "Relay sink nemo-fabric-stream must use http_post or ndjson"

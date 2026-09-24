@@ -7,7 +7,9 @@
     "script": "dist/cli.js"
   },
   "requirements": {
-    "binaries": ["node"]
+    "binaries": [
+      "node"
+    ]
   },
   "config": {
     "accepts": [
@@ -19,7 +21,9 @@
       "tools.blocked",
       "skills"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": [
+      "replace"
+    ]
   },
   "settings_schema": {
     "type": "object",
@@ -43,33 +47,79 @@
   "model_schema": {
     "type": "object",
     "properties": {
-      "provider": {"type": "string", "minLength": 1},
-      "model": {"type": "string", "minLength": 1},
-      "api_key_env": {"type": "string", "minLength": 1},
-      "base_url": {"type": ["string", "null"], "format": "uri"}
+      "provider": {
+        "type": "string",
+        "minLength": 1
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "api_key_env": {
+        "type": "string",
+        "minLength": 1
+      },
+      "base_url": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      },
+      "settings": {
+        "type": "object",
+        "properties": {
+          "model_metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "api": {
+        "type": "string",
+        "enum": [
+          "openai-completions",
+          "openai-responses",
+          "anthropic-messages"
+        ]
+      }
     },
-    "required": ["provider", "model", "api_key_env"],
+    "required": [
+      "provider",
+      "model",
+      "api_key_env"
+    ],
     "additionalProperties": false
   },
   "tool_definition_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "kind": {"const": "module"},
+      "kind": {
+        "const": "module"
+      },
       "ref": {
         "type": "string",
         "minLength": 1,
         "pattern": "^[^#]+(?:#[A-Za-z_$][A-Za-z0-9_$]*)?$"
       },
-      "settings": {"type": "object"}
+      "settings": {
+        "type": "object"
+      }
     },
-    "required": ["kind", "ref"],
+    "required": [
+      "kind",
+      "ref"
+    ],
     "additionalProperties": false
   },
   "telemetry": {
     "providers": {
       "relay": {
-        "outputs": ["atif", "otel", "openinference"]
+        "outputs": [
+          "atif",
+          "otel",
+          "openinference"
+        ]
       }
     }
   },
@@ -78,5 +128,21 @@
     "cancellation": false,
     "updates": false,
     "service": false
+  },
+  "extension_schemas": {
+    "model": {
+      "type": "object",
+      "properties": {
+        "api": {
+          "type": "string",
+          "enum": [
+            "openai-completions",
+            "openai-responses",
+            "anthropic-messages"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
   }
 }

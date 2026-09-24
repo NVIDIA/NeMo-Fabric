@@ -1,0 +1,16 @@
+---
+title: "Function discover_adapters"
+sidebar-title: "discover_adapters"
+description: "Enumerate canonical adapter descriptors without selecting or starting a runtime."
+position: 72
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn discover_adapters(\n    discovery: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;&amp;<a href=\"struct-discoveryconfig.mdx\">DiscoveryConfig</a>&gt;,\n    context: <a href=\"struct-resolvecontext.mdx\">ResolveContext</a>,\n) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-resolvedadapterdescriptor.mdx\">ResolvedAdapterDescriptor</a>&gt;&gt;"}} /></pre>
+
+Enumerate canonical adapter descriptors without selecting or starting a runtime.
+
+Uses the same bundled and explicit-local registry as planning, ordered by exact adapter ID. Identical records retain all provenance; malformed or ambiguous adapter records fail discovery. Descriptor metadata does not prove readiness.

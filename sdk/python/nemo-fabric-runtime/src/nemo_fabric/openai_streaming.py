@@ -37,8 +37,8 @@ class _ProtocolError(ValueError):
 
 class _ChunkQueue:
     def __init__(self, *, maxsize: int, max_bytes: int) -> None:
-        self._queue: asyncio.Queue[tuple[dict[str, Any] | object, int]] = (
-            asyncio.Queue(maxsize=maxsize)
+        self._queue: asyncio.Queue[tuple[dict[str, Any] | object, int]] = asyncio.Queue(
+            maxsize=maxsize
         )
         self._max_bytes = max_bytes
         self._queued_bytes = 0
@@ -50,7 +50,9 @@ class _ChunkQueue:
 
     async def put(self, item: dict[str, Any] | object, size: int = 0) -> None:
         if size > self._max_bytes:
-            raise _ProtocolError("OpenAI stream record exceeds the queue byte limit", 413)
+            raise _ProtocolError(
+                "OpenAI stream record exceeds the queue byte limit", 413
+            )
         while self._queued_bytes + size > self._max_bytes:
             self._space_available.clear()
             await self._space_available.wait()
@@ -180,7 +182,9 @@ class _OpenAIStreamListener:
             # Authentication and request validation are connection-local. Claim the
             # invocation only after they succeed, with no await between check/set.
             if self._connected:
-                raise _ProtocolError("OpenAI stream listener accepts one connection", 409)
+                raise _ProtocolError(
+                    "OpenAI stream listener accepts one connection", 409
+                )
             self._connected = True
             claimed = True
             writer.write(b"HTTP/1.1 100 Continue\r\n\r\n")
@@ -280,7 +284,9 @@ class _OpenAIStreamListener:
             if coding.strip()
         ]
         if not transfer_codings or transfer_codings[-1] != "chunked":
-            raise _ProtocolError("OpenAI stream must use chunked transfer encoding", 411)
+            raise _ProtocolError(
+                "OpenAI stream must use chunked transfer encoding", 411
+            )
         if headers.get("expect", "").lower() != "100-continue":
             raise _ProtocolError("OpenAI stream must use Expect: 100-continue", 417)
 
@@ -292,7 +298,9 @@ class _OpenAIStreamListener:
         while True:
             size_line = await reader.readline()
             if not size_line:
-                raise ConnectionError("OpenAI stream connection closed before completion")
+                raise ConnectionError(
+                    "OpenAI stream connection closed before completion"
+                )
             size = int(size_line.split(b";", 1)[0].strip(), 16)
             if size < 0:
                 raise _ProtocolError("Invalid OpenAI stream chunk size")
@@ -318,10 +326,9 @@ class _OpenAIStreamListener:
             if newline < 0:
                 # A record exactly at the limit can have a trailing CR while
                 # waiting for the LF half of its delimiter.
-                pending_crlf = (
-                    len(buffer) == self._max_record_bytes + 1
-                    and buffer.endswith(b"\r")
-                )
+                pending_crlf = len(
+                    buffer
+                ) == self._max_record_bytes + 1 and buffer.endswith(b"\r")
                 if len(buffer) > self._max_record_bytes and not pending_crlf:
                     raise _ProtocolError(
                         f"OpenAI stream record exceeds {self._max_record_bytes} bytes",
@@ -469,8 +476,10 @@ def _validate_openai_chunk(value: Any) -> dict[str, Any]:
         if not isinstance(delta, dict):
             raise _ProtocolError("OpenAI stream choice delta must be a mapping")
         for name in ("content", "refusal", "role"):
-            if name in delta and delta[name] is not None and not isinstance(
-                delta[name], str
+            if (
+                name in delta
+                and delta[name] is not None
+                and not isinstance(delta[name], str)
             ):
                 raise _ProtocolError(
                     f"OpenAI stream choice delta {name} must be a string or null"
@@ -702,7 +711,10 @@ class OpenAIInvokeStream:
                 pass
 
             if result is not None:
-                if result.status == "succeeded" or self._listener.invocation_id is not None:
+                if (
+                    result.status == "succeeded"
+                    or self._listener.invocation_id is not None
+                ):
                     try:
                         await asyncio.wait_for(
                             self._listener.wait_completed(),

@@ -135,3 +135,18 @@ model, skills, MCP, tools, telemetry, and runtime behavior through complete
 typed `FabricConfig` values and ordinary Python composition. The adapter
 descriptor describes adapter capabilities; it is not an agent configuration.
 Add descriptor fields only when NeMo Fabric core or the SDK actually uses them.
+
+## Native API and dashboard
+
+Set `harness.settings.mode` to `service` to own the Hermes native API and optional
+dashboard. Configure `settings.interfaces.api.port` and
+`settings.interfaces.dashboard` (`enabled`, `port`, `internalPort`, and
+`tui.enabled`). The service retains separate dashboard sessions, protected local
+credentials, and exclusive ownership of its native state directory.
+
+`settings.native_config` carries advertised native web/plugin/approval settings.
+It cannot override Fabric-owned model or tool configuration. Model `api`
+extensions map to Hermes API mode in this adapter.
+The packaged `plugins/tavily` module provides native Tavily search/extraction;
+install it in Hermes' native plugin directory and supply `TAVILY_API_KEY` through
+the deployment's credential mechanism.

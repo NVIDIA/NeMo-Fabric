@@ -43,7 +43,29 @@ hermes_mcp_server_config = configuration.hermes_mcp_server_config
 def main() -> None:
     """Serve the persistent local-host lifecycle protocol."""
 
-    lifecycle.serve(HermesRuntime, config_loader=AgentConfig.from_mapping)
+    lifecycle.serve(HermesModeRuntime, config_loader=AgentConfig.from_mapping)
+
+
+class HermesModeRuntime:
+    """Select the native Hermes API service only when explicitly configured."""
+
+    async def start(self, payload):
+        config = payload["config"]
+        if configuration._settings(config).get("mode") == "service":
+            from nemo_fabric_adapters.hermes.service import HermesServiceRuntime
+
+            self.runtime = HermesServiceRuntime()
+        else:
+            self.runtime = HermesRuntime()
+        await self.runtime.start(payload)
+
+    async def invoke(self, request, context):
+        return await self.runtime.invoke(request, context)
+
+    async def stop(self):
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            await runtime.stop()
 
 
 class HermesRuntime:
@@ -188,6 +210,7 @@ class HermesRuntime:
                         base_url=model_config.base_url,
                         api_key=api_key,
                         provider=model_config.provider,
+                        api_mode=configuration.api_mode(agent_config),
                         model=model_config.model,
                         max_iterations=int(max_iterations),
                         enabled_toolsets=self._enabled_toolsets,

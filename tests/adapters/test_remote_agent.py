@@ -498,3 +498,34 @@ def test_remote_agent_descriptor_and_module_entrypoint(repo_root: Path):
         "integration_modes": ["remote_service"],
     }
     assert result.returncode == 0, result.stderr
+
+
+async def test_public_model_endpoint_and_protocol_are_consumed(api_server, repo_root):
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {}},
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "fabric-echo",
+                    "base_url": f"{api_server}/v1",
+                    "extensions": {"api": "openai-completions"},
+                }
+            },
+        }
+    )
+    runtime = adapter.RemoteAgentRuntime()
+    context = _context()
+    await runtime.start(
+        {
+            "config": config,
+            "runtime_context": context.to_mapping(),
+            "base_dir": str(repo_root),
+        }
+    )
+    try:
+        result = await runtime.invoke(AgentRunRequest(input="Hello."), context)
+        assert result.status == "succeeded"
+        assert runtime._endpoint == f"{api_server}/v1/chat/completions"
+    finally:
+        await runtime.stop()

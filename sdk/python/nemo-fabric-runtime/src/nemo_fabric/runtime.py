@@ -81,7 +81,9 @@ class Runtime:
 
         self._plan = plan if isinstance(plan, RunPlan) else RunPlan.from_mapping(plan)
         self._runtime = (
-            runtime if isinstance(runtime, RuntimeHandle) else RuntimeHandle.from_mapping(runtime)
+            runtime
+            if isinstance(runtime, RuntimeHandle)
+            else RuntimeHandle.from_mapping(runtime)
         )
         self._client = client
         self._overrides = _json_mapping(overrides, "runtime overrides")
@@ -248,7 +250,9 @@ class Runtime:
                 try:
                     await _call_blocking(stop_after_cancel)
                 except asyncio.CancelledError:
-                    self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
+                    self._status = (
+                        RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
+                    )
                     raise
                 except Exception:
                     self._status = RuntimeStatus.FAILED
@@ -331,9 +335,7 @@ class Runtime:
             try:
                 await self._deregister_request(request_id, remove_queue=False)
             except Exception as cleanup_error:
-                error.add_note(
-                    f"ATOF collector deregistration failed: {cleanup_error}"
-                )
+                error.add_note(f"ATOF collector deregistration failed: {cleanup_error}")
             raise
         await self._deregister_request(request_id, remove_queue=False)
         return result
@@ -577,7 +579,9 @@ def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:
     try:
         return json.loads(json.dumps(dict(value), allow_nan=False))
     except (TypeError, ValueError) as error:
-        raise FabricConfigError(f"{name} must contain JSON-compatible values") from error
+        raise FabricConfigError(
+            f"{name} must contain JSON-compatible values"
+        ) from error
 
 
 def _merge_overrides(
@@ -627,7 +631,9 @@ async def _run_native_lifecycle(
         try:
             try:
                 result = json.loads(
-                    native.invoke_runtime(plan_json, runtime_json, json.dumps(dict(request)))
+                    native.invoke_runtime(
+                        plan_json, runtime_json, json.dumps(dict(request))
+                    )
                 )
             except Exception as error:
                 invoke_error = error

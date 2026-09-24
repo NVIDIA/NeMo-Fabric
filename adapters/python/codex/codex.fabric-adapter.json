@@ -9,24 +9,56 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "provider": {"type": "string", "minLength": 1},
-      "model": {"type": "string", "minLength": 1},
-      "temperature": {"type": "number"},
-      "api_key_env": {"type": "string", "minLength": 1},
-      "base_url": {"type": "string", "minLength": 1},
+      "provider": {
+        "type": "string",
+        "minLength": 1
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "temperature": {
+        "type": "number"
+      },
+      "api_key_env": {
+        "type": "string",
+        "minLength": 1
+      },
+      "base_url": {
+        "type": "string",
+        "minLength": 1
+      },
       "settings": {
         "type": "object",
         "properties": {},
         "additionalProperties": false
+      },
+      "api": {
+        "type": "string",
+        "enum": [
+          "openai-responses"
+        ]
       }
     },
-    "required": ["provider", "model"],
+    "required": [
+      "provider",
+      "model"
+    ],
     "if": {
-      "properties": {"provider": {"const": "openai"}},
-      "required": ["provider"]
+      "properties": {
+        "provider": {
+          "const": "openai"
+        }
+      },
+      "required": [
+        "provider"
+      ]
     },
     "else": {
-      "required": ["base_url", "api_key_env"]
+      "required": [
+        "base_url",
+        "api_key_env"
+      ]
     },
     "additionalProperties": false
   },
@@ -36,13 +68,20 @@
     "properties": {
       "sandbox": {
         "type": "string",
-        "enum": ["read-only", "workspace-write", "danger-full-access"],
+        "enum": [
+          "read-only",
+          "workspace-write",
+          "danger-full-access"
+        ],
         "default": "read-only",
         "description": "Codex filesystem access level."
       },
       "approval_mode": {
         "type": "string",
-        "enum": ["auto_review", "deny_all"],
+        "enum": [
+          "auto_review",
+          "deny_all"
+        ],
         "default": "auto_review",
         "description": "Codex approval handling mode for escalated permission requests."
       },
@@ -53,12 +92,23 @@
       },
       "personality": {
         "type": "string",
-        "enum": ["none", "friendly", "pragmatic"],
+        "enum": [
+          "none",
+          "friendly",
+          "pragmatic"
+        ],
         "description": "Codex response personality."
       },
       "reasoning_effort": {
         "type": "string",
-        "enum": ["none", "minimal", "low", "medium", "high", "xhigh"],
+        "enum": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
         "description": "Codex reasoning effort for each turn."
       },
       "service_tier": {
@@ -88,10 +138,31 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "status": {"type": "string"},
-        "sdk_error": {"type": "string"},
-        "jsonrpc_code": {"type": "integer"},
-        "timeout_seconds": {"type": "number", "minimum": 0}
+        "status": {
+          "type": "string"
+        },
+        "sdk_error": {
+          "type": "string"
+        },
+        "jsonrpc_code": {
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "model": {
+      "type": "object",
+      "properties": {
+        "api": {
+          "type": "string",
+          "enum": [
+            "openai-responses"
+          ]
+        }
       },
       "additionalProperties": false
     }
@@ -105,16 +176,27 @@
       "mcp.auth.oauth2",
       "skills"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": [
+      "replace"
+    ]
   },
   "telemetry": {
     "providers": {
       "relay": {
-        "outputs": ["atif", "otel", "openinference"],
-        "integration_modes": ["hooks", "gateway"]
+        "outputs": [
+          "atif",
+          "otel",
+          "openinference"
+        ],
+        "integration_modes": [
+          "hooks",
+          "gateway"
+        ]
       },
       "native": {
-        "outputs": ["otel"]
+        "outputs": [
+          "otel"
+        ]
       }
     }
   }

@@ -1855,3 +1855,29 @@ async def test_incompatible_relay_fails_before_target_execution(
     assert result.called is False
     assert result.report.error == "Relay setup failed (RuntimeError)"
     call.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "api,client_type",
+    [("openai-completions", "completion"), ("openai-responses", "responses")],
+)
+async def test_public_model_protocol_selects_native_client(
+    monkeypatch, api, client_type
+):
+    unified = types.ModuleType("nooa.unifiedllm")
+    unified.get_llm_client = MagicMock()
+    monkeypatch.setitem(sys.modules, "nooa.unifiedllm", unified)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    config = AgentConfig.from_mapping(
+        {
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "test",
+                    "extensions": {"api": api},
+                }
+            }
+        }
+    )
+    await model_support.build_models(config)
+    assert unified.get_llm_client.call_args.kwargs["client_type"] == client_type

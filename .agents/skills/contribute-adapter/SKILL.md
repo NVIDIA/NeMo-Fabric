@@ -34,12 +34,12 @@ Follow these repository-specific requirements after applying the public skill:
    `adapters/typescript/<name>/` and wire them into that npm workspace.
 2. Give each Python leaf adapter a small base installation, a `harness` extra
    for package-installable target packages, and a `full` extra for
-   package-installable integrations. The Hermes adapter is the sole source-only
-   exception and omits `harness`. Add a `relay` extra only when the adapter
+   package-installable integrations. The Hermes and OpenClaw adapters use externally installed harnesses
+   and omit the Python `harness` extra. Add a `relay` extra only when the adapter
    imports NVIDIA NeMo Relay Python APIs.
 3. Add one canonical root extra that delegates to the matching leaf adapter
-   and its `harness` extra. The Hermes root extra delegates to the bare adapter
-   because users install Hermes Agent separately from source. Keep
+   and its `harness` extra. The Hermes and OpenClaw root extras delegate to bare adapters
+   because users install their harnesses separately. Keep
    `nemo-fabric-runtime` an exact-version, unconditional root dependency.
 4. Add the package to the root adapter-test dependency group,
    `[tool.uv.sources]`, `python_projects` in `justfile`, applicable catalogs,

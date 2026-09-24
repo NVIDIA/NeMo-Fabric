@@ -1325,6 +1325,54 @@ class FabricMapping(Mapping[str, Any]):
         return self.to_mapping()
 
 
+class ResolvedAdapterDescriptor(FabricMapping):
+    """Canonical adapter metadata and every registry source that supplied it.
+
+    Descriptor fields, including adapter-owned JSON Schemas and extensions,
+    remain unchanged. Accessors return copies of their JSON values.
+    """
+
+    _fields = frozenset({"descriptor", "provenance"})
+    _json_fields = _fields
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        descriptor = _mapping(data.get("descriptor"), "adapter descriptor")
+        _required_text(descriptor.get("adapter_id"), "adapter_id")
+        provenance = data.get("provenance")
+        if not isinstance(provenance, list) or not provenance:
+            raise FabricConfigError("adapter provenance must be a non-empty list")
+        data["descriptor"] = descriptor
+        data["provenance"] = [
+            _mapping(item, "adapter provenance") for item in provenance
+        ]
+        return data
+
+
+class ResolvedAdapterTargetDescriptor(FabricMapping):
+    """Canonical target metadata and every registry source that supplied it.
+
+    Descriptor fields, including adapter-owned JSON Schemas and extensions,
+    remain unchanged. Accessors return copies of their JSON values.
+    """
+
+    _fields = frozenset({"descriptor", "provenance"})
+    _json_fields = _fields
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        descriptor = _mapping(data.get("descriptor"), "target descriptor")
+        _required_text(descriptor.get("id"), "id")
+        provenance = data.get("provenance")
+        if not isinstance(provenance, list) or not provenance:
+            raise FabricConfigError("target provenance must be a non-empty list")
+        data["descriptor"] = descriptor
+        data["provenance"] = [
+            _mapping(item, "target provenance") for item in provenance
+        ]
+        return data
+
+
 class AdapterInfo(FabricMapping):
     """Resolved adapter identity attached to a run plan.
 

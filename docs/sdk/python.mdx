@@ -21,6 +21,28 @@ This guide explains how the pieces are intended to fit together.
 For installation and a package-backed example, start with the
 [NeMo Fabric overview](../about-nemo-fabric/overview.mdx).
 
+## Discover Adapters Before Configuration
+
+Call `Fabric.discover()` to inspect the canonical descriptors visible to the selected Python environment before constructing a complete `FabricConfig`. Each immutable `ResolvedAdapterDescriptor` contains the adapter's descriptor and all discovery provenance. Use its exact `adapter_id` for selection; filenames and package names do not define aliases.
+
+```python
+from nemo_fabric import DiscoveryConfig, Fabric
+
+fabric = Fabric()
+for record in fabric.discover():
+    descriptor = record.descriptor
+    print(descriptor["adapter_id"], descriptor.get("settings_schema"))
+    print(record.provenance)
+
+# Add source descriptors during adapter development.
+records = fabric.discover(
+    discovery=DiscoveryConfig(local_paths=["./adapter-metadata"]),
+    base_dir="/workspace/project",
+)
+```
+
+Discovery uses the same registry as planning: bundled records, installed package records, and explicit local paths. Results are sorted by adapter ID. Identical records retain all provenance; conflicting records for an ID and malformed adapter records fail discovery. Adapter-owned schemas and extension fields retain their canonical values. Discovery does not import runners, start runtimes, install dependencies, or establish runtime readiness. Pass the chosen configuration to `plan()` for schema and capability validation, then use `doctor()` to check declared requirements.
+
 ## Start With One Run
 
 This example uses an NVIDIA-hosted model. Export your NVIDIA API key before

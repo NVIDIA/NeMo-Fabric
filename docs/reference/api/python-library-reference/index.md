@@ -64,6 +64,8 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`types.DoctorReport`](./nemo_fabric.types.md#class-doctorreport): Aggregate preflight diagnostics for a resolved run plan.
 - [`types.ErrorInfo`](./nemo_fabric.types.md#class-errorinfo): Structured failure returned inside a normalized ``RunResult``.
 - [`types.FabricEvent`](./nemo_fabric.types.md#class-fabricevent): One normalized lifecycle or invocation event.
+- [`types.ResolvedAdapterDescriptor`](./nemo_fabric.types.md#class-resolvedadapterdescriptor): Canonical adapter metadata and every registry source that supplied it.
+- [`types.ResolvedAdapterTargetDescriptor`](./nemo_fabric.types.md#class-resolvedadaptertargetdescriptor): Canonical target metadata and every registry source that supplied it.
 - [`types.RunOutput`](./nemo_fabric.types.md#class-runoutput): Normalized adapter output.
 - [`types.RunPlan`](./nemo_fabric.types.md#class-runplan): Immutable execution plan produced before a runtime is started.
 - [`types.RunResult`](./nemo_fabric.types.md#class-runresult): Normalized terminal result from one NeMo Fabric invocation.

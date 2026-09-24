@@ -515,11 +515,9 @@ mod tests {
         unsupported_provider["telemetry"]["providers"] = serde_json::json!({"custom": {}});
         assert!(!validator.is_valid(&unsupported_provider));
 
-        for field in ["adapter_id"] {
-            let mut blank_identifier = descriptor.clone();
-            blank_identifier[field] = serde_json::json!(" \t");
-            assert!(!validator.is_valid(&blank_identifier));
-        }
+        let mut blank_identifier = descriptor.clone();
+        blank_identifier["adapter_id"] = serde_json::json!(" \t");
+        assert!(!validator.is_valid(&blank_identifier));
     }
 
     #[test]

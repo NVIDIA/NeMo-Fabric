@@ -204,6 +204,18 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
     api_key = os.environ[api_key_env]
 
     provider = model_config.provider
+    api = model_config.extensions.get("api")
+    expected_api = (
+        "openai-completions"
+        if provider in OPENAI_COMPATIBLE_PROVIDERS
+        else "anthropic-messages"
+        if provider == "anthropic"
+        else None
+    )
+    if api is not None and api != expected_api:
+        raise AdapterConfigError(
+            "The selected provider does not implement the requested model API"
+        )
     base_url = model_config.base_url
     temperature = model_config.temperature
     top_p = model_config.top_p

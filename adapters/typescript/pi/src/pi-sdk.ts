@@ -5,6 +5,7 @@
 // into a controlled in-memory Pi session, including model credentials, skills,
 // extensions, custom tools, and workspace containment.
 
+
 import { realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -450,6 +451,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       );
     }
     const pi = await loadPiSdk();
+    const { loadConfiguredModel } = await import("./pi-model.js");
     let workspace: string;
     try {
       workspace = await realpath(resolve(input.runtimeContext.environment.workspace ?? input.baseDir));
@@ -474,26 +476,15 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     const skillPaths = await resolveSkillPaths(input.baseDir, input.config.skills?.paths ?? []);
     const customTools = await resolveCustomTools(workspace, input.config.tools?.definitions ?? {});
     const credentials = new pi.InMemoryCredentialStore();
-    const modelRuntime = await pi.ModelRuntime.create({
-      credentials,
-      modelsPath: null,
-      allowModelNetwork: false,
-      refreshOnCreate: false,
-    });
-    await modelRuntime.setRuntimeApiKey(selected.provider, apiKey);
-    const relayEnabled = input.runtimeContext.telemetry?.relay_enabled === true;
-    if (relayEnabled && selected.base_url) {
-      // Configure the provider before Relay loads so its provider-wide redirect
-      // sees a consistent catalog instead of one overlaid selected model.
-      modelRuntime.registerProvider(selected.provider, {
-        baseUrl: selected.base_url,
-      });
-    }
-    const catalogModel = modelRuntime.getModel(selected.provider, selected.model);
-    if (catalogModel === undefined) {
-      throw new LifecycleError("pi_model_unknown", "The selected provider and model are not present in Pi's catalog");
-    }
-    const model = !relayEnabled && selected.base_url ? { ...catalogModel, baseUrl: selected.base_url } : catalogModel;
+    const { modelRuntime, model, models, cleanup } = await loadConfiguredModel(selected, credentials, input.config.models);
+    try {
+      for (const [alias, native] of Object.entries(models)) {
+        const config = input.config.models?.[alias] ?? selected;
+        const key = config.api_key_env ? credentialValue(input, config.api_key_env) : undefined;
+        if (!key) throw new LifecycleError("pi_credential_missing", "A configured Pi model credential is unavailable");
+        await modelRuntime.setRuntimeApiKey(native.provider, key);
+      }
+    } catch (error) { await cleanup(); throw error; }
     let relay: PiRelayRuntime | undefined;
     let handle: PiSdkSessionHandle | undefined;
     try {
@@ -580,6 +571,8 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         excludeTools: blocked,
       });
       handle = new PiSdkSessionHandle(session, state, relay);
+      const stop = handle.stop.bind(handle);
+      handle.stop = async () => { try { await stop(); } finally { await cleanup(); } };
       const blockedNames = new Set(blocked);
       const availableNames = new Set(session.getAllTools().map((tool) => tool.name));
       const missing = (enabled ?? []).filter((name) => !blockedNames.has(name) && !availableNames.has(name));
@@ -613,7 +606,13 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       });
       // bindExtensions emits session_start; emitting it here would create a
       // duplicate Relay session scope.
-      return handle;
+      return Object.assign(handle, {
+        selectModel: async (name: string) => {
+          const choice = models[name];
+          if (!choice) throw new LifecycleError("pi_model_unknown", "The requested Pi model choice is not declared");
+          await session.setModel(choice);
+        },
+      });
     } catch (error) {
       await handle?.stop().catch(() => {
         process.stderr.write("Pi session cleanup failed after adapter startup error\n");
@@ -621,6 +620,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       await relay?.stop().catch(() => {
         process.stderr.write("NeMo Relay cleanup failed after Pi adapter startup error\n");
       });
+      await cleanup();
       throw error;
     }
   }

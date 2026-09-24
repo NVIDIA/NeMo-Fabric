@@ -44,17 +44,17 @@ commitment.
 
 - Keep `nemo-fabric` as a metapackage that unconditionally installs the
   exact-version `nemo-fabric-runtime` distribution. Its harness extras delegate
-  to version-matched leaf adapter `harness` extras. Hermes Agent is the sole
-  exception: its root extra delegates to the bare adapter because Hermes Agent
-  0.20 and later is not installable from PyPI. Do not add other adapter-only
+  to version-matched leaf adapter `harness` extras. Hermes Agent and OpenClaw are
+  exceptions: their root extras delegate to bare adapters because the harnesses
+  are installed separately from source or through Node. Do not add other adapter-only
   aliases.
 - Keep the runtime `streaming` extra pinned to the version-matched
   `nemo-fabric-collector` distribution. The metapackage `streaming` extra must
   delegate to the version-matched runtime extra. Do not expose a separate
   metapackage `collector` extra.
 - Keep leaf adapters adapter-only by default. Every leaf provides `full`, and
-  every package-installable harness provides `harness`. The Hermes adapter omits
-  `harness` because users install Hermes Agent separately from source. Provide
+  every package-installable harness provides `harness`. The Hermes and OpenClaw adapters omit
+  `harness` because users install their harnesses outside Python packaging. Provide
   `relay` only when the adapter imports the NeMo Relay Python package. For
   adapters that launch the Relay CLI, both `harness` and `full` install the
   version-matched `nemo-relay-cli-bin` package and remain equivalent.

@@ -1,0 +1,215 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.openclaw",
+  "adapter_kind": "python",
+  "runner": {
+    "module": "nemo_fabric_adapters.openclaw.adapter"
+  },
+  "requirements": {
+    "binaries": [
+      "node"
+    ]
+  },
+  "settings_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "agent_name": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,39}$",
+        "default": "main"
+      },
+      "cli": {
+        "type": "string",
+        "minLength": 1,
+        "default": "/app/openclaw.mjs"
+      },
+      "home": {
+        "type": "string",
+        "minLength": 1
+      },
+      "timeout_seconds": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 86400,
+        "default": 260
+      },
+      "native_config": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "gateway": {
+            "type": "object"
+          },
+          "plugins": {
+            "type": "object"
+          },
+          "diagnostics": {
+            "type": "object"
+          },
+          "tools": {
+            "type": "object"
+          },
+          "agents": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "defaults": {
+                "type": "object",
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "model"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "workspace"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "timeoutSeconds"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "memory": {
+            "type": "object"
+          },
+          "cron": {
+            "type": "object"
+          },
+          "update": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "model_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "provider": {
+        "type": "string",
+        "minLength": 1
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "base_url": {
+        "type": "string",
+        "minLength": 1
+      },
+      "api_key_env": {
+        "type": "string",
+        "minLength": 1
+      },
+      "max_tokens": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "settings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "api": {
+            "type": "string",
+            "enum": [
+              "openai-completions",
+              "openai-responses",
+              "anthropic-messages"
+            ]
+          },
+          "model_metadata": {
+            "type": "object"
+          },
+          "reasoning_effort": {
+            "type": "string",
+            "enum": [
+              "off",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "adaptive"
+            ]
+          }
+        }
+      },
+      "api": {
+        "type": "string",
+        "enum": [
+          "openai-completions",
+          "openai-responses",
+          "anthropic-messages"
+        ]
+      }
+    },
+    "required": [
+      "provider",
+      "model",
+      "base_url"
+    ],
+    "anyOf": [
+      {
+        "required": [
+          "api"
+        ]
+      },
+      {
+        "properties": {
+          "settings": {
+            "required": [
+              "api"
+            ]
+          }
+        },
+        "required": [
+          "settings"
+        ]
+      }
+    ]
+  },
+  "config": {
+    "accepts": [
+      "models",
+      "models.base_url",
+      "models.max_tokens",
+      "tools.enabled",
+      "tools.blocked"
+    ],
+    "generates": [
+      ".openclaw/openclaw.json"
+    ]
+  },
+  "capabilities": {
+    "service": false,
+    "streaming": false,
+    "updates": false,
+    "cancellation": false
+  },
+  "extension_schemas": {
+    "model": {
+      "type": "object",
+      "properties": {
+        "api": {
+          "type": "string",
+          "enum": [
+            "openai-completions",
+            "openai-responses",
+            "anthropic-messages"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

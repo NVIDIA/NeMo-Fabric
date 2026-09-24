@@ -54,6 +54,8 @@ from nemo_fabric.types import DoctorReport
 from nemo_fabric.types import ErrorInfo
 from nemo_fabric.types import FabricEvent
 from nemo_fabric.types import RunOutput
+from nemo_fabric.types import ResolvedAdapterDescriptor
+from nemo_fabric.types import ResolvedAdapterTargetDescriptor
 from nemo_fabric.types import RunPlan
 from nemo_fabric.types import RunResult
 from nemo_fabric.types import RunUsage
@@ -104,6 +106,8 @@ __all__ = [
     "FabricStateError",
     "RunOutput",
     "RunPlan",
+    "ResolvedAdapterDescriptor",
+    "ResolvedAdapterTargetDescriptor",
     "RunRequest",
     "RunResult",
     "RunUsage",
