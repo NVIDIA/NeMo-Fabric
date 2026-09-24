@@ -524,7 +524,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
                 "transport": "sse",
             },
         },
-        "platform_toolsets": {"cli": ["git"], "api_server": ["git"]},
+        "platform_toolsets": {"cli": ["git"]},
         "plugins": {"enabled": ["custom/plugin", "observability/nemo_relay"]},
     }
 
@@ -653,10 +653,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
             "transport": "streamable-http",
         },
     }
-    assert config["platform_toolsets"] == {
-        "cli": ["git", "shell"],
-        "api_server": ["git", "shell"],
-    }
+    assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
     assert observability["atof"]["sinks"][0]["output_directory"] == str(
         tmp_path / "relay" / "atof" / "runtime-matrix"
@@ -1077,7 +1074,7 @@ def test_summarize_hermes_config():
             "skills": {"external_dirs": ["skills"]},
             "mcp_servers": {"z": {}, "a": {}},
             "plugins": {"enabled": ["observability/nemo_relay"]},
-            "platform_toolsets": {"cli": ["git"], "api_server": ["git"]},
+            "platform_toolsets": {"cli": ["git"]},
         }
     ) == {
         "model": {"default": "demo"},
@@ -1085,7 +1082,7 @@ def test_summarize_hermes_config():
         "skill_dirs": ["skills"],
         "mcp_servers": ["a", "z"],
         "plugins": ["observability/nemo_relay"],
-        "platform_toolsets": {"cli": ["git"], "api_server": ["git"]},
+        "platform_toolsets": {"cli": ["git"]},
         "disabled_toolsets": [],
     }
 
@@ -1152,7 +1149,7 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
 
 def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
     assert (
-        adapter._artifact_root(
+        adapter.configuration.artifact_root(
             _runtime_context(artifact_root="run-artifacts"),
             str(tmp_path),
         )

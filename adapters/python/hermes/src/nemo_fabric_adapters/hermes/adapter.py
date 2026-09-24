@@ -47,14 +47,13 @@ def main() -> None:
 
 
 class HermesModeRuntime:
-    """Select the native Hermes API service only when explicitly configured."""
+    """Embed the Hermes SDK, or run Hermes' API server when configured."""
 
     async def start(self, payload):
-        config = payload["config"]
-        if configuration._settings(config).get("mode") == "service":
-            from nemo_fabric_adapters.hermes.service import HermesServiceRuntime
+        if configuration.api_server_mode(payload["config"]):
+            from nemo_fabric_adapters.hermes.api_server import HermesApiServerRuntime
 
-            self.runtime = HermesServiceRuntime()
+            self.runtime = HermesApiServerRuntime()
         else:
             self.runtime = HermesRuntime()
         await self.runtime.start(payload)
@@ -117,12 +116,8 @@ class HermesRuntime:
             model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
-            self._hermes_home = (
-                _artifact_root(runtime_context, common_utils.base_dir(payload))
-                / ".fabric"
-                / "hermes"
-                / "runtimes"
-                / runtime_context.runtime_id
+            self._hermes_home = configuration.runtime_home(
+                runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
             os.environ["HOME"] = str(self._hermes_home)
@@ -558,16 +553,6 @@ class HermesRuntime:
                 "hermes_runtime_stop_failed",
                 "Hermes runtime failed to stop cleanly",
             ) from errors[0]
-
-
-def _artifact_root(runtime_context: RuntimeContext, base_dir: str) -> Path:
-    root = runtime_context.artifacts.root
-    if root:
-        artifact_root = Path(str(root))
-        if not artifact_root.is_absolute():
-            artifact_root = Path(base_dir) / artifact_root
-        return artifact_root.resolve()
-    return Path(base_dir).resolve() / "artifacts"
 
 
 def _invoke_hermes_turn(
