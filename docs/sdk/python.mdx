@@ -46,6 +46,8 @@ catalog = fabric.discover(
 
 Discovery uses the same registry as planning: bundled descriptors, descriptors installed in the selected Python environment, and explicit local paths. Entries are sorted by identifier. Identical descriptors keep all of their sources. A conflicting or malformed descriptor makes discovery fail instead of disappearing from the catalog. Adapter-owned schemas and extension fields keep their canonical values. Discovery does not import runners, start runtimes, install dependencies, or establish runtime readiness. Pass the chosen configuration to `plan()` for schema and capability validation, then use `doctor()` to check declared requirements.
 
+Discovery does not remember its paths. When the chosen adapter came from `discovery.local_paths`, set the same paths in `FabricConfig.discovery` and pass the same `base_dir` to `plan()`, `doctor()`, and `start_runtime()`.
+
 `catalog.to_mapping()` is the JSON form of the Rust `DescriptorCatalog`. A Rust host can read a catalog where adapters are installed, such as inside an image, and plan elsewhere with `nemo_fabric_core::resolve_run_plan_from_descriptors`.
 
 ## Start With One Run

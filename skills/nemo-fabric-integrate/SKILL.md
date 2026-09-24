@@ -290,7 +290,7 @@ chunks, so consume the iterator first when the application needs every chunk.
 
 ## Discover Before Selecting
 
-Use `Fabric().discover(discovery=DiscoveryConfig(local_paths=[...]), base_dir=base)` when the consumer needs available adapter IDs, target IDs, or adapter-owned schemas before constructing a complete configuration. Omit `discovery` to use bundled and installed descriptors. The returned `DescriptorCatalog` has `adapters` and `targets`; each entry exposes canonical `descriptor` and `provenance` JSON snapshots. Select the exact `descriptor["adapter_id"]`; do not derive aliases or maintain a separate capability list. Discovery uses the planning registry, keeps every source of an identical descriptor, and fails on malformed or ambiguous records. It does not import runners or establish runtime readiness.
+Use `Fabric().discover(discovery=DiscoveryConfig(local_paths=[...]), base_dir=base)` when the consumer needs available adapter IDs, target IDs, or adapter-owned schemas before constructing a complete configuration. Omit `discovery` to use bundled and installed descriptors. The returned `DescriptorCatalog` has `adapters` and `targets`; each entry exposes canonical `descriptor` and `provenance` JSON snapshots. Select the exact `descriptor["adapter_id"]`; do not derive aliases or maintain a separate capability list. Discovery uses the planning registry, keeps every source of an identical descriptor, and fails on malformed or ambiguous records. It does not import runners or establish runtime readiness. Discovery does not remember its paths: when the selected adapter came from `local_paths`, put the same paths in `FabricConfig.discovery` and use the same `base_dir` when planning and running.
 
 ## Validate Before Running
 
