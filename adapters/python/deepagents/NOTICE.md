@@ -3,9 +3,12 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Adapted source
+# Adapted Source
 
-Native integration code was adapted on 2026-09-24 from NemoClaw revision
-9146224da4, `image/fabric/`: brave_search.py, test_brave_search.py.
-Original NVIDIA Apache-2.0 notices are retained. Native behavior now consumes
-Fabric public contracts; deployment lifecycle stays in NemoClaw.
+The Brave search MCP server in `brave_search.py` and its tests were adapted from
+NVIDIA NemoClaw revision `9146224da4`: `image/fabric/brave_search.py` and
+`test_brave_search.py`. The original NVIDIA Apache-2.0 notices are retained.
+
+Modified on 2026-09-24: the server is packaged with this adapter, bounds each
+search by a total deadline, and reports only expected search failures without
+their details.

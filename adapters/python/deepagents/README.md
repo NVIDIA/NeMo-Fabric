@@ -94,6 +94,9 @@ NeMo Fabric maps the following into the harness:
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.
+  The package includes a Brave web search MCP server: declare a `stdio` server
+  that runs `python -m nemo_fabric_adapters.deepagents.brave_search` with
+  `BRAVE_API_KEY` in its environment to add a `web_search` tool.
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.
