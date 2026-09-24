@@ -163,7 +163,9 @@ else:
             self.fabric_environment_env = dict(fabric_environment_env or {})
             self.fabric_blocked_tools = blocked_tools
             self.fabric_enabled_tools = (
-                list(fabric_enabled_tools) if fabric_enabled_tools is not None else None
+                list(fabric_enabled_tools)
+                if fabric_enabled_tools is not None
+                else None
             )
             self.fabric_telemetry = fabric_telemetry
             self.fabric_python = fabric_python

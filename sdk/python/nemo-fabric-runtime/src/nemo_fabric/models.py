@@ -350,7 +350,9 @@ class McpAuthenticationConfig(FabricBaseModel):
     type: Literal["oauth2", "service_account"]
     client_id: str | None = None
     client_secret_env: str | None = None
-    scopes: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    scopes: list[str] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
     redirect_uri: str | None = None
     enable_dynamic_registration: bool = Field(
         default=True, exclude_if=lambda value: value
@@ -462,7 +464,9 @@ class McpServerConfig(FabricBaseModel):
     transport: Literal["stdio", "sse", "streamable-http"]
     url: str = Field(
         min_length=1,
-        description=("MCP server URL for network transports or executable for stdio."),
+        description=(
+            "MCP server URL for network transports or executable for stdio."
+        ),
     )
     args: list[str] = Field(
         default_factory=list,
@@ -524,9 +528,7 @@ class McpServerConfig(FabricBaseModel):
             overlap = set(self.allowed_tools).intersection(self.blocked_tools)
             if overlap:
                 name = sorted(overlap)[0]
-                raise ValueError(
-                    f"MCP tool {name!r} cannot be both allowed and blocked"
-                )
+                raise ValueError(f"MCP tool {name!r} cannot be both allowed and blocked")
         return self
 
     def to_mapping(self) -> dict[str, Any]:
@@ -835,7 +837,9 @@ class RelayConfig(FabricBaseModel):
                     "NeMo Relay opentelemetry config must be an object for "
                     f"relay.components[{index}]"
                 )
-            legacy_fields = sorted(_LEGACY_FLAT_OTEL_FIELDS.intersection(opentelemetry))
+            legacy_fields = sorted(
+                _LEGACY_FLAT_OTEL_FIELDS.intersection(opentelemetry)
+            )
             if legacy_fields:
                 fields = ", ".join(legacy_fields)
                 raise ValueError(
@@ -1019,7 +1023,8 @@ class ToolsConfig(FabricBaseModel):
         overlap = {"kind", "ref", "settings"}.intersection(extras)
         if overlap:
             raise ValueError(
-                "extra_fields duplicates known fields: " + ", ".join(sorted(overlap))
+                "extra_fields duplicates known fields: "
+                + ", ".join(sorted(overlap))
             )
         value = {
             "kind": kind,
