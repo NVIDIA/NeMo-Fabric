@@ -99,6 +99,16 @@ Install its optional `pydantic` extra only for Pydantic interoperability. Add
 Relay helpers. A bare adapter package should not depend on the NeMo Fabric
 runtime.
 
+Choose harness installation ownership before adding `harness` or `full`
+extras. Resolve the complete transitive graph and run the repository license
+diff before making a harness dependency part of a NeMo Fabric distribution.
+If the harness is not package-installable, has unreviewed or incompatible
+transitive licenses, or must be managed by another installer, keep the adapter
+package bare and document separately pinned, tested harness installation
+instructions. In that case, a root package extra may install the bare adapter,
+but must not imply that it installs the harness. Test the adapter against the
+documented harness versions in an isolated environment either way.
+
 For a TypeScript adapter, depend on
 `nemo-fabric-adapter-contract`. Import descriptor, configuration,
 runtime-context, request, and result types from the package root, matching the
@@ -118,6 +128,10 @@ adapter boundary:
   and adds the configured content after it.
 - Convert MCP servers, tool definitions, tool policy, and skills into native
   target constructs.
+- Disable ambient user, project, memory, and skill loading unless the normalized
+  config explicitly requests it. Redirect harness profile, cache, and state
+  writes from user-home defaults into adapter-owned runtime directories, and
+  remove temporary state during partial-start cleanup and `stop`.
 - Resolve workflow entry points and construction settings during `start` in
   the task environment.
 - Read identity, environment, artifacts, and telemetry from `RuntimeContext`,

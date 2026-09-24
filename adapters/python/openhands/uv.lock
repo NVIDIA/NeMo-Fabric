@@ -1,0 +1,38 @@
+version = 1
+revision = 3
+requires-python = ">=3.11"
+
+[[package]]
+name = "nemo-fabric-adapter-contract"
+version = "0.4.0"
+source = { editable = "../../../adapter-contract/python" }
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" }]
+provides-extras = ["pydantic"]
+
+[[package]]
+name = "nemo-fabric-adapters-common"
+version = "0.4.0"
+source = { editable = "../common" }
+dependencies = [
+    { name = "nemo-fabric-adapter-contract" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" }]
+
+[[package]]
+name = "nemo-fabric-adapters-openhands"
+version = "0.4.0"
+source = { editable = "." }
+dependencies = [
+    { name = "nemo-fabric-adapter-contract" },
+    { name = "nemo-fabric-adapters-common" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
+    { name = "nemo-fabric-adapters-common", editable = "../common" },
+]

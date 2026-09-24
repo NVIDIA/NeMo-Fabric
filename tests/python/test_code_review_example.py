@@ -23,6 +23,7 @@ from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import hermes_config
 from examples.code_review_agent import nooa_config
 from examples.code_review_agent import openclaw_config
+from examples.code_review_agent import openhands_config
 from examples.code_review_agent import pi_config
 from examples.code_review_agent import with_github_mcp
 from examples.code_review_agent import with_native_otel
@@ -44,9 +45,20 @@ def test_variant_builders_return_independent_complete_configs():
     deepagents = deepagents_config()
     nooa = nooa_config()
     openclaw = openclaw_config()
+    openhands = openhands_config()
     pi = pi_config()
 
-    for config in (base, hermes, codex, claude, deepagents, nooa, openclaw, pi):
+    for config in (
+        base,
+        hermes,
+        codex,
+        claude,
+        deepagents,
+        nooa,
+        openclaw,
+        openhands,
+        pi,
+    ):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
@@ -96,6 +108,12 @@ def test_variant_builders_return_independent_complete_configs():
     assert openclaw.skills.paths == ["./skills/code-review"]
     assert openclaw.tools is not None
     assert openclaw.tools.enabled == ["read"]
+    assert openhands.harness.adapter_id == "nvidia.fabric.openhands"
+    assert openhands.models["default"].provider == "nvidia"
+    assert openhands.skills is not None
+    assert openhands.skills.paths == ["./skills/code-review"]
+    assert openhands.tools is not None
+    assert openhands.tools.enabled == ["terminal", "file_editor"]
     assert base.mcp is None
     assert base.skills is not None
     skill_path = BASE_DIR / base.skills.paths[0]
@@ -224,6 +242,7 @@ def test_variants_plan_from_complete_configs():
         claude_config(),
         deepagents_config(),
         openclaw_config(),
+        openhands_config(),
         pi_config(),
     ):
         plan = client.plan(config, base_dir=BASE_DIR)
@@ -253,6 +272,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         ("deepagents", "nvidia.fabric.langchain.deepagents"),
         ("nooa", "nvidia.fabric.nooa"),
         ("openclaw", "nvidia.fabric.openclaw"),
+        ("openhands", "nvidia.fabric.openhands"),
         ("pi", "nvidia.fabric.pi"),
     )
     cases = tuple(
@@ -263,7 +283,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         )
         for variant, adapter_id in variants
         for relay_enabled in (False, True)
-        if variant != "openclaw" or not relay_enabled
+        if variant not in {"openclaw", "openhands"} or not relay_enabled
     )
 
     for options, adapter_id, relay_enabled in cases:
@@ -412,6 +432,26 @@ def test_openclaw_variant_rejects_relay_telemetry():
 
     assert completed.returncode == 2
     assert "OpenClaw adapter does not support Relay telemetry" in completed.stderr
+
+
+def test_openhands_variant_rejects_relay_telemetry():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "openhands",
+            "--relay",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "OpenHands adapter does not support Relay telemetry" in completed.stderr
 
 
 @pytest.mark.parametrize(

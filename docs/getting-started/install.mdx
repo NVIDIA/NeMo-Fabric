@@ -15,7 +15,7 @@ dependencies.
 
 NeMo Fabric supports Python 3.11 through 3.14. Some integrations and adapters
 have additional requirements. The Hermes Agent adapter does not support Python
-3.14, and the Harbor integration requires Python 3.12 or later.
+3.14; OpenHands and the Harbor integration require Python 3.12 or later.
 
 ### Choose an Installation
 
@@ -37,12 +37,13 @@ be managed separately.
 | `nemo-fabric-adapters-mini-swe-agent[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-nooa[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-openclaw` | No | No | Yes | No | No | No |
+| `nemo-fabric-adapters-openhands` | No | No | Yes | No | No | No |
 | `nemo-fabric-adapters-hermes[relay]` | No | No | Yes | No | Yes | No |
 | `nemo-fabric-adapters-claude` | No | No | Yes | No | No | No |
 
 An adapter package's `full` extra is scoped to the adapter environment and does
 not install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent
-to `harness`; both install the supported harness and `nemo-relay` CLI. For
+to `harness`; both also install the supported `nemo-relay` CLI. For
 LangChain Deep Agents and mini-SWE-agent, `full` installs the harness and NeMo
 Relay Python package without the CLI. For Hermes Agent, `full` installs only
 the adapter and NeMo Relay Python package; Hermes Agent must be installed
@@ -81,6 +82,7 @@ pip install "nemo-fabric[deepagents]"
 pip install "nemo-fabric[mini-swe-agent]"
 pip install "nemo-fabric[nooa]"
 pip install "nemo-fabric[openclaw]"
+pip install "nemo-fabric[openhands]"
 ```
 
 Each `nemo-fabric` harness extra installs the corresponding adapter package
@@ -95,6 +97,11 @@ pip install "nemo-fabric[claude,harbor,relay]"
 The NOOA extra supports Python 3.12 and 3.13 only. On another supported Python
 version, the command can succeed while its environment marker omits the NOOA
 adapter.
+
+OpenHands requires Python 3.12 or later. The root extra installs the adapter
+but not OpenHands. Install compatible `openhands-sdk`
+and `openhands-tools` packages separately as described in the
+[OpenHands adapter guide](../integrations/harness/openhands.mdx).
 
 The OpenClaw extra installs its adapter and HTTP client, but not OpenClaw.
 Install the `openclaw` npm package separately before using that adapter.
@@ -145,6 +152,9 @@ The OpenClaw adapter does not provide `harness` or `full` extras. Install
 `nemo-fabric-adapters-openclaw` directly and install the `openclaw` npm package
 separately.
 
+The OpenHands adapter also omits `harness` and `full` extras. Install the bare
+adapter and the compatible OpenHands packages separately.
+
 ### Add an Adapter to an Existing Harness Environment
 
 Install an adapter package without an extra when the environment already
@@ -157,6 +167,7 @@ pip install nemo-fabric-adapters-deepagents
 pip install nemo-fabric-adapters-hermes
 pip install nemo-fabric-adapters-nooa
 pip install nemo-fabric-adapters-openclaw
+pip install nemo-fabric-adapters-openhands
 ```
 
 Bare adapter distributions install only adapter-owned dependencies. They do not

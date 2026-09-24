@@ -34,6 +34,9 @@ ADAPTER_DESCRIPTORS = {
     "nvidia.fabric.openclaw": (
         ROOT / "adapters" / "python" / "openclaw" / "openclaw.fabric-adapter.json"
     ),
+    "nvidia.fabric.openhands": (
+        ROOT / "adapters" / "python" / "openhands" / "openhands.fabric-adapter.json"
+    ),
     "nvidia.fabric.remote-agent": (
         ROOT
         / "adapters"

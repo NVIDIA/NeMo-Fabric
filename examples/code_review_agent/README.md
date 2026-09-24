@@ -181,6 +181,13 @@ collects Relay ATOF records; it is not native model-response streaming.
 
 Install Node.js and OpenClaw, then install the [OpenClaw adapter](../../adapters/python/openclaw/README.md). This variant uses the `NVIDIA_API_KEY` configured for the default demo and retains the default code-review skill. OpenClaw does not currently support Relay telemetry.
 
+### OpenHands (`openhands`)
+
+Install `nemo-fabric[openhands]` on Python 3.12 or later. This variant uses the
+`NVIDIA_API_KEY` configured for the default demo, maps the terminal and file
+editor tools, and retains the default code-review skill. OpenHands does not
+currently support Relay telemetry.
+
 ### Pi (`pi`)
 
 Install Node.js 22.19 or later, and follow the

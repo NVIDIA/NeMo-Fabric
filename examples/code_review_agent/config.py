@@ -199,6 +199,34 @@ def deepagents_config() -> FabricConfig:
     return config
 
 
+def openhands_config() -> FabricConfig:
+    """Return the complete OpenHands SDK adapter variant."""
+
+    config = base_config().model_copy(deep=True)
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.openhands",
+        resolution="preinstalled",
+        settings={},
+    )
+    config.models = {"default": _nvidia_code_review_model()}
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content=CODE_REVIEW_INSTRUCTION, mode="append")
+    )
+    config.tools = ToolsConfig(enabled=["terminal", "file_editor"])
+    config.runtime = RuntimeConfig(
+        input_schema="text",
+        output_schema="message",
+        artifacts="./artifacts/openhands",
+        max_turns=20,
+    )
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=WORKSPACE,
+        artifacts="./artifacts/openhands",
+    )
+    return config
+
+
 def claude_config() -> FabricConfig:
     """Return the complete Claude adapter variant.
 

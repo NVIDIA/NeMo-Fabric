@@ -70,6 +70,8 @@ navigation:
             path: ./integrations/harness/mini-swe-agent.mdx
           - page: OpenClaw
             path: ./integrations/harness/openclaw.mdx
+          - page: OpenHands
+            path: ./integrations/harness/openhands.mdx
           - page: OpenCode
             path: ./integrations/harness/opencode.mdx
           - page: Pi
