@@ -5,6 +5,7 @@
 A native API or dashboard whose state outlives one runtime needs a credential
 that its operator can read from the adapter's retained state directory. The
 credential is created once, readable only by its owner, and never replaced.
+The checks rely on POSIX ownership and O_NOFOLLOW, so this requires a POSIX host.
 """
 
 from __future__ import annotations

@@ -6,13 +6,13 @@ In ``api_server`` mode the adapter starts Hermes' OpenAI-compatible Responses
 API in a supervised child process and forwards each invocation to it, instead
 of embedding the Hermes SDK. The same child can also serve the Hermes dashboard
 and browser TUI. Native state lives in ``harness.settings.state_dir`` when
-retained across runtimes, or in a runtime-scoped directory otherwise.
+retained across runtimes, or in a runtime-scoped directory otherwise. The mode
+requires a POSIX host.
 """
 
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import json
 import os
 import signal
@@ -186,6 +186,8 @@ class HermesApiServerRuntime:
                 "hermes_missing_api_key",
                 f"Hermes API key environment variable {api_key_env} is not set",
             )
+        import fcntl
+
         self.home.mkdir(parents=True, mode=0o700, exist_ok=True)
         self._state_lock = (self.home / "adapter.lock").open("a")
         try:

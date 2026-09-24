@@ -15,6 +15,8 @@ from nemo_fabric_adapter_contract.models import (
 
 if sys.version_info >= (3, 14):
     pytest.skip("Hermes adapter supports Python 3.11–3.13", allow_module_level=True)
+if sys.platform == "win32":
+    pytest.skip("Hermes API server mode requires a POSIX host", allow_module_level=True)
 
 import yaml
 from nemo_fabric import Fabric, FabricConfig, FabricConfigError

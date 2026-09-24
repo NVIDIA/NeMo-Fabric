@@ -3,9 +3,13 @@
 """Native interface credentials remain private and stable across runtime starts."""
 
 import os
+import sys
 
 import pytest
 from nemo_fabric_adapters.common.credentials import interface_token
+
+if sys.platform == "win32":
+    pytest.skip("interface credentials require a POSIX host", allow_module_level=True)
 
 
 def test_interface_token_is_retained_and_rejects_public_permissions(tmp_path):
