@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 """Run an installed native adapter against owned local inference, without external APIs.
 
@@ -105,14 +105,15 @@ async def qualify(adapter_id, settings):
             runtime = await fabric.start_runtime(config, base_dir=Path(directory))
             try:
                 for prompt in ("Say fabric-native-ok.", "Repeat that response."):
+                    before = len(Inference.requests)
                     result = await runtime.invoke(input=prompt)
                     assert result.status == "succeeded", result.to_mapping()
                     assert "fabric-native-ok" in json.dumps(
                         result.to_mapping()["output"]
                     ), result.to_mapping()
-                assert len(Inference.requests) >= 2, (
-                    "native process did not use owned inference"
-                )
+                    assert len(Inference.requests) > before, (
+                        "the invocation did not reach the owned inference endpoint"
+                    )
                 print(
                     json.dumps(
                         {
