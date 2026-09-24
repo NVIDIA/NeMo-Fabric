@@ -80,7 +80,20 @@
       "models.max_tokens",
       "instructions.system"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": ["replace"],
+    "schema": {
+      "anyOf": [
+        {
+          "properties": {"harness": {"properties": {"settings": {"required": ["base_url"]}}, "required": ["settings"]}},
+          "required": ["harness"]
+        },
+        {
+          "properties": {"models": {"minProperties": 1, "additionalProperties": {"required": ["base_url"]}}},
+          "required": ["models"]
+        }
+      ],
+      "description": "The agent API root comes from harness.settings.base_url or from base_url on every model role."
+    }
   },
   "capabilities": {
     "service": false,
