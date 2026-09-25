@@ -14323,6 +14323,14 @@ THE SOFTWARE.
 .
 ```
 
+## @kilocode/sdk - 7.7.12
+**Repository URL**: https://github.com/Kilo-Org/kilocode
+**License Type(s)**: MIT
+### License: https://spdx.org/licenses/MIT.html
+```
+(No license file read from locked npm artifact for @kilocode/sdk; see npm metadata.)
+```
+
 ## @lydell/node-pty - 1.2.0-beta.12
 **Repository URL**: https://github.com/lydell/node-pty
 **License Type(s)**: MIT

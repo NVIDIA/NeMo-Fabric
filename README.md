@@ -184,6 +184,10 @@ control the harness version. Relay-enabled Pi runs also require
 `nemo-relay>=0.9.0,<0.10.0` and an explicit path to the matching Relay Pi
 extension.
 
+The [Kilo Code adapter](docs/integrations/harness/kilo.mdx) is also distributed
+through npm. Install `nemo-fabric-adapters-kilo` with the exact-pinned Kilo CLI
+and SDK packages in the project where NeMo Fabric discovers its descriptor.
+
 Capabilities vary by harness. Review the
 [configuration compatibility matrix](adapters/README.md#configuration-compatibility)
 and use `Fabric.plan()` and `Fabric.doctor()` before relying on optional
@@ -285,9 +289,8 @@ harnesses and custom agents. Use these references to compare and build them:
 
 ## Roadmap
 
-- **Expand the harness ecosystem:** Add support for
-  [OpenCode](https://opencode.ai/docs), [OpenClaw](https://docs.openclaw.ai),
-  and other high-priority first- and third-party harnesses through Fabric
+- **Expand the harness ecosystem:** Add support for other high-priority
+  first- and third-party harnesses through Fabric
   normalized lifecycle and capability contracts.
 - **Sandbox-native execution with [NVIDIA OpenShell](https://docs.nvidia.com/openshell/about/overview):**
   Enable seamless Fabric runtime execution within secure sandboxes.

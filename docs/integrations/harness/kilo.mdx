@@ -1,0 +1,107 @@
+---
+title: "Use the Kilo Code Adapter"
+description: "Install and configure the NVIDIA NeMo Fabric harness integration for Kilo Code."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the `nvidia.fabric.kilo` adapter to run tasks with Kilo Code. Each NVIDIA
+NeMo Fabric runtime starts one isolated local Kilo server and reuses one Kilo
+session across ordered invocations.
+
+## Install the Adapter
+
+Install Node.js 22.19 or later, then install the adapter and its exact-pinned,
+consumer-managed Kilo packages:
+
+```bash
+npm install nemo-fabric-adapters-kilo @kilocode/cli@7.7.12 @kilocode/sdk@7.7.12
+```
+
+Installing the adapter alone does not install Kilo. If the compatible SDK or
+CLI is missing, startup returns `kilo_harness_unavailable`.
+
+For source development, run these commands from the repository root:
+
+```bash
+just install-typescript-kilo
+npm install --prefix adapters/typescript --no-save --package-lock=false @kilocode/cli@7.7.12
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kilo
+```
+
+## Configure the Adapter
+
+Point discovery at the installed descriptor and select the adapter:
+
+```python
+from nemo_fabric import DiscoveryConfig, FabricConfig, HarnessConfig
+from nemo_fabric import MetadataConfig, ModelConfig
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="kilo-review"),
+    discovery=DiscoveryConfig(
+        local_paths=[
+            "./node_modules/nemo-fabric-adapters-kilo/kilo.fabric-adapter.json"
+        ]
+    ),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.kilo"),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-30b-a3b",
+            api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
+        )
+    },
+)
+```
+
+For a source build, use
+`adapters/typescript/kilo/kilo.fabric-adapter.json` as the discovery path.
+
+## Supported Configuration
+
+The adapter maps these normalized fields:
+
+- **Models:** Selects the `default` role, or the only configured role. It maps
+  `provider`, `model`, `api_key_env`, `base_url`, `temperature`, and `top_p`.
+- **Instructions:** Supports `instructions.system` with `mode: replace`.
+- **Runtime:** Maps a positive `runtime.max_turns` to Kilo's build-agent step limit.
+- **Tools:** Maps native Kilo tool names in `tools.enabled` and `tools.blocked`.
+  Tool definitions are not supported.
+- **Skills:** Each `skills.paths` entry must be a directory containing `SKILL.md`.
+  Startup verifies that Kilo loaded every configured skill.
+- **MCP:** Supports stdio, streamable HTTP, and SSE server configurations.
+  Startup requires every configured server to report `connected`.
+
+Remote MCP endpoints must use HTTPS unless they are loopback addresses. Remote
+servers can define headers but not process arguments or environment variables.
+Stdio servers can define arguments and environment variables. Header values can
+reference `${NAME}`. The adapter resolves these references from Fabric
+`environment.env` first and then the parent process environment. Normalized MCP
+authentication and per-server tool filters are not supported.
+
+`models.max_tokens`, provider-specific model settings, append-mode system
+instructions, streaming, cancellation, service mode, and Relay telemetry are
+not supported.
+
+## Understand Runtime Isolation
+
+The adapter starts `kilo serve` on an available loopback port and communicates
+with it through `@kilocode/sdk`. It disables project Kilo configuration and
+uses temporary Kilo and XDG directories. The child receives required operating
+system variables, Fabric `environment.env`, and the selected model credential.
+Other parent variables are not forwarded.
+
+The adapter is non-interactive. It denies follow-up questions, access outside
+the workspace, and direct reads of `.env` files. These permission rules are not
+a filesystem sandbox and cannot prevent an enabled shell tool from reading
+workspace files. Use an environment provider when the task needs stronger
+isolation.
+
+Each invocation accepts plain text and returns the terminal assistant text in
+`output.response`. Usage and cost are included when Kilo reports them. `stop`
+deletes the Kilo session, terminates the local server, and removes its temporary
+profile.

@@ -84,6 +84,17 @@ def typescript_project_fixture(tmp_path: Path) -> Path:
         },
     )
     _write_json(
+        tmp_path / "adapters/typescript/kilo/package.json",
+        {
+            "name": "nemo-fabric-adapters-kilo",
+            "version": "0.2.0",
+            "dependencies": {
+                "nemo-fabric-adapter-contract": "0.2.0",
+                "nemo-fabric-adapters-common": "0.2.0",
+            },
+        },
+    )
+    _write_json(
         tmp_path / "adapters/typescript/package-lock.json",
         {
             "name": "nemo-fabric-typescript-adapters",
@@ -118,6 +129,14 @@ def typescript_project_fixture(tmp_path: Path) -> Path:
                         "nemo-fabric-adapters-common": "0.2.0",
                     },
                 },
+                "kilo": {
+                    "name": "nemo-fabric-adapters-kilo",
+                    "version": "0.2.0",
+                    "dependencies": {
+                        "nemo-fabric-adapter-contract": "0.2.0",
+                        "nemo-fabric-adapters-common": "0.2.0",
+                    },
+                },
                 "node_modules/ajv": {"version": "8.20.0"},
             },
         },
@@ -145,7 +164,9 @@ def test_updates_the_complete_typescript_package_graph(
         (typescript_project / "adapter-contract/typescript/package.json").read_text()
     )
     contract_lock = json.loads(
-        (typescript_project / "adapter-contract/typescript/package-lock.json").read_text()
+        (
+            typescript_project / "adapter-contract/typescript/package-lock.json"
+        ).read_text()
     )
     adapters = json.loads(
         (typescript_project / "adapters/typescript/package.json").read_text()
@@ -162,13 +183,23 @@ def test_updates_the_complete_typescript_package_graph(
     opencode = json.loads(
         (typescript_project / "adapters/typescript/opencode/package.json").read_text()
     )
+    kilo = json.loads(
+        (typescript_project / "adapters/typescript/kilo/package.json").read_text()
+    )
 
     assert contract["version"] == version
     assert contract_lock["version"] == version
     assert contract_lock["packages"][""]["version"] == version
     assert adapters["version"] == version
     assert adapters_lock["version"] == version
-    for workspace in ("", "../../adapter-contract/typescript", "common", "pi", "opencode"):
+    for workspace in (
+        "",
+        "../../adapter-contract/typescript",
+        "common",
+        "pi",
+        "opencode",
+        "kilo",
+    ):
         assert adapters_lock["packages"][workspace]["version"] == version
     assert common["version"] == version
     assert common["dependencies"]["nemo-fabric-adapter-contract"] == version
@@ -178,14 +209,24 @@ def test_updates_the_complete_typescript_package_graph(
     assert opencode["version"] == version
     assert opencode["dependencies"]["nemo-fabric-adapter-contract"] == version
     assert opencode["dependencies"]["nemo-fabric-adapters-common"] == version
-    assert adapters_lock["packages"]["common"]["dependencies"][
-        "nemo-fabric-adapter-contract"
-    ] == version
+    assert kilo["version"] == version
+    assert kilo["dependencies"]["nemo-fabric-adapter-contract"] == version
+    assert kilo["dependencies"]["nemo-fabric-adapters-common"] == version
+    assert (
+        adapters_lock["packages"]["common"]["dependencies"][
+            "nemo-fabric-adapter-contract"
+        ]
+        == version
+    )
     assert adapters_lock["packages"]["pi"]["dependencies"] == {
         "nemo-fabric-adapter-contract": version,
         "nemo-fabric-adapters-common": version,
     }
     assert adapters_lock["packages"]["opencode"]["dependencies"] == {
+        "nemo-fabric-adapter-contract": version,
+        "nemo-fabric-adapters-common": version,
+    }
+    assert adapters_lock["packages"]["kilo"]["dependencies"] == {
         "nemo-fabric-adapter-contract": version,
         "nemo-fabric-adapters-common": version,
     }

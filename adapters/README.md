@@ -57,6 +57,7 @@ build, and packaging conventions.
 
 | Agent Harness | Adapter ID | npm Package | Supported Runtime |
 | --- | --- | --- | --- |
+| [Kilo Code](typescript/kilo/README.md) | `nvidia.fabric.kilo` | `nemo-fabric-adapters-kilo` | Node.js 22.19+ |
 | [OpenCode](typescript/opencode/README.md) | `nvidia.fabric.opencode` | `nemo-fabric-adapters-opencode` | Bun 1.4.2+ |
 | [Pi](typescript/pi/README.md) | `nvidia.fabric.pi` | `nemo-fabric-adapters-pi` | 22.19+ |
 
@@ -87,6 +88,7 @@ integration shape and implement the minimum lifecycle.
 | [Codex](python/codex/README.md) | Native OpenAI or a configured Responses-compatible provider | `tools.enabled` and `tools.blocked` unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
 | [LangChain Deep Agents](python/deepagents/README.md) | LangChain model providers | Middleware enforces `tools.enabled` and `tools.blocked` across built-ins, MCP, and local delegation | Normalized through `langchain-mcp-adapters` | Normalized | Built-in, declarative, and Agent Protocol |
 | [Hermes Agent](python/hermes/README.md) | Configurable provider, model, and base URL | `tools.enabled` and `tools.blocked` map to Hermes native toolset selectors | Normalized | Normalized | Not exposed |
+| [Kilo Code](typescript/kilo/README.md) | Configured Kilo provider and model with an optional OpenAI-compatible base URL | `tools.enabled` and `tools.blocked` map to native Kilo tool names | Normalized: stdio, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | Configured provider and model | Not exposed | Not exposed | Not exposed | Not exposed |
 | [NOOA](python/nooa/README.md) | Configured provider and model with optional base URL and temperature | Not exposed | InteractiveAgent: normalized whole servers; BenchAgent: not exposed | InteractiveAgent: normalized `skills.paths`; BenchAgent: not exposed | Not exposed |
 | [OpenClaw](python/openclaw/README.md) | Native OpenClaw providers or a configured OpenAI Chat Completions-compatible provider | OpenClaw native policy only | Normalized: stdio, HTTP, streamable HTTP, and SSE without normalized authentication | Normalized `skills.paths` | OpenClaw native behavior |
@@ -118,39 +120,39 @@ its harness. `No` means an explicitly configured value fails planning instead
 of being ignored. The following table groups provider-specific Relay subfields
 and additive extension maps because their support does not vary by adapter:
 
-| `FabricConfig` Field | Claude | Codex | Deep Agents | Hermes Agent | mini-SWE-agent | NOOA | OpenClaw | OpenCode | Pi | Remote Agent |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `schema_version` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `metadata.name`, `.description` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema | Closed schema | Closed command, port-range, and timeout schema | No settings declared | Closed local-extension and Relay-extension schema | Closed `base_url`, `api_type`, transport-timeout, and `relay_streaming` schema |
-| `workflow.target_id`, `.settings` | No | No | No | No | No | No | No | No | No | No |
-| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | Configured provider | Configured provider | OpenClaw provider; custom providers require an OpenAI Chat Completions-compatible `base_url` | OpenCode provider | Pi catalog provider | Configured provider |
-| `models.<role>.model` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes; passed to OpenCode | Yes; must exist in the Pi catalog | Yes |
-| `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes; OpenAI-compatible Chat Completions endpoint | Yes; known catalog models only | No; use `harness.settings.base_url` |
-| `models.<role>.temperature` | No | No | Yes | Yes | Yes | Yes | Yes | Yes: OpenAI-compatible `base_url` only | No | Yes |
-| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | `client_type` | No keys declared | No keys declared | No keys declared | `max_tokens` for Anthropic Messages |
-| `models.<role>.top_p` | No | No | Yes | Yes | Yes: passed through LiteLLM | No | Yes | Yes: OpenAI-compatible `base_url` only | No | Yes: translated to the selected API protocol |
-| `models.<role>.max_tokens` | No | No | Yes | Yes | Yes: passed through LiteLLM | No | Yes | No | No | Yes: translated to the selected API protocol |
-| `instructions.system` | `replace`, `append` | `replace` with base instructions | `replace` | `replace` | `replace` | `replace` | `replace` | `replace` with OpenCode base instructions | `replace` with Pi base instructions | `replace` |
-| `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; iteration limit | Yes | No | No | No | No | No |
-| `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
-| `tools.definitions` | No | No | No | No | No | No | No | No | Yes; trusted local module factories | No |
-| `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No | No | Yes | No | Yes | No |
-| `skills.paths` | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes, BenchAgent: No | Yes | Yes | Yes | No |
-| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes, BenchAgent: No | Yes | Yes: stdio `args` and `env`, streamable HTTP `custom_headers` | No | No |
-| `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No; not implemented | No; not implemented | No | No | No |
-| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | Yes, supports embedded collector-backed Agent Trajectory Observability Format (ATOF) streaming | Yes, supports collector-backed ATOF streaming |
-| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No | No | No | No |
-| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No | Declared-provider pass-through | No |
-| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | Yes | Uses the named external collector sink when selected; config is not sent to the remote service |
-| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | Yes | Not sent to the remote service |
-| Other additive `extensions` on typed config objects | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor |
+| `FabricConfig` Field | Claude | Codex | Deep Agents | Hermes Agent | mini-SWE-agent | NOOA | OpenClaw | Kilo Code | OpenCode | Pi | Remote Agent |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `schema_version` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `metadata.name`, `.description` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema | Closed schema | Closed command, port-range, and timeout schema | Closed schema | No settings declared | Closed local-extension and Relay-extension schema | Closed `base_url`, `api_type`, transport-timeout, and `relay_streaming` schema |
+| `workflow.target_id`, `.settings` | No | No | No | No | No | No | No | No | No | No | No |
+| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | Configured provider | Configured provider | OpenClaw provider; custom providers require an OpenAI Chat Completions-compatible `base_url` | Kilo provider | OpenCode provider | Pi catalog provider | Configured provider |
+| `models.<role>.model` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes; passed to OpenCode | Yes; must exist in the Pi catalog | Yes |
+| `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes; OpenAI-compatible endpoint | Yes; OpenAI-compatible Chat Completions endpoint | Yes; known catalog models only | No; use `harness.settings.base_url` |
+| `models.<role>.temperature` | No | No | Yes | Yes | Yes | Yes | Yes | Yes | Yes: OpenAI-compatible `base_url` only | No | Yes |
+| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | `client_type` | No keys declared | No keys declared | No keys declared | No keys declared | `max_tokens` for Anthropic Messages |
+| `models.<role>.top_p` | No | No | Yes | Yes | Yes: passed through LiteLLM | No | Yes | Yes | Yes: OpenAI-compatible `base_url` only | No | Yes: translated to the selected API protocol |
+| `models.<role>.max_tokens` | No | No | Yes | Yes | Yes: passed through LiteLLM | No | Yes | No | No | No | Yes: translated to the selected API protocol |
+| `instructions.system` | `replace`, `append` | `replace` with base instructions | `replace` | `replace` | `replace` | `replace` | `replace` | `replace` | `replace` with OpenCode base instructions | `replace` with Pi base instructions | `replace` |
+| `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; iteration limit | Yes | No | No | Yes; maps to build-agent steps | No | No | No |
+| `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
+| `tools.definitions` | No | No | No | No | No | No | No | No | No | Yes; trusted local module factories | No |
+| `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No | No | Yes | Yes; native Kilo tool names | No | Yes | No |
+| `skills.paths` | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes, BenchAgent: No | Yes | Yes | Yes | Yes | No |
+| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No | InteractiveAgent: Yes, BenchAgent: No | Yes | Yes: stdio, streamable HTTP, and SSE | Yes: stdio `args` and `env`, streamable HTTP `custom_headers` | No | No |
+| `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No | No; not implemented | No; not implemented | No | No | No | No |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | No | Yes, supports embedded collector-backed Agent Trajectory Observability Format (ATOF) streaming | Yes, supports collector-backed ATOF streaming |
+| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No | No | No | No | No | No | No |
+| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | No | No | Declared-provider pass-through | No |
+| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | No | Yes | Uses the named external collector sink when selected; config is not sent to the remote service |
+| `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | No | Yes | Not sent to the remote service |
+| Other additive `extensions` on typed config objects | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor |
 
 The selected model role is `default`, or the sole configured role when no
 `default` exists. More than one role without `default` fails planning.
@@ -186,6 +188,7 @@ Agent Trajectory Interchange Format (ATIF).
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | Conversation history | Adapter-owned subclass with NeMo Relay Python SDK scopes | Creates a fresh Relay plugin and request scope, emits step, model, and bash-action telemetry, and collects artifacts | Clears the agent and Relay state | Not implemented |
 | [NOOA](python/nooa/README.md) | InteractiveAgent queue dispatcher or BenchAgent task state | Adapter-owned Relay middleware and generated Relay configuration | InteractiveAgent dispatches queued requests; BenchAgent evaluates one task | Closes agent resources and Relay state | Not implemented |
 | [OpenClaw](python/openclaw/README.md) | OpenClaw Gateway session selected by Fabric runtime ID | Not supported | Sends a terminal Chat Completions request to the isolated loopback Gateway | Terminates the Gateway process tree and removes its temporary config and state | Adapter-owned loopback service |
+| [Kilo Code](typescript/kilo/README.md) | Local Kilo server and one Kilo session | Not supported | Reuses the session and submits one SDK prompt for ordered text input | Deletes the session, terminates the server, and removes the isolated profile | Adapter-owned loopback service |
 | [OpenCode](typescript/opencode/README.md) | Embedded OpenCode host and session | Not supported | Reuses the session and calls `prompt()`, `wait()`, and `context()` for ordered text input | Removes the session and closes the host | Not implemented |
 | [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Runtime-owned Relay 0.9 CLI gateway and explicit Pi extension | Reuses the session and calls `prompt()` for ordered text input; with `streaming=True`, routes per-invocation model-turn ATOF for successful redirects through the embedded collector; startup `model_redirect` marks remain in configured Relay ATOF artifacts and are not included in `invoke_stream()`; `relay_artifacts` does not include local ATIF | Aborts work, emits extension shutdown so local ATIF finalizes on disk, disposes the session, and then stops the gateway | Not implemented |
 | [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a shared ATOF collector | Registers the request ID, maps it into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |

@@ -47,16 +47,14 @@ def test_publisher_only_triggers_for_public_release_channels():
     for package in (
         "nemo-fabric-adapters-common",
         "nemo-fabric-adapters-opencode",
+        "nemo-fabric-adapters-kilo",
         "nemo-fabric-adapters-pi",
     ):
         for version in ("0.3.0", "0.3.0-beta.1", "0.3.0-rc.1"):
-            assert not _tag_triggers_workflow(
-                f"npm/{package}/v{version}", tag_patterns
-            )
+            assert not _tag_triggers_workflow(f"npm/{package}/v{version}", tag_patterns)
 
     steps = {
-        step["name"]: step
-        for step in workflow["jobs"]["publish-typescript"]["steps"]
+        step["name"]: step for step in workflow["jobs"]["publish-typescript"]["steps"]
     }
     assert steps["Verify release tag"]["env"]["RELEASE_REF"] == "${{ github.ref }}"
     release_metadata = steps["Resolve package release"]["run"]
@@ -68,8 +66,7 @@ def test_publisher_only_triggers_for_public_release_channels():
 def test_publisher_publishes_packages_in_dependency_order():
     workflow = _load_workflow(PUBLISH_WORKFLOW)
     steps = {
-        step["name"]: step
-        for step in workflow["jobs"]["publish-typescript"]["steps"]
+        step["name"]: step for step in workflow["jobs"]["publish-typescript"]["steps"]
     }
     release = steps["Resolve package release"]["run"]
     assert 'case "$RELEASE_TAG" in' in release
@@ -86,6 +83,7 @@ def test_publisher_publishes_packages_in_dependency_order():
         "adapters/typescript/common",
         "adapters/typescript/pi",
         "adapters/typescript/opencode",
+        "adapters/typescript/kilo",
     )
     assert "Verify packages" not in steps
     run = steps["Publish packages"]["run"]

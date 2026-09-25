@@ -149,7 +149,8 @@ jobs:
             adapter-contract/typescript \
             adapters/typescript/common \
             adapters/typescript/pi \
-            adapters/typescript/opencode; do
+            adapters/typescript/opencode \
+            adapters/typescript/kilo; do
             python3 scripts/ci/publish_typescript_package.py \
               --action publish \
               --package-directory "$package_directory" \

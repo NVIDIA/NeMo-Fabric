@@ -7,16 +7,17 @@
   "workspaces": [
     "common",
     "pi",
-    "opencode"
+    "opencode",
+    "kilo"
   ],
   "scripts": {
-    "build": "npm run build --workspace nemo-fabric-adapters-common && npm run build --workspace nemo-fabric-adapters-pi && npm run build --workspace nemo-fabric-adapters-opencode",
+    "build": "npm run build --workspace nemo-fabric-adapters-common && npm run build --workspace nemo-fabric-adapters-pi && npm run build --workspace nemo-fabric-adapters-opencode && npm run build --workspace nemo-fabric-adapters-kilo",
     "pack:check": "npm run pack:contents && npm run pack:install-check",
-    "pack:contents": "npm run pack:check --workspace nemo-fabric-adapters-common && npm run pack:check --workspace nemo-fabric-adapters-pi && npm run pack:check --workspace nemo-fabric-adapters-opencode",
+    "pack:contents": "npm run pack:check --workspace nemo-fabric-adapters-common && npm run pack:check --workspace nemo-fabric-adapters-pi && npm run pack:check --workspace nemo-fabric-adapters-opencode && npm run pack:check --workspace nemo-fabric-adapters-kilo",
     "pack:install-check": "node scripts/check-install.mjs",
     "test": "npm run test:units && npm run test:dependencies && npm run pack:check",
     "test:dependencies": "npm ls --all && npm audit --audit-level=high",
-    "test:units": "npm test --workspace nemo-fabric-adapters-common && npm test --workspace nemo-fabric-adapters-pi && npm test --workspace nemo-fabric-adapters-opencode"
+    "test:units": "npm test --workspace nemo-fabric-adapters-common && npm test --workspace nemo-fabric-adapters-pi && npm test --workspace nemo-fabric-adapters-opencode && npm test --workspace nemo-fabric-adapters-kilo"
   },
   "devDependencies": {
     "nemo-fabric-adapter-contract": "file:../../adapter-contract/typescript"

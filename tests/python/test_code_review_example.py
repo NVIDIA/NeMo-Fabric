@@ -21,6 +21,7 @@ from examples.code_review_agent import claude_config
 from examples.code_review_agent import codex_config
 from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import hermes_config
+from examples.code_review_agent import kilo_config
 from examples.code_review_agent import nooa_config
 from examples.code_review_agent import openclaw_config
 from examples.code_review_agent import pi_config
@@ -39,6 +40,7 @@ from nemo_fabric import RunOutput
 def test_variant_builders_return_independent_complete_configs():
     base = base_config()
     hermes = hermes_config()
+    kilo = kilo_config()
     codex = codex_config()
     claude = claude_config()
     deepagents = deepagents_config()
@@ -46,7 +48,7 @@ def test_variant_builders_return_independent_complete_configs():
     openclaw = openclaw_config()
     pi = pi_config()
 
-    for config in (base, hermes, codex, claude, deepagents, nooa, openclaw, pi):
+    for config in (base, hermes, codex, claude, deepagents, nooa, openclaw, pi, kilo):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
@@ -78,6 +80,9 @@ def test_variant_builders_return_independent_complete_configs():
     assert pi.models["default"].api_key_env == "NVIDIA_API_KEY"
     assert pi.models["default"].temperature is None
     assert pi.skills is not None
+    assert kilo.harness.adapter_id == "nvidia.fabric.kilo"
+    assert kilo.tools.enabled == ["read", "glob", "grep", "skill"]
+    assert kilo.runtime.max_turns == 20
     assert pi.skills.paths == ["./skills/code-review"]
     assert pi.tools is not None
     assert pi.tools.enabled == ["read"]
@@ -225,6 +230,7 @@ def test_variants_plan_from_complete_configs():
         deepagents_config(),
         openclaw_config(),
         pi_config(),
+        kilo_config(),
     ):
         plan = client.plan(config, base_dir=BASE_DIR)
         assert plan.base_dir == BASE_DIR
@@ -254,6 +260,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         ("nooa", "nvidia.fabric.nooa"),
         ("openclaw", "nvidia.fabric.openclaw"),
         ("pi", "nvidia.fabric.pi"),
+        ("kilo", "nvidia.fabric.kilo"),
     )
     cases = tuple(
         (
@@ -263,7 +270,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         )
         for variant, adapter_id in variants
         for relay_enabled in (False, True)
-        if variant != "openclaw" or not relay_enabled
+        if variant not in {"openclaw", "kilo"} or not relay_enabled
     )
 
     for options, adapter_id, relay_enabled in cases:
@@ -372,6 +379,17 @@ def test_pi_variant_projects_explicit_skill_and_tool_policy():
     assert plan.config.runtime.output_schema == "message"
 
 
+def test_kilo_variant_projects_normalized_configuration():
+    plan = Fabric().plan(kilo_config(), base_dir=BASE_DIR)
+    agent_config = plan.to_mapping()["agent_config"]
+
+    assert agent_config["skills"] == {
+        "paths": [str((BASE_DIR / "skills/code-review").resolve())]
+    }
+    assert agent_config["tools"] == {"enabled": ["read", "glob", "grep", "skill"]}
+    assert agent_config["runtime"]["max_turns"] == 20
+
+
 @pytest.mark.parametrize("stream", [False, True])
 def test_pi_variant_requires_the_relay_extension_for_a_live_run(stream: bool):
     completed = subprocess.run(
@@ -412,6 +430,26 @@ def test_openclaw_variant_rejects_relay_telemetry():
 
     assert completed.returncode == 2
     assert "OpenClaw adapter does not support Relay telemetry" in completed.stderr
+
+
+def test_kilo_variant_rejects_relay_telemetry():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "kilo",
+            "--relay",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "Kilo Code adapter does not support Relay telemetry" in completed.stderr
 
 
 @pytest.mark.parametrize(

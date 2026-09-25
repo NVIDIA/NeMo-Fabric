@@ -1,0 +1,36 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.kilo",
+  "adapter_kind": "process",
+  "runner": {"command": "node", "script": "dist/cli.js"},
+  "config": {
+    "accepts": [
+      "models",
+      "models.base_url",
+      "models.temperature",
+      "models.top_p",
+      "instructions.system",
+      "runtime.max_turns",
+      "tools.enabled",
+      "tools.blocked",
+      "skills",
+      "mcp"
+    ],
+    "system_instruction_modes": ["replace"]
+  },
+  "model_schema": {
+    "type": "object",
+    "properties": {
+      "provider": {"type": "string", "minLength": 1},
+      "model": {"type": "string", "minLength": 1},
+      "api_key_env": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+      "base_url": {"type": ["string", "null"], "format": "uri", "pattern": "^https?://"},
+      "temperature": {"type": "number"},
+      "top_p": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "required": ["provider", "model", "api_key_env"],
+    "additionalProperties": false
+  },
+  "settings_schema": {"type": "object", "additionalProperties": false},
+  "capabilities": {"streaming": false, "cancellation": false, "updates": false, "service": false}
+}

@@ -210,3 +210,17 @@ document containing `atof_records` and the separate terminal `result`. Relay
 retains redirect-decision marks in configured ATOF artifacts, while Pi's startup
 `model_redirect` marks are not included in `atof_records`. Omit `--stream` to
 retain Relay artifacts without collecting records for that JSON output.
+
+### Kilo Code (`kilo`)
+
+Install Node.js 22.19 or later and the source adapter dependencies:
+
+```bash
+just install-typescript-kilo
+npm install --prefix adapters/typescript --no-save --package-lock=false @kilocode/cli@7.7.12
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kilo
+```
+
+The variant maps the NVIDIA model endpoint, replacement review instruction,
+read-oriented tool policy, maximum turns, and default code-review skill. Kilo
+Code does not currently support Relay through this adapter.

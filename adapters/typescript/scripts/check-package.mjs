@@ -66,6 +66,20 @@ const expectedByPackage = {
     "opencode.fabric-adapter.json",
     "package.json",
   ],
+  "nemo-fabric-adapters-kilo": [
+    "LICENSE",
+    "README.md",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/configuration.d.ts",
+    "dist/configuration.js",
+    "dist/kilo-sdk.d.ts",
+    "dist/kilo-sdk.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "kilo.fabric-adapter.json",
+    "package.json",
+  ],
 };
 const expectedFiles = expectedByPackage[manifest.name];
 if (expectedFiles === undefined) {
@@ -132,6 +146,21 @@ if (manifest.name === "nemo-fabric-adapters-opencode") {
       throw new Error(`The OpenCode package must exact-pin ${name} for development`);
     }
   }
+}
+if (manifest.name === "nemo-fabric-adapters-kilo") {
+  if (manifest.exports?.["./descriptor"] !== "./kilo.fabric-adapter.json") {
+    throw new Error("The Kilo Code package must export its adapter descriptor");
+  }
+  const descriptor = JSON.parse(await readFile(join(packageRoot, "kilo.fabric-adapter.json"), "utf8"));
+  if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("The Kilo Code descriptor must run its packaged CLI with Node.js");
+  }
+  for (const name of ["@kilocode/cli", "@kilocode/sdk"]) {
+    if (manifest.dependencies?.[name] !== undefined) throw new Error(`The Kilo Code harness package ${name} must not be a production dependency`);
+    if (manifest.peerDependencies?.[name] !== "7.7.12") throw new Error(`The Kilo Code package must exact-pin its supported ${name} peer`);
+    if (manifest.peerDependenciesMeta?.[name]?.optional !== true) throw new Error(`The Kilo Code package must declare ${name} as an optional peer`);
+  }
+  if (manifest.devDependencies?.["@kilocode/sdk"] !== "7.7.12") throw new Error("The Kilo Code package must exact-pin @kilocode/sdk for development");
 }
 for (const [name, specifier] of Object.entries(manifest.dependencies ?? {})) {
   if (specifier.startsWith("file:") || specifier.startsWith("workspace:")) {

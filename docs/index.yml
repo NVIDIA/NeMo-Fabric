@@ -66,6 +66,8 @@ navigation:
             path: ./integrations/harness/hermes.mdx
           - page: LangChain Deep Agents
             path: ./integrations/harness/deepagents.mdx
+          - page: Kilo Code
+            path: ./integrations/harness/kilo.mdx
           - page: mini-SWE-agent
             path: ./integrations/harness/mini-swe-agent.mdx
           - page: OpenClaw
