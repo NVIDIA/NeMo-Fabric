@@ -560,3 +560,5 @@ def test_planning_requires_an_endpoint_in_the_model_or_settings(tmp_path: Path):
     plan({}, {"base_url": endpoint})
     with pytest.raises(FabricConfigError, match="nvidia.fabric.remote-agent"):
         plan({}, {})
+    with pytest.raises(FabricConfigError, match="base_url"):
+        plan({}, {"base_url": "ftp://agent.example.test/v1"})

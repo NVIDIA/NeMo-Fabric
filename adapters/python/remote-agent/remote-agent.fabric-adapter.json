@@ -56,7 +56,13 @@
       "temperature": {"type": "number"},
       "top_p": {"type": "number", "minimum": 0, "maximum": 1},
       "max_tokens": {"type": "integer", "minimum": 1},
-      "base_url": {"type": "string", "minLength": 1},
+      "base_url": {
+        "type": "string",
+        "format": "uri",
+        "pattern": "^https?://",
+        "minLength": 1,
+        "description": "Remote agent API root, including the /v1 path segment."
+      },
       "api": {"enum": ["openai-completions", "openai-responses", "anthropic-messages"]},
       "settings": {
         "type": "object",
