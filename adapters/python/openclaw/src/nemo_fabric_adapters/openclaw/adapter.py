@@ -745,8 +745,12 @@ async def _capture_stream(
     while line := await stream.readline():
         tail.append(line.decode(errors="replace").rstrip())
         if log is not None:
-            log.write(line)
-            log.flush()
+            try:
+                log.write(line)
+                log.flush()
+            except OSError:
+                # Keep draining the Gateway so it never blocks on a full pipe.
+                log = None
 
 
 def _write_private(path: Path, text: str) -> None:
@@ -928,10 +932,20 @@ class OpenClawRuntime:
             return await self._attach_service(config, context, settings, service)
         child_env = common_utils.virtualenv_subprocess_env()
         child_env.update(context.environment.env)
-        if model.api_key_env is not None and not child_env.get(model.api_key_env):
+        # Every role is registered with OpenClaw, so each needs its credential.
+        missing_api_keys = sorted(
+            {
+                role.api_key_env
+                for role in config.models.values()
+                if role.api_key_env is not None and not child_env.get(role.api_key_env)
+            }
+        )
+        if missing_api_keys:
             raise lifecycle.LifecycleError(
                 "openclaw_missing_api_key",
-                f"OpenClaw API key environment variable {model.api_key_env} is not set",
+                "OpenClaw API key environment variables are not set: "
+                + ", ".join(missing_api_keys),
+                metadata={"environment_variables": missing_api_keys},
             )
         missing_channel_secrets = sorted(
             name
@@ -1115,7 +1129,11 @@ class OpenClawRuntime:
                 metadata={"field": "harness.settings.state_dir"},
             ) from None
         self._state_lock = lock
-        self._gateway_log = (state_dir / GATEWAY_LOG).open("ab")
+        self._gateway_log = open(
+            state_dir / GATEWAY_LOG,
+            "ab",
+            opener=lambda name, flags: os.open(name, flags, 0o600),
+        )
         token = interface_token(state_dir, create=True)
         return state_dir, state_dir / "openclaw.json", token
 

@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import socket
 import sys
+from collections import deque
 from pathlib import Path
 
 import pytest
@@ -170,6 +172,44 @@ def test_fixed_port_requires_its_derived_ports(monkeypatch):
     assert adapter._select_port({"port": free}) == free
 
 
+async def test_every_role_credential_is_checked_before_startup(tmp_path: Path):
+    review = {
+        "provider": "anthropic",
+        "model": "reviewer",
+        "base_url": "https://review.example.test/v1",
+        "api_key_env": "REVIEW_KEY",
+    }
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {"openclaw_command": str(tmp_path / "unused")}},
+            "models": {"default": {**MODEL, "api_key_env": "MODEL_KEY"}, "review": review},
+        }
+    )
+    context = _context(tmp_path).to_mapping()
+    context["environment"]["env"] = {"MODEL_KEY": "fixture"}
+    payload = {"config": config, "runtime_context": context, "base_dir": str(tmp_path)}
+    with pytest.raises(lifecycle.LifecycleError, match="REVIEW_KEY") as raised:
+        await adapter.OpenClawRuntime().start(payload)
+    assert raised.value.code == "openclaw_missing_api_key"
+    assert raised.value.metadata["environment_variables"] == ["REVIEW_KEY"]
+
+
+async def test_gateway_output_is_still_read_when_its_log_fails():
+    class FailingLog:
+        def write(self, data: bytes) -> None:
+            raise OSError("disk full")
+
+        def flush(self) -> None:
+            raise OSError("disk full")
+
+    stream = asyncio.StreamReader()
+    stream.feed_data(b"first\nsecond\n")
+    stream.feed_eof()
+    tail: deque[str] = deque(maxlen=10)
+    await adapter._capture_stream(stream, tail, FailingLog())
+    assert list(tail) == ["first", "second"]
+
+
 def _plan(tmp_path: Path, settings: dict) -> None:
     Fabric().plan(
         FabricConfig.from_mapping(
@@ -195,6 +235,11 @@ def test_planning_checks_native_settings_before_startup(tmp_path: Path):
     _plan(tmp_path, {"state_dir": "state", "native_config": control_ui})
     with pytest.raises(FabricConfigError, match="state_dir"):
         _plan(tmp_path, {"native_config": control_ui})
+    with pytest.raises(FabricConfigError, match="controlUi"):
+        _plan(
+            tmp_path,
+            {"state_dir": "state", "native_config": {"gateway": {"controlUi": None}}},
+        )
     with pytest.raises(FabricConfigError, match="gateway.port"):
         _plan(tmp_path, {"native_config": {"gateway": {"port": 18800}}})
     with pytest.raises(FabricConfigError, match="port"):
@@ -243,7 +288,7 @@ async def test_state_dir_retains_state_credential_and_log(
         assert result.status == "succeeded"
     finally:
         await runtime.stop()
-    assert (state / "gateway.log").exists()
+    assert (state / "gateway.log").stat().st_mode & 0o077 == 0
     assert (state / "openclaw.json").stat().st_mode & 0o077 == 0
 
     restarted = adapter.OpenClawRuntime()

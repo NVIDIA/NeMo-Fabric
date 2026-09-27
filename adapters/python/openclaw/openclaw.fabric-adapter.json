@@ -63,7 +63,14 @@
           "models": false,
           "gateway": {
             "type": "object",
-            "properties": {"mode": false, "port": false, "bind": false, "auth": false, "http": false}
+            "properties": {
+              "mode": false,
+              "port": false,
+              "bind": false,
+              "auth": false,
+              "http": false,
+              "controlUi": {"type": "object"}
+            }
           },
           "agents": {
             "type": "object",
