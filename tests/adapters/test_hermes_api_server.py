@@ -2,7 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Hermes API server mode forwards invocations to Hermes' native Responses API."""
 
+import asyncio
+import json
 import sys
+import types
+import urllib.error
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -21,7 +25,8 @@ if sys.platform == "win32":
 import yaml
 from nemo_fabric import Fabric, FabricConfig, FabricConfigError
 from nemo_fabric_adapters.common import lifecycle
-from nemo_fabric_adapters.hermes import api_server
+from nemo_fabric_adapters.common.credentials import interface_token
+from nemo_fabric_adapters.hermes import api_server, configuration, telemetry
 
 COMPLETED = {
     "status": "completed",
@@ -118,6 +123,9 @@ async def test_retained_state_is_written_once_and_checked_for_drift(tmp_path, na
     )
     with pytest.raises(lifecycle.LifecycleError, match="conflicts"):
         await api_server.HermesApiServerRuntime().start(_payload(changed, tmp_path))
+    dropped = _config({"state_dir": str(state)})
+    with pytest.raises(lifecycle.LifecycleError, match="conflicts"):
+        await api_server.HermesApiServerRuntime().start(_payload(dropped, tmp_path))
 
 
 async def test_without_state_dir_native_state_is_scoped_to_the_runtime(
@@ -142,6 +150,9 @@ async def test_invocations_forward_instructions_and_chain_responses(
     assert result.output["response"] == "hello"
     first = native.request.call_args.kwargs["body"]
     assert first["instructions"] == "Be brief."
+    assert native.request.call_args.kwargs["timeout"] is None, (
+        "runtime.timeout_seconds, enforced by NeMo Fabric, bounds the turn"
+    )
     assert "previous_response_id" not in first
     await runtime.invoke(AgentRunRequest(input="again"), context)
     assert native.request.call_args.kwargs["body"]["previous_response_id"] == "turn-1"
@@ -160,6 +171,15 @@ async def test_definite_failures_keep_the_runtime_and_uncertain_ones_stop_it(
     native.request.return_value = COMPLETED
     result = await runtime.invoke(AgentRunRequest(input="hello"), context)
     assert result.status == "succeeded", "a reported failure does not stop Hermes"
+    native.request.side_effect = urllib.error.HTTPError(
+        "http://127.0.0.1/v1/responses", 500, "Internal Server Error", {}, None
+    )
+    result = await runtime.invoke(AgentRunRequest(input="hello"), context)
+    assert result.status == "failed"
+    assert result.error.code == "hermes_invocation_failed"
+    native.request.side_effect = None
+    result = await runtime.invoke(AgentRunRequest(input="hello"), context)
+    assert result.status == "succeeded", "an HTTP error response does not stop Hermes"
 
     native.request.side_effect = OSError("uncertain network result")
     result = await runtime.invoke(AgentRunRequest(input="again"), context)
@@ -194,3 +214,75 @@ def test_planning_rejects_api_server_settings_in_sdk_mode(tmp_path):
         plan({"interfaces": {"api": {"port": 8643}}})
     with pytest.raises(FabricConfigError, match="state_dir"):
         plan({"mode": "sdk", "state_dir": str(tmp_path)})
+
+
+async def test_relay_telemetry_enables_the_hermes_relay_plugin(
+    tmp_path, native, monkeypatch
+):
+    relay_config = tmp_path / "relay.toml"
+    monkeypatch.setattr(
+        telemetry, "write_hermes_relay_plugin_config", lambda payload: (relay_config, {})
+    )
+    payload = _payload(_config({}), tmp_path)
+    payload["runtime_context"]["telemetry"] = {"relay_enabled": True}
+    runtime = api_server.HermesApiServerRuntime()
+    await runtime.start(payload)
+    written = yaml.safe_load((runtime.home / "config.yaml").read_text())
+    assert written["plugins"]["enabled"] == ["observability/nemo_relay"]
+    env = native.spawn.call_args.kwargs["env"]
+    assert env["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(relay_config)
+    await runtime.stop()
+
+
+def test_plugin_settings_compose_with_enabled_plugins(tmp_path):
+    config = _config(
+        {
+            "plugins_enabled": ["web/tavily"],
+            "native_config": {"plugins": {"entries": {"web/tavily": {"depth": 2}}}},
+        }
+    )
+    native = configuration.build_hermes_config(
+        config, workspace=str(tmp_path), relay_enabled=True
+    )
+    assert native["plugins"] == {
+        "entries": {"web/tavily": {"depth": 2}},
+        "enabled": ["web/tavily", "observability/nemo_relay"],
+    }
+
+
+def test_retained_state_checks_every_section_native_config_can_set(repo_root):
+    descriptor = json.loads(
+        (repo_root / "adapters/python/hermes/hermes.fabric-adapter.json").read_text()
+    )
+    native_config = descriptor["settings_schema"]["properties"]["native_config"]
+    assert set(native_config["properties"]) <= configuration.CONFIGURED_SECTIONS
+
+
+async def test_native_server_stops_when_its_adapter_exits(tmp_path, monkeypatch):
+    disconnected = MagicMock()
+
+    class NativeApi:
+        def __init__(self, config):
+            self.config = config
+
+        async def connect(self):
+            return True
+
+        async def disconnect(self):
+            disconnected()
+
+    gateway_config = types.ModuleType("gateway.config")
+    gateway_config.PlatformConfig = lambda **fields: fields
+    gateway_api = types.ModuleType("gateway.platforms.api_server")
+    gateway_api.APIServerAdapter = NativeApi
+    monkeypatch.setitem(sys.modules, "gateway.config", gateway_config)
+    monkeypatch.setitem(sys.modules, "gateway.platforms.api_server", gateway_api)
+    interface_token(tmp_path, create=True)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv(
+        "FABRIC_HERMES_INTERFACES", json.dumps(api_server.interface_settings({}))
+    )
+    parents = iter([4242, 4242])
+    monkeypatch.setattr(api_server.os, "getppid", lambda: next(parents, 1))
+    await asyncio.wait_for(api_server._serve_native_interfaces(), 5)
+    disconnected.assert_called_once()

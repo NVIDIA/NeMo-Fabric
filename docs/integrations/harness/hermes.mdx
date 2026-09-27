@@ -77,7 +77,7 @@ The Hermes descriptor validates the following `harness.settings` fields:
 | `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
 | `mode` | `sdk` or `api_server` | `sdk` | Embeds the Hermes SDK, or runs Hermes' native API server as described in [Run Hermes as an API Server](#run-hermes-as-an-api-server). |
-| `native_config` | object | none | Adds Hermes `config.yaml` sections that NeMo Fabric does not derive: `web`, `approvals`, `plugins`, and `display`. NeMo Fabric-owned sections are rejected. |
+| `native_config` | object | none | Adds Hermes `config.yaml` sections that NeMo Fabric does not derive: `web`, `approvals`, `plugins`, and `display`. NeMo Fabric-owned sections are rejected. `plugins` holds plugin settings; `plugins_enabled` decides which plugins are enabled. |
 
 For example:
 
@@ -103,7 +103,8 @@ Hermes harness setting.
 ## Run Hermes as an API Server
 
 Set `harness.settings.mode` to `api_server` to run Hermes' native
-OpenAI-compatible API server in a supervised child process. Each invocation
+OpenAI-compatible API server in a supervised child process. This mode requires
+a POSIX host, such as Linux or macOS, and is not supported on Windows. Each invocation
 becomes a Responses API request that continues the previous response. In this
 mode, `harness.settings.interfaces.api.port` selects the loopback API port and
 `harness.settings.interfaces.dashboard` serves the Hermes dashboard and browser
@@ -112,7 +113,9 @@ TUI. Both require a retained interface token.
 Set `harness.settings.state_dir` to retain Hermes configuration, state, the
 `interface-token` credential, and `api.log` across runtimes. Without it,
 native state belongs to the runtime. Planning rejects `interfaces` and
-`state_dir` in `sdk` mode.
+`state_dir` in `sdk` mode. `runtime.timeout_seconds` bounds each turn; when
+it expires, or the outcome of a request is unknown, Hermes stops instead of
+replaying the turn.
 
 ```python
 from nemo_fabric import HarnessConfig

@@ -173,6 +173,8 @@ failed result and keeps the runtime usable.
 `harness.settings.native_config` adds Hermes `config.yaml` sections that NeMo
 Fabric does not derive from `FabricConfig`: `web`, `approvals`, `plugins`,
 and `display`. Sections that NeMo Fabric owns, such as `model`, are rejected.
+`plugins` holds plugin settings, such as `entries`; `plugins_enabled` decides
+which plugins are enabled.
 `models.<role>.api` selects the Hermes `api_mode`.
 
 The package includes a native Tavily web search and extraction plugin under

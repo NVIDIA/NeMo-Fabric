@@ -101,7 +101,11 @@
         "properties": {
           "web": {"type": "object"},
           "approvals": {"type": "object"},
-          "plugins": {"type": "object"},
+          "plugins": {
+            "type": "object",
+            "properties": {"enabled": false},
+            "description": "Hermes plugin settings, such as entries. Enable plugins with plugins_enabled."
+          },
           "display": {"type": "object"}
         },
         "additionalProperties": false,

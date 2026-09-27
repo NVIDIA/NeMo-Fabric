@@ -17,6 +17,7 @@ import json
 import os
 import signal
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -35,7 +36,6 @@ from nemo_fabric_adapters.hermes import configuration
 MODEL_NAME = "primary"
 RESPONSE_LIMIT = 4 * 1024 * 1024
 STARTUP_TIMEOUT_SECONDS = 75
-INVOKE_TIMEOUT_SECONDS = 280
 SHUTDOWN_TIMEOUT_SECONDS = 10
 MAX_DASHBOARD_CLIENTS = 128
 DASHBOARD_HOME = Path("profiles") / "dashboard-home"
@@ -58,11 +58,16 @@ def interface_settings(settings: dict[str, Any]) -> dict[str, Any]:
 
 
 def configuration_matches(home: Path, native: dict[str, Any]) -> bool:
-    """Whether every NeMo Fabric-owned top-level section is unchanged on disk."""
+    """Whether every section that FabricConfig determines is unchanged on disk.
+
+    A configured section missing from native must also be missing on disk, so
+    removing a setting cannot leave its retained section in effect.
+    """
 
     actual = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
     return isinstance(actual, dict) and all(
-        actual.get(key) == value for key, value in native.items()
+        actual.get(key) == native.get(key)
+        for key in configuration.CONFIGURED_SECTIONS | native.keys()
     )
 
 
@@ -95,9 +100,13 @@ def api_request(
     path: str,
     *,
     body: dict[str, Any] | None = None,
-    timeout: float = 3,
+    timeout: float | None = 3,
 ) -> dict[str, Any]:
-    """Call the loopback Hermes API with the retained bearer credential."""
+    """Call the loopback Hermes API with the retained bearer credential.
+
+    A timeout of None waits for the response; NeMo Fabric's
+    runtime.timeout_seconds then bounds the call.
+    """
 
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}{path}",
@@ -178,7 +187,10 @@ class HermesApiServerRuntime:
             if state_dir
             else configuration.runtime_home(context, base_dir)
         )
-        self._native = configuration.build_hermes_config(config, workspace=workspace)
+        relay_enabled = bool(context.telemetry and context.telemetry.relay_enabled)
+        self._native = configuration.build_hermes_config(
+            config, workspace=workspace, relay_enabled=relay_enabled
+        )
         model = configuration._selected_model(config)
         api_key_env = configuration._api_key_env(model)
         if not os.environ.get(api_key_env):
@@ -211,8 +223,13 @@ class HermesApiServerRuntime:
             )
             if model.base_url:
                 env["OPENAI_BASE_URL"] = model.base_url
-            self._configure_relay(payload, config, env)
-            self._log = (self.home / "api.log").open("ab")
+            if relay_enabled:
+                self._configure_relay(payload, config, env)
+            self._log = open(
+                self.home / "api.log",
+                "ab",
+                opener=lambda name, flags: os.open(name, flags, 0o600),
+            )
             self.process = await asyncio.create_subprocess_exec(
                 sys.executable,
                 __file__,
@@ -231,9 +248,6 @@ class HermesApiServerRuntime:
     def _configure_relay(
         self, payload: dict[str, Any], config: AgentConfig, env: dict[str, str]
     ) -> None:
-        telemetry = payload["runtime_context"].get("telemetry") or {}
-        if not telemetry.get("relay_enabled"):
-            return
         from nemo_fabric_adapters.hermes.telemetry import HERMES_RELAY_ENV_NAMES
         from nemo_fabric_adapters.hermes.telemetry import (
             write_hermes_relay_plugin_config,
@@ -304,7 +318,14 @@ class HermesApiServerRuntime:
                     self._interfaces["apiPort"],
                     "/v1/responses",
                     body=body,
-                    timeout=INVOKE_TIMEOUT_SECONDS,
+                    timeout=None,
+                )
+            except urllib.error.HTTPError as error:
+                # Hermes answered, so the turn is over and the runtime stays usable.
+                error.close()
+                return self._failed_result(
+                    "hermes_invocation_failed",
+                    f"Hermes API returned HTTP {error.code}; inspect api.log",
                 )
             except BaseException as error:
                 # The turn may still be running natively; stop Hermes rather
@@ -364,6 +385,7 @@ async def _serve_native_interfaces() -> None:
     from gateway.config import PlatformConfig
     from gateway.platforms.api_server import APIServerAdapter
 
+    parent = os.getppid()
     home = Path(os.environ["HERMES_HOME"])
     interfaces = json.loads(os.environ["FABRIC_HERMES_INTERFACES"])
     dashboard = interfaces["dashboard"]
@@ -437,6 +459,8 @@ async def _serve_native_interfaces() -> None:
                 relay, "127.0.0.1", dashboard["port"]
             )
         while not stop.is_set():
+            if os.getppid() != parent:
+                break  # The adapter exited without stopping Hermes.
             if child is not None and child.returncode is not None:
                 raise RuntimeError("Hermes dashboard exited")
             try:
