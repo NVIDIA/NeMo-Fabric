@@ -140,9 +140,18 @@ interface PiModelChoices {
   roles: Map<string, Model<Api>>;
   /** Whether a role other than the selected one can become active. */
   switchable: boolean;
+  /** The role model the session uses, as resolved before any Relay redirect. */
+  active: Model<Api>;
   /** Apply model-dependent session settings before the session switches. */
   activate(model: Model<Api>): void;
   cleanup(): Promise<void>;
+}
+
+/** Whether two resolved models send the same requests to the same endpoint. */
+function sameModel(left: Model<Api>, right: Model<Api>): boolean {
+  return (
+    left.provider === right.provider && left.id === right.id && left.baseUrl === right.baseUrl && left.api === right.api
+  );
 }
 
 function harnessSettings(config: AgentConfig): PiHarnessSettings {
@@ -419,21 +428,23 @@ class PiSdkSessionHandle implements PiSessionHandle {
   }
 
   async selectModel(role: string): Promise<void> {
-    const model = this.models?.roles.get(role);
-    if (model === undefined) {
+    const models = this.models;
+    const model = models?.roles.get(role);
+    if (models === undefined || model === undefined) {
       throw new LifecycleError("pi_model_unknown", `The Pi model role ${role} is not configured`);
     }
-    if (model === this.session.model) {
+    if (sameModel(model, models.active)) {
       return;
     }
-    if (!this.models?.switchable) {
+    if (!models.switchable) {
       throw new LifecycleError(
         "pi_model_switch_unsupported",
         "Switching Pi model roles is not supported while NeMo Relay redirects the selected model",
       );
     }
-    this.models.activate(model);
+    models.activate(model);
     await this.session.setModel(model);
+    models.active = model;
   }
 
   async prompt(text: string): Promise<PiPromptOutcome> {
@@ -571,6 +582,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     const choices: PiModelChoices = {
       roles: configured.roles,
       switchable: !relayEnabled,
+      active: model,
       activate,
       cleanup: configured.cleanup,
     };

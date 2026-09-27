@@ -111,7 +111,8 @@ test("identical roles share a provider and distinct roles get their own", async 
   }
 });
 
-test("invocations select declared roles and keep the conversation", { timeout: 30000 }, async () => {
+/** Start Pi with identical default and fast roles plus a distinct smart role. */
+async function withRoleRuntime({ telemetry, factory = new PiSdkSessionFactory() }, body) {
   const requests = [];
   const server = createServer(async (request, response) => {
     const chunks = [];
@@ -133,7 +134,7 @@ test("invocations select declared roles and keep the conversation", { timeout: 3
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const workspace = await mkdtemp(join(tmpdir(), "pi-model-roles-"));
-  const runtime = new PiAdapterRuntime(new PiSdkSessionFactory());
+  const runtime = new PiAdapterRuntime(factory);
   try {
     const { port } = server.address();
     const role = (path, key) => ({
@@ -158,6 +159,7 @@ test("invocations select declared roles and keep the conversation", { timeout: 3
       invocation_id: "start",
       request_id: "start",
       runtime_id: "fixture",
+      ...(telemetry === undefined ? {} : { telemetry }),
     };
     await runtime.start({
       agentName: "main",
@@ -165,7 +167,16 @@ test("invocations select declared roles and keep the conversation", { timeout: 3
       config: { models: { default: fast, fast, smart: role("smart", "SMART_KEY") }, tools: { enabled: [] } },
       runtimeContext,
     });
-    const invoke = (input) => runtime.invoke({ input }, runtimeContext);
+    await body({ invoke: (input) => runtime.invoke({ input }, runtimeContext), requests });
+  } finally {
+    await runtime.stop();
+    await rm(workspace, { recursive: true, force: true });
+    await new Promise((resolve) => server.close(() => resolve()));
+  }
+}
+
+test("invocations select declared roles and keep the conversation", { timeout: 30000 }, async () => {
+  await withRoleRuntime({}, async ({ invoke, requests }) => {
     for (const input of [{ prompt: "Reply FOUR", model: "fast" }, { prompt: "Reply FOUR", model: "smart" }, "Again"]) {
       const result = await invoke(input);
       assert.equal(result.status, "succeeded", JSON.stringify(result));
@@ -183,10 +194,25 @@ test("invocations select declared roles and keep the conversation", { timeout: 3
     const unknown = await invoke({ prompt: "Do not send", model: "missing" });
     assert.equal(unknown.status, "failed");
     assert.equal(unknown.error.code, "pi_model_selection_failed");
+    assert.equal(unknown.error.extensions?.reason, "pi_model_unknown");
     assert.equal(requests.length, 3, "an unknown role fails before inference");
-  } finally {
-    await runtime.stop();
-    await rm(workspace, { recursive: true, force: true });
-    await new Promise((resolve) => server.close(() => resolve()));
-  }
+  });
+});
+
+test("with Relay, roles that resolve to the active model stay selectable", { timeout: 30000 }, async () => {
+  const factory = new PiSdkSessionFactory({ start: async () => undefined });
+  await withRoleRuntime({ telemetry: { relay_enabled: true }, factory }, async ({ invoke, requests }) => {
+    for (const model of ["default", "fast"]) {
+      const result = await invoke({ prompt: "Reply FOUR", model });
+      assert.equal(result.status, "succeeded", `${model}: ${JSON.stringify(result)}`);
+    }
+    const switched = await invoke({ prompt: "Do not send", model: "smart" });
+    assert.equal(switched.status, "failed");
+    assert.equal(switched.error.code, "pi_model_selection_failed");
+    assert.equal(switched.error.extensions?.reason, "pi_model_switch_unsupported");
+    assert.deepEqual(
+      requests.map((entry) => entry.path),
+      ["/fast/v1/chat/completions", "/fast/v1/chat/completions"],
+    );
+  });
 });

@@ -36,11 +36,11 @@ export interface PiSessionFactory {
   create(input: AdapterStartInput): Promise<PiSessionHandle>;
 }
 
-function failed(code: string, message: string): AgentRunResult {
+function failed(code: string, message: string, extensions?: JsonObject): AgentRunResult {
   return {
     status: "failed",
     output: null,
-    error: { code, message, retryable: false },
+    error: { code, message, retryable: false, ...(extensions === undefined ? {} : { extensions }) },
   };
 }
 
@@ -104,9 +104,13 @@ export class PiAdapterRuntime implements AdapterRuntime {
           throw new Error("model selection is unavailable");
         }
         await this.session.selectModel(input.model);
-      } catch {
+      } catch (error) {
         return withRelayOutput(
-          failed("pi_model_selection_failed", "The requested Pi model role could not be selected"),
+          failed(
+            "pi_model_selection_failed",
+            "The requested Pi model role could not be selected",
+            error instanceof LifecycleError ? { reason: error.code } : undefined,
+          ),
           this.session.relay,
           false,
           this.turnCount,
