@@ -128,6 +128,16 @@ async def test_retained_state_is_written_once_and_checked_for_drift(tmp_path, na
         await api_server.HermesApiServerRuntime().start(_payload(dropped, tmp_path))
 
 
+async def test_a_retained_log_is_made_owner_only(tmp_path, native):
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "api.log").touch(mode=0o644)
+    runtime = api_server.HermesApiServerRuntime()
+    await runtime.start(_payload(_config({"state_dir": str(state)}), tmp_path))
+    assert (state / "api.log").stat().st_mode & 0o777 == 0o600
+    await runtime.stop()
+
+
 async def test_without_state_dir_native_state_is_scoped_to_the_runtime(
     tmp_path, native
 ):

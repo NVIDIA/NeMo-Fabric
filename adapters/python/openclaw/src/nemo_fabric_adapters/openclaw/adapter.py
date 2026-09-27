@@ -1134,6 +1134,8 @@ class OpenClawRuntime:
             "ab",
             opener=lambda name, flags: os.open(name, flags, 0o600),
         )
+        # A log retained from an earlier runtime keeps its old mode.
+        os.fchmod(self._gateway_log.fileno(), 0o600)
         token = interface_token(state_dir, create=True)
         return state_dir, state_dir / "openclaw.json", token
 

@@ -274,9 +274,12 @@ async def test_state_dir_retains_state_credential_and_log(
         "base_dir": str(tmp_path),
     }
 
+    state.mkdir()
+    (state / "gateway.log").touch(mode=0o644)
     runtime = adapter.OpenClawRuntime()
     await runtime.start(payload)
     try:
+        assert (state / "gateway.log").stat().st_mode & 0o077 == 0
         token = (state / "interface-token").read_text(encoding="ascii")
         assert runtime._token == token
         assert json.loads((state / "openclaw.json").read_text()) == json.loads(

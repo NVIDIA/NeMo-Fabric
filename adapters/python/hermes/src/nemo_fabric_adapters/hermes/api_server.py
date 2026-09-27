@@ -230,6 +230,8 @@ class HermesApiServerRuntime:
                 "ab",
                 opener=lambda name, flags: os.open(name, flags, 0o600),
             )
+            # A log retained from an earlier runtime keeps its old mode.
+            os.fchmod(self._log.fileno(), 0o600)
             self.process = await asyncio.create_subprocess_exec(
                 sys.executable,
                 __file__,
