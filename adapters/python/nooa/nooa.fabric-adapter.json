@@ -31,11 +31,21 @@
     "allOf": [
       {
         "if": {"required": ["api"], "properties": {"api": {"const": "openai-completions"}}},
-        "then": {"properties": {"provider": {"enum": ["openai", "nvidia"]}}}
+        "then": {
+          "properties": {
+            "provider": {"enum": ["openai", "nvidia"]},
+            "settings": {"properties": {"client_type": {"const": "completion"}}}
+          }
+        }
       },
       {
         "if": {"required": ["api"], "properties": {"api": {"const": "openai-responses"}}},
-        "then": {"properties": {"provider": {"enum": ["openai"]}}}
+        "then": {
+          "properties": {
+            "provider": {"enum": ["openai"]},
+            "settings": {"properties": {"client_type": {"const": "responses"}}}
+          }
+        }
       }
     ],
     "additionalProperties": false

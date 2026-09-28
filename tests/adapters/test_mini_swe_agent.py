@@ -551,3 +551,30 @@ def test_mini_swe_agent_module_entrypoint_exits_cleanly():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def _plan_model(tmp_path, adapter_id, model):
+    from nemo_fabric import Fabric
+    from nemo_fabric import FabricConfig
+
+    return Fabric().plan(
+        FabricConfig.from_mapping(
+            {
+                "metadata": {"name": "model-api"},
+                "harness": {"adapter_id": adapter_id},
+                "models": {"default": model},
+            }
+        ),
+        base_dir=tmp_path,
+    )
+
+
+def test_planning_rejects_a_model_qualified_with_another_provider(tmp_path):
+    from nemo_fabric import FabricConfigError
+
+    adapter_id = "nvidia.fabric.mini-swe-agent"
+    model = {"provider": "openai", "api": "openai-completions"}
+    _plan_model(tmp_path, adapter_id, {**model, "model": "gpt-test"})
+    _plan_model(tmp_path, adapter_id, {**model, "model": "openai/gpt-test"})
+    with pytest.raises(FabricConfigError, match="models.default"):
+        _plan_model(tmp_path, adapter_id, {**model, "model": "anthropic/claude-test"})
