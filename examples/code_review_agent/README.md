@@ -81,6 +81,7 @@ Format (ATOF) stream records:
 
 ```bash
 .venv/bin/python -m examples.code_review_agent \
+  --variant deepagents \
   --relay \
   --stream \
   --input "Review calculator.py"
@@ -99,6 +100,7 @@ configuration:
 ```python
 from examples.code_review_agent import (
     BASE_DIR,
+    deepagents_config,
     hermes_config,
     with_github_mcp,
     with_opensandbox,
@@ -109,7 +111,7 @@ from examples.code_review_agent import (
 config = hermes_config()
 skill_config = with_skill_paths(config, "./skills/code-review")
 mcp_config = with_github_mcp(config)
-relay_config = with_relay(config)
+relay_config = with_relay(deepagents_config())
 sandbox_config = with_opensandbox(config)
 ```
 
