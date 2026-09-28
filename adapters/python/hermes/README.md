@@ -176,3 +176,9 @@ Fabric does not derive from `FabricConfig`: `web`, `approvals`, `plugins`,
 and `display`. Sections that NeMo Fabric owns, such as `model`, are rejected.
 `plugins` holds plugin settings, such as `entries`; `plugins_enabled` decides
 which plugins are enabled.
+
+The package includes a native Tavily web search and extraction plugin under
+`nemo_fabric_adapters/hermes/plugins/tavily/`. Copy it into Hermes' plugin
+directory as `plugins/web/tavily`, enable it with
+`harness.settings.plugins_enabled: [web/tavily]`, select it with
+`native_config.web`, and provide `TAVILY_API_KEY` in the runtime environment.
