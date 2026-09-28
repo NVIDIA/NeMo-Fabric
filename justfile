@@ -379,6 +379,8 @@ install-hermes-agent:
     if [[ "$hermes_head" != "$hermes_commit" ]]; then
         if [[ -n "$hermes_head" ]] && { ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}" || ! git -C "$hermes_checkout" diff --cached --quiet; }; then
             echo "ERROR: Hermes Agent checkout has tracked changes at an unpinned revision: $hermes_checkout" >&2
+            echo "If these are disposable changes from the old metadata-propagate.patch, run:" >&2
+            echo "  git -C \"$hermes_checkout\" restore --source=HEAD --staged --worktree -- ." >&2
             exit 1
         fi
         if ! git -C "$hermes_checkout" cat-file -e "$hermes_commit^{commit}" 2>/dev/null; then
@@ -388,6 +390,8 @@ install-hermes-agent:
     fi
     if ! git -C "$hermes_checkout" diff --cached --quiet || ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
         echo "ERROR: Hermes Agent checkout has tracked changes: $hermes_checkout" >&2
+        echo "To discard only tracked changes that you do not need, run:" >&2
+        echo "  git -C \"$hermes_checkout\" restore --source=HEAD --staged --worktree -- ." >&2
         exit 1
     fi
     if [[ ! -x "$REPO_ROOT/.venv-hermes/bin/python" ]]; then
@@ -403,7 +407,7 @@ install-hermes-agent:
         --editable "$hermes_checkout" pytest pytest-asyncio
 
 test-hermes: install-hermes-agent
-    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py -q -k 'not relay or rejects_relay'
+    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py -q -k 'not relay or rejects_relay or rejects_mixed_native_and_relay'
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript
