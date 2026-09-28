@@ -78,6 +78,13 @@ function roleModels(models: Record<string, AgentModelConfig>, selectedRole: stri
     const providerId =
       identical?.providerId ??
       (role === selectedRole || metadata === undefined ? config.provider : `${config.provider}-${role}`);
+    if (!identical && resolved.some((entry) => entry.providerId === providerId && (entry.metadata || metadata))) {
+      throw new LifecycleError(
+        "pi_model_provider_conflict",
+        `Pi model roles would define provider ${providerId} twice; rename a provider or role`,
+        { metadata: { field: `models.${role}` } },
+      );
+    }
     resolved.push({ role, config, providerId, metadata });
   }
   return resolved;

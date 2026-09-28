@@ -90,6 +90,12 @@ test("identical roles share a provider and distinct roles get their own", async 
   });
 });
 
+test("roles that would share a generated provider fail", async () => {
+  const selected = described("a", { contextWindow: 8192 }, { provider: "openai-x" });
+  const other = described("b", { contextWindow: 8192 });
+  await assert.rejects(load({ default: selected, x: other }), (error) => error.code === "pi_model_provider_conflict");
+});
+
 /** Start Pi with identical default and fast roles plus a distinct smart role. */
 async function withRoleRuntime({ telemetry, factory = new PiSdkSessionFactory(), smartContextWindow = 8192 }, body) {
   const requests = [];
