@@ -22,7 +22,7 @@ import sys
 import tempfile
 import threading
 from collections import deque
-from contextlib import suppress
+from contextlib import ExitStack
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -323,16 +323,6 @@ def _select_port(settings: dict[str, Any]) -> int:
     """
     port = settings.get("port")
     if port is not None:
-        if (
-            isinstance(port, bool)
-            or not isinstance(port, int)
-            or not 1 <= port <= MAX_TCP_PORT - MAX_DERIVED_PORT_OFFSET
-        ):
-            raise lifecycle.LifecycleError(
-                "openclaw_invalid_configuration",
-                "OpenClaw port must leave room for its derived ports",
-                metadata={"field": "harness.settings.port"},
-            )
         if not (_port_available(port) and _port_available(port + 2)):
             raise lifecycle.LifecycleError(
                 "openclaw_port_unavailable",
@@ -470,12 +460,6 @@ def _role_models(
     for role, model in roles:
         if any(model == known for known, _, _ in refs):
             continue
-        if model.api is not None and model.base_url is None:
-            raise lifecycle.LifecycleError(
-                "openclaw_invalid_configuration",
-                "OpenClaw models.api applies only to a model with base_url",
-                metadata={"field": f"models.{role}.api"},
-            )
         model_id = _model_id(model)
         key = (
             model.provider
@@ -548,24 +532,6 @@ def _overlay(
         else:
             result[key] = copy.deepcopy(value)
     return result
-
-
-def _native_config(settings: dict[str, Any]) -> dict[str, Any]:
-    value = settings.get("native_config", {})
-    if not isinstance(value, dict):
-        raise lifecycle.LifecycleError(
-            "openclaw_invalid_configuration",
-            "OpenClaw native_config must be an object",
-            metadata={"field": "harness.settings.native_config"},
-        )
-    if "models" in value:
-        raise lifecycle.LifecycleError(
-            "openclaw_native_config_conflict",
-            "harness.settings.native_config.models conflicts with NeMo Fabric "
-            "model roles",
-            metadata={"field": "harness.settings.native_config.models"},
-        )
-    return value
 
 
 def _openclaw_config(
@@ -655,7 +621,7 @@ def _openclaw_config(
                 metadata={"field": "harness.settings.channel_config"},
             )
         owned.update(channel_config)
-    configured = _overlay(defaults, _native_config(settings), owned=False)
+    configured = _overlay(defaults, settings.get("native_config", {}), owned=False)
     result = _overlay(configured, owned, owned=True)
     control_ui = result["gateway"]["controlUi"]
     if control_ui.get("enabled"):
@@ -753,18 +719,12 @@ async def _capture_stream(
                 log = None
 
 
-def _write_private(path: Path, text: str) -> None:
-    """Atomically replace path with owner-only text."""
+def _open_private(path: Path, mode: str) -> Any:
+    """Open path for writing, readable only by its owner."""
 
-    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-")
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            output.write(text)
-        os.replace(temporary, path)
-    except BaseException:
-        with suppress(FileNotFoundError):
-            os.unlink(temporary)
-        raise
+    output = open(path, mode, opener=lambda name, flags: os.open(name, flags, 0o600))
+    path.chmod(0o600)  # A file retained from an earlier runtime keeps its mode.
+    return output
 
 
 def _gateway_command(
@@ -981,7 +941,8 @@ class OpenClawRuntime:
                 service_mode=service is not None
                 and service.get("operation") == "prepare",
             )
-            _write_private(config_path, json.dumps(generated, indent=2) + "\n")
+            with _open_private(config_path, "w") as output:
+                output.write(json.dumps(generated, indent=2) + "\n")
             child_env.update(
                 {
                     "OPENCLAW_CONFIG_PATH": str(config_path),
@@ -1116,47 +1077,29 @@ class OpenClawRuntime:
             )
         import fcntl
 
-        def invalid(error: Exception) -> lifecycle.LifecycleError:
-            return lifecycle.LifecycleError(
-                "openclaw_invalid_state_dir",
-                f"OpenClaw state_dir cannot be used: {type(error).__name__}",
-                metadata={"field": "harness.settings.state_dir"},
-            )
-
         state_dir = (base_dir / retained).resolve()
-        try:
-            state_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
-            lock = (state_dir / STATE_LOCK).open("a")
-        except OSError as error:
-            raise invalid(error) from error
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            lock.close()
-            raise lifecycle.LifecycleError(
-                "openclaw_state_in_use",
-                "OpenClaw state_dir is in use by another runtime",
-                metadata={"field": "harness.settings.state_dir"},
-            ) from None
-        try:
-            gateway_log = open(
-                state_dir / GATEWAY_LOG,
-                "ab",
-                opener=lambda name, flags: os.open(name, flags, 0o600),
-            )
+        with ExitStack() as opened:
             try:
-                # A log retained from an earlier runtime keeps its old mode.
-                os.fchmod(gateway_log.fileno(), 0o600)
+                state_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+                lock = opened.enter_context((state_dir / STATE_LOCK).open("a"))
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                gateway_log = opened.enter_context(
+                    _open_private(state_dir / GATEWAY_LOG, "ab")
+                )
                 token = interface_token(state_dir, create=True)
-            except BaseException:
-                gateway_log.close()
-                raise
-        except (OSError, RuntimeError) as error:
-            lock.close()
-            raise invalid(error) from error
-        except BaseException:
-            lock.close()
-            raise
+            except BlockingIOError:
+                raise lifecycle.LifecycleError(
+                    "openclaw_state_in_use",
+                    "OpenClaw state_dir is in use by another runtime",
+                    metadata={"field": "harness.settings.state_dir"},
+                ) from None
+            except (OSError, RuntimeError) as error:
+                raise lifecycle.LifecycleError(
+                    "openclaw_invalid_state_dir",
+                    f"OpenClaw state_dir cannot be used: {type(error).__name__}",
+                    metadata={"field": "harness.settings.state_dir"},
+                ) from error
+            opened.pop_all()
         self._state_lock = lock
         self._gateway_log = gateway_log
         return state_dir, state_dir / "openclaw.json", token

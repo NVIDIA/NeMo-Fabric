@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections import deque
 from contextlib import suppress
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -1577,3 +1578,226 @@ def test_openclaw_descriptor_and_module_entrypoint(repo_root: Path):
     assert descriptor["capabilities"]["streaming"] is False
     assert "telemetry" not in descriptor
     assert result.returncode == 0, result.stderr
+
+
+# Native configuration, model roles, and retained state.
+
+MODEL = {"provider": "openai", "model": "fabric-model"}
+
+
+def _generate(tmp_path: Path, **config) -> dict:
+    return adapter._openclaw_config(
+        AgentConfig.from_mapping({"models": {"default": MODEL}, **config}),
+        _context(tmp_path),
+        base_dir=tmp_path,
+        port=20_000,
+        token_env="OPENCLAW_GATEWAY_TOKEN",
+    )
+
+
+def _plan(tmp_path: Path, **settings) -> None:
+    model = {**MODEL, "base_url": "http://127.0.0.1:9/v1", "api": "openai-completions"}
+    Fabric().plan(
+        FabricConfig.from_mapping(
+            {
+                "metadata": {"name": "openclaw-native"},
+                "harness": {
+                    "adapter_id": "nvidia.fabric.openclaw",
+                    "settings": settings,
+                },
+                "models": {"default": model},
+            }
+        ),
+        base_dir=tmp_path,
+    )
+
+
+def test_native_config_extends_and_overrides_defaults(tmp_path: Path):
+    native = {
+        "plugins": {"entries": {"brave": {"enabled": True}}},
+        "tools": {"web": {"search": {"provider": "brave"}}},
+        "gateway": {"controlUi": {"enabled": True}},
+        "telemetry": {"enabled": True},
+    }
+    generated = _generate(
+        tmp_path,
+        harness={"settings": {"native_config": native}},
+        tools={"enabled": ["read"]},
+    )
+    assert generated["plugins"] == native["plugins"]
+    assert generated["tools"] == {"allow": ["read"], "web": native["tools"]["web"]}
+    assert generated["telemetry"] == {"enabled": True}, "a default is overridden"
+    assert generated["gateway"]["controlUi"]["allowedOrigins"] == [
+        "http://127.0.0.1:20000",
+        "http://localhost:20000",
+    ]
+
+
+@pytest.mark.parametrize(
+    "native",
+    [
+        {"tools": {"allow": ["exec"]}},
+        {"agents": {"defaults": {"workspace": "/elsewhere"}}},
+        {"gateway": {"auth": {"mode": "none"}}},
+    ],
+)
+def test_native_config_cannot_change_owned_configuration(tmp_path: Path, native: dict):
+    with pytest.raises(adapter.lifecycle.LifecycleError, match="native_config"):
+        _generate(
+            tmp_path,
+            harness={"settings": {"native_config": native}},
+            tools={"enabled": ["read"]},
+        )
+
+
+def test_planning_checks_native_settings(tmp_path: Path):
+    control_ui = {"gateway": {"controlUi": {"enabled": True}}}
+    _plan(tmp_path, state_dir="state", port=18800, native_config=control_ui)
+    for invalid in [
+        {"native_config": control_ui},  # The control UI needs a retained token.
+        {"state_dir": "state", "native_config": {"gateway": {"controlUi": None}}},
+        {"native_config": {"gateway": {"port": 18800}}},
+        {"native_config": {"models": {}}},
+        {"port": 18800, "port_range": {"start": 20000, "end": 20200}},
+    ]:
+        with pytest.raises(FabricConfigError):
+            _plan(tmp_path, **invalid)
+
+
+def test_every_model_role_is_registered_with_its_protocol_and_metadata(tmp_path: Path):
+    default = {
+        **MODEL,
+        "base_url": "https://models.example.test/v1",
+        "api": "openai-responses",
+        "max_tokens": 8192,
+        "settings": {
+            "model_metadata": {"contextWindow": 65536},
+            "reasoning_effort": "high",
+        },
+    }
+    review = {
+        "provider": "anthropic",
+        "model": "reviewer",
+        "base_url": "https://review.example.test/v1",
+        "api": "anthropic-messages",
+    }
+    generated = _generate(
+        tmp_path, models={"default": default, "primary": default, "review": review}
+    )
+
+    providers = generated["models"]["providers"]
+    assert providers["openai"]["api"] == "openai-responses"
+    assert providers["openai"]["models"] == [
+        {
+            "contextWindow": 65536,
+            "id": "fabric-model",
+            "name": "fabric-model",
+            "maxTokens": 8192,
+        }
+    ]
+    assert providers["anthropic-review"]["api"] == "anthropic-messages"
+    defaults = generated["agents"]["defaults"]
+    assert defaults["model"] == {"primary": "openai/fabric-model"}
+    assert defaults["thinkingDefault"] == "high"
+    assert {ref: entry["alias"] for ref, entry in defaults["models"].items()} == {
+        "openai/fabric-model": "default",
+        "anthropic-review/reviewer": "review",
+    }, "identical roles share one model"
+
+
+def test_a_fixed_port_requires_its_derived_port(monkeypatch):
+    monkeypatch.setattr(adapter, "_port_available", lambda port: port != 18802)
+    with pytest.raises(adapter.lifecycle.LifecycleError, match="18802"):
+        adapter._select_port({"port": 18800})
+    assert adapter._select_port({"port": 18900}) == 18900
+
+
+async def test_every_role_credential_is_checked_before_startup(tmp_path: Path):
+    review = {"provider": "anthropic", "model": "reviewer", "api_key_env": "REVIEW_KEY"}
+    context = _context(tmp_path).to_mapping()
+    context["environment"]["env"] = {"MODEL_KEY": "fixture"}
+    payload = {
+        "config": AgentConfig.from_mapping(
+            {
+                "models": {
+                    "default": {**MODEL, "api_key_env": "MODEL_KEY"},
+                    "review": review,
+                }
+            }
+        ),
+        "runtime_context": context,
+        "base_dir": str(tmp_path),
+    }
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        await adapter.OpenClawRuntime().start(payload)
+    assert raised.value.code == "openclaw_missing_api_key"
+    assert raised.value.metadata["environment_variables"] == ["REVIEW_KEY"]
+
+
+async def test_gateway_output_is_still_read_when_its_log_fails():
+    log = MagicMock(write=MagicMock(side_effect=OSError("disk full")))
+    stream = asyncio.StreamReader()
+    stream.feed_data(b"first\nsecond\n")
+    stream.feed_eof()
+    tail: deque[str] = deque()
+    await adapter._capture_stream(stream, tail, log)
+    assert list(tail) == ["first", "second"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Requires POSIX file modes")
+@pytest.mark.parametrize("unusable", ["state_dir", "gateway.log"])
+def test_an_unusable_state_dir_is_a_configuration_error(tmp_path: Path, unusable: str):
+    state = tmp_path / "state"
+    if unusable == "state_dir":
+        state.write_text("a file, not a directory")
+    else:
+        (state / "gateway.log").mkdir(parents=True)
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        runtime._prepare_state({"state_dir": str(state)}, tmp_path)
+    assert raised.value.code == "openclaw_invalid_state_dir"
+    assert runtime._state_lock is None, "a failed preparation releases the directory"
+
+
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"}, reason="Requires POSIX process supervision"
+)
+async def test_state_dir_retains_state_credential_and_log(
+    mock_openclaw: Path, tmp_path: Path, monkeypatch
+):
+    state = tmp_path / "state"
+    monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(tmp_path / "config.json"))
+    monkeypatch.setenv("FAKE_OPENCLAW_REQUEST", str(tmp_path / "request.json"))
+    settings = {"openclaw_command": str(mock_openclaw), "state_dir": str(state)}
+    payload = {
+        "config": AgentConfig.from_mapping(
+            {"harness": {"settings": settings}, "models": {"default": MODEL}}
+        ),
+        "runtime_context": _context(tmp_path).to_mapping(),
+        "base_dir": str(tmp_path),
+    }
+    state.mkdir()
+    (state / "gateway.log").touch(mode=0o644)  # Retained from an earlier runtime.
+
+    runtime = adapter.OpenClawRuntime()
+    await runtime.start(payload)
+    try:
+        token = (state / "interface-token").read_text(encoding="ascii")
+        assert runtime._token == token
+        with pytest.raises(adapter.lifecycle.LifecycleError, match="in use"):
+            await adapter.OpenClawRuntime().start(payload)
+        result = await runtime.invoke(
+            AgentRunRequest(input="Hello."), _context(tmp_path)
+        )
+        assert result.status == "succeeded"
+    finally:
+        await runtime.stop()
+    for name in ["gateway.log", "openclaw.json", "interface-token"]:
+        assert (state / name).stat().st_mode & 0o077 == 0, f"{name} is owner-only"
+
+    restarted = adapter.OpenClawRuntime()
+    await restarted.start(payload)
+    try:
+        assert restarted._token == token, "the credential survives restarts"
+    finally:
+        await restarted.stop()
