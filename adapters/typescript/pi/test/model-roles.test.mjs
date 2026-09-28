@@ -19,72 +19,56 @@ const pi = { ModelRuntime, InMemoryModelsStore };
 const endpoint = "https://inference.local/v1";
 const credential = () => "fixture-key";
 
-async function load(models, options = {}) {
-  return loadConfiguredModels(pi, new InMemoryCredentialStore(), models, "default", {
+/** Resolve model roles, pass them to check, and remove Pi's generated models.json. */
+async function withRoles(models, check) {
+  const loaded = await loadConfiguredModels(pi, new InMemoryCredentialStore(), models, "default", {
     relayEnabled: false,
     credential,
-    ...options,
   });
+  try {
+    await check(loaded.roles);
+  } finally {
+    await loaded.cleanup();
+  }
 }
 
-function withMetadata(model, metadata, extra = {}) {
+const load = (models) => withRoles(models, () => {});
+
+function described(model, metadata, extra = {}) {
   return {
     provider: "openai",
     model,
     base_url: endpoint,
     api_key_env: "MODEL_KEY",
+    api: "openai-completions",
     settings: { model_metadata: metadata },
     ...extra,
   };
 }
 
-test("catalog models keep their provider and use the configured endpoint", async () => {
-  const loaded = await load({
-    default: { provider: "openai", model: "gpt-4o-mini", base_url: endpoint, api_key_env: "MODEL_KEY" },
+test("a catalog model keeps its provider and uses the configured endpoint", async () => {
+  const catalog = { provider: "openai", model: "gpt-4o-mini", base_url: endpoint, api_key_env: "MODEL_KEY" };
+  await withRoles({ default: catalog }, (roles) => {
+    const model = roles.get("default");
+    assert.deepEqual([model.provider, model.id, model.baseUrl], ["openai", "gpt-4o-mini", endpoint]);
   });
-  try {
-    const model = loaded.roles.get("default");
-    assert.equal(model.provider, "openai");
-    assert.equal(model.id, "gpt-4o-mini");
-    assert.equal(model.baseUrl, endpoint);
-  } finally {
-    await loaded.cleanup();
-  }
 });
 
-test("model_metadata defines a model that the Pi catalog does not know", async () => {
-  const loaded = await load({
-    default: withMetadata("qwen3:4b", { contextWindow: 8192, maxTokens: 2048, compat: { supportsDeveloperRole: false } }, {
-      api: "openai-completions",
-    }),
-  });
-  try {
-    const model = loaded.roles.get("default");
-    assert.equal(model.provider, "openai");
-    assert.equal(model.id, "qwen3:4b");
-    assert.equal(model.baseUrl, endpoint);
-    assert.equal(model.api, "openai-completions");
-    assert.equal(model.contextWindow, 8192);
-    assert.equal(model.maxTokens, 2048);
+test("model_metadata describes a model that the Pi catalog does not know", async () => {
+  const metadata = { contextWindow: 8192, maxTokens: 2048, compat: { supportsDeveloperRole: false } };
+  await withRoles({ default: described("qwen3:4b", metadata) }, (roles) => {
+    const model = roles.get("default");
+    assert.deepEqual(
+      [model.id, model.baseUrl, model.api, model.contextWindow, model.maxTokens],
+      ["qwen3:4b", endpoint, "openai-completions", 8192, 2048],
+    );
     assert.equal(model.compat.supportsDeveloperRole, false);
     assert.equal(model.reasoning, false, "Pi applies its own defaults");
-  } finally {
-    await loaded.cleanup();
-  }
+  });
 });
 
-test("Pi validates model_metadata and a conflicting protocol fails", async () => {
-  await assert.rejects(
-    load({ default: withMetadata("qwen3:4b", { api: "openai-completions", contextWindow: "large" }) }),
-    /models\.json/,
-  );
-  await assert.rejects(
-    load({ default: withMetadata("qwen3:4b", { api: "anthropic-messages" }, { api: "openai-completions" }) }),
-    (error) => error.code === "pi_model_api_conflict",
-  );
-});
-
-test("an unknown model without metadata fails instead of borrowing another model", async () => {
+test("Pi validates model_metadata, and an unknown model needs it", async () => {
+  await assert.rejects(load({ default: described("qwen3:4b", { contextWindow: "large" }) }), /models\.json/);
   await assert.rejects(
     load({ default: { provider: "openai", model: "custom-model", api_key_env: "MODEL_KEY" } }),
     (error) => error.code === "pi_model_unknown" && /model_metadata/.test(error.message),
@@ -92,23 +76,18 @@ test("an unknown model without metadata fails instead of borrowing another model
 });
 
 test("identical roles share a provider and distinct roles get their own", async () => {
-  const fast = withMetadata("fast", { api: "openai-completions", contextWindow: 8192, maxTokens: 128 });
-  const smart = withMetadata("smart", { api: "openai-completions", contextWindow: 8192, maxTokens: 128 }, {
-    base_url: "https://smart.local/v1",
-  });
-  const loaded = await load({ default: fast, primary: fast, smart });
-  try {
+  const fast = described("fast", { contextWindow: 8192 });
+  const smart = described("smart", { contextWindow: 8192 }, { base_url: "https://smart.local/v1" });
+  await withRoles({ default: fast, primary: fast, smart }, (roles) => {
     assert.deepEqual(
-      [...loaded.roles].map(([role, model]) => [role, model.provider, model.baseUrl]),
+      [...roles].map(([role, model]) => [role, model.provider, model.baseUrl]),
       [
         ["default", "openai", endpoint],
         ["primary", "openai", endpoint],
         ["smart", "openai-smart", "https://smart.local/v1"],
       ],
     );
-  } finally {
-    await loaded.cleanup();
-  }
+  });
 });
 
 /** Start Pi with identical default and fast roles plus a distinct smart role. */

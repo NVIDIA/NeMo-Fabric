@@ -54,8 +54,8 @@
         "properties": {
           "model_metadata": {
             "type": "object",
-            "properties": {"id": false, "baseUrl": false},
-            "description": "One Pi models.json model entry for a model that the Pi catalog does not contain. NeMo Fabric supplies its id and baseUrl."
+            "properties": {"id": false, "baseUrl": false, "api": false},
+            "description": "One Pi models.json model entry for a model that the Pi catalog does not contain. NeMo Fabric supplies its id, baseUrl, and api from the model."
           }
         },
         "additionalProperties": false

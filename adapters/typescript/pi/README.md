@@ -125,15 +125,10 @@ and model are in the Pi catalog needs no metadata; `base_url` replaces its
 endpoint and `api` its wire protocol. For any other model, set
 `models.<role>.settings.model_metadata` to one Pi `models.json` model entry,
 such as `contextWindow`, `maxTokens`, `reasoning`, and `input`. Pi validates
-the entry and supplies its defaults; NeMo Fabric supplies the model `id` and
-`baseUrl`, and `api` may come from either `models.<role>.api` or the entry,
-but not both with different values.
-
-A model defined by `model_metadata` also needs an endpoint and a protocol.
-The endpoint comes from `models.<role>.base_url`. The protocol comes from
-`models.<role>.api` or the entry's `api`. For the selected role of a
-provider Pi knows, Pi can take either from that provider's defaults;
-otherwise Pi rejects the model at startup.
+the entry and supplies its defaults; NeMo Fabric supplies its `id`, and its
+`baseUrl` and `api` from `models.<role>.base_url` and `models.<role>.api`.
+Such a model needs both, unless it is the selected role of a provider that Pi
+knows, whose defaults then apply; otherwise Pi rejects the model at startup.
 
 Every role requires `api_key_env`. The selected role keeps its provider name;
 another role that defines its own model uses the provider `<provider>-<role>`,

@@ -85,30 +85,19 @@ function roleModels(models: Record<string, AgentModelConfig>, selectedRole: stri
 
 function modelsJson(roles: RoleModel[]): JsonObject | undefined {
   const providers: Record<string, JsonObject> = {};
-  for (const { role, config, providerId, metadata } of roles) {
+  for (const { config, providerId, metadata } of roles) {
     if (metadata === undefined) {
       continue;
     }
-    if (config.api != null && metadata.api !== undefined && metadata.api !== config.api) {
-      throw new LifecycleError(
-        "pi_model_api_conflict",
-        `models.${role}.api conflicts with its model_metadata.api`,
-        { metadata: { field: `models.${role}.settings.model_metadata.api` } },
-      );
+    // model_schema keeps id, baseUrl, and api out of model_metadata.
+    const model: JsonObject = { ...metadata, id: config.model };
+    if (config.api != null) {
+      model.api = config.api;
     }
-    const api = config.api ?? metadata.api;
-    const baseUrl = config.base_url ?? undefined;
-    providers[providerId] = {
-      ...(baseUrl === undefined ? {} : { baseUrl }),
-      models: [
-        {
-          ...metadata,
-          ...(api === undefined ? {} : { api }),
-          ...(baseUrl === undefined ? {} : { baseUrl }),
-          id: config.model,
-        },
-      ],
-    };
+    if (config.base_url != null) {
+      model.baseUrl = config.base_url;
+    }
+    providers[providerId] = { models: [model] };
   }
   return Object.keys(providers).length === 0 ? undefined : { providers };
 }
@@ -145,12 +134,8 @@ async function createModelRuntime(
 async function setCredentials(modelRuntime: ModelRuntime, roles: RoleModel[], options: PiModelOptions) {
   const keys = new Map<string, string>();
   for (const { role, config, providerId } of roles) {
-    const name = config.api_key_env;
-    if (!name) {
-      throw new LifecycleError("pi_api_key_env_required", `The Pi model role ${role} requires api_key_env`, {
-        metadata: { field: `models.${role}.api_key_env` },
-      });
-    }
+    // model_schema requires api_key_env for every role.
+    const name = config.api_key_env ?? "";
     const key = options.credential(name);
     if (!key) {
       throw new LifecycleError("pi_credential_missing", `Credential environment variable ${name} is not set`);
