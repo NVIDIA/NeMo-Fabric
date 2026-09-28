@@ -10,7 +10,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum AgentRunResultValidationError &#123;\n    FailedWithoutError,\n    SucceededWithError,\n    InvalidArtifactPath(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum AgentRunResultValidationError &#123;\n    FailedWithoutError,\n    SucceededWithError,\n    BlankField(&amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>),\n    InvalidArtifactPath(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n&#125;"}} /></pre>
 
 Invalid relationship or value within an adapter result.
 
@@ -27,6 +27,12 @@ A failed result omitted its required error.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "SucceededWithError"}} /></pre>
 
 A successful result included an error.
+
+### `BlankField(&'static str)`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "BlankField(&amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>)"}} /></pre>
+
+A result string violated the non-blank contract.
 
 ### `InvalidArtifactPath(PathBuf)`
 

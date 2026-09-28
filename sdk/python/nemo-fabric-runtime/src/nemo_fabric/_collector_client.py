@@ -37,7 +37,12 @@ class _AtofCollectorClient:
         self._stream_timeout = httpx.Timeout(timeout_seconds, read=None)
 
     @classmethod
-    def from_sink(cls, sink: RelayAtofStreamSinkConfig) -> _AtofCollectorClient:
+    def from_sink(
+        cls,
+        sink: RelayAtofStreamSinkConfig,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> _AtofCollectorClient:
         if sink.transport != "ndjson":
             raise FabricConfigError(
                 "Relay sink nemo-fabric-stream must use ndjson with the "
@@ -77,40 +82,81 @@ class _AtofCollectorClient:
             base_url=urlunsplit(
                 (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "")
             ),
-            timeout_seconds=sink.timeout_millis / 1000,
+            timeout_seconds=(
+                sink.timeout_millis / 1000
+                if timeout_seconds is None
+                else timeout_seconds
+            ),
             headers=headers,
         )
 
-    async def register(self, request_id: str) -> None:
+    async def register(
+        self,
+        request_id: str,
+        *,
+        correlation_mode: str | None = None,
+        capture_records: bool = True,
+        registration_token: str | None = None,
+    ) -> None:
+        payload = {"request_id": request_id}
+        if correlation_mode is not None:
+            payload["correlation_mode"] = correlation_mode
+        if not capture_records:
+            payload["capture_records"] = False
+        if registration_token is not None:
+            payload["registration_token"] = registration_token
         await self._request(
             "POST",
             "/v1/register",
             expected_status=201,
-            json={"request_id": request_id},
+            json=payload,
         )
 
-    async def deregister(self, request_id: str, *, remove_queue: bool) -> None:
+    async def deregister(
+        self,
+        request_id: str,
+        *,
+        remove_queue: bool,
+        pi_boundary: str | None = None,
+        pi_turn_count: int | None = None,
+        registration_token: str | None = None,
+    ) -> None:
         encoded_request_id = quote(request_id, safe="")
+        params = {"remove_queue": "true" if remove_queue else "false"}
+        if pi_boundary is not None:
+            params["pi_boundary"] = pi_boundary
+        if pi_turn_count is not None:
+            params["pi_turn_count"] = str(pi_turn_count)
+        if registration_token is not None:
+            params["registration_token"] = registration_token
         await self._request(
             "DELETE",
             f"/v1/deregister-request/{encoded_request_id}",
             expected_status=204,
-            params={"remove_queue": "true" if remove_queue else "false"},
+            params=params,
         )
 
     async def stream(
         self,
         request_id: str,
+        *,
+        registration_token: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         encoded_request_id = quote(request_id, safe="")
         method = "GET"
         path = f"/v1/stream/{encoded_request_id}"
+        params = (
+            {"registration_token": registration_token}
+            if registration_token is not None
+            else None
+        )
         try:
             async with self._client.stream(
                 method,
                 f"{self.base_url}{path}",
                 headers={"Accept": "application/x-ndjson"},
                 timeout=self._stream_timeout,
+                params=params,
             ) as response:
                 if response.status_code != 200:
                     raise FabricRuntimeError(
@@ -171,9 +217,22 @@ class _AtofCollectorClient:
                 code="collector_request_failed",
             ) from error
         if response.status_code != expected_status:
+            detail = _response_error_detail(response)
+            detail_suffix = f": {detail}" if detail is not None else ""
             raise FabricRuntimeError(
                 f"ATOF collector returned HTTP {response.status_code} for "
-                f"{method} {path}; expected HTTP {expected_status}",
+                f"{method} {path}; expected HTTP {expected_status}{detail_suffix}",
                 stage="invoke",
                 code="collector_request_failed",
             )
+
+
+def _response_error_detail(response: httpx.Response) -> str | None:
+    try:
+        payload = response.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    detail = payload.get("detail")
+    return detail if isinstance(detail, str) and detail else None

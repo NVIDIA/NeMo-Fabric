@@ -173,7 +173,7 @@ test("removes prompt_cache_key while preserving the remaining JSON request body"
   const upstreamUrl = await listen(upstream);
   const proxy = await ModelEndpointProxy.create(`${upstreamUrl}/v1`);
   const payload = {
-    model: "fabric-echo",
+    model: "nvidia/nemotron-3.5-lightning-30b-a3b",
     messages: [{ role: "user", content: "hello" }],
     prompt_cache_key: "provider-specific-cache-key",
     stream: true,
@@ -188,7 +188,7 @@ test("removes prompt_cache_key while preserving the remaining JSON request body"
 
     assert.equal(response.status, 200);
     assert.deepEqual(received, {
-      model: "fabric-echo",
+      model: "nvidia/nemotron-3.5-lightning-30b-a3b",
       messages: [{ role: "user", content: "hello" }],
       stream: true,
       temperature: 0.2,

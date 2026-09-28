@@ -149,6 +149,13 @@
     "runtime_id": {
       "description": "Runtime handle id.",
       "type": "string"
+    },
+    "service_id": {
+      "description": "Service used by this runtime, when it is connected to a shared service.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

@@ -945,3 +945,16 @@ def test_lifecycle_host_cleans_up_and_exits_after_start_failure():
         "lifecycle_adapter_start_failed"
     )
     assert stopped == [True]
+
+
+def test_lifecycle_host_exits_without_traceback_on_keyboard_interrupt(monkeypatch):
+    def interrupt(coroutine):
+        coroutine.close()
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(lifecycle.asyncio, "run", interrupt)
+
+    with pytest.raises(SystemExit) as caught:
+        lifecycle.serve(object)
+
+    assert caught.value.code == 130

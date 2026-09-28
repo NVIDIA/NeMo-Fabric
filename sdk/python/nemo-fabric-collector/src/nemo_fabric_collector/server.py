@@ -12,7 +12,10 @@ from contextlib import asynccontextmanager, contextmanager
 
 import uvicorn
 
-from nemo_fabric_collector.app import create_app
+from nemo_fabric_collector.app import (
+    _COMPLETION_WAIT_TIMEOUT_SECONDS,
+    create_app,
+)
 
 
 class _EmbeddedServer(uvicorn.Server):
@@ -29,10 +32,14 @@ async def serve_collector(
     host: str = "127.0.0.1",
     port: int = 0,
     standalone: bool = False,
+    completion_wait_timeout: float = _COMPLETION_WAIT_TIMEOUT_SECONDS,
 ) -> AsyncIterator[str]:
     """Run a collector until the asynchronous context exits."""
 
-    application = create_app(standalone=standalone)
+    application = create_app(
+        standalone=standalone,
+        completion_wait_timeout=completion_wait_timeout,
+    )
     config = uvicorn.Config(
         application,
         host=host,

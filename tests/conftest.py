@@ -132,6 +132,7 @@ def adapter_ids_fixture() -> dict[str, str]:
         "claude": "nvidia.fabric.claude",
         "codex": "nvidia.fabric.codex",
         "hermes": "nvidia.fabric.hermes",
+        "openclaw": "nvidia.fabric.openclaw",
     }
 
 

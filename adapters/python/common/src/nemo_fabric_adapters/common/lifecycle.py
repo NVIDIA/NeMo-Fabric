@@ -30,8 +30,8 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 class AdapterRuntime(Protocol):
     """One adapter-owned runtime living for the complete host lifetime."""
 
-    async def start(self, payload: dict[str, Any]) -> None:
-        """Initialize runtime-owned SDK clients and resources."""
+    async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        """Initialize resources and optionally return service information."""
 
     async def invoke(
         self,
@@ -565,14 +565,14 @@ async def _handle_start(
 
     candidate = runtime_factory()
     try:
-        await _adapter_call("start", lambda: candidate.start(payload))
+        output = await _adapter_call("start", lambda: candidate.start(payload))
     except LifecycleError:
         await _stop_after_eof(candidate)
         raise
     state.runtime = candidate
     state.runtime_id = message_runtime_id
     state.failed = False
-    return _response("start")
+    return _response("start", output=output)
 
 
 async def _handle_invoke(
@@ -812,11 +812,14 @@ def serve(
     # Reserve process stdout for the protocol for the entire host lifetime,
     # including SDK background tasks running while the host is idle.
     with redirect_stdout(sys.stderr):
-        asyncio.run(
-            _serve(
-                runtime_factory,
-                config_loader=config_loader,
-                input_stream=input_stream,
-                output_stream=output_stream,
+        try:
+            asyncio.run(
+                _serve(
+                    runtime_factory,
+                    config_loader=config_loader,
+                    input_stream=input_stream,
+                    output_stream=output_stream,
+                )
             )
-        )
+        except KeyboardInterrupt:
+            raise SystemExit(130) from None

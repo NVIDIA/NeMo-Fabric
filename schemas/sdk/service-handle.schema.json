@@ -1,0 +1,62 @@
+{
+  "$defs": {
+    "ServiceOwnership": {
+      "description": "Ownership of a service exposed through NeMo Fabric.",
+      "oneOf": [
+        {
+          "const": "fabric_owned",
+          "description": "NeMo Fabric created and owns the service lifecycle.",
+          "type": "string"
+        },
+        {
+          "const": "caller_owned",
+          "description": "The caller owns the service and NeMo Fabric only owns its attachment.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Public identity and binding for one prepared or attached service.",
+  "properties": {
+    "adapter_id": {
+      "description": "Adapter that created or attached to the service.",
+      "type": "string"
+    },
+    "connection": {
+      "additionalProperties": true,
+      "description": "Sanitized connection summary. This never contains credential values.",
+      "type": "object"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "description": "Adapter-reported version and readiness metadata.",
+      "type": "object"
+    },
+    "ownership": {
+      "$ref": "#/$defs/ServiceOwnership",
+      "description": "Whether NeMo Fabric owns the underlying service."
+    },
+    "service_binding": {
+      "description": "NeMo Fabric-owned opaque binding for this service handle.",
+      "type": "string"
+    },
+    "service_id": {
+      "description": "Unique identifier for this process-local service lifecycle.",
+      "type": "string"
+    },
+    "service_type": {
+      "description": "Stable service type returned by the adapter.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "service_id",
+    "service_binding",
+    "adapter_id",
+    "service_type",
+    "ownership"
+  ],
+  "title": "ServiceHandle",
+  "type": "object"
+}

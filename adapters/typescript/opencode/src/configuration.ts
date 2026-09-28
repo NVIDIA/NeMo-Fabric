@@ -11,6 +11,10 @@ export interface OpenCodeModel {
   model: string;
   apiKeyEnv: string;
   baseUrl?: string;
+  sampling?: {
+    temperature?: number;
+    topP?: number;
+  };
 }
 
 const ENVIRONMENT_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
@@ -26,6 +30,43 @@ function validEndpoint(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function sampling(model: AgentModelConfig, baseUrl: string | undefined): OpenCodeModel["sampling"] {
+  if (model.max_tokens !== undefined && model.max_tokens !== null) {
+    throw new LifecycleError(
+      "opencode_max_tokens_unsupported",
+      "OpenCode does not support models.max_tokens",
+    );
+  }
+  if (model.settings !== undefined) {
+    throw new LifecycleError(
+      "opencode_model_settings_unsupported",
+      "OpenCode does not support provider-specific model settings",
+    );
+  }
+  const hasTemperature = model.temperature !== undefined && model.temperature !== null;
+  const hasTopP = model.top_p !== undefined && model.top_p !== null;
+  if (!hasTemperature && !hasTopP) {
+    return undefined;
+  }
+  if (baseUrl === undefined) {
+    throw new LifecycleError(
+      "opencode_sampling_requires_base_url",
+      "OpenCode sampling settings require an OpenAI-compatible models.base_url endpoint",
+    );
+  }
+  if (
+    (hasTemperature && (typeof model.temperature !== "number" || !Number.isFinite(model.temperature))) ||
+    (hasTopP &&
+      (typeof model.top_p !== "number" || !Number.isFinite(model.top_p) || model.top_p < 0 || model.top_p > 1))
+  ) {
+    throw new LifecycleError("opencode_invalid_model", "OpenCode model configuration does not match the adapter schema");
+  }
+  return {
+    ...(typeof model.temperature === "number" ? { temperature: model.temperature } : {}),
+    ...(typeof model.top_p === "number" ? { topP: model.top_p } : {}),
+  };
 }
 
 function validModel(model: AgentModelConfig): OpenCodeModel {
@@ -46,11 +87,14 @@ function validModel(model: AgentModelConfig): OpenCodeModel {
   ) {
     throw new LifecycleError("opencode_invalid_model", "OpenCode model configuration does not match the adapter schema");
   }
+  const baseUrl = typeof model.base_url === "string" ? model.base_url : undefined;
+  const configuredSampling = sampling(model, baseUrl);
   return {
     provider: model.provider,
     model: model.model,
     apiKeyEnv: model.api_key_env,
-    ...(typeof model.base_url === "string" ? { baseUrl: model.base_url } : {}),
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(configuredSampling === undefined ? {} : { sampling: configuredSampling }),
   };
 }
 
@@ -67,4 +111,31 @@ export function selectModel(config: AgentConfig): OpenCodeModel {
     );
   }
   return validModel(selected);
+}
+
+export function selectSystemInstruction(config: AgentConfig): string | undefined {
+  const instruction = config.instructions?.system;
+  if (instruction === undefined || instruction === null) {
+    return undefined;
+  }
+  if (typeof instruction.content !== "string" || instruction.content.trim().length === 0) {
+    throw new LifecycleError(
+      "opencode_invalid_system_instruction",
+      "OpenCode system instructions must contain non-empty text",
+    );
+  }
+  if (instruction.mode !== undefined && instruction.mode !== "replace") {
+    throw new LifecycleError(
+      "unsupported_system_instruction_mode",
+      `OpenCode does not support instructions.system.mode=${JSON.stringify(instruction.mode)}; supported modes: replace`,
+      {
+        metadata: {
+          field: "instructions.system.mode",
+          mode: instruction.mode,
+          supported_modes: ["replace"],
+        },
+      },
+    );
+  }
+  return instruction.content;
 }

@@ -36,7 +36,7 @@ function startInput(baseDir, options = {}) {
           ...(options.extensionPath === undefined ? {} : { relay_extension_path: options.extensionPath }),
         },
       },
-      models: {
+      models: options.models ?? {
         default: {
           api_key_env: "TEST_API_KEY",
           model: "gpt-4.1-mini",
@@ -111,32 +111,20 @@ test("accepts only stable NeMo Relay 0.9 CLI versions", async () => {
   );
 });
 
-test("normalizes file outputs without mutating a Relay stream sink", async () => {
+test("normalizes a core-authored Relay plugin document without mutating a stream sink", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-config-")));
   const previousConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;
   try {
     const runtimeConfigPath = join(root, "relay-config.json");
-    const streamSink = {
-      type: "stream",
-      name: "nemo-fabric-stream",
-      url: "http://127.0.0.1:4319/atof",
-      transport: "ndjson",
-      timeout_millis: 3000,
-      headers: {},
-      header_env: { authorization: "RELAY_AUTHORIZATION" },
-    };
+    const corePluginConfig = JSON.parse(
+      await readFile(new URL("../../../../tests/fixtures/pi-relay-core-plugin.json", import.meta.url), "utf8"),
+    );
+    const streamSink = structuredClone(corePluginConfig.components[0].config.atof.sinks[1]);
     await writeFile(
       runtimeConfigPath,
       JSON.stringify({
         relay: {
-          config: {
-            version: 3,
-            atof: {
-              enabled: true,
-              sinks: [{ type: "file", output_directory: "relay-atof" }, streamSink],
-            },
-            atif: { enabled: true },
-          },
+          config: corePluginConfig,
         },
       }),
       "utf8",
@@ -149,9 +137,9 @@ test("normalizes file outputs without mutating a Relay stream sink", async () =>
     assert.equal(config.atof.sinks[0].output_directory, join(root, "relay-atof", "runtime-1"));
     assert.equal(config.atof.sinks[0].filename, "events.atof.jsonl");
     assert.equal(config.atif.output_directory, join(root, "artifacts", "relay", "runtime-1"));
-    assert.equal(config.atif.filename_template, "trajectory-{session_id}.atif.json");
-    assert.equal(config.atif.agent_name, "pi-relay-test");
-    assert.equal(config.atif.model_name, undefined);
+    assert.equal(config.atif.filename_template, "nemo-relay-atif-{session_id}.json");
+    assert.equal(config.atif.agent_name, "NeMo Relay");
+    assert.equal(config.atif.model_name, "gpt-4.1-mini");
 
     const paths = await writeRelayConfigs(pluginConfig);
     assert.equal(paths.configPath, join(root, "relay-config", "config.toml"));
@@ -166,6 +154,49 @@ test("normalizes file outputs without mutating a Relay stream sink", async () =>
     } else {
       process.env.FABRIC_RELAY_CONFIG_PATH = previousConfigPath;
     }
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("defaults an omitted ATIF model name consistently with Python adapters", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-model-name-")));
+  try {
+    const cases = [
+      {
+        models: {
+          default: { provider: "openai", model: "gpt-4.1-mini", api_key_env: "TEST_API_KEY" },
+        },
+        expected: "gpt-4.1-mini",
+      },
+      {
+        models: {
+          review: { provider: "openai", model: "openai/gpt-5-codex", api_key_env: "TEST_API_KEY" },
+        },
+        expected: "openai/gpt-5-codex",
+      },
+      {
+        models: {
+          review: { provider: "openai", model: "review-model", api_key_env: "TEST_API_KEY" },
+          writer: { provider: "openai", model: "writer-model", api_key_env: "TEST_API_KEY" },
+        },
+        expected: "unknown",
+      },
+      {
+        models: {
+          default: { provider: "openai", model: "gpt-4.1-mini", api_key_env: "TEST_API_KEY" },
+        },
+        configured: "trajectory-model",
+        expected: "trajectory-model",
+      },
+    ];
+    for (const { models, configured, expected } of cases) {
+      const pluginConfig = observability({
+        atif: { enabled: true, ...(configured === undefined ? {} : { model_name: configured }) },
+      });
+      await normalizeRelayOutputDirs(pluginConfig, startInput(root, { models }));
+      assert.equal(pluginConfig.components[0].config.atif.model_name, expected);
+    }
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -443,6 +474,7 @@ test("collects ATIF templates with directory, metadata, or no placeholders", asy
     const cases = [
       ["nested/trajectory-{session_id}.json", "nested/trajectory-s1.json", true],
       ["{metadata.workflow_id}-trajectory-{session_id}.json", "wf1-trajectory-s1.json", false],
+      ["{metadata.run:-a/b}.json", "a/b.json", true],
       ["{metadata.run:-a/b}/{session_id}.atif.json", "a/b/sess-1.atif.json", true],
       ["fixed.atif.json", "fixed.atif.json", false],
     ];

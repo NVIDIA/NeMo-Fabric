@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "components": [
+    {
+      "kind": "observability",
+      "enabled": true,
+      "config": {
+        "version": 3,
+        "atof": {
+          "enabled": true,
+          "sinks": [
+            {
+              "type": "file",
+              "output_directory": "relay-atof",
+              "mode": "overwrite"
+            },
+            {
+              "type": "stream",
+              "url": "http://127.0.0.1:4319/atof",
+              "transport": "ndjson",
+              "header_env": {
+                "authorization": "RELAY_AUTHORIZATION"
+              },
+              "timeout_millis": 3000,
+              "field_name_policy": "preserve",
+              "name": "nemo-fabric-stream"
+            }
+          ]
+        },
+        "atif": {
+          "enabled": true,
+          "agent_name": "NeMo Relay",
+          "model_name": "gpt-4.1-mini",
+          "filename_template": "nemo-relay-atif-{session_id}.json"
+        },
+        "enable_full_payloads": false
+      }
+    }
+  ]
+}

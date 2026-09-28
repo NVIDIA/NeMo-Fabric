@@ -72,14 +72,23 @@ For a source build, set `discovery.local_paths` to
 `adapters/typescript/opencode/opencode.fabric-adapter.json` instead. The build
 commands above create the descriptor's `dist/cli.js` runner.
 
-The adapter selects the `default` model role or the only configured role.
-Configure `default` with multiple roles. Set `api_key_env` to the name of the
-environment variable that contains the provider credential. The credential must
-be a portable environment-variable identifier (for example, `NVIDIA_API_KEY`).
-The provider and model must be supported by the installed OpenCode SDK when no
-endpoint is configured. The adapter passes this configured name explicitly to
-OpenCode, so it does not need to be the provider's conventional
-environment-variable name.
+## Supported Configuration
+
+The adapter supports the following configuration:
+
+- **Models:** Selects the `default` role, or the only configured role.
+  `api_key_env` may use any portable environment-variable name. When no
+  endpoint is configured, the provider and model must be supported by the
+  installed OpenCode SDK.
+- **Instructions:** Supports `instructions.system` with `mode: replace`.
+  A replacement instruction replaces OpenCode's base prompt. OpenCode may still
+  append runtime context.
+- **Skills:** Each `skills.paths` entry must be a directory containing `SKILL.md`.
+  Startup verifies that only those `SKILL.md` files load and that names are unique.
+- **MCP:** Supports `stdio` and `streamable-http`. Startup fails if a configured
+  server cannot connect.
+
+### Model Endpoints
 
 To route model requests through a local or company-hosted endpoint, set
 `base_url`. The endpoint must implement the OpenAI-compatible Chat Completions
@@ -92,18 +101,53 @@ reject that OpenAI-specific field can still use the core protocol. The proxy
 buffers and rewrites request bodies up to 16 MiB. Larger requests receive HTTP
 413 rather than consuming unbounded adapter memory.
 
+`temperature` and `top_p` are supported only with `base_url`.
+
+To configure a loopback OpenAI-compatible endpoint for development, set
+`base_url` as follows:
+
 ```python
 config.models["default"].base_url = "http://127.0.0.1:8080/v1"
 ```
 
-The initial adapter exposes `models` and `models.base_url`. NeMo Fabric rejects
-temperature, instructions, MCP, skills, tool policy, subagents, Relay, remote
-OpenCode service configuration, and other undeclared configuration rather than
-ignoring them.
+### MCP Configuration
+
+Streamable-HTTP servers may define headers but not command arguments. Stdio
+servers may define command arguments and environment variables but not HTTP
+headers.
+
+Streamable-HTTP server URLs require HTTPS except for loopback development
+endpoints.
+
+Header values may reference `${NAME}`. Resolution checks `environment.env`
+first, then the parent process environment. Unresolved references fail startup.
+For MCP credentials, prefer parent-only variables so they are used to construct
+the header without being added to OpenCode's tool environment.
+
+SSE, MCP authentication objects, and per-server tool filters are unsupported.
+MCP elicitation is also unsupported. Configure only non-interactive MCP servers as
+NeMo Fabric cannot reply to an elicitation request, so it can block an
+invocation until its configured timeout.
+
+### Runtime Behavior
 
 The embedded session keeps the Fabric workspace as its working location, but
 does not load ambient OpenCode project or user configuration and instructions
 from that workspace or the host home directory.
+
+At runtime, OpenCode receives only required operating-system variables,
+explicit Fabric `environment.env` values, and the selected model credential.
+Other variables inherited by the Fabric process are not exposed to OpenCode.
+
+The adapter is non-interactive. It denies OpenCode's direct `read` permission
+for `.env` files (except `.env.example`), access outside the workspace, or
+follow-up questions rather than waiting for an approval that NeMo Fabric cannot
+supply. These rules are not a filesystem sandbox and do not prevent shell tools
+from reading files in the workspace.
+
+The adapter accepts plain-text input and returns the final response in
+`output.response`. Streaming, Relay, tool policy, subagents,
+provider-specific model settings, and `max_tokens` are not supported.
 
 ## Understand the Runtime Lifecycle
 
@@ -132,9 +176,3 @@ invocation-scoped path beneath `opencode/` and returns it as a `patch` artifact.
 Without an artifact root, it returns no patch artifact.
 
 Create a new runtime to change the selected model or workspace.
-
-## Limitations
-
-The initial adapter does not expose streaming, caller-driven cancellation,
-runtime updates, remote-service execution, Relay telemetry, MCP, skills, tool
-policy, subagents, system instructions, or model settings.

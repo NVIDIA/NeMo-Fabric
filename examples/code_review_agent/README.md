@@ -127,10 +127,10 @@ Keep any capability options from the previous section that the selected
 harness supports.
 
 Codex and Claude omit the default code-review skill; add
-`--skill-path ./skills/code-review` to retain it. For Relay, Codex, Claude, and
-Pi require a NeMo Relay CLI in the `>=0.9,<0.10` range, Pi additionally requires
-its Relay Pi extension, and Hermes Agent and Deep Agents use the Relay Python
-package.
+`--skill-path ./skills/code-review` to retain it. Relay configurations for
+Codex, Claude, and Pi require a NeMo Relay CLI in the `>=0.9,<0.10` range.
+Pi also requires its Relay Pi extension. Hermes Agent and Deep Agents require
+the `nemo-relay>=0.9,<0.10` Python package.
 Additional requirements appear in the corresponding subsections.
 
 For example, after installing Deep Agents, this command keeps the default skill
@@ -178,6 +178,10 @@ default demo.
 Its Relay integration requires `nemo-relay>=0.9,<0.10`. The `--stream` option
 collects Relay ATOF records; it is not native model-response streaming.
 
+### OpenClaw (`openclaw`)
+
+Install Node.js and OpenClaw, then install the [OpenClaw adapter](../../adapters/python/openclaw/README.md). This variant uses the `NVIDIA_API_KEY` configured for the default demo and retains the default code-review skill. OpenClaw does not currently support Relay telemetry.
+
 ### Pi (`pi`)
 
 Install Node.js 22.19 or later, and follow the
@@ -188,7 +192,7 @@ This variant adds an explicit `read` tool to the default code-review skill and
 uses `NVIDIA_API_KEY`. Pi does not currently support MCP, so do not use a
 configuration created by `with_github_mcp`.
 
-For Relay telemetry, install `nemo-relay>=0.9.0,<0.10.0` as described in the
+For Relay telemetry, install `nemo-relay-cli-bin>=0.9.0,<0.10.0` as described in the
 [Pi adapter instructions](../../adapters/typescript/pi/README.md#install-nemo-relay)
 and pass the Relay Pi extension path explicitly:
 
@@ -196,9 +200,14 @@ and pass the Relay Pi extension path explicitly:
 .venv/bin/python -m examples.code_review_agent \
   --variant pi \
   --relay \
+  --stream \
   --pi-relay-extension-path /path/to/NeMo-Relay/crates/cli/assets/pi-extension \
   --input "Review calculator.py"
 ```
 
-The Pi variant does not yet support Relay-backed streaming, so do not add
-`--stream`.
+The Pi variant uses the default embedded collector to collect per-invocation
+model-turn ATOF records for successful Relay redirects, then prints one JSON
+document containing `atof_records` and the separate terminal `result`. Relay
+retains redirect-decision marks in configured ATOF artifacts, while Pi's startup
+`model_redirect` marks are not included in `atof_records`. Omit `--stream` to
+retain Relay artifacts without collecting records for that JSON output.

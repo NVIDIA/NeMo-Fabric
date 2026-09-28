@@ -10,7 +10,16 @@
     "binaries": ["bun"]
   },
   "config": {
-    "accepts": ["models", "models.base_url"]
+    "accepts": [
+      "models",
+      "models.base_url",
+      "models.temperature",
+      "models.top_p",
+      "instructions.system",
+      "skills",
+      "mcp"
+    ],
+    "system_instruction_modes": ["replace"]
   },
   "model_schema": {
     "type": "object",
@@ -18,10 +27,28 @@
       "provider": {"type": "string", "minLength": 1},
       "model": {"type": "string", "minLength": 1},
       "api_key_env": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
-      "base_url": {"type": ["string", "null"], "format": "uri", "pattern": "^https?://"}
+      "base_url": {"type": ["string", "null"], "format": "uri", "pattern": "^https?://"},
+      "temperature": {"type": "number"},
+      "top_p": {"type": "number", "minimum": 0, "maximum": 1}
     },
     "required": ["provider", "model", "api_key_env"],
-    "additionalProperties": false
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "anyOf": [
+            {"required": ["temperature"]},
+            {"required": ["top_p"]}
+          ]
+        },
+        "then": {
+          "properties": {
+            "base_url": {"type": "string", "format": "uri", "pattern": "^https?://"}
+          },
+          "required": ["base_url"]
+        }
+      }
+    ]
   },
   "capabilities": {
     "streaming": false,

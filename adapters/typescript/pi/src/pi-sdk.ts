@@ -34,6 +34,38 @@ interface PiToolFactoryContext {
   workspace: string;
 }
 
+export function withCustomBaseUrl<T extends { api: string; baseUrl: string; compat?: object }>(
+  catalogModel: T,
+  baseUrl: string | null | undefined,
+  overrideBaseUrl = true,
+): T {
+  if (!baseUrl) {
+    return catalogModel;
+  }
+  const model = overrideBaseUrl ? { ...catalogModel, baseUrl } : catalogModel;
+  if (catalogModel.api !== "openai-completions") {
+    return model;
+  }
+  return {
+    ...model,
+    // Generic OpenAI-compatible proxies may reject provider-specific
+    // reasoning_content fields when Pi replays an assistant tool call.
+    compat: { ...catalogModel.compat, requiresThinkingAsText: true },
+  };
+}
+
+export function modelAwareCompactionReserveTokens(
+  configuredReserveTokens: number,
+  maxOutputTokens: number,
+  contextWindow: number,
+): number {
+  const reserveTokens = Math.max(configuredReserveTokens, maxOutputTokens);
+  if (contextWindow <= 0) {
+    return reserveTokens;
+  }
+  return Math.min(reserveTokens, Math.floor(contextWindow / 2));
+}
+
 type PiToolFactory = (context: PiToolFactoryContext) => ToolDefinition | Promise<ToolDefinition>;
 
 const PI_BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
@@ -362,20 +394,35 @@ class PiSdkSessionHandle implements PiSessionHandle {
   readonly relay?: PiRelayRuntime;
   private readonly session: AgentSession;
   private readonly state: { shutdownRequested: boolean };
+  private readonly unsubscribeTurnCounter: () => void;
   private stopped = false;
+  private cumulativeTurnCount = 0;
 
   constructor(session: AgentSession, state: { shutdownRequested: boolean }, relay?: PiRelayRuntime) {
     this.session = session;
     this.state = state;
     this.relay = relay;
+    this.unsubscribeTurnCounter = this.session.subscribe((event) => {
+      if (event.type === "turn_start") {
+        this.cumulativeTurnCount += 1;
+      }
+    });
+  }
+
+  get turnCount(): number {
+    return this.cumulativeTurnCount;
   }
 
   async prompt(text: string): Promise<PiPromptOutcome> {
     let accepted = false;
+    let turnStarted = false;
     let finalAssistant:
       | { role: "assistant"; content: unknown; stopReason: string; errorMessage?: string }
       | undefined;
     const unsubscribe = this.session.subscribe((event) => {
+      if (event.type === "turn_start") {
+        turnStarted = true;
+      }
       if (event.type === "message_end" && event.message.role === "assistant") {
         finalAssistant = event.message;
       }
@@ -393,6 +440,8 @@ class PiSdkSessionHandle implements PiSessionHandle {
     }
     return {
       accepted,
+      turnStarted,
+      turnCount: this.cumulativeTurnCount,
       text: finalAssistant === undefined ? undefined : promptText(finalAssistant),
       stopReason: finalAssistant?.stopReason,
       errorMessage: finalAssistant?.errorMessage,
@@ -413,6 +462,11 @@ class PiSdkSessionHandle implements PiSessionHandle {
     }
     try {
       await this.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    } catch (error) {
+      failure ??= error;
+    }
+    try {
+      this.unsubscribeTurnCounter();
     } catch (error) {
       failure ??= error;
     }
@@ -493,7 +547,17 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     if (catalogModel === undefined) {
       throw new LifecycleError("pi_model_unknown", "The selected provider and model are not present in Pi's catalog");
     }
-    const model = !relayEnabled && selected.base_url ? { ...catalogModel, baseUrl: selected.base_url } : catalogModel;
+    const model = withCustomBaseUrl(catalogModel, selected.base_url, !relayEnabled);
+    const compactionReserveTokens = modelAwareCompactionReserveTokens(
+      settings.getCompactionReserveTokens(),
+      model.maxTokens,
+      model.contextWindow,
+    );
+    settings.applyOverrides({
+      compaction: {
+        reserveTokens: compactionReserveTokens,
+      },
+    });
     let relay: PiRelayRuntime | undefined;
     let handle: PiSdkSessionHandle | undefined;
     try {

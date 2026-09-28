@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse
 import pytest
 import requests
 import uvicorn
@@ -59,7 +59,7 @@ def _remote_hermes_server(
         return {"status": "ok"}
 
     @app.post("/v1/chat/completions")
-    async def chat_completions(request: Request) -> JSONResponse:
+    async def chat_completions(request: Request) -> StreamingResponse:
         payload = await request.json()
         request_id = payload["metadata"][_REQUEST_ID_METADATA]
         received_request_ids.append(request_id)
@@ -71,36 +71,45 @@ def _remote_hermes_server(
         ]
         user_input = user_messages[-1]["content"]
         invocation = asyncio.run_coroutine_threadsafe(
-            runtime.invoke(
-                request=RunRequest(input=user_input, request_id=request_id)
-            ),
+            runtime.invoke(request=RunRequest(input=user_input, request_id=request_id)),
             runtime_loop,
         )
         result = await asyncio.wrap_future(invocation)
         assert result.status == "succeeded", result.to_mapping()
-        return JSONResponse(
-            {
-                "id": f"chatcmpl-{request_id}",
-                "object": "chat.completion",
-                "created": 0,
-                "model": payload.get("model", "remote-hermes"),
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": result.output["response"],
-                        },
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
+
+        def events() -> Iterator[str]:
+            chunks = [
+                {
+                    "id": f"chatcmpl-{request_id}",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": payload.get("model", "remote-hermes"),
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": result.output["response"]},
+                            "finish_reason": None,
+                        }
+                    ],
                 },
-            }
-        )
+                {
+                    "id": f"chatcmpl-{request_id}",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": payload.get("model", "remote-hermes"),
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                    },
+                },
+            ]
+            for chunk in chunks:
+                yield f"data: {json.dumps(chunk)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(events(), media_type="text/event-stream")
 
     server = uvicorn.Server(
         uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")

@@ -325,6 +325,20 @@ def _stream_chat_completion(payload: dict[str, object], content: str) -> Iterato
 
     for chunk in chunks:
         yield f"data: {json.dumps(chunk)}\n\n"
+    if payload.get("stream_options") == {"include_usage": True}:
+        usage = {
+            "id": "chatcmpl-fabric-test",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": model,
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            },
+        }
+        yield f"data: {json.dumps(usage)}\n\n"
     yield "data: [DONE]\n\n"
 
 

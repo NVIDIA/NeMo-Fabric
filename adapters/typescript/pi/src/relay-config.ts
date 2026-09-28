@@ -70,6 +70,13 @@ function components(pluginConfig: RelayPluginConfig): unknown[] {
   return value;
 }
 
+function relayModelName(input: AdapterStartInput): string {
+  const models = input.config.models ?? {};
+  const entries = Object.values(models);
+  const selected = models.default ?? (entries.length === 1 ? entries[0] : undefined);
+  return selected?.model || "unknown";
+}
+
 export function validateRelayObservabilityV3(pluginConfig: RelayPluginConfig): void {
   for (const component of components(pluginConfig)) {
     if (!isRecord(component) || component.enabled === false) {
@@ -236,6 +243,7 @@ export async function normalizeRelayOutputDirs(
     await mkdir(outputDirectory, { recursive: true });
     atif.filename_template ??= "trajectory-{session_id}.atif.json";
     atif.agent_name ??= input.agentName;
+    atif.model_name ??= relayModelName(input);
   }
 }
 
@@ -431,23 +439,35 @@ function escapePattern(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function placeholderPattern(placeholder: string): string {
+function placeholderPattern(placeholder: string): { pattern: string; recursive: boolean } {
   const expression = placeholder.slice(1, -1);
   const fallbackIndex = expression.indexOf(":-");
   if (fallbackIndex < 0) {
-    return "[^/]+";
+    return { pattern: "[^/]+", recursive: false };
   }
   const fallback = expression.slice(fallbackIndex + 2).replaceAll("\\", "/");
-  return fallback.includes("/") ? `(?:[^/]+|${escapePattern(fallback)})` : "[^/]+";
+  const recursive = fallback.includes("/");
+  return {
+    pattern: recursive ? `(?:[^/]+|${escapePattern(fallback)})` : "[^/]+",
+    recursive,
+  };
 }
 
 function templatePattern(template: string): { pattern: RegExp; recursive: boolean } {
   const normalized = template.replaceAll("\\", "/");
   const parts = normalized.split(/(\{[^{}]+\})/u);
+  let recursive = normalized.includes("/");
   const pattern = parts
-    .map((part) => (/^\{[^{}]+\}$/u.test(part) ? placeholderPattern(part) : escapePattern(part)))
+    .map((part) => {
+      if (!/^\{[^{}]+\}$/u.test(part)) {
+        return escapePattern(part);
+      }
+      const placeholder = placeholderPattern(part);
+      recursive ||= placeholder.recursive;
+      return placeholder.pattern;
+    })
     .join("");
-  return { pattern: new RegExp(`^${pattern}$`, "u"), recursive: normalized.includes("/") };
+  return { pattern: new RegExp(`^${pattern}$`, "u"), recursive };
 }
 
 export function matchesRelayAtifPath(matcher: RelayAtifMatcher, path: string): boolean {

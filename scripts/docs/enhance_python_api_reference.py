@@ -18,6 +18,7 @@ from pydantic import BaseModel
 MODULE_NAMES = (
     "nemo_fabric.client",
     "nemo_fabric.runtime",
+    "nemo_fabric.service",
     "nemo_fabric.streaming",
     "nemo_fabric.openai_streaming",
     "nemo_fabric.models",
