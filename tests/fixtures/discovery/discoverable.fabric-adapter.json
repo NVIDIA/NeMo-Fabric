@@ -1,0 +1,25 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "org.fabric.fixture.discoverable",
+  "adapter_kind": "python",
+  "runner": {"module": "discoverable_fixture_runner"},
+  "settings_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "mode": {"enum": ["simple", "advanced"]},
+      "budget": {"type": "integer", "minimum": 1}
+    },
+    "required": ["mode"],
+    "if": {"properties": {"mode": {"const": "advanced"}}},
+    "then": {"required": ["budget"]},
+    "additionalProperties": false
+  },
+  "model_schema": {
+    "type": "object",
+    "properties": {"provider": {"const": "openai"}, "model": {"pattern": "^fixture-"}},
+    "required": ["provider", "model"],
+    "additionalProperties": false
+  },
+  "config": {"accepts": ["models"]}
+}

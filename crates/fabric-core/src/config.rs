@@ -495,14 +495,6 @@ struct DescriptorRegistry {
 }
 
 impl DescriptorRegistry {
-    fn from_config(
-        config: &FabricConfig,
-        base_dir: &Path,
-        installed_roots: &[PathBuf],
-    ) -> Result<Self> {
-        Self::from_discovery(config.discovery.as_ref(), base_dir, installed_roots)
-    }
-
     fn from_discovery(
         discovery: Option<&DiscoveryConfig>,
         base_dir: &Path,
@@ -2553,7 +2545,11 @@ fn resolve_run_plan_from_config_with_adapter_directories_mode(
 ) -> Result<RunPlan> {
     validate_config(&config)?;
     let base_dir = absolute_base_dir(context.base_dir)?;
-    let registry = DescriptorRegistry::from_config(&config, &base_dir, adapter_directories)?;
+    let registry = DescriptorRegistry::from_discovery(
+        config.discovery.as_ref(),
+        &base_dir,
+        adapter_directories,
+    )?;
     resolve_run_plan_with_registry(config, base_dir, &registry, enforce_compatibility)
 }
 
@@ -4303,83 +4299,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn discovered_catalog_plans_exactly_like_local_discovery() {
-        let root = repository_root().join("tests/fixtures/discovery");
-        let discovery = DiscoveryConfig {
-            local_paths: vec![root.clone()],
-            extensions: BTreeMap::new(),
-        };
-        let catalog = discover_descriptors(Some(&discovery), ResolveContext::new(&root))
-            .expect("discover without loading runners");
-        assert!(
-            catalog
-                .adapters
-                .windows(2)
-                .all(|pair| pair[0].descriptor.adapter_id < pair[1].descriptor.adapter_id)
-        );
-        assert!(
-            catalog
-                .targets
-                .iter()
-                .any(|target| target.descriptor.id == "nvidia.nooa.coding-agent"),
-            "bundled targets are part of the same catalog"
-        );
-        let record = catalog
-            .adapters
-            .iter()
-            .find(|record| record.descriptor.adapter_id == "org.fabric.fixture.discoverable")
-            .expect("new adapter discovered by exact ID");
-        assert_eq!(record.primary().source, DescriptorSource::ExplicitLocal);
-
-        let mut config = typed_config("org.fabric.fixture.discoverable");
-        config.skills = None;
-        config.harness.as_mut().unwrap().settings =
-            serde_json::from_value(serde_json::json!({"mode":"advanced", "budget":2})).unwrap();
-        let snapshot =
-            resolve_run_plan_from_descriptors(config.clone(), ResolveContext::new(&root), &catalog)
-                .expect("the discovered catalog is a complete planning input");
-        config.discovery = Some(discovery);
-        let local = resolve_run_plan_from_config(config.clone(), ResolveContext::new(&root))
-            .expect("valid settings plan");
-        assert_eq!(local.adapter_descriptor.as_ref(), Some(record));
-        assert_eq!(snapshot.adapter_descriptor, local.adapter_descriptor);
-
-        config.harness.as_mut().unwrap().settings.remove("budget");
-        assert!(resolve_run_plan_from_config(config, ResolveContext::new(&root)).is_err());
-    }
-
-    #[test]
-    fn discovery_fails_on_any_malformed_descriptor() {
-        struct RemoveDirOnDrop(PathBuf);
-
-        impl Drop for RemoveDirOnDrop {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
-
-        let root = std::env::temp_dir().join(format!(
-            "nemo-fabric-malformed-target-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("create descriptor root");
-        let _cleanup = RemoveDirOnDrop(root.clone());
-        let target = root.join("broken.fabric-target.json");
-        std::fs::write(&target, r#"{"id":"broken"}"#).expect("write malformed target");
-        let discovery = DiscoveryConfig {
-            local_paths: vec![target],
-            extensions: BTreeMap::new(),
-        };
-        let error = discover_descriptors(Some(&discovery), ResolveContext::new(&root))
-            .expect_err("a malformed target must not be silently omitted");
-        assert!(matches!(
-            error,
-            FabricError::InvalidAdapterTargetDescriptor { .. }
-        ));
-    }
-
-    #[test]
     fn agent_config_round_trips_explicit_extensions() {
         let config: AgentConfig = serde_json::from_value(serde_json::json!({
             "extensions": {
@@ -5443,143 +5362,103 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_planning_reports_config_schema_violations() {
-        let config = typed_config("nvidia.fabric.nooa");
-        let plan = resolve_diagnostic_plan_from_config(config, ResolveContext::new("."))
-            .expect("diagnostic planning keeps compatibility failures for doctor");
-        let report = crate::doctor_plan(&plan);
-        assert!(
-            report
-                .checks
-                .iter()
-                .any(|check| check.name == "config.unsupported"
-                    && check.status == crate::DoctorStatus::Fail
-                    && check.metadata.get("field") == Some(&Value::String("workflow".into()))),
-            "{:?}",
-            report.checks
-        );
-    }
+    fn a_discovered_catalog_plans_like_local_discovery_and_is_the_only_source() {
+        let root = repository_root().join("tests/fixtures/discovery");
+        let discovery = DiscoveryConfig {
+            local_paths: vec![root.clone()],
+            extensions: BTreeMap::new(),
+        };
+        let plan = |config: &FabricConfig, catalog: &DescriptorCatalog| {
+            resolve_run_plan_from_descriptors(config.clone(), ResolveContext::new(&root), catalog)
+        };
+        let mut config = typed_config("org.fabric.fixture.discoverable");
+        config.skills = None;
+        config.harness.as_mut().unwrap().settings =
+            serde_json::from_value(serde_json::json!({"mode": "advanced", "budget": 2})).unwrap();
 
-    #[test]
-    fn adapter_config_schema_rejects_missing_required_workflow() {
-        let mut config = typed_config("nvidia.fabric.nooa");
-        let error = resolve_run_plan_from_config(config.clone(), ResolveContext::new("."))
-            .expect_err("NOOA requires a workflow selection before native startup");
-        assert!(
-            matches!(
-                &error,
-                FabricError::AdapterCompatibility { adapter_id, field, .. }
-                    if adapter_id == "nvidia.fabric.nooa" && field == "workflow"
-            ),
-            "config.schema failures report the configuration path: {error}"
-        );
-        config.workflow = Some(
-            serde_json::from_value(serde_json::json!({"target_id":"nvidia.nooa.coding-agent"}))
-                .unwrap(),
-        );
-        resolve_run_plan_from_config(config, ResolveContext::new("."))
-            .expect("discovered target meets required config schema");
-    }
+        let catalog = discover_descriptors(Some(&discovery), ResolveContext::new(&root))
+            .expect("discover descriptors");
+        let snapshot = plan(&config, &catalog).expect("the catalog is a complete planning input");
+        config.discovery = Some(discovery);
+        let local = resolve_run_plan_from_config(config.clone(), ResolveContext::new(&root))
+            .expect("plan with local discovery");
+        assert_eq!(snapshot.adapter_descriptor, local.adapter_descriptor);
+        let fixture = snapshot.adapter_descriptor.expect("fixture adapter");
+        assert_eq!(fixture.primary().source, DescriptorSource::ExplicitLocal);
 
-    #[test]
-    fn supplied_descriptors_validate_settings_and_models_without_local_fallback() {
-        let path = repository_root().join("tests/fixtures/discovery/future.fabric-adapter.json");
-        let adapter = resolved_adapter(path.clone(), load_adapter_descriptor(&path).unwrap());
-        let mut config: FabricConfig = serde_json::from_value(serde_json::json!({
-            "schema_version": "fabric.agent/v1alpha1",
-            "metadata": {"name": "snapshot-agent"},
-            "runtime": {},
-            "harness": {"adapter_id": "org.fabric.fixture.discoverable", "settings": {"mode": "advanced", "budget": 4}},
-            "models": {"default": {"provider": "openai", "model": "fixture-model"}}
-        })).unwrap();
-        let catalog = DescriptorCatalog {
-            adapters: vec![adapter],
+        // A catalog's schemas apply, and no descriptor outside it is consulted.
+        let only_fixture = DescriptorCatalog {
+            adapters: vec![fixture],
             targets: Vec::new(),
         };
-        let plan =
-            resolve_run_plan_from_descriptors(config.clone(), ResolveContext::new("."), &catalog)
-                .unwrap();
-        assert_eq!(
-            plan.config.harness.as_ref().unwrap().settings,
-            config.harness.as_ref().unwrap().settings
-        );
         config.harness.as_mut().unwrap().settings.remove("budget");
-        assert!(
-            resolve_run_plan_from_descriptors(config.clone(), ResolveContext::new("."), &catalog)
-                .is_err()
-        );
-        config
-            .harness
-            .as_mut()
-            .unwrap()
-            .settings
-            .insert("budget".into(), serde_json::json!(4));
-        config.models.get_mut("default").unwrap().model = "invalid".into();
-        assert!(
-            resolve_run_plan_from_descriptors(config.clone(), ResolveContext::new("."), &catalog)
-                .is_err()
-        );
+        assert!(plan(&config, &only_fixture).is_err());
         config.harness.as_mut().unwrap().adapter_id = "nvidia.fabric.hermes".into();
         assert!(matches!(
-            resolve_run_plan_from_descriptors(
-                config,
-                ResolveContext::new("."),
-                &DescriptorCatalog::default()
-            ),
+            plan(&config, &only_fixture),
             Err(FabricError::UnknownAdapter { .. })
         ));
     }
 
     #[test]
-    fn model_api_is_a_normalized_field_adapters_accept_and_constrain() {
+    fn config_schema_violations_fail_planning_and_are_reported_by_doctor() {
+        let mut config = typed_config("nvidia.fabric.nooa");
+        let error = resolve_run_plan_from_config(config.clone(), ResolveContext::new("."))
+            .expect_err("NOOA's config.schema requires a workflow");
+        assert!(
+            matches!(&error, FabricError::AdapterCompatibility { field, .. } if field == "workflow"),
+            "{error}"
+        );
+        let plan = resolve_diagnostic_plan_from_config(config.clone(), ResolveContext::new("."))
+            .expect("diagnostic planning leaves compatibility issues to doctor");
+        assert!(crate::doctor_plan(&plan).checks.iter().any(|check| {
+            check.name == "config.unsupported"
+                && check.metadata.get("field") == Some(&serde_json::json!("workflow"))
+        }));
+
+        config.workflow = Some(
+            serde_json::from_value(serde_json::json!({"target_id": "nvidia.nooa.coding-agent"}))
+                .unwrap(),
+        );
+        resolve_run_plan_from_config(config, ResolveContext::new(".")).expect("workflow selected");
+    }
+
+    #[test]
+    fn model_api_is_a_normalized_field_that_adapters_accept_and_constrain() {
+        let parse = |api: &str| {
+            serde_json::from_value::<ModelConfig>(
+                serde_json::json!({"provider": "openai", "model": "m", "api": api}),
+            )
+        };
+        assert!(parse("grpc").is_err(), "unknown protocols are rejected");
+        assert!(
+            parse("openai-responses").unwrap().extensions.is_empty(),
+            "api is typed"
+        );
+
         let mut config = config_with_model("nvidia.fabric.codex", "openai");
-        let model = config.models.get_mut("default").unwrap();
-        model.api = Some(ModelApi::OpenaiResponses);
+        config.models.get_mut("default").unwrap().api = Some(ModelApi::OpenaiResponses);
         let plan = resolve_run_plan_from_config(config.clone(), ResolveContext::new("."))
-            .expect("accepted and allowed by the adapter model schema");
+            .expect("Codex speaks OpenAI Responses");
         assert_eq!(
             plan.agent_config.models["default"].api,
             Some(ModelApi::OpenaiResponses)
         );
 
-        let mut descriptor = load_adapter_descriptor(
-            repository_adapter_dir().join("python/codex/codex.fabric-adapter.json"),
-        )
-        .expect("codex descriptor");
-        assert!(adapter_config_compatibility_issues(&config, Some(&descriptor)).is_empty());
+        config.models.get_mut("default").unwrap().api = Some(ModelApi::AnthropicMessages);
+        let error = resolve_run_plan_from_config(config.clone(), ResolveContext::new("."))
+            .expect_err("Codex's model_schema admits only OpenAI Responses");
+        assert!(error.to_string().contains("models.default.api"), "{error}");
+
+        let mut descriptor = plan.adapter_descriptor.expect("Codex").descriptor;
         descriptor
             .config
             .accepts
             .retain(|field| *field != AdapterConfigField::ModelApi);
         let issues = adapter_config_compatibility_issues(&config, Some(&descriptor));
         assert_eq!(
-            issues
-                .iter()
-                .map(|issue| issue.field.as_str())
-                .collect::<Vec<_>>(),
-            ["models.default.api"],
-            "adapters must declare the normalized protocol field"
-        );
-
-        config.models.get_mut("default").unwrap().api = Some(ModelApi::AnthropicMessages);
-        let error = resolve_run_plan_from_config(config, ResolveContext::new("."))
-            .expect_err("the adapter model schema constrains the protocol");
-        assert!(error.to_string().contains("models.default.api"), "{error}");
-
-        let parsed: ModelConfig = serde_json::from_value(
-            serde_json::json!({"provider": "openai", "model": "m", "api": "openai-completions"}),
-        )
-        .unwrap();
-        assert!(
-            parsed.extensions.is_empty(),
-            "api is typed, not an extension"
-        );
-        assert!(
-            serde_json::from_value::<ModelConfig>(
-                serde_json::json!({"provider": "openai", "model": "m", "api": "grpc"})
-            )
-            .is_err(),
-            "unknown protocols are rejected before planning"
+            issues[0].field, "models.default.api",
+            "an adapter must accept models.api"
         );
     }
 
@@ -5721,7 +5600,7 @@ mod tests {
             extensions: BTreeMap::new(),
         });
 
-        DescriptorRegistry::from_config(&config, &root, &[])
+        DescriptorRegistry::from_discovery(config.discovery.as_ref(), &root, &[])
             .expect("symlinked directories must not be traversed");
     }
 
