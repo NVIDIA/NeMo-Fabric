@@ -2566,27 +2566,13 @@ fn resolve_run_plan_with_registry(
     enforce_compatibility: bool,
 ) -> Result<RunPlan> {
     let (adapter_descriptor, adapter_target_descriptor) = resolve_descriptors(&config, registry)?;
-    if let Some(resolved) = &adapter_descriptor
-        && let Some(schema) = &resolved.descriptor.config.schema
-    {
-        let validator = jsonschema::validator_for(&Value::Object(schema.clone()))
-            .expect("validated descriptor schema");
-        let value = serde_json::to_value(&config).expect("serializable public config");
-        if let Some(error) = validator.iter_errors(&value).next() {
-            let field = schema_error_path(&error, "");
-            let field = field.trim_start_matches('.');
-            return Err(FabricError::AdapterCompatibility {
-                adapter_id: resolved.descriptor.adapter_id.clone(),
-                field: if field.is_empty() { "config" } else { field }.to_string(),
-                reason: schema_error_reason(&error, "adapter configuration schema"),
-            });
-        }
-    }
     validate_harness_settings(&config, adapter_descriptor.as_ref())?;
     validate_workflow(&config, adapter_target_descriptor.as_ref())?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
+    // Compatibility issues, including config.schema violations, fail strict
+    // planning; diagnostic planning leaves them for doctor to report.
     if enforce_compatibility {
         validate_adapter_config_compatibility(&config, descriptor)?;
     }
@@ -2743,6 +2729,19 @@ pub(crate) fn adapter_config_compatibility_issues(
         field,
     };
     let mut issues = Vec::new();
+    if let Some(schema) = &descriptor.config.schema {
+        let validator = jsonschema::validator_for(&Value::Object(schema.clone()))
+            .expect("validated descriptor schema");
+        let value = serde_json::to_value(config).expect("serializable public config");
+        if let Some(error) = validator.iter_errors(&value).next() {
+            let field = schema_error_path(&error, "");
+            let field = field.trim_start_matches('.');
+            issues.push(incompatible(
+                if field.is_empty() { "config" } else { field }.to_string(),
+                schema_error_reason(&error, "adapter configuration schema"),
+            ));
+        }
+    }
 
     if let Some(system) = config
         .instructions
@@ -5413,6 +5412,24 @@ mod tests {
             let error = validate_config(&config).expect_err("invalid MCP auth must fail");
             assert!(error.to_string().contains(expected), "{error}");
         }
+    }
+
+    #[test]
+    fn diagnostic_planning_reports_config_schema_violations() {
+        let config = typed_config("nvidia.fabric.nooa");
+        let plan = resolve_diagnostic_plan_from_config(config, ResolveContext::new("."))
+            .expect("diagnostic planning keeps compatibility failures for doctor");
+        let report = crate::doctor_plan(&plan);
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|check| check.name == "config.unsupported"
+                    && check.status == crate::DoctorStatus::Fail
+                    && check.metadata.get("field") == Some(&Value::String("workflow".into()))),
+            "{:?}",
+            report.checks
+        );
     }
 
     #[test]
