@@ -533,6 +533,42 @@ async def test_public_model_endpoint_and_protocol_are_consumed(api_server, repo_
         await runtime.stop()
 
 
+@pytest.mark.parametrize(
+    ("settings", "model", "field"),
+    [
+        (
+            {"base_url": "https://settings.example.test/v1"},
+            {"base_url": "https://model.example.test/v1"},
+            "models.default.base_url",
+        ),
+        (
+            {"api_type": "openai-responses"},
+            {"base_url": "https://model.example.test/v1", "api": "openai-completions"},
+            "models.default.api",
+        ),
+    ],
+)
+async def test_conflicting_endpoint_sources_fail_before_any_invocation(
+    repo_root: Path, settings: dict, model: dict, field: str
+):
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": settings},
+            "models": {"default": {"provider": "openai", "model": "agent", **model}},
+        }
+    )
+    runtime = adapter.RemoteAgentRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError, match="conflicts") as raised:
+        await runtime.start(
+            {
+                "config": config,
+                "runtime_context": _context().to_mapping(),
+                "base_dir": str(repo_root),
+            }
+        )
+    assert raised.value.metadata["field"] == field
+
+
 def test_planning_requires_an_endpoint_in_the_model_or_settings(tmp_path: Path):
     from nemo_fabric import Fabric
     from nemo_fabric import FabricConfig

@@ -133,11 +133,13 @@ class RemoteAgentRuntime:
         context = contract.RuntimeContext.from_mapping(payload["runtime_context"])
         settings = config.harness.settings if config.harness is not None else {}
         model = _selected_model(config)
+        role = "default" if "default" in config.models else next(iter(config.models))
         api = model.api
         if api is not None and settings.get("api_type", api) != api:
             raise lifecycle.LifecycleError(
                 "remote_agent_invalid_configuration",
                 "Remote Agent api_type conflicts with model api",
+                metadata={"field": f"models.{role}.api"},
             )
         self._api_type = api or settings.get("api_type", DEFAULT_API_TYPE)
         if self._api_type not in API_PATHS:
@@ -153,6 +155,7 @@ class RemoteAgentRuntime:
             raise lifecycle.LifecycleError(
                 "remote_agent_invalid_configuration",
                 "Remote Agent base_url conflicts with model base_url",
+                metadata={"field": f"models.{role}.base_url"},
             )
         if not isinstance(base_url, str) or not base_url.startswith(
             ("http://", "https://")
