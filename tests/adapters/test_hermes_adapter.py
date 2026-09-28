@@ -1149,7 +1149,7 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
 
 def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
     assert (
-        adapter._artifact_root(
+        adapter.configuration.artifact_root(
             _runtime_context(artifact_root="run-artifacts"),
             str(tmp_path),
         )
@@ -1578,6 +1578,6 @@ def test_main_serves_persistent_runtime(monkeypatch):
     adapter.main()
 
     serve.assert_called_once_with(
-        adapter.HermesRuntime,
+        adapter.HermesModeRuntime,
         config_loader=AgentConfig.from_mapping,
     )
