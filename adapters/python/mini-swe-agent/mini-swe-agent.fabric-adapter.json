@@ -24,7 +24,20 @@
       }
     },
     "required": ["provider", "model"],
-    "allOf": [{"if": {"required": ["api"]}, "then": {"properties": {"provider": {"const": "openai"}}}}],
+    "allOf": [
+      {
+        "if": {"required": ["api"]},
+        "then": {
+          "properties": {
+            "provider": {"const": "openai"},
+            "model": {
+              "pattern": "^(openai/[^/]+|[^/]+)$",
+              "description": "LiteLLM routes a slash-qualified model to its prefix, so only openai/ may qualify it."
+            }
+          }
+        }
+      }
+    ],
     "additionalProperties": false
   },
   "settings_schema": {
