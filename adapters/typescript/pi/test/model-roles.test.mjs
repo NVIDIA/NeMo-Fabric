@@ -9,7 +9,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { InMemoryCredentialStore, InMemoryModelsStore } from "@earendil-works/pi-ai";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { AgentSession, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 import { loadConfiguredModels } from "../dist/pi-model.js";
 import { PiSdkSessionFactory } from "../dist/pi-sdk.js";
@@ -112,7 +112,7 @@ test("identical roles share a provider and distinct roles get their own", async 
 });
 
 /** Start Pi with identical default and fast roles plus a distinct smart role. */
-async function withRoleRuntime({ telemetry, factory = new PiSdkSessionFactory() }, body) {
+async function withRoleRuntime({ telemetry, factory = new PiSdkSessionFactory(), smartContextWindow = 8192 }, body) {
   const requests = [];
   const server = createServer(async (request, response) => {
     const chunks = [];
@@ -137,13 +137,13 @@ async function withRoleRuntime({ telemetry, factory = new PiSdkSessionFactory() 
   const runtime = new PiAdapterRuntime(factory);
   try {
     const { port } = server.address();
-    const role = (path, key) => ({
+    const role = (path, key, contextWindow = 8192) => ({
       provider: "openai",
       model: "fixture",
       base_url: `http://127.0.0.1:${port}/${path}/v1`,
       api_key_env: key,
       api: "openai-completions",
-      settings: { model_metadata: { contextWindow: 8192, maxTokens: 128 } },
+      settings: { model_metadata: { contextWindow, maxTokens: 128 } },
     });
     const fast = role("fast", "FAST_KEY");
     const runtimeContext = {
@@ -164,10 +164,13 @@ async function withRoleRuntime({ telemetry, factory = new PiSdkSessionFactory() 
     await runtime.start({
       agentName: "main",
       baseDir: workspace,
-      config: { models: { default: fast, fast, smart: role("smart", "SMART_KEY") }, tools: { enabled: [] } },
+      config: {
+        models: { default: fast, fast, smart: role("smart", "SMART_KEY", smartContextWindow) },
+        tools: { enabled: [] },
+      },
       runtimeContext,
     });
-    await body({ invoke: (input) => runtime.invoke({ input }, runtimeContext), requests });
+    await body({ invoke: (input) => runtime.invoke({ input }, runtimeContext), requests, runtime });
   } finally {
     await runtime.stop();
     await rm(workspace, { recursive: true, force: true });
@@ -215,4 +218,33 @@ test("with Relay, roles that resolve to the active model stay selectable", { tim
       ["/fast/v1/chat/completions", "/fast/v1/chat/completions"],
     );
   });
+});
+
+test("a failed role switch keeps the active role's session settings", { timeout: 30000 }, async () => {
+  const setModel = AgentSession.prototype.setModel;
+  const applyOverrides = SettingsManager.prototype.applyOverrides;
+  const reserves = [];
+  AgentSession.prototype.setModel = async function () {
+    throw new Error("fixture setModel failure");
+  };
+  SettingsManager.prototype.applyOverrides = function (overrides) {
+    if (overrides?.compaction?.reserveTokens !== undefined) {
+      reserves.push(overrides.compaction.reserveTokens);
+    }
+    return applyOverrides.call(this, overrides);
+  };
+  try {
+    await withRoleRuntime({ smartContextWindow: 65536 }, async ({ invoke, requests }) => {
+      const switched = await invoke({ prompt: "Do not send", model: "smart" });
+      assert.equal(switched.status, "failed");
+      assert.equal(switched.error.code, "pi_model_selection_failed");
+      assert.deepEqual(reserves, [4096, 16384, 4096], "the smart role's settings are rolled back");
+      const result = await invoke("Reply FOUR");
+      assert.equal(result.status, "succeeded", JSON.stringify(result));
+      assert.deepEqual(requests.map((entry) => entry.path), ["/fast/v1/chat/completions"]);
+    });
+  } finally {
+    AgentSession.prototype.setModel = setModel;
+    SettingsManager.prototype.applyOverrides = applyOverrides;
+  }
 });

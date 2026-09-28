@@ -443,7 +443,13 @@ class PiSdkSessionHandle implements PiSessionHandle {
       );
     }
     models.activate(model);
-    await this.session.setModel(model);
+    try {
+      await this.session.setModel(model);
+    } catch (error) {
+      // Keep the active role's model-dependent settings.
+      models.activate(models.active);
+      throw error;
+    }
     models.active = model;
   }
 

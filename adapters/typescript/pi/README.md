@@ -15,7 +15,9 @@ The adapter supports:
   active at startup; refer to [Model Roles](#model-roles)
 - Pi catalog models, or models defined by `models.<role>.settings.model_metadata`
 - Runtime API-key credentials named by `models.<role>.api_key_env`
-- Optional `models.<role>.base_url` and `models.<role>.api`
+- `models.<role>.base_url` and `models.<role>.api`: optional for Pi catalog
+  models; required for a `model_metadata` model unless its provider is one Pi
+  knows and the role is the selected role
 - Optional replacement system instructions
 - Tool allow and block policy
 - NeMo Fabric custom tools loaded through normalized `tools.definitions`
@@ -126,6 +128,11 @@ such as `contextWindow`, `maxTokens`, `reasoning`, and `input`. Pi validates
 the entry and supplies its defaults; NeMo Fabric supplies the model `id` and
 `baseUrl`, and `api` may come from either `models.<role>.api` or the entry,
 but not both with different values.
+
+A model defined by `model_metadata` also needs an endpoint and a protocol.
+Pi takes them from `base_url` and `api`, or, for the selected role of a
+provider Pi knows, from that provider's defaults; otherwise Pi rejects the
+model at startup.
 
 Every role requires `api_key_env`. The selected role keeps its provider name;
 another role that defines its own model uses the provider `<provider>-<role>`,
