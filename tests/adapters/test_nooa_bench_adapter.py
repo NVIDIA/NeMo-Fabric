@@ -465,3 +465,9 @@ def test_model_schema_rejects_a_client_type_that_contradicts_the_model_api(
     assert not validator.is_valid(
         {**model, "api": "openai-responses", "settings": {"client_type": "completion"}}
     )
+    nvidia = {"provider": "nvidia", "model": "test"}
+    assert validator.is_valid({**nvidia, "api": "openai-completions"})
+    assert not validator.is_valid({**nvidia, "api": "openai-responses"})
+    assert not validator.is_valid(
+        {"provider": "anthropic", "model": "test", "api": "openai-completions"}
+    )
