@@ -247,3 +247,13 @@ Review the canonical schema for exact fields, defaults, and constraints.
 </Card>
 
 </CardGroup>
+
+## Planning Against Another Environment
+
+Consumers planning for another environment, such as an image, can pass its
+`DescriptorCatalog` to the Rust `resolve_run_plan_from_descriptors` function.
+It performs the same validation and does not discover local fallback adapters.
+
+## Constraints Across the Configuration
+
+The optional `config.schema` is an adapter-owned JSON Schema over the complete public `FabricConfig`. NeMo Fabric validates it during planning, before native startup, with the same schema machinery as settings and model schemas. A failure reports the failing configuration path, such as `workflow`. Use it for required selections and constraints that span configuration areas; for example, NOOA declares `{"type":"object","required":["workflow"]}`. Consumers can inspect those requirements, but NeMo Fabric enforces the schema.

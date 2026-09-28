@@ -1,0 +1,16 @@
+---
+title: "Function discover_descriptors"
+sidebar-title: "discover_descriptors"
+description: "Discover every adapter and target descriptor that planning would see."
+position: 72
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn discover_descriptors(\n    discovery: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;&amp;<a href=\"struct-discoveryconfig.mdx\">DiscoveryConfig</a>&gt;,\n    context: <a href=\"struct-resolvecontext.mdx\">ResolveContext</a>,\n) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"struct-descriptorcatalog.mdx\">DescriptorCatalog</a>&gt;"}} /></pre>
+
+Discover every adapter and target descriptor that planning would see.
+
+Uses the bundled and `discovery.local_paths` registry without importing runners, installing dependencies, or starting a runtime. Identical records keep all of their sources; malformed or ambiguous records fail discovery rather than disappearing from the catalog.

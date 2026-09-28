@@ -52,8 +52,9 @@ all provenance. Different records with the same ID are ambiguous and fail
 planning. Explicit paths that do not exist, files with an unrecognized suffix,
 and malformed records fail when selection depends on them.
 
-The v1alpha2 registry resolves adapters and targets by exact ID. It does not
-provide a human-facing catalog or presentation metadata.
+The v1alpha2 registry resolves adapters and targets by exact ID. `Fabric.discover()` in Python and `discover_descriptors` in Rust return a `DescriptorCatalog` with every Adapter Descriptor and Adapter Target Descriptor that planning can select, and their provenance, without requiring a complete configuration. Discovery fails on malformed or ambiguous records, because every catalog entry must resolve unambiguously. It does not supply presentation metadata, import adapter runners, or check runtime readiness.
+
+A host that plans for another environment, such as an image, can pass a catalog read there to the Rust `resolve_run_plan_from_descriptors` function. Only the supplied catalog participates; planning never falls back to descriptors on the host's filesystem.
 
 Planning performs these steps before target code starts:
 

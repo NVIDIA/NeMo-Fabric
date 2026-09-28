@@ -10,8 +10,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use nemo_fabric_core::{
-    FabricConfig, FabricError, OpenAiStreamTransport, ResolveContext, RunPlan, RunRequest,
-    RuntimeHandle, ServiceHandle, ServiceReference, doctor_plan,
+    DiscoveryConfig, FabricConfig, FabricError, OpenAiStreamTransport, ResolveContext, RunPlan,
+    RunRequest, RuntimeHandle, ServiceHandle, ServiceReference,
+    discover_descriptors_with_adapter_directories, doctor_plan,
     resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
@@ -35,6 +36,32 @@ const PYTHON_DATA_PATH_SCRIPT: &str =
 #[pyfunction]
 fn version() -> PyResult<String> {
     Ok(nemo_fabric_core::version().to_string())
+}
+
+/// Discover the adapter and target descriptor catalog without planning or loading runners.
+#[pyfunction]
+#[pyo3(signature = (discovery_json=None, base_dir=None))]
+fn discover_descriptors(
+    py: Python<'_>,
+    discovery_json: Option<String>,
+    base_dir: Option<String>,
+) -> PyResult<String> {
+    let discovery: Option<DiscoveryConfig> = discovery_json
+        .map(|json| {
+            serde_json::from_str(&json).map_err(|error| PyRuntimeError::new_err(error.to_string()))
+        })
+        .transpose()?;
+    let (context, adapter_directories) = resolve_context(py, base_dir)?;
+    let catalog = py
+        .detach(|| {
+            discover_descriptors_with_adapter_directories(
+                discovery.as_ref(),
+                context,
+                &adapter_directories,
+            )
+        })
+        .map_err(to_py_error)?;
+    to_json(&catalog)
 }
 
 /// Resolve typed config JSON into a runnable plan and return JSON.
@@ -236,6 +263,7 @@ fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyRe
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ServiceInUseError", m.py().get_type::<ServiceInUseError>())?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
+    m.add_function(wrap_pyfunction!(discover_descriptors, m)?)?;
     m.add_function(wrap_pyfunction!(plan_config, m)?)?;
     m.add_function(wrap_pyfunction!(doctor_config, m)?)?;
     m.add_function(wrap_pyfunction!(run_config, m)?)?;

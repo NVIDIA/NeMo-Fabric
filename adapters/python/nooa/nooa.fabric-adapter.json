@@ -44,7 +44,8 @@
       "instructions.system",
       "skills",
       "mcp"
-    ]
+    ],
+    "schema": {"type": "object", "required": ["workflow"]}
   },
   "telemetry": {
     "providers": {

@@ -29,7 +29,9 @@ That system is the **Adapter Target**.
 
 **Consumers** use the Python SDK and typed `FabricConfig` to compose experiment
 variants, plan and run targets, and receive normalized results, artifact
-manifests, and telemetry references.
+manifests, and telemetry references. `Fabric.discover()` returns the adapter
+and target descriptors that planning can select, so a consumer can choose an
+adapter and read its settings schema before writing a configuration.
 
 **Adapter developers** use the versioned adapter contract to receive
 `AgentConfig`, `RuntimeContext`, and `AgentRunRequest`, translate the Fabric
