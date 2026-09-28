@@ -96,6 +96,16 @@ class BraveSearch(unittest.IsolatedAsyncioTestCase):
         self.response = FakeResponse([bomb], encoding="gzip")
         with self.assertRaisesRegex(RuntimeError, "Brave search failed"):
             await web_search("question")
+        compressed = gzip.compress(body)
+        for chunks in ([compressed[:-4]], [compressed + b"trailing"]):
+            self.response = FakeResponse(chunks, encoding="gzip")
+            with self.assertRaisesRegex(RuntimeError, "Brave search failed"):
+                await web_search("question")
+        self.response = FakeResponse(
+            [b"\x1f" * (brave_search.RESPONSE_LIMIT_BYTES + 1)], encoding="gzip"
+        )
+        with self.assertRaisesRegex(RuntimeError, "Brave search failed"):
+            await web_search("question")
         self.response = FakeResponse([body], encoding="br")
         with self.assertRaisesRegex(RuntimeError, "Brave search failed"):
             await web_search("question")

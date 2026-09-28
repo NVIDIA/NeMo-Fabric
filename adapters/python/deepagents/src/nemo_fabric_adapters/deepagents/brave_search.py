@@ -36,18 +36,27 @@ class _BoundedBody:
             zlib.decompressobj(16 + zlib.MAX_WBITS) if encoding == "gzip" else None
         )
         self.data = bytearray()
+        self._received = 0
 
     def add(self, chunk: bytes) -> None:
+        self._received += len(chunk)
         room = RESPONSE_LIMIT_BYTES - len(self.data)
+        if self._received > RESPONSE_LIMIT_BYTES:
+            raise _ResponseRejected
         if self._decoder is None:
-            if len(chunk) > room:
-                raise _ResponseRejected
             self.data.extend(chunk)
             return
+        if self._decoder.eof:
+            raise _ResponseRejected  # Data after the end of the gzip stream.
         data = self._decoder.decompress(chunk, room + 1)
-        if len(data) > room or self._decoder.unconsumed_tail:
+        if len(data) > room or self._decoder.unconsumed_tail or self._decoder.unused_data:
             raise _ResponseRejected
         self.data.extend(data)
+
+    def finish(self) -> bytes:
+        if self._decoder is not None and not self._decoder.eof:
+            raise _ResponseRejected  # Truncated gzip stream.
+        return bytes(self.data)
 
 
 async def web_search(query: str, count: int = 5) -> dict:
@@ -86,7 +95,7 @@ async def web_search(query: str, count: int = 5) -> dict:
                     )
                     async for chunk in response.aiter_raw():
                         body.add(chunk)
-        result = json.loads(body.data)
+        result = json.loads(body.finish())
     except (httpx.HTTPError, ValueError, TimeoutError, zlib.error, _ResponseRejected):
         # Error details can include the request URL or response text.
         raise RuntimeError(FAILURE) from None
