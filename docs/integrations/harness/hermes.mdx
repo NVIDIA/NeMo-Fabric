@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 The NVIDIA NeMo Fabric `nvidia.fabric.hermes` adapter runs Hermes Agent through
 its Python SDK. The adapter maps normalized NeMo Fabric configuration into
 Hermes Agent models, tools, skills, Model Context Protocol (MCP) servers,
-and sessions. Hermes Relay telemetry is temporarily unavailable.
+sessions, and Relay telemetry.
 
 ## Install the Adapter
 
@@ -30,12 +30,13 @@ NeMo Fabric, install only the bare adapter in the Hermes Agent environment:
 python -m pip install nemo-fabric-adapters-hermes
 ```
 
-The adapter package also provides a `full` extra, equivalent to the bare
-adapter. Neither installs Hermes Agent.
+The adapter package provides `relay` and `full` extras for Relay 0.9. Neither
+installs Hermes Agent.
 
 For local NeMo Fabric development, run the following command from the repository
-root. The recipe checks out released Hermes Agent and creates an isolated
-environment because that release requires Relay 0.8.x:
+root. The recipe checks out a pinned, unreleased Hermes Relay 0.9 snapshot and
+creates an isolated environment. Update it to a compatible release before this
+draft is ready to merge:
 
 ```bash
 just install-hermes-agent
@@ -59,7 +60,7 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.hermes")
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, replacement system instructions, turn limit, and native tool
-selectors. The adapter rejects `append` system instructions and Relay telemetry.
+selectors, and telemetry. The adapter rejects `append` system instructions.
 
 During run-plan resolution, NeMo Fabric Core validates the
 `models.<role>.top_p` (from 0 through 1) and positive
@@ -73,7 +74,7 @@ The Hermes descriptor validates the following `harness.settings` fields:
 | Setting | Type | Default | Description |
 | --- | --- | --- | --- |
 | `reasoning_config` | object | `{"effort": "none"}` | Configures Hermes model reasoning. The closed object accepts an optional `enabled` boolean and an optional `effort` value of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
-| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. |
+| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. NeMo Fabric adds `observability/nemo_relay` when Relay telemetry is enabled. |
 | `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
 | `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
@@ -103,7 +104,8 @@ Hermes harness setting.
 
 Each NeMo Fabric runtime creates one Hermes Agent `AIAgent` and one `SessionDB`.
 Ordered invocations reuse those objects and the conversation history until the
-runtime stops.
+runtime stops. The adapter finalizes and flushes Relay subscriber output after
+each invocation so ATOF and ATIF artifacts are complete when it returns.
 
 For the complete configuration and lifecycle reference, refer to the
 [Hermes Agent adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/hermes).

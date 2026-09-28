@@ -87,11 +87,11 @@ pip install "nemo-fabric[hermes-agent]"
 ```
 
 For local development from this repository, build NeMo Fabric and run
-`just install-hermes-agent`. The recipe checks out released Hermes Agent and
-installs it with the adapter in an isolated environment. Set
-`ADAPTER_PYTHON=.venv-hermes/bin/python` when running from the main environment.
-Hermes Relay telemetry is temporarily unavailable because the current Hermes
-release requires Relay 0.8.x.
+`just install-hermes-agent`. This draft's recipe checks out a pinned upstream
+Hermes Relay 0.9 snapshot and installs it with the adapter in an isolated
+environment. Set `ADAPTER_PYTHON=.venv-hermes/bin/python` when running from the
+main environment. A compatible upstream release is required before this
+follow-up is ready to merge.
 
 ### Set the API Key
 

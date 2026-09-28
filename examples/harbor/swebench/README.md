@@ -27,7 +27,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 export FABRIC_AGENT='nemo_fabric.integrations.harbor:FabricAgent'
 export FABRIC_BUNDLE="$PWD/examples/harbor/swebench"
-export FABRIC_PACKAGE='nemo-fabric[claude,hermes-agent]==0.4.0'
+export FABRIC_PACKAGE='nemo-fabric[claude,hermes-agent,relay]==0.4.0'
 export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
 
 curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
@@ -41,11 +41,11 @@ no longer installable from PyPI. Before running the Hermes examples, prepare the
 task image by following the
 [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation)
 and ensure that the Fabric runner uses the Python environment containing Hermes
-Agent and `nemo-fabric-adapters-hermes`. Released Hermes requires Relay 0.8.x;
-install it in a separate task environment and set `ADAPTER_PYTHON` to that
-environment's interpreter for Hermes runs. Hermes Relay telemetry is
-temporarily unavailable. The dynamic `fabric_package` install is not a
-substitute for that image preparation.
+Agent and `nemo-fabric-adapters-hermes`. Relay-enabled Hermes runs in this draft
+require the pinned upstream Relay 0.9 snapshot used by `just install-hermes-agent`;
+set `ADAPTER_PYTHON` to that task environment's interpreter. Replace the pin
+with a compatible release before this follow-up is ready to merge. The dynamic
+`fabric_package` install is not a substitute for that image preparation.
 
 The curl command downloads and installs the standalone NeMo Relay 0.9.0 CLI tool
 and verifies its checksum. For other installation methods, refer to the
@@ -132,14 +132,16 @@ container. Do not apply that permission mode to a normal host environment.
 
 ## Vary One NeMo Fabric Capability
 
-Start from the Hermes Agent command, replace its `--job-name`, and add the
-option in the middle column. Hermes Relay telemetry is temporarily unavailable.
+Start from the Hermes Agent command, replace its `--job-name`, and add the option in
+the middle column. Relay is enabled for every capability variation so its ATIF
+can confirm that the input reached the harness.
 
 | Experiment | Add to the Hermes Agent command | Replacement job name |
 | --- | --- | --- |
-| Skill | `--skill "$PWD/examples/harbor/swebench/skills/swebench-debugging"` | `django-13741-hermes-skill` |
-| MCP | `--mcp-config "$FABRIC_BUNDLE/mcp/repo-inspector.mcp.json"` | `django-13741-hermes-mcp` |
-| Blocked tool | `--ak 'fabric_blocked_tools=["browser"]'` | `django-13741-hermes-tools` |
+| Skill | `--skill "$PWD/examples/harbor/swebench/skills/swebench-debugging" --ak fabric_telemetry=relay` | `django-13741-hermes-skill` |
+| MCP | `--mcp-config "$FABRIC_BUNDLE/mcp/repo-inspector.mcp.json" --ak fabric_telemetry=relay` | `django-13741-hermes-mcp` |
+| Blocked tool | `--ak 'fabric_blocked_tools=["browser"]' --ak fabric_telemetry=relay` | `django-13741-hermes-tools` |
+| Telemetry only | `--ak fabric_telemetry=relay` | `django-13741-hermes-relay` |
 
 For example, the complete skill variation is:
 
@@ -153,6 +155,7 @@ uv run --extra harbor harbor run \
   --skill "$PWD/examples/harbor/swebench/skills/swebench-debugging" \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
+  --ak fabric_telemetry=relay \
   --ak "fabric_package=$FABRIC_PACKAGE" \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name django-13741-hermes-skill \
@@ -165,6 +168,10 @@ uv run --extra harbor harbor run \
 The MCP definition starts the dependency-free
 [`repo_inspector.py`](mcp/repo_inspector.py) inside the task container. The MCP
 definition itself enters through Harbor's `--mcp-config` option.
+
+For a pure telemetry comparison, run the Hermes Agent baseline once without
+`fabric_telemetry`, then repeat it with `--ak fabric_telemetry=relay`. No other
+model, harness, capability, task, or verifier input changes.
 
 ## Verify Reward and Relay Evidence
 
@@ -203,7 +210,7 @@ uv run --extra harbor harbor view "$RUNS_DIR/$JOB_NAME"
 For a Relay-enabled job, select its job name and inspect the published evidence:
 
 ```bash
-export JOB_NAME=django-13741-claude
+export JOB_NAME=django-13741-hermes-relay
 
 find "$RUNS_DIR/$JOB_NAME" \
   -path '*/agent/telemetry-validation.json' \
@@ -220,14 +227,13 @@ promotes Relay's ATIF to `agent/trajectory.json`, Harbor's canonical ATIF path,
 and also publishes `agent/telemetry-validation.json` plus the normalized
 `agent/fabric-result-<id>.json`. Validate ATOF and ATIF independently.
 
-Sample output from earlier Relay-enabled Hermes Agent and Claude runs is checked
-in under [`sample-artifacts/`](sample-artifacts/). Hermes Relay output is
-historical while its integration is unavailable.
+Sample output from successful Relay-enabled Hermes Agent and Claude runs is checked
+in under [`sample-artifacts/`](sample-artifacts/).
 
 ## Progress to a Full Run
 
 Complete the install gate and the single-task experiments first. Then run a
-five-task Hermes Agent shard without Relay telemetry:
+five-task Hermes Agent shard with Relay enabled:
 
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
@@ -239,6 +245,7 @@ uv run --extra harbor harbor run \
   --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
+  --ak fabric_telemetry=relay \
   --ak "fabric_package=$FABRIC_PACKAGE" \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name swebench-verified-hermes-5 \

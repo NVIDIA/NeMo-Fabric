@@ -32,7 +32,14 @@ dependencies = [
 
 [project.optional-dependencies]
 
-full = []
+relay = [
+  "nemo-relay>=0.9,<0.10",
+  "tomli-w>=1.2,<2",
+]
+full = [
+  "nemo-relay>=0.9,<0.10",
+  "tomli-w>=1.2,<2",
+]
 
 [project.urls]
 Repository = "https://github.com/NVIDIA/NeMo-Fabric"

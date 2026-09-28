@@ -334,8 +334,8 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     declared_extras = set(sdk_project["optional-dependencies"])
 
     assert "run.sh" not in calculator
-    assert calculator.count(" harbor run \\") == 4
-    assert calculator.count("uv run --extra harbor harbor run \\") == 4
+    assert calculator.count(" harbor run \\") == 5
+    assert calculator.count("uv run --extra harbor harbor run \\") == 5
     assert '--ak "fabric_config_bundle=$TASK_DIR/environment/fabric"' in calculator
     assert "uv run --extra harbor --extra" not in calculator
     assert landing.count("uv run --extra harbor harbor run") == 0
@@ -369,7 +369,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh" in swebench
     assert (
         "FABRIC_PACKAGE="
-        f"'nemo-fabric[claude,hermes-agent]=={package_version}'"
+        f"'nemo-fabric[claude,hermes-agent,relay]=={package_version}'"
         in swebench
     )
     assert "PIP_FIND_LINKS" not in swebench
@@ -428,8 +428,8 @@ def test_harbor_calculator_setup_and_solution_fail_fast():
     assert "raise SystemExit" in solution
 
 
-def test_harbor_hermes_relay_telemetry_is_unavailable():
-    from nemo_fabric import Fabric, FabricConfigError
+def test_harbor_relay_telemetry_exports_direct_atof_and_atif():
+    from nemo_fabric import Fabric
     from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
 
     config = build_harbor_config(
@@ -439,16 +439,21 @@ def test_harbor_hermes_relay_telemetry_is_unavailable():
         telemetry="relay",
     )
     assert config.harness.settings == {}
-    with pytest.raises(FabricConfigError, match="does not support.*relay"):
-        Fabric().plan(config, base_dir=CALCULATOR_FABRIC_ROOT)
+    plan = Fabric().plan(config, base_dir=CALCULATOR_FABRIC_ROOT)
+    assert plan.adapter.adapter_id == "nvidia.fabric.hermes"
 
     mapping = config.to_mapping()
     assert "relay" in mapping["telemetry"]["providers"]
     observability = mapping["relay"]["observability"]
+    swebench = SWEBENCH_README.read_text(encoding="utf-8")
+
     assert "openinference" not in observability
     assert observability["atof"]["enabled"] is True
     assert observability["atif"]["enabled"] is True
     assert not (CALCULATOR_ROOT / "host-gateway.compose.yaml").exists()
+    assert "direct Relay ATOF and ATIF" in swebench
+    assert "telemetry-validation.json" in swebench
+    assert "canonical ATIF" in swebench
 
 
 def test_harbor_sdk_package_points_to_the_public_example():
@@ -477,7 +482,7 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
         workspace="/testbed",
     )
     relay = build_harbor_config(
-        adapter_id="nvidia.fabric.claude",
+        adapter_id="nvidia.fabric.hermes",
         workspace="/testbed",
         telemetry="relay",
         model_name="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
@@ -498,6 +503,7 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
         workspace="/testbed",
         enabled_tools=[],
         blocked_tools=["browser"],
+        telemetry="relay",
     )
     claude = build_harbor_config(
         adapter_id="nvidia.fabric.claude",
@@ -526,7 +532,6 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     assert selected_tools.tools is not None
     assert selected_tools.tools.enabled == []
     assert selected_tools.tools.blocked == ["browser"]
-    assert selected_tools.telemetry is None
     assert relay.telemetry is not None
     assert "relay" in relay.telemetry.providers
     assert relay.relay is not None
