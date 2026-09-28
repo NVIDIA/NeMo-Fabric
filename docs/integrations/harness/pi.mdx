@@ -98,13 +98,18 @@ config = FabricConfig(
 For a source build, set `discovery.local_paths` to
 `adapters/typescript/pi/pi.fabric-adapter.json` instead.
 
-The adapter supports one selected model from Pi's catalog, an optional base URL
-override, `replace` system instructions, tool policy, explicit skill paths,
-and explicit local Pi extensions. Set `models.<role>.api_key_env` to the name of
-the environment variable that contains the provider credential.
+The adapter supports every configured model role, optional base URL and
+`models.<role>.api` protocol overrides, `replace` system instructions, tool
+policy, explicit skill paths, and explicit local Pi extensions. Set
+`models.<role>.api_key_env` to the name of the environment variable that
+contains each role's provider credential.
 
-The provider and model pair must already exist in Pi's catalog. A base URL can
-override a known model endpoint, but it does not define a new provider.
+A model in Pi's catalog needs no other configuration. For any other model, set
+`models.<role>.settings.model_metadata` to one Pi `models.json` model entry,
+such as `contextWindow` and `maxTokens`; Pi validates it. The `default` role,
+or the sole role, is active at startup. An invocation with
+`{"prompt": "...", "model": "<role>"}` switches the session to that role and
+keeps the conversation. The role stays active for later invocations.
 
 ## Configure Skills and Extensions
 
@@ -263,8 +268,8 @@ and extensions.
 
 Each NeMo Fabric runtime owns one in-memory Pi session in a persistent Node.js
 adapter process. Ordered invocations reuse that session and its conversation
-history until the runtime stops. Start a new runtime to change the model,
-skills, extensions, custom tools, or workspace.
+history until the runtime stops. Start a new runtime to change the configured
+models, skills, extensions, custom tools, or workspace.
 
 ## Current Limitations
 

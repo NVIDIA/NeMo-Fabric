@@ -57,6 +57,7 @@ def test_pi_descriptor_declares_the_supported_surface():
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",
+        "models.api",
         "instructions.system",
         "tools.definitions",
         "tools.enabled",
@@ -64,6 +65,12 @@ def test_pi_descriptor_declares_the_supported_surface():
         "skills",
     ]
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
+    assert descriptor["model_schema"]["properties"]["api"] == {
+        "enum": ["openai-completions", "openai-responses", "anthropic-messages"]
+    }
+    assert descriptor["model_schema"]["properties"]["settings"][
+        "additionalProperties"
+    ] is False
     assert descriptor["settings_schema"]["properties"]["relay_extension_path"] == {
         "type": "string",
         "minLength": 1,
