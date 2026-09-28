@@ -546,9 +546,10 @@ async def test_public_model_endpoint_and_protocol_are_consumed(api_server, repo_
             {"base_url": "https://model.example.test/v1", "api": "openai-completions"},
             "models.default.api",
         ),
+        ({}, {}, "harness.settings.base_url"),
     ],
 )
-async def test_conflicting_endpoint_sources_fail_before_any_invocation(
+async def test_missing_or_conflicting_endpoints_fail_before_any_invocation(
     repo_root: Path, settings: dict, model: dict, field: str
 ):
     config = AgentConfig.from_mapping(
@@ -558,7 +559,7 @@ async def test_conflicting_endpoint_sources_fail_before_any_invocation(
         }
     )
     runtime = adapter.RemoteAgentRuntime()
-    with pytest.raises(adapter.lifecycle.LifecycleError, match="conflicts") as raised:
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
         await runtime.start(
             {
                 "config": config,
@@ -569,7 +570,7 @@ async def test_conflicting_endpoint_sources_fail_before_any_invocation(
     assert raised.value.metadata["field"] == field
 
 
-def test_planning_requires_an_endpoint_in_the_model_or_settings(tmp_path: Path):
+def test_planning_accepts_an_endpoint_in_the_model_or_settings(tmp_path: Path):
     from nemo_fabric import Fabric
     from nemo_fabric import FabricConfig
     from nemo_fabric.errors import FabricConfigError
@@ -594,7 +595,5 @@ def test_planning_requires_an_endpoint_in_the_model_or_settings(tmp_path: Path):
     endpoint = "https://agent.example.test/v1"
     plan({"base_url": endpoint}, {})
     plan({}, {"base_url": endpoint})
-    with pytest.raises(FabricConfigError, match="nvidia.fabric.remote-agent"):
-        plan({}, {})
     with pytest.raises(FabricConfigError, match="base_url"):
         plan({}, {"base_url": "ftp://agent.example.test/v1"})
