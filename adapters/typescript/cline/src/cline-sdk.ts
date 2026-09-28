@@ -73,6 +73,30 @@ interface ClineSdkModule {
 
 export type ClineSdkLoader = () => Promise<ClineSdkModule>;
 
+let clineDataDirTail = Promise.resolve();
+
+async function withClineDataDir<T>(dataDir: string, operation: () => Promise<T>): Promise<T> {
+  const predecessor = clineDataDirTail;
+  let release: () => void = () => undefined;
+  clineDataDirTail = new Promise<void>((resolveLease) => {
+    release = resolveLease;
+  });
+  await predecessor;
+
+  const previousDataDir = process.env.CLINE_DATA_DIR;
+  process.env.CLINE_DATA_DIR = dataDir;
+  try {
+    return await operation();
+  } finally {
+    if (previousDataDir === undefined) {
+      delete process.env.CLINE_DATA_DIR;
+    } else {
+      process.env.CLINE_DATA_DIR = previousDataDir;
+    }
+    release();
+  }
+}
+
 function isMissingModuleError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -137,7 +161,7 @@ async function resolveWorkspace(input: AdapterStartInput): Promise<string> {
     }
     return workspace;
   } catch {
-    throw new LifecycleError("cline_workspace_invalid", "The Fabric runtime workspace must be a directory");
+    throw new LifecycleError("cline_workspace_invalid", "The NeMo Fabric runtime workspace must be a directory");
   }
 }
 
@@ -525,8 +549,6 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
     }
     const workspace = await resolveWorkspace(input);
     const files = await prepareRuntimeFiles(input);
-    const previousDataDir = process.env.CLINE_DATA_DIR;
-    process.env.CLINE_DATA_DIR = files.dataDir;
     let core: ClineCoreInstance | undefined;
     try {
       const sdk = await this.loader();
@@ -534,11 +556,11 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
       const policies = {
         ...toolPolicies(input.config, sdk.ALL_DEFAULT_TOOL_NAMES),
       };
-      core = await sdk.ClineCore.create({
+      core = await withClineDataDir(files.dataDir, () => sdk.ClineCore.create({
         clientName: "nemo-fabric",
         backendMode: "local",
         toolPolicies: policies,
-      });
+      }));
       const systemPrompt =
         systemInstruction === undefined || systemInstruction === null
           ? sdk.getClineDefaultSystemPrompt({
@@ -563,33 +585,19 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
           systemPrompt,
           ...(files.pluginRoot === undefined ? {} : { agentPluginPaths: [files.pluginRoot] }),
         },
-        // Cline removes non-interactive sessions after their initial turn. Fabric
-        // owns a persistent runtime, so keep this SDK session interactive and
-        // drive every turn through the lifecycle protocol instead.
+        // Cline removes non-interactive sessions after their initial turn. NeMo
+        // Fabric owns a persistent runtime, so keep this SDK session interactive
+        // and drive every turn through the lifecycle protocol instead.
         interactive: true,
         source: "sdk",
         toolPolicies: policies,
         localRuntime: { configExtensions: [] },
       }, async () => {
         await rm(files.root, { recursive: true, force: true });
-        if (process.env.CLINE_DATA_DIR === files.dataDir) {
-          if (previousDataDir === undefined) {
-            delete process.env.CLINE_DATA_DIR;
-          } else {
-            process.env.CLINE_DATA_DIR = previousDataDir;
-          }
-        }
       });
     } catch (error) {
       await core?.dispose("NeMo Fabric startup failed").catch(() => undefined);
       await rm(files.root, { recursive: true, force: true });
-      if (process.env.CLINE_DATA_DIR === files.dataDir) {
-        if (previousDataDir === undefined) {
-          delete process.env.CLINE_DATA_DIR;
-        } else {
-          process.env.CLINE_DATA_DIR = previousDataDir;
-        }
-      }
       if (error instanceof LifecycleError) {
         throw error;
       }

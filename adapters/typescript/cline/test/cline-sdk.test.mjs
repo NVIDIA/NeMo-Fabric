@@ -22,7 +22,7 @@ function input(overrides = {}) {
           base_url: "https://example.test/v1",
         },
       },
-      instructions: { system: { content: "Fabric system prompt", mode: "replace" } },
+      instructions: { system: { content: "NeMo Fabric system prompt", mode: "replace" } },
       tools: { enabled: ["read_files"], blocked: ["run_commands"] },
       ...overrides,
     },
@@ -66,7 +66,11 @@ function fakeSdk(options = {}) {
     calls,
     loader: async () => ({
       ALL_DEFAULT_TOOL_NAMES: ["read_files", "search_codebase", "run_commands"],
-      ClineCore: { async create(value) { calls.create.push(value); return core; } },
+      ClineCore: { async create(value) {
+        calls.create.push(value);
+        await options.onCreate?.(process.env.CLINE_DATA_DIR);
+        return core;
+      } },
       getClineDefaultSystemPrompt(value) { calls.prompts.push(value); return `system:${value.overridePrompt ?? "default"}`; },
       async loadAgentPluginPackages(value) {
         calls.plugins.push(value);
@@ -105,7 +109,7 @@ test("maps model, endpoint, credential, system instruction, and built-in tool po
       enableTools: true,
       enableSpawnAgent: false,
       enableAgentTeams: false,
-      systemPrompt: "Fabric system prompt",
+      systemPrompt: "NeMo Fabric system prompt",
     },
     interactive: true,
     source: "sdk",
@@ -123,7 +127,7 @@ test("maps model, endpoint, credential, system instruction, and built-in tool po
   await handle.stop();
 });
 
-test("uses Cline's default prompt only when Fabric supplies no system instruction", async () => {
+test("uses Cline's default prompt only when NeMo Fabric supplies no system instruction", async () => {
   const sdk = fakeSdk();
   const configured = input();
   delete configured.config.instructions;
@@ -187,6 +191,36 @@ test("cleans up the core, runtime files, and environment after partial startup",
   assert.equal(process.env.CLINE_DATA_DIR, original);
   assert.ok(stagedDataDir);
   await assert.rejects(access(dirname(stagedDataDir)));
+});
+
+test("serializes core creation while scoping each Cline data directory", async () => {
+  const original = process.env.CLINE_DATA_DIR;
+  const observedDataDirs = [];
+  let activeCreates = 0;
+  let maximumActiveCreates = 0;
+  const onCreate = async (dataDir) => {
+    observedDataDirs.push(dataDir);
+    activeCreates += 1;
+    maximumActiveCreates = Math.max(maximumActiveCreates, activeCreates);
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    activeCreates -= 1;
+  };
+  const firstSdk = fakeSdk({ onCreate });
+  const secondSdk = fakeSdk({ onCreate });
+
+  const handles = await Promise.all([
+    new ClineSdkSessionFactory(firstSdk.loader).create(input()),
+    new ClineSdkSessionFactory(secondSdk.loader).create(input()),
+  ]);
+  try {
+    assert.equal(maximumActiveCreates, 1);
+    assert.equal(observedDataDirs.length, 2);
+    assert.notEqual(observedDataDirs[0], observedDataDirs[1]);
+    assert.ok(observedDataDirs.every((dataDir) => typeof dataDir === "string"));
+    assert.equal(process.env.CLINE_DATA_DIR, original);
+  } finally {
+    await Promise.all(handles.map((handle) => handle.stop()));
+  }
 });
 
 test("reports a Cline turn timeout and still permits cleanup", async () => {
@@ -301,7 +335,7 @@ test("normalizes Cline usage and result metadata", async () => {
   await handle.stop();
 });
 
-test("stages Fabric skills and MCP servers as one runtime-scoped native Cline plugin", async () => {
+test("stages NeMo Fabric skills and MCP servers as one runtime-scoped native Cline plugin", async () => {
   const root = await mkdtemp(join(tmpdir(), "fabric-cline-native-config-"));
   const skill = join(root, "skills", "review-code");
   try {

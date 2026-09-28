@@ -106,6 +106,7 @@ export class ClineAdapterRuntime implements AdapterRuntime {
         "cline_no_assistant_response",
         "Cline completed without a final assistant text response",
         outcome.usage,
+        outcome.extensions,
       );
     }
     return {

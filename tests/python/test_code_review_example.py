@@ -441,6 +441,26 @@ def test_openclaw_variant_rejects_relay_telemetry():
     assert "OpenClaw adapter does not support Relay telemetry" in completed.stderr
 
 
+def test_cline_variant_rejects_relay_telemetry():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "cline",
+            "--relay",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "Cline adapter does not support Relay telemetry" in completed.stderr
+
+
 @pytest.mark.parametrize(
     ("options", "message"),
     [

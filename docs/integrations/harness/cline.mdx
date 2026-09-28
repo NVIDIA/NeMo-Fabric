@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Use the NVIDIA NeMo Fabric `nvidia.fabric.cline` adapter to run Cline through
 its supported TypeScript SDK while retaining conversation context for the
-lifetime of a Fabric runtime.
+lifetime of a NeMo Fabric runtime.
 
 ## Install Cline and the Adapter
 
@@ -19,13 +19,13 @@ configuration:
 npm install --save-exact @cline/sdk@0.0.83
 ```
 
-Then install the Fabric adapter in the same project:
+Then install the NeMo Fabric adapter in the same project:
 
 ```bash
 npm install nemo-fabric-adapters-cline
 ```
 
-The Cline SDK is not an adapter package dependency. Installing the Fabric
+The Cline SDK is not an adapter package dependency. Installing the NeMo Fabric
 adapter does not install the harness, and the adapter never installs it at
 runtime. A missing SDK produces `cline_harness_unavailable` with an explicit
 Cline installation command.
@@ -110,11 +110,11 @@ supported and fail during planning or startup.
 
 ## Understand Runtime Behavior
 
-Each Fabric runtime creates an isolated local `ClineCore`. The first invocation
-starts one interactive Cline session, later invocations send prompts to the
-same session ID, and runtime shutdown stops the session and disposes the core.
-Callers do not replay conversation history. Independent Fabric runtimes use
-separate Cline state directories and sessions.
+Each NeMo Fabric runtime creates an isolated local `ClineCore`. The first
+invocation starts one interactive Cline session, later invocations send prompts
+to the same session ID, and runtime shutdown stops the session and disposes the
+core. Callers do not replay conversation history. Independent NeMo Fabric
+runtimes use separate Cline state directories and sessions.
 
 Successful results include normalized response text and usage when Cline
 reports it. Adapter-owned result metadata includes the Cline session ID, finish

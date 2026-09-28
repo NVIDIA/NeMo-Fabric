@@ -141,6 +141,8 @@ async def main() -> None:
         parser.error("--stream requires --relay")
     if args.stream and args.plan:
         parser.error("--stream cannot be combined with --plan")
+    if args.variant == "cline" and args.relay:
+        parser.error("the Cline adapter does not support Relay telemetry")
     if args.variant == "openclaw" and args.relay:
         parser.error("the OpenClaw adapter does not support Relay telemetry")
     if args.service and args.variant != "openclaw":

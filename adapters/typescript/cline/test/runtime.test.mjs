@@ -102,7 +102,7 @@ test("normalizes Cline failures, cancellation, malformed output, and non-text in
   const outcomes = [
     { status: "failed", errorMessage: "provider failed" },
     { status: "aborted" },
-    { status: "completed" },
+    { status: "completed", extensions: { session_id: "session-1", finish_reason: "completed" } },
   ];
   let calls = 0;
   const runtime = new ClineAdapterRuntime({
@@ -122,6 +122,7 @@ test("normalizes Cline failures, cancellation, malformed output, and non-text in
   assert.equal(failed.error.code, "cline_model_error");
   assert.equal(cancelled.status, "cancelled");
   assert.equal(malformed.error.code, "cline_no_assistant_response");
+  assert.deepEqual(malformed.extensions, { session_id: "session-1", finish_reason: "completed" });
   assert.equal(calls, 3);
 });
 
