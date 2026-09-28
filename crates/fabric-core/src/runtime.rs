@@ -3607,12 +3607,12 @@ for line in sys.stdin:
             "request_id": invocation["runtime_context"]["request_id"],
             "normalized_env": os.environ.get("FABRIC_NORMALIZED_ENV"),
         }
-        if MODE == "adapter_reported_failure":
+        if MODE in {"adapter_reported_failure", "blank_error_code"}:
             result = {
                 "status": "failed",
                 "output": output,
                 "error": {
-                    "code": "fake_adapter_failure",
+                    "code": " \t" if MODE == "blank_error_code" else "fake_adapter_failure",
                     "message": "adapter rejected the invocation",
                     "retryable": True,
                     "extensions": {"source": "fake-host"},
@@ -4605,6 +4605,25 @@ for line in sys.stdin:
             })
         );
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_rejects_blank_agent_result_fields() {
+        let (root, plan) = local_host_plan("blank_error_code");
+
+        let error = run_plan(&plan, RunRequest::text("fail"))
+            .expect_err("blank adapter result fields must fail runtime validation");
+
+        assert!(
+            matches!(
+                &error,
+                FabricError::AdapterLifecycleOperation { code, message, .. }
+                    if code == "invalid_agent_run_result"
+                        && message.contains("error.code must be a non-blank string")
+            ),
+            "{error}"
+        );
         let _ = fs::remove_dir_all(root);
     }
 

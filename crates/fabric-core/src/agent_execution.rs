@@ -136,6 +136,9 @@ pub enum AgentRunResultValidationError {
     /// A successful result included an error.
     #[error("succeeded result must not include an error")]
     SucceededWithError,
+    /// A result string violated the non-blank contract.
+    #[error("{0} must be a non-blank string")]
+    BlankField(&'static str),
     /// An artifact path was blank, absolute, or contained parent traversal.
     #[error("artifact path must be non-blank and relative, and contain no parent traversal: {0}")]
     InvalidArtifactPath(PathBuf),
@@ -153,22 +156,44 @@ impl AgentRunResult {
             }
             _ => {}
         }
-        if let Some(artifact) = self
-            .artifacts
-            .iter()
-            .find(|artifact| !is_valid_agent_artifact_path(&artifact.path))
-        {
-            return Err(AgentRunResultValidationError::InvalidArtifactPath(
-                artifact.path.clone(),
-            ));
+        if let Some(error) = &self.error {
+            validate_nonblank(&error.code, "error.code")?;
+            validate_nonblank(&error.message, "error.message")?;
+        }
+        for artifact in &self.artifacts {
+            validate_nonblank(&artifact.name, "artifacts.name")?;
+            validate_nonblank(&artifact.kind, "artifacts.kind")?;
+            if let Some(media_type) = &artifact.media_type {
+                validate_nonblank(media_type, "artifacts.media_type")?;
+            }
+            if !is_valid_agent_artifact_path(&artifact.path) {
+                return Err(AgentRunResultValidationError::InvalidArtifactPath(
+                    artifact.path.clone(),
+                ));
+            }
         }
         Ok(())
     }
 }
 
+fn validate_nonblank(
+    value: &str,
+    field: &'static str,
+) -> std::result::Result<(), AgentRunResultValidationError> {
+    if is_nonblank(value) {
+        Ok(())
+    } else {
+        Err(AgentRunResultValidationError::BlankField(field))
+    }
+}
+
+fn is_nonblank(value: &str) -> bool {
+    value.chars().any(|character| !character.is_whitespace())
+}
+
 fn is_valid_agent_artifact_path(path: &Path) -> bool {
     let raw = path.to_string_lossy();
-    raw.chars().any(|character| !character.is_whitespace())
+    is_nonblank(&raw)
         && !path.is_absolute()
         && !raw.starts_with(['/', '\\'])
         && !raw
@@ -342,5 +367,63 @@ mod tests {
                 PathBuf::from("../output")
             ))
         );
+    }
+
+    #[test]
+    fn rejects_blank_error_and_artifact_scalar_fields() {
+        for (payload, field) in [
+            (
+                serde_json::json!({
+                    "status": "failed",
+                    "output": null,
+                    "error": {"code": " \t", "message": "target failed"}
+                }),
+                "error.code",
+            ),
+            (
+                serde_json::json!({
+                    "status": "failed",
+                    "output": null,
+                    "error": {"code": "target_error", "message": " \t"}
+                }),
+                "error.message",
+            ),
+            (
+                serde_json::json!({
+                    "status": "succeeded",
+                    "output": null,
+                    "artifacts": [{"name": " \t", "kind": "file", "path": "output.txt"}]
+                }),
+                "artifacts.name",
+            ),
+            (
+                serde_json::json!({
+                    "status": "succeeded",
+                    "output": null,
+                    "artifacts": [{"name": "output", "kind": " \t", "path": "output.txt"}]
+                }),
+                "artifacts.kind",
+            ),
+            (
+                serde_json::json!({
+                    "status": "succeeded",
+                    "output": null,
+                    "artifacts": [{
+                        "name": "output",
+                        "kind": "file",
+                        "path": "output.txt",
+                        "media_type": " \t"
+                    }]
+                }),
+                "artifacts.media_type",
+            ),
+        ] {
+            let result = serde_json::from_value::<AgentRunResult>(payload)
+                .expect("schema-constrained strings deserialize before runtime validation");
+            assert_eq!(
+                result.validate(),
+                Err(AgentRunResultValidationError::BlankField(field))
+            );
+        }
     }
 }
