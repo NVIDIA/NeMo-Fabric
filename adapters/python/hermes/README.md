@@ -147,13 +147,12 @@ and `instructions.system` is sent as the request's `instructions`.
 
 In this mode the adapter also accepts:
 
-- `harness.settings.state_dir`: a directory that retains Hermes' `config.yaml`,
-  native state, the `interface-token` credential, and `api.log` across
-  runtimes. Relative paths resolve from the NeMo Fabric base directory. When
-  omitted, native state is scoped to the runtime under the artifact root. A
-  retained `config.yaml` whose NeMo Fabric-owned sections differ from the
-  current configuration stops startup instead of being overwritten, and only one
-  runtime can use a state directory at a time.
+- `harness.settings.state_dir`: a directory that retains Hermes' native state,
+  the `interface-token` credential, and `api.log` across runtimes. The adapter
+  regenerates `config.yaml` there at each start, so change it through
+  `FabricConfig`. Relative paths resolve from the NeMo Fabric base directory.
+  When omitted, native state is scoped to the runtime under the artifact root.
+  Only one runtime can use a state directory at a time.
 - `harness.settings.interfaces.api.port`: the loopback API port, `8642` by
   default.
 - `harness.settings.interfaces.dashboard`: serve the Hermes dashboard, with

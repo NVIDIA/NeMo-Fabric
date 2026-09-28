@@ -65,7 +65,7 @@
       "state_dir": {
         "type": "string",
         "minLength": 1,
-        "description": "api_server mode only. Directory that retains Hermes configuration, state, the interface token, and api.log across runtimes; relative paths resolve from the NeMo Fabric base directory. When omitted, native state is scoped to the runtime."
+        "description": "api_server mode only. Directory that retains Hermes state, the interface token, and api.log across runtimes, with config.yaml regenerated at each start; relative paths resolve from the NeMo Fabric base directory. When omitted, native state is scoped to the runtime."
       },
       "interfaces": {
         "type": "object",
@@ -109,7 +109,7 @@
           "display": {"type": "object"}
         },
         "additionalProperties": false,
-        "description": "Hermes config.yaml sections that NeMo Fabric does not derive from FabricConfig. Sections that NeMo Fabric owns are rejected."
+        "description": "Hermes config.yaml sections that NeMo Fabric does not derive from FabricConfig."
       }
     },
     "required": [],

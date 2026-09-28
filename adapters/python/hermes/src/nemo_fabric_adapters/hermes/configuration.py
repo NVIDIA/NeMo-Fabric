@@ -118,25 +118,6 @@ def disabled_toolsets(config: AgentConfig) -> list[str]:
     return config.tools.blocked if config.tools is not None else []
 
 
-# Top-level config.yaml sections that a FabricConfig determines, either derived
-# by build_hermes_config or supplied through harness.settings.native_config.
-CONFIGURED_SECTIONS = frozenset(
-    {
-        "model",
-        "providers",
-        "agent",
-        "terminal",
-        "skills",
-        "mcp_servers",
-        "platform_toolsets",
-        "plugins",
-        "web",
-        "approvals",
-        "display",
-    }
-)
-
-
 def build_hermes_config(
     agent_config: AgentConfig,
     *,
@@ -209,15 +190,11 @@ def build_hermes_config(
         if api_server_mode(agent_config):
             config["platform_toolsets"]["api_server"] = enabled_toolsets
 
+    # settings_schema limits native_config to sections this function does not
+    # derive; its plugins section holds settings, while plugins_enabled and
+    # Relay telemetry decide which plugins are enabled.
     native = copy.deepcopy(settings.get("native_config", {}))
-    # native_config.plugins carries plugin settings; plugins_enabled and Relay
-    # telemetry decide which plugins are enabled.
     plugin_settings = native.pop("plugins", {})
-    if "enabled" in plugin_settings:
-        raise ValueError(
-            "native_config.plugins.enabled conflicts with plugins_enabled; "
-            "list plugins in harness.settings.plugins_enabled"
-        )
     plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
     if relay_enabled and "observability/nemo_relay" not in plugins:
         plugins.append("observability/nemo_relay")
@@ -225,15 +202,7 @@ def build_hermes_config(
         plugin_settings["enabled"] = plugins
     if plugin_settings:
         config["plugins"] = plugin_settings
-
-    conflicts = set(native) & set(config)
-    if conflicts:
-        raise ValueError(
-            "native_config conflicts with NeMo Fabric-owned fields: "
-            f"{sorted(conflicts)}"
-        )
-    config.update(native)
-    return config
+    return config | native
 
 
 def write_hermes_config(

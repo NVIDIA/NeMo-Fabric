@@ -70,7 +70,6 @@ def test_write_hermes_config_round_trips_without_pyyaml(
     assert json.loads(config_path.read_text(encoding="utf-8")) == config
 
 
-
 @pytest.mark.parametrize(
     ("api", "api_mode"),
     [
@@ -92,19 +91,29 @@ def test_model_api_selects_the_hermes_api_mode(api, api_mode):
         assert native["model"]["api_mode"] == api_mode
 
 
-def test_native_config_adds_sections_but_cannot_replace_owned_ones():
-    def build(native_config):
-        config = AgentConfig.from_mapping(
-            {
-                "harness": {"settings": {"native_config": native_config}},
-                "models": {"default": {"provider": "openai", "model": "test"}},
-            }
-        )
-        return configuration.build_hermes_config(config, workspace="/workspace")
-
-    assert build({"web": {"backend": "tavily"}})["web"] == {"backend": "tavily"}
-    with pytest.raises(ValueError, match="NeMo Fabric-owned"):
-        build({"model": {"default": "other"}})
+def test_native_config_adds_sections_and_plugin_settings():
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {
+                "settings": {
+                    "plugins_enabled": ["web/tavily"],
+                    "native_config": {
+                        "web": {"backend": "tavily"},
+                        "plugins": {"entries": {"web/tavily": {"depth": 2}}},
+                    },
+                }
+            },
+            "models": {"default": {"provider": "openai", "model": "test"}},
+        }
+    )
+    native = configuration.build_hermes_config(
+        config, workspace=".", relay_enabled=True
+    )
+    assert native["web"] == {"backend": "tavily"}
+    assert native["plugins"] == {
+        "entries": {"web/tavily": {"depth": 2}},
+        "enabled": ["web/tavily", "observability/nemo_relay"],
+    }
 
 
 def test_api_server_mode_registers_the_endpoint_and_tool_allowlist():

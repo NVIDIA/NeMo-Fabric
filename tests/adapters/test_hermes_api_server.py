@@ -26,7 +26,7 @@ import yaml
 from nemo_fabric import Fabric, FabricConfig, FabricConfigError
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common.credentials import interface_token
-from nemo_fabric_adapters.hermes import api_server, configuration, telemetry
+from nemo_fabric_adapters.hermes import api_server, telemetry
 
 COMPLETED = {
     "status": "completed",
@@ -92,78 +92,73 @@ def native_fixture(monkeypatch):
     return SimpleNamespace(process=process, spawn=spawn, request=request)
 
 
-async def test_retained_state_is_written_once_and_checked_for_drift(tmp_path, native):
-    state = tmp_path / "state"
-    config = _config(
-        {"state_dir": str(state), "native_config": {"web": {"backend": "tavily"}}}
-    )
+async def _start(tmp_path, config, **context):
     runtime = api_server.HermesApiServerRuntime()
-    await runtime.start(_payload(config, tmp_path))
-    written = (state / "config.yaml").read_text()
-    native_config = yaml.safe_load(written)
-    assert native_config["web"] == {"backend": "tavily"}
-    assert native_config["model"]["api_mode"] == "codex_responses"
-    assert native_config["model"]["provider"] == "custom:fabric"
-    assert native_config["providers"]["fabric"]["key_env"] == "FIXTURE_KEY"
-    assert "fixture-placeholder" not in written
-    token_path = state / "interface-token"
-    assert token_path.stat().st_mode & 0o777 == 0o600
-    token = token_path.read_text()
-    with pytest.raises(lifecycle.LifecycleError, match="in use"):
-        await api_server.HermesApiServerRuntime().start(_payload(config, tmp_path))
-    await runtime.stop()
-
-    restarted = api_server.HermesApiServerRuntime()
-    await restarted.start(_payload(config, tmp_path))
-    assert token_path.read_text() == token, "the credential survives restarts"
-    await restarted.stop()
-
-    changed = _config(
-        {"state_dir": str(state), "native_config": {"web": {"backend": "brave"}}}
-    )
-    with pytest.raises(lifecycle.LifecycleError, match="conflicts"):
-        await api_server.HermesApiServerRuntime().start(_payload(changed, tmp_path))
-    dropped = _config({"state_dir": str(state)})
-    with pytest.raises(lifecycle.LifecycleError, match="conflicts"):
-        await api_server.HermesApiServerRuntime().start(_payload(dropped, tmp_path))
+    payload = _payload(config, tmp_path)
+    payload["runtime_context"].update(context)
+    await runtime.start(payload)
+    return runtime
 
 
-async def test_a_retained_log_is_made_owner_only(tmp_path, native):
+async def test_state_dir_keeps_the_credential_and_rewrites_config(tmp_path, native):
     state = tmp_path / "state"
     state.mkdir()
-    (state / "api.log").touch(mode=0o644)
-    runtime = api_server.HermesApiServerRuntime()
-    await runtime.start(_payload(_config({"state_dir": str(state)}), tmp_path))
-    assert (state / "api.log").stat().st_mode & 0o777 == 0o600
+    (state / "api.log").touch(mode=0o644)  # Retained from an earlier runtime.
+    web = {"state_dir": str(state), "native_config": {"web": {"backend": "tavily"}}}
+    runtime = await _start(tmp_path, _config(web))
+    written = (state / "config.yaml").read_text()
+    assert yaml.safe_load(written)["providers"]["fabric"]["key_env"] == "FIXTURE_KEY"
+    assert "fixture-placeholder" not in written, "the key stays in the environment"
+    token = interface_token(state)
+    with pytest.raises(lifecycle.LifecycleError, match="in use"):
+        await _start(tmp_path, _config(web))
+    await runtime.stop()
+    for name in ["config.yaml", "interface-token", "api.log"]:
+        assert (state / name).stat().st_mode & 0o777 == 0o600, name
+
+    runtime = await _start(tmp_path, _config({"state_dir": str(state)}))
+    assert "web" not in yaml.safe_load((state / "config.yaml").read_text())
+    assert interface_token(state) == token, "the credential survives restarts"
     await runtime.stop()
 
 
-async def test_without_state_dir_native_state_is_scoped_to_the_runtime(
-    tmp_path, native
-):
-    runtime = api_server.HermesApiServerRuntime()
-    await runtime.start(_payload(_config({}), tmp_path, runtime_id="runtime-1"))
+async def test_without_state_dir_native_state_belongs_to_the_runtime(tmp_path, native):
+    runtime = await _start(tmp_path, _config({}), runtime_id="runtime-1")
     assert runtime.home == tmp_path / "artifacts/.fabric/hermes/runtimes/runtime-1"
-    assert (runtime.home / "config.yaml").exists()
     await runtime.stop()
 
 
-async def test_invocations_forward_instructions_and_chain_responses(
-    tmp_path, native
+async def test_hermes_gets_only_the_configured_endpoint_and_relay_plugin(
+    tmp_path, native, monkeypatch
 ):
-    runtime = api_server.HermesApiServerRuntime()
-    await runtime.start(_payload(_config({}), tmp_path))
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://inherited.invalid/v1")
+    relay = tmp_path / "relay.toml"
+    monkeypatch.setattr(
+        telemetry, "write_hermes_relay_plugin_config", lambda _: (relay, {})
+    )
+    config = _config({}).to_mapping()
+    del config["models"]["default"]["base_url"], config["models"]["default"]["api"]
+    runtime = await _start(
+        tmp_path, AgentConfig.from_mapping(config), telemetry={"relay_enabled": True}
+    )
+    env = native.spawn.call_args.kwargs["env"]
+    assert "OPENAI_BASE_URL" not in env
+    assert env["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(relay)
+    written = yaml.safe_load((runtime.home / "config.yaml").read_text())
+    assert written["plugins"]["enabled"] == ["observability/nemo_relay"]
+    await runtime.stop()
+
+
+async def test_invocations_forward_instructions_and_chain_responses(tmp_path, native):
+    runtime = await _start(tmp_path, _config({}))
     context = RuntimeContext.from_mapping(_context(tmp_path))
     native.request.return_value = COMPLETED
     result = await runtime.invoke(AgentRunRequest(input="hello"), context)
-    assert result.status == "succeeded"
     assert result.output["response"] == "hello"
-    first = native.request.call_args.kwargs["body"]
-    assert first["instructions"] == "Be brief."
-    assert native.request.call_args.kwargs["timeout"] is None, (
-        "runtime.timeout_seconds, enforced by NeMo Fabric, bounds the turn"
-    )
-    assert "previous_response_id" not in first
+    call = native.request.call_args.kwargs
+    assert call["body"]["instructions"] == "Be brief."
+    assert "previous_response_id" not in call["body"]
+    assert call["timeout"] is None, "runtime.timeout_seconds bounds the turn"
     await runtime.invoke(AgentRunRequest(input="again"), context)
     assert native.request.call_args.kwargs["body"]["previous_response_id"] == "turn-1"
     await runtime.stop()
@@ -172,100 +167,50 @@ async def test_invocations_forward_instructions_and_chain_responses(
 async def test_definite_failures_keep_the_runtime_and_uncertain_ones_stop_it(
     tmp_path, native
 ):
-    runtime = api_server.HermesApiServerRuntime()
-    await runtime.start(_payload(_config({}), tmp_path))
+    runtime = await _start(tmp_path, _config({}))
     context = RuntimeContext.from_mapping(_context(tmp_path))
-    native.request.return_value = {"status": "failed", "id": "turn-0"}
-    result = await runtime.invoke(AgentRunRequest(input="hello"), context)
-    assert result.status == "failed"
-    native.request.return_value = COMPLETED
-    result = await runtime.invoke(AgentRunRequest(input="hello"), context)
-    assert result.status == "succeeded", "a reported failure does not stop Hermes"
-    native.request.side_effect = urllib.error.HTTPError(
-        "http://127.0.0.1/v1/responses", 500, "Internal Server Error", {}, None
-    )
-    result = await runtime.invoke(AgentRunRequest(input="hello"), context)
-    assert result.status == "failed"
-    assert result.error.code == "hermes_invocation_failed"
-    native.request.side_effect = None
-    result = await runtime.invoke(AgentRunRequest(input="hello"), context)
-    assert result.status == "succeeded", "an HTTP error response does not stop Hermes"
 
-    native.request.side_effect = OSError("uncertain network result")
-    result = await runtime.invoke(AgentRunRequest(input="again"), context)
-    assert result.status == "failed"
+    async def invoke(outcome):
+        native.request.side_effect = outcome if isinstance(outcome, Exception) else None
+        native.request.return_value = outcome
+        return await runtime.invoke(AgentRunRequest(input="hello"), context)
+
+    http_error = urllib.error.HTTPError("http://127.0.0.1", 500, "error", {}, None)
+    for definite in [{"status": "failed", "id": "turn-0"}, http_error]:
+        assert (await invoke(definite)).status == "failed"
+        assert (await invoke(COMPLETED)).status == "succeeded", "Hermes keeps running"
+    assert (await invoke(OSError("unknown outcome"))).status == "failed"
     with pytest.raises(lifecycle.LifecycleError, match="no replay"):
-        await runtime.invoke(AgentRunRequest(input="again"), context)
+        await invoke(COMPLETED)
 
 
-def test_interface_defaults_apply_to_partially_declared_interfaces():
-    assert api_server.interface_settings({})["dashboard"]["enabled"] is False
-    dashboard = api_server.interface_settings(
-        {"interfaces": {"dashboard": {"port": 9000}}}
-    )["dashboard"]
-    assert dashboard["enabled"] is True
-    assert dashboard["port"] == 9000
-    assert dashboard["tui"] == {"enabled": True}
+async def test_stop_reaps_hermes_even_when_cancelled(tmp_path, native, monkeypatch):
+    runtime = await _start(tmp_path, _config({}))
+    log = runtime._log
+    signals = []
+    waits = []
 
+    async def wait():
+        waits.append(True)
+        if len(waits) == 1:
+            await asyncio.sleep(3600)  # SIGTERM is ignored.
+        native.process.returncode = -9
 
-def test_planning_rejects_api_server_settings_in_sdk_mode(tmp_path):
-    def plan(settings):
-        config = FabricConfig.from_mapping(
-            {
-                "metadata": {"name": "hermes-modes"},
-                "harness": {"adapter_id": "nvidia.fabric.hermes", "settings": settings},
-                "models": {"default": {"provider": "openai", "model": "fixture"}},
-            }
-        )
-        return Fabric().plan(config, base_dir=tmp_path)
+    def killpg(pid, sig):
+        signals.append(sig)
+        if sig == api_server.signal.SIGKILL:
+            raise ProcessLookupError  # The group exited meanwhile.
 
-    plan({"mode": "api_server", "interfaces": {"api": {"port": 8643}}})
-    with pytest.raises(FabricConfigError, match="interfaces"):
-        plan({"interfaces": {"api": {"port": 8643}}})
-    with pytest.raises(FabricConfigError, match="state_dir"):
-        plan({"mode": "sdk", "state_dir": str(tmp_path)})
-
-
-async def test_relay_telemetry_enables_the_hermes_relay_plugin(
-    tmp_path, native, monkeypatch
-):
-    relay_config = tmp_path / "relay.toml"
-    monkeypatch.setattr(
-        telemetry, "write_hermes_relay_plugin_config", lambda payload: (relay_config, {})
-    )
-    payload = _payload(_config({}), tmp_path)
-    payload["runtime_context"]["telemetry"] = {"relay_enabled": True}
-    runtime = api_server.HermesApiServerRuntime()
-    await runtime.start(payload)
-    written = yaml.safe_load((runtime.home / "config.yaml").read_text())
-    assert written["plugins"]["enabled"] == ["observability/nemo_relay"]
-    env = native.spawn.call_args.kwargs["env"]
-    assert env["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(relay_config)
-    await runtime.stop()
-
-
-def test_plugin_settings_compose_with_enabled_plugins(tmp_path):
-    config = _config(
-        {
-            "plugins_enabled": ["web/tavily"],
-            "native_config": {"plugins": {"entries": {"web/tavily": {"depth": 2}}}},
-        }
-    )
-    native = configuration.build_hermes_config(
-        config, workspace=str(tmp_path), relay_enabled=True
-    )
-    assert native["plugins"] == {
-        "entries": {"web/tavily": {"depth": 2}},
-        "enabled": ["web/tavily", "observability/nemo_relay"],
-    }
-
-
-def test_retained_state_checks_every_section_native_config_can_set(repo_root):
-    descriptor = json.loads(
-        (repo_root / "adapters/python/hermes/hermes.fabric-adapter.json").read_text()
-    )
-    native_config = descriptor["settings_schema"]["properties"]["native_config"]
-    assert set(native_config["properties"]) <= configuration.CONFIGURED_SECTIONS
+    native.process.wait = wait
+    monkeypatch.setattr(api_server.os, "killpg", killpg)
+    stopping = asyncio.create_task(runtime.stop())
+    await asyncio.sleep(0.05)
+    stopping.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await stopping
+    assert signals == [api_server.signal.SIGTERM, api_server.signal.SIGKILL]
+    assert native.process.returncode == -9, "cancellation does not abandon the child"
+    assert log.closed and runtime._state_lock is None and runtime.process is None
 
 
 async def test_native_server_stops_when_its_adapter_exits(tmp_path, monkeypatch):
@@ -273,7 +218,7 @@ async def test_native_server_stops_when_its_adapter_exits(tmp_path, monkeypatch)
 
     class NativeApi:
         def __init__(self, config):
-            self.config = config
+            pass
 
         async def connect(self):
             return True
@@ -292,67 +237,38 @@ async def test_native_server_stops_when_its_adapter_exits(tmp_path, monkeypatch)
     monkeypatch.setenv(
         "FABRIC_HERMES_INTERFACES", json.dumps(api_server.interface_settings({}))
     )
-    parents = iter([4242, 4242])
+    parents = iter([4242, 4242])  # The adapter exits after the server starts.
     monkeypatch.setattr(api_server.os, "getppid", lambda: next(parents, 1))
     await asyncio.wait_for(api_server._serve_native_interfaces(), 5)
     disconnected.assert_called_once()
 
 
-async def test_an_inherited_model_endpoint_does_not_reach_hermes(
-    tmp_path, native, monkeypatch
-):
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://inherited.invalid/v1")
-    config = AgentConfig.from_mapping(
-        {
-            "harness": {"settings": {"mode": "api_server"}},
-            "models": {
-                "default": {
-                    "provider": "openai",
-                    "model": "fixture",
-                    "api_key_env": "FIXTURE_KEY",
-                }
-            },
-        }
+def test_the_dashboard_is_opt_in_and_partial_settings_get_defaults():
+    assert api_server.interface_settings({})["dashboard"]["enabled"] is False
+    dashboard = api_server.interface_settings(
+        {"interfaces": {"dashboard": {"port": 9000}}}
     )
-    runtime = api_server.HermesApiServerRuntime()
-    await runtime.start(_payload(config, tmp_path))
-    assert "OPENAI_BASE_URL" not in native.spawn.call_args.kwargs["env"]
-    await runtime.stop()
+    assert dashboard["dashboard"] == {
+        "enabled": True,
+        "port": 9000,
+        "internalPort": 19119,
+        "tui": {"enabled": True},
+    }
 
 
-async def test_stop_finishes_shutdown_when_cancelled_or_the_process_is_gone(
-    tmp_path, native, monkeypatch
-):
-    runtime = api_server.HermesApiServerRuntime()
-    await runtime.start(_payload(_config({}), tmp_path))
-    log = runtime._log
-    reaped = asyncio.Event()
-    waits = 0
+def test_planning_rejects_api_server_settings_in_sdk_mode(tmp_path):
+    def plan(settings):
+        config = FabricConfig.from_mapping(
+            {
+                "metadata": {"name": "hermes-modes"},
+                "harness": {"adapter_id": "nvidia.fabric.hermes", "settings": settings},
+                "models": {"default": {"provider": "openai", "model": "fixture"}},
+            }
+        )
+        return Fabric().plan(config, base_dir=tmp_path)
 
-    async def wait():
-        nonlocal waits
-        waits += 1
-        if waits == 1:
-            await asyncio.sleep(3600)
-        native.process.returncode = -9
-        reaped.set()
-
-    native.process.wait = wait
-    signals = []
-
-    def killpg(pid, sig):
-        signals.append(sig)
-        if sig == api_server.signal.SIGKILL:
-            raise ProcessLookupError
-
-    monkeypatch.setattr(api_server.os, "killpg", killpg)
-    stopping = asyncio.create_task(runtime.stop())
-    await asyncio.sleep(0.05)
-    stopping.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await stopping
-    assert reaped.is_set(), "cancellation does not abandon the child"
-    assert signals == [api_server.signal.SIGTERM, api_server.signal.SIGKILL]
-    assert log.closed and runtime._log is None and runtime._state_lock is None
-    assert runtime.process is None
-
+    plan({"mode": "api_server", "interfaces": {"api": {"port": 8643}}})
+    with pytest.raises(FabricConfigError, match="interfaces"):
+        plan({"interfaces": {"api": {"port": 8643}}})
+    with pytest.raises(FabricConfigError, match="state_dir"):
+        plan({"mode": "sdk", "state_dir": str(tmp_path)})
