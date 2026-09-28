@@ -21,8 +21,10 @@ client. They do not install the independently deployed remote service.
 
 ## Configuration
 
-Configure the API root in `HarnessConfig.settings`. `base_url` is required and
-includes `/v1`; `api_type` defaults to `openai-responses`.
+Configure the API root as `models.<role>.base_url` and the request protocol as
+`models.<role>.api`, or with the equivalent `base_url` and `api_type` harness
+settings. The API root is required and includes `/v1`; the protocol defaults to
+`openai-responses`. When both places are set, they must agree.
 
 | Setting | Accepted values |
 | --- | --- |
@@ -32,8 +34,9 @@ includes `/v1`; `api_type` defaults to `openai-responses`.
 | `read_timeout_seconds` | Timeout between response bytes; defaults to `600` |
 | `relay_streaming` | Opt in to request-ID correlation with a Relay-instrumented remote service. Supported only by `openai-responses` and `openai-completions`; defaults to `false`. |
 
-The adapter accepts `models`, `models.temperature`, `models.top_p`,
-`models.max_tokens`, and replacement `instructions.system` values. It maps the
+The adapter accepts `models`, `models.base_url`, `models.api`,
+`models.temperature`, `models.top_p`, `models.max_tokens`, and replacement
+`instructions.system` values. It maps the
 token limit to `max_output_tokens` for OpenAI Responses,
 `max_completion_tokens` for OpenAI Chat Completions, and `max_tokens` for
 Anthropic Messages.
