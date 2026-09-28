@@ -129,7 +129,8 @@ harness supports.
 Codex and Claude omit the default code-review skill; add
 `--skill-path ./skills/code-review` to retain it. For Relay, Codex and Claude
 require the NeMo Relay 0.7 CLI, Pi requires the NeMo Relay 0.9 CLI and its Pi
-extension, and Hermes Agent and Deep Agents use the Relay Python package.
+extension, and Hermes Agent and Deep Agents use the Relay Python package. Cline
+does not support Relay telemetry in this initial adapter.
 Additional requirements appear in the corresponding subsections.
 
 For example, after installing Deep Agents, this command keeps the default skill
@@ -180,6 +181,22 @@ collects Relay ATOF records; it is not native model-response streaming.
 ### OpenClaw (`openclaw`)
 
 Install Node.js and OpenClaw, then install the [OpenClaw adapter](../../adapters/python/openclaw/README.md). This variant uses the `NVIDIA_API_KEY` configured for the default demo and retains the default code-review skill. OpenClaw does not currently support Relay telemetry.
+
+### Cline (`cline`)
+
+Install Node.js 22.19 or newer and follow the
+[Cline adapter installation instructions](../../adapters/typescript/cline/README.md).
+The source-tree build is included in `just build-all`. This variant maps the
+default skill and the `read_files`, `search_codebase`, and `skills` Cline tools,
+and uses `NVIDIA_API_KEY`.
+
+Inspect its plan with:
+
+```bash
+.venv/bin/python -m examples.code_review_agent --variant cline --plan
+```
+
+The initial Cline adapter does not support Relay telemetry or streaming.
 
 ### Pi (`pi`)
 

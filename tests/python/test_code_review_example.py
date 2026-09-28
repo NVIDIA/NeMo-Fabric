@@ -18,6 +18,7 @@ from examples.code_review_agent import BASE_DIR
 from examples.code_review_agent import __main__ as main_module
 from examples.code_review_agent import base_config
 from examples.code_review_agent import claude_config
+from examples.code_review_agent import cline_config
 from examples.code_review_agent import codex_config
 from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import hermes_config
@@ -41,12 +42,13 @@ def test_variant_builders_return_independent_complete_configs():
     hermes = hermes_config()
     codex = codex_config()
     claude = claude_config()
+    cline = cline_config()
     deepagents = deepagents_config()
     nooa = nooa_config()
     openclaw = openclaw_config()
     pi = pi_config()
 
-    for config in (base, hermes, codex, claude, deepagents, nooa, openclaw, pi):
+    for config in (base, hermes, codex, claude, cline, deepagents, nooa, openclaw, pi):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
@@ -65,6 +67,13 @@ def test_variant_builders_return_independent_complete_configs():
     assert claude.models["default"].api_key_env == "ANTHROPIC_API_KEY"
     assert claude.mcp is None
     assert claude.skills is None
+    assert cline.harness.adapter_id == "nvidia.fabric.cline"
+    assert cline.models["default"].provider == "nvidia"
+    assert cline.models["default"].api_key_env == "NVIDIA_API_KEY"
+    assert cline.skills is not None
+    assert cline.skills.paths == ["./skills/code-review"]
+    assert cline.tools is not None
+    assert cline.tools.enabled == ["read_files", "search_codebase", "skills"]
     assert deepagents is not base
     assert deepagents.harness is not base.harness
     assert deepagents.harness.adapter_id == "nvidia.fabric.langchain.deepagents"
@@ -222,6 +231,7 @@ def test_variants_plan_from_complete_configs():
         hermes_config(),
         codex_config(),
         claude_config(),
+        cline_config(),
         deepagents_config(),
         openclaw_config(),
         pi_config(),
@@ -250,6 +260,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         ("hermes", "nvidia.fabric.hermes"),
         ("codex", "nvidia.fabric.codex"),
         ("claude", "nvidia.fabric.claude"),
+        ("cline", "nvidia.fabric.cline"),
         ("deepagents", "nvidia.fabric.langchain.deepagents"),
         ("nooa", "nvidia.fabric.nooa"),
         ("openclaw", "nvidia.fabric.openclaw"),
@@ -263,7 +274,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         )
         for variant, adapter_id in variants
         for relay_enabled in (False, True)
-        if variant != "openclaw" or not relay_enabled
+        if variant not in {"cline", "openclaw"} or not relay_enabled
     )
 
     for options, adapter_id, relay_enabled in cases:
@@ -296,6 +307,8 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
     ("options", "expected_paths"),
     [
         (["--variant", "pi"], [BASE_DIR / "skills/code-review"]),
+        (["--variant", "cline"], [BASE_DIR / "skills/code-review"]),
+        (["--variant", "cline", "--no-skills"], []),
         (["--variant", "pi", "--no-skills"], []),
         (["--variant", "deepagents"], [BASE_DIR / "skills/code-review"]),
         (
@@ -368,6 +381,20 @@ def test_pi_variant_projects_explicit_skill_and_tool_policy():
         "paths": [str((BASE_DIR / "skills/code-review").resolve())]
     }
     assert agent_config["tools"] == {"enabled": ["read"]}
+    assert plan.config.runtime.input_schema == "text"
+    assert plan.config.runtime.output_schema == "message"
+
+
+def test_cline_variant_projects_explicit_skill_and_tool_policy():
+    plan = Fabric().plan(cline_config(), base_dir=BASE_DIR)
+    agent_config = plan.to_mapping()["agent_config"]
+
+    assert agent_config["skills"] == {
+        "paths": [str((BASE_DIR / "skills/code-review").resolve())]
+    }
+    assert agent_config["tools"] == {
+        "enabled": ["read_files", "search_codebase", "skills"]
+    }
     assert plan.config.runtime.input_schema == "text"
     assert plan.config.runtime.output_schema == "message"
 
