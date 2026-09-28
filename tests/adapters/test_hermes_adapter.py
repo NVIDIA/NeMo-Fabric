@@ -1351,6 +1351,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
                 "default": {
                     "provider": "test-provider",
                     "model": "test-model",
+                    "api": "anthropic-messages",
                     "api_key_env": "TEST_API_KEY",
                     "temperature": 0.2,
                     "top_p": 0.85,
@@ -1391,7 +1392,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         base_url=None,
         api_key="secret",
         provider="test-provider",
-        api_mode=None,
+        api_mode="anthropic_messages",
         model="test-model",
         max_iterations=90,
         enabled_toolsets=[],
