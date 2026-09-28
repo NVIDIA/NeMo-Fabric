@@ -30,6 +30,24 @@ QUICKSTART_NOTEBOOK = ROOT / "examples" / "notebooks" / "01_quickstart.ipynb"
 VARIATIONS_NOTEBOOK = ROOT / "examples" / "notebooks" / "02_variations.ipynb"
 
 
+@pytest.mark.parametrize("notebook_path", [QUICKSTART_NOTEBOOK, VARIATIONS_NOTEBOOK])
+def test_notebook_setup_finds_repo_root_hermes_venv(monkeypatch, notebook_path):
+    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    source = next(
+        "".join(cell["source"])
+        for cell in notebook["cells"]
+        if 'os.environ["FABRIC_PYTHON"]' in "".join(cell["source"])
+    )
+    monkeypatch.chdir(ROOT / "examples" / "notebooks")
+    os.environ.pop("ADAPTER_PYTHON", None)
+    os.environ.pop("HERMES_PYTHON", None)
+
+    # Execute only the checked-in notebook source controlled by this repository.
+    exec(compile(source, str(notebook_path), "exec"), {})  # noqa: S102
+
+    assert os.environ["HERMES_PYTHON"] == str(ROOT / ".venv-hermes/bin/python")
+
+
 def test_quickstart_notebook_hermes_config_plans_without_adapter_settings():
     notebook = json.loads(QUICKSTART_NOTEBOOK.read_text(encoding="utf-8"))
     source = next(

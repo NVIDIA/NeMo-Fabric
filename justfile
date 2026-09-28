@@ -378,6 +378,8 @@ install-hermes-agent:
     if [[ "$hermes_head" != "$hermes_commit" ]]; then
         if [[ -n "$hermes_head" ]] && { ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}" || ! git -C "$hermes_checkout" diff --cached --quiet; }; then
             echo "ERROR: Hermes Agent checkout has tracked changes at an unpinned revision: $hermes_checkout" >&2
+            echo "If these are disposable changes from the old metadata-propagate.patch, run:" >&2
+            echo "  git -C \"$hermes_checkout\" restore --source=HEAD --staged --worktree -- ." >&2
             exit 1
         fi
         if ! git -C "$hermes_checkout" cat-file -e "$hermes_commit^{commit}" 2>/dev/null; then
@@ -387,6 +389,8 @@ install-hermes-agent:
     fi
     if ! git -C "$hermes_checkout" diff --cached --quiet || ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
         echo "ERROR: Hermes Agent checkout has tracked changes: $hermes_checkout" >&2
+        echo "To discard only tracked changes that you do not need, run:" >&2
+        echo "  git -C \"$hermes_checkout\" restore --source=HEAD --staged --worktree -- ." >&2
         exit 1
     fi
     if [[ ! -x "$REPO_ROOT/.venv-hermes/bin/python" ]]; then
