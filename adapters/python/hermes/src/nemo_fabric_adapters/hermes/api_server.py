@@ -221,6 +221,8 @@ class HermesApiServerRuntime:
                 HERMES_DISABLE_LAZY_INSTALLS="1",
                 FABRIC_HERMES_INTERFACES=json.dumps(self._interfaces),
             )
+            # Only the configured endpoint reaches Hermes, never an inherited one.
+            env.pop("OPENAI_BASE_URL", None)
             if model.base_url:
                 env["OPENAI_BASE_URL"] = model.base_url
             if relay_enabled:
@@ -364,21 +366,48 @@ class HermesApiServerRuntime:
         )
 
     async def stop(self) -> None:
-        if self.process is not None and self.process.returncode is None:
-            try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-                await asyncio.wait_for(self.process.wait(), SHUTDOWN_TIMEOUT_SECONDS)
-            except TimeoutError:
-                os.killpg(self.process.pid, signal.SIGKILL)
-                await self.process.wait()
-            except ProcessLookupError:
-                await self.process.wait()
-        if self._log is not None:
-            self._log.close()
-            self._log = None
-        if self._state_lock is not None:
-            self._state_lock.close()
-            self._state_lock = None
+        """Stop and reap Hermes, even if the caller is cancelled meanwhile.
+
+        Cancellation escalates to SIGKILL, still waits for the child to exit,
+        and is re-raised after the native state is released.
+        """
+
+        process = self.process
+        cancelled = False
+        try:
+            if process is not None and process.returncode is None:
+                _signal_group(process.pid, signal.SIGTERM)
+                try:
+                    await asyncio.wait_for(process.wait(), SHUTDOWN_TIMEOUT_SECONDS)
+                except TimeoutError:
+                    pass
+                except asyncio.CancelledError:
+                    cancelled = True
+                if process.returncode is None:
+                    _signal_group(process.pid, signal.SIGKILL)
+                    while True:
+                        try:
+                            await process.wait()
+                            break
+                        except asyncio.CancelledError:
+                            cancelled = True
+            self.process = None
+        finally:
+            if self._log is not None:
+                self._log.close()
+                self._log = None
+            if self._state_lock is not None:
+                self._state_lock.close()
+                self._state_lock = None
+        if cancelled:
+            raise asyncio.CancelledError
+
+
+def _signal_group(pid: int, sig: int) -> None:
+    try:
+        os.killpg(pid, sig)
+    except ProcessLookupError:
+        pass  # The process group has already exited.
 
 
 async def _serve_native_interfaces() -> None:

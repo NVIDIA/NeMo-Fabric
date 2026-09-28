@@ -129,7 +129,7 @@ and additive extension maps because their support does not vary by adapter:
 | `models.<role>.model` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes; passed to OpenCode | Yes; must exist in the Pi catalog | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes; OpenAI-compatible Chat Completions endpoint | Yes; known catalog models only | No; use `harness.settings.base_url` |
-| `models.<role>.api` | `anthropic-messages` | `openai-responses` | `openai-completions` for OpenAI-compatible providers; `anthropic-messages` for `anthropic` | Any; maps to Hermes `api_mode` | `openai-completions` with `openai` | `openai-completions` or `openai-responses`; maps to `client_type` | No | No | No | No |
+| `models.<role>.api` | `anthropic-messages` | `openai-responses` | `openai-completions` for OpenAI-compatible providers; `anthropic-messages` for `anthropic` | Any; maps to Hermes `api_mode` | `openai-completions` with `openai`; the model can be qualified only with `openai/` | `openai-completions` or `openai-responses`; maps to `client_type` | No | No | No | No |
 | `models.<role>.temperature` | No | No | Yes | Yes | Yes | Yes | Yes | Yes: OpenAI-compatible `base_url` only | No | Yes |
 | `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared | `client_type` | No keys declared | No keys declared | No keys declared | `max_tokens` for Anthropic Messages |
 | `models.<role>.top_p` | No | No | Yes | Yes | Yes: passed through LiteLLM | No | Yes | Yes: OpenAI-compatible `base_url` only | No | Yes: translated to the selected API protocol |

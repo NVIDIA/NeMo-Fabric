@@ -436,3 +436,32 @@ def test_equivalent_default_model_alias_is_accepted():
     model = {"provider": "openai", "model": "test"}
     config = AgentConfig.from_mapping({"models": {"default": model, "primary": model}})
     assert bench_adapter._selected_model_role(config) == "default"
+
+
+@pytest.mark.parametrize(
+    "descriptor", ["nooa-bench.fabric-adapter.json", "nooa.fabric-adapter.json"]
+)
+def test_model_schema_rejects_a_client_type_that_contradicts_the_model_api(
+    repo_root: Path, descriptor: str
+):
+    import jsonschema
+
+    schema = json.loads(
+        (repo_root / "adapters/python/nooa" / descriptor).read_text(encoding="utf-8")
+    )["model_schema"]
+    validator = jsonschema.Draft202012Validator(schema)
+    model = {"provider": "openai", "model": "test"}
+    for api, client_type in [
+        ("openai-completions", "completion"),
+        ("openai-responses", "responses"),
+    ]:
+        assert validator.is_valid(
+            {**model, "api": api, "settings": {"client_type": client_type}}
+        )
+    assert validator.is_valid({**model, "settings": {"client_type": "responses"}})
+    assert not validator.is_valid(
+        {**model, "api": "openai-completions", "settings": {"client_type": "responses"}}
+    )
+    assert not validator.is_valid(
+        {**model, "api": "openai-responses", "settings": {"client_type": "completion"}}
+    )
