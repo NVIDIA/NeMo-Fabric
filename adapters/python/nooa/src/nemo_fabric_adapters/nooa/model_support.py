@@ -81,6 +81,9 @@ def selected_model(models: Mapping[str, Any], *, target_name: str) -> Any:
     )
 
 
+CLIENT_TYPES = {"openai-completions": "completion", "openai-responses": "responses"}
+
+
 async def build_models(config: AgentConfig) -> dict[str, Any]:
     """Translate normalized Fabric model roles into OO Agents clients."""
 
@@ -106,30 +109,8 @@ async def build_models(config: AgentConfig) -> dict[str, Any]:
                     field=f"models.{role}.api_key_env",
                 )
             settings = dict(model.settings)
-            client_type = settings.pop("client_type", None)
-            api = model.api
-            if api is not None:
-                native_type = {
-                    "openai-completions": "completion",
-                    "openai-responses": "responses",
-                }.get(api)
-                if (
-                    native_type is None
-                    or model.provider not in {"openai", "nvidia"}
-                    or (api == "openai-responses" and model.provider != "openai")
-                ):
-                    raise _config_error(
-                        "nooa_invalid_model_protocol",
-                        "OO Agents model protocol does not match its provider",
-                        field=f"models.{role}.api",
-                    )
-                if client_type is not None and client_type != native_type:
-                    raise _config_error(
-                        "nooa_invalid_model_protocol",
-                        "OO Agents client_type conflicts with model api",
-                        field=f"models.{role}.settings.client_type",
-                    )
-                client_type = native_type
+            # model_schema ties a declared api to the matching client_type.
+            client_type = settings.pop("client_type", None) or CLIENT_TYPES.get(model.api)
             overrides: dict[str, Any] = {"api_key": api_key, **settings}
             if model.base_url is not None:
                 overrides["api_base"] = model.base_url

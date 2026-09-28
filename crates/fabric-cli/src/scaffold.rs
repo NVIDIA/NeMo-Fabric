@@ -430,40 +430,29 @@ mod tests {
     }
 
     #[test]
-    fn rust_models_keep_the_model_protocol() {
-        let mut model: ModelConfig = serde_json::from_value(serde_json::json!({
-            "provider": "openai",
-            "model": "fixture",
-            "api": "openai-responses"
-        }))
-        .expect("model");
-        assert!(
-            rust_models(Some(&model))
-                .contains("api: Some(nemo_fabric_core::ModelApi::OpenaiResponses)")
-        );
-        model.api = None;
+    fn rust_models_write_the_model_protocol_as_a_model_api_path() {
+        use nemo_fabric_core::ModelApi::*;
+        let mut model: ModelConfig =
+            serde_json::from_value(serde_json::json!({"provider": "openai", "model": "m"}))
+                .unwrap();
         assert!(rust_models(Some(&model)).contains("api: None"));
-    }
-
-    #[test]
-    fn generated_model_protocols_name_exported_variants() {
-        // The scaffold writes each protocol with its Debug name, so every Debug
-        // name must be a variant path that generated code can compile.
-        for (api, variant) in [
+        // Naming every variant here keeps the written paths in step with the enum.
+        for (api, path) in [
             (
-                nemo_fabric_core::ModelApi::OpenaiCompletions,
-                "OpenaiCompletions",
+                OpenaiCompletions,
+                "nemo_fabric_core::ModelApi::OpenaiCompletions",
             ),
             (
-                nemo_fabric_core::ModelApi::OpenaiResponses,
-                "OpenaiResponses",
+                OpenaiResponses,
+                "nemo_fabric_core::ModelApi::OpenaiResponses",
             ),
             (
-                nemo_fabric_core::ModelApi::AnthropicMessages,
-                "AnthropicMessages",
+                AnthropicMessages,
+                "nemo_fabric_core::ModelApi::AnthropicMessages",
             ),
         ] {
-            assert_eq!(format!("{api:?}"), variant);
+            model.api = Some(api);
+            assert!(rust_models(Some(&model)).contains(&format!("api: Some({path})")));
         }
     }
 
