@@ -34,7 +34,7 @@ RUN python -m venv /opt/hermes-venv \
     && /opt/hermes-venv/bin/pip install --no-cache-dir \
         -e /opt/nemo-fabric/adapter-contract/python \
         -e /opt/nemo-fabric/adapters/python/common \
-        -e /opt/nemo-fabric/adapters/python/hermes \
+        -e '/opt/nemo-fabric/adapters/python/hermes[relay]' \
     && /opt/hermes-venv/bin/pip install --no-cache-dir \
         --config-settings editable_mode=compat -e /opt/hermes-agent
 
