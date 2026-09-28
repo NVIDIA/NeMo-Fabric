@@ -446,6 +446,28 @@ mod tests {
     }
 
     #[test]
+    fn generated_model_protocols_name_exported_variants() {
+        // The scaffold writes each protocol with its Debug name, so every Debug
+        // name must be a variant path that generated code can compile.
+        for (api, variant) in [
+            (
+                nemo_fabric_core::ModelApi::OpenaiCompletions,
+                "OpenaiCompletions",
+            ),
+            (
+                nemo_fabric_core::ModelApi::OpenaiResponses,
+                "OpenaiResponses",
+            ),
+            (
+                nemo_fabric_core::ModelApi::AnthropicMessages,
+                "AnthropicMessages",
+            ),
+        ] {
+            assert_eq!(format!("{api:?}"), variant);
+        }
+    }
+
+    #[test]
     fn generates_both_languages_from_the_same_example_assets_and_config() {
         let example = examples::find("code-review").expect("example");
         for language in [Language::Python, Language::Rust] {
