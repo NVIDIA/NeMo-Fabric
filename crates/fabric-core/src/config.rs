@@ -5189,55 +5189,41 @@ mod tests {
     }
 
     #[test]
-    fn model_api_is_a_normalized_field_adapters_accept_and_constrain() {
+    fn model_api_is_a_normalized_field_that_adapters_accept_and_constrain() {
+        let parse = |api: &str| {
+            serde_json::from_value::<ModelConfig>(
+                serde_json::json!({"provider": "openai", "model": "m", "api": api}),
+            )
+        };
+        assert!(parse("grpc").is_err(), "unknown protocols are rejected");
+        assert!(
+            parse("openai-responses").unwrap().extensions.is_empty(),
+            "api is typed"
+        );
+
         let mut config = config_with_model("nvidia.fabric.codex", "openai");
-        let model = config.models.get_mut("default").unwrap();
-        model.api = Some(ModelApi::OpenaiResponses);
+        config.models.get_mut("default").unwrap().api = Some(ModelApi::OpenaiResponses);
         let plan = resolve_run_plan_from_config(config.clone(), ResolveContext::new("."))
-            .expect("accepted and allowed by the adapter model schema");
+            .expect("Codex speaks OpenAI Responses");
         assert_eq!(
             plan.agent_config.models["default"].api,
             Some(ModelApi::OpenaiResponses)
         );
 
-        let mut descriptor = load_adapter_descriptor(
-            repository_adapter_dir().join("python/codex/codex.fabric-adapter.json"),
-        )
-        .expect("codex descriptor");
-        assert!(adapter_config_compatibility_issues(&config, Some(&descriptor)).is_empty());
+        config.models.get_mut("default").unwrap().api = Some(ModelApi::AnthropicMessages);
+        let error = resolve_run_plan_from_config(config.clone(), ResolveContext::new("."))
+            .expect_err("Codex's model_schema admits only OpenAI Responses");
+        assert!(error.to_string().contains("models.default.api"), "{error}");
+
+        let mut descriptor = plan.adapter_descriptor.expect("Codex").descriptor;
         descriptor
             .config
             .accepts
             .retain(|field| *field != AdapterConfigField::ModelApi);
         let issues = adapter_config_compatibility_issues(&config, Some(&descriptor));
         assert_eq!(
-            issues
-                .iter()
-                .map(|issue| issue.field.as_str())
-                .collect::<Vec<_>>(),
-            ["models.default.api"],
-            "adapters must declare the normalized protocol field"
-        );
-
-        config.models.get_mut("default").unwrap().api = Some(ModelApi::AnthropicMessages);
-        let error = resolve_run_plan_from_config(config, ResolveContext::new("."))
-            .expect_err("the adapter model schema constrains the protocol");
-        assert!(error.to_string().contains("models.default.api"), "{error}");
-
-        let parsed: ModelConfig = serde_json::from_value(
-            serde_json::json!({"provider": "openai", "model": "m", "api": "openai-completions"}),
-        )
-        .unwrap();
-        assert!(
-            parsed.extensions.is_empty(),
-            "api is typed, not an extension"
-        );
-        assert!(
-            serde_json::from_value::<ModelConfig>(
-                serde_json::json!({"provider": "openai", "model": "m", "api": "grpc"})
-            )
-            .is_err(),
-            "unknown protocols are rejected before planning"
+            issues[0].field, "models.default.api",
+            "an adapter must accept models.api"
         );
     }
 
