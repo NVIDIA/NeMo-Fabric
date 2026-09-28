@@ -57,41 +57,21 @@ def interface_settings(settings: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def configuration_matches(home: Path, native: dict[str, Any]) -> bool:
-    """Whether every section that FabricConfig determines is unchanged on disk.
+def _open_private(path: Path, mode: str) -> Any:
+    """Open path for writing, readable only by its owner."""
 
-    A configured section missing from native must also be missing on disk, so
-    removing a setting cannot leave its retained section in effect.
-    """
-
-    actual = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
-    return isinstance(actual, dict) and all(
-        actual.get(key) == native.get(key)
-        for key in configuration.CONFIGURED_SECTIONS | native.keys()
-    )
+    output = open(path, mode, opener=lambda name, flags: os.open(name, flags, 0o600))
+    path.chmod(0o600)  # A file retained from an earlier runtime keeps its mode.
+    return output
 
 
-def _initialize(home: Path, native: dict[str, Any]) -> None:
-    """Write native configuration and its credential once, or verify them."""
+def _write_config(home: Path, native: dict[str, Any]) -> None:
+    """Write config.yaml, regenerated at each start, and ensure its credential."""
 
     home.mkdir(parents=True, mode=0o700, exist_ok=True)
-    path = home / "config.yaml"
-    if path.exists():
-        interface_token(home)
-        if not configuration_matches(home, native):
-            raise lifecycle.LifecycleError(
-                "hermes_configuration_conflict",
-                "Retained Hermes configuration conflicts with NeMo Fabric-owned settings",
-                metadata={"state_dir": str(home)},
-            )
-        return
     interface_token(home, create=True)
-    with open(
-        path, "x", encoding="utf-8", opener=lambda name, flags: os.open(name, flags, 0o600)
-    ) as output:
+    with _open_private(home / "config.yaml", "w") as output:
         yaml.safe_dump(native, output, sort_keys=False)
-        output.flush()
-        os.fsync(output.fileno())
 
 
 def api_request(
@@ -124,10 +104,8 @@ def api_request(
     return json.loads(raw)
 
 
-def _healthy(home: Path, interfaces: dict[str, Any], native: dict[str, Any]) -> bool:
+def _healthy(home: Path, interfaces: dict[str, Any]) -> bool:
     try:
-        if not configuration_matches(home, native):
-            return False
         models = api_request(home, interfaces["apiPort"], "/v1/models")
         if models["data"][0]["id"] != MODEL_NAME:
             return False
@@ -135,8 +113,6 @@ def _healthy(home: Path, interfaces: dict[str, Any], native: dict[str, Any]) -> 
         if not dashboard["enabled"]:
             return True
         dashboard_home = home / DASHBOARD_HOME
-        if not configuration_matches(dashboard_home, native):
-            return False
         request = urllib.request.Request(
             f"http://127.0.0.1:{dashboard['port']}/api/sessions?limit=1",
             headers={"X-Hermes-Session-Token": interface_token(dashboard_home)},
@@ -188,9 +164,6 @@ class HermesApiServerRuntime:
             else configuration.runtime_home(context, base_dir)
         )
         relay_enabled = bool(context.telemetry and context.telemetry.relay_enabled)
-        self._native = configuration.build_hermes_config(
-            config, workspace=workspace, relay_enabled=relay_enabled
-        )
         model = configuration._selected_model(config)
         api_key_env = configuration._api_key_env(model)
         if not os.environ.get(api_key_env):
@@ -200,20 +173,23 @@ class HermesApiServerRuntime:
             )
         import fcntl
 
-        self.home.mkdir(parents=True, mode=0o700, exist_ok=True)
-        self._state_lock = (self.home / "adapter.lock").open("a")
         try:
+            self.home.mkdir(parents=True, mode=0o700, exist_ok=True)
+            self._state_lock = (self.home / "adapter.lock").open("a")
             try:
                 fcntl.flock(self._state_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
+            except BlockingIOError:
                 raise lifecycle.LifecycleError(
                     "hermes_state_in_use",
                     "Hermes native state is in use by another runtime",
                     metadata={"state_dir": str(self.home)},
                 ) from None
-            _initialize(self.home, self._native)
+            native = configuration.build_hermes_config(
+                config, workspace=workspace, relay_enabled=relay_enabled
+            )
+            _write_config(self.home, native)
             if self._interfaces["dashboard"]["enabled"]:
-                _initialize(self.home / DASHBOARD_HOME, self._native)
+                _write_config(self.home / DASHBOARD_HOME, native)
             env = dict(
                 os.environ,
                 HERMES_HOME=str(self.home),
@@ -227,13 +203,7 @@ class HermesApiServerRuntime:
                 env["OPENAI_BASE_URL"] = model.base_url
             if relay_enabled:
                 self._configure_relay(payload, config, env)
-            self._log = open(
-                self.home / "api.log",
-                "ab",
-                opener=lambda name, flags: os.open(name, flags, 0o600),
-            )
-            # A log retained from an earlier runtime keeps its old mode.
-            os.fchmod(self._log.fileno(), 0o600)
+            self._log = _open_private(self.home / "api.log", "ab")
             self.process = await asyncio.create_subprocess_exec(
                 sys.executable,
                 __file__,
@@ -275,7 +245,7 @@ class HermesApiServerRuntime:
                     metadata={"log": str(self.home / "api.log")},
                 )
             if await asyncio.to_thread(
-                _healthy, self.home, self._interfaces, self._native
+                _healthy, self.home, self._interfaces
             ):
                 return
             await asyncio.sleep(0.1)
@@ -300,11 +270,6 @@ class HermesApiServerRuntime:
             if not isinstance(request.input, str):
                 raise lifecycle.LifecycleError(
                     "hermes_unsupported_input", "Hermes requires a text prompt"
-                )
-            if not configuration_matches(self.home, self._native):
-                raise lifecycle.LifecycleError(
-                    "hermes_configuration_drift",
-                    "Hermes configuration changed outside NeMo Fabric",
                 )
             body: dict[str, Any] = {
                 "model": MODEL_NAME,
