@@ -14,6 +14,7 @@
       "temperature": {"type": "number"},
       "api_key_env": {"type": "string", "minLength": 1},
       "base_url": {"type": "string", "minLength": 1},
+      "api": {"enum": ["openai-responses"]},
       "settings": {
         "type": "object",
         "properties": {},
@@ -100,6 +101,7 @@
     "accepts": [
       "models",
       "models.base_url",
+      "models.api",
       "instructions.system",
       "mcp",
       "mcp.auth.oauth2",

@@ -38,6 +38,10 @@ Any other provider is constructed through
 `langchain.chat_models.init_chat_model`, so LangChain-supported backends do not
 require adapter-specific branches.
 
+The optional `models.<role>.api` field must match the provider: use
+`openai-completions` with `openai`, `nvidia`, or `openai-compatible`, and
+`anthropic-messages` with `anthropic`. Planning rejects other combinations.
+
 `models.<role>.api_key_env` names the environment variable holding the API key,
 and defaults to `OPENAI_API_KEY` only for the native `openai` provider. Every
 other provider must set `api_key_env` explicitly (a missing one is a normalized

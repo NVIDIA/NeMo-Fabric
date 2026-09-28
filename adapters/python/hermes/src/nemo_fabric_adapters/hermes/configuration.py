@@ -17,6 +17,13 @@ from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 import nemo_fabric_adapters.common.utils as common_utils
 
 
+# Normalized model protocols and the Hermes api_mode that implements each.
+HERMES_API_MODES = {
+    "openai-completions": "chat_completions",
+    "openai-responses": "codex_responses",
+    "anthropic-messages": "anthropic_messages",
+}
+
 PROVIDER_DEFAULT_API_KEY_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
     "nvidia": "NVIDIA_API_KEY",
@@ -70,6 +77,13 @@ def _api_key_env(model_config: AgentModelConfig) -> str:
     return default
 
 
+def api_mode(config: AgentConfig) -> str | None:
+    """Hermes api_mode for the selected model, or None to let Hermes infer it."""
+
+    api = _selected_model(config).api
+    return None if api is None else HERMES_API_MODES[api]
+
+
 def disabled_toolsets(config: AgentConfig) -> list[str]:
     return config.tools.blocked if config.tools is not None else []
 
@@ -93,6 +107,7 @@ def build_hermes_config(
                 "provider": model_config.provider,
                 "default": model_config.model,
                 "base_url": model_config.base_url,
+                "api_mode": api_mode(agent_config),
             }
         ),
         "agent": common_utils.without_none(

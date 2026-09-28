@@ -188,6 +188,7 @@ def test_bench_descriptor_is_a_closed_harness_adapter(tmp_path: Path):
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",
+        "models.api",
         "models.temperature",
         "instructions.system",
     ]
@@ -429,3 +430,9 @@ def test_bench_persistent_host_runs_start_invoke_stop(tmp_path: Path):
         "total_tokens": 16,
     }
     assert (workspace / "bench-agent-result.txt").is_file()
+
+
+def test_equivalent_default_model_alias_is_accepted():
+    model = {"provider": "openai", "model": "test"}
+    config = AgentConfig.from_mapping({"models": {"default": model, "primary": model}})
+    assert bench_adapter._selected_model_role(config) == "default"

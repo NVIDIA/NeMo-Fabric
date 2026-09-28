@@ -46,7 +46,8 @@ includes the NeMo Relay Python package.
 The adapter receives a normalized payload from NeMo Fabric and materializes a native Hermes Agent configuration for:
 
 - selected model provider, model name, base URL, temperature, `top_p`, and
-  per-model `max_tokens` through `models`;
+  per-model `max_tokens` through `models`, with `models.<role>.api` selecting
+  the Hermes `api_mode`;
 - replacement `instructions.system` and `runtime.max_turns`;
 - workspace and explicit environment variables through `environment`;
 - invocation timeout through `runtime.timeout_seconds`;

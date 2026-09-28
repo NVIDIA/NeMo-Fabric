@@ -130,6 +130,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",
+        "models.api",
         "models.temperature",
         "models.top_p",
         "models.max_tokens",
@@ -1390,6 +1391,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         base_url=None,
         api_key="secret",
         provider="test-provider",
+        api_mode=None,
         model="test-model",
         max_iterations=90,
         enabled_toolsets=[],

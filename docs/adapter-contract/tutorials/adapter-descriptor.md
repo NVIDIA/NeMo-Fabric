@@ -247,3 +247,15 @@ Review the canonical schema for exact fields, defaults, and constraints.
 </Card>
 
 </CardGroup>
+
+## Model Protocols
+
+`models.<role>.api` is a normalized field for the wire protocol of the model
+endpoint: `openai-completions`, `openai-responses`, or `anthropic-messages`.
+Declare `models.api` in `config.accepts` when the adapter maps it to native
+provider configuration; the value reaches the adapter as `AgentModelConfig.api`.
+Because `model_schema` validates normalized model fields together, an adapter
+can restrict the protocols it speaks and the provider and protocol
+combinations it supports. For example, a harness that only speaks Anthropic
+Messages declares `"api": {"enum": ["anthropic-messages"]}`. Consumers set the
+protocol once and do not translate it per harness.

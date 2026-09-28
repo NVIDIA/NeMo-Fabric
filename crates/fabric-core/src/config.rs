@@ -852,6 +852,9 @@ pub enum AdapterConfigField {
     /// Custom model endpoint.
     #[serde(rename = "models.base_url")]
     ModelBaseUrl,
+    /// Model endpoint wire protocol.
+    #[serde(rename = "models.api")]
+    ModelApi,
     /// Model temperature.
     #[serde(rename = "models.temperature")]
     ModelTemperature,
@@ -961,6 +964,18 @@ pub enum AdapterKind {
     NativePlugin,
 }
 
+/// Wire protocol spoken by a model endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ModelApi {
+    /// OpenAI Chat Completions.
+    OpenaiCompletions,
+    /// OpenAI Responses.
+    OpenaiResponses,
+    /// Anthropic Messages.
+    AnthropicMessages,
+}
+
 /// Model configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ModelConfig {
@@ -989,6 +1004,12 @@ pub struct ModelConfig {
     /// Optional provider endpoint URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
+    /// Optional wire protocol spoken by the model endpoint.
+    ///
+    /// Adapters that accept `models.api` map it to their native provider
+    /// configuration; their `model_schema` can restrict the supported values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api: Option<ModelApi>,
     /// Provider-specific settings.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub settings: serde_json::Map<String, Value>,
@@ -2671,6 +2692,12 @@ pub(crate) fn adapter_config_compatibility_issues(
                 "the adapter does not declare custom endpoint support".to_string(),
             ));
         }
+        if model.api.is_some() && !accepts(AdapterConfigField::ModelApi) {
+            issues.push(incompatible(
+                format!("models.{role}.api"),
+                "the adapter does not declare an equivalent native mapping".to_string(),
+            ));
+        }
         if model.temperature.is_some() && !accepts(AdapterConfigField::ModelTemperature) {
             issues.push(incompatible(
                 format!("models.{role}.temperature"),
@@ -4166,6 +4193,7 @@ mod tests {
                 max_tokens: None,
                 api_key_env: None,
                 base_url: None,
+                api: None,
                 settings: serde_json::Map::new(),
                 extensions: BTreeMap::new(),
             },
@@ -5161,6 +5189,59 @@ mod tests {
     }
 
     #[test]
+    fn model_api_is_a_normalized_field_adapters_accept_and_constrain() {
+        let mut config = config_with_model("nvidia.fabric.codex", "openai");
+        let model = config.models.get_mut("default").unwrap();
+        model.api = Some(ModelApi::OpenaiResponses);
+        let plan = resolve_run_plan_from_config(config.clone(), ResolveContext::new("."))
+            .expect("accepted and allowed by the adapter model schema");
+        assert_eq!(
+            plan.agent_config.models["default"].api,
+            Some(ModelApi::OpenaiResponses)
+        );
+
+        let mut descriptor = load_adapter_descriptor(
+            repository_adapter_dir().join("python/codex/codex.fabric-adapter.json"),
+        )
+        .expect("codex descriptor");
+        assert!(adapter_config_compatibility_issues(&config, Some(&descriptor)).is_empty());
+        descriptor
+            .config
+            .accepts
+            .retain(|field| *field != AdapterConfigField::ModelApi);
+        let issues = adapter_config_compatibility_issues(&config, Some(&descriptor));
+        assert_eq!(
+            issues
+                .iter()
+                .map(|issue| issue.field.as_str())
+                .collect::<Vec<_>>(),
+            ["models.default.api"],
+            "adapters must declare the normalized protocol field"
+        );
+
+        config.models.get_mut("default").unwrap().api = Some(ModelApi::AnthropicMessages);
+        let error = resolve_run_plan_from_config(config, ResolveContext::new("."))
+            .expect_err("the adapter model schema constrains the protocol");
+        assert!(error.to_string().contains("models.default.api"), "{error}");
+
+        let parsed: ModelConfig = serde_json::from_value(
+            serde_json::json!({"provider": "openai", "model": "m", "api": "openai-completions"}),
+        )
+        .unwrap();
+        assert!(
+            parsed.extensions.is_empty(),
+            "api is typed, not an extension"
+        );
+        assert!(
+            serde_json::from_value::<ModelConfig>(
+                serde_json::json!({"provider": "openai", "model": "m", "api": "grpc"})
+            )
+            .is_err(),
+            "unknown protocols are rejected before planning"
+        );
+    }
+
+    #[test]
     fn resolves_complete_typed_config_with_explicit_base_dir() {
         let base_dir = repository_root();
         let plan = resolve_run_plan_from_config(
@@ -5327,6 +5408,7 @@ mod tests {
                 max_tokens: Some(512),
                 api_key_env: Some("NVIDIA_API_KEY".to_string()),
                 base_url: Some("https://models.example/v1".to_string()),
+                api: None,
                 settings: serde_json::Map::new(),
                 extensions: BTreeMap::new(),
             },
@@ -5544,6 +5626,7 @@ mod tests {
                     max_tokens: None,
                     api_key_env: None,
                     base_url: None,
+                    api: None,
                     settings: serde_json::Map::new(),
                     extensions: BTreeMap::new(),
                 },
@@ -5558,6 +5641,7 @@ mod tests {
                     max_tokens: None,
                     api_key_env: None,
                     base_url: None,
+                    api: None,
                     settings: serde_json::Map::new(),
                     extensions: BTreeMap::new(),
                 },
@@ -5593,6 +5677,7 @@ mod tests {
                 max_tokens: None,
                 api_key_env: None,
                 base_url: None,
+                api: None,
                 settings: serde_json::Map::new(),
                 extensions: BTreeMap::new(),
             },
@@ -5607,6 +5692,7 @@ mod tests {
                 max_tokens: None,
                 api_key_env: None,
                 base_url: Some("https://example.test/v1".to_string()),
+                api: None,
                 settings: serde_json::Map::new(),
                 extensions: BTreeMap::new(),
             },
@@ -5672,6 +5758,7 @@ mod tests {
                     max_tokens: None,
                     api_key_env: None,
                     base_url: None,
+                    api: None,
                     settings: serde_json::Map::new(),
                     extensions: BTreeMap::new(),
                 },
@@ -5928,6 +6015,7 @@ mod tests {
                 max_tokens: None,
                 api_key_env: None,
                 base_url: None,
+                api: None,
                 settings: serde_json::Map::new(),
                 extensions: BTreeMap::new(),
             },
@@ -5951,6 +6039,7 @@ mod tests {
                     max_tokens: None,
                     api_key_env: None,
                     base_url: None,
+                    api: None,
                     settings: serde_json::Map::new(),
                     extensions: BTreeMap::new(),
                 },

@@ -166,6 +166,17 @@
       "additionalProperties": false,
       "description": "Configuration for one named model role projected to an adapter target.",
       "properties": {
+        "api": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelApi"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional wire protocol spoken by the model endpoint."
+        },
         "api_key_env": {
           "description": "Environment variable containing the provider credential.",
           "type": [
@@ -539,6 +550,26 @@
             "token_url"
           ],
           "type": "object"
+        }
+      ]
+    },
+    "ModelApi": {
+      "description": "Wire protocol spoken by a model endpoint.",
+      "oneOf": [
+        {
+          "const": "openai-completions",
+          "description": "OpenAI Chat Completions.",
+          "type": "string"
+        },
+        {
+          "const": "openai-responses",
+          "description": "OpenAI Responses.",
+          "type": "string"
+        },
+        {
+          "const": "anthropic-messages",
+          "description": "Anthropic Messages.",
+          "type": "string"
         }
       ]
     },

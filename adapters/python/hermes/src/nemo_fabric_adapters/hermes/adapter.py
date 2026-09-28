@@ -188,6 +188,7 @@ class HermesRuntime:
                         base_url=model_config.base_url,
                         api_key=api_key,
                         provider=model_config.provider,
+                        api_mode=configuration.api_mode(agent_config),
                         model=model_config.model,
                         max_iterations=int(max_iterations),
                         enabled_toolsets=self._enabled_toolsets,

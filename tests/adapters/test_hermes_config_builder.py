@@ -68,3 +68,21 @@ def test_write_hermes_config_round_trips_without_pyyaml(
     )
 
     assert json.loads(config_path.read_text(encoding="utf-8")) == config
+
+
+@pytest.mark.parametrize(
+    ("api", "api_mode"),
+    [
+        ("openai-completions", "chat_completions"),
+        ("openai-responses", "codex_responses"),
+        ("anthropic-messages", "anthropic_messages"),
+        (None, None),
+    ],
+)
+def test_model_api_selects_the_hermes_api_mode(api, api_mode):
+    model = {"provider": "openai", "model": "test-model"}
+    if api is not None:
+        model["api"] = api
+    config = AgentConfig.from_mapping({"models": {"default": model}})
+    native = configuration.build_hermes_config(config, workspace=".")
+    assert native["model"].get("api_mode") == api_mode

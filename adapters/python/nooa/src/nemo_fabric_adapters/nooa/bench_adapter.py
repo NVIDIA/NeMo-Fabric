@@ -55,7 +55,7 @@ def _agent_config(payload: dict[str, Any]) -> AgentConfig:
 
 def _selected_model_role(config: AgentConfig) -> str:
     if "default" in config.models:
-        if len(config.models) != 1:
+        if any(model != config.models["default"] for model in config.models.values()):
             raise _config_error(
                 "nooa_bench_invalid_models",
                 "OO Agents BenchAgent accepts exactly one model role",

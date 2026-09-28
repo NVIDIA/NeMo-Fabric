@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import typing
 from dataclasses import fields
 from dataclasses import is_dataclass
 from pathlib import Path
@@ -397,6 +398,7 @@ def test_agent_config_dataclasses_track_rust_schema_block_fields():
         {
             "InstructionMode",
             "McpAuthenticationConfig",
+            "ModelApi",
             "OAuthTokenEndpointAuthMethod",
         }
     )
@@ -404,6 +406,22 @@ def test_agent_config_dataclasses_track_rust_schema_block_fields():
         assert {item.name for item in fields(model)} == set(
             rust_schema["$defs"][name]["properties"]
         )
+
+
+def test_model_api_literals_track_rust_schema():
+    rust_schema = json.loads(
+        (ROOT / "schemas/adapter-contract/agent-config.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    definition = rust_schema["$defs"]["ModelApi"]
+    values = set(definition.get("enum", [])) | {
+        variant["const"] for variant in definition.get("oneOf", [])
+    }
+    annotation = typing.get_type_hints(AgentModelConfig)["api"]
+    literal = next(arg for arg in typing.get_args(annotation) if arg is not type(None))
+
+    assert set(typing.get_args(literal)) == values
 
 
 def test_mcp_authentication_dataclasses_track_rust_schema_variants():
