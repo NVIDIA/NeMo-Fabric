@@ -6,6 +6,9 @@ import urllib.error
 import urllib.request
 
 
+MAX_SEARCH_RESULTS = 20
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -49,6 +52,7 @@ class Tavily:
 
     def search(self, query, limit=5):
         try:
+            limit = min(max(int(limit), 1), MAX_SEARCH_RESULTS)
             response = self._request("/search", {"query": query, "max_results": limit})
             return {
                 "success": True,
@@ -70,17 +74,22 @@ class Tavily:
     def extract(self, urls, **kwargs):
         try:
             response = self._request("/extract", {"urls": urls})
-            return [
-                {
+            extracted = {
+                item["url"]: {
                     "url": item["url"],
                     "title": item.get("title", item["url"]),
                     "content": item["raw_content"],
                     "raw_content": item["raw_content"],
                 }
                 for item in response["results"]
-            ] + [
-                {"url": item["url"], "error": "Tavily could not extract this URL"}
-                for item in response.get("failed_results", [])
+            }
+            # One entry per requested URL, in request order; a URL Tavily did
+            # not return is reported as a failure without its error text.
+            return [
+                extracted.get(
+                    url, {"url": url, "error": "Tavily could not extract this URL"}
+                )
+                for url in urls
             ]
         except (ValueError, KeyError, TypeError):
             return [{"url": url, "error": "Tavily extraction failed"} for url in urls]

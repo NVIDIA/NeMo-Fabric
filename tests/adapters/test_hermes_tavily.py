@@ -141,3 +141,37 @@ class TavilyRequests(unittest.TestCase):
                 result, {"success": False, "error": "Tavily search failed"}
             )
             self.assertEqual(opener.return_value.open.call_count, 1)
+
+    def _call(self, method, response, *args, **kwargs):
+        with (
+            patch.dict(os.environ, {"TAVILY_API_KEY": "fixture-placeholder"}),
+            patch.object(tavily.urllib.request, "build_opener") as opener,
+        ):
+            opener.return_value.open.return_value = io.BytesIO(
+                json.dumps(response).encode()
+            )
+            result = getattr(tavily.Tavily(), method)(*args, **kwargs)
+            return result, json.loads(opener.return_value.open.call_args.args[0].data)
+
+    def test_search_limits_are_clamped_to_the_supported_range(self):
+        for limit, expected in [(0, 1), (-3, 1), (5, 5), (50, 20)]:
+            with self.subTest(limit=limit):
+                result, body = self._call("search", {"results": []}, "q", limit=limit)
+                self.assertTrue(result["success"])
+                self.assertEqual(body["max_results"], expected)
+
+    def test_extraction_results_follow_the_requested_order(self):
+        urls = ["https://a.example", "https://b.example", "https://c.example"]
+        response = {
+            "results": [
+                {"url": "https://c.example", "raw_content": "C"},
+                {"url": "https://a.example", "raw_content": "A"},
+            ],
+            "failed_results": [],
+        }
+        result, _ = self._call("extract", response, urls)
+        self.assertEqual([entry["url"] for entry in result], urls)
+        self.assertEqual(result[0]["content"], "A")
+        self.assertEqual(result[2]["content"], "C")
+        self.assertEqual(result[1]["error"], "Tavily could not extract this URL")
+
