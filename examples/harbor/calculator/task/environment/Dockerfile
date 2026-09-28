@@ -27,6 +27,17 @@ RUN pip install --no-cache-dir \
         -e /opt/nemo-fabric/adapters/python/openclaw \
         -e "/opt/nemo-fabric/sdk/python/nemo-fabric[claude,hermes-agent,openclaw,relay]"
 
+# Released Hermes requires Relay 0.8.x; keep it outside Fabric's Relay 0.9 env.
+RUN python -m venv /opt/hermes-venv \
+    && git clone https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
+    && git -C /opt/hermes-agent checkout --detach e3dd27ee2d8b011737a4eea8e3eb3d711ab78690 \
+    && /opt/hermes-venv/bin/pip install --no-cache-dir \
+        -e /opt/nemo-fabric/adapter-contract/python \
+        -e /opt/nemo-fabric/adapters/python/common \
+        -e /opt/nemo-fabric/adapters/python/hermes \
+    && /opt/hermes-venv/bin/pip install --no-cache-dir \
+        --config-settings editable_mode=compat -e /opt/hermes-agent
+
 COPY calculator.py /app/calculator.py
 COPY fabric /opt/fabric-calculator
 

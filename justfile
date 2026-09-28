@@ -351,18 +351,13 @@ install-typescript-opencode: install-typescript-contract
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters
 
-# Install the Hermes Agent into the Fabric virtualenv for local development
-# and testing.
-# Hermes Agent no longer publishes a PyPI package, so we need to install it
-# from source.
-# The documented https://hermes-agent.nousresearch.com/install.sh script is
-# tied directly to Python 3.11, we also want to ensure that we are installing
-# into our Fabric virtualenv
-# 47edd6455bbb66ac94e00be0ca3e888680f02882 is the head of NousResearch/hermes-agent#115343 (Relay 0.9 support on Hermes 0.21.3).
+# Install the released Hermes Agent in an isolated environment. Hermes
+# v2026.9.24 requires Relay 0.8.x, while the main Fabric environment uses 0.9.
+# Its normal adapter behavior is tested here; Relay telemetry is unavailable.
 install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
-    hermes_commit="47edd6455bbb66ac94e00be0ca3e888680f02882"
+    hermes_commit="e3dd27ee2d8b011737a4eea8e3eb3d711ab78690"
     hermes_checkout="$REPO_ROOT/external/hermes-agent"
     hermes_diff_pathspec=()
 
@@ -386,14 +381,29 @@ install-hermes-agent:
             echo "ERROR: Hermes Agent checkout has tracked changes at an unpinned revision: $hermes_checkout" >&2
             exit 1
         fi
-        git -C "$hermes_checkout" fetch --depth 1 origin "$hermes_commit"
-        git -C "$hermes_checkout" checkout --quiet --detach FETCH_HEAD
+        if ! git -C "$hermes_checkout" cat-file -e "$hermes_commit^{commit}" 2>/dev/null; then
+            git -C "$hermes_checkout" fetch --depth 1 origin "$hermes_commit"
+        fi
+        git -C "$hermes_checkout" checkout --quiet --detach "$hermes_commit"
     fi
     if ! git -C "$hermes_checkout" diff --cached --quiet || ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
         echo "ERROR: Hermes Agent checkout has tracked changes: $hermes_checkout" >&2
         exit 1
     fi
-    uv sync --inexact --reinstall-package hermes-agent
+    if [[ ! -x "$REPO_ROOT/.venv-hermes/bin/python" ]]; then
+        uv venv --python "${UV_PYTHON:-3.12}" "$REPO_ROOT/.venv-hermes"
+    fi
+    uv pip install --python "$REPO_ROOT/.venv-hermes/bin/python" \
+        --editable "$REPO_ROOT/adapter-contract/python" \
+        --editable "$REPO_ROOT/adapters/python/common" \
+        --editable "$REPO_ROOT/adapters/python/hermes" \
+        --editable "$REPO_ROOT/sdk/python/nemo-fabric-runtime" \
+        --editable "$REPO_ROOT/sdk/python/nemo-fabric" \
+        --config-settings-package hermes-agent:editable_mode=compat \
+        --editable "$hermes_checkout" pytest pytest-asyncio
+
+test-hermes: install-hermes-agent
+    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py -q -k 'not relay or rejects_relay'
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript

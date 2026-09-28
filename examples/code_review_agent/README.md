@@ -21,6 +21,7 @@ language packages, and then install the pinned Hermes Agent source:
 ```bash
 just build-all
 just install-hermes-agent
+export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
 ```
 
 Set `NVIDIA_API_KEY`, then run the example:
@@ -129,8 +130,9 @@ harness supports.
 Codex and Claude omit the default code-review skill; add
 `--skill-path ./skills/code-review` to retain it. Relay configurations for
 Codex, Claude, and Pi require a NeMo Relay CLI in the `>=0.9,<0.10` range.
-Pi also requires its Relay Pi extension. Hermes Agent and Deep Agents require
-the `nemo-relay>=0.9,<0.10` Python package.
+Pi also requires its Relay Pi extension. Deep Agents requires the
+`nemo-relay>=0.9,<0.10` Python package. Hermes Relay telemetry is temporarily
+unavailable.
 Additional requirements appear in the corresponding subsections.
 
 For example, after installing Deep Agents, this command keeps the default skill
@@ -148,7 +150,8 @@ and Relay configuration while changing the harness:
 
 Hermes Agent is the baseline used by the default demo. Specify the variant only
 when an explicit configuration is useful, such as `--variant hermes --plan`.
-Hermes supports the example's skills, MCP, and Relay configurations.
+Hermes supports the example's skills and MCP configurations. Run it without
+`--relay` while Hermes Relay telemetry is unavailable.
 
 ### Codex (`codex`)
 

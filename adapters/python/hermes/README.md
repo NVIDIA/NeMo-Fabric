@@ -21,25 +21,24 @@ provides. None of these expressions installs Hermes Agent:
 | Installation | Runtime | Adapter | Harness | NeMo Relay Python Package |
 | --- | --- | --- | --- | --- |
 | `pip install nemo-fabric nemo-fabric-adapters-hermes` | Yes | Yes | No | No |
-| `pip install "nemo-fabric[relay]" nemo-fabric-adapters-hermes` | Yes | Yes | No | Yes |
-| `pip install "nemo-fabric-adapters-hermes[full]"` | No | Yes | No | Yes |
-| `pip install "nemo-fabric-adapters-hermes[relay]"` | No | Yes | No | Yes |
+| `pip install "nemo-fabric-adapters-hermes[full]"` | No | Yes | No | No |
 | `pip install nemo-fabric-adapters-hermes` | No | Yes | No | No |
 
-For local development from this repository, check out and install the pinned
-Hermes Agent source into the project environment:
+Hermes Agent v2026.9.24 requires Relay 0.8.x. Keep it in a separate Python
+environment from NeMo Fabric Relay 0.9 integrations. For local development,
+create an isolated environment with the pinned released Hermes source:
 
 ```bash
 just install-hermes-agent
+export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
 ```
 
 For split runtime and adapter environments, configure `ADAPTER_PYTHON` and use
 matching NeMo Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-Relay is optional for ordinary runs. Relay telemetry and
-`Runtime.invoke_stream()` require one of the installations in the table that
-includes the NeMo Relay Python package.
+Hermes Relay telemetry and `Runtime.invoke_stream()` are temporarily
+unavailable. Ordinary `Runtime.invoke()` calls remain supported.
 
 ## What It Maps
 
@@ -54,7 +53,6 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 - NeMo Fabric MCP servers as Hermes Agent MCP server config;
 - `tools.enabled` and `tools.blocked` as Hermes-native toolset selection and
   blocking policy;
-- optional NeMo Relay telemetry plugin configuration.
 
 Tool selectors are Hermes toolset names because that is the native policy
 surface Hermes exposes.
@@ -71,7 +69,7 @@ The descriptor validates the following `harness.settings` fields:
 | Setting | Type | Default | Description |
 | --- | --- | --- | --- |
 | `reasoning_config` | object | `{"effort": "none"}` | Configures Hermes model reasoning. The closed object accepts an optional `enabled` boolean and an optional `effort` value of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
-| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. NeMo Fabric adds `observability/nemo_relay` when Relay telemetry is enabled. |
+| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. |
 | `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
 | `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
@@ -108,12 +106,7 @@ Each NeMo Fabric runtime starts one local adapter host, constructs one Hermes Ag
 `AIAgent`, and opens one `SessionDB`. Ordered `Runtime.invoke(...)` calls reuse
 those native objects and pass the prior turn's returned transcript back to
 `run_conversation(...)`. Runtime stop calls the agent's idempotent `close()`
-method, closes the session database, and releases the Relay plugin context when
-enabled.
-
-Hermes Agent Relay telemetry is finalized after each NeMo Fabric invocation so its ATOF
-and ATIF artifacts are complete when that invocation returns. This telemetry
-boundary does not recreate the `AIAgent` or `SessionDB`.
+method and closes the session database.
 
 ## Maintaining The Adapter
 

@@ -66,7 +66,6 @@ adapters = [
   # and test environments exercise the SDK-native NeMo Relay integration.
   "nemo-fabric-adapters-deepagents[relay]",
   "nemo-fabric-adapters-hermes; python_version < '3.14'",
-  "hermes-agent==0.21.3; python_version < '3.14'",
   # Install the mini-SWE-agent adapter with Relay so focused adapter tests cover
   # its optional subclass-based telemetry integration.
   "nemo-fabric-adapters-mini-swe-agent[relay]",
@@ -83,7 +82,7 @@ adapter-tests = [
   "nemo-fabric-adapters-claude[harness]",
   "nemo-fabric-adapters-codex[harness]",
   "nemo-fabric-adapters-deepagents[harness]",
-  "nemo-fabric-adapters-hermes[full]; python_version < '3.14'",
+  "nemo-fabric-adapters-hermes; python_version < '3.14'",
   "nemo-fabric-adapters-mini-swe-agent[harness]",
   "nemo-fabric-adapters-nooa[full]; python_version >= '3.12' and python_version < '3.14'",
   "nemo-fabric-adapters-openclaw",
@@ -135,12 +134,8 @@ test = [
 [tool.uv]
 package = false
 default-groups = ["adapters", "collector", "dev", "test"]
-# Hermes v0.20.1 imports the top-level registration_lifecycle module but omits
-# it from setuptools' py-modules, so standard editable installs cannot import it.
-config-settings-package = { "hermes-agent" = { editable_mode = "compat" } }
 
 [tool.uv.sources]
-hermes-agent = { path = "external/hermes-agent", editable = true, marker = "python_version < '3.14'" }
 nemo-fabric = { path = "sdk/python/nemo-fabric", editable = true }
 nemo-fabric-collector = { path = "sdk/python/nemo-fabric-collector", editable = true }
 nemo-fabric-runtime = { path = "sdk/python/nemo-fabric-runtime", editable = true }

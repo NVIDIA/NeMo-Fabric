@@ -141,6 +141,8 @@ async def main() -> None:
         parser.error("--stream cannot be combined with --plan")
     if args.variant == "openclaw" and args.relay:
         parser.error("the OpenClaw adapter does not support Relay telemetry")
+    if args.variant == "hermes" and args.relay:
+        parser.error("Hermes Relay telemetry is temporarily unavailable")
     if args.service and args.variant != "openclaw":
         parser.error("--service requires --variant openclaw")
     if args.runtime_count < 1:

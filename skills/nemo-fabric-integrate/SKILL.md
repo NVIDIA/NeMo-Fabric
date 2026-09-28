@@ -65,9 +65,10 @@ runtime assumptions but never installs harnesses or credentials at run time.
 - If the adapter environment already manages a compatible harness, install the
   bare `nemo-fabric-adapters-<adapter>` distribution. Bare adapter
   distributions contain only adapter-owned runtime dependencies.
-- LangChain Deep Agents and Hermes Agent adapter packages provide `relay` and
-  include the NeMo Relay Python package in `full`. The Hermes Agent extras do
-  not install Hermes Agent. Claude and Codex do not provide `relay`; their
+- LangChain Deep Agents provides `relay` and includes the NeMo Relay Python
+  package in `full`. Hermes Agent Relay telemetry is temporarily unavailable;
+  its `full` extra installs only the adapter, not Hermes Agent. Claude and Codex
+  do not provide `relay`; their
   `harness` and `full` extras install the supported `nemo-relay` CLI alongside
   the harness SDK.
 - Provide model credentials through environment variables named by the config

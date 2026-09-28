@@ -28,13 +28,11 @@ provides. None of these expressions installs Hermes Agent:
 | Installation | Runtime | Adapter | Harness | NeMo Relay Python Package |
 | --- | --- | --- | --- | --- |
 | `pip install nemo-fabric nemo-fabric-adapters-hermes` | Yes | Yes | No | No |
-| `pip install "nemo-fabric[relay]" nemo-fabric-adapters-hermes` | Yes | Yes | No | Yes |
-| `pip install "nemo-fabric-adapters-hermes[full]"` | No | Yes | No | Yes |
-| `pip install "nemo-fabric-adapters-hermes[relay]"` | No | Yes | No | Yes |
+| `pip install "nemo-fabric-adapters-hermes[full]"` | No | Yes | No | No |
 | `pip install nemo-fabric-adapters-hermes` | No | Yes | No | No |
 
-NeMo Relay is optional for ordinary runs. NeMo Relay telemetry and streaming
-require one of the installations in the table that includes the NeMo Relay
-Python package.
+Hermes Agent v2026.9.24 requires Relay 0.8.x. Keep it separate from Relay 0.9
+integrations. Ordinary runs are supported; Hermes Relay telemetry and streaming
+are temporarily unavailable.
 
 Refer to the [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install) for more details.

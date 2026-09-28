@@ -108,7 +108,6 @@ def build_hermes_config(
                 "timeout": settings.get("terminal_timeout", 60),
             }
         ),
-        "auxiliary": {"title_generation": {"enabled": False}},
     }
 
     skill_dirs = (

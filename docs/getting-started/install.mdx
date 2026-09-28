@@ -30,14 +30,14 @@ be managed separately.
 | `nemo-fabric` | Yes | No | No | No | No | No |
 | `nemo-fabric[streaming]` | Yes | Yes | No | No | No | No |
 | `nemo-fabric[relay]` | Yes | No | No | No | Yes | No |
-| `nemo-fabric[hermes-agent,relay]` | Yes | No | Yes | No | Yes | No |
+| `nemo-fabric[hermes-agent]` | Yes | No | Yes | No | No | No |
 | `nemo-fabric-adapters-claude[harness]` | No | No | Yes | Yes | No | Yes |
 | `nemo-fabric-adapters-claude[full]` | No | No | Yes | Yes | No | Yes |
 | `nemo-fabric-adapters-deepagents[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-mini-swe-agent[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-nooa[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-openclaw` | No | No | Yes | No | No | No |
-| `nemo-fabric-adapters-hermes[relay]` | No | No | Yes | No | Yes | No |
+| `nemo-fabric-adapters-hermes[full]` | No | No | Yes | No | No | No |
 | `nemo-fabric-adapters-claude` | No | No | Yes | No | No | No |
 
 An adapter package's `full` extra is scoped to the adapter environment and does
@@ -45,8 +45,7 @@ not install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent
 to `harness`; both install the supported harness and `nemo-relay` CLI. For
 LangChain Deep Agents and mini-SWE-agent, `full` installs the harness and NeMo
 Relay Python package without the CLI. For Hermes Agent, `full` installs only
-the adapter and NeMo Relay Python package; Hermes Agent must be installed
-separately.
+the adapter; Hermes Agent must be installed separately.
 
 ### Install the NeMo Fabric Runtime
 
@@ -114,12 +113,15 @@ that runs Hermes Agent:
 pip install "nemo-fabric[hermes-agent]"
 ```
 
-These packages do not install Hermes Agent. For local NeMo Fabric development,
-check out the pinned Hermes Agent source and synchronize it into the project
-environment by running this command from the repository root:
+These packages do not install Hermes Agent. Hermes Agent v2026.9.24 requires
+Relay 0.8.x, so keep it in a separate Python environment from Relay 0.9
+integrations. Hermes Relay telemetry is temporarily unavailable. For local
+NeMo Fabric development, create the isolated Hermes environment by running
+this command from the repository root:
 
 ```bash
 just install-hermes-agent
+export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
 ```
 
 ### Install an Adapter and Harness Without the Runtime
@@ -191,25 +193,23 @@ to be compatible with the installed version of NeMo Fabric:
 pip install "nemo-fabric[relay]"
 ```
 
-LangChain Deep Agents, Hermes Agent, mini-SWE-agent, and NOOA import the NeMo
+LangChain Deep Agents, mini-SWE-agent, and NOOA import the NeMo
 Relay Python package directly. Their adapter packages provide `relay` and
 `full` extras:
 
 ```bash
 pip install "nemo-fabric-adapters-deepagents[relay]"
-pip install "nemo-fabric-adapters-hermes[relay]"
 pip install "nemo-fabric-adapters-mini-swe-agent[relay]"
 pip install "nemo-fabric-adapters-nooa[relay]"
 pip install "nemo-fabric-adapters-deepagents[full]"
-pip install "nemo-fabric-adapters-hermes[full]"
 pip install "nemo-fabric-adapters-mini-swe-agent[full]"
 pip install "nemo-fabric-adapters-nooa[full]"
 ```
 
 Use `relay` when the environment already manages the harness. For Deep Agents,
 mini-SWE-agent, and NOOA, use `full` to install the harness and Relay package
-together. For Hermes Agent, `relay` and `full` install the adapter and Relay
-package, but neither installs Hermes Agent. Claude and Codex do not provide a
+together. Hermes Agent Relay telemetry is temporarily unavailable. Claude and
+Codex do not provide a
 `relay` extra because their adapters launch the external CLI instead of
 importing this Python package.
 
@@ -217,7 +217,7 @@ Python-backed Relay integrations require `nemo-relay>=0.9,<0.10`. NeMo Fabric
 does not merge user or workspace `plugins.toml` files with its runtime-owned
 configuration. Remove or relocate a user
 `plugins.toml` or the nearest `.nemo-relay/plugins.toml` before starting a
-Relay-enabled Deep Agents, Hermes Agent, or mini-SWE-agent runtime. System
+Relay-enabled Deep Agents or mini-SWE-agent runtime. System
 configuration in `/etc/nemo-relay/plugins.toml` remains administrator
 controlled.
 
@@ -230,8 +230,9 @@ one or more `RelayOpenTelemetryEndpointConfig` entries.
 
 #### NeMo Relay CLI
 
-Claude, Codex, and Pi harness extras install their compatible CLI binary without
-the Relay Python package. Install the `>=0.9,<0.10` range:
+Claude and Codex harness extras install their compatible CLI binary without
+the Relay Python package. Pi requires a separate CLI installation alongside
+the npm adapter. Install the `>=0.9,<0.10` range:
 
 ```bash
 pip install "nemo-relay-cli-bin>=0.9,<0.10"
