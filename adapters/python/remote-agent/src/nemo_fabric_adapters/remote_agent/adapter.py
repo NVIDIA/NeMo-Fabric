@@ -134,29 +134,28 @@ class RemoteAgentRuntime:
         settings = config.harness.settings if config.harness is not None else {}
         model = _selected_model(config)
         role = "default" if "default" in config.models else next(iter(config.models))
-        api = model.api
-        if api is not None and settings.get("api_type", api) != api:
-            raise lifecycle.LifecycleError(
-                "remote_agent_invalid_configuration",
-                "Remote Agent api_type conflicts with model api",
-                metadata={"field": f"models.{role}.api"},
-            )
-        self._api_type = api or settings.get("api_type", DEFAULT_API_TYPE)
+
+        def model_or_setting(field: str, value: str | None, setting: str) -> Any:
+            configured = settings.get(setting)
+            if value is not None and configured is not None:
+                if configured.rstrip("/") != value.rstrip("/"):
+                    raise lifecycle.LifecycleError(
+                        "remote_agent_invalid_configuration",
+                        f"Remote Agent {setting} conflicts with model {field}",
+                        metadata={"field": f"models.{role}.{field}"},
+                    )
+            return value if value is not None else configured
+
+        self._api_type = (
+            model_or_setting("api", model.api, "api_type") or DEFAULT_API_TYPE
+        )
         if self._api_type not in API_PATHS:
             raise lifecycle.LifecycleError(
                 "remote_agent_invalid_configuration",
                 "Remote Agent api_type is not supported",
                 metadata={"field": "harness.settings.api_type"},
             )
-        base_url = model.base_url or settings.get("base_url")
-        if model.base_url is not None and settings.get(
-            "base_url", model.base_url
-        ).rstrip("/") != model.base_url.rstrip("/"):
-            raise lifecycle.LifecycleError(
-                "remote_agent_invalid_configuration",
-                "Remote Agent base_url conflicts with model base_url",
-                metadata={"field": f"models.{role}.base_url"},
-            )
+        base_url = model_or_setting("base_url", model.base_url, "base_url")
         if not isinstance(base_url, str) or not base_url.startswith(
             ("http://", "https://")
         ):
