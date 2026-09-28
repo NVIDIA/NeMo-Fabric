@@ -156,15 +156,18 @@ apply them to an existing Gateway.
 ## Execution and Isolation
 
 Before starting a managed runtime or prepared service, the adapter writes a
-complete temporary `openclaw.json` and sets OpenClaw environment variables. It
-does not use the OpenClaw configuration RPC. The generated configuration:
+complete `openclaw.json` and sets OpenClaw environment variables. It does not
+use the OpenClaw configuration RPC. The generated configuration:
 
 - binds the Gateway to loopback;
 - enables the OpenAI-compatible Chat Completions endpoint;
-- uses a cryptographically generated one-time Gateway token;
+- uses a cryptographically generated Gateway token: a one-time token, or
+  with `harness.settings.state_dir`, the owner-only `interface-token` retained
+  there;
 - applies the normalized workspace, model, skills, and MCP servers;
 - disables OpenClaw anonymous telemetry; and
-- uses a unique temporary state directory.
+- uses a unique temporary state directory, which is removed at shutdown, or
+  the retained `state_dir`.
 
 Each invocation sends a terminal request to `/v1/chat/completions` with the
 NeMo Fabric runtime ID as the stable OpenClaw session key. A managed runtime

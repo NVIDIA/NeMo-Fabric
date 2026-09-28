@@ -57,10 +57,13 @@ authoritative field-level contract.
 The adapter maps these fields into a generated `openclaw.json` before starting
 the Gateway. A non-empty `tools.enabled` list maps to `tools.allow`, an empty
 list maps to a wildcard `tools.deny` policy, and `tools.blocked` maps to
-`tools.deny`. It uses a generated one-time token, loopback binding, and an
-isolated temporary OpenClaw state directory. The Gateway is stopped and its
-temporary configuration is removed when the NeMo Fabric runtime stops, unless
-`state_dir` retains it as described in [Retain Native State](#retain-native-state).
+`tools.deny`. The Gateway binds to loopback. Without `state_dir`, it uses a
+generated one-time token and an isolated temporary OpenClaw state directory,
+and its temporary configuration and state are removed when the NeMo Fabric
+runtime stops. With `state_dir`, the configuration, state, and a retained
+`interface-token` persist there across runtimes, as described in
+[Retain Native State](#retain-native-state). The Gateway is stopped with the
+runtime in both cases.
 
 For custom providers, set `models.<role>.base_url` and, optionally,
 `models.<role>.api`: `openai-completions` (the default), `openai-responses`, or

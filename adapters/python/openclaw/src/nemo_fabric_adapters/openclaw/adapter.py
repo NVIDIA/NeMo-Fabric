@@ -1116,9 +1116,19 @@ class OpenClawRuntime:
             )
         import fcntl
 
+        def invalid(error: Exception) -> lifecycle.LifecycleError:
+            return lifecycle.LifecycleError(
+                "openclaw_invalid_state_dir",
+                f"OpenClaw state_dir cannot be used: {type(error).__name__}",
+                metadata={"field": "harness.settings.state_dir"},
+            )
+
         state_dir = (base_dir / retained).resolve()
-        state_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
-        lock = (state_dir / STATE_LOCK).open("a")
+        try:
+            state_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+            lock = (state_dir / STATE_LOCK).open("a")
+        except OSError as error:
+            raise invalid(error) from error
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
@@ -1128,15 +1138,27 @@ class OpenClawRuntime:
                 "OpenClaw state_dir is in use by another runtime",
                 metadata={"field": "harness.settings.state_dir"},
             ) from None
+        try:
+            gateway_log = open(
+                state_dir / GATEWAY_LOG,
+                "ab",
+                opener=lambda name, flags: os.open(name, flags, 0o600),
+            )
+            try:
+                # A log retained from an earlier runtime keeps its old mode.
+                os.fchmod(gateway_log.fileno(), 0o600)
+                token = interface_token(state_dir, create=True)
+            except BaseException:
+                gateway_log.close()
+                raise
+        except (OSError, RuntimeError) as error:
+            lock.close()
+            raise invalid(error) from error
+        except BaseException:
+            lock.close()
+            raise
         self._state_lock = lock
-        self._gateway_log = open(
-            state_dir / GATEWAY_LOG,
-            "ab",
-            opener=lambda name, flags: os.open(name, flags, 0o600),
-        )
-        # A log retained from an earlier runtime keeps its old mode.
-        os.fchmod(self._gateway_log.fileno(), 0o600)
-        token = interface_token(state_dir, create=True)
+        self._gateway_log = gateway_log
         return state_dir, state_dir / "openclaw.json", token
 
     def _client_for(self, settings: dict[str, Any], token: str) -> httpx.AsyncClient:

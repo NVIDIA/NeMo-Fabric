@@ -229,6 +229,22 @@ def _plan(tmp_path: Path, settings: dict) -> None:
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="state_dir requires a POSIX host")
+@pytest.mark.parametrize("blocked", ["state_dir", "gateway.log"])
+def test_an_unusable_state_dir_is_a_configuration_error(tmp_path: Path, blocked: str):
+    state = tmp_path / "state"
+    if blocked == "state_dir":
+        state.write_text("not a directory")
+    else:
+        (state / "gateway.log").mkdir(parents=True)
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(lifecycle.LifecycleError) as raised:
+        runtime._prepare_state({"state_dir": str(state)}, tmp_path)
+    assert raised.value.code == "openclaw_invalid_state_dir"
+    assert raised.value.metadata["field"] == "harness.settings.state_dir"
+    assert runtime._state_lock is None, "a failed preparation releases the directory"
+
+
 def test_planning_checks_native_settings_before_startup(tmp_path: Path):
     _plan(tmp_path, {"state_dir": "state", "port": 18800})
     control_ui = {"gateway": {"controlUi": {"enabled": True}}}
