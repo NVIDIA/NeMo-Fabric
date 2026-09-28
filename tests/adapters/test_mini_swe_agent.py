@@ -578,3 +578,5 @@ def test_planning_rejects_a_model_qualified_with_another_provider(tmp_path):
     _plan_model(tmp_path, adapter_id, {**model, "model": "openai/gpt-test"})
     with pytest.raises(FabricConfigError, match="models.default"):
         _plan_model(tmp_path, adapter_id, {**model, "model": "anthropic/claude-test"})
+    with pytest.raises(FabricConfigError, match="models.default"):
+        _plan_model(tmp_path, adapter_id, {**model, "provider": "anthropic", "model": "claude"})
