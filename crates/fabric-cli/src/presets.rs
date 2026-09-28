@@ -324,7 +324,6 @@ fn model(
         max_tokens: None,
         api_key_env: api_key_env.map(str::to_string),
         base_url: base_url.map(str::to_string),
-        api: None,
         settings: Map::new(),
         extensions: BTreeMap::new(),
     }

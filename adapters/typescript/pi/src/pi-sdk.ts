@@ -8,14 +8,13 @@
 import { realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import type { Api, Model } from "@earendil-works/pi-ai";
 import type {
   AgentSession,
   ExtensionCommandContextActions,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti/static";
-import type { AgentConfig, AgentToolDefinition, JsonObject } from "nemo-fabric-adapter-contract";
+import type { AgentConfig, AgentModelConfig, AgentToolDefinition, JsonObject } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import {
@@ -23,10 +22,7 @@ import {
   type PiRelayControllerFactory,
   type PiRelayRuntime,
 } from "./relay.js";
-import { loadConfiguredModels, withCustomBaseUrl } from "./pi-model.js";
 import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runtime.js";
-
-export { withCustomBaseUrl };
 
 interface PiHarnessSettings {
   extensions: string[];
@@ -36,6 +32,26 @@ interface PiToolFactoryContext {
   name: string;
   settings: JsonObject;
   workspace: string;
+}
+
+export function withCustomBaseUrl<T extends { api: string; baseUrl: string; compat?: object }>(
+  catalogModel: T,
+  baseUrl: string | null | undefined,
+  overrideBaseUrl = true,
+): T {
+  if (!baseUrl) {
+    return catalogModel;
+  }
+  const model = overrideBaseUrl ? { ...catalogModel, baseUrl } : catalogModel;
+  if (catalogModel.api !== "openai-completions") {
+    return model;
+  }
+  return {
+    ...model,
+    // Generic OpenAI-compatible proxies may reject provider-specific
+    // reasoning_content fields when Pi replays an assistant tool call.
+    compat: { ...catalogModel.compat, requiresThinkingAsText: true },
+  };
 }
 
 export function modelAwareCompactionReserveTokens(
@@ -59,7 +75,6 @@ const PI_HARNESS_INSTALL_COMMAND =
 
 interface PiSdkModules {
   InMemoryCredentialStore: typeof import("@earendil-works/pi-ai").InMemoryCredentialStore;
-  InMemoryModelsStore: typeof import("@earendil-works/pi-ai").InMemoryModelsStore;
   createAgentSession: typeof import("@earendil-works/pi-coding-agent").createAgentSession;
   DefaultResourceLoader: typeof import("@earendil-works/pi-coding-agent").DefaultResourceLoader;
   ModelRuntime: typeof import("@earendil-works/pi-coding-agent").ModelRuntime;
@@ -96,7 +111,6 @@ async function loadPiSdk(): Promise<PiSdkModules> {
 
   if (
     typeof ai.InMemoryCredentialStore !== "function" ||
-    typeof ai.InMemoryModelsStore !== "function" ||
     typeof codingAgent.createAgentSession !== "function" ||
     typeof codingAgent.DefaultResourceLoader !== "function" ||
     typeof codingAgent.ModelRuntime !== "function" ||
@@ -111,7 +125,6 @@ async function loadPiSdk(): Promise<PiSdkModules> {
 
   return {
     InMemoryCredentialStore: ai.InMemoryCredentialStore,
-    InMemoryModelsStore: ai.InMemoryModelsStore,
     createAgentSession: codingAgent.createAgentSession,
     DefaultResourceLoader: codingAgent.DefaultResourceLoader,
     ModelRuntime: codingAgent.ModelRuntime,
@@ -120,12 +133,12 @@ async function loadPiSdk(): Promise<PiSdkModules> {
   };
 }
 
-function selectedRole(config: AgentConfig): string {
-  const roles = Object.keys(config.models ?? {});
-  if (roles.length === 0) {
+function selectModel(config: AgentConfig): AgentModelConfig {
+  const entries = Object.entries(config.models ?? {});
+  if (entries.length === 0) {
     throw new LifecycleError("pi_model_required", "The Pi adapter requires one configured model");
   }
-  const selected = config.models?.default !== undefined ? "default" : roles.length === 1 ? roles[0] : undefined;
+  const selected = config.models?.default ?? (entries.length === 1 ? entries[0]?.[1] : undefined);
   if (selected === undefined) {
     throw new LifecycleError(
       "pi_model_ambiguous",
@@ -133,25 +146,6 @@ function selectedRole(config: AgentConfig): string {
     );
   }
   return selected;
-}
-
-/** Declared model roles that an invocation can switch the session to. */
-interface PiModelChoices {
-  roles: Map<string, Model<Api>>;
-  /** Whether a role other than the selected one can become active. */
-  switchable: boolean;
-  /** The role model the session uses, as resolved before any Relay redirect. */
-  active: Model<Api>;
-  /** Apply model-dependent session settings before the session switches. */
-  activate(model: Model<Api>): void;
-  cleanup(): Promise<void>;
-}
-
-/** Whether two resolved models send the same requests to the same endpoint. */
-function sameModel(left: Model<Api>, right: Model<Api>): boolean {
-  return (
-    left.provider === right.provider && left.id === right.id && left.baseUrl === right.baseUrl && left.api === right.api
-  );
 }
 
 function harnessSettings(config: AgentConfig): PiHarnessSettings {
@@ -404,18 +398,10 @@ class PiSdkSessionHandle implements PiSessionHandle {
   private stopped = false;
   private cumulativeTurnCount = 0;
 
-  private readonly models?: PiModelChoices;
-
-  constructor(
-    session: AgentSession,
-    state: { shutdownRequested: boolean },
-    relay?: PiRelayRuntime,
-    models?: PiModelChoices,
-  ) {
+  constructor(session: AgentSession, state: { shutdownRequested: boolean }, relay?: PiRelayRuntime) {
     this.session = session;
     this.state = state;
     this.relay = relay;
-    this.models = models;
     this.unsubscribeTurnCounter = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         this.cumulativeTurnCount += 1;
@@ -425,26 +411,6 @@ class PiSdkSessionHandle implements PiSessionHandle {
 
   get turnCount(): number {
     return this.cumulativeTurnCount;
-  }
-
-  async selectModel(role: string): Promise<void> {
-    const models = this.models;
-    const model = models?.roles.get(role);
-    if (models === undefined || model === undefined) {
-      throw new LifecycleError("pi_model_unknown", `The Pi model role ${role} is not configured`);
-    }
-    if (sameModel(model, models.active)) {
-      return;
-    }
-    if (!models.switchable) {
-      throw new LifecycleError(
-        "pi_model_switch_unsupported",
-        "Switching Pi model roles is not supported while NeMo Relay redirects the selected model",
-      );
-    }
-    models.activate(model);
-    await this.session.setModel(model);
-    models.active = model;
   }
 
   async prompt(text: string): Promise<PiPromptOutcome> {
@@ -509,11 +475,6 @@ class PiSdkSessionHandle implements PiSessionHandle {
     } catch (error) {
       failure ??= error;
     }
-    try {
-      await this.models?.cleanup();
-    } catch (error) {
-      failure ??= error;
-    }
     if (failure !== undefined) {
       throw failure;
     }
@@ -552,40 +513,51 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     } catch {
       throw new LifecycleError("pi_workspace_invalid", "The Fabric runtime workspace must be a directory");
     }
-    const role = selectedRole(input.config);
+    const selected = selectModel(input.config);
+    const apiKeyEnv = selected.api_key_env;
+    if (apiKeyEnv === undefined || apiKeyEnv === null || apiKeyEnv.length === 0) {
+      throw new LifecycleError("pi_api_key_env_required", "The selected Pi model requires api_key_env");
+    }
+    const apiKey = credentialValue(input, apiKeyEnv);
+    if (apiKey === undefined || apiKey.length === 0) {
+      throw new LifecycleError("pi_credential_missing", `Credential environment variable ${apiKeyEnv} is not set`);
+    }
 
     const settings = pi.SettingsManager.inMemory({}, { projectTrusted: false });
     const extensionPaths = await resolveExtensionPaths(workspace, harnessSettings(input.config).extensions);
     const skillPaths = await resolveSkillPaths(input.baseDir, input.config.skills?.paths ?? []);
     const customTools = await resolveCustomTools(workspace, input.config.tools?.definitions ?? {});
     const credentials = new pi.InMemoryCredentialStore();
-    const relayEnabled = input.runtimeContext.telemetry?.relay_enabled === true;
-    const configured = await loadConfiguredModels(pi, credentials, input.config.models ?? {}, role, {
-      relayEnabled,
-      credential: (name) => credentialValue(input, name),
+    const modelRuntime = await pi.ModelRuntime.create({
+      credentials,
+      modelsPath: null,
+      allowModelNetwork: false,
+      refreshOnCreate: false,
     });
-    const { modelRuntime } = configured;
-    const model = configured.roles.get(role)!;
-    const configuredReserveTokens = settings.getCompactionReserveTokens();
-    const activate = (active: Model<Api>) => {
-      settings.applyOverrides({
-        compaction: {
-          reserveTokens: modelAwareCompactionReserveTokens(
-            configuredReserveTokens,
-            active.maxTokens,
-            active.contextWindow,
-          ),
-        },
+    await modelRuntime.setRuntimeApiKey(selected.provider, apiKey);
+    const relayEnabled = input.runtimeContext.telemetry?.relay_enabled === true;
+    if (relayEnabled && selected.base_url) {
+      // Configure the provider before Relay loads so its provider-wide redirect
+      // sees a consistent catalog instead of one overlaid selected model.
+      modelRuntime.registerProvider(selected.provider, {
+        baseUrl: selected.base_url,
       });
-    };
-    activate(model);
-    const choices: PiModelChoices = {
-      roles: configured.roles,
-      switchable: !relayEnabled,
-      active: model,
-      activate,
-      cleanup: configured.cleanup,
-    };
+    }
+    const catalogModel = modelRuntime.getModel(selected.provider, selected.model);
+    if (catalogModel === undefined) {
+      throw new LifecycleError("pi_model_unknown", "The selected provider and model are not present in Pi's catalog");
+    }
+    const model = withCustomBaseUrl(catalogModel, selected.base_url, !relayEnabled);
+    const compactionReserveTokens = modelAwareCompactionReserveTokens(
+      settings.getCompactionReserveTokens(),
+      model.maxTokens,
+      model.contextWindow,
+    );
+    settings.applyOverrides({
+      compaction: {
+        reserveTokens: compactionReserveTokens,
+      },
+    });
     let relay: PiRelayRuntime | undefined;
     let handle: PiSdkSessionHandle | undefined;
     try {
@@ -671,7 +643,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         tools: enabled === null ? undefined : enabled,
         excludeTools: blocked,
       });
-      handle = new PiSdkSessionHandle(session, state, relay, choices);
+      handle = new PiSdkSessionHandle(session, state, relay);
       const blockedNames = new Set(blocked);
       const availableNames = new Set(session.getAllTools().map((tool) => tool.name));
       const missing = (enabled ?? []).filter((name) => !blockedNames.has(name) && !availableNames.has(name));
@@ -713,9 +685,6 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       await relay?.stop().catch(() => {
         process.stderr.write("NeMo Relay cleanup failed after Pi adapter startup error\n");
       });
-      if (handle === undefined) {
-        await configured.cleanup();
-      }
       throw error;
     }
   }

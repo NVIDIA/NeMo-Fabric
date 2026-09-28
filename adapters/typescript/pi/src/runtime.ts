@@ -27,8 +27,6 @@ export interface PiSessionHandle {
   readonly relay?: PiRelayRuntime;
   readonly turnCount?: number;
   prompt(text: string): Promise<PiPromptOutcome>;
-  /** Make a declared model role active for this and later invocations. */
-  selectModel?(role: string): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -36,11 +34,11 @@ export interface PiSessionFactory {
   create(input: AdapterStartInput): Promise<PiSessionHandle>;
 }
 
-function failed(code: string, message: string, extensions?: JsonObject): AgentRunResult {
+function failed(code: string, message: string): AgentRunResult {
   return {
     status: "failed",
     output: null,
-    error: { code, message, retryable: false, ...(extensions === undefined ? {} : { extensions }) },
+    error: { code, message, retryable: false },
   };
 }
 
@@ -97,27 +95,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
     if (this.unusable) {
       throw new LifecycleError("pi_runtime_unusable", "Pi adapter runtime cannot accept another invocation");
     }
-    const input = promptInput(request.input);
-    if (input?.model !== undefined) {
-      try {
-        if (this.session.selectModel === undefined) {
-          throw new Error("model selection is unavailable");
-        }
-        await this.session.selectModel(input.model);
-      } catch (error) {
-        return withRelayOutput(
-          failed(
-            "pi_model_selection_failed",
-            "The requested Pi model role could not be selected",
-            error instanceof LifecycleError ? { reason: error.code } : undefined,
-          ),
-          this.session.relay,
-          false,
-          this.turnCount,
-        );
-      }
-    }
-    if (input === undefined) {
+    if (typeof request.input !== "string") {
       const observedTurnCount = this.session.turnCount;
       if (observedTurnCount !== undefined) {
         if (!Number.isInteger(observedTurnCount) || observedTurnCount < this.turnCount) {
@@ -126,7 +104,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         this.turnCount = observedTurnCount;
       }
       return withRelayOutput(
-        failed("pi_unsupported_input", "The Pi adapter accepts text or an object with prompt and model"),
+        failed("pi_unsupported_input", "The Pi adapter accepts only plain-text input"),
         this.session.relay,
         false,
         this.turnCount,
@@ -134,7 +112,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
     }
 
     const relay = this.session.relay;
-    const outcome = await this.session.prompt(input.prompt);
+    const outcome = await this.session.prompt(request.input);
     if (
       !Number.isInteger(outcome.turnCount) ||
       outcome.turnCount < this.turnCount ||
@@ -232,19 +210,4 @@ export class PiAdapterRuntime implements AdapterRuntime {
       this.unusable = false;
     }
   }
-}
-
-/** Plain text, or `{ prompt, model }` selecting a declared model role first. */
-function promptInput(input: unknown): { prompt: string; model?: string } | undefined {
-  if (typeof input === "string") {
-    return { prompt: input };
-  }
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    return undefined;
-  }
-  const { prompt, model, ...rest } = input as Record<string, unknown>;
-  if (typeof prompt !== "string" || typeof model !== "string" || Object.keys(rest).length > 0) {
-    return undefined;
-  }
-  return { prompt, model };
 }

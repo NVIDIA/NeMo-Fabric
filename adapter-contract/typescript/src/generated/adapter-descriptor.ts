@@ -38,7 +38,6 @@ export type TelemetryProvider =
 export type AdapterConfigField =
   | "models"
   | "models.base_url"
-  | "models.api"
   | "models.temperature"
   | "models.top_p"
   | "models.max_tokens"

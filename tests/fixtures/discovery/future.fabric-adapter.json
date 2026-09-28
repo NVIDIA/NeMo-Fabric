@@ -71,9 +71,6 @@
             "default": "native"
           }
         }
-      },
-      "api": {
-        "const": "openai-completions"
       }
     },
     "required": [
@@ -84,8 +81,7 @@
   "config": {
     "accepts": [
       "models",
-      "models.base_url",
-      "models.api"
+      "models.base_url"
     ]
   },
   "capabilities": {
@@ -93,16 +89,5 @@
     "streaming": false,
     "updates": false,
     "cancellation": false
-  },
-  "extension_schemas": {
-    "model": {
-      "type": "object",
-      "properties": {
-        "api": {
-          "const": "openai-completions"
-        }
-      },
-      "additionalProperties": false
-    }
   }
 }

@@ -264,7 +264,6 @@ def test_mini_swe_agent_descriptor_is_narrow_and_versioned():
         "accepts": [
             "models",
             "models.base_url",
-            "models.api",
             "models.temperature",
             "models.top_p",
             "models.max_tokens",

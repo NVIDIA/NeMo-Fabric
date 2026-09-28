@@ -12,8 +12,7 @@ use serde_json::Value;
 
 use crate::config::{
     AdapterConfigField, AdapterDescriptor, CapabilityPlan, FabricConfig, InstructionMode,
-    McpAuthenticationConfig, ModelApi, ResolvedAdapterTargetDescriptor,
-    legacy_model_sampling_extensions,
+    McpAuthenticationConfig, ResolvedAdapterTargetDescriptor, legacy_model_sampling_extensions,
 };
 use crate::error::{FabricError, Result};
 
@@ -89,9 +88,6 @@ pub struct AgentModelConfig {
     /// Optional provider API base URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
-    /// Optional wire protocol spoken by the model endpoint.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api: Option<ModelApi>,
     /// Provider-specific model settings.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub settings: serde_json::Map<String, Value>,
@@ -371,7 +367,6 @@ pub(crate) fn project_agent_config(
                             .then_some(model.max_tokens)
                             .flatten(),
                         base_url: model.base_url.clone(),
-                        api: model.api,
                         settings: model.settings.clone(),
                         extensions,
                     },
