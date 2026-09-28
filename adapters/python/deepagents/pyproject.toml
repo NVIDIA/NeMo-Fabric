@@ -28,6 +28,9 @@ dependencies = [
   "nemo-fabric-adapter-contract == 0.4.0",
   "nemo-fabric-adapters-common == 0.4.0",
   "langchain-mcp-adapters>=0.1,<0.3.0",
+  # The packaged Brave search MCP server imports these directly.
+  "httpx>=0.28,<1",
+  "mcp>=1.28,<2",
   "langchain-openai>=0.3",
   # Requires 3.x: the 2.x line is incompatible with the langgraph core deepagents
   # pulls (AsyncSqliteSaver fails with 'Connection has no attribute is_alive').
