@@ -912,10 +912,6 @@ pub struct AdapterRequirements {
 /// Adapter config support.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterConfigSupport {
-    /// Optional adapter-owned JSON Schema over the complete public FabricConfig.
-    /// Declares required selections and constraints spanning configuration areas.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub schema: Option<serde_json::Map<String, Value>>,
     /// Normalized NVIDIA NeMo Fabric config areas or policy paths accepted by this adapter.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accepts: Vec<AdapterConfigField>,
@@ -2588,8 +2584,6 @@ fn resolve_run_plan_with_registry(
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
-    // Compatibility issues, including config.schema violations, fail strict
-    // planning; diagnostic planning leaves them for doctor to report.
     if enforce_compatibility {
         validate_adapter_config_compatibility(&config, descriptor)?;
     }
@@ -2746,20 +2740,6 @@ pub(crate) fn adapter_config_compatibility_issues(
         field,
     };
     let mut issues = Vec::new();
-    if let Some(schema) = &descriptor.config.schema {
-        let validator = jsonschema::validator_for(&Value::Object(schema.clone()))
-            .expect("validated descriptor schema");
-        let value = serde_json::to_value(config).expect("serializable public config");
-        if let Some(error) = validator.iter_errors(&value).next() {
-            let field = schema_error_path(&error, "");
-            let field = field.trim_start_matches('.');
-            issues.push(incompatible(
-                if field.is_empty() { "config" } else { field }.to_string(),
-                schema_error_reason(&error, "adapter configuration schema"),
-            ));
-        }
-    }
-
     if let Some(system) = config
         .instructions
         .as_ref()
@@ -3038,7 +3018,6 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
         }
     }
     for (field, schema) in [
-        ("config.schema", descriptor.config.schema.as_ref()),
         ("settings_schema", descriptor.settings_schema.as_ref()),
         ("model_schema", descriptor.model_schema.as_ref()),
         (
@@ -5398,29 +5377,6 @@ mod tests {
             plan(&config, &only_fixture),
             Err(FabricError::UnknownAdapter { .. })
         ));
-    }
-
-    #[test]
-    fn config_schema_violations_fail_planning_and_are_reported_by_doctor() {
-        let mut config = typed_config("nvidia.fabric.nooa");
-        let error = resolve_run_plan_from_config(config.clone(), ResolveContext::new("."))
-            .expect_err("NOOA's config.schema requires a workflow");
-        assert!(
-            matches!(&error, FabricError::AdapterCompatibility { field, .. } if field == "workflow"),
-            "{error}"
-        );
-        let plan = resolve_diagnostic_plan_from_config(config.clone(), ResolveContext::new("."))
-            .expect("diagnostic planning leaves compatibility issues to doctor");
-        assert!(crate::doctor_plan(&plan).checks.iter().any(|check| {
-            check.name == "config.unsupported"
-                && check.metadata.get("field") == Some(&serde_json::json!("workflow"))
-        }));
-
-        config.workflow = Some(
-            serde_json::from_value(serde_json::json!({"target_id": "nvidia.nooa.coding-agent"}))
-                .unwrap(),
-        );
-        resolve_run_plan_from_config(config, ResolveContext::new(".")).expect("workflow selected");
     }
 
     #[test]
