@@ -1,0 +1,16 @@
+---
+title: "Function resolve_run_plan_from_descriptors"
+sidebar-title: "resolve_run_plan_from_descriptors"
+description: "Resolve configuration against an explicit descriptor catalog."
+position: 77
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn resolve_run_plan_from_descriptors(\n    config: <a href=\"struct-fabricconfig.mdx\">FabricConfig</a>,\n    context: <a href=\"struct-resolvecontext.mdx\">ResolveContext</a>,\n    catalog: &amp;<a href=\"struct-descriptorcatalog.mdx\">DescriptorCatalog</a>,\n) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"struct-runplan.mdx\">RunPlan</a>&gt;"}} /></pre>
+
+Resolve configuration against an explicit descriptor catalog.
+
+Hosts use this with a catalog read from the selected environment or image, for example one produced there by [`discover_descriptors`](fn-discover-descriptors.mdx). Only the supplied catalog participates: this never scans bundled or installed descriptors or `config.discovery` paths, imports runners, or starts a runtime. Validation and configuration projection match ordinary planning.
