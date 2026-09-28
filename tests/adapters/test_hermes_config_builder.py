@@ -86,8 +86,10 @@ def test_model_api_selects_the_hermes_api_mode(api, api_mode):
         model["api"] = api
     config = AgentConfig.from_mapping({"models": {"default": model}})
     native = configuration.build_hermes_config(config, workspace=".")
-<<<<<<< HEAD
-    assert native["model"].get("api_mode") == api_mode
+    if api_mode is None:
+        assert "api_mode" not in native["model"]
+    else:
+        assert native["model"]["api_mode"] == api_mode
 
 
 def test_native_config_adds_sections_but_cannot_replace_owned_ones():
@@ -133,9 +135,3 @@ def test_api_server_mode_registers_the_endpoint_and_tool_allowlist():
     sdk = build("sdk")
     assert sdk["platform_toolsets"] == {"cli": ["terminal"]}
     assert "providers" not in sdk
-=======
-    if api_mode is None:
-        assert "api_mode" not in native["model"]
-    else:
-        assert native["model"]["api_mode"] == api_mode
->>>>>>> feat/model-api

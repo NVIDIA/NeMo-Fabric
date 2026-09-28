@@ -296,3 +296,63 @@ async def test_native_server_stops_when_its_adapter_exits(tmp_path, monkeypatch)
     monkeypatch.setattr(api_server.os, "getppid", lambda: next(parents, 1))
     await asyncio.wait_for(api_server._serve_native_interfaces(), 5)
     disconnected.assert_called_once()
+
+
+async def test_an_inherited_model_endpoint_does_not_reach_hermes(
+    tmp_path, native, monkeypatch
+):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://inherited.invalid/v1")
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {"mode": "api_server"}},
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "fixture",
+                    "api_key_env": "FIXTURE_KEY",
+                }
+            },
+        }
+    )
+    runtime = api_server.HermesApiServerRuntime()
+    await runtime.start(_payload(config, tmp_path))
+    assert "OPENAI_BASE_URL" not in native.spawn.call_args.kwargs["env"]
+    await runtime.stop()
+
+
+async def test_stop_finishes_shutdown_when_cancelled_or_the_process_is_gone(
+    tmp_path, native, monkeypatch
+):
+    runtime = api_server.HermesApiServerRuntime()
+    await runtime.start(_payload(_config({}), tmp_path))
+    log = runtime._log
+    reaped = asyncio.Event()
+    waits = 0
+
+    async def wait():
+        nonlocal waits
+        waits += 1
+        if waits == 1:
+            await asyncio.sleep(3600)
+        native.process.returncode = -9
+        reaped.set()
+
+    native.process.wait = wait
+    signals = []
+
+    def killpg(pid, sig):
+        signals.append(sig)
+        if sig == api_server.signal.SIGKILL:
+            raise ProcessLookupError
+
+    monkeypatch.setattr(api_server.os, "killpg", killpg)
+    stopping = asyncio.create_task(runtime.stop())
+    await asyncio.sleep(0.05)
+    stopping.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await stopping
+    assert reaped.is_set(), "cancellation does not abandon the child"
+    assert signals == [api_server.signal.SIGTERM, api_server.signal.SIGKILL]
+    assert log.closed and runtime._log is None and runtime._state_lock is None
+    assert runtime.process is None
+
