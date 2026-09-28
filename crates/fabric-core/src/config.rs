@@ -5445,21 +5445,25 @@ mod tests {
             Some(ModelApi::OpenaiResponses)
         );
 
-        config.models.get_mut("default").unwrap().api = Some(ModelApi::AnthropicMessages);
-        let error = resolve_run_plan_from_config(config.clone(), ResolveContext::new("."))
-            .expect_err("Codex's model_schema admits only OpenAI Responses");
-        assert!(error.to_string().contains("models.default.api"), "{error}");
-
         let mut descriptor = plan.adapter_descriptor.expect("Codex").descriptor;
         descriptor
             .config
             .accepts
             .retain(|field| *field != AdapterConfigField::ModelApi);
-        let issues = adapter_config_compatibility_issues(&config, Some(&descriptor));
+        let fields: Vec<_> = adapter_config_compatibility_issues(&config, Some(&descriptor))
+            .into_iter()
+            .map(|issue| issue.field)
+            .collect();
         assert_eq!(
-            issues[0].field, "models.default.api",
+            fields,
+            ["models.default.api"],
             "an adapter must accept models.api"
         );
+
+        config.models.get_mut("default").unwrap().api = Some(ModelApi::AnthropicMessages);
+        let error = resolve_run_plan_from_config(config, ResolveContext::new("."))
+            .expect_err("Codex's model_schema admits only OpenAI Responses");
+        assert!(error.to_string().contains("models.default.api"), "{error}");
     }
 
     #[test]
