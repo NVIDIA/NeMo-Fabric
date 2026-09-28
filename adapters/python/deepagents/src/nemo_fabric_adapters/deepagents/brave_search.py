@@ -45,7 +45,9 @@ async def web_search(query: str, count: int = 5) -> dict:
         # The total deadline also cancels a read that is blocked waiting for data.
         async with (
             asyncio.timeout(TIMEOUT_SECONDS),
-            httpx.AsyncClient(timeout=TIMEOUT_SECONDS, follow_redirects=False) as client,
+            httpx.AsyncClient(
+                timeout=TIMEOUT_SECONDS, follow_redirects=False
+            ) as client,
             client.stream(
                 "GET", SEARCH_URL, params={"q": query, "count": count}, headers=headers
             ) as response,
@@ -59,7 +61,13 @@ async def web_search(query: str, count: int = 5) -> dict:
                 if len(body) > RESPONSE_LIMIT_BYTES:
                     raise _ResponseRejected
         result = json.loads(body)
-    except (httpx.HTTPError, ValueError, TimeoutError, _ResponseRejected):
+    except (
+        httpx.HTTPError,
+        ValueError,
+        RecursionError,
+        TimeoutError,
+        _ResponseRejected,
+    ):
         # Error details can include the request URL or response text.
         raise RuntimeError(FAILURE) from None
     if not isinstance(result, dict):

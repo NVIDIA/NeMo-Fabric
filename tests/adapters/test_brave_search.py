@@ -58,8 +58,17 @@ async def test_a_search_sends_the_credential_and_returns_brave_results(brave):
         (200, gzip.compress(RESULTS), {"content-encoding": "gzip"}),
         (200, b"[]", {}),
         (200, b"not json", {}),
+        (200, b"[" * 100_000, {}),
     ],
-    ids=["http-error", "redirect", "too-large", "encoded", "not-an-object", "not-json"],
+    ids=[
+        "http-error",
+        "redirect",
+        "too-large",
+        "encoded",
+        "not-an-object",
+        "not-json",
+        "too-deep",
+    ],
 )
 async def test_rejected_responses_report_only_a_generic_failure(
     brave, status, content, headers
