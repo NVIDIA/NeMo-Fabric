@@ -59,7 +59,7 @@ build, and packaging conventions.
 | --- | --- | --- | --- |
 | [Cline](typescript/cline/README.md) | `nvidia.fabric.cline` | `nemo-fabric-adapters-cline` | Node.js 22.19+ |
 | [OpenCode](typescript/opencode/README.md) | `nvidia.fabric.opencode` | `nemo-fabric-adapters-opencode` | Bun 1.4.2+ |
-| [Pi](typescript/pi/README.md) | `nvidia.fabric.pi` | `nemo-fabric-adapters-pi` | 22.19+ |
+| [Pi](typescript/pi/README.md) | `nvidia.fabric.pi` | `nemo-fabric-adapters-pi` | Node.js 22.19+ |
 | [Qwen Code](typescript/qwen/README.md) | `nvidia.fabric.qwen` | `nemo-fabric-adapters-qwen` | Node.js 22.19+ |
 
 Shared TypeScript lifecycle utilities live under

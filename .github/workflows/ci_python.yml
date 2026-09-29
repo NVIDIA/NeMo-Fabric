@@ -222,6 +222,8 @@ jobs:
       - name: Install Cline adapter and caller-owned SDK
         run: |
           just install-typescript-cline
+          # Cline is caller-managed, so this intentionally tests the exact supported
+          # SDK release with its current transitive graph outside NeMo Fabric's lockfile.
           npm install --prefix adapters/typescript --workspace nemo-fabric-adapters-cline --include-workspace-root --no-save --package-lock=false --ignore-scripts --no-audit --no-fund @cline/sdk@0.0.83
           npm run build --prefix adapter-contract/typescript
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
