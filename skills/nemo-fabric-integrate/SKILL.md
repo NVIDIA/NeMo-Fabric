@@ -40,8 +40,9 @@ that stay hidden behind this boundary.
 The consumer or its execution environment owns installation; NeMo Fabric validates
 runtime assumptions but never installs harnesses or credentials at run time.
 
-- NeMo Fabric supports Python 3.11 through 3.14. Use Python 3.11 through 3.13
-  for Hermes Agent; the Harbor integration requires Python 3.12 or later.
+- NeMo Fabric supports Python 3.11 through 3.14. Hermes Relay 0.9 telemetry
+  requires Python 3.14 in a separate adapter environment; the Harbor
+  integration requires Python 3.12 or later.
 - Install the runtime with `uv pip install nemo-fabric` (add the `harbor` extra
   for the Harbor integration). Refer to the
   [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx).
@@ -65,12 +66,13 @@ runtime assumptions but never installs harnesses or credentials at run time.
 - If the adapter environment already manages a compatible harness, install the
   bare `nemo-fabric-adapters-<adapter>` distribution. Bare adapter
   distributions contain only adapter-owned runtime dependencies.
-- LangChain Deep Agents and Hermes Agent provide `relay` and include the NeMo
-  Relay Python package in `full`. Hermes Agent itself must be installed
-  separately from a Relay 0.9-compatible release. Claude and Codex do not
-  provide `relay`; their
-  `harness` and `full` extras install the supported `nemo-relay` CLI alongside
-  the harness SDK.
+- LangChain Deep Agents and Hermes adapter packages provide `relay` and include
+  the NeMo Relay Python package in `full`. For Hermes Relay 0.9, install the
+  [merged upstream revision](https://github.com/NousResearch/hermes-agent/commit/dccb84b92401234db294667ec203d3ac3dc1b87f)
+  until a compatible Hermes release is available. The current Hermes release
+  uses Relay 0.8 for ordinary runs in a separate environment. Claude and Codex
+  do not provide `relay`; their `harness` and `full` extras install the
+  supported `nemo-relay` CLI alongside the harness SDK.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise
