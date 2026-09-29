@@ -12,8 +12,8 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 import nemo_fabric_adapters.common.utils as common_utils
 
 
-# Hermes 0.16+ discovers Relay from this TOML path and falls back to direct
-# ATIF/ATOF only when TOML initialization fails. Clear only those enable flags.
+# Hermes selects the generated Relay TOML through this path. Clear stale
+# exporter flags from earlier Hermes versions before starting a new runtime.
 HERMES_RELAY_ENV_NAMES = (
     "HERMES_NEMO_RELAY_PLUGINS_TOML",
     "HERMES_NEMO_RELAY_ATIF_ENABLED",

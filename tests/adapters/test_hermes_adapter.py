@@ -397,7 +397,6 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
     )
 
     def stop_after_staging(*_args, **kwargs):
-        assert kwargs["relay_enabled"] is True
         assert os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(plugin_config_path)
         assert all(
             name not in os.environ
@@ -507,7 +506,6 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
     config = configuration.build_hermes_config(
         agent_config,
         workspace="/workspace/repo",
-        relay_enabled=True,
     )
 
     assert config == {
@@ -540,7 +538,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             },
         },
         "platform_toolsets": {"cli": ["git"]},
-        "plugins": {"enabled": ["custom/plugin", "observability/nemo_relay"]},
+        "plugins": {"enabled": ["custom/plugin"]},
     }
 
 
@@ -645,7 +643,6 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     config = configuration.build_hermes_config(
         agent_config,
         workspace=str(tmp_path / "workspace"),
-        relay_enabled=True,
     )
     plugin_config = common_utils.load_relay_plugin_config(payload)
     observability = plugin_config["components"][0]["config"]
@@ -669,7 +666,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         },
     }
     assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
-    assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
+    assert "plugins" not in config
     assert observability["atof"]["sinks"][0]["output_directory"] == str(
         tmp_path / "relay" / "atof" / "runtime-matrix"
     )

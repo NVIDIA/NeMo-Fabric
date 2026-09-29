@@ -12,8 +12,9 @@ sessions, and Relay telemetry.
 
 ## Install the Adapter
 
-Hermes Agent and the adapter support Python 3.11 through 3.13. Hermes Agent
-0.20 and later is no longer installable from PyPI. End users must first follow
+The adapter supports Python 3.11 through 3.14. The merged upstream Hermes Relay
+0.9 integration requires Python 3.14. Hermes Agent 0.20 and later is no longer
+installable from PyPI. End users must first follow
 the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation).
 
 Install the NeMo Fabric runtime and bare Hermes adapter into the Python
@@ -34,9 +35,9 @@ The adapter package provides `relay` and `full` extras for Relay 0.9. Neither
 installs Hermes Agent.
 
 For local NeMo Fabric development, run the following command from the repository
-root. The recipe checks out a pinned, unreleased Hermes Relay 0.9 snapshot and
-creates an isolated environment. Update it to a compatible release before this
-draft is ready to merge:
+root. The recipe checks out the merged, unreleased Hermes Relay 0.9 revision and
+creates an isolated environment. Update it to a compatible release when one is
+available:
 
 ```bash
 just install-hermes-agent
@@ -74,7 +75,7 @@ The Hermes descriptor validates the following `harness.settings` fields:
 | Setting | Type | Default | Description |
 | --- | --- | --- | --- |
 | `reasoning_config` | object | `{"effort": "none"}` | Configures Hermes model reasoning. The closed object accepts an optional `enabled` boolean and an optional `effort` value of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
-| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. NeMo Fabric adds `observability/nemo_relay` when Relay telemetry is enabled. |
+| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. Relay telemetry uses the generated `plugins.toml`; do not list the removed `observability/nemo_relay` plugin. |
 | `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
 | `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |

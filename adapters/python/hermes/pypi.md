@@ -15,8 +15,8 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Install
 
-Hermes Agent and this adapter require Python versions 3.11 through 3.13.
-Hermes Agent 0.20 and later is not installable from PyPI. Install Hermes Agent
+The adapter supports Python 3.11 through 3.14. The merged upstream Hermes Relay
+integration requires Python 3.14. Hermes Agent 0.20 and later is not installable from PyPI. Install Hermes Agent
 by following the
 [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
 then install the NeMo Fabric packages into the Python environment that runs
@@ -34,7 +34,7 @@ provides. None of these expressions installs Hermes Agent:
 
 Released Hermes Agent v2026.9.24 requires Relay 0.8.x. Ordinary runs remain
 supported in a separate environment. Relay telemetry and streaming require a
-Hermes release with Relay 0.9 support; this draft tests an unreleased upstream
-snapshot until such a release is available.
+Hermes release with Relay 0.9 support; this draft tests the merged upstream
+revision until such a release is available.
 
 Refer to the [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install) for more details.

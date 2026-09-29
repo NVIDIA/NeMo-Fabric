@@ -152,7 +152,7 @@ and Relay configuration while changing the harness:
 Hermes Agent is the baseline used by the default demo. Specify the variant only
 when an explicit configuration is useful, such as `--variant hermes --plan`.
 Hermes supports the example's skills, MCP, and Relay configurations when
-installed from the pinned upstream snapshot used by `just install-hermes-agent`.
+installed from the merged upstream revision used by `just install-hermes-agent`.
 
 ### Codex (`codex`)
 

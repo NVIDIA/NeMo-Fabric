@@ -9,8 +9,9 @@ This adapter runs Hermes Agent through its Python SDK.
 
 ## Install
 
-Hermes Agent and this adapter require Python 3.11 through 3.13. Hermes Agent
-0.20 and later is not installable from PyPI. Install Hermes Agent by following
+The adapter supports Python 3.11 through 3.14. The merged upstream Hermes Relay
+0.9 integration requires Python 3.14. Hermes Agent 0.20 and later is not
+installable from PyPI. Install Hermes Agent by following
 the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
 then install the NeMo Fabric packages into the Python environment that runs
 Hermes Agent.
@@ -27,8 +28,8 @@ provides. None of these expressions installs Hermes Agent:
 | `pip install nemo-fabric-adapters-hermes` | No | Yes | No | No |
 
 Released Hermes Agent v2026.9.24 requires Relay 0.8.x. This draft tests Relay
-telemetry with a pinned, unreleased upstream Hermes snapshot that supports
-Relay 0.9. Create its isolated development environment:
+telemetry with the merged, unreleased upstream Hermes revision on Python 3.14.
+Create its isolated development environment:
 
 ```bash
 just install-hermes-agent
@@ -39,7 +40,7 @@ For split runtime and adapter environments, configure `ADAPTER_PYTHON` and use
 matching NeMo Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-Relay telemetry and `Runtime.invoke_stream()` require the Hermes snapshot
+Relay telemetry and `Runtime.invoke_stream()` require the merged Hermes revision
 above until an upstream release supports Relay 0.9. Ordinary `Runtime.invoke()`
 also works with released Hermes in a separate environment.
 
@@ -73,7 +74,7 @@ The descriptor validates the following `harness.settings` fields:
 | Setting | Type | Default | Description |
 | --- | --- | --- | --- |
 | `reasoning_config` | object | `{"effort": "none"}` | Configures Hermes model reasoning. The closed object accepts an optional `enabled` boolean and an optional `effort` value of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
-| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. NeMo Fabric adds `observability/nemo_relay` when Relay telemetry is enabled. |
+| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. Relay telemetry uses the generated `plugins.toml`; do not list the removed `observability/nemo_relay` plugin. |
 | `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
 | `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |

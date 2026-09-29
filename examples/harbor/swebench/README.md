@@ -42,7 +42,7 @@ task image by following the
 [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation)
 and ensure that the Fabric runner uses the Python environment containing Hermes
 Agent and `nemo-fabric-adapters-hermes`. Relay-enabled Hermes runs in this draft
-require the pinned upstream Relay 0.9 snapshot used by `just install-hermes-agent`;
+require the merged upstream Relay 0.9 revision used by `just install-hermes-agent`;
 set `ADAPTER_PYTHON` to that task environment's interpreter. Replace the pin
 with a compatible release before this follow-up is ready to merge. The dynamic
 `fabric_package` install is not a substitute for that image preparation.

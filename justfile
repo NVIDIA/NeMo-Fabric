@@ -351,12 +351,11 @@ install-typescript-opencode: install-typescript-contract
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters
 
-# Pin a tested snapshot of upstream Hermes Relay 0.9 support for this draft.
-# Replace it with a compatible Hermes release before marking this PR ready.
+# Pin the merged upstream Hermes Relay 0.9 integration until it is released.
 install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
-    hermes_commit="47edd6455bbb66ac94e00be0ca3e888680f02882"
+    hermes_commit="dccb84b92401234db294667ec203d3ac3dc1b87f"
     hermes_checkout="$REPO_ROOT/external/hermes-agent"
     hermes_diff_pathspec=()
 
@@ -393,20 +392,22 @@ install-hermes-agent:
         echo "  git -C \"$hermes_checkout\" restore --source=HEAD --staged --worktree -- ." >&2
         exit 1
     fi
-    if [[ ! -x "$REPO_ROOT/.venv-hermes/bin/python" ]]; then
-        uv venv --python "${UV_PYTHON:-3.12}" "$REPO_ROOT/.venv-hermes"
+    if [[ ! -x "$REPO_ROOT/.venv-hermes/bin/python" ]] ||
+       ! "$REPO_ROOT/.venv-hermes/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 14)' 2>/dev/null; then
+        uv venv --python 3.14 --clear "$REPO_ROOT/.venv-hermes"
     fi
     uv pip install --python "$REPO_ROOT/.venv-hermes/bin/python" \
         --editable "$REPO_ROOT/adapter-contract/python" \
         --editable "$REPO_ROOT/adapters/python/common" \
         --editable "$REPO_ROOT/adapters/python/hermes[relay]" \
+        --editable "$REPO_ROOT/sdk/python/nemo-fabric-collector" \
         --editable "$REPO_ROOT/sdk/python/nemo-fabric-runtime" \
         --editable "$REPO_ROOT/sdk/python/nemo-fabric" \
         --config-settings-package hermes-agent:editable_mode=compat \
-        --editable "$hermes_checkout" pytest pytest-asyncio
+        --editable "$hermes_checkout[mcp]" pytest pytest-asyncio pyyaml
 
 test-hermes: install-hermes-agent
-    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py -q
+    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_streaming.py tests/e2e/test_hermes_e2e.py -q
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript

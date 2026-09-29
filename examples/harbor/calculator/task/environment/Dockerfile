@@ -27,16 +27,16 @@ RUN pip install --no-cache-dir \
         -e /opt/nemo-fabric/adapters/python/openclaw \
         -e "/opt/nemo-fabric/sdk/python/nemo-fabric[claude,hermes-agent,openclaw,relay]"
 
-# Pin the upstream Hermes Relay 0.9 snapshot until a compatible release exists.
+# Pin the merged upstream Hermes Relay 0.9 revision until it is released.
 RUN python -m venv /opt/hermes-venv \
     && git clone https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
-    && git -C /opt/hermes-agent checkout --detach 47edd6455bbb66ac94e00be0ca3e888680f02882 \
+    && git -C /opt/hermes-agent checkout --detach dccb84b92401234db294667ec203d3ac3dc1b87f \
     && /opt/hermes-venv/bin/pip install --no-cache-dir \
         -e /opt/nemo-fabric/adapter-contract/python \
         -e /opt/nemo-fabric/adapters/python/common \
         -e '/opt/nemo-fabric/adapters/python/hermes[relay]' \
     && /opt/hermes-venv/bin/pip install --no-cache-dir \
-        --config-settings editable_mode=compat -e /opt/hermes-agent
+        --config-settings editable_mode=compat -e '/opt/hermes-agent[mcp]'
 
 COPY calculator.py /app/calculator.py
 COPY fabric /opt/fabric-calculator

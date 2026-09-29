@@ -78,7 +78,6 @@ def build_hermes_config(
     agent_config: AgentConfig,
     *,
     workspace: str,
-    relay_enabled: bool = False,
 ) -> dict[str, Any]:
     settings = _settings(agent_config)
     model_config = _selected_model(agent_config)
@@ -130,8 +129,6 @@ def build_hermes_config(
         config["platform_toolsets"] = {"cli": enabled_toolsets}
 
     plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
-    if relay_enabled and "observability/nemo_relay" not in plugins:
-        plugins.append("observability/nemo_relay")
     if plugins:
         config["plugins"] = {"enabled": plugins}
 
@@ -143,13 +140,11 @@ def write_hermes_config(
     hermes_home: Path,
     *,
     workspace: str,
-    relay_enabled: bool = False,
 ) -> tuple[Path, dict[str, Any]]:
     hermes_home.mkdir(parents=True, exist_ok=True)
     config = build_hermes_config(
         agent_config,
         workspace=workspace,
-        relay_enabled=relay_enabled,
     )
     config_path = hermes_home / "config.yaml"
     config_path.write_text(common_utils.dump_yaml(config), encoding="utf-8")
