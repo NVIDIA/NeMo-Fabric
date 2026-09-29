@@ -86,7 +86,7 @@ uv run --extra harbor harbor run \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak "fabric_package=$FABRIC_PACKAGE" \
-  --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
+  --ae 'NVIDIA_API_KEY=${NVIDIA_API_KEY}' \
   --job-name django-13741-hermes \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
@@ -185,7 +185,7 @@ uv run --extra harbor harbor run \
   --ak fabric_telemetry=relay \
   --ak "fabric_package=$FABRIC_PACKAGE" \
   --ae "PATH=/tmp/nemo-fabric-config/.relay/bin:$PATH" \
-  --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
+  --ae 'ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}' \
   --job-name django-13741-claude \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
@@ -223,7 +223,7 @@ uv run --extra harbor harbor run \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_telemetry=relay \
   --ak "fabric_package=$FABRIC_PACKAGE" \
-  --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
+  --ae 'NVIDIA_API_KEY=${NVIDIA_API_KEY}' \
   --job-name django-13741-hermes-skill \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
@@ -313,7 +313,7 @@ uv run --extra harbor harbor run \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_telemetry=relay \
   --ak "fabric_package=$FABRIC_PACKAGE" \
-  --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
+  --ae 'NVIDIA_API_KEY=${NVIDIA_API_KEY}' \
   --job-name swebench-verified-hermes-5 \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
