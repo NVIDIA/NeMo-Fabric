@@ -36,6 +36,13 @@ MARKDOWN_CODE_BLOCK_END = "```\n\n"
 _NODE_TARBALL_LICENSE_CACHE: dict[tuple[str, str], str | None] = {}
 
 
+def _markdown_code_fence(text: str) -> str:
+    """Return a backtick fence longer than every backtick run in text."""
+
+    longest = max((len(match.group()) for match in re.finditer(r"`+", text)), default=0)
+    return "`" * max(3, longest + 1)
+
+
 class RenderedPythonPackage(TypedDict):
     """Normalized Python package data ready to be rendered into markdown."""
 
@@ -1183,16 +1190,17 @@ def cmd_node() -> int:
         parts.append(f"**Repository URL**: {repository}\n")
         parts.append(f"**License Type(s)**: {license_name}\n")
         parts.append(f"### License: {license_url}\n")
-        parts.append(MARKDOWN_CODE_FENCE)
         fallback = (
             f"(No license file read from locked npm artifact for {name}; "
             "see npm metadata.)\n"
         )
         rendered_text = text if text else fallback
+        fence = _markdown_code_fence(rendered_text)
+        parts.append(f"{fence}\n")
         parts.append(
             rendered_text if rendered_text.endswith("\n") else rendered_text + "\n"
         )
-        parts.append(MARKDOWN_CODE_BLOCK_END)
+        parts.append(f"{fence}\n\n")
 
     out.write_text("".join(parts).rstrip("\n") + "\n", encoding="utf-8")
     print(f"Wrote {out.relative_to(ROOT)}", file=sys.stderr)

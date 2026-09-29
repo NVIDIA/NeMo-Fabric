@@ -49,6 +49,7 @@ def test_publisher_only_triggers_for_public_release_channels():
         "nemo-fabric-adapters-common",
         "nemo-fabric-adapters-opencode",
         "nemo-fabric-adapters-pi",
+        "nemo-fabric-adapters-qwen",
     ):
         for version in ("0.3.0", "0.3.0-beta.1", "0.3.0-rc.1"):
             assert not _tag_triggers_workflow(f"npm/{package}/v{version}", tag_patterns)
@@ -84,6 +85,7 @@ def test_publisher_publishes_packages_in_dependency_order():
         "adapters/typescript/cline",
         "adapters/typescript/pi",
         "adapters/typescript/opencode",
+        "adapters/typescript/qwen",
     )
     assert "Verify packages" not in steps
     run = steps["Publish packages"]["run"]

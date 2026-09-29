@@ -26,6 +26,7 @@ from examples.code_review_agent.config import (
     nooa_config,
     openclaw_config,
     pi_config,
+    qwen_config,
     with_relay,
     with_skill_paths,
 )
@@ -39,6 +40,7 @@ CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "nooa": nooa_config,
     "openclaw": openclaw_config,
     "pi": pi_config,
+    "qwen": qwen_config,
 }
 
 
@@ -141,10 +143,13 @@ async def main() -> None:
         parser.error("--stream requires --relay")
     if args.stream and args.plan:
         parser.error("--stream cannot be combined with --plan")
-    if args.variant == "cline" and args.relay:
-        parser.error("the Cline adapter does not support Relay telemetry")
-    if args.variant == "openclaw" and args.relay:
-        parser.error("the OpenClaw adapter does not support Relay telemetry")
+    if args.variant in {"cline", "openclaw", "qwen"} and args.relay:
+        display_name = {
+            "cline": "Cline",
+            "openclaw": "OpenClaw",
+            "qwen": "Qwen Code",
+        }[args.variant]
+        parser.error(f"the {display_name} adapter does not support Relay telemetry")
     if args.service and args.variant != "openclaw":
         parser.error("--service requires --variant openclaw")
     if args.runtime_count < 1:

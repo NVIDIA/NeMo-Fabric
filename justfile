@@ -289,6 +289,7 @@ clean:
         adapters/typescript/cline/dist \
         adapters/typescript/pi/dist \
         adapters/typescript/opencode/dist \
+        adapters/typescript/qwen/dist \
         adapters/python/*/build \
         adapters/python/*/dist \
         sdk/python/*/build \
@@ -297,7 +298,8 @@ clean:
         adapters/typescript/common/*.tgz \
         adapters/typescript/cline/*.tgz \
         adapters/typescript/pi/*.tgz \
-        adapters/typescript/opencode/*.tgz
+        adapters/typescript/opencode/*.tgz \
+        adapters/typescript/qwen/*.tgz
     find . \
         \( -path './.venv' -o -path './.git' \) -prune -o \
         -type d \( \
@@ -353,6 +355,10 @@ install-typescript-cline: install-typescript-contract
 # Install the OpenCode adapter and its pinned SDK harness for source development.
 install-typescript-opencode: install-typescript-contract
     npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-opencode --include-workspace-root --ignore-scripts
+
+# Install the Qwen adapter and its pinned SDK harness for source development.
+install-typescript-qwen: install-typescript-contract
+    npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-qwen --include-workspace-root --ignore-scripts
 
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters
