@@ -23,14 +23,14 @@ products:
     path: ./versions/dev.yml
     slug: dev
     availability: beta
-  - display-name: v0.3.0
-    path: ./versions/v0.3.0.yml
-    slug: v0.3.0
-    availability: stable
   - display-name: v0.4.0
     path: ./versions/v0.4.0.yml
     slug: v0.4.0
     availability: beta
+  - display-name: v0.3.0
+    path: ./versions/v0.3.0.yml
+    slug: v0.3.0
+    availability: stable
   - display-name: v0.2.0
     path: ./versions/v0.2.0.yml
     slug: v0.2.0

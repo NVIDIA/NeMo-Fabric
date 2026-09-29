@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeHandle &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>,\n    pub runtime_binding: <a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>,\n    pub harness: <a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>,\n    pub adapter_kind: <a href=\"../config/enum-adapterkind.mdx\">AdapterKind</a>,\n    pub adapter_id: <a href=\"https://doc.rust-lang.org/1.98.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>&gt;,\n    pub environment: <a href=\"struct-environmenthandle.mdx\">EnvironmentHandle</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeHandle &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>,\n    pub runtime_binding: <a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>,\n    pub harness: <a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>,\n    pub adapter_kind: <a href=\"../config/enum-adapterkind.mdx\">AdapterKind</a>,\n    pub adapter_id: <a href=\"https://doc.rust-lang.org/1.98.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>&gt;,\n    pub service_id: <a href=\"https://doc.rust-lang.org/1.98.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.98.1/alloc/string/struct.String.html\">String</a>&gt;,\n    pub environment: <a href=\"struct-environmenthandle.mdx\">EnvironmentHandle</a>,\n&#125;"}} /></pre>
 
 Active or resumable harness runtime.
 
@@ -38,6 +38,10 @@ Adapter kind.
 ### `adapter_id: Option<String>`
 
 Adapter implementation id.
+
+### `service_id: Option<String>`
+
+Service used by this runtime, when it is connected to a shared service.
 
 ### `environment: EnvironmentHandle`
 
