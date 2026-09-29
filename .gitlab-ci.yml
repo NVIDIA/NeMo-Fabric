@@ -70,7 +70,7 @@ collect:github-artifacts:
           --jq '.sha'
       )"
 
-      if printf '%s\n' "$tag" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]{8}$'; then
+      if printf '%s\n' "$tag" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]{8}$'; then
         trigger_type="nightly"
         matched_workflow="$NEMO_FABRIC_CI_NIGHTLY_WORKFLOW_FILE"
       else
