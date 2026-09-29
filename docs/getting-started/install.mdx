@@ -17,6 +17,14 @@ NeMo Fabric supports Python 3.11 through 3.14. Some integrations and adapters
 have additional requirements. The Hermes Agent adapter does not support Python
 3.14, and the Harbor integration requires Python 3.12 or later.
 
+### Supported Platforms
+
+NeMo Fabric supports the following platforms:
+
+- Linux (x86_64 and arm64)
+- macOS (arm64)
+- Windows (x86_64)
+
 ### Choose an Installation
 
 The following table shows a representative subset of package expressions and
@@ -269,6 +277,48 @@ the adapter-owned Relay configuration. Refer to the
 configuration and the embedded collector streaming workflow. Do not set
 `launch_collector=False` for Pi streaming because the Pi extension does not
 attach the NeMo Fabric request IDs required by an externally managed collector.
+
+## Deployment Scenarios
+
+Choose a deployment scenario based on where the consumer, runtime, adapter, and harness need to run.
+
+### Runtime and Harness in the Same Environment
+
+The NeMo Fabric runtime, selected adapter, and harness share one environment. This is the simplest scenario for local development and the [quickstart](./quickstart.mdx).
+
+Install the runtime with the harness extra, or install the runtime and a bare adapter beside an existing harness. The package options earlier in this guide describe both approaches.
+
+### Isolated Task Environment
+
+The host application constructs and serializes the final typed `FabricConfig`. It then runs NeMo Fabric, the selected adapter, and the harness inside an isolated task environment such as a Docker container or sandbox. Adapter discovery and task-path resolution occur inside that environment.
+
+Harbor uses this model. Install its integration in the host environment:
+
+```bash
+pip install "nemo-fabric[harbor]"
+```
+
+Install NeMo Fabric, the selected adapter, and the harness in the task environment. For a Hermes Agent task, install Hermes Agent according to its installation guide, then add `nemo-fabric`, `nemo-fabric-adapters-hermes`, and optionally `nemo-fabric[relay]`.
+
+Relay-enabled Claude, Codex, or Pi tasks also require the adapter-compatible NeMo Relay CLI in the task environment. Pi additionally requires its matching Relay extension. Refer to the [Harbor integration guide](../integrations/consumer/harbor.mdx) for details.
+
+### Runtime and Harness in Separate Environments
+
+The NeMo Fabric runtime and agent harness can run in separate, locally accessible Python environments. This scenario isolates their Python dependencies while the runtime launches the adapter through the adapter environment's interpreter.
+
+Install `nemo-fabric` in the runtime environment. Install the adapter and harness in the second environment, then set `ADAPTER_PYTHON` in the runtime environment:
+
+```bash
+export ADAPTER_PYTHON="/path/to/adapter-environment/bin/python"
+```
+
+On Windows, use the adapter environment's Python executable:
+
+```powershell
+$env:ADAPTER_PYTHON = "C:\path\to\adapter-environment\Scripts\python.exe"
+```
+
+Use matching NeMo Fabric release versions for the runtime and adapter unless a different pairing has been validated.
 
 ## Source Installation Method
 
