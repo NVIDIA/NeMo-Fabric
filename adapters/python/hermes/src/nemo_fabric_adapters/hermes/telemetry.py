@@ -12,8 +12,8 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 import nemo_fabric_adapters.common.utils as common_utils
 
 
-# Hermes 0.16+ discovers Relay from this TOML path and falls back to direct
-# ATIF/ATOF only when TOML initialization fails. Clear only those enable flags.
+# Hermes selects the generated Relay TOML through this path. Clear stale
+# exporter flags from earlier Hermes versions before starting a new runtime.
 HERMES_RELAY_ENV_NAMES = (
     "HERMES_NEMO_RELAY_PLUGINS_TOML",
     "HERMES_NEMO_RELAY_ATIF_ENABLED",
@@ -34,15 +34,17 @@ def finalize_hermes_relay_session(session_id: str) -> None:
         invoke_hook("on_session_finalize", session_id=session_id, platform="fabric")
     else:
         finalize_session(session_id=session_id, platform="fabric")
+    from nemo_relay import subscribers
+
+    # Relay enqueues subscriber work; the ATIF file is written by one, so wait for it.
+    subscribers.flush()
 
 
 def validate_hermes_telemetry_provider(runtime_context: RuntimeContext) -> None:
     telemetry = runtime_context.telemetry
     providers = telemetry.metadata.get("telemetry_providers", []) if telemetry else []
-    if (telemetry and telemetry.relay_enabled) or "relay" in providers:
-        raise ValueError("Hermes Relay telemetry is temporarily unavailable")
-    if providers:
-        raise ValueError("telemetry providers are not supported for Hermes")
+    if any(provider != "relay" for provider in providers):
+        raise ValueError("only relay telemetry is supported for Hermes")
 
 
 def write_hermes_relay_plugin_config(

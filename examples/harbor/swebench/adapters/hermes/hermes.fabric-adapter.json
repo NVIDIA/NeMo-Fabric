@@ -87,5 +87,15 @@
     ],
     "system_instruction_modes": ["replace"]
   },
-  "telemetry": {"providers": {}}
+  "telemetry": {
+    "providers": {
+      "relay": {
+        "outputs": [
+          "atif",
+          "otel",
+          "openinference"
+        ]
+      }
+    }
+  }
 }

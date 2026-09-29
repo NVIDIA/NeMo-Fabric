@@ -182,7 +182,7 @@ Agent Trajectory Interchange Format (ATIF).
 | [Claude](python/claude/README.md) | `ClaudeSDKClient` and Claude session ID | Runtime-owned Relay CLI gateway and generated Claude hooks | Calls `client.query()`, validates the session ID, and collects ATOF and ATIF | Disconnects the client, stops the gateway, and removes the generated plugin | Not implemented |
 | [Codex](python/codex/README.md) | `AsyncCodex` app-server client and SDK thread | Runtime-owned Relay CLI gateway and Codex SDK hooks | Reuses the SDK thread and persists its thread ID | Closes the SDK client and app server, then stops the gateway | Not implemented |
 | [LangChain Deep Agents](python/deepagents/README.md) | Compiled LangGraph agent, checkpointer, and thread ID | NeMo Relay Python SDK integration added when the agent is compiled | Creates a fresh Relay request scope and callback for each invocation | Closes the checkpointer; no gateway process | Not implemented |
-| [Hermes Agent](python/hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Temporarily unavailable | Reuses the native session across invocations | Closes the agent and database | Not implemented |
+| [Hermes Agent](python/hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes Agent NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
 | [mini-SWE-agent](python/mini-swe-agent/README.md) | Conversation history | Adapter-owned subclass with NeMo Relay Python SDK scopes | Creates a fresh Relay plugin and request scope, emits step, model, and bash-action telemetry, and collects artifacts | Clears the agent and Relay state | Not implemented |
 | [NOOA](python/nooa/README.md) | InteractiveAgent queue dispatcher or BenchAgent task state | Adapter-owned Relay middleware and generated Relay configuration | InteractiveAgent dispatches queued requests; BenchAgent evaluates one task | Closes agent resources and Relay state | Not implemented |
 | [OpenClaw](python/openclaw/README.md) | OpenClaw Gateway session selected by Fabric runtime ID | Not supported | Sends a terminal Chat Completions request to the isolated loopback Gateway | Terminates the Gateway process tree and removes its temporary config and state | Adapter-owned loopback service |
@@ -191,7 +191,7 @@ Agent Trajectory Interchange Format (ATIF).
 | [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a shared ATOF collector | Registers the request ID, maps it into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |
 
 Telemetry output names use the descriptor contract values. Claude, Codex,
-mini-SWE-agent and Pi can emit NeMo Relay ATIF, OpenTelemetry, and
+Hermes Agent, mini-SWE-agent, and Pi can emit NeMo Relay ATIF, OpenTelemetry, and
 OpenInference output. Deep Agents supports the same Relay outputs plus native
 OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry. The
 Remote Agent adapter maps the request ID into the remote API body. The

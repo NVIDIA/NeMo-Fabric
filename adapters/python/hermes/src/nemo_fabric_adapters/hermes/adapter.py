@@ -137,7 +137,6 @@ class HermesRuntime:
                 self._hermes_home,
                 # Workspace belongs to the per-runtime context, not AgentConfig.
                 workspace=str(runtime_context.environment.workspace or "."),
-                relay_enabled=relay_enabled,
             )
             api_key_env = configuration._api_key_env(model_config)
             api_key = os.environ.get(api_key_env)
@@ -160,7 +159,12 @@ class HermesRuntime:
                 # discover_mcp_tools uses a blocking 120s wait, wrapping it in
                 # asyncio.to_thread to avoid blocking the loop.
                 if self._hermes_config.get("mcp_servers"):
-                    from tools.mcp_tool import discover_mcp_tools
+                    try:
+                        from tools.mcp_tool_discovery import discover_mcp_tools
+                    except ModuleNotFoundError as error:
+                        if error.name != "tools.mcp_tool_discovery":
+                            raise
+                        from tools.mcp_tool import discover_mcp_tools
 
                     await asyncio.to_thread(discover_mcp_tools)
 
@@ -506,7 +510,12 @@ class HermesRuntime:
 
         if had_mcp_servers:
             try:
-                from tools.mcp_tool import shutdown_mcp_servers
+                try:
+                    from tools.mcp_tool_lifecycle import shutdown_mcp_servers
+                except ModuleNotFoundError as error:
+                    if error.name != "tools.mcp_tool_lifecycle":
+                        raise
+                    from tools.mcp_tool import shutdown_mcp_servers
 
                 # wrapping this blocking call in asyncio.to_thread to avoid
                 # blocking the loop.

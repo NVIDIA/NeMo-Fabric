@@ -351,13 +351,11 @@ install-typescript-opencode: install-typescript-contract
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters
 
-# Install the released Hermes Agent in an isolated environment. Hermes
-# v2026.9.24 requires Relay 0.8.x, while the main Fabric environment uses 0.9.
-# Its normal adapter behavior is tested here; Relay telemetry is unavailable.
+# Pin the merged upstream Hermes Relay 0.9 integration until it is released.
 install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
-    hermes_commit="e3dd27ee2d8b011737a4eea8e3eb3d711ab78690"
+    hermes_commit="dccb84b92401234db294667ec203d3ac3dc1b87f"
     hermes_checkout="$REPO_ROOT/external/hermes-agent"
     hermes_diff_pathspec=()
 
@@ -394,20 +392,22 @@ install-hermes-agent:
         echo "  git -C \"$hermes_checkout\" restore --source=HEAD --staged --worktree -- ." >&2
         exit 1
     fi
-    if [[ ! -x "$REPO_ROOT/.venv-hermes/bin/python" ]]; then
-        uv venv --python "${UV_PYTHON:-3.12}" "$REPO_ROOT/.venv-hermes"
+    if [[ ! -x "$REPO_ROOT/.venv-hermes/bin/python" ]] ||
+       ! "$REPO_ROOT/.venv-hermes/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 14)' 2>/dev/null; then
+        uv venv --python 3.14 --clear "$REPO_ROOT/.venv-hermes"
     fi
     uv pip install --python "$REPO_ROOT/.venv-hermes/bin/python" \
         --editable "$REPO_ROOT/adapter-contract/python" \
         --editable "$REPO_ROOT/adapters/python/common" \
-        --editable "$REPO_ROOT/adapters/python/hermes" \
+        --editable "$REPO_ROOT/adapters/python/hermes[relay]" \
+        --editable "$REPO_ROOT/sdk/python/nemo-fabric-collector" \
         --editable "$REPO_ROOT/sdk/python/nemo-fabric-runtime" \
         --editable "$REPO_ROOT/sdk/python/nemo-fabric" \
         --config-settings-package hermes-agent:editable_mode=compat \
-        --editable "$hermes_checkout" pytest pytest-asyncio
+        --editable "$hermes_checkout[mcp]" pytest pytest-asyncio pyyaml
 
 test-hermes: install-hermes-agent
-    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py -q -k 'not relay or rejects_relay or rejects_mixed_native_and_relay'
+    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_streaming.py tests/e2e/test_hermes_e2e.py -q
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript

@@ -104,8 +104,7 @@ async def test_hermes_persistent_host_with_relay(
     ]
     assert (
         sum(
-            record["name"] == "hermes.session"
-            and record.get("scope_category") == "end"
+            record["name"] == "hermes.session" and record.get("scope_category") == "end"
             for record in atof_records
         )
         == 2
@@ -120,7 +119,7 @@ async def test_env_secrets_in_headers(
     os.environ["ADAPTER_PYTHON"] = sys.executable
     os.environ["MY_KEY"] = "XYZ"
     tool_name = "mcp__headers__get_authorization_header"
-    if Version(distribution_version("hermes-agent")) < Version("0.20"):
+    if Version("0") < Version(distribution_version("hermes-agent")) < Version("0.20"):
         tool_call = {"name": tool_name, "arguments": {}}
     else:
         tool_call = {
@@ -167,7 +166,7 @@ async def test_mcp_stdio_transport(
     os.environ["ADAPTER_PYTHON"] = sys.executable
     tool_name = "mcp__mcp_server_time__get_current_time"
     tool_arguments = {"timezone": "America/Los_Angeles"}
-    if Version(distribution_version("hermes-agent")) < Version("0.20"):
+    if Version("0") < Version(distribution_version("hermes-agent")) < Version("0.20"):
         # The released 0.19 integration accepts the configured MCP tool directly.
         tool_call = {"name": tool_name, "arguments": tool_arguments}
     else:
@@ -186,11 +185,12 @@ async def test_mcp_stdio_transport(
     config = hermes_config()
     config.models["default"].base_url = f"{api_server}/v1"
     config.tools.enabled = None
+    mcp_server = Path(__file__).resolve().parents[1] / "_utils" / "time_mcp_server.py"
     config.add_mcp_server(
         "mcp_server_time",
         transport="stdio",
         url=sys.executable,
-        args=["-m", "mcp_server_time"],
+        args=[str(mcp_server)],
         env={"MCP_TIME_TEST": "enabled"},
     )
 
@@ -239,7 +239,7 @@ async def test_mcp_stdio_transport(
         assert generated_config["mcp_servers"]["mcp_server_time"] == {
             "enabled": True,
             "command": sys.executable,
-            "args": ["-m", "mcp_server_time"],
+            "args": [str(mcp_server)],
             "env": {"MCP_TIME_TEST": "enabled"},
         }
         assert "mcp_server_time" in result["output"]["enabled_toolsets"]
@@ -396,8 +396,8 @@ class TestHermesE2E:
             == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
         )
         assert hermes_config["model"]["base_url"] == f"{self.api_server}/v1"
-        assert hermes_config["plugins"]["enabled"] == ["observability/nemo_relay"]
-        assert output["hermes_native_config"]["plugins"] == ["observability/nemo_relay"]
+        assert "plugins" not in hermes_config
+        assert output["hermes_native_config"]["plugins"] == []
 
         expected_artifact_root = (
             self.code_review_agent_dir / "artifacts" / self.artifact_dir

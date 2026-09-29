@@ -265,7 +265,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         )
         for variant, adapter_id in variants
         for relay_enabled in (False, True)
-        if variant not in {"openclaw", "hermes"} or not relay_enabled
+        if variant != "openclaw" or not relay_enabled
     )
 
     for options, adapter_id, relay_enabled in cases:

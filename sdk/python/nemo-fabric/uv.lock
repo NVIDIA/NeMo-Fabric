@@ -1895,7 +1895,7 @@ harbor = [
     { name = "pyyaml" },
 ]
 hermes-agent = [
-    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.15'" },
 ]
 mini-swe-agent = [
     { name = "nemo-fabric-adapters-mini-swe-agent", extra = ["harness"] },
@@ -1922,7 +1922,7 @@ requires-dist = [
     { name = "nemo-fabric-adapters-claude", extras = ["harness"], marker = "extra == 'claude'", editable = "../../../adapters/python/claude" },
     { name = "nemo-fabric-adapters-codex", extras = ["harness"], marker = "extra == 'codex'", editable = "../../../adapters/python/codex" },
     { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], marker = "extra == 'deepagents'", editable = "../../../adapters/python/deepagents" },
-    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "../../../adapters/python/hermes" },
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.15' and extra == 'hermes-agent'", editable = "../../../adapters/python/hermes" },
     { name = "nemo-fabric-adapters-mini-swe-agent", extras = ["harness"], marker = "extra == 'mini-swe-agent'", editable = "../../../adapters/python/mini-swe-agent" },
     { name = "nemo-fabric-adapters-nooa", extras = ["harness"], marker = "python_full_version >= '3.12' and python_full_version < '3.14' and extra == 'nooa'", editable = "../../../adapters/python/nooa" },
     { name = "nemo-fabric-adapters-openclaw", marker = "extra == 'openclaw'", editable = "../../../adapters/python/openclaw" },
@@ -2052,16 +2052,20 @@ name = "nemo-fabric-adapters-hermes"
 version = "0.4.0"
 source = { editable = "../../../adapters/python/hermes" }
 dependencies = [
-    { name = "nemo-fabric-adapter-contract", marker = "python_full_version < '3.14'" },
-    { name = "nemo-fabric-adapters-common", marker = "python_full_version < '3.14'" },
+    { name = "nemo-fabric-adapter-contract" },
+    { name = "nemo-fabric-adapters-common" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "../../../adapters/python/common" },
+    { name = "nemo-relay", marker = "extra == 'full'", specifier = ">=0.9,<0.10" },
+    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.9,<0.10" },
+    { name = "tomli-w", marker = "extra == 'full'", specifier = ">=1.2,<2" },
+    { name = "tomli-w", marker = "extra == 'relay'", specifier = ">=1.2,<2" },
 ]
-provides-extras = ["full"]
+provides-extras = ["relay", "full"]
 
 [[package]]
 name = "nemo-fabric-adapters-mini-swe-agent"

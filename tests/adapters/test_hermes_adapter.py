@@ -90,22 +90,16 @@ def _runtime_context(
     )
 
 
-def test_validate_hermes_telemetry_provider_accepts_no_provider():
-    telemetry.validate_hermes_telemetry_provider(_runtime_context())
-
-
-def test_validate_hermes_telemetry_provider_rejects_relay():
-    with pytest.raises(
-        ValueError, match="Hermes Relay telemetry is temporarily unavailable"
-    ):
-        telemetry.validate_hermes_telemetry_provider(
-            _runtime_context(providers=["relay"])
-        )
+@pytest.mark.parametrize("providers", [None, ["relay"]])
+def test_validate_hermes_telemetry_provider_accepts_relay(
+    providers: list[str] | None,
+):
+    telemetry.validate_hermes_telemetry_provider(_runtime_context(providers=providers))
 
 
 def test_validate_hermes_telemetry_provider_rejects_native():
     with pytest.raises(
-        ValueError, match="telemetry providers are not supported for Hermes"
+        ValueError, match="only relay telemetry is supported for Hermes"
     ):
         telemetry.validate_hermes_telemetry_provider(
             _runtime_context(providers=["native"])
@@ -114,7 +108,7 @@ def test_validate_hermes_telemetry_provider_rejects_native():
 
 def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
     with pytest.raises(
-        ValueError, match="Hermes Relay telemetry is temporarily unavailable"
+        ValueError, match="only relay telemetry is supported for Hermes"
     ):
         telemetry.validate_hermes_telemetry_provider(
             _runtime_context(providers=["relay", "native"])
@@ -149,7 +143,6 @@ def test_descriptor_uses_the_typed_agent_config_contract():
     ]
     assert "model" not in descriptor["extension_schemas"]
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
-    assert descriptor["telemetry"]["providers"] == {}
 
 
 async def test_runtime_start_rejects_append_system_instruction(tmp_path: Path):
@@ -377,6 +370,21 @@ def test_finalize_hermes_relay_session_uses_legacy_plugin_hook(monkeypatch):
     )
 
 
+def test_finalize_hermes_relay_session_flushes_relay_after_the_hook(monkeypatch):
+    nemo_relay = pytest.importorskip("nemo_relay")
+    order: list[str] = []
+    hermes_cli = ModuleType("hermes_cli")
+    hermes_lifecycle = ModuleType("hermes_cli.lifecycle")
+    hermes_lifecycle.finalize_session = lambda **_: order.append("finalize")  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.lifecycle", hermes_lifecycle)
+    monkeypatch.setattr(nemo_relay.subscribers, "flush", lambda: order.append("flush"))
+
+    telemetry.finalize_hermes_relay_session("session-1")
+
+    assert order == ["finalize", "flush"]
+
+
 async def test_runtime_start_stages_upstream_relay_plugin_configuration(
     monkeypatch,
     tmp_path: Path,
@@ -389,7 +397,6 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
     )
 
     def stop_after_staging(*_args, **kwargs):
-        assert kwargs["relay_enabled"] is True
         assert os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(plugin_config_path)
         assert all(
             name not in os.environ
@@ -499,7 +506,6 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
     config = configuration.build_hermes_config(
         agent_config,
         workspace="/workspace/repo",
-        relay_enabled=True,
     )
 
     assert config == {
@@ -517,6 +523,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             "cwd": "/workspace/repo",
             "timeout": 90,
         },
+        "auxiliary": {"title_generation": {"enabled": False}},
         "skills": {"external_dirs": ["skills/review"]},
         "mcp_servers": {
             "github": {
@@ -531,7 +538,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             },
         },
         "platform_toolsets": {"cli": ["git"]},
-        "plugins": {"enabled": ["custom/plugin", "observability/nemo_relay"]},
+        "plugins": {"enabled": ["custom/plugin"]},
     }
 
 
@@ -636,7 +643,6 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     config = configuration.build_hermes_config(
         agent_config,
         workspace=str(tmp_path / "workspace"),
-        relay_enabled=True,
     )
     plugin_config = common_utils.load_relay_plugin_config(payload)
     observability = plugin_config["components"][0]["config"]
@@ -660,7 +666,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         },
     }
     assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
-    assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
+    assert "plugins" not in config
     assert observability["atof"]["sinks"][0]["output_directory"] == str(
         tmp_path / "relay" / "atof" / "runtime-matrix"
     )
@@ -1018,6 +1024,19 @@ async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
     assert runtime._mcp_authentication_checked is False
 
 
+def test_build_hermes_config_disables_session_title_generation():
+    agent_config = _agent_config(
+        {
+            "harness": {"settings": {}},
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+        }
+    )
+
+    config = configuration.build_hermes_config(agent_config, workspace=".")
+
+    assert config["auxiliary"] == {"title_generation": {"enabled": False}}
+
+
 def test_write_hermes_config_writes_file(tmp_path: Path):
     agent_config = _agent_config(
         {
@@ -1100,7 +1119,7 @@ async def test_runtime_start_rejects_native_telemetry():
     }
 
     with pytest.raises(
-        ValueError, match="telemetry providers are not supported for Hermes"
+        ValueError, match="only relay telemetry is supported for Hermes"
     ):
         await adapter.HermesRuntime().start(payload)
 
