@@ -115,6 +115,39 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
         )
 
 
+def test_validate_hermes_relay_compatibility_accepts_supported_checkout():
+    telemetry.validate_hermes_relay_compatibility()
+
+
+def test_validate_hermes_relay_compatibility_rejects_relay_08(monkeypatch):
+    monkeypatch.setattr(telemetry, "version", lambda _name: "0.8.4")
+
+    with pytest.raises(RuntimeError, match="requires nemo-relay 0.9; found 0.8.4"):
+        telemetry.validate_hermes_relay_compatibility()
+
+
+async def test_runtime_start_rejects_published_hermes_relay_before_setup(
+    monkeypatch, tmp_path: Path
+):
+    from agent import relay_runtime
+
+    monkeypatch.delattr(relay_runtime, "resolve_plugin_sources")
+    payload = {
+        "base_dir": str(tmp_path),
+        "config": _agent_config(
+            {"models": {"default": {"provider": "nvidia", "model": "test-model"}}}
+        ),
+        "runtime_context": _runtime_context(
+            artifact_root=str(tmp_path / "artifacts"), providers=["relay"]
+        ).to_mapping(),
+    }
+
+    with pytest.raises(RuntimeError, match="does not support Relay 0.9 telemetry"):
+        await adapter.HermesRuntime().start(payload)
+
+    assert not (tmp_path / "artifacts" / ".fabric").exists()
+
+
 def test_descriptor_uses_the_typed_agent_config_contract():
     """The Hermes descriptor declares its typed normalized config."""
     descriptor_path = (

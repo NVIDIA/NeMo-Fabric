@@ -12,10 +12,11 @@ sessions, and Relay telemetry.
 
 ## Install the Adapter
 
-The adapter supports Python 3.11 through 3.14. The merged upstream Hermes Relay
-0.9 integration requires Python 3.14. Hermes Agent 0.20 and later is no longer
-installable from PyPI. End users must first follow
-the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation).
+The adapter supports Python 3.11 through 3.14. Hermes Agent 0.20 and later is
+no longer installable from PyPI. For ordinary invocations, follow the
+[Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation).
+The published Hermes v2026.9.24 release requires Relay 0.8 and does not support
+this adapter's Relay telemetry or streaming path.
 
 Install the NeMo Fabric runtime and bare Hermes adapter into the Python
 environment that runs Hermes Agent:
@@ -31,13 +32,17 @@ NeMo Fabric, install only the bare adapter in the Hermes Agent environment:
 python -m pip install nemo-fabric-adapters-hermes
 ```
 
-The adapter package provides `relay` and `full` extras for Relay 0.9. Neither
-installs Hermes Agent.
+The adapter package provides `relay` and `full` extras for Relay 0.9. Use them
+only with a Hermes Agent checkout that supports Relay 0.9; the published release
+requires a conflicting Relay version. Neither extra installs Hermes Agent. If
+Relay telemetry is enabled with an incompatible Hermes or Relay installation,
+the adapter fails at startup with a compatibility error.
 
-For local NeMo Fabric development, run the following command from the repository
-root. The recipe checks out the merged, unreleased Hermes Relay 0.9 revision and
-creates an isolated environment. Update it to a compatible release when one is
-available:
+For Relay telemetry or streaming in local NeMo Fabric development, run the
+following command from the repository root. The recipe checks out the merged,
+unreleased Hermes Relay 0.9 revision and creates an isolated Python 3.14
+environment with the adapter's `relay` extra. Update it to a compatible release
+when one is available:
 
 ```bash
 just install-hermes-agent

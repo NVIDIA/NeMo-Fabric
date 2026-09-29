@@ -90,6 +90,11 @@ class HermesRuntime:
                 payload.get("runtime_context")
             )
             telemetry.validate_hermes_telemetry_provider(runtime_context)
+            relay_enabled = bool(
+                runtime_context.telemetry and runtime_context.telemetry.relay_enabled
+            )
+            if relay_enabled:
+                telemetry.validate_hermes_relay_compatibility()
             self._agent_config = agent_config
             self._settings = configuration._settings(agent_config)
             model_config = configuration._selected_model(agent_config)
@@ -114,9 +119,6 @@ class HermesRuntime:
                 str(self._settings.get("terminal_timeout", 60)),
             )
 
-            relay_enabled = bool(
-                runtime_context.telemetry and runtime_context.telemetry.relay_enabled
-            )
             if relay_enabled:
                 relay_payload = {**payload, "config": agent_config.to_mapping()}
                 (
