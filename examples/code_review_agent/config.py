@@ -31,6 +31,7 @@ BASE_DIR = Path(__file__).resolve().parent
 WORKSPACE = "./repos/my-service"
 SKILL_PATH = "./skills/code-review"
 PI_DESCRIPTOR = "../../adapters/typescript/pi/pi.fabric-adapter.json"
+CLINE_DESCRIPTOR = "../../adapters/typescript/cline/cline.fabric-adapter.json"
 QWEN_DESCRIPTOR = "../../adapters/typescript/qwen/qwen.fabric-adapter.json"
 CODE_REVIEW_INSTRUCTION = (
     "You are a concise code reviewer. Read the relevant workspace files before "
@@ -143,6 +144,34 @@ def pi_config() -> FabricConfig:
         provider="local",
         workspace=WORKSPACE,
         artifacts="./artifacts/pi",
+    )
+    return config
+
+
+def cline_config() -> FabricConfig:
+    """Return the complete Cline SDK adapter variant."""
+
+    config = base_config().model_copy(deep=True)
+    config.discovery = DiscoveryConfig(local_paths=[CLINE_DESCRIPTOR])
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.cline",
+        resolution="preinstalled",
+        settings={},
+    )
+    config.models = {"default": _nvidia_code_review_model()}
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content=CODE_REVIEW_INSTRUCTION)
+    )
+    config.tools = ToolsConfig(enabled=["read_files", "search_codebase", "skills"])
+    config.runtime = RuntimeConfig(
+        input_schema="text",
+        output_schema="message",
+        artifacts="./artifacts/cline",
+    )
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=WORKSPACE,
+        artifacts="./artifacts/cline",
     )
     return config
 

@@ -286,6 +286,7 @@ clean:
         adapter-contract/typescript/dist \
         adapters/typescript/node_modules \
         adapters/typescript/common/dist \
+        adapters/typescript/cline/dist \
         adapters/typescript/pi/dist \
         adapters/typescript/opencode/dist \
         adapters/typescript/qwen/dist \
@@ -295,6 +296,7 @@ clean:
         sdk/python/*/dist \
         adapter-contract/typescript/*.tgz \
         adapters/typescript/common/*.tgz \
+        adapters/typescript/cline/*.tgz \
         adapters/typescript/pi/*.tgz \
         adapters/typescript/opencode/*.tgz \
         adapters/typescript/qwen/*.tgz
@@ -345,6 +347,10 @@ install-typescript-adapters:
 # Install the Pi adapter and its pinned SDK harness for source development.
 install-typescript-pi: install-typescript-contract
     npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-pi --include-workspace-root --ignore-scripts
+
+# Install the Cline adapter workspace without the caller-managed SDK harness.
+install-typescript-cline: install-typescript-contract
+    npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-cline --include-workspace-root --ignore-scripts
 
 # Install the OpenCode adapter and its pinned SDK harness for source development.
 install-typescript-opencode: install-typescript-contract

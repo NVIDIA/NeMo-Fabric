@@ -28,6 +28,18 @@ const expectedByPackage = {
     "dist/lifecycle.js",
     "package.json",
   ],
+  "nemo-fabric-adapters-cline": [
+    "LICENSE",
+    "README.md",
+    "cline.fabric-adapter.json",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/cline-sdk.d.ts",
+    "dist/cline-sdk.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "package.json",
+  ],
   "nemo-fabric-adapters-pi": [
     "LICENSE",
     "README.md",
@@ -117,6 +129,25 @@ if (manifest.name === "nemo-fabric-adapters-pi") {
     if (manifest.devDependencies?.[name] !== "0.84.2") {
       throw new Error(`The Pi harness package ${name} must be exact-pinned for development`);
     }
+  }
+}
+if (manifest.name === "nemo-fabric-adapters-cline") {
+  if (manifest.exports?.["./descriptor"] !== "./cline.fabric-adapter.json") {
+    throw new Error("The Cline package must export its adapter descriptor");
+  }
+  const descriptor = JSON.parse(
+    await readFile(join(packageRoot, "cline.fabric-adapter.json"), "utf8"),
+  );
+  if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("The Cline descriptor runner must resolve inside the npm package");
+  }
+  if (
+    manifest.dependencies?.["@cline/sdk"] !== undefined ||
+    manifest.optionalDependencies?.["@cline/sdk"] !== undefined ||
+    manifest.peerDependencies?.["@cline/sdk"] !== undefined ||
+    manifest.devDependencies?.["@cline/sdk"] !== undefined
+  ) {
+    throw new Error("The caller-managed Cline SDK harness must not be an adapter package dependency");
   }
 }
 if (manifest.name === "nemo-fabric-adapters-opencode") {
