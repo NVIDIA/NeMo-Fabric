@@ -125,6 +125,36 @@ def test_sync_dev_rewrites_navigation_and_preserves_versions(tmp_path: Path):
     assert docs_yml["products"][0] == preserved_product
 
 
+@pytest.mark.parametrize("release", [False, True])
+def test_repository_image_links_resolve_after_publication(tmp_path: Path, release: bool):
+    """Images outside docs remain reachable in dev and release layouts."""
+    source_root = tmp_path / "source"
+    target_root = tmp_path / "target"
+    _source_tree(source_root)
+    (source_root / "assets").mkdir()
+    image_bytes = b"ecosystem image"
+    (source_root / "assets" / "ecosystem.png").write_bytes(image_bytes)
+    page = source_root / "docs" / "about-nemo-fabric" / "ecosystem.mdx"
+    page.parent.mkdir()
+    image_link = "../../assets/ecosystem.png"
+    page.write_text(f"![Ecosystem]({image_link})\n", encoding="utf-8")
+
+    if release:
+        _write_yaml(
+            target_root / "fern" / "docs.yml",
+            sync_fern_docs_branch.read_yaml(source_root / "fern" / "docs.yml"),
+        )
+        sync_fern_docs_branch.release_version(target_root, "1.2.3", source_root)
+        pages_name = "pages-v1.2.3"
+    else:
+        sync_fern_docs_branch.sync_dev(source_root, target_root)
+        pages_name = "pages-dev"
+
+    published_page = target_root / "fern" / pages_name / "about-nemo-fabric" / page.name
+    assert image_link in published_page.read_text(encoding="utf-8")
+    assert (published_page.parent / image_link).read_bytes() == image_bytes
+
+
 @pytest.mark.parametrize(
     ("tag", "expected"),
     [
