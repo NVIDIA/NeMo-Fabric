@@ -117,9 +117,9 @@ def test_uuid_request_id_seeds_relay_propagation(tmp_path, monkeypatch):
 
     @asynccontextmanager
     async def plugin_context(_config):
-        yield None
+        yield SimpleNamespace(report={"config": {"diagnostics": []}})
 
-    plugin_api = SimpleNamespace(plugin=MagicMock(side_effect=plugin_context))
+    plugin_api = SimpleNamespace(activate=MagicMock(side_effect=plugin_context))
     monkeypatch.setattr(
         telemetry_module,
         "_load_plugin_config",

@@ -21,6 +21,7 @@ language packages, and then install the pinned Hermes Agent source:
 ```bash
 just build-all
 just install-hermes-agent
+export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
 ```
 
 Set `NVIDIA_API_KEY`, then run the example:
@@ -80,6 +81,7 @@ Format (ATOF) stream records:
 
 ```bash
 .venv/bin/python -m examples.code_review_agent \
+  --variant deepagents \
   --relay \
   --stream \
   --input "Review calculator.py"
@@ -98,6 +100,7 @@ configuration:
 ```python
 from examples.code_review_agent import (
     BASE_DIR,
+    deepagents_config,
     hermes_config,
     with_github_mcp,
     with_opensandbox,
@@ -108,7 +111,7 @@ from examples.code_review_agent import (
 config = hermes_config()
 skill_config = with_skill_paths(config, "./skills/code-review")
 mcp_config = with_github_mcp(config)
-relay_config = with_relay(config)
+relay_config = with_relay(deepagents_config())
 sandbox_config = with_opensandbox(config)
 ```
 
@@ -127,9 +130,10 @@ Keep any capability options from the previous section that the selected
 harness supports.
 
 Codex and Claude omit the default code-review skill; add
-`--skill-path ./skills/code-review` to retain it. For Relay, Codex and Claude
-require the NeMo Relay 0.7 CLI, Pi requires the NeMo Relay 0.9 CLI and its Pi
-extension, and Hermes Agent and Deep Agents use the Relay Python package.
+`--skill-path ./skills/code-review` to retain it. Relay configurations for
+Codex, Claude, and Pi require a NeMo Relay CLI in the `>=0.9,<0.10` range.
+Pi also requires its Relay Pi extension. Hermes Agent and Deep Agents require
+the `nemo-relay>=0.9,<0.10` Python package.
 Additional requirements appear in the corresponding subsections.
 
 For example, after installing Deep Agents, this command keeps the default skill
@@ -147,7 +151,8 @@ and Relay configuration while changing the harness:
 
 Hermes Agent is the baseline used by the default demo. Specify the variant only
 when an explicit configuration is useful, such as `--variant hermes --plan`.
-Hermes supports the example's skills, MCP, and Relay configurations.
+Hermes supports the example's skills, MCP, and Relay configurations when
+installed from the merged upstream revision used by `just install-hermes-agent`.
 
 ### Codex (`codex`)
 
@@ -174,7 +179,7 @@ it through the same `--variant` option. The variant discovers
 `nvidia.nooa.coding-agent` and uses the `NVIDIA_API_KEY` configured for the
 default demo.
 
-Its Relay integration requires `nemo-relay>=0.7.2,<0.8`. The `--stream` option
+Its Relay integration requires `nemo-relay>=0.9,<0.10`. The `--stream` option
 collects Relay ATOF records; it is not native model-response streaming.
 
 ### OpenClaw (`openclaw`)
@@ -210,3 +215,21 @@ document containing `atof_records` and the separate terminal `result`. Relay
 retains redirect-decision marks in configured ATOF artifacts, while Pi's startup
 `model_redirect` marks are not included in `atof_records`. Omit `--stream` to
 retain Relay artifacts without collecting records for that JSON output.
+
+### Qwen Code (`qwen`)
+
+Install Node.js 22.19 or later and the pinned
+[Qwen adapter dependencies](../../adapters/typescript/qwen/README.md), then build
+the adapter:
+
+```bash
+just install-typescript-qwen
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-qwen
+.venv/bin/python -m examples.code_review_agent --variant qwen --plan
+```
+
+Set `NVIDIA_API_KEY` to run the example. The variant keeps the code-review skill,
+uses Qwen's non-interactive default approval mode, and blocks shell and edit
+tools. The variant does not configure an MCP server or Relay telemetry.

@@ -31,6 +31,7 @@ BASE_DIR = Path(__file__).resolve().parent
 WORKSPACE = "./repos/my-service"
 SKILL_PATH = "./skills/code-review"
 PI_DESCRIPTOR = "../../adapters/typescript/pi/pi.fabric-adapter.json"
+QWEN_DESCRIPTOR = "../../adapters/typescript/qwen/qwen.fabric-adapter.json"
 CODE_REVIEW_INSTRUCTION = (
     "You are a concise code reviewer. Read the relevant workspace files before "
     "reporting correctness risks."
@@ -142,6 +143,39 @@ def pi_config() -> FabricConfig:
         provider="local",
         workspace=WORKSPACE,
         artifacts="./artifacts/pi",
+    )
+    return config
+
+
+def qwen_config() -> FabricConfig:
+    """Return the direct Qwen Code SDK adapter variant."""
+
+    config = base_config().model_copy(deep=True)
+    config.discovery = DiscoveryConfig(local_paths=[QWEN_DESCRIPTOR])
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.qwen",
+        resolution="preinstalled",
+        settings={"permission_mode": "default"},
+    )
+    config.models = {
+        "default": ModelConfig(
+            provider="openai",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
+        )
+    }
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content=CODE_REVIEW_INSTRUCTION, mode="append")
+    )
+    config.tools = ToolsConfig(
+        blocked=["exec", "run_shell_command", "edit", "write_file", "notebook_edit"]
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="text", output_schema="message", artifacts="./artifacts/qwen"
+    )
+    config.environment = EnvironmentConfig(
+        provider="local", workspace=WORKSPACE, artifacts="./artifacts/qwen"
     )
     return config
 

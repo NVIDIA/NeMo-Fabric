@@ -22,6 +22,18 @@ def _entry(package: str, version: str, license_name: str) -> LicenseInventoryEnt
     return LicenseInventoryEntry(package=package, version=version, license=license_name)
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("plain license text", "```"),
+        ("an embedded ``` block", "````"),
+        ("an embedded ````` block", "``````"),
+    ],
+)
+def test_markdown_code_fence_is_longer_than_embedded_fences(text, expected):
+    assert license_diff.attributions_lockfile_md._markdown_code_fence(text) == expected
+
+
 def test_compare_inventories_classifies_dependency_changes():
     unchanged = _entry("unchanged", "1.0.0", "MIT")
     base = {

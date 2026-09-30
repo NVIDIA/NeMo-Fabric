@@ -76,7 +76,8 @@ Agent in one Python environment.
 
 ### Install NeMo Fabric and Hermes Agent
 
-Hermes Agent supports Python 3.11 through 3.13. Hermes Agent 0.20 and later is
+The merged Hermes Relay integration requires Python 3.14. Released Hermes Agent
+v2026.9.24 supports Python 3.11 through 3.13. Hermes Agent 0.20 and later is
 not installable from PyPI. Install it with a supported method from the
 [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation).
 Then install NeMo Fabric and the Hermes adapter into the Python environment
@@ -86,9 +87,12 @@ that runs Hermes Agent:
 pip install "nemo-fabric[hermes-agent]"
 ```
 
-For local development from this repository, run `just install-hermes-agent`
-instead. The recipe checks out the pinned Hermes Agent source and synchronizes
-it into the project environment.
+For local development from this repository, build NeMo Fabric and run
+`just install-hermes-agent`. The recipe checks out tested Hermes source with
+Relay 0.9 support and installs it with the adapter in an isolated
+environment. Set `ADAPTER_PYTHON=.venv-hermes/bin/python` when running from the
+main environment. Relay telemetry requires this environment or another Hermes
+build compatible with Relay 0.9.
 
 ### Set the API Key
 
