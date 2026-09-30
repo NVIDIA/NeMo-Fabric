@@ -31,7 +31,8 @@ def test_install_reports_native_plugin_path_and_preserves_identical_install(
     before = (destination / "__init__.py").stat().st_mtime_ns
     assert install_tavily(hermes_root) == destination
     assert (destination / "__init__.py").stat().st_mtime_ns == before
-    assert (destination.stat().st_mode & 0o777) == 0o755
+    if sys.platform != "win32":
+        assert (destination.stat().st_mode & 0o777) == 0o755
     assert (hermes_root / "plugins" / "unrelated" / "keep.txt").read_text() == "keep"
     assert not (hermes_root / "config.yaml").exists()
 
