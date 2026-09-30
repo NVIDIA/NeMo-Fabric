@@ -165,6 +165,13 @@ def write_docs_yml(source_docs_yml: Path, target_docs_yml: Path) -> None:
     write_yaml(target_docs_yml, docs_yml)
 
 
+def copy_repository_assets(source_root: Path, target_fern: Path) -> None:
+    """Keep repository asset links valid after docs move into pages-* directories."""
+    source_assets = source_root / "assets"
+    if source_assets.is_dir():
+        shutil.copytree(source_assets, target_fern / "assets", dirs_exist_ok=True)
+
+
 def sync_dev(source_root: Path, target_root: Path) -> None:
     source_docs = source_root / "docs"
     source_fern = source_root / "fern"
@@ -196,6 +203,7 @@ def sync_dev(source_root: Path, target_root: Path) -> None:
         if source.exists():
             copy_path(source, target_fern / item)
 
+    copy_repository_assets(source_root, target_fern)
     write_docs_yml(source_fern / "docs.yml", target_fern / "docs.yml")
 
 
@@ -240,6 +248,7 @@ def release_version(target_root: Path, tag: str, source_root: Path) -> None:
 
     shutil.copytree(source_docs, pages_version, ignore=docs_ignore)
     prepare_generated_python_references_for_fern(pages_version)
+    copy_repository_assets(source_root, target_fern)
     update_github_links(pages_version, display_tag, source_root)
     version_navigation = rewrite_doc_references(
         read_yaml(source_docs / "index.yml"), f"pages-{display_tag}"
