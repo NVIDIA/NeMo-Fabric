@@ -155,6 +155,7 @@ and additive extension maps because their support does not vary by adapter:
 | `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes | Yes | No | No | Yes | No | Not sent to the remote service |
 | Other additive `extensions` on typed config objects | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor |
 
+
 The selected model role is `default`, or the sole configured role when no
 `default` exists. More than one role without `default` fails planning.
 All bundled adapters except Hermes publish a descriptor-owned `model_schema`
