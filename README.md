@@ -78,7 +78,8 @@ Agent in one Python environment.
 
 ### Install NeMo Fabric and Hermes Agent
 
-Hermes Agent supports Python 3.11 through 3.13. Hermes Agent 0.20 and later is
+The merged Hermes Relay integration requires Python 3.14. Released Hermes Agent
+v2026.9.24 supports Python 3.11 through 3.13. Hermes Agent 0.20 and later is
 not installable from PyPI. Install it with a supported method from the
 [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation).
 Then install NeMo Fabric and the Hermes adapter into the Python environment
@@ -88,9 +89,12 @@ that runs Hermes Agent:
 pip install "nemo-fabric[hermes-agent]"
 ```
 
-For local development from this repository, run `just install-hermes-agent`
-instead. The recipe checks out the pinned Hermes Agent source and synchronizes
-it into the project environment.
+For local development from this repository, build NeMo Fabric and run
+`just install-hermes-agent`. The recipe checks out tested Hermes source with
+Relay 0.9 support and installs it with the adapter in an isolated
+environment. Set `ADAPTER_PYTHON=.venv-hermes/bin/python` when running from the
+main environment. Relay telemetry requires this environment or another Hermes
+build compatible with Relay 0.9.
 
 ### Set the API Key
 
@@ -153,6 +157,7 @@ integrations use the package expressions shown in each column:
 | Agent Harness | Runtime, Adapter, and Harness | Adapter and Harness | Adapter Only |
 | --- | --- | --- | --- |
 | [Claude Code](docs/integrations/harness/claude.mdx) | `nemo-fabric[claude]` | `nemo-fabric-adapters-claude[harness]` | `nemo-fabric-adapters-claude` |
+| [Cline](docs/integrations/harness/cline.mdx) | Install Cline separately, then install `nemo-fabric` and `nemo-fabric-adapters-cline` | Install Cline separately, then install `nemo-fabric-adapters-cline` | `nemo-fabric-adapters-cline` |
 | [Codex](docs/integrations/harness/codex.mdx) | `nemo-fabric[codex]` | `nemo-fabric-adapters-codex[harness]` | `nemo-fabric-adapters-codex` |
 | [Hermes Agent](docs/integrations/harness/hermes.mdx) | Install Hermes Agent separately, then install `nemo-fabric[hermes-agent]` | Install Hermes Agent separately, then install `nemo-fabric-adapters-hermes` | `nemo-fabric-adapters-hermes` |
 | [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
@@ -185,6 +190,12 @@ project; the adapter declares the Pi packages as optional peers so deployments
 control the harness version. Relay-enabled Pi runs also require
 `nemo-relay>=0.9.0,<0.10.0` and an explicit path to the matching Relay Pi
 extension.
+
+The [Cline adapter](docs/integrations/harness/cline.mdx) is also distributed
+through npm. Install `@cline/sdk@0.0.83` separately, then install
+`nemo-fabric-adapters-cline` in the project where NeMo Fabric discovers its
+descriptor. The adapter does not declare or install the Cline SDK as a package
+dependency.
 
 Capabilities vary by harness. Review the
 [configuration compatibility matrix](adapters/README.md#configuration-compatibility)

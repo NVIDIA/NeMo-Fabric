@@ -9399,7 +9399,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @earendil-works/pi-agent-core
 
 Stateful agent with tool execution and event streaming. Built on `@earendil-works/pi-ai`.
@@ -9913,13 +9913,13 @@ These low-level streams are observational. They preserve event order, but they d
 ## License
 
 MIT
-```
+````
 
 ## @earendil-works/pi-ai - 0.84.2
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @earendil-works/pi-ai
 
 Unified LLM API with provider collections, automatic auth resolution, token and cost tracking, and simple context persistence and hand-off to other models mid-session.
@@ -11598,13 +11598,13 @@ Add an entry to `packages/ai/CHANGELOG.md` under `## [Unreleased]`:
 ## License
 
 MIT
-```
+````
 
 ## @earendil-works/pi-client - 0.84.2
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @earendil-works/pi-client
 
 Transport-neutral client for remote pi sessions. `PiClient` exchanges length-prefixed CBOR messages through a small `ByteTransport` interface. The package has no Node-specific imports.
@@ -11668,13 +11668,13 @@ await client.connect();
 `maxPendingBytes` bounds queued outbound data. It defaults to four times the protocol frame limit. The transport preserves send order and waits for socket backpressure before resolving each send.
 
 The `@earendil-works/pi-client` root remains transport- and runtime-neutral. Importing the Node-compatible transport requires the explicit `@earendil-works/pi-client/unix` subpath.
-```
+````
 
 ## @earendil-works/pi-coding-agent - 0.84.2
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 <p align="center">
   <a href="https://pi.dev">
     <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">
@@ -12388,13 +12388,13 @@ MIT
   <br /><br />
   <a href="https://exe.dev"><img src="docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
 </p>
-```
+````
 
 ## @earendil-works/pi-protocol - 0.84.2
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @earendil-works/pi-protocol
 
 Runtime-neutral schemas, types, CBOR encoding, and byte-stream framing for the experimental pi protocol.
@@ -12464,13 +12464,13 @@ Undefined object properties are omitted. JSON-valued protocol fields reject CBOR
 Default limits are 16 MiB per CBOR payload/frame, 1,000,000 array elements or map entries, and 64 nested item levels. Options can configure these limits. A frame decoder validates the declared length before buffering payload bytes.
 
 All schemas reject unknown object properties. The protocol is experimental and has no compatibility guarantees.
-```
+````
 
 ## @earendil-works/pi-telemetry - 0.84.2
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @earendil-works/pi-telemetry
 
 Vendor-neutral telemetry contracts and typed schema utilities for pi packages.
@@ -12935,13 +12935,13 @@ npm run check
 ## License
 
 MIT
-```
+````
 
 ## @earendil-works/pi-tui - 0.84.2
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @earendil-works/pi-tui
 
 Minimal terminal UI framework with differential rendering and synchronized output for flicker-free interactive CLI applications.
@@ -13796,7 +13796,7 @@ Set `PI_TUI_WRITE_LOG` to capture the raw ANSI stream written to stdout.
 ```bash
 PI_TUI_WRITE_LOG=/tmp/tui-ansi.log npx tsx test/chat-simple.ts
 ```
-```
+````
 
 ## @effect/opentelemetry - 4.0.0-rc.112
 **Repository URL**: https://github.com/Effect-TS/effect
@@ -14925,6 +14925,34 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## @modelcontextprotocol/sdk - 1.30.1
+**Repository URL**: https://github.com/modelcontextprotocol/typescript-sdk
+**License Type(s)**: MIT
+### License: https://spdx.org/licenses/MIT.html
+```
+MIT License
+
+Copyright (c) 2024 Anthropic, PBC
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## @msgpackr-extract/msgpackr-extract-darwin-arm64 - 3.0.4
 **Repository URL**: https://www.npmjs.com/package/@msgpackr-extract/msgpackr-extract-darwin-arm64
 **License Type(s)**: MIT
@@ -14977,7 +15005,7 @@ SOFTWARE.
 **Repository URL**: https://github.com/nodable/val-parsers
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @nodable/entities
 
 Fast, zero-dependency XML/HTML entity encoder and decoder for Node.js.
@@ -15019,13 +15047,13 @@ dec.decode('Hello &copy; 2024 &amp; &lt;stuff&gt;');
 ## License
 
 MIT
-```
+````
 
 ## @npmcli/agent - 4.0.2
 **Repository URL**: https://github.com/npm/agent
 **License Type(s)**: ISC
 ### License: https://spdx.org/licenses/ISC.html
-```
+````
 ## @npmcli/agent
 
 A pair of Agent implementations for nodejs that provide consistent keep-alives, granular timeouts, dns caching, and proxy support.
@@ -15066,7 +15094,7 @@ Options that have been added by this module include:
     - `idle`: time between data packets (if a top level `timeout` is provided, it will be copied here)
     - `response`: time between sending a request and receiving a response
     - `transfer`: time between starting to receive a request and consuming the response fully
-```
+````
 
 ## @npmcli/arborist - 9.4.0
 **Repository URL**: https://github.com/npm/cli
@@ -15597,7 +15625,7 @@ SOFTWARE.
 **Repository URL**: https://www.npmjs.com/package/@opencode/ai
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @opencode/ai
 
 Schema-first language model and image-generation APIs built with Effect.
@@ -16480,13 +16508,13 @@ This package is built on Effect. Public methods return `Effect` or `Stream`; pro
 - `AGENTS.md` — architecture, route construction, contributor guide
 - `example/tutorial.ts` — runnable end-to-end walkthrough
 - `test/provider/*.test.ts` — fixture-first protocol tests; `*.recorded.test.ts` files cover live cassettes
-```
+````
 
 ## @opencode/client - 2.0.3
 **Repository URL**: https://github.com/anomalyco/opencode
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @opencode/client
 
 Private generation target for clients derived directly from OpenCode's authoritative Effect `HttpApi`.
@@ -16514,13 +16542,13 @@ yield *
   })
 yield * client.sessions.prompt({ sessionID, prompt: Prompt.make({ text: "Hello" }) })
 ```
-```
+````
 
 ## @opencode/codemode - 2.0.3
 **Repository URL**: https://github.com/anomalyco/opencode
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @opencode/codemode
 
 This is our take on code mode: a lightweight, pure interpreter for a JavaScript-like language built around calling
@@ -16708,7 +16736,7 @@ Invalid limit configuration throws `RangeError`. Warnings receive a separate bud
 Truncation does not fail execution; an oversized value becomes a string with an in-band marker. Timeouts interrupt
 tool calls and busy loops, while a result returned before cleanup times out remains successful with a
 `TimeoutExceeded` warning. Tool-call concurrency is unrestricted. Boundary data is limited to 32 nested levels.
-```
+````
 
 ## @opencode/core - 2.0.3
 **Repository URL**: https://github.com/anomalyco/opencode
@@ -16732,7 +16760,7 @@ Core runtime services for OpenCode.
 **Repository URL**: https://github.com/anomalyco/opencode
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # Browser plugin
 
 `@opencode/plugin-browser` exposes the desktop browser through Code Mode.
@@ -16861,7 +16889,7 @@ Disable through normal configuration:
 ```jsonc
 { "plugins": ["-opencode.browser"] }
 ```
-```
+````
 
 ## @opencode/protocol - 2.0.3
 **Repository URL**: https://github.com/anomalyco/opencode
@@ -16883,7 +16911,7 @@ Disable through normal configuration:
 **Repository URL**: https://github.com/anomalyco/opencode
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @opencode/sdk
 
 In-process OpenCode host for Promise and Effect applications. The SDK executes Server's assembled HTTP router in memory, opening no listener and adding no network hop.
@@ -17027,7 +17055,7 @@ const opencode = OpenCode.layer({
 ```
 
 Resources acquired in `configure` still belong to the instance, not to the Scope the SDK was built in. Both Workerd entrypoints also accept `instances`. The public `OpenCode.InstanceOptions` and `OpenCode.InstanceConfiguration` types describe the corresponding Promise or Effect callbacks.
-```
+````
 
 ## @opencode/server - 2.0.3
 **Repository URL**: https://github.com/anomalyco/opencode
@@ -20939,6 +20967,675 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
+## @qwen-code/sdk - 0.1.16
+**Repository URL**: https://github.com/QwenLM/qwen-code
+**License Type(s)**: Apache-2.0
+### License: https://spdx.org/licenses/Apache-2.0.html
+````
+# @qwen-code/sdk
+
+A minimum experimental TypeScript SDK for programmatic access to Qwen Code.
+
+Feel free to submit a feature request/issue/PR.
+
+## Installation
+
+```bash
+npm install @qwen-code/sdk
+```
+
+## Requirements
+
+- Node.js >= 22.0.0
+
+> From v0.1.1, the CLI is bundled with the SDK. So no standalone CLI installation is needed.
+
+## Quick Start
+
+```typescript
+import { query } from '@qwen-code/sdk';
+
+// Single-turn query
+const result = query({
+  prompt: 'What files are in the current directory?',
+  options: {
+    cwd: '/path/to/project',
+  },
+});
+
+// Iterate over messages
+for await (const message of result) {
+  if (message.type === 'assistant') {
+    console.log('Assistant:', message.message.content);
+  } else if (message.type === 'result') {
+    console.log('Result:', message.result);
+  }
+}
+```
+
+## API Reference
+
+### `query(config)`
+
+Creates a new query session with the Qwen Code.
+
+#### Parameters
+
+- `prompt`: `string | AsyncIterable<SDKUserMessage>` - The prompt to send. Use a string for single-turn queries or an async iterable for multi-turn conversations.
+- `options`: `QueryOptions` - Configuration options for the query session.
+
+#### QueryOptions
+
+| Option                   | Type                                                                 | Default          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------ | -------------------------------------------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cwd`                    | `string`                                                             | `process.cwd()`  | The working directory for the query session. Determines the context in which file operations and commands are executed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `model`                  | `string`                                                             | -                | The AI model to use (e.g., `'qwen-max'`, `'qwen-plus'`, `'qwen-turbo'`). Takes precedence over `OPENAI_MODEL` and `QWEN_MODEL` environment variables.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `pathToQwenExecutable`   | `string`                                                             | Bundled CLI      | Path to the Qwen Code executable. Supports multiple formats: `'qwen'` (native binary from PATH), `'/path/to/qwen'` (explicit path), `'/path/to/cli.js'` (Node.js bundle), `'node:/path/to/cli.js'` (force Node.js runtime), `'bun:/path/to/cli.js'` (force Bun runtime). If not provided, the SDK uses the bundled CLI included with the package.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `permissionMode`         | `'default' \| 'plan' \| 'auto-edit' \| 'auto' \| 'yolo'`             | `'default'`      | Permission mode controlling tool execution approval. See [Permission Modes](#permission-modes) for details.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `canUseTool`             | `CanUseTool`                                                         | -                | Custom permission handler for tool execution approval. Invoked when a tool requires confirmation. Must respond within 60 seconds or the request will be auto-denied. See [Custom Permission Handler](#custom-permission-handler).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `env`                    | `Record<string, string>`                                             | -                | Environment variables to pass to the Qwen Code process. Merged with the current process environment.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `systemPrompt`           | `string \| QuerySystemPromptPreset`                                  | -                | System prompt configuration for the main session. Use a string to fully override the built-in Qwen Code system prompt, or a preset object to keep the built-in prompt and append extra instructions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `mcpServers`             | `Record<string, McpServerConfig>`                                    | -                | MCP (Model Context Protocol) servers to connect. Supports external servers (stdio/SSE/HTTP) and SDK-embedded servers. External servers are configured with transport options like `command`, `args`, `url`, `httpUrl`, etc. SDK servers use `{ type: 'sdk', name: string, instance: Server }`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `abortController`        | `AbortController`                                                    | -                | Controller to cancel the query session. Call `abortController.abort()` to terminate the session and cleanup resources.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `debug`                  | `boolean`                                                            | `false`          | Enable debug mode for verbose logging from the CLI process.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `maxSessionTurns`        | `number`                                                             | `-1` (unlimited) | Maximum number of conversation turns before the session automatically terminates. Must be an integer. A turn consists of a user message and an assistant response.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `coreTools`              | `string[]`                                                           | -                | Uses the legacy `coreTools` / CLI `--core-tools` allowlist semantics. If specified, only matching core tools are registered for the session. This is the only allowlist-style option that restricts built-in tool registration; a whole-tool `permissions.deny` / `excludeTools` rule (and `tools.disabled` in settings.json) also removes a tool from the registry. `permissions.allow` in settings.json is pure auto-approval and never removes, demotes, or hides a tool (#10075). To keep a tool's schema out of the initial model request, use `tools.eager` in settings.json (requires restart, #9827) — `tool_search`, `tool_call`, `structured_output`, plan-mode lifecycle tools, `task_stop`, `mcp__*` and `computer_use__*` tools are exempt from that allowlist and keep their normal loading; tools demoted this way stay registered and reachable through `tool_search` + `tool_call` while both bridge tools are registered — when either is unregistered (`tools.toolSearch.enabled: false` denies both; a `tool_search` or `tool_call` deny rule, or a `tools.disabled` entry removes one) the demoted tools that remain hidden are not offered to the model and cannot be reached through the bridge for that session, and a warning is written to the CLI process's stderr (SDK forwards it only with piped stderr and effective `debug` logging; an explicit `logLevel` always wins). These bridge and warning rules apply to direct tool mode. CodeModeOnly hides both bridge tools, keeps full nested schemas for callable deferred tools in `exec`, and skips deferred reminders and this warning; `tools.eager` does not make them unreachable or save their schema tokens. In direct mode they stay registered, so a direct call by their own name is still evaluated and approved normally — except tools also listed in `tools.visible`, which are declared upfront, and sessions whose live history contains a direct call to a still-hidden demoted tool, which any tool-set refresh (resume, MCP discovery, the first plan-mode entry in a session, a subagent definition change) re-declares.; to remove a tool entirely, use a whole-tool `excludeTools` / `permissions.deny` rule — a rule with a specifier (such as `'Bash(rm *)'`) only denies matching invocations at runtime. MCP tools are exempt from deny-based removal: hide them with the per-server `excludeTools` / `tools.disabled` filters instead (deny still blocks their calls at runtime). Example: `['read_file', 'edit', 'run_shell_command']`. |
+| `excludeTools`           | `string[]`                                                           | -                | Equivalent to `permissions.deny` in settings.json. Excluded tools return a permission error immediately. Takes highest priority over all other permission settings. Supports tool name aliases and pattern matching: tool name (`'write_file'`), shell command prefix (`'Bash(rm *)'`), or path patterns (`'Read(.env)'`, `'Edit(/src/**)'`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `allowedTools`           | `string[]`                                                           | -                | Equivalent to `permissions.allow` in settings.json for auto-approval. Matching tools bypass `canUseTool` callback and execute automatically. Only applies when tool requires confirmation. Like `permissions.allow`, this is pure auto-approval and never affects which tools are registered or which schemas are sent (#10075). Supports same pattern matching as `excludeTools`. Example: `['Bash(git status)', 'Bash(npm test)']`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `authType`               | `'openai' \| 'anthropic' \| 'qwen-oauth' \| 'gemini' \| 'vertex-ai'` | -                | Authentication type for the AI service. When provided, the SDK forwards it to the CLI as `--auth-type`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `agents`                 | `SubagentConfig[]`                                                   | -                | Configuration for subagents that can be invoked during the session. Subagents are specialized AI agents for specific tasks or domains.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `includePartialMessages` | `boolean`                                                            | `false`          | When `true`, the SDK emits incomplete messages as they are being generated, allowing real-time streaming of the AI's response.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `resume`                 | `string`                                                             | -                | Resume a previous session by providing its session ID. Equivalent to CLI's `--resume` flag.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `sessionId`              | `string`                                                             | -                | Specify a session ID for the new session. Ensures SDK and CLI use the same ID without resuming history. Equivalent to CLI's `--session-id` flag.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+
+> [!tip]
+> If you need to configure `coreTools`, `excludeTools`, or `allowedTools`, it is **strongly recommended** to read the [permissions configuration documentation](../../docs/users/configuration/settings.md#permissions) first, especially the **Tool name aliases** and **Rule syntax examples** sections. Rule patterns such as `Bash(git *)`, `Read(.env)`, and `Edit(/src/**)` apply to `excludeTools` and `allowedTools`; `coreTools` accepts aliases but strips invocation specifiers.
+
+### Timeouts
+
+The SDK enforces the following default timeouts:
+
+| Timeout          | Default  | Description                                                                                                                                       |
+| ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canUseTool`     | 1 minute | Maximum time for `canUseTool` callback to respond. If exceeded, the tool request is auto-denied.                                                  |
+| `mcpRequest`     | 1 minute | Maximum time for SDK MCP tool calls to complete.                                                                                                  |
+| `controlRequest` | 1 minute | Maximum time for control operations like `initialize()`, `setModel()`, `setPermissionMode()`, `getContextUsage()`, and `interrupt()` to complete. |
+| `streamClose`    | 1 minute | Maximum time to wait for initialization to complete before closing CLI stdin in multi-turn mode with SDK MCP servers.                             |
+
+You can customize these timeouts via the `timeout` option:
+
+```typescript
+import { query } from '@qwen-code/sdk';
+
+const q = query({
+  prompt: 'Your prompt',
+  options: {
+    timeout: {
+      canUseTool: 60000, // 60 seconds for permission callback
+      mcpRequest: 600000, // 10 minutes for MCP tool calls
+      controlRequest: 60000, // 60 seconds for control requests
+      streamClose: 15000, // 15 seconds for stream close wait
+    },
+  },
+});
+```
+
+### Experimental Daemon Session Client
+
+`DaemonSessionClient` is an experimental wrapper for clients that talk to a
+running `qwen serve` daemon over HTTP + SSE. It binds one daemon session so TUI,
+channel, IDE, or web backend adapters do not need to pass `sessionId` into every
+call.
+
+```typescript
+import { DaemonClient, DaemonSessionClient } from '@qwen-code/sdk';
+
+const daemon = new DaemonClient({
+  baseUrl: 'http://127.0.0.1:4170',
+  token: process.env['QWEN_SERVER_TOKEN'],
+});
+
+const caps = await daemon.capabilities();
+const session = await DaemonSessionClient.createOrAttach(daemon, {
+  workspaceCwd: caps.workspaceCwd,
+});
+
+const eventController = new AbortController();
+const eventTask = (async () => {
+  for await (const event of session.events({
+    signal: eventController.signal,
+  })) {
+    console.log(event.type, event.data);
+  }
+})();
+
+const result = await session.prompt({
+  prompt: [{ type: 'text', text: 'Summarize this workspace.' }],
+});
+
+eventController.abort();
+await eventTask;
+console.log(result.stopReason);
+```
+
+`session.events()` tracks the last seen SSE event id and reuses it on the next
+subscription by default. Pass `{ resume: false }` to start a fresh subscription
+without sending `Last-Event-ID`.
+
+When `createOrAttach()` is called with `modelServiceId`, the returned session
+client seeds its first event subscription with `Last-Event-ID: 0`. This replays
+the daemon ring from the oldest available event so adapters can observe
+attach-time `model_switch_failed` or `model_switched` events that are not
+reported on the create/attach HTTP response. Raw `DaemonClient` callers should
+pass `{ lastEventId: 0 }` on their first `subscribeEvents()` call when they use
+`modelServiceId`.
+
+The raw event envelope remains available as `DaemonEvent` with `data: unknown`.
+Adapters that want a v1 typed view can layer the schema helpers on top without
+changing the wire stream:
+
+```typescript
+import {
+  asKnownDaemonEvent,
+  createDaemonSessionViewState,
+  reduceDaemonSessionEvent,
+} from '@qwen-code/sdk';
+
+let view = createDaemonSessionViewState();
+for await (const event of session.events()) {
+  view = reduceDaemonSessionEvent(view, event);
+
+  const known = asKnownDaemonEvent(event);
+  if (known?.type === 'permission_request') {
+    console.log(known.data.requestId);
+  }
+}
+```
+
+### Offline daemon transcript projection
+
+The opt-in browser-safe transcript entry converts already-parsed append-only
+ChatRecord values into the same block model used by daemon clients. It does not
+read files, parse JSONL text, start a daemon, or access network or browser
+storage.
+
+```typescript
+import { projectChatRecordsToDaemonTranscript } from '@qwen-code/sdk/daemon/transcript';
+
+const projection = projectChatRecordsToDaemonTranscript(records);
+if (!projection.complete) {
+  console.warn(projection.diagnostics);
+}
+renderTranscript(projection.blocks);
+```
+
+Projection is synchronous and scans all records and message parts. `maxBlocks`
+limits retained output blocks, not computation. As a conservative browser
+guideline, project up to roughly 1,000 ordinary records on the main thread;
+move larger or unusually text-heavy inputs to a Web Worker and call the same
+entry there.
+
+### Talking to running sessions
+
+`@qwen-code/sdk/peer` lets a program that is not a Qwen Code session join the
+sessions running as the same user on the same machine — a voice front-end, a
+relay, a build watcher. The program shows up in `qwen sessions ps`, and in the
+`list_agents` of every session that has `agents.crossSessionMessaging` turned
+on — which is also what lets those sessions message it by name with
+`send_message`. It can message them back. It runs on Node only and needs
+nothing beyond Node itself.
+
+```typescript
+import { PeerEndpoint } from '@qwen-code/sdk/peer';
+
+const endpoint = await PeerEndpoint.start({
+  name: 'voice-bridge',
+  onMessage: (message) =>
+    console.log(`${message.fromName}: ${message.content}`),
+});
+
+const [session] = await endpoint.list();
+if (session) {
+  const sent = await endpoint.send({
+    to: session.address,
+    content: 'What are you working on?',
+  });
+  if (sent.kind === 'sent') {
+    const receipt = await endpoint.awaitReceipt(sent.msgId, { final: true });
+    console.log(receipt?.status); // delivered, denied, refused, ...
+  }
+}
+
+await endpoint.close();
+```
+
+A message like that is held for the session's user to review. To direct a
+session without that review, mint a controller token with
+`qwen sessions controllers add --label voice-bridge`, give it to the endpoint,
+and mark the sends that should present it:
+
+```typescript
+const endpoint = await PeerEndpoint.start({
+  name: 'voice-bridge',
+  controllerToken: process.env['QWEN_CONTROLLER_TOKEN'],
+});
+await endpoint.send({
+  to: 'my-app-3f',
+  content: 'run the tests',
+  controller: true,
+});
+```
+
+Things to know:
+
+- A session has an inbox only while its `agents.crossSessionMessaging` setting
+  is on, which it is by default. A session that turned it off does not appear
+  in `list()`, and its own `list_agents` and `send_message` cannot see or
+  reach the program either. `qwen sessions ps` lists the program regardless.
+- A message is delivered without review in exactly two cases: the send
+  presents a controller token (`controller: true`), or its `fromMode` names the
+  receiving session's own review class. `fromMode` is a claim nothing
+  authenticates, so a program that is not a coding session should leave it
+  out. Nothing in the record — not `kind`, not `name` — buys delivery. The
+  receiving session's `agents.crossSessionInbound` setting outranks both:
+  `hold` or `refuse` there wins over a controller token.
+- Mark only the sends meant to direct a session. Addresses are resolved from
+  records any program running as you can write, so a controller send presents
+  the token to whichever process's record answers to that address. A
+  controller send to another peer endpoint is dropped unread, because an
+  endpoint's inbox accepts only its own token.
+- The endpoint's inbox applies none of the protections a Qwen Code session
+  applies to its own: no rate limit, no holds, and no duplicate window beyond
+  the last 200 messages it answered. Every message is answered `delivered` and
+  handed to `onMessage` as it arrives, so apply your own limits there if you
+  need them. Without `onMessage`, every message is answered `refused`.
+- Call `close()` before exiting, including from your own signal handlers. A
+  process killed without closing leaves its record behind until a Qwen Code
+  session lists the directory and sees the process is gone.
+- UNIX domain sockets only: Windows is not supported yet.
+
+The record schema, wire format and receipt states are documented in
+[Cross-Session Protocol](https://github.com/QwenLM/qwen-code/blob/main/docs/users/features/cross-session-protocol.md).
+
+### Message Types
+
+The SDK provides type guards to identify different message types:
+
+```typescript
+import {
+  isSDKUserMessage,
+  isSDKAssistantMessage,
+  isSDKSystemMessage,
+  isSDKResultMessage,
+  isSDKPartialAssistantMessage,
+} from '@qwen-code/sdk';
+
+for await (const message of result) {
+  if (isSDKAssistantMessage(message)) {
+    // Handle assistant message
+  } else if (isSDKResultMessage(message)) {
+    // Handle result message
+  }
+}
+```
+
+### Query Instance Methods
+
+The `Query` instance returned by `query()` provides several methods:
+
+```typescript
+const q = query({ prompt: 'Hello', options: {} });
+
+// Get session ID
+const sessionId = q.getSessionId();
+
+// Check if closed
+const closed = q.isClosed();
+
+// Interrupt the current operation
+await q.interrupt();
+
+// Change permission mode mid-session
+await q.setPermissionMode('yolo');
+
+// Change model mid-session
+await q.setModel('qwen-max');
+
+// Get context window usage breakdown (token counts per category)
+const usage = await q.getContextUsage();
+// Pass true to hint that per-item details should be displayed
+const detail = await q.getContextUsage(true);
+
+// Close the session
+await q.close();
+```
+
+## Permission Modes
+
+The SDK supports different permission modes for controlling tool execution:
+
+- **`default`**: Write tools are denied unless approved via `canUseTool` callback or in `allowedTools`. Read-only tools execute without confirmation.
+- **`plan`**: Blocks all write tools, instructing AI to present a plan first.
+- **`auto-edit`**: Auto-approve edit tools (`edit`, `write_file`, `notebook_edit`) while other tools require confirmation.
+- **`auto`**: Uses the built-in classifier to auto-approve safe tool calls and block risky ones, with manual-approval fallback after repeated policy blocks or classifier outages.
+- **`yolo`**: All tools execute automatically without confirmation.
+
+### Permission Priority Chain
+
+Decision priority (highest first): `deny` > `ask` > `allow` > _(default/interactive mode)_
+
+The first matching rule wins.
+
+1. `excludeTools` / `permissions.deny` - Blocks tools completely (returns permission error)
+2. `permissions.ask` - Always requires user confirmation
+3. `permissionMode: 'plan'` - Blocks all non-read-only tools
+4. `permissionMode: 'yolo'` - Auto-approves all tools
+5. `allowedTools` / `permissions.allow` - Auto-approves matching tools
+6. `permissionMode: 'auto'` - Classifier-mediated approval for remaining tools
+7. `canUseTool` callback - Custom approval logic (if provided, not called for allowed tools)
+8. Default behavior - Auto-deny in SDK mode (write tools require explicit approval)
+
+## Examples
+
+### Multi-turn Conversation
+
+```typescript
+import { query, type SDKUserMessage } from '@qwen-code/sdk';
+
+async function* generateMessages(): AsyncIterable<SDKUserMessage> {
+  yield {
+    type: 'user',
+    session_id: 'my-session',
+    message: { role: 'user', content: 'Create a hello.txt file' },
+    parent_tool_use_id: null,
+  };
+
+  // Wait for some condition or user input
+  yield {
+    type: 'user',
+    session_id: 'my-session',
+    message: { role: 'user', content: 'Now read the file back' },
+    parent_tool_use_id: null,
+  };
+}
+
+const result = query({
+  prompt: generateMessages(),
+  options: {
+    permissionMode: 'auto-edit',
+  },
+});
+
+for await (const message of result) {
+  console.log(message);
+}
+```
+
+### Custom Permission Handler
+
+```typescript
+import { query, type CanUseTool } from '@qwen-code/sdk';
+
+const canUseTool: CanUseTool = async (toolName, input, { signal }) => {
+  // Allow all read operations
+  if (toolName.startsWith('read_')) {
+    return { behavior: 'allow', updatedInput: input };
+  }
+
+  // Prompt user for write operations (in a real app)
+  const userApproved = await promptUser(`Allow ${toolName}?`);
+
+  if (userApproved) {
+    return { behavior: 'allow', updatedInput: input };
+  }
+
+  return { behavior: 'deny', message: 'User denied the operation' };
+};
+
+const result = query({
+  prompt: 'Create a new file',
+  options: {
+    canUseTool,
+  },
+});
+```
+
+### Handling `ask_user_question`
+
+When the model needs a decision from the user it calls the built-in
+`ask_user_question` tool. The SDK surfaces this through the same
+`canUseTool` callback: the tool input contains a `questions` array, and you
+return the collected answers via `updatedInput.answers`. `answers` is an
+object keyed by the question's index (as a string), where each value is the
+label of the chosen option (or free-form text when the user picks "Other").
+
+```typescript
+import { query, type CanUseTool } from '@qwen-code/sdk';
+
+const canUseTool: CanUseTool = async (toolName, input, { signal }) => {
+  if (toolName === 'ask_user_question') {
+    const questions = input.questions as Array<{
+      question: string;
+      header: string;
+      options: Array<{ label: string; description: string }>;
+    }>;
+
+    // Present the questions to the user however your app sees fit, then
+    // build an index-keyed map of their answers.
+    const answers: Record<string, string> = {};
+    for (let i = 0; i < questions.length; i++) {
+      answers[String(i)] = await promptUserToChoose(questions[i]);
+    }
+
+    // Return the answers through `updatedInput.answers` — the CLI forwards
+    // them to the tool so the model receives the user's decisions.
+    return { behavior: 'allow', updatedInput: { ...input, answers } };
+  }
+
+  return { behavior: 'allow', updatedInput: input };
+};
+```
+
+> If you return `allow` without any `answers`, the tool reports that no
+> answer was provided; return `deny` to signal the user declined.
+
+### With External MCP Servers
+
+```typescript
+import { query } from '@qwen-code/sdk';
+
+const result = query({
+  prompt: 'Use the custom tool from my MCP server',
+  options: {
+    mcpServers: {
+      'my-server': {
+        command: 'node',
+        args: ['path/to/mcp-server.js'],
+        env: { PORT: '3000' },
+      },
+    },
+  },
+});
+```
+
+### Override the System Prompt
+
+```typescript
+import { query } from '@qwen-code/sdk';
+
+const result = query({
+  prompt: 'Say hello in one sentence.',
+  options: {
+    systemPrompt: 'You are a terse assistant. Answer in exactly one sentence.',
+  },
+});
+```
+
+### Append to the Built-in System Prompt
+
+```typescript
+import { query } from '@qwen-code/sdk';
+
+const result = query({
+  prompt: 'Review the current directory.',
+  options: {
+    systemPrompt: {
+      type: 'preset',
+      preset: 'qwen_code',
+      append: 'Be terse and focus on concrete findings.',
+    },
+  },
+});
+```
+
+### With SDK-Embedded MCP Servers
+
+The SDK provides `tool` and `createSdkMcpServer` to create MCP servers that run in the same process as your SDK application. This is useful when you want to expose custom tools to the AI without running a separate server process.
+
+#### `tool(name, description, inputSchema, handler)`
+
+Creates a tool definition with Zod schema type inference.
+
+| Parameter     | Type                               | Description                                                              |
+| ------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| `name`        | `string`                           | Tool name (1-64 chars, starts with letter, alphanumeric and underscores) |
+| `description` | `string`                           | Human-readable description of what the tool does                         |
+| `inputSchema` | `ZodRawShape`                      | Zod schema object defining the tool's input parameters                   |
+| `handler`     | `(args, extra) => Promise<Result>` | Async function that executes the tool and returns MCP content blocks     |
+
+The handler must return a `CallToolResult` object with the following structure:
+
+```typescript
+{
+  content: Array<
+    | { type: 'text'; text: string }
+    | { type: 'image'; data: string; mimeType: string }
+    | { type: 'resource'; uri: string; mimeType?: string; text?: string }
+  >;
+  isError?: boolean;
+}
+```
+
+#### `createSdkMcpServer(options)`
+
+Creates an SDK-embedded MCP server instance.
+
+| Option    | Type                     | Default   | Description                          |
+| --------- | ------------------------ | --------- | ------------------------------------ |
+| `name`    | `string`                 | Required  | Unique name for the MCP server       |
+| `version` | `string`                 | `'1.0.0'` | Server version                       |
+| `tools`   | `SdkMcpToolDefinition[]` | -         | Array of tools created with `tool()` |
+
+Returns a `McpSdkServerConfigWithInstance` object that can be passed directly to the `mcpServers` option.
+
+#### Example
+
+```typescript
+import { z } from 'zod';
+import { query, tool, createSdkMcpServer } from '@qwen-code/sdk';
+
+// Define a tool with Zod schema
+const calculatorTool = tool(
+  'calculate_sum',
+  'Add two numbers',
+  { a: z.number(), b: z.number() },
+  async (args) => ({
+    content: [{ type: 'text', text: String(args.a + args.b) }],
+  }),
+);
+
+// Create the MCP server
+const server = createSdkMcpServer({
+  name: 'calculator',
+  tools: [calculatorTool],
+});
+
+// Use the server in a query
+const result = query({
+  prompt: 'What is 42 + 17?',
+  options: {
+    permissionMode: 'yolo',
+    mcpServers: {
+      calculator: server,
+    },
+  },
+});
+
+for await (const message of result) {
+  console.log(message);
+}
+```
+
+### Abort a Query
+
+```typescript
+import { query, isAbortError } from '@qwen-code/sdk';
+
+const abortController = new AbortController();
+
+const result = query({
+  prompt: 'Long running task...',
+  options: {
+    abortController,
+  },
+});
+
+// Abort after 5 seconds
+setTimeout(() => abortController.abort(), 5000);
+
+try {
+  for await (const message of result) {
+    console.log(message);
+  }
+} catch (error) {
+  if (isAbortError(error)) {
+    console.log('Query was aborted');
+  } else {
+    throw error;
+  }
+}
+```
+
+## Error Handling
+
+The SDK provides an `AbortError` class for handling aborted queries:
+
+```typescript
+import { AbortError, isAbortError } from '@qwen-code/sdk';
+
+try {
+  // ... query operations
+} catch (error) {
+  if (isAbortError(error)) {
+    // Handle abort
+  } else {
+    // Handle other errors
+  }
+}
+```
+
+## FAQ / Troubleshooting
+
+### Version 0.1.0 Requirements
+
+If you're using SDK version **0.1.0**, please note the following requirements:
+
+#### Qwen Code Installation Required
+
+Version 0.1.0 requires [Qwen Code](https://github.com/QwenLM/qwen-code) **>= 0.4.0** to be installed separately and accessible in your PATH.
+
+```bash
+# Install Qwen Code globally
+npm install -g @qwen-code/qwen-code@latest
+```
+
+**Note**: From version **0.1.1** onwards, the CLI is bundled with the SDK, so no separate Qwen Code installation is needed.
+
+## License
+
+Apache-2.0 - see [LICENSE](../../LICENSE) for details.
+````
+
 ## @redis/bloom - 6.2.1
 **Repository URL**: https://github.com/redis/node-redis
 **License Type(s)**: MIT
@@ -20977,7 +21674,7 @@ The source code and documentation for this package are in the main [node-redis](
 **Repository URL**: https://github.com/redis/node-redis
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @redis/json
 
 This package provides support for the [RedisJSON](https://redis.io/docs/latest/develop/data-types/json/) module, which adds JSON as a native data type to Redis.
@@ -21054,13 +21751,13 @@ await client.json.arrAppend('noderedis:jsondata', '.pets', {
   isMammal: false
 });
 ```
-```
+````
 
 ## @redis/search - 6.2.1
 **Repository URL**: https://github.com/redis/node-redis
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @redis/search
 
 This package provides support for the [RediSearch](https://redis.io/docs/interact/search-and-query/) module, which adds indexing and querying support for data stored in Redis Hashes or as JSON documents with the [RedisJSON](https://redis.io/docs/data-types/json/) module.
@@ -21200,13 +21897,13 @@ We'll use the [RediSearch query language](https://redis.io/docs/interact/search-
 ```javascript
 await client.ft.search('idx:users', '@age:[0 30]');
 ```
-```
+````
 
 ## @redis/time-series - 6.2.1
 **Repository URL**: https://github.com/redis/node-redis
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # @redis/time-series
 
 This package provides support for the [RedisTimeSeries](https://redis.io/docs/data-types/timeseries/) module, which adds a time series data structure to Redis.
@@ -21374,7 +22071,7 @@ const tsInfo = await client.ts.info('temperature');
 //   rules: []
 // }
 ```
-```
+````
 
 ## @sigstore/bundle - 4.0.0
 **Repository URL**: https://github.com/sigstore/sigstore-js
@@ -29058,7 +29755,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **Repository URL**: https://github.com/TooTallNate/node-data-uri-to-buffer
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 data-uri-to-buffer
 ==================
 ### Generate a Buffer instance from a [Data URI][rfc] string
@@ -29147,7 +29844,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 [rfc]: http://tools.ietf.org/html/rfc2397
-```
+````
 
 ## debug - 4.4.3
 **Repository URL**: https://github.com/debug-js/debug
@@ -37453,7 +38150,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 **Repository URL**: https://github.com/redis/node-redis
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # Node-Redis
 
 [![Tests](https://img.shields.io/github/actions/workflow/status/redis/node-redis/tests.yml?branch=master)](https://github.com/redis/node-redis/actions/workflows/tests.yml)
@@ -37795,7 +38492,7 @@ Thank you to all the people who already contributed to Node Redis!
 ## License
 
 This repository is licensed under the "MIT" license. See [LICENSE](https://github.com/redis/node-redis/blob/master/LICENSE).
-```
+````
 
 ## require-from-string - 2.0.2
 **Repository URL**: https://github.com/floatdrop/require-from-string
@@ -38733,7 +39430,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **Repository URL**: https://github.com/jslicense/spdx-license-ids
 **License Type(s)**: CC0-1.0
 ### License: https://spdx.org/licenses/CC0-1.0.html
-```
+````
 # spdx-license-ids
 
 [![npm version](https://img.shields.io/npm/v/spdx-license-ids.svg)](https://www.npmjs.com/package/spdx-license-ids)
@@ -38785,7 +39482,7 @@ deprecatedIds.includes('GPL-3.0'); //=> true
 ## License
 
 [Creative Commons Zero v1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/deed)
-```
+````
 
 ## sprintf-js - 1.0.3
 **Repository URL**: https://github.com/alexei/sprintf.js
@@ -40241,7 +40938,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **Repository URL**: https://github.com/NaturalIntelligence/xml-naming
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
-```
+````
 # xml-naming
 
 Validates XML name productions as defined in the [XML 1.0](https://www.w3.org/TR/xml/) and [XML 1.1](https://www.w3.org/TR/xml11/) specifications.
@@ -40431,7 +41128,7 @@ sanitize('my element', 'name', { replacement: '-' })  // 'my-element'
 ## License
 
 MIT
-```
+````
 
 ## xmlhttprequest-ssl - 2.1.2
 **Repository URL**: https://github.com/mjwwit/node-XMLHttpRequest

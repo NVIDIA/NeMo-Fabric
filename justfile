@@ -286,16 +286,20 @@ clean:
         adapter-contract/typescript/dist \
         adapters/typescript/node_modules \
         adapters/typescript/common/dist \
+        adapters/typescript/cline/dist \
         adapters/typescript/pi/dist \
         adapters/typescript/opencode/dist \
+        adapters/typescript/qwen/dist \
         adapters/python/*/build \
         adapters/python/*/dist \
         sdk/python/*/build \
         sdk/python/*/dist \
         adapter-contract/typescript/*.tgz \
         adapters/typescript/common/*.tgz \
+        adapters/typescript/cline/*.tgz \
         adapters/typescript/pi/*.tgz \
-        adapters/typescript/opencode/*.tgz
+        adapters/typescript/opencode/*.tgz \
+        adapters/typescript/qwen/*.tgz
     find . \
         \( -path './.venv' -o -path './.git' \) -prune -o \
         -type d \( \
@@ -344,36 +348,28 @@ install-typescript-adapters:
 install-typescript-pi: install-typescript-contract
     npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-pi --include-workspace-root --ignore-scripts
 
+# Install the Cline adapter workspace without the caller-managed SDK harness.
+install-typescript-cline: install-typescript-contract
+    npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-cline --include-workspace-root --ignore-scripts
+
 # Install the OpenCode adapter and its pinned SDK harness for source development.
 install-typescript-opencode: install-typescript-contract
     npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-opencode --include-workspace-root --ignore-scripts
 
+# Install the Qwen adapter and its pinned SDK harness for source development.
+install-typescript-qwen: install-typescript-contract
+    npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-qwen --include-workspace-root --ignore-scripts
+
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters
 
-# Install the Hermes Agent into the Fabric virtualenv for local development
-# and testing.
-# Hermes Agent no longer publishes a PyPI package, so we need to install it
-# from source.
-# The documented https://hermes-agent.nousresearch.com/install.sh script is
-# tied directly to Python 3.11, we also want to ensure that we are installing
-# into our Fabric virtualenv
-# 29112bef099274229cadff79cdff7bf7b99c4b77 aligns with Hermes Agent v0.21.0.
-# metadata-propagate.patch forwards OpenAI request metadata into Hermes Relay
-# turn metadata. Remove it when the pinned Hermes revision includes that behavior.
-# Install the pinned Hermes Agent source with Fabric Relay metadata propagation.
+# Pin the merged upstream Hermes Relay 0.9 integration until it is released.
 install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
-    hermes_commit="29112bef099274229cadff79cdff7bf7b99c4b77"
+    hermes_commit="dccb84b92401234db294667ec203d3ac3dc1b87f"
     hermes_checkout="$REPO_ROOT/external/hermes-agent"
-    hermes_patch="$REPO_ROOT/adapters/python/hermes/metadata-propagate.patch"
     hermes_diff_pathspec=()
-
-    if [[ ! -f "$hermes_patch" ]]; then
-        echo "ERROR: Hermes Agent patch not found: $hermes_patch" >&2
-        exit 1
-    fi
 
     if [[ -e "$hermes_checkout" && ! -d "$hermes_checkout/.git" ]]; then
         echo "ERROR: expected a Git checkout at $hermes_checkout" >&2
@@ -393,47 +389,37 @@ install-hermes-agent:
     if [[ "$hermes_head" != "$hermes_commit" ]]; then
         if [[ -n "$hermes_head" ]] && { ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}" || ! git -C "$hermes_checkout" diff --cached --quiet; }; then
             echo "ERROR: Hermes Agent checkout has tracked changes at an unpinned revision: $hermes_checkout" >&2
+            echo "If these are disposable changes from the old metadata-propagate.patch, run:" >&2
+            echo "  git -C \"$hermes_checkout\" restore --source=HEAD --staged --worktree -- ." >&2
             exit 1
         fi
-        git -C "$hermes_checkout" fetch --depth 1 origin "$hermes_commit"
-        git -C "$hermes_checkout" checkout --quiet --detach FETCH_HEAD
+        if ! git -C "$hermes_checkout" cat-file -e "$hermes_commit^{commit}" 2>/dev/null; then
+            git -C "$hermes_checkout" fetch --depth 1 origin "$hermes_commit"
+        fi
+        git -C "$hermes_checkout" checkout --quiet --detach "$hermes_commit"
     fi
-    if ! git -C "$hermes_checkout" diff --cached --quiet; then
-        echo "ERROR: Hermes Agent checkout has staged changes: $hermes_checkout" >&2
+    if ! git -C "$hermes_checkout" diff --cached --quiet || ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
+        echo "ERROR: Hermes Agent checkout has tracked changes: $hermes_checkout" >&2
+        echo "To discard only tracked changes that you do not need, run:" >&2
+        echo "  git -C \"$hermes_checkout\" restore --source=HEAD --staged --worktree -- ." >&2
         exit 1
     fi
-    if git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
-        if ! git -C "$hermes_checkout" apply --check "$hermes_patch"; then
-            echo "ERROR: Hermes Agent patch does not apply to $hermes_commit" >&2
-            exit 1
-        fi
-        git -C "$hermes_checkout" apply "$hermes_patch"
-    else
-        # Validate the already-applied patch without depending on Git's
-        # platform-specific diff serialization.
-        patch_reversed=false
-        restore_hermes_patch() {
-            if [[ "$patch_reversed" == true ]]; then
-                git -C "$hermes_checkout" apply "$hermes_patch" || \
-                    echo "ERROR: failed to restore Hermes Agent metadata patch" >&2
-            fi
-        }
-        trap restore_hermes_patch EXIT
-        if ! git -C "$hermes_checkout" apply --reverse --check "$hermes_patch"; then
-            echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
-            exit 1
-        fi
-        git -C "$hermes_checkout" apply --reverse "$hermes_patch"
-        patch_reversed=true
-        if ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
-            echo "ERROR: Hermes Agent checkout has changes other than metadata-propagate.patch: $hermes_checkout" >&2
-            exit 1
-        fi
-        git -C "$hermes_checkout" apply "$hermes_patch"
-        patch_reversed=false
-        trap - EXIT
+    if [[ ! -x "$REPO_ROOT/.venv-hermes/bin/python" ]] ||
+       ! "$REPO_ROOT/.venv-hermes/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 14)' 2>/dev/null; then
+        uv venv --python 3.14 --clear "$REPO_ROOT/.venv-hermes"
     fi
-    uv sync --inexact --reinstall-package hermes-agent
+    uv pip install --python "$REPO_ROOT/.venv-hermes/bin/python" \
+        --editable "$REPO_ROOT/adapter-contract/python" \
+        --editable "$REPO_ROOT/adapters/python/common" \
+        --editable "$REPO_ROOT/adapters/python/hermes[relay]" \
+        --editable "$REPO_ROOT/sdk/python/nemo-fabric-collector" \
+        --editable "$REPO_ROOT/sdk/python/nemo-fabric-runtime" \
+        --editable "$REPO_ROOT/sdk/python/nemo-fabric" \
+        --config-settings-package hermes-agent:editable_mode=compat \
+        --editable "$hermes_checkout[mcp]" pytest pytest-asyncio pyyaml
+
+test-hermes: install-hermes-agent
+    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_streaming.py tests/e2e/test_hermes_e2e.py -q
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript

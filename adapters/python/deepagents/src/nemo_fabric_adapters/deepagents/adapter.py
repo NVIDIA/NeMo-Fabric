@@ -827,10 +827,10 @@ class DeepAgentsRuntime:
         try:
             common_utils.reject_ambient_relay_plugin_config()
             callback_handler = self._callback_handler_type()
-            async with self._relay_plugin.plugin(
+            async with self._relay_plugin.activate(
                 self._relay_plugin_config
-            ) as activation_report:
-                common_utils.reject_inherited_relay_plugin_config(activation_report)
+            ) as activation:
+                common_utils.reject_inherited_relay_plugin_config(activation.report)
                 # Caught here rather than left to propagate: an exception crossing the
                 # plugin's ``__aexit__`` is replaced by any fault the plugin raises in
                 # turn, which would lose one of the two.
