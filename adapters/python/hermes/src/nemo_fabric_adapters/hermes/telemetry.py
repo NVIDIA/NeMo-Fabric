@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
@@ -12,8 +14,8 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 import nemo_fabric_adapters.common.utils as common_utils
 
 
-# Hermes 0.16+ discovers Relay from this TOML path and falls back to direct
-# ATIF/ATOF only when TOML initialization fails. Clear only those enable flags.
+# Hermes selects the generated Relay TOML through this path. Clear stale
+# exporter flags from earlier Hermes versions before starting a new runtime.
 HERMES_RELAY_ENV_NAMES = (
     "HERMES_NEMO_RELAY_PLUGINS_TOML",
     "HERMES_NEMO_RELAY_ATIF_ENABLED",
@@ -34,6 +36,10 @@ def finalize_hermes_relay_session(session_id: str) -> None:
         invoke_hook("on_session_finalize", session_id=session_id, platform="fabric")
     else:
         finalize_session(session_id=session_id, platform="fabric")
+    from nemo_relay import subscribers
+
+    # Relay enqueues subscriber work; the ATIF file is written by one, so wait for it.
+    subscribers.flush()
 
 
 def validate_hermes_telemetry_provider(runtime_context: RuntimeContext) -> None:
@@ -41,6 +47,35 @@ def validate_hermes_telemetry_provider(runtime_context: RuntimeContext) -> None:
     providers = telemetry.metadata.get("telemetry_providers", []) if telemetry else []
     if any(provider != "relay" for provider in providers):
         raise ValueError("only relay telemetry is supported for Hermes")
+
+
+def validate_hermes_relay_compatibility() -> None:
+    """Reject Hermes/Relay combinations that cannot activate Fabric telemetry."""
+    try:
+        relay_version = version("nemo-relay")
+    except PackageNotFoundError as error:
+        raise RuntimeError(
+            "Hermes Relay telemetry requires nemo-relay 0.9; install the Hermes "
+            "adapter's relay extra in the Hermes environment"
+        ) from error
+    if relay_version.split(".")[:2] != ["0", "9"]:
+        raise RuntimeError(
+            f"Hermes Relay telemetry requires nemo-relay 0.9; found {relay_version}"
+        )
+
+    try:
+        from agent import relay_runtime
+    except ImportError as error:
+        raise RuntimeError(
+            "Hermes Relay telemetry requires a Hermes Agent checkout with "
+            "Relay 0.9 support; see the NeMo Fabric Hermes installation guide"
+        ) from error
+    if not callable(getattr(relay_runtime, "resolve_plugin_sources", None)):
+        raise RuntimeError(
+            "Installed Hermes Agent does not support Relay 0.9 telemetry; "
+            "use the Hermes checkout in `just install-hermes-agent` or a "
+            "compatible upstream release"
+        )
 
 
 def write_hermes_relay_plugin_config(

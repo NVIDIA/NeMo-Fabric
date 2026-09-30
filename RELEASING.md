@@ -32,7 +32,7 @@ package-specific tag pushes:
 | Ecosystem | Published Surface |
 |---|---|
 | crates.io | `nemo-fabric-core`, `nemo-fabric-cli` |
-| npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-pi` |
+| npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-pi`, `nemo-fabric-adapters-opencode`, `nemo-fabric-adapters-qwen` |
 | GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-collector`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, `nemo-fabric-adapters-hermes`, and `nemo-fabric-adapters-nooa` wheel artifacts |
 | Fern | The documentation site |
 
@@ -413,9 +413,9 @@ git push upstream "refs/tags/${RELEASE_TAG}"
 
 ## Publish the TypeScript Adapter Packages
 
-Pushing the canonical beta, RC, or stable tag publishes the contract, Common
-adapter, and Pi adapter packages in dependency order. The workflow submits all
-three packages before it starts deployment verification, then verifies them in
+Pushing the canonical beta, RC, or stable tag publishes the TypeScript contract,
+Common, Pi, OpenCode, and Qwen Code packages in dependency order. The workflow
+submits all five packages before it starts deployment verification, then verifies them in
 the same order. Do not create package-specific npm tags. The nightly workflow
 runs the TypeScript tests against alpha tags without publishing to npm.
 
@@ -429,7 +429,7 @@ Pushing a valid canonical tag triggers:
 | [`.github/workflows/ci_python.yml`](.github/workflows/ci_python.yml) | For all tags including alpha |
 | [`.github/workflows/publish_rust.yml`](.github/workflows/publish_rust.yml) | For RC, beta and release tags |
 | [`.github/workflows/ci_typescript.yml`](.github/workflows/ci_typescript.yml) | For nightly alpha tags and normal pull request/main validation |
-| [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml) | Publishes and verifies the contract, Common, and Pi packages for beta, RC, and stable tags |
+| [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml) | Publishes and verifies the TypeScript contract and bundled adapters for beta, RC, and stable tags |
 | [`.github/workflows/fern-docs.yml`](.github/workflows/fern-docs.yml) | For RC, beta and release tags |
 
 The release pipeline then:
@@ -442,7 +442,7 @@ The release pipeline then:
 3. Publishes `nemo-fabric-core` and `nemo-fabric-cli` to crates.io through
    trusted publishing for stable, beta, and RC tags. Alpha tags are not
    published to crates.io.
-4. Publishes the contract, Common, and Pi packages to npm from the canonical
+4. Publishes the contract, Common, Pi, OpenCode, and Qwen Code packages to npm from the canonical
    tag in dependency order, then verifies the deployment in that order. Stable
    releases use the `latest` dist-tag and beta and RC releases use `next`.
    Alpha tags validate the packages without publishing them.
@@ -458,7 +458,7 @@ The workflow boundary is split intentionally:
 - [`.github/workflows/publish_rust.yml`](.github/workflows/publish_rust.yml)
   owns crates.io publication decisions and credentials.
 - [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml)
-  owns contract, Common, and Pi npm publication decisions. It requests a
+  owns TypeScript contract and adapter npm publication decisions. It requests a
   short-lived credential through GitHub OIDC and does not receive an npm write
   token.
 
@@ -502,7 +502,7 @@ After the release is live, verify:
    - [`nemo-fabric-adapters-deepagents`](https://pypi.nvidia.com/nemo-fabric-adapters-deepagents/)
    - [`nemo-fabric-adapters-hermes`](https://pypi.nvidia.com/nemo-fabric-adapters-hermes/)
    - [`nemo-fabric-adapters-nooa`](https://pypi.nvidia.com/nemo-fabric-adapters-nooa/)
-4. The TypeScript contract, Common, and Pi packages are visible on npm with the
+4. The TypeScript contract and bundled adapter packages are visible on npm with the
    expected version, dist-tag, and provenance:
 
    ```bash
@@ -512,7 +512,9 @@ After the release is live, verify:
      for package in \
        nemo-fabric-adapter-contract \
        nemo-fabric-adapters-common \
-       nemo-fabric-adapters-pi; do
+       nemo-fabric-adapters-pi \
+       nemo-fabric-adapters-opencode \
+       nemo-fabric-adapters-qwen; do
        npm view "${package}@<release-version>" version \
          --registry="$npmjs_registry"
        npm view "$package" dist-tags --registry="$npmjs_registry"
@@ -525,11 +527,12 @@ After the release is live, verify:
        --registry="$npmjs_registry" \
        "nemo-fabric-adapter-contract@<release-version>" \
        "nemo-fabric-adapters-common@<release-version>" \
-       "nemo-fabric-adapters-pi@<release-version>"
+       "nemo-fabric-adapters-pi@<release-version>" \
+       "nemo-fabric-adapters-opencode@<release-version>" \
+       "nemo-fabric-adapters-qwen@<release-version>"
      npm audit signatures --registry="$npmjs_registry"
    )
    ```
 
 5. The Fern documentation site shows the expected version and release notes.
 6. The GitHub Release page is complete and accurate.
-
