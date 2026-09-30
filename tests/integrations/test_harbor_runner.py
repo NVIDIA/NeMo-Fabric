@@ -677,8 +677,16 @@ def test_swebench_mcp_config_uses_the_bundled_repo_inspector():
     assert server.args == ["/tmp/nemo-fabric-config/mcp/repo_inspector.py"]
 
 
-def test_root_readme_routes_to_sdk_and_harbor_guides():
+def test_root_readme_routes_to_primary_documentation():
     readme = ROOT_README.read_text(encoding="utf-8")
 
-    assert "docs/sdk/python.mdx" in readme
-    assert "examples/harbor/README.md" in readme
+    primary_documentation = (
+        "docs/getting-started/install.mdx",
+        "docs/getting-started/quickstart.mdx",
+        "docs/about-nemo-fabric/overview.mdx",
+        "adapters/README.md",
+        "CONTRIBUTING.md",
+    )
+
+    for path in primary_documentation:
+        assert f"]({path})" in readme
