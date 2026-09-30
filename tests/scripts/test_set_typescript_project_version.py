@@ -62,6 +62,17 @@ def typescript_project_fixture(tmp_path: Path) -> Path:
         },
     )
     _write_json(
+        tmp_path / "adapters/typescript/cline/package.json",
+        {
+            "name": "nemo-fabric-adapters-cline",
+            "version": "0.2.0",
+            "dependencies": {
+                "nemo-fabric-adapter-contract": "0.2.0",
+                "nemo-fabric-adapters-common": "0.2.0",
+            },
+        },
+    )
+    _write_json(
         tmp_path / "adapters/typescript/pi/package.json",
         {
             "name": "nemo-fabric-adapters-pi",
@@ -112,6 +123,14 @@ def typescript_project_fixture(tmp_path: Path) -> Path:
                     "name": "nemo-fabric-adapters-common",
                     "version": "0.2.0",
                     "dependencies": {"nemo-fabric-adapter-contract": "0.2.0"},
+                },
+                "cline": {
+                    "name": "nemo-fabric-adapters-cline",
+                    "version": "0.2.0",
+                    "dependencies": {
+                        "nemo-fabric-adapter-contract": "0.2.0",
+                        "nemo-fabric-adapters-common": "0.2.0",
+                    },
                 },
                 "pi": {
                     "name": "nemo-fabric-adapters-pi",
@@ -177,6 +196,9 @@ def test_updates_the_complete_typescript_package_graph(
     common = json.loads(
         (typescript_project / "adapters/typescript/common/package.json").read_text()
     )
+    cline = json.loads(
+        (typescript_project / "adapters/typescript/cline/package.json").read_text()
+    )
     pi = json.loads(
         (typescript_project / "adapters/typescript/pi/package.json").read_text()
     )
@@ -196,6 +218,7 @@ def test_updates_the_complete_typescript_package_graph(
         "",
         "../../adapter-contract/typescript",
         "common",
+        "cline",
         "pi",
         "opencode",
         "qwen",
@@ -203,6 +226,9 @@ def test_updates_the_complete_typescript_package_graph(
         assert adapters_lock["packages"][workspace]["version"] == version
     assert common["version"] == version
     assert common["dependencies"]["nemo-fabric-adapter-contract"] == version
+    assert cline["version"] == version
+    assert cline["dependencies"]["nemo-fabric-adapter-contract"] == version
+    assert cline["dependencies"]["nemo-fabric-adapters-common"] == version
     assert pi["version"] == version
     assert pi["dependencies"]["nemo-fabric-adapter-contract"] == version
     assert pi["dependencies"]["nemo-fabric-adapters-common"] == version
@@ -219,6 +245,10 @@ def test_updates_the_complete_typescript_package_graph(
         == version
     )
     assert adapters_lock["packages"]["pi"]["dependencies"] == {
+        "nemo-fabric-adapter-contract": version,
+        "nemo-fabric-adapters-common": version,
+    }
+    assert adapters_lock["packages"]["cline"]["dependencies"] == {
         "nemo-fabric-adapter-contract": version,
         "nemo-fabric-adapters-common": version,
     }

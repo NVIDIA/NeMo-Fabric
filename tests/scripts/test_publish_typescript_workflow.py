@@ -45,6 +45,7 @@ def test_publisher_only_triggers_for_public_release_channels():
         assert _tag_triggers_workflow(tag, tag_patterns)
     assert not _tag_triggers_workflow("v0.3.0-alpha.20260817", tag_patterns)
     for package in (
+        "nemo-fabric-adapters-cline",
         "nemo-fabric-adapters-common",
         "nemo-fabric-adapters-opencode",
         "nemo-fabric-adapters-pi",
@@ -81,6 +82,7 @@ def test_publisher_publishes_packages_in_dependency_order():
     package_directories = (
         "adapter-contract/typescript",
         "adapters/typescript/common",
+        "adapters/typescript/cline",
         "adapters/typescript/pi",
         "adapters/typescript/opencode",
         "adapters/typescript/qwen",

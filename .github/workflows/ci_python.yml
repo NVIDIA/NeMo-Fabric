@@ -199,6 +199,59 @@ jobs:
           uv sync --no-default-groups --group test
           uv run --no-sync pytest tests/e2e/test_opencode.py -k local_openai_compatible -q
 
+  cline-e2e:
+    name: Cline E2E
+    if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: adapters/typescript/package-lock.json
+
+      - name: Install just
+        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        with:
+          tool: just@1.50.0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+
+      - name: Create virtual environment
+        run: uv venv --python 3.12 .venv
+
+      - name: Install Cline adapter and caller-owned SDK
+        run: |
+          just install-typescript-cline
+          # Cline is caller-managed, so this intentionally tests the exact supported
+          # SDK release with its current transitive graph outside NeMo Fabric's lockfile.
+          npm install --prefix adapters/typescript --workspace nemo-fabric-adapters-cline --include-workspace-root --no-save --package-lock=false --ignore-scripts --no-audit --no-fund @cline/sdk@0.0.83
+          npm run build --prefix adapter-contract/typescript
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-cline
+
+      - name: Run deterministic Cline E2E
+        run: |
+          uv sync --frozen --no-default-groups --group test --no-sources-package hermes-agent
+          uv run --no-sync pytest tests/e2e/test_cline.py -k plans_diagnoses_runs_and_isolates_sessions -q
+
   qwen-e2e:
     name: Qwen Code E2E
     if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}

@@ -1,0 +1,80 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.cline",
+  "adapter_kind": "process",
+  "runner": {
+    "command": "node",
+    "script": "dist/cli.js"
+  },
+  "requirements": {
+    "binaries": ["node"]
+  },
+  "config": {
+    "accepts": [
+      "models",
+      "models.base_url",
+      "instructions.system",
+      "tools.enabled",
+      "tools.blocked",
+      "mcp",
+      "skills"
+    ],
+    "system_instruction_modes": ["replace"]
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "model_schema": {
+    "type": "object",
+    "properties": {
+      "provider": {"type": "string", "minLength": 1},
+      "model": {"type": "string", "minLength": 1},
+      "api_key_env": {"type": "string", "minLength": 1},
+      "base_url": {"type": ["string", "null"], "format": "uri"}
+    },
+    "required": ["provider", "model", "api_key_env"],
+    "additionalProperties": false
+  },
+  "extension_schemas": {
+    "run_result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session_id": {"type": "string", "minLength": 1},
+        "finish_reason": {
+          "type": "string",
+          "enum": ["completed", "aborted", "error", "mistake_limit", "max_iterations"]
+        },
+        "iterations": {"type": "integer", "minimum": 0},
+        "model": {
+          "type": "object",
+          "properties": {
+            "id": {"type": "string"},
+            "provider": {"type": "string"}
+          },
+          "required": ["id", "provider"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["session_id", "finish_reason"],
+      "additionalProperties": false
+    },
+    "usage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "cache_read_tokens": {"type": "integer", "minimum": 0},
+        "cache_write_tokens": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "capabilities": {
+    "streaming": false,
+    "cancellation": false,
+    "updates": false,
+    "service": false
+  }
+}
