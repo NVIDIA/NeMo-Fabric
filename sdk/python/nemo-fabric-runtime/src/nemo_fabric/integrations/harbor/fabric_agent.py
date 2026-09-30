@@ -369,7 +369,7 @@ else:
         @property
         def _runner_env(self) -> dict[str, str]:
             env = dict(self._extra_env)
-            env["ADAPTER_PYTHON"] = self._runner_python
+            env.setdefault("ADAPTER_PYTHON", self._runner_python)
             return env
 
 

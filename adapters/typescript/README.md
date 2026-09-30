@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # NVIDIA NeMo Fabric TypeScript Adapter Workspace
 
 This private npm workspace coordinates the independently published common, Pi,
-and OpenCode adapter packages. It provides shared build, test, package-content,
+OpenCode, and Qwen Code adapter packages. It provides shared build, test, package-content,
 and consumer-install checks without becoming a published package itself.
 
 ## Build and Test
@@ -33,6 +33,12 @@ harness, run:
 
 ```bash
 just install-typescript-opencode
+```
+
+To install only the Qwen Code adapter workspace and its exact-pinned SDK, run:
+
+```bash
+just install-typescript-qwen
 ```
 
 ## Dependency Rationale

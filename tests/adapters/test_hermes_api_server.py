@@ -17,8 +17,8 @@ from nemo_fabric_adapter_contract.models import (
     RuntimeContext,
 )
 
-if sys.version_info >= (3, 14):
-    pytest.skip("Hermes adapter supports Python 3.11–3.13", allow_module_level=True)
+if sys.version_info >= (3, 15):
+    pytest.skip("Hermes adapter supports Python 3.11–3.14", allow_module_level=True)
 if sys.platform == "win32":
     pytest.skip("Hermes API server mode requires a POSIX host", allow_module_level=True)
 
@@ -128,7 +128,7 @@ async def test_without_state_dir_native_state_belongs_to_the_runtime(tmp_path, n
     await runtime.stop()
 
 
-async def test_hermes_gets_only_the_configured_endpoint_and_relay_plugin(
+async def test_hermes_gets_only_the_configured_endpoint_and_relay_settings(
     tmp_path, native, monkeypatch
 ):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://inherited.invalid/v1")
@@ -145,7 +145,8 @@ async def test_hermes_gets_only_the_configured_endpoint_and_relay_plugin(
     assert "OPENAI_BASE_URL" not in env
     assert env["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(relay)
     written = yaml.safe_load((runtime.home / "config.yaml").read_text())
-    assert written["plugins"]["enabled"] == ["observability/nemo_relay"]
+    assert "plugins" not in written
+    assert written["auxiliary"]["title_generation"]["enabled"] is False
     await runtime.stop()
 
 

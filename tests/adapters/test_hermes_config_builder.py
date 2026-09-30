@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
 
-if sys.version_info >= (3, 14):
+if sys.version_info >= (3, 15):
     pytest.skip(
-        "Hermes adapter requires Python 3.13 or earlier",
+        "Hermes adapter requires Python 3.14 or earlier",
         allow_module_level=True,
     )
 
@@ -112,11 +112,12 @@ def test_native_config_adds_sections_and_plugin_settings():
     assert native["web"] == {"backend": "tavily"}
     assert native["plugins"] == {
         "entries": {"web/tavily": {"depth": 2}},
-        "enabled": ["web/tavily", "observability/nemo_relay"],
+        "enabled": ["web/tavily"],
     }
 
 
-def test_api_server_mode_registers_the_endpoint_and_tool_allowlist():
+@pytest.mark.parametrize("relay_enabled", [False, True])
+def test_api_server_mode_registers_the_endpoint_and_tool_allowlist(relay_enabled):
     def build(mode):
         config = AgentConfig.from_mapping(
             {
@@ -132,7 +133,9 @@ def test_api_server_mode_registers_the_endpoint_and_tool_allowlist():
                 "tools": {"enabled": ["terminal"]},
             }
         )
-        return configuration.build_hermes_config(config, workspace=".")
+        return configuration.build_hermes_config(
+            config, workspace=".", relay_enabled=relay_enabled
+        )
 
     native = build("api_server")
     assert native["platform_toolsets"]["api_server"] == ["terminal"]
@@ -144,3 +147,9 @@ def test_api_server_mode_registers_the_endpoint_and_tool_allowlist():
     sdk = build("sdk")
     assert sdk["platform_toolsets"] == {"cli": ["terminal"]}
     assert "providers" not in sdk
+
+    for resolved in (native, sdk):
+        if relay_enabled:
+            assert resolved["auxiliary"]["title_generation"]["enabled"] is False
+        else:
+            assert "auxiliary" not in resolved

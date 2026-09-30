@@ -18,7 +18,7 @@ def mock_api_server(port: int) -> Iterator[str]:
     Context manager for a mock API server.
 
     Use the /_requests endpoint to inspect captured chat-completion payloads after a test action.
-    Use the /_scenario endpoint to configure the server to return a specific status code for subsequent requests.
+    Use the /_scenario endpoint to configure a status code or ordered tool calls for subsequent requests.
     Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
@@ -33,8 +33,8 @@ def mock_api_server(port: int) -> Iterator[str]:
     def reset_state() -> None:
         app.state.requests = []
         app.state.status_code = 200
-        app.state.tool_call = None
-        app.state.tool_call_sent = False
+        app.state.tool_calls = []
+        app.state.tool_call_index = 0
         app.state.mcp_authorization_headers = []
 
     reset_state()
@@ -65,16 +65,30 @@ def mock_api_server(port: int) -> Iterator[str]:
 
     @app.post("/_scenario")
     async def scenario(request: Request) -> dict[str, object]:
-        """Configure the status code or a single tool call for subsequent requests."""
+        """Configure the status code or ordered tool calls for subsequent requests."""
 
         payload = await request.json()
         app.state.status_code = int(payload.get("status_code", 200))
-        app.state.tool_call = payload.get("tool_call")
-        app.state.tool_call_sent = False
+        tool_call = payload.get("tool_call")
+        app.state.tool_calls = payload.get("tool_calls") or (
+            [tool_call] if tool_call is not None else []
+        )
+        app.state.tool_call_index = 0
         return {
             "status_code": app.state.status_code,
-            "tool_call": app.state.tool_call,
+            "tool_call": tool_call,
+            "tool_calls": app.state.tool_calls,
         }
+
+    def next_tool_call(payload: dict[str, object]) -> dict[str, object] | None:
+        index = app.state.tool_call_index
+        if index >= len(app.state.tool_calls):
+            return None
+        tool_call = app.state.tool_calls[index]
+        if not _payload_has_tool(payload, tool_call["name"]):
+            return None
+        app.state.tool_call_index += 1
+        return tool_call
 
     @app.post("/_reset")
     def reset() -> dict[str, str]:
@@ -146,13 +160,8 @@ def mock_api_server(port: int) -> Iterator[str]:
                 },
             )
 
-        tool_call = app.state.tool_call
-        if (
-            tool_call is not None
-            and not app.state.tool_call_sent
-            and _payload_has_tool(payload, tool_call["name"])
-        ):
-            app.state.tool_call_sent = True
+        tool_call = next_tool_call(payload)
+        if tool_call is not None:
             if payload.get("stream") is True:
                 return StreamingResponse(
                     _stream_tool_call_completion(payload, tool_call),
@@ -210,13 +219,8 @@ def mock_api_server(port: int) -> Iterator[str]:
                 },
             )
 
-        tool_call = app.state.tool_call
-        if (
-            tool_call is not None
-            and not app.state.tool_call_sent
-            and _payload_has_tool(payload, tool_call["name"])
-        ):
-            app.state.tool_call_sent = True
+        tool_call = next_tool_call(payload)
+        if tool_call is not None:
             events = _responses_tool_call_events(payload, tool_call)
         else:
             events = _responses_text_events(payload, "echo response")
@@ -238,13 +242,8 @@ def mock_api_server(port: int) -> Iterator[str]:
                 },
             )
 
-        tool_call = app.state.tool_call
-        if (
-            tool_call is not None
-            and not app.state.tool_call_sent
-            and _payload_has_tool(payload, tool_call["name"])
-        ):
-            app.state.tool_call_sent = True
+        tool_call = next_tool_call(payload)
+        if tool_call is not None:
             events = _messages_tool_call_events(payload, tool_call)
         else:
             events = _messages_text_events(payload, "echo response")

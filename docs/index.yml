@@ -74,6 +74,8 @@ navigation:
             path: ./integrations/harness/opencode.mdx
           - page: Pi
             path: ./integrations/harness/pi.mdx
+          - page: Qwen Code
+            path: ./integrations/harness/qwen.mdx
           - page: Remote Agent
             path: ./integrations/harness/remote-agent.mdx
   - section: Reference

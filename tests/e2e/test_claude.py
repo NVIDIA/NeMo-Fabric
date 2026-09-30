@@ -53,7 +53,7 @@ from pathlib import Path
 
 args = sys.argv[1:]
 if args == ["--version"]:
-    print("nemo-relay 0.7.2")
+    print("nemo-relay 0.9.0")
     raise SystemExit(0)
 Path({str(log_path)!r}).write_text(json.dumps(args), encoding="utf-8")
 bind = args[args.index("--bind") + 1]
