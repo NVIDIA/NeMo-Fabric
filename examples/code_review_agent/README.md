@@ -210,3 +210,21 @@ document containing `atof_records` and the separate terminal `result`. Relay
 retains redirect-decision marks in configured ATOF artifacts, while Pi's startup
 `model_redirect` marks are not included in `atof_records`. Omit `--stream` to
 retain Relay artifacts without collecting records for that JSON output.
+
+### Qwen Code (`qwen`)
+
+Install Node.js 22.19 or later and the pinned
+[Qwen adapter dependencies](../../adapters/typescript/qwen/README.md), then build
+the adapter:
+
+```bash
+just install-typescript-qwen
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-qwen
+.venv/bin/python -m examples.code_review_agent --variant qwen --plan
+```
+
+Set `NVIDIA_API_KEY` to run the example. The variant keeps the code-review skill,
+uses Qwen's non-interactive default approval mode, and blocks shell and edit
+tools. The variant does not configure an MCP server or Relay telemetry.

@@ -1,0 +1,42 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.qwen",
+  "adapter_kind": "process",
+  "runner": {"command": "node", "script": "dist/cli.js"},
+  "requirements": {"binaries": ["node"]},
+  "config": {
+    "accepts": [
+      "models",
+      "models.base_url",
+      "models.temperature",
+      "models.top_p",
+      "instructions.system",
+      "tools.blocked",
+      "skills",
+      "mcp",
+      "mcp.tool_filters"
+    ],
+    "system_instruction_modes": ["replace", "append"]
+  },
+  "model_schema": {
+    "type": "object",
+    "properties": {
+      "provider": {"const": "openai"},
+      "model": {"type": "string", "minLength": 1},
+      "api_key_env": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+      "base_url": {"type": ["string", "null"], "format": "uri", "pattern": "^https?://"},
+      "temperature": {"type": "number"},
+      "top_p": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "required": ["provider", "model", "api_key_env"],
+    "additionalProperties": false
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "permission_mode": {"enum": ["default", "plan", "auto-edit", "auto", "yolo"]}
+    },
+    "additionalProperties": false
+  },
+  "capabilities": {"streaming": false, "cancellation": false, "updates": false, "service": false}
+}
