@@ -62,6 +62,8 @@ navigation:
             path: ./integrations/harness/claude.mdx
           - page: Codex
             path: ./integrations/harness/codex.mdx
+          - page: Cline
+            path: ./integrations/harness/cline.mdx
           - page: Hermes Agent
             path: ./integrations/harness/hermes.mdx
           - page: LangChain Deep Agents
@@ -74,6 +76,8 @@ navigation:
             path: ./integrations/harness/opencode.mdx
           - page: Pi
             path: ./integrations/harness/pi.mdx
+          - page: Qwen Code
+            path: ./integrations/harness/qwen.mdx
           - page: Remote Agent
             path: ./integrations/harness/remote-agent.mdx
   - section: Reference

@@ -25,16 +25,18 @@ variations notebook shows advanced composition against a real, maintained agent.
   harness's adapter and credentials must be present:
   - **Hermes Agent** (both notebooks): from the repository root, run
     `just install-hermes-agent`, then set `NVIDIA_API_KEY`. The recipe checks out
-    the pinned Hermes Agent source and synchronizes it into the project
-    environment. End users installing outside a source checkout must follow the
+    the merged upstream Hermes Relay 0.9 revision and installs it with Python 3.14 in
+    `.venv-hermes`. The notebooks use that environment for Hermes adapter runs.
+    End users installing outside a source checkout must follow the
     [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation);
     Hermes Agent 0.20 and later is no longer installable from PyPI.
   - **Deep Agents, Codex, Claude** (variations notebook): the matching adapter
     installed in the NeMo Fabric environment, plus that harness's credentials
     (`NVIDIA_API_KEY` for Deep Agents; an existing ChatGPT or provisioned API-key
     login for Codex; `ANTHROPIC_API_KEY` for the documented Claude run).
-    Relay-enabled Hermes Agent and Deep Agents runs also need the `nemo-relay`
-    Python package in the selected adapter environment.
+    Relay-enabled Deep Agents runs need the `nemo-relay` Python package in the
+    selected adapter environment. The merged upstream Hermes revision supplies
+    Relay 0.9 support for the Hermes cells.
 - API keys are loaded from a gitignored `.env` at the repo root if present.
   Each notebook securely prompts for any missing keys it uses. Press Enter to
   skip a key and the live harness calls that require it.
