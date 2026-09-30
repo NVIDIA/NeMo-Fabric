@@ -6,6 +6,8 @@ navigation:
   contents:
   - page: Overview
     path: ../pages-dev/about-nemo-fabric/overview.mdx
+  - page: Ecosystem
+    path: ../pages-dev/about-nemo-fabric/ecosystem.mdx
   - page: Release Notes
     path: ../pages-dev/about-nemo-fabric/release-notes.mdx
 - section: Getting Started
