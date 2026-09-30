@@ -30,6 +30,7 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 | Agent Harness | Tool Policy | MCP | Skills | Telemetry |
 | --- | :---: | :---: | :---: | :---: |
 | [Claude Code](adapters/python/claude/README.md) | ✅ | ✅ | ✅ | ✅ |
+| [Cline](adapters/typescript/cline/README.md) | ✅ | ✅ | ✅ | — |
 | [Codex](adapters/python/codex/README.md) | — | ✅ | ✅ | ✅ |
 | [Hermes Agent](adapters/python/hermes/README.md) | ✅ | ✅ | ✅ | ✅ |
 | [LangChain Deep Agents](adapters/python/deepagents/README.md) | ✅ | ✅ | ✅ | ✅ |
