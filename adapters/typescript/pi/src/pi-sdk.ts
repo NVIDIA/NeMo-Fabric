@@ -71,7 +71,7 @@ type PiToolFactory = (context: PiToolFactoryContext) => ToolDefinition | Promise
 const PI_BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 const TOOL_MODULE_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 const PI_HARNESS_INSTALL_COMMAND =
-  "npm install @earendil-works/pi-ai@^0.84.2 @earendil-works/pi-coding-agent@^0.84.2";
+  "npm install @earendil-works/pi-ai@^0.86.0 @earendil-works/pi-coding-agent@^0.86.0";
 
 interface PiSdkModules {
   InMemoryCredentialStore: typeof import("@earendil-works/pi-ai").InMemoryCredentialStore;

@@ -78,7 +78,7 @@ test("enforces the package Node.js engine floor", () => {
 
 test(
   "launches the Pi process host and loads an explicit extension tool",
-  { skip: supportsPi ? false : "Pi 0.84.2 requires Node 22.19 or newer" },
+  { skip: supportsPi ? false : "Pi 0.86.0 requires Node 22.19 or newer" },
   async () => {
     const baseDir = await mkdtemp(join(tmpdir(), "fabric-pi-process-"));
     const workspace = join(baseDir, "workspace");
@@ -186,7 +186,7 @@ Read the implementation before reporting findings.
 
 test(
   "rejects an explicitly configured missing skill before session creation",
-  { skip: supportsPi ? false : "Pi 0.84.2 requires Node 22.19 or newer" },
+  { skip: supportsPi ? false : "Pi 0.86.0 requires Node 22.19 or newer" },
   async () => {
     const baseDir = await mkdtemp(join(tmpdir(), "fabric-pi-missing-skill-"));
     const workspace = join(baseDir, "workspace");
@@ -226,7 +226,7 @@ test(
 
 test(
   "dispatches extension commands and rejects work after extension shutdown",
-  { skip: supportsPi ? false : "Pi 0.84.2 requires Node 22.19 or newer" },
+  { skip: supportsPi ? false : "Pi 0.86.0 requires Node 22.19 or newer" },
   async () => {
     const baseDir = await mkdtemp(join(tmpdir(), "fabric-pi-shutdown-"));
     const workspace = join(baseDir, "workspace");
@@ -292,7 +292,7 @@ test(
 
 test(
   "returns a stable error for a missing configured extension",
-  { skip: supportsPi ? false : "Pi 0.84.2 requires Node 22.19 or newer" },
+  { skip: supportsPi ? false : "Pi 0.86.0 requires Node 22.19 or newer" },
   async () => {
     const baseDir = await mkdtemp(join(tmpdir(), "fabric-pi-missing-extension-"));
     const workspace = join(baseDir, "workspace");

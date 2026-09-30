@@ -39,7 +39,7 @@ half of the context window for input.
 
 ## Install the Adapter
 
-Pi 0.84.x requires Node.js 22.19.0 or newer.
+Pi 0.86.x requires Node.js 22.19.0 or newer.
 
 ### Install for Consumers
 
@@ -48,7 +48,7 @@ then install the compatible Pi SDK harness version selected by that project:
 
 ```bash
 npm install nemo-fabric-adapters-pi
-npm install @earendil-works/pi-ai@^0.84.2 @earendil-works/pi-coding-agent@^0.84.2
+npm install @earendil-works/pi-ai@^0.86.0 @earendil-works/pi-coding-agent@^0.86.0
 ```
 
 The adapter declares the Pi packages as optional peers. Installing the adapter
@@ -269,7 +269,7 @@ process; maintaining a second JSON-RPC translation was rejected for the bundled
 adapter. `@earendil-works/pi-ai` supplies Pi's model catalog and credential
 store, which the coding-agent SDK expects. Both packages are optional peer
 dependencies so deployments control the compatible harness version. Exact
-0.84.2 development dependencies keep repository builds and tests reproducible.
+0.86.0 development dependencies keep repository builds and tests reproducible.
 
 `jiti` loads explicitly configured, trusted JavaScript and TypeScript tool
 modules. Native Node.js loading cannot execute TypeScript modules, while a
