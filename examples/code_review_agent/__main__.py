@@ -19,6 +19,7 @@ from nemo_fabric import Fabric, FabricConfig
 from examples.code_review_agent.config import (
     BASE_DIR,
     claude_config,
+    cline_config,
     codex_config,
     deepagents_config,
     hermes_config,
@@ -33,6 +34,7 @@ from examples.code_review_agent.config import (
 CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "hermes": hermes_config,
     "claude": claude_config,
+    "cline": cline_config,
     "codex": codex_config,
     "deepagents": deepagents_config,
     "nooa": nooa_config,
@@ -141,8 +143,12 @@ async def main() -> None:
         parser.error("--stream requires --relay")
     if args.stream and args.plan:
         parser.error("--stream cannot be combined with --plan")
-    if args.variant in {"openclaw", "qwen"} and args.relay:
-        display_name = "OpenClaw" if args.variant == "openclaw" else "Qwen Code"
+    if args.variant in {"cline", "openclaw", "qwen"} and args.relay:
+        display_name = {
+            "cline": "Cline",
+            "openclaw": "OpenClaw",
+            "qwen": "Qwen Code",
+        }[args.variant]
         parser.error(f"the {display_name} adapter does not support Relay telemetry")
     if args.service and args.variant != "openclaw":
         parser.error("--service requires --variant openclaw")

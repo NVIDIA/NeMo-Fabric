@@ -62,6 +62,8 @@ navigation:
             path: ./integrations/harness/claude.mdx
           - page: Codex
             path: ./integrations/harness/codex.mdx
+          - page: Cline
+            path: ./integrations/harness/cline.mdx
           - page: Hermes Agent
             path: ./integrations/harness/hermes.mdx
           - page: LangChain Deep Agents
