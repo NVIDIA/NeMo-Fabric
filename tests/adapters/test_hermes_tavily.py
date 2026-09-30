@@ -10,8 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-if sys.version_info >= (3, 14):
-    pytest.skip("Hermes adapter supports Python 3.11–3.13", allow_module_level=True)
+if sys.version_info >= (3, 15):
+    pytest.skip("Hermes adapter supports Python 3.11–3.14", allow_module_level=True)
 
 from nemo_fabric_adapters.hermes.plugins import tavily
 

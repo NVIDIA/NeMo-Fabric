@@ -40,19 +40,19 @@ that stay hidden behind this boundary.
 The consumer or its execution environment owns installation; NeMo Fabric validates
 runtime assumptions but never installs harnesses or credentials at run time.
 
-- NeMo Fabric supports Python 3.11 through 3.14. Use Python 3.11 through 3.13
-  for Hermes Agent; the Harbor integration requires Python 3.12 or later.
-- Install the runtime with `uv pip install nemo-fabric` (add the `harbor` extra
-  for the Harbor integration). Refer to the
+- Choose supported Python interpreters for the runtime, Harbor, and adapter
+  environments from the
   [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx).
+- Install the runtime with `uv pip install nemo-fabric` (add the `harbor` extra
+  for the Harbor integration).
 - Select the harness adapter through `HarnessConfig.adapter_id`. To install the
   NeMo Fabric runtime, adapter, and supported harness in one environment, use
   `nemo-fabric[claude]`, `nemo-fabric[codex]`,
   or `nemo-fabric[deepagents]`.
-- Hermes Agent 0.20 and later is no longer installable from PyPI. Follow the
-  [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
-  then install the `nemo-fabric[hermes-agent]` package
-  into the Python environment that runs Hermes Agent. These packages do not
+- Install Hermes Agent separately from the Fabric adapter. Follow the
+  [Hermes integration guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes.mdx)
+  for the current compatible interpreter, source checkout, Relay dependencies,
+  and adapter installation. The `nemo-fabric[hermes-agent]` extra does not
   install Hermes Agent.
 - In a separate adapter environment, install
   `nemo-fabric-adapters-<adapter>[harness]`. This installs the adapter and
@@ -65,11 +65,10 @@ runtime assumptions but never installs harnesses or credentials at run time.
 - If the adapter environment already manages a compatible harness, install the
   bare `nemo-fabric-adapters-<adapter>` distribution. Bare adapter
   distributions contain only adapter-owned runtime dependencies.
-- LangChain Deep Agents and Hermes Agent adapter packages provide `relay` and
-  include the NeMo Relay Python package in `full`. The Hermes Agent extras do
-  not install Hermes Agent. Claude and Codex do not provide `relay`; their
-  `harness` and `full` extras install the supported `nemo-relay` CLI alongside
-  the harness SDK.
+- LangChain Deep Agents and Hermes adapter packages provide `relay` and include
+  the NeMo Relay Python package in `full`. Claude and Codex do not provide
+  `relay`; their `harness` and `full` extras install the supported `nemo-relay`
+  CLI alongside the harness SDK.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise
