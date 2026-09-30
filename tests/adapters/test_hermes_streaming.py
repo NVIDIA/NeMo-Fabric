@@ -13,9 +13,9 @@ from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import RuntimeContext
 
-if sys.version_info >= (3, 14):
+if sys.version_info >= (3, 15):
     pytest.skip(
-        "Hermes adapter requires Python 3.13 or earlier",
+        "Hermes adapter requires Python 3.14 or earlier",
         allow_module_level=True,
     )
 

@@ -36,13 +36,13 @@ harness = [
   "nooa-bench>=0.0.10,<0.0.11",
 ]
 relay = [
-  "nemo-relay>=0.7.2,<0.8",
+  "nemo-relay>=0.9,<0.10",
 ]
 full = [
   "nooa>=0.0.10,<0.0.11",
   "nooa-cli>=0.0.10,<0.0.11",
   "nooa-bench>=0.0.10,<0.0.11",
-  "nemo-relay>=0.7.2,<0.8",
+  "nemo-relay>=0.9,<0.10",
 ]
 
 [project.urls]
