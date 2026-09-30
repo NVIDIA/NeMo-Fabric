@@ -101,6 +101,7 @@ jobs:
         env:
           UV_TOOL_BIN_DIR: ${{ runner.temp }}/nemo-relay-bin
           UV_TOOL_DIR: ${{ runner.temp }}/nemo-relay-tools
+        # Keep this smoke test reproducible; package extras accept compatible 0.9 releases.
         run: uv tool install --no-cache nemo-relay-cli-bin==0.9.3
 
       - name: Test released Relay Pi smoke

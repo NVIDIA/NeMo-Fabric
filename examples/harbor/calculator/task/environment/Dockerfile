@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-FROM python:3.12-slim-bookworm
+# Hermes declares its core runtime dependencies for Python 3.14.
+FROM python:3.14-slim-bookworm
 
 COPY --from=node:24.16.0-bookworm-slim /usr/local /usr/local
 
@@ -36,7 +37,8 @@ RUN python -m venv /opt/hermes-venv \
         -e /opt/nemo-fabric/adapters/python/common \
         -e '/opt/nemo-fabric/adapters/python/hermes[relay]' \
     && /opt/hermes-venv/bin/pip install --no-cache-dir \
-        --config-settings editable_mode=compat -e '/opt/hermes-agent[mcp]'
+        --config-settings editable_mode=compat -e '/opt/hermes-agent[mcp]' \
+    && /opt/hermes-venv/bin/python -c 'from run_agent import AIAgent'
 
 COPY calculator.py /app/calculator.py
 COPY fabric /opt/fabric-calculator
