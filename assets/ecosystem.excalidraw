@@ -1,7 +1,7 @@
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "https://excalidraw.com",
+  "source": "https://excalidraw.sc-paas.nvidia.com",
   "elements": [
     {
       "type": "text",
@@ -674,8 +674,8 @@
     },
     {
       "type": "text",
-      "version": 1,
-      "versionNonce": 2023,
+      "version": 14,
+      "versionNonce": 1417293335,
       "isDeleted": false,
       "id": "heading-targets",
       "fillStyle": "solid",
@@ -684,8 +684,8 @@
       "roughness": 0,
       "opacity": 100,
       "angle": 0,
-      "x": 60,
-      "y": 414,
+      "x": 69,
+      "y": 391,
       "strokeColor": "#111827",
       "backgroundColor": "transparent",
       "width": 240,
@@ -1225,7 +1225,6 @@
   ],
   "appState": {
     "gridSize": null,
-    "exportBackground": true,
     "viewBackgroundColor": "#ffffff"
   },
   "files": {}
