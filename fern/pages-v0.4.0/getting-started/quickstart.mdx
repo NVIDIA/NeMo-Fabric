@@ -21,8 +21,10 @@ python -m pip install nemo-fabric nemo-fabric-adapters-hermes
 
 These packages do not install Hermes Agent. For local development from a NeMo
 Fabric checkout, run `just install-hermes-agent` from the repository root
-instead. The recipe checks out the pinned Hermes Agent source and synchronizes
-it into the project environment. Refer to the [NeMo Fabric installation guide](install.mdx)
+instead. The recipe checks out tested Hermes source with Relay 0.9 support
+and installs it in an isolated environment. Set
+`ADAPTER_PYTHON` to `.venv-hermes/bin/python` when running NeMo Fabric from the
+project environment. Refer to the [NeMo Fabric installation guide](install.mdx)
 for separate adapter environments and other supported package combinations.
 
 ## Obtaining API Keys

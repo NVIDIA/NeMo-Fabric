@@ -766,10 +766,12 @@ Streaming has the following v0.1 constraints:
   when it is deployed beyond a trusted local boundary.
 
 Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and
-require a release in the `>=0.7.2,<0.8` range. Their adapter `harness` and
-`full` extras install the supported CLI. Hermes Agent and Deep Agents use their
-in-process NeMo Relay integrations. Remote Agent services own their Relay
-installation and publish to the same configured `nemo-fabric-stream` collector
+require a release in the `>=0.9,<0.10` range. Their adapter `harness` and
+`full` extras install the supported CLI. Deep Agents uses its in-process NeMo
+Relay integration. Hermes Agent uses its in-process Relay integration when
+installed from the merged Relay 0.9 Hermes revision in a separate Python 3.14 environment.
+Remote Agent services own their Relay installation and publish to the same
+configured `nemo-fabric-stream` collector
 base URL. The local adapter does not install or start Relay for the service.
 
 ## Application-Owned Parallelism
