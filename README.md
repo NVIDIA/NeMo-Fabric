@@ -27,19 +27,19 @@ NeMo Fabric gives applications, evaluation systems, and rollout platforms a cons
 
 NeMo Fabric includes adapters for the following harnesses and execution targets. Select a harness name for its adapter documentation:
 
-| Agent Harness | Tool Policy | MCP | Skills | Subagents | Telemetry |
-| --- | :---: | :---: | :---: | :---: | :---: |
-| [Claude Code](adapters/python/claude/README.md) | ✅ | ✅ | ✅ | — | ✅ |
-| [Codex](adapters/python/codex/README.md) | — | ✅ | ✅ | — | ✅ |
-| [Hermes Agent](adapters/python/hermes/README.md) | ✅ | ✅ | ✅ | — | ✅ |
-| [LangChain Deep Agents](adapters/python/deepagents/README.md) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [mini-SWE-agent](adapters/python/mini-swe-agent/README.md) | — | — | — | — | ✅ |
-| [NOOA](adapters/python/nooa/README.md) | — | ✅ | ✅ | — | ✅ |
-| [OpenClaw](adapters/python/openclaw/README.md) | ✅ | ✅ | ✅ | ✅ | — |
-| [OpenCode](adapters/typescript/opencode/README.md) | — | ✅ | ✅ | — | — |
-| [Pi](adapters/typescript/pi/README.md) | ✅ | — | ✅ | — | ✅ |
-| [Qwen Code](adapters/typescript/qwen/README.md) | ✅ | ✅ | ✅ | — | — |
-| [Remote Agent](adapters/python/remote-agent/README.md) | — | — | — | — | ✅ |
+| Agent Harness | Tool Policy | MCP | Skills | Telemetry |
+| --- | :---: | :---: | :---: | :---: |
+| [Claude Code](adapters/python/claude/README.md) | ✅ | ✅ | ✅ | ✅ |
+| [Codex](adapters/python/codex/README.md) | — | ✅ | ✅ | ✅ |
+| [Hermes Agent](adapters/python/hermes/README.md) | ✅ | ✅ | ✅ | ✅ |
+| [LangChain Deep Agents](adapters/python/deepagents/README.md) | ✅ | ✅ | ✅ | ✅ |
+| [mini-SWE-agent](adapters/python/mini-swe-agent/README.md) | — | — | — | ✅ |
+| [NOOA](adapters/python/nooa/README.md) | — | ✅ | ✅ | ✅ |
+| [OpenClaw](adapters/python/openclaw/README.md) | ✅ | ✅ | ✅ | — |
+| [OpenCode](adapters/typescript/opencode/README.md) | — | ✅ | ✅ | — |
+| [Pi](adapters/typescript/pi/README.md) | ✅ | — | ✅ | ✅ |
+| [Qwen Code](adapters/typescript/qwen/README.md) | ✅ | ✅ | ✅ | — |
+| [Remote Agent](adapters/python/remote-agent/README.md) | — | — | — | ✅ |
 
 ✅ Supported · — Not supported. Support may come through normalized configuration, native harness behavior, or a specific target. Refer to each adapter guide or the [complete compatibility matrix](adapters/README.md#configuration-compatibility) for details and limitations.
 
