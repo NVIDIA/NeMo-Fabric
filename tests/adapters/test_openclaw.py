@@ -1373,7 +1373,13 @@ def test_linux_parent_death_stops_openclaw_gateway(mock_openclaw: Path, tmp_path
         process.kill()
         process.wait(timeout=5)
         deadline = time.monotonic() + 5
-        while not stopped_path.exists() and time.monotonic() < deadline:
+        # File creation precedes the gateway flushing its shutdown marker.
+        while time.monotonic() < deadline:
+            if (
+                stopped_path.exists()
+                and stopped_path.read_text(encoding="utf-8") == "stopped"
+            ):
+                break
             time.sleep(0.05)
 
         assert stopped_path.read_text(encoding="utf-8") == "stopped"
