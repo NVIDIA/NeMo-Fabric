@@ -176,8 +176,12 @@ and `display`. Sections that NeMo Fabric owns, such as `model`, are rejected.
 `plugins` holds plugin settings, such as `entries`; `plugins_enabled` decides
 which plugins are enabled.
 
-The package includes a native Tavily web search and extraction plugin under
-`nemo_fabric_adapters/hermes/plugins/tavily/`. Copy it into Hermes' plugin
-directory as `plugins/web/tavily`, enable it with
-`harness.settings.plugins_enabled: [web/tavily]`, select it with
-`native_config.web`, and provide `TAVILY_API_KEY` in the runtime environment.
+The package includes a native Tavily web search and extraction plugin. Install it into an existing Hermes Agent checkout using the adapter's installer:
+
+```bash
+python -m nemo_fabric_adapters.hermes.install_plugins --hermes-root /path/to/hermes-agent
+```
+
+The command needs write access to that checkout and prints a JSON mapping from `web/tavily` to the installed directory. It performs no network requests and does not change Hermes configuration or credentials. Repeating the same installation preserves the files; a different existing plugin or a symlink in its destination path causes an error. To replace an older installation, first review and remove the reported plugin directory, then run the command again.
+
+Enable the installed plugin with `harness.settings.plugins_enabled: [web/tavily]`, select it with `native_config.web`, and provide `TAVILY_API_KEY` in the runtime environment. Installation alone does not enable search or verify access to the Tavily API.
