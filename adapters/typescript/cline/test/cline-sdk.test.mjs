@@ -91,9 +91,9 @@ test("maps model, endpoint, credential, system instruction, and built-in tool po
     clientName: "nemo-fabric",
     backendMode: "local",
     toolPolicies: {
-      read_files: { enabled: true },
-      search_codebase: { enabled: false },
-      run_commands: { enabled: false },
+      read_files: { enabled: true, autoApprove: true },
+      search_codebase: { enabled: false, autoApprove: true },
+      run_commands: { enabled: false, autoApprove: true },
     },
   }]);
   assert.deepEqual(sdk.calls.prompts, []);
@@ -114,9 +114,9 @@ test("maps model, endpoint, credential, system instruction, and built-in tool po
     interactive: true,
     source: "sdk",
     toolPolicies: {
-      read_files: { enabled: true },
-      search_codebase: { enabled: false },
-      run_commands: { enabled: false },
+      read_files: { enabled: true, autoApprove: true },
+      search_codebase: { enabled: false, autoApprove: true },
+      run_commands: { enabled: false, autoApprove: true },
     },
     localRuntime: { configExtensions: [] },
     prompt: "one",

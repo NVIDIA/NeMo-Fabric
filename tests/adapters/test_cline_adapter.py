@@ -172,12 +172,14 @@ def test_cline_descriptor_rejects_unsupported_instruction_runtime_and_tool_field
         Fabric().plan(custom_tool, base_dir=ROOT)
 
 
-async def test_cline_descriptor_doctor_reports_node(tmp_path):
+async def test_cline_descriptor_doctor_reports_node(tmp_path, monkeypatch):
     node = tmp_path / ("node.exe" if os.name == "nt" else "node")
     node.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     if os.name != "nt":
         node.chmod(0o755)
-    os.environ["PATH"] = f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}"
+    monkeypatch.setenv(
+        "PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}"
+    )
 
     report = await Fabric().doctor(config(), base_dir=ROOT)
 
@@ -190,8 +192,8 @@ async def test_cline_descriptor_doctor_reports_node(tmp_path):
     )
 
 
-async def test_cline_descriptor_doctor_reports_missing_node():
-    os.environ["PATH"] = ""
+async def test_cline_descriptor_doctor_reports_missing_node(monkeypatch):
+    monkeypatch.setenv("PATH", "")
 
     report = await Fabric().doctor(config(), base_dir=ROOT)
 

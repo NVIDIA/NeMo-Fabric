@@ -165,7 +165,10 @@ async function resolveWorkspace(input: AdapterStartInput): Promise<string> {
   }
 }
 
-function toolPolicies(config: AgentConfig, availableNames: readonly string[]): Record<string, { enabled: boolean }> {
+function toolPolicies(
+  config: AgentConfig,
+  availableNames: readonly string[],
+): Record<string, { enabled?: boolean; autoApprove: true }> {
   const available = new Set(availableNames);
   const enabled = config.tools?.enabled;
   const blocked = config.tools?.blocked ?? [];
@@ -177,15 +180,17 @@ function toolPolicies(config: AgentConfig, availableNames: readonly string[]): R
     });
   }
 
-  const policies: Record<string, { enabled: boolean }> = {};
+  const policies: Record<string, { enabled?: boolean; autoApprove: true }> = Object.fromEntries(
+    availableNames.map((name) => [name, { autoApprove: true }]),
+  );
   if (enabled !== undefined && enabled !== null) {
     const selected = new Set(enabled);
     for (const name of available) {
-      policies[name] = { enabled: selected.has(name) };
+      policies[name] = { enabled: selected.has(name), autoApprove: true };
     }
   }
   for (const name of blocked) {
-    policies[name] = { enabled: false };
+    policies[name] = { enabled: false, autoApprove: true };
   }
   return policies;
 }

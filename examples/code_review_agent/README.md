@@ -186,15 +186,45 @@ Install Node.js and OpenClaw, then install the [OpenClaw adapter](../../adapters
 
 Install Node.js 22.19 or newer and follow the
 [Cline adapter installation instructions](../../adapters/typescript/cline/README.md).
-The source-tree build is included in `just build-all`. This variant maps the
-default skill and the `read_files`, `search_codebase`, and `skills` Cline tools,
-and uses `NVIDIA_API_KEY`.
+The source-tree adapter build is included in `just build-all`, but that command
+does not install the caller-owned Cline SDK. Install it separately from the
+repository root:
+
+```bash
+npm install --prefix adapters/typescript \
+  --workspace nemo-fabric-adapters-cline \
+  --include-workspace-root \
+  --no-save \
+  --package-lock=false \
+  --ignore-scripts \
+  --no-audit \
+  --no-fund \
+  @cline/sdk@0.0.83
+```
+
+This variant maps the default skill and the `read_files`, `search_codebase`,
+and `skills` Cline tools, and uses `NVIDIA_API_KEY`.
 
 Inspect its plan with:
 
 ```bash
 .venv/bin/python -m examples.code_review_agent --variant cline --plan
 ```
+
+Run the review with an absolute path because Cline's `read_files` tool requires
+one:
+
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --variant cline \
+  --input "Review $(realpath examples/code_review_agent/repos/my-service/calculator.py)" \
+  --show-output
+```
+
+The variant uses `instructions.system.mode: replace`, which discards Cline's
+native system prompt. Applications that need workspace-location context must
+include it in the replacement instruction or provide absolute paths in user
+input.
 
 The initial Cline adapter does not support Relay telemetry or streaming.
 

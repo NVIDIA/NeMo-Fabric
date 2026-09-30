@@ -27,6 +27,15 @@ repository root:
 
 ```bash
 just install-typescript-cline
+npm install --prefix adapters/typescript \
+  --workspace nemo-fabric-adapters-cline \
+  --include-workspace-root \
+  --no-save \
+  --package-lock=false \
+  --ignore-scripts \
+  --no-audit \
+  --no-fund \
+  @cline/sdk@0.0.83
 npm run build --prefix adapter-contract/typescript
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-cline
