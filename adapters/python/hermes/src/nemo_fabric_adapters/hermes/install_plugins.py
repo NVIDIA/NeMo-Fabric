@@ -29,7 +29,7 @@ def install_tavily(hermes_root: Path) -> Path:
     destination = parent / "tavily"
     if destination.is_symlink():
         raise FileExistsError(f"plugin directory is a symlink: {destination}")
-    source = files("nemo_fabric_adapters.hermes").joinpath("plugins", "tavily")
+    source = files("nemo_fabric_adapters.hermes.plugins.tavily")
     contents = {
         name: source.joinpath(name).read_bytes()
         for name in ("__init__.py", "plugin.yaml")

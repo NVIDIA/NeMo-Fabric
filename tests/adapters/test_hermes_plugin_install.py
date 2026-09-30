@@ -25,7 +25,7 @@ def test_install_reports_native_plugin_path_and_preserves_identical_install(
 ):
     destination = install_tavily(hermes_root)
     assert destination == hermes_root / "plugins" / "web" / "tavily"
-    source = files("nemo_fabric_adapters.hermes").joinpath("plugins", "tavily")
+    source = files("nemo_fabric_adapters.hermes.plugins.tavily")
     for name in ("__init__.py", "plugin.yaml"):
         assert (destination / name).read_bytes() == source.joinpath(name).read_bytes()
     before = (destination / "__init__.py").stat().st_mtime_ns
