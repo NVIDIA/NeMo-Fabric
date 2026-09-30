@@ -148,8 +148,10 @@ jobs:
           for package_directory in \
             adapter-contract/typescript \
             adapters/typescript/common \
+            adapters/typescript/cline \
             adapters/typescript/pi \
-            adapters/typescript/opencode; do
+            adapters/typescript/opencode \
+            adapters/typescript/qwen; do
             python3 scripts/ci/publish_typescript_package.py \
               --action publish \
               --package-directory "$package_directory" \

@@ -1,0 +1,142 @@
+---
+title: "Use the Cline Adapter"
+description: "Install and configure the NVIDIA NeMo Fabric harness integration for Cline."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the NVIDIA NeMo Fabric `nvidia.fabric.cline` adapter to run Cline through
+its supported TypeScript SDK while retaining conversation context for the
+lifetime of a NeMo Fabric runtime.
+
+## Install Cline and the Adapter
+
+Cline requires Node.js 22.19.0 or newer. Install the supported Cline SDK
+harness separately in the Node.js project that owns the NeMo Fabric
+configuration:
+
+```bash
+npm install --save-exact @cline/sdk@0.0.83
+```
+
+Then install the NeMo Fabric adapter in the same project:
+
+```bash
+npm install nemo-fabric-adapters-cline
+```
+
+The Cline SDK is not an adapter package dependency. Installing the NeMo Fabric
+adapter does not install the harness, and the adapter never installs it at
+runtime. A missing SDK produces `cline_harness_unavailable` with an explicit
+Cline installation command.
+
+For source development in the NeMo Fabric repository, run:
+
+```bash
+just install-typescript-cline
+npm install --prefix adapters/typescript \
+  --workspace nemo-fabric-adapters-cline \
+  --include-workspace-root \
+  --no-save \
+  --package-lock=false \
+  --ignore-scripts \
+  --no-audit \
+  --no-fund \
+  @cline/sdk@0.0.83
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-cline
+```
+
+## Configure the Adapter
+
+Select the Cline adapter and point discovery at its installed descriptor:
+
+```python
+from nemo_fabric import DiscoveryConfig, FabricConfig, HarnessConfig
+from nemo_fabric import InstructionConfig, InstructionsConfig
+from nemo_fabric import MetadataConfig, ModelConfig, ToolsConfig
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="cline-review"),
+    discovery=DiscoveryConfig(
+        local_paths=[
+            "./node_modules/nemo-fabric-adapters-cline/cline.fabric-adapter.json"
+        ]
+    ),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.cline"),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
+        )
+    },
+    instructions=InstructionsConfig(
+        system=InstructionConfig(
+            content="Review code for correctness risks.",
+            mode="replace",
+        )
+    ),
+    tools=ToolsConfig(enabled=["read_files", "search_codebase", "skills"]),
+)
+config.add_skill_path("./skills/code-review")
+```
+
+For a source build, use
+`adapters/typescript/cline/cline.fabric-adapter.json`. Set the environment
+variable named by `api_key_env` before starting the runtime.
+
+Start one runtime and reuse it for ordered turns:
+
+```python
+from nemo_fabric import Fabric
+
+async with await Fabric().start_runtime(config) as runtime:
+    first = await runtime.invoke(input="Review the authentication changes.")
+    second = await runtime.invoke(input="Now summarize the highest-risk finding.")
+```
+
+The second invocation uses the conversation retained by the Cline session;
+the caller does not replay the first prompt or response.
+
+The adapter maps the provider, model ID, API-key environment reference, and
+optional compatible base URL into Cline. It supports only `replace` system
+instructions. Tool policy names are Cline built-in tool names; unknown names
+fail during startup.
+
+Enabled Cline built-in tools run non-interactively and are explicitly
+auto-approved. `tools.enabled` and `tools.blocked` define harness tool policy;
+they do not provide a filesystem or process sandbox. Run Cline in an isolated
+task environment when enabling `run_commands`, `editor`, or `apply_patch`.
+
+The `replace` instruction mode discards Cline's native system prompt. Include
+required workspace-location context in the replacement instruction or provide
+absolute paths in user input.
+
+## Configure MCP Servers and Skills
+
+Normalized skill paths are staged into a runtime-scoped Agent Plugins v1
+package and loaded through Cline's native skill discovery. Each path must name
+a directory containing `SKILL.md`.
+
+Normalized MCP servers use the same runtime-scoped native plugin. The adapter
+supports unauthenticated stdio, SSE, and streamable HTTP servers.
+Normalized MCP authentication, `allowed_tools`, and `blocked_tools` are not
+supported and fail during planning or startup.
+
+## Understand Runtime Behavior
+
+Each NeMo Fabric runtime creates an isolated local `ClineCore`. The first
+invocation starts one interactive Cline session, later invocations send prompts
+to the same session ID, and runtime shutdown stops the session and disposes the
+core. Callers do not replay conversation history. Independent NeMo Fabric
+runtimes use separate Cline state directories and sessions.
+
+Successful results include normalized response text and usage when Cline
+reports it. Adapter-owned result metadata includes the Cline session ID, finish
+reason, iteration count, and selected model when available.
+
+The initial adapter does not support NeMo Relay telemetry, native streaming,
+Relay-backed streaming, or adapter-specific `harness.settings`.

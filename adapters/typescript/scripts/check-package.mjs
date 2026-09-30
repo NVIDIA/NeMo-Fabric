@@ -28,6 +28,18 @@ const expectedByPackage = {
     "dist/lifecycle.js",
     "package.json",
   ],
+  "nemo-fabric-adapters-cline": [
+    "LICENSE",
+    "README.md",
+    "cline.fabric-adapter.json",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/cline-sdk.d.ts",
+    "dist/cline-sdk.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "package.json",
+  ],
   "nemo-fabric-adapters-pi": [
     "LICENSE",
     "README.md",
@@ -65,6 +77,20 @@ const expectedByPackage = {
     "dist/runtime.js",
     "opencode.fabric-adapter.json",
     "package.json",
+  ],
+  "nemo-fabric-adapters-qwen": [
+    "LICENSE",
+    "README.md",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/configuration.d.ts",
+    "dist/configuration.js",
+    "dist/qwen-sdk.d.ts",
+    "dist/qwen-sdk.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "package.json",
+    "qwen.fabric-adapter.json",
   ],
 };
 const expectedFiles = expectedByPackage[manifest.name];
@@ -105,6 +131,25 @@ if (manifest.name === "nemo-fabric-adapters-pi") {
     }
   }
 }
+if (manifest.name === "nemo-fabric-adapters-cline") {
+  if (manifest.exports?.["./descriptor"] !== "./cline.fabric-adapter.json") {
+    throw new Error("The Cline package must export its adapter descriptor");
+  }
+  const descriptor = JSON.parse(
+    await readFile(join(packageRoot, "cline.fabric-adapter.json"), "utf8"),
+  );
+  if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("The Cline descriptor runner must resolve inside the npm package");
+  }
+  if (
+    manifest.dependencies?.["@cline/sdk"] !== undefined ||
+    manifest.optionalDependencies?.["@cline/sdk"] !== undefined ||
+    manifest.peerDependencies?.["@cline/sdk"] !== undefined ||
+    manifest.devDependencies?.["@cline/sdk"] !== undefined
+  ) {
+    throw new Error("The caller-managed Cline SDK harness must not be an adapter package dependency");
+  }
+}
 if (manifest.name === "nemo-fabric-adapters-opencode") {
   if (manifest.exports?.["./descriptor"] !== "./opencode.fabric-adapter.json") {
     throw new Error("The OpenCode package must export its adapter descriptor");
@@ -131,6 +176,21 @@ if (manifest.name === "nemo-fabric-adapters-opencode") {
     if (manifest.devDependencies?.[name] !== "2.0.3") {
       throw new Error(`The OpenCode package must exact-pin ${name} for development`);
     }
+  }
+}
+if (manifest.name === "nemo-fabric-adapters-qwen") {
+  if (manifest.exports?.["./descriptor"] !== "./qwen.fabric-adapter.json") {
+    throw new Error("The Qwen package must export its adapter descriptor");
+  }
+  const descriptor = JSON.parse(await readFile(join(packageRoot, "qwen.fabric-adapter.json"), "utf8"));
+  if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("The Qwen descriptor must run its packaged CLI with Node.js");
+  }
+  if (manifest.dependencies?.["@qwen-code/sdk"] !== undefined ||
+      manifest.peerDependencies?.["@qwen-code/sdk"] !== "0.1.16" ||
+      manifest.peerDependenciesMeta?.["@qwen-code/sdk"]?.optional !== true ||
+      manifest.devDependencies?.["@qwen-code/sdk"] !== "0.1.16") {
+    throw new Error("The Qwen SDK must be an exact-pinned optional peer and development dependency");
   }
 }
 for (const [name, specifier] of Object.entries(manifest.dependencies ?? {})) {

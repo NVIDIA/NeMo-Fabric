@@ -27,7 +27,7 @@ application-facing Python SDK contract:
 - creating harness, environment, capability, and telemetry variants from deep
   copies;
 - resolving relative workspace and skill paths with `base_dir`;
-- running maintained Hermes Agent, Codex, Claude, Deep Agents, and Pi
+- running maintained Hermes Agent, Codex, Claude, Cline, Deep Agents, and Pi
   adapters through the Python SDK.
 
 Complete the [code-review setup](code_review_agent/README.md#set-up), then run:
@@ -75,8 +75,9 @@ The walkthroughs include:
   smoke test and optional LLM-backed Hermes Agent and Claude runs;
 - an NVIDIA-labs Object Oriented Agents (NOOA) BenchAgent walkthrough with
   Harbor reward, Relay ATOF/ATIF verification, and a real SWE-Bench task; and
-- a SWE-Bench workflow for running Hermes Agent and Claude, comparing capability
-  variations, inspecting Relay telemetry, and verifying real coding tasks.
+- a SWE-Bench workflow for running Hermes Agent, OpenCode, and Claude, comparing
+  capability variations, inspecting Relay telemetry, and verifying real coding
+  tasks.
 
 Start with the shared setup and execution model in the
 [Harbor guide](harbor/README.md).

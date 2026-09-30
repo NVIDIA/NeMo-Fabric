@@ -459,14 +459,17 @@ async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
     }
 
 
-async def test_harbor_custom_install_uses_explicit_runner_environment(tmp_path: Path):
+async def test_harbor_custom_install_preserves_explicit_adapter_python(tmp_path: Path):
     with pytest.warns(DeprecationWarning, match="fabric_install_command"):
         agent = FabricAgent(
             logs_dir=tmp_path,
             fabric_adapter_id="nvidia.fabric.hermes",
             fabric_python="/tmp/custom-fabric/bin/python",
             fabric_install_command="install-fabric-for-test",
-            extra_env={"NVIDIA_API_KEY": "test-key", "ADAPTER_PYTHON": "/wrong/python"},
+            extra_env={
+                "NVIDIA_API_KEY": "test-key",
+                "ADAPTER_PYTHON": "/opt/hermes-venv/bin/python",
+            },
         )
     environment = FakeHarborEnvironment()
 
@@ -486,7 +489,7 @@ async def test_harbor_custom_install_uses_explicit_runner_environment(tmp_path: 
     runner_index = environment.commands.index(runner)
     assert environment.environments[runner_index] == {
         "NVIDIA_API_KEY": "test-key",
-        "ADAPTER_PYTHON": "/tmp/custom-fabric/bin/python",
+        "ADAPTER_PYTHON": "/opt/hermes-venv/bin/python",
     }
 
 

@@ -18,12 +18,14 @@ from examples.code_review_agent import BASE_DIR
 from examples.code_review_agent import __main__ as main_module
 from examples.code_review_agent import base_config
 from examples.code_review_agent import claude_config
+from examples.code_review_agent import cline_config
 from examples.code_review_agent import codex_config
 from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import hermes_config
 from examples.code_review_agent import nooa_config
 from examples.code_review_agent import openclaw_config
 from examples.code_review_agent import pi_config
+from examples.code_review_agent import qwen_config
 from examples.code_review_agent import with_github_mcp
 from examples.code_review_agent import with_native_otel
 from examples.code_review_agent import with_opensandbox
@@ -41,12 +43,25 @@ def test_variant_builders_return_independent_complete_configs():
     hermes = hermes_config()
     codex = codex_config()
     claude = claude_config()
+    cline = cline_config()
     deepagents = deepagents_config()
     nooa = nooa_config()
     openclaw = openclaw_config()
     pi = pi_config()
+    qwen = qwen_config()
 
-    for config in (base, hermes, codex, claude, deepagents, nooa, openclaw, pi):
+    for config in (
+        base,
+        hermes,
+        codex,
+        claude,
+        cline,
+        deepagents,
+        nooa,
+        openclaw,
+        pi,
+        qwen,
+    ):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
@@ -65,6 +80,13 @@ def test_variant_builders_return_independent_complete_configs():
     assert claude.models["default"].api_key_env == "ANTHROPIC_API_KEY"
     assert claude.mcp is None
     assert claude.skills is None
+    assert cline.harness.adapter_id == "nvidia.fabric.cline"
+    assert cline.models["default"].provider == "nvidia"
+    assert cline.models["default"].api_key_env == "NVIDIA_API_KEY"
+    assert cline.skills is not None
+    assert cline.skills.paths == ["./skills/code-review"]
+    assert cline.tools is not None
+    assert cline.tools.enabled == ["read_files", "search_codebase", "skills"]
     assert deepagents is not base
     assert deepagents.harness is not base.harness
     assert deepagents.harness.adapter_id == "nvidia.fabric.langchain.deepagents"
@@ -81,6 +103,19 @@ def test_variant_builders_return_independent_complete_configs():
     assert pi.skills.paths == ["./skills/code-review"]
     assert pi.tools is not None
     assert pi.tools.enabled == ["read"]
+    assert qwen.harness.adapter_id == "nvidia.fabric.qwen"
+    assert qwen.models["default"].provider == "openai"
+    assert qwen.models["default"].api_key_env == "NVIDIA_API_KEY"
+    assert qwen.skills is not None
+    assert qwen.skills.paths == ["./skills/code-review"]
+    assert qwen.tools is not None
+    assert qwen.tools.blocked == [
+        "exec",
+        "run_shell_command",
+        "edit",
+        "write_file",
+        "notebook_edit",
+    ]
     assert deepagents.models == pi.models
     assert deepagents.instructions == pi.instructions
     assert deepagents.environment.workspace == pi.environment.workspace
@@ -165,7 +200,9 @@ def test_native_otel_variants_match_adapter_contracts():
     deepagents = with_native_otel(deepagents_config())
     assert deepagents.telemetry is not None
     deepagents_config_payload = deepagents.telemetry.providers["native"].config
-    assert plugin.validate(deepagents_config_payload)["diagnostics"] == []
+    assert (
+        plugin.validate_exact(deepagents_config_payload)["config"]["diagnostics"] == []
+    )
 
     with pytest.raises(ValueError, match="does not support native OpenTelemetry"):
         with_native_otel(hermes_config())
@@ -212,7 +249,7 @@ def test_relay_otel_variants_author_v3_endpoints(
             }
         ],
     }
-    assert plugin.validate(plugin_config)["diagnostics"] == []
+    assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
 
 
 def test_variants_plan_from_complete_configs():
@@ -222,9 +259,11 @@ def test_variants_plan_from_complete_configs():
         hermes_config(),
         codex_config(),
         claude_config(),
+        cline_config(),
         deepagents_config(),
         openclaw_config(),
         pi_config(),
+        qwen_config(),
     ):
         plan = client.plan(config, base_dir=BASE_DIR)
         assert plan.base_dir == BASE_DIR
@@ -250,10 +289,12 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         ("hermes", "nvidia.fabric.hermes"),
         ("codex", "nvidia.fabric.codex"),
         ("claude", "nvidia.fabric.claude"),
+        ("cline", "nvidia.fabric.cline"),
         ("deepagents", "nvidia.fabric.langchain.deepagents"),
         ("nooa", "nvidia.fabric.nooa"),
         ("openclaw", "nvidia.fabric.openclaw"),
         ("pi", "nvidia.fabric.pi"),
+        ("qwen", "nvidia.fabric.qwen"),
     )
     cases = tuple(
         (
@@ -263,7 +304,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         )
         for variant, adapter_id in variants
         for relay_enabled in (False, True)
-        if variant != "openclaw" or not relay_enabled
+        if variant not in {"cline", "openclaw", "qwen"} or not relay_enabled
     )
 
     for options, adapter_id, relay_enabled in cases:
@@ -296,6 +337,8 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
     ("options", "expected_paths"),
     [
         (["--variant", "pi"], [BASE_DIR / "skills/code-review"]),
+        (["--variant", "cline"], [BASE_DIR / "skills/code-review"]),
+        (["--variant", "cline", "--no-skills"], []),
         (["--variant", "pi", "--no-skills"], []),
         (["--variant", "deepagents"], [BASE_DIR / "skills/code-review"]),
         (
@@ -372,6 +415,40 @@ def test_pi_variant_projects_explicit_skill_and_tool_policy():
     assert plan.config.runtime.output_schema == "message"
 
 
+def test_cline_variant_projects_explicit_skill_and_tool_policy():
+    plan = Fabric().plan(cline_config(), base_dir=BASE_DIR)
+    agent_config = plan.to_mapping()["agent_config"]
+
+    assert agent_config["skills"] == {
+        "paths": [str((BASE_DIR / "skills/code-review").resolve())]
+    }
+    assert agent_config["tools"] == {
+        "enabled": ["read_files", "search_codebase", "skills"]
+    }
+    assert plan.config.runtime.input_schema == "text"
+    assert plan.config.runtime.output_schema == "message"
+
+
+def test_qwen_variant_projects_explicit_skill_and_tool_policy():
+    plan = Fabric().plan(qwen_config(), base_dir=BASE_DIR)
+    agent_config = plan.to_mapping()["agent_config"]
+
+    assert agent_config["skills"] == {
+        "paths": [str((BASE_DIR / "skills/code-review").resolve())]
+    }
+    assert agent_config["tools"] == {
+        "blocked": [
+            "exec",
+            "run_shell_command",
+            "edit",
+            "write_file",
+            "notebook_edit",
+        ]
+    }
+    assert plan.config.runtime.input_schema == "text"
+    assert plan.config.runtime.output_schema == "message"
+
+
 @pytest.mark.parametrize("stream", [False, True])
 def test_pi_variant_requires_the_relay_extension_for_a_live_run(stream: bool):
     completed = subprocess.run(
@@ -412,6 +489,46 @@ def test_openclaw_variant_rejects_relay_telemetry():
 
     assert completed.returncode == 2
     assert "OpenClaw adapter does not support Relay telemetry" in completed.stderr
+
+
+def test_cline_variant_rejects_relay_telemetry():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "cline",
+            "--relay",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "Cline adapter does not support Relay telemetry" in completed.stderr
+
+
+def test_qwen_variant_rejects_relay_telemetry():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "qwen",
+            "--relay",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "Qwen Code adapter does not support Relay telemetry" in completed.stderr
 
 
 @pytest.mark.parametrize(
