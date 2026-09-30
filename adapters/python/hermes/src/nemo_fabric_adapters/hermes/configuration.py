@@ -110,6 +110,10 @@ def build_hermes_config(
         ),
     }
 
+    if relay_enabled:
+        # Hermes makes an extra model call for titles, which skews Relay telemetry.
+        config["auxiliary"] = {"title_generation": {"enabled": False}}
+
     skill_dirs = (
         [str(path) for path in agent_config.skills.paths]
         if agent_config.skills is not None
@@ -129,8 +133,6 @@ def build_hermes_config(
         config["platform_toolsets"] = {"cli": enabled_toolsets}
 
     plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
-    if relay_enabled and "observability/nemo_relay" not in plugins:
-        plugins.append("observability/nemo_relay")
     if plugins:
         config["plugins"] = {"enabled": plugins}
 

@@ -29,14 +29,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Checkout Hermes Agent
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          repository: NousResearch/hermes-agent
-          ref: 29112bef099274229cadff79cdff7bf7b99c4b77
-          path: external/hermes-agent
-          persist-credentials: false
-
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
         with:
@@ -69,9 +61,6 @@ jobs:
 
       - name: Create virtual environment
         run: uv venv --python "${UV_PYTHON:-${{ 3.12 }}}" .venv
-
-      - name: Install Hermes Agent
-        run: just install-hermes-agent
 
       - name: Install pre-commit
         run: uv sync --frozen --no-default-groups --group dev --no-install-project

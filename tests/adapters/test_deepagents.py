@@ -39,6 +39,13 @@ from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
+
+def _activation(*diagnostics: dict[str, object]) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        report={"config": {"diagnostics": list(diagnostics), "runtime_diagnostics": []}}
+    )
+
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -356,12 +363,12 @@ def fake_relay_fixture(monkeypatch):
         return merged
 
     @contextlib.asynccontextmanager
-    async def plugin_ctx(config: object) -> AsyncIterator[dict[str, object]]:
+    async def plugin_ctx(config: object) -> AsyncIterator[types.SimpleNamespace]:
         calls["plugin_open"] = True
         calls["plugin_enters"] = calls.get("plugin_enters", 0) + 1
         calls.setdefault("plugin_configs", []).append(config)
         try:
-            yield {"diagnostics": [], "runtime_diagnostics": []}
+            yield _activation()
         finally:
             calls["plugin_exits"] = calls.get("plugin_exits", 0) + 1
 
@@ -430,7 +437,7 @@ def fake_relay_fixture(monkeypatch):
     # check sees Relay as installed.
     relay_root.__spec__ = importlib.machinery.ModuleSpec("nemo_relay", loader=None)
     plugin_mod = types.ModuleType("nemo_relay.plugin")
-    plugin_mod.plugin = plugin_ctx
+    plugin_mod.activate = plugin_ctx
     scope_mod = types.ModuleType("nemo_relay.scope")
     scope_mod.scope = scope_ctx
     scope_mod.get_handle = get_handle
@@ -817,21 +824,16 @@ async def test_inherited_relay_config_report_fails_before_agent_invocation(
     import contextlib
 
     @contextlib.asynccontextmanager
-    async def inherited_plugin(
-        _config: object,
-    ) -> AsyncIterator[dict[str, object]]:
-        yield {
-            "diagnostics": [
-                {
-                    "level": "warning",
-                    "code": "plugin.configuration_inherited",
-                    "message": "inherited plugin configuration from discovered file",
-                }
-            ],
-            "runtime_diagnostics": [],
-        }
+    async def inherited_plugin(_config: object) -> AsyncIterator[types.SimpleNamespace]:
+        yield _activation(
+            {
+                "level": "warning",
+                "code": "plugin.configuration_inherited",
+                "message": "inherited plugin configuration from discovered file",
+            }
+        )
 
-    monkeypatch.setattr(sys.modules["nemo_relay.plugin"], "plugin", inherited_plugin)
+    monkeypatch.setattr(sys.modules["nemo_relay.plugin"], "activate", inherited_plugin)
 
     output = await invoke_once(relay_payload(tmp_path))
 
@@ -910,10 +912,10 @@ async def test_relay_plugin_teardown_failure_keeps_the_invocation_completed(
 
     @contextlib.asynccontextmanager
     async def exploding_plugin(config: object):
-        yield {"diagnostics": [], "runtime_diagnostics": []}
+        yield _activation()
         raise RuntimeError("relay plugin flush failed")
 
-    monkeypatch.setattr(sys.modules["nemo_relay.plugin"], "plugin", exploding_plugin)
+    monkeypatch.setattr(sys.modules["nemo_relay.plugin"], "activate", exploding_plugin)
 
     output = await invoke_once(relay_payload(tmp_path))
 
@@ -1111,12 +1113,12 @@ async def test_a_fault_that_unwinds_cleanly_does_not_quarantine_later_turns(
 
     @contextlib.asynccontextmanager
     async def flaky_plugin(config: object):
-        yield {"diagnostics": [], "runtime_diagnostics": []}
+        yield _activation()
         flushes["count"] += 1
         if flushes["count"] == 1:
             raise RuntimeError("relay plugin flush failed")
 
-    monkeypatch.setattr(sys.modules["nemo_relay.plugin"], "plugin", flaky_plugin)
+    monkeypatch.setattr(sys.modules["nemo_relay.plugin"], "activate", flaky_plugin)
 
     first, second = await invoke_twice(relay_payload(tmp_path))
 
@@ -1142,11 +1144,11 @@ async def test_scope_and_plugin_teardown_faults_are_both_reported(
 
     @contextlib.asynccontextmanager
     async def exploding_plugin(config: object):
-        yield {"diagnostics": [], "runtime_diagnostics": []}
+        yield _activation()
         raise RuntimeError("relay plugin flush failed")
 
     monkeypatch.setattr(sys.modules["nemo_relay.scope"], "scope", exploding_scope)
-    monkeypatch.setattr(sys.modules["nemo_relay.plugin"], "plugin", exploding_plugin)
+    monkeypatch.setattr(sys.modules["nemo_relay.plugin"], "activate", exploding_plugin)
 
     output = await invoke_once(relay_payload(tmp_path))
 

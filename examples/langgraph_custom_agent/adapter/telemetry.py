@@ -129,8 +129,8 @@ async def observe_invocation(
         runnable_config={"callbacks": [callback_handler()]},
         plugin_config=plugin_config,
     )
-    async with plugin.plugin(plugin_config) as activation_report:
-        common_utils.reject_inherited_relay_plugin_config(activation_report)
+    async with plugin.activate(plugin_config) as activation:
+        common_utils.reject_inherited_relay_plugin_config(activation.report)
         request_context, metadata = common_utils.relay_request_context(
             context.request_id
         )
