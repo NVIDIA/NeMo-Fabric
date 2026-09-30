@@ -430,6 +430,7 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
     )
 
     def stop_after_staging(*_args, **kwargs):
+        assert kwargs["relay_enabled"] is True
         assert os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(plugin_config_path)
         assert all(
             name not in os.environ
@@ -556,7 +557,6 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             "cwd": "/workspace/repo",
             "timeout": 90,
         },
-        "auxiliary": {"title_generation": {"enabled": False}},
         "skills": {"external_dirs": ["skills/review"]},
         "mcp_servers": {
             "github": {
@@ -1057,7 +1057,7 @@ async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
     assert runtime._mcp_authentication_checked is False
 
 
-def test_build_hermes_config_disables_session_title_generation():
+def test_build_hermes_config_disables_session_title_generation_only_for_relay():
     agent_config = _agent_config(
         {
             "harness": {"settings": {}},
@@ -1065,9 +1065,13 @@ def test_build_hermes_config_disables_session_title_generation():
         }
     )
 
-    config = configuration.build_hermes_config(agent_config, workspace=".")
+    ordinary_config = configuration.build_hermes_config(agent_config, workspace=".")
+    relay_config = configuration.build_hermes_config(
+        agent_config, workspace=".", relay_enabled=True
+    )
 
-    assert config["auxiliary"] == {"title_generation": {"enabled": False}}
+    assert "auxiliary" not in ordinary_config
+    assert relay_config["auxiliary"] == {"title_generation": {"enabled": False}}
 
 
 def test_write_hermes_config_writes_file(tmp_path: Path):

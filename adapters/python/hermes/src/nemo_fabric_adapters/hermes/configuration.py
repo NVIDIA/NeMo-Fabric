@@ -78,6 +78,7 @@ def build_hermes_config(
     agent_config: AgentConfig,
     *,
     workspace: str,
+    relay_enabled: bool = False,
 ) -> dict[str, Any]:
     settings = _settings(agent_config)
     model_config = _selected_model(agent_config)
@@ -107,8 +108,11 @@ def build_hermes_config(
                 "timeout": settings.get("terminal_timeout", 60),
             }
         ),
-        "auxiliary": {"title_generation": {"enabled": False}},
     }
+
+    if relay_enabled:
+        # Hermes makes an extra model call for titles, which skews Relay telemetry.
+        config["auxiliary"] = {"title_generation": {"enabled": False}}
 
     skill_dirs = (
         [str(path) for path in agent_config.skills.paths]
@@ -140,11 +144,13 @@ def write_hermes_config(
     hermes_home: Path,
     *,
     workspace: str,
+    relay_enabled: bool = False,
 ) -> tuple[Path, dict[str, Any]]:
     hermes_home.mkdir(parents=True, exist_ok=True)
     config = build_hermes_config(
         agent_config,
         workspace=workspace,
+        relay_enabled=relay_enabled,
     )
     config_path = hermes_home / "config.yaml"
     config_path.write_text(common_utils.dump_yaml(config), encoding="utf-8")

@@ -104,7 +104,8 @@ async def test_hermes_persistent_host_with_relay(
     ]
     assert (
         sum(
-            record["name"] == "hermes.session" and record.get("scope_category") == "end"
+            record["name"] == "hermes.session"
+            and record.get("scope_category") == "end"
             for record in atof_records
         )
         == 2
@@ -119,6 +120,7 @@ async def test_env_secrets_in_headers(
     os.environ["ADAPTER_PYTHON"] = sys.executable
     os.environ["MY_KEY"] = "XYZ"
     tool_name = "mcp__headers__get_authorization_header"
+    # The pinned source checkout reports 0.0.0 but uses the current MCP tool shape.
     if Version("0") < Version(distribution_version("hermes-agent")) < Version("0.20"):
         tool_call = {"name": tool_name, "arguments": {}}
     else:
@@ -166,6 +168,7 @@ async def test_mcp_stdio_transport(
     os.environ["ADAPTER_PYTHON"] = sys.executable
     tool_name = "mcp__mcp_server_time__get_current_time"
     tool_arguments = {"timezone": "America/Los_Angeles"}
+    # The pinned source checkout reports 0.0.0 but uses the current MCP tool shape.
     if Version("0") < Version(distribution_version("hermes-agent")) < Version("0.20"):
         # The released 0.19 integration accepts the configured MCP tool directly.
         tool_call = {"name": tool_name, "arguments": tool_arguments}

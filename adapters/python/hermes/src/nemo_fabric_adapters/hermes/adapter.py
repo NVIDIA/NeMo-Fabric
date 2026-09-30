@@ -139,6 +139,7 @@ class HermesRuntime:
                 self._hermes_home,
                 # Workspace belongs to the per-runtime context, not AgentConfig.
                 workspace=str(runtime_context.environment.workspace or "."),
+                relay_enabled=relay_enabled,
             )
             api_key_env = configuration._api_key_env(model_config)
             api_key = os.environ.get(api_key_env)
