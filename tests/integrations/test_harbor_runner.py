@@ -20,6 +20,7 @@ CALCULATOR_FABRIC_ROOT = CALCULATOR_ROOT / "task" / "environment" / "fabric"
 SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
 SWEBENCH_README = SWEBENCH_ROOT / "README.md"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
+SWEBENCH_CLINE_DOCKERFILE = SWEBENCH_ROOT / "cline" / "Dockerfile"
 SWEBENCH_OPENCODE_DOCKERFILE = SWEBENCH_ROOT / "opencode" / "Dockerfile"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
@@ -340,7 +341,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert '--ak "fabric_config_bundle=$TASK_DIR/environment/fabric"' in calculator
     assert "uv run --extra harbor --extra" not in calculator
     assert landing.count("uv run --extra harbor harbor run") == 0
-    assert swebench.count("uv run --extra harbor harbor run") == 7
+    assert swebench.count("uv run --extra harbor harbor run") == 9
     assert "--agent-import-path" not in landing + calculator + swebench
     assert "fabric_config_path" not in calculator
     assert "fabric_config_path" not in landing
@@ -379,17 +380,27 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     for value in (
         '--path "$OPENCODE_SWEBENCH_TASK"',
         "fabric_adapter_id=nvidia.fabric.opencode",
-        "fabric_config_target=/opt/nemo-fabric-config",
-        "fabric_python=/opt/nemo-fabric-venv/bin/python",
     ):
         assert swebench.count(value) == 2
+    assert swebench.count("fabric_config_target=/opt/nemo-fabric-config") == 4
+    assert swebench.count("fabric_python=/opt/nemo-fabric-venv/bin/python") == 4
     assert "--job-name django-13741-opencode-install" not in swebench
     assert "--job-name django-13741-opencode" not in swebench
     assert 'OPENCODE_JOB_NAME="django-13741-opencode-$(date +%Y%m%d-%H%M%S)"' in swebench
     assert '--job-name "${OPENCODE_JOB_NAME}-install"' in swebench
     assert '--job-name "$OPENCODE_JOB_NAME"' in swebench
+    for value in (
+        '--path "$CLINE_SWEBENCH_TASK"',
+        "fabric_adapter_id=nvidia.fabric.cline",
+    ):
+        assert swebench.count(value) == 2
+    assert swebench.count("--model nvidia/nemotron-3-super-120b-a12b") == 1
+    assert 'CLINE_JOB_NAME="django-13741-cline-$(date +%Y%m%d-%H%M%S)"' in swebench
+    assert '--job-name "${CLINE_JOB_NAME}-install"' in swebench
+    assert '--job-name "$CLINE_JOB_NAME"' in swebench
     assert "--ae 'NVIDIA_API_KEY=${NVIDIA_API_KEY}'" in swebench
     assert '"$RUNS_DIR/$OPENCODE_JOB_NAME/result.json"' in swebench
+    assert '"$RUNS_DIR/$CLINE_JOB_NAME/result.json"' in swebench
     assert "export JOB_NAME=django-13741-hermes" in swebench
     for flag in (
         "--path",
@@ -439,6 +450,16 @@ def test_swebench_opencode_image_uses_locked_npm_dependencies():
     assert "--ignore-scripts" in dockerfile
     assert "package-lock.json" in dockerfile
     assert "--no-package-lock" not in dockerfile
+
+
+def test_swebench_cline_image_uses_supported_sdk_and_locked_adapter_dependencies():
+    dockerfile = SWEBENCH_CLINE_DOCKERFILE.read_text(encoding="utf-8")
+
+    assert "npm ci" in dockerfile
+    assert "--workspace nemo-fabric-adapters-cline" in dockerfile
+    assert "@cline/sdk@0.0.83" in dockerfile
+    assert "--ignore-scripts" in dockerfile
+    assert "package-lock.json" in dockerfile
 
 
 def test_harbor_calculator_setup_and_solution_fail_fast():
