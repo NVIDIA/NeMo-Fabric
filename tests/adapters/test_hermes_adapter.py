@@ -380,6 +380,21 @@ def test_finalize_hermes_relay_session_uses_legacy_plugin_hook(monkeypatch):
     )
 
 
+def test_finalize_hermes_relay_session_flushes_relay_after_the_hook(monkeypatch):
+    nemo_relay = pytest.importorskip("nemo_relay")
+    order: list[str] = []
+    hermes_cli = ModuleType("hermes_cli")
+    hermes_lifecycle = ModuleType("hermes_cli.lifecycle")
+    hermes_lifecycle.finalize_session = lambda **_: order.append("finalize")  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.lifecycle", hermes_lifecycle)
+    monkeypatch.setattr(nemo_relay.subscribers, "flush", lambda: order.append("flush"))
+
+    telemetry.finalize_hermes_relay_session("session-1")
+
+    assert order == ["finalize", "flush"]
+
+
 async def test_runtime_start_stages_upstream_relay_plugin_configuration(
     monkeypatch,
     tmp_path: Path,
