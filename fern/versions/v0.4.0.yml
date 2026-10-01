@@ -6,6 +6,8 @@ navigation:
   contents:
   - page: Overview
     path: ../pages-v0.4.0/about-nemo-fabric/overview.mdx
+  - page: Ecosystem
+    path: ../pages-v0.4.0/about-nemo-fabric/ecosystem.mdx
   - page: Release Notes
     path: ../pages-v0.4.0/about-nemo-fabric/release-notes.mdx
 - section: Getting Started
@@ -62,6 +64,8 @@ navigation:
       path: ../pages-v0.4.0/integrations/harness/claude.mdx
     - page: Codex
       path: ../pages-v0.4.0/integrations/harness/codex.mdx
+    - page: Cline
+      path: ../pages-v0.4.0/integrations/harness/cline.mdx
     - page: Hermes Agent
       path: ../pages-v0.4.0/integrations/harness/hermes.mdx
     - page: LangChain Deep Agents
