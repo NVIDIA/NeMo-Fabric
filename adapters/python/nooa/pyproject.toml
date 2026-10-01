@@ -30,6 +30,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# NOOA 0.0.10 needs relay_compat.py with Relay 0.9. Remove the shim when
+# updating these pins to a compatible NOOA release (issue #347).
 harness = [
   "nooa>=0.0.10,<0.0.11",
   "nooa-cli>=0.0.10,<0.0.11",

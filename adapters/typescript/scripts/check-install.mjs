@@ -22,6 +22,7 @@ const repositoryRoot = resolve(scriptDirectory, "../../..");
 const packageRoots = [
   join(repositoryRoot, "adapter-contract/typescript"),
   join(repositoryRoot, "adapters/typescript/common"),
+  join(repositoryRoot, "adapters/typescript/cline"),
   join(repositoryRoot, "adapters/typescript/pi"),
   join(repositoryRoot, "adapters/typescript/opencode"),
   join(repositoryRoot, "adapters/typescript/qwen"),
@@ -57,6 +58,24 @@ function runPiCli(piRoot, consumerRoot, requests) {
   if (invocation.status !== 0) {
     throw new Error(
       `Installed Pi CLI failed (status ${invocation.status}, signal ${invocation.signal}): ${invocation.stderr}`,
+    );
+  }
+  return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+function runClineCli(clineRoot, consumerRoot, requests) {
+  const invocation = spawnSync(process.execPath, [join(clineRoot, "dist/cli.js")], {
+    cwd: consumerRoot,
+    encoding: "utf8",
+    input: `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`,
+    timeout: 60_000,
+  });
+  if (invocation.error) {
+    throw invocation.error;
+  }
+  if (invocation.status !== 0) {
+    throw new Error(
+      `Installed Cline CLI failed (status ${invocation.status}, signal ${invocation.signal}): ${invocation.stderr}`,
     );
   }
   return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
@@ -124,6 +143,16 @@ function startRequest(consumerRoot) {
         request_id: "request-install-check",
         runtime_id: "runtime-install-check",
       },
+    },
+  };
+}
+
+function clineStartRequest(consumerRoot) {
+  return {
+    ...startRequest(consumerRoot),
+    payload: {
+      ...startRequest(consumerRoot).payload,
+      agent_name: "cline-install-check",
     },
   };
 }
@@ -205,6 +234,47 @@ try {
     consumerRoot,
   );
 
+  const clineRoot = join(consumerRoot, "node_modules/nemo-fabric-adapters-cline");
+  const clineDescriptor = JSON.parse(
+    await readFile(join(clineRoot, "cline.fabric-adapter.json"), "utf8"),
+  );
+  if (clineDescriptor.runner?.command !== "node" || clineDescriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("Installed Cline descriptor does not reference its packaged CLI");
+  }
+  if (await pathExists(join(consumerRoot, "node_modules/@cline/sdk/package.json"))) {
+    throw new Error("Adapter-only install unexpectedly included @cline/sdk");
+  }
+  const [invalidClineResponse] = runClineCli(clineRoot, consumerRoot, [{}]);
+  if (invalidClineResponse.outcome?.error?.code !== "lifecycle_invalid_operation") {
+    throw new Error(
+      `Installed Cline CLI returned an unexpected response: ${JSON.stringify(invalidClineResponse)}`,
+    );
+  }
+  const [missingClineHarnessResponse] = runClineCli(clineRoot, consumerRoot, [clineStartRequest(consumerRoot)]);
+  if (missingClineHarnessResponse.outcome?.error?.code !== "cline_harness_unavailable") {
+    throw new Error(
+      `Adapter-only install did not report the missing Cline harness: ${JSON.stringify(missingClineHarnessResponse)}`,
+    );
+  }
+  npm(
+    [
+      "install",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--package-lock=false",
+      "@cline/sdk@0.0.83",
+    ],
+    consumerRoot,
+  );
+  const clineResponses = runClineCli(clineRoot, consumerRoot, [
+    clineStartRequest(consumerRoot),
+    { operation: "stop", payload: { runtime_id: "runtime-install-check" } },
+  ]);
+  if (clineResponses.length !== 2 || clineResponses[0].outcome?.status !== "succeeded") {
+    throw new Error(`Consumer-managed Cline harness failed to start: ${JSON.stringify(clineResponses)}`);
+  }
+
   const piRoot = join(consumerRoot, "node_modules/nemo-fabric-adapters-pi");
   const descriptor = JSON.parse(await readFile(join(piRoot, "pi.fabric-adapter.json"), "utf8"));
   if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
@@ -236,8 +306,8 @@ try {
       "--no-audit",
       "--no-fund",
       "--package-lock=false",
-      "@earendil-works/pi-ai@0.84.2",
-      "@earendil-works/pi-coding-agent@0.84.2",
+      "@earendil-works/pi-ai@0.86.0",
+      "@earendil-works/pi-coding-agent@0.86.0",
     ],
     consumerRoot,
   );

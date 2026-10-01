@@ -233,7 +233,7 @@ class RelayTelemetry:
             from nemo_relay import ScopeType
             from nemo_relay import plugin
             from nemo_relay import scope
-            from nooa.nemo_relay_middleware import install_nemo_relay
+            from nemo_fabric_adapters.nooa.relay_compat import install_nemo_relay_compat
         except Exception as error:
             LOGGER.error(
                 "OO Agents Relay setup failed (error_type=%s)",
@@ -257,7 +257,7 @@ class RelayTelemetry:
         try:
             async with plugin.activate(plugin_config) as activation:
                 common_utils.reject_inherited_relay_plugin_config(activation.report)
-                uninstall = install_nemo_relay(agent.event_manager)
+                uninstall = install_nemo_relay_compat(agent.event_manager)
                 try:
                     metadata = {
                         "nemo_fabric_request_id": runtime_context.request_id,

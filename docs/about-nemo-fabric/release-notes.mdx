@@ -25,83 +25,89 @@ tag-specific notes.
 
 ## Current Release
 
-NVIDIA NeMo Fabric 0.3 adds packaged integrations for
-[Pi](https://pi.dev/docs/latest), remote HTTP agents, and
-[NVIDIA-labs Object Oriented Agents (NOOA)](https://github.com/nvidia-nemo/labs-OO-Agents).
-It also expands [NVIDIA NeMo Relay](https://docs.nvidia.com/nemo/relay/about-nemo-relay/overview)
-streaming with a standalone collector, explicit request correlation, and
-additional adapter telemetry.
+NVIDIA NeMo Fabric 0.4 adds adapters for Cline, OpenClaw, OpenCode, and Qwen
+Code. It also adds a shared-service lifecycle for adapters that support it,
+extends Pi observability with NeMo Relay telemetry and streaming, and supports
+normalized model sampling and token-limit settings.
 
-For release artifacts and the complete PR-by-PR history, refer to
+For release artifacts and the complete change history, refer to
 [GitHub Releases](https://github.com/NVIDIA/NeMo-Fabric/releases).
+
+## Upgrade Notes
+
+<Warning>
+Relay-enabled integrations in NeMo Fabric 0.4 require NeMo Relay `>=0.9,<0.10`.
+Upgrade separately installed Relay Python packages and `nemo-relay` CLI
+installations before using Relay with 0.4 adapters. The published Hermes Agent
+v2026.9.24 release requires Relay 0.8, so Hermes Relay telemetry and streaming
+currently require the compatible, merged Hermes Relay 0.9 revision in a
+separate Python 3.14 environment. Ordinary Hermes Agent invocations do not
+require that development checkout.
+</Warning>
+
+The public Rust `ModelConfig` and `AgentModelConfig` structs now include
+optional `top_p` and `max_tokens` fields, and `RuntimeHandle` includes an
+optional `service_id`. Applications that construct these structs with explicit
+Rust struct literals must add the new fields or use a constructor or default
+that supplies them. Existing serialized configurations can omit the new fields.
 
 ## Release Highlights
 
-### New Harness Integrations
+### More Harness Integrations
 
-The [Pi adapter](../integrations/harness/pi.mdx) runs the Pi SDK in a persistent
-Node.js process and is distributed as `nemo-fabric-adapters-pi` on npm. It maps
-normalized models, replacement system instructions, tool policy, custom tool
-modules, skills, and explicit local extensions into one in-memory Pi session.
-Pi requires Node.js 22.19.0 or newer.
+- [Cline](../integrations/harness/cline.mdx) runs a local Cline SDK session
+  across ordered invocations and maps supported model, tool, skill, and MCP
+  configuration.
+- [OpenClaw](../integrations/harness/openclaw.mdx) can run a Gateway for one
+  runtime or connect multiple runtimes to a shared Gateway.
+- [OpenCode](../integrations/harness/opencode.mdx) runs an embedded OpenCode
+  host and persistent session. The adapter can return a patch artifact for
+  files changed during an invocation.
+- [Qwen Code](../integrations/harness/qwen.mdx) runs the Qwen Code SDK and its
+  bundled CLI in an isolated child process, reusing one session across ordered
+  invocations.
 
-The [Remote Agent adapter](../integrations/harness/remote-agent.mdx) invokes an
-independently deployed service through OpenAI Responses, OpenAI Chat
-Completions, or Anthropic Messages-compatible HTTP APIs. It retains the
-completed user and assistant transcript across ordered invocations in one
-runtime and can consume correlated records in Agent Trajectory Observability Format (ATOF)
-from a collector shared with the
-remote deployment.
+### Shared Adapter Services
 
-The packaged
-[NOOA adapter](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/nooa)
-integrates [NVIDIA-labs Object Oriented Agents (NOOA)](https://github.com/nvidia-nemo/labs-OO-Agents)
-and supports shared `InteractiveAgent` targets and dedicated `BenchAgent` tasks,
-including CodingAgent, ARC Solver, and Harbor evaluation workflows. The package
-supports Python 3.12 and 3.13.
+The [Python SDK](../sdk/python.mdx#shared-services) now exposes
+`Fabric.prepare_service()` for a NeMo Fabric-managed service and
+`Fabric.attach_service()` for a service managed by another system. Multiple
+runtimes can use one service while keeping separate runtime IDs and harness
+sessions. OpenClaw supports both service paths. Service handles are local to
+the creating process and cannot be used for cold resume.
 
-### Collector-Backed Relay Streaming
+### Relay and Model Configuration
 
-The new `nemo-fabric-collector` package receives ATOF over HTTP, routes records
-to per-request queues, and supports multiple Fabric runtimes when request IDs
-are unique. Install `nemo-fabric[streaming]` to use the default embedded
-collector. Applications can instead set `launch_collector=False` and connect
-to an externally managed collector.
+The [Pi adapter](../integrations/harness/pi.mdx) now emits Relay telemetry and
+supports live ATOF records through `Runtime.invoke_stream()`. Pi streaming
+uses the embedded collector; its Relay 0.9 extension and CLI must be installed
+separately. Pi model telemetry also depends on a supported model API and a
+matching Relay gateway upstream.
 
-Relay-enabled in-process adapters propagate UUID request IDs into Relay scope
-context and preserve other request IDs as metadata. mini-SWE-agent now emits
-agent, function, model, and tool telemetry for live ATOF streaming and ATIF,
-OpenTelemetry, and OpenInference outputs.
+The normalized model configuration now accepts `models.<role>.top_p` and
+`models.<role>.max_tokens`. Adapters use these fields when their descriptors
+declare support; unsupported settings fail during planning. See the
+[Python SDK guide](../sdk/python.mdx) and the selected adapter guide for the
+exact mapping and limits.
 
-For collector setup, correlation behavior, backpressure limits, and stream
-lifecycle requirements, refer to the
-[Python SDK guide](../sdk/python.mdx#nemo-relay-streaming).
-
-### Explicit System Instruction Modes
-
-The normalized contract now distinguishes `replace` and `append` system
-instruction modes. `replace` remains the default. Adapter descriptors declare
-the modes they support, and planning rejects unsupported modes before adapter
-startup. Claude supports both modes; the other bundled adapters support
-`replace` only.
-
-NeMo Agent Toolkit configurations that set `instructions.system` must now set
-`mode="append"`, because that adapter maps the value to additive instructions
-and cannot implement replacement semantics.
+The [Deep Agents adapter](../integrations/harness/deepagents.mdx) also adds an
+opt-in local shell backend for supervised demonstrations. This backend runs
+commands with the adapter host user's permissions and provides no process
+isolation.
 
 ## Current Limitations
 
 The current release has the following limitations:
 
 - Provider-backed third-party adapter registries are not included.
-- The automated adapter conformance suite is not included. Adapter authors can
-  use the maintained verification checklist for the required profile and
-  declared capabilities.
-- Cancellation, live updates, and service lifecycle flags are reserved until a
-  runtime binding exposes and tests the corresponding adapter operations.
-- The Remote Agent adapter does not normalize remote MCP, skills, tool policy,
-  or subagent configuration. The remote service owns those capabilities and
-  its lifecycle. Relay streaming requires an independently instrumented remote
-  service and a collector reachable by both the service and Fabric.
-- The Pi adapter does not expose Relay, MCP, native streaming, caller-driven
-  cancellation, or remote-service execution.
+- An automated adapter conformance suite is not included.
+- Cancellation, live updates, and cold resume are not exposed as supported
+  adapter lifecycle operations. Shared service handles cannot be persisted
+  across processes.
+- The [Remote Agent adapter](../integrations/harness/remote-agent.mdx) does not
+  normalize the remote service's MCP, skills, tool policy, or subagents. Relay
+  streaming requires a separately instrumented remote service and a collector
+  reachable by that service and NeMo Fabric.
+- The new Cline, OpenCode, and Qwen Code adapters do not support Relay
+  telemetry or native streaming. Consult each adapter guide for other
+  capability limits.
