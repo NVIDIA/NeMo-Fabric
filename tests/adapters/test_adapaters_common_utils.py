@@ -42,6 +42,8 @@ CODEX_DESCRIPTOR = ROOT / "adapters/python/codex/codex.fabric-adapter.json"
             ),
         ),
         ("request-1", None),
+        ("00000000-0000-0000-0000-000000000000", None),
+        ("018f47a4-3af7-7d94-0000-000000000000", None),
     ],
 )
 def test_relay_request_context(
