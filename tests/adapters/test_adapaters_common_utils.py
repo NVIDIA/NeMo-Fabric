@@ -149,7 +149,14 @@ def test_relay_request_context_sessions_a_non_uuid_request(
     assert used_stacks[0].root_uuid == SESSION_UUID
 
 
-@pytest.mark.parametrize("session_root", ["agent-session-TnDtpPhP", "", "not a uuid"])
+NIL_UUID = "00000000-0000-0000-0000-000000000000"
+ZERO_SPAN_UUID = "018f47a4-3af7-7d94-0000-000000000000"
+
+
+@pytest.mark.parametrize(
+    "session_root",
+    ["agent-session-TnDtpPhP", "", "not a uuid", NIL_UUID, ZERO_SPAN_UUID],
+)
 def test_relay_request_context_drops_a_non_uuid_session_root(
     session_root: str, monkeypatch: pytest.MonkeyPatch
 ):
@@ -164,6 +171,23 @@ def test_relay_request_context_drops_a_non_uuid_session_root(
     propagation_context.assert_called_once_with(REQUEST_UUID, root_uuid=REQUEST_UUID)
     assert "nemo_fabric_session_root" not in metadata
     assert used_stacks[0].root_uuid == REQUEST_UUID
+
+
+@pytest.mark.parametrize("session_root", [NIL_UUID, ZERO_SPAN_UUID])
+def test_relay_refuses_a_zero_span_root_so_fabric_falls_back(session_root: str):
+    nemo_relay = pytest.importorskip("nemo_relay")
+
+    with pytest.raises(ValueError, match="not a usable Relay identifier"):
+        nemo_relay.PropagationContext(REQUEST_UUID, root_uuid=session_root)
+
+    request_context, metadata = common_utils.relay_request_context(
+        REQUEST_UUID, session_root
+    )
+    with request_context:
+        captured = nemo_relay.capture_propagation_context()
+
+    assert captured.root_uuid == REQUEST_UUID
+    assert "nemo_fabric_session_root" not in metadata
 
 
 def test_two_requests_share_one_session_root(monkeypatch: pytest.MonkeyPatch):
@@ -187,6 +211,8 @@ def test_two_requests_share_one_session_root(monkeypatch: pytest.MonkeyPatch):
     [
         ({common_utils.SESSION_ROOT_CONTEXT_KEY: SESSION_UUID}, SESSION_UUID),
         ({common_utils.SESSION_ROOT_CONTEXT_KEY: "agent-session-TnDtpPhP"}, None),
+        ({common_utils.SESSION_ROOT_CONTEXT_KEY: NIL_UUID}, None),
+        ({common_utils.SESSION_ROOT_CONTEXT_KEY: ZERO_SPAN_UUID}, None),
         ({common_utils.SESSION_ROOT_CONTEXT_KEY: 7}, None),
         ({"session_id": SESSION_UUID}, None),
         ({}, None),
