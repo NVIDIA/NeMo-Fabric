@@ -133,6 +133,7 @@ async def test_uuid_request_id_seeds_real_relay_parent(monkeypatch):
         "hello",
         request_id,
         "invocation-1",
+        None,
     )
 
     assert outcome.error is None
@@ -165,9 +166,11 @@ async def test_overlapping_turns_stay_telemetry_clean(monkeypatch):
     runtime._relay_scope_type = nemo_relay.ScopeType
     runtime._callback_handler_type = NemoRelayCallbackHandler
 
-    first = await runtime._invoke_with_telemetry("hello", "request-1", "invocation-1")
+    first = await runtime._invoke_with_telemetry(
+        "hello", "request-1", "invocation-1", None
+    )
     second = await runtime._invoke_with_telemetry(
-        "hello again", "request-2", "invocation-2"
+        "hello again", "request-2", "invocation-2", None
     )
 
     assert (first.error, first.telemetry_error) == (None, None)
