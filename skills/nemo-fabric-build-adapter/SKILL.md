@@ -236,19 +236,17 @@ for an adapter-owned history pattern.
 
 For in-process Relay SDK telemetry where the adapter owns the invocation-level
 Agent scope, wrap that scope with
-`nemo_fabric_adapters.common.utils.relay_request_context(context.request_id, session_root_id(request.context))`.
-The helper uses a UUID request ID as Relay's propagated root and always returns
-`nemo_fabric_request_id` metadata, including for non-UUID request IDs. When the
-caller sets `relay_session_root` in the request context to a UUID string Relay
-accepts,
-that value becomes the root instead, a UUID request ID stays the parent
-(otherwise the session root is), and
-`nemo_fabric_session_root` is added to the metadata, so the caller's
-invocations share one Relay session. Unusable session roots fall back to the
-request root without raising. Do not
-apply this pattern to an external Relay gateway or an upstream integration that
-creates an isolated scope context unless its boundary accepts a per-turn
-propagation context.
+`relay_request_context(context.request_id, session_root_id(request.context))`,
+both from `nemo_fabric_adapters.common.utils`. The helper uses a UUID request ID
+as Relay's propagated root and always returns `nemo_fabric_request_id` metadata,
+including for non-UUID request IDs. When the caller sets `relay_session_root` in
+the request context to a UUID string Relay accepts, that value becomes the root
+instead, a UUID request ID stays the parent (otherwise the session root is), and
+`nemo_fabric_session_root` is added to the metadata, so the caller's invocations
+share one Relay session. Unusable session roots fall back to the request root
+without raising. Do not apply this pattern to an external Relay gateway or an
+upstream integration that creates an isolated scope context unless its boundary
+accepts a per-turn propagation context.
 
 ## Handle Custom Agents
 
