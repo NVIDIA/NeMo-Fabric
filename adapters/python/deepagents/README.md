@@ -290,6 +290,11 @@ includes the NeMo Relay Python package.
   - The top-level invocation runs inside a
     `nemo_relay.scope.scope("deepagents-request", nemo_relay.ScopeType.Agent)`
     scope, so the whole NeMo Fabric turn is captured under one Agent scope.
+    A UUID `request_id` roots that scope's propagation. To group turns into one
+    Relay session, send the same UUID as `RunRequest.context["relay_session_root"]`
+    on each invocation: it becomes the propagated root, the request stays the
+    parent, and ATIF exports one trajectory per turn under one `session_id`.
+    Values Relay cannot use fall back to the request root.
   - `NemoRelayDeepAgentsCallbackHandler()` is added to the LangGraph run config
     (without dropping consumer-provided callbacks) to capture LangGraph scopes
     and human-in-the-loop interrupt/resume marks.
