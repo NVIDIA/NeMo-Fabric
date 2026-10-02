@@ -808,7 +808,7 @@ class DeepAgentsRuntime:
         user_message: str,
         request_id: str,
         invocation_id: str,
-        session_root: str | None = None,
+        session_root: str | None,
     ) -> TurnOutcome:
         """Run one turn inside the Relay plugin/scope, isolating telemetry faults.
 

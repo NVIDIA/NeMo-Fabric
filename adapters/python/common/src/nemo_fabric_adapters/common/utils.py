@@ -260,7 +260,6 @@ def native_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
     return config if isinstance(config, dict) else {}
 
 
-#: Namespaced so a caller's own ``session_id`` cannot silently regroup its traces.
 SESSION_ROOT_CONTEXT_KEY = "relay_session_root"
 
 
@@ -278,7 +277,10 @@ def _uuid_or_none(value: object) -> str | None:
 
 
 def session_root_id(context: Mapping[str, Any] | None) -> str | None:
-    """Return the caller's Relay session root, ignoring a non-UUID value."""
+    """Return the caller's Relay session root, or ``None`` when Relay cannot use it.
+
+    The key is not ``session_id`` so a caller's own session id cannot regroup its traces.
+    """
 
     return _uuid_or_none(context.get(SESSION_ROOT_CONTEXT_KEY)) if context else None
 

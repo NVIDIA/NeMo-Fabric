@@ -190,7 +190,7 @@ class MiniSweAgentRuntime:
         self,
         task: str,
         context: contract.RuntimeContext,
-        session_root: str | None = None,
+        session_root: str | None,
     ) -> tuple[dict[str, Any], list[str]]:
         if self._telemetry_quarantine is not None:
             self._agent.begin_relay_invocation(None)
