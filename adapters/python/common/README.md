@@ -134,9 +134,10 @@ the active turn.
 Pass `session_root_id(request.context)` as the helper's `session_root` to let a
 caller group invocations into one Relay session. It reads
 `SESSION_ROOT_CONTEXT_KEY` (`relay_session_root`) from the run request context.
-When that value is a UUID string Relay accepts, it becomes the propagated root,
-the request stays the parent, and the value is recorded as
-`nemo_fabric_session_root` metadata. Relay derives ATIF `session_id` from the
+When that value is a UUID string Relay accepts, it becomes the propagated root
+and the value is recorded as
+`nemo_fabric_session_root` metadata. A UUID request ID stays the parent;
+otherwise the session root is also the parent. Relay derives ATIF `session_id` from the
 root, so invocations that share a session root export separate trajectories
 under one session. A missing value, a non-string, a string that is not a UUID,
 the nil UUID, or a UUID whose final eight bytes are zero falls back to the
