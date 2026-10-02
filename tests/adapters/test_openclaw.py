@@ -366,6 +366,7 @@ def test_openclaw_rejects_invalid_skill_paths(
         )
 
     assert caught.value.code == expected_code
+    assert caught.value.metadata == {"field": "skills.paths[0]"}
 
 
 def test_openclaw_preserves_context_injection_without_system_instruction(
