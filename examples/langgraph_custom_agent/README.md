@@ -160,8 +160,8 @@ lifecycle. During `invoke`, NeMo Fabric supplies `RuntimeContext.telemetry`; the
 adapter loads that generated configuration, opens one invocation-level Agent
 scope, and passes `NemoRelayCallbackHandler` through LangGraph
 runnable config. Relay records the graph and its model-backed node, while the
-terminal result remains separate. A `relay_session_root` UUID in the request
-context roots that scope's propagation, so invocations that share it export
+terminal result remains separate. A `relay_session_root` UUID string in the
+request context roots that scope's propagation, so invocations that share it export
 one trajectory each under one Relay session.
 
 Relay is imported only on the enabled path. This adapter does not implement a

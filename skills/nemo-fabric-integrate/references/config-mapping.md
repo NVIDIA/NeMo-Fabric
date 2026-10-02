@@ -146,8 +146,9 @@ package or job layout, so nothing depends on the process working directory.
 - Supply request context through `RunRequest.context` for each invocation;
   request context is not part of `FabricConfig`. To group invocations into one
   NeMo Relay session, set `RunRequest.context["relay_session_root"]` to the
-  same UUID on each; adapters that own an in-process Relay Agent scope root
-  propagation at it. Unusable values fall back to per-request sessions.
+  same UUID string on each; adapters that own an in-process Relay Agent scope root
+  propagation at it. Unusable values fall back to per-request
+  sessions without an error.
 - Use `harness.settings` for adapter-owned configuration declared by the
   selected descriptor. Each bundled adapter declares a closed settings schema.
   Executable paths, state directories, and Relay command discovery are runtime
