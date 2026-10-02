@@ -268,9 +268,13 @@ def _uuid_or_none(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     try:
-        return str(uuid.UUID(value))
+        parsed = uuid.UUID(value)
     except ValueError:
         return None
+    # Relay derives the OTel span id from the low 8 bytes and rejects a zero one.
+    if not any(parsed.bytes[8:]):
+        return None
+    return str(parsed)
 
 
 def session_root_id(context: Mapping[str, Any] | None) -> str | None:
