@@ -58,8 +58,17 @@ class _EventManager:
 
         return unsubscribe
 
-    def intercept(self, _event_type: str, _handler: Any):
-        return lambda: None
+    def intercept(self, event_type: str, handler: Any):
+        handlers = self._handlers.setdefault(event_type, [])
+        handlers.append(handler)
+
+        def unsubscribe() -> None:
+            handlers.remove(handler)
+
+        return unsubscribe
+
+    def middleware(self, event_type: str) -> Any:
+        return self._handlers[event_type][0]
 
     def emit(self, event_type: str, event: Any) -> None:
         for handler in list(self._handlers.get(event_type, [])):
@@ -116,10 +125,18 @@ class EchoInteractiveAgent:
             complete_llm,
             model_name="fixture-model",
         )
-        await nemo_relay.tools.execute(
-            "execute_python",
-            {"code": "result = 'fixture'"},
-            lambda _args: nemo_relay.ToolExecutionResult({"result": "fixture"}),
+        from nooa.runtime.middleware import MIDDLEWARE_EXECUTE_PYTHON
+
+        tool_ctx = SimpleNamespace(code="result = 'fixture'", params={}, result=None)
+
+        async def execute_tool(ctx: Any) -> Any:
+            ctx.result = SimpleNamespace(
+                returned_value=["fixture"], signal=None, stdout=""
+            )
+            return ctx
+
+        await self.event_manager.middleware(MIDDLEWARE_EXECUTE_PYTHON)(
+            tool_ctx, execute_tool
         )
         self.event_manager.emit(
             "AgentMessage",

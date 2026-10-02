@@ -1,6 +1,6 @@
 {
   "name": "nemo-fabric-typescript-adapters",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "TypeScript adapter workspace for NVIDIA NeMo Fabric.",
   "license": "Apache-2.0",
   "private": true,
@@ -17,8 +17,8 @@
     "pack:contents": "npm run pack:check --workspace nemo-fabric-adapters-common && npm run pack:check --workspace nemo-fabric-adapters-cline && npm run pack:check --workspace nemo-fabric-adapters-pi && npm run pack:check --workspace nemo-fabric-adapters-opencode && npm run pack:check --workspace nemo-fabric-adapters-qwen",
     "pack:install-check": "node scripts/check-install.mjs",
     "test": "npm run test:units && npm run test:dependencies && npm run pack:check",
-    "test:dependencies": "npm ls --all && npm audit --audit-level=high",
-    "test:units": "npm test --workspace nemo-fabric-adapters-common && npm test --workspace nemo-fabric-adapters-cline && npm test --workspace nemo-fabric-adapters-pi && npm test --workspace nemo-fabric-adapters-opencode && npm test --workspace nemo-fabric-adapters-qwen"
+    "test:dependencies": "npm ls --all && node scripts/audit-dependencies.mjs",
+    "test:units": "node --test scripts/audit-dependencies.test.mjs && npm test --workspace nemo-fabric-adapters-common && npm test --workspace nemo-fabric-adapters-cline && npm test --workspace nemo-fabric-adapters-pi && npm test --workspace nemo-fabric-adapters-opencode && npm test --workspace nemo-fabric-adapters-qwen"
   },
   "devDependencies": {
     "nemo-fabric-adapter-contract": "file:../../adapter-contract/typescript"

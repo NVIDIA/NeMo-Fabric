@@ -1,6 +1,6 @@
 {
   "name": "nemo-fabric-adapters-qwen",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Qwen Code SDK harness adapter for NVIDIA NeMo Fabric.",
   "license": "Apache-2.0",
   "type": "module",
@@ -9,8 +9,15 @@
     "./descriptor": "./qwen.fabric-adapter.json",
     "./package.json": "./package.json"
   },
-  "bin": {"nemo-fabric-adapters-qwen": "dist/cli.js"},
-  "files": ["dist", "qwen.fabric-adapter.json", "README.md", "LICENSE"],
+  "bin": {
+    "nemo-fabric-adapters-qwen": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "qwen.fabric-adapter.json",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
@@ -18,21 +25,34 @@
     "prepack": "npm run build",
     "test": "npm run clean && npm run build && node --test test/*.test.mjs"
   },
-  "publishConfig": {"access": "public", "registry": "https://registry.npmjs.org"},
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/NVIDIA/NeMo-Fabric.git",
     "directory": "adapters/typescript/qwen"
   },
-  "bugs": {"url": "https://github.com/NVIDIA/NeMo-Fabric/issues"},
-  "homepage": "https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/qwen#readme",
-  "engines": {"node": ">=22.19.0"},
-  "dependencies": {
-    "nemo-fabric-adapter-contract": "0.4.0",
-    "nemo-fabric-adapters-common": "0.4.0"
+  "bugs": {
+    "url": "https://github.com/NVIDIA/NeMo-Fabric/issues"
   },
-  "peerDependencies": {"@qwen-code/sdk": "0.1.16"},
-  "peerDependenciesMeta": {"@qwen-code/sdk": {"optional": true}},
+  "homepage": "https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/qwen#readme",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "nemo-fabric-adapter-contract": "0.5.0",
+    "nemo-fabric-adapters-common": "0.5.0"
+  },
+  "peerDependencies": {
+    "@qwen-code/sdk": "0.1.16"
+  },
+  "peerDependenciesMeta": {
+    "@qwen-code/sdk": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@qwen-code/sdk": "0.1.16",
     "@types/node": "24.12.4",

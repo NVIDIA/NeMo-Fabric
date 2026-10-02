@@ -1485,13 +1485,13 @@ def _install_relay_doubles(
     relay_module.scope.scope.side_effect = enter_scope
     nooa_module = types.ModuleType("nooa")
     nooa_module.__path__ = []  # type: ignore[attr-defined]
-    middleware_module = types.ModuleType("nooa.nemo_relay_middleware")
-    middleware_module.install_nemo_relay = install
+    middleware_module = types.ModuleType("nemo_fabric_adapters.nooa.relay_compat")
+    middleware_module.install_nemo_relay_compat = install
     monkeypatch.setitem(sys.modules, "nemo_relay", relay_module)
     monkeypatch.setitem(sys.modules, "nooa", nooa_module)
     monkeypatch.setitem(
         sys.modules,
-        "nooa.nemo_relay_middleware",
+        "nemo_fabric_adapters.nooa.relay_compat",
         middleware_module,
     )
     return install, scope_metadata
@@ -1714,12 +1714,12 @@ async def test_relay_emits_correlated_atof_and_atif(
     install = MagicMock(return_value=MagicMock())
     nooa_module = types.ModuleType("nooa")
     nooa_module.__path__ = []  # type: ignore[attr-defined]
-    middleware_module = types.ModuleType("nooa.nemo_relay_middleware")
-    middleware_module.install_nemo_relay = install
+    middleware_module = types.ModuleType("nemo_fabric_adapters.nooa.relay_compat")
+    middleware_module.install_nemo_relay_compat = install
     monkeypatch.setitem(sys.modules, "nooa", nooa_module)
     monkeypatch.setitem(
         sys.modules,
-        "nooa.nemo_relay_middleware",
+        "nemo_fabric_adapters.nooa.relay_compat",
         middleware_module,
     )
     telemetry = nooa_telemetry.RelayTelemetry(

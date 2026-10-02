@@ -263,6 +263,27 @@ def _channel_secret_env_names(value: Any) -> set[str]:
     return names
 
 
+def _resolve_skill_paths(config: contract.AgentConfig, base_dir: Path) -> list[str]:
+    paths: list[str] = []
+    for index, path in enumerate(config.skills.paths if config.skills else []):
+        try:
+            directory = (base_dir / path).resolve(strict=True)
+        except (OSError, RuntimeError):
+            raise lifecycle.LifecycleError(
+                "openclaw_skill_not_found",
+                "A configured NeMo Fabric skill path does not exist",
+                metadata={"field": f"skills.paths[{index}]"},
+            ) from None
+        if not directory.is_dir() or not (directory / "SKILL.md").is_file():
+            raise lifecycle.LifecycleError(
+                "openclaw_skill_invalid",
+                "NeMo Fabric skill paths must be directories containing a SKILL.md file",
+                metadata={"field": f"skills.paths[{index}]"},
+            )
+        paths.append(str(directory))
+    return paths
+
+
 def _resolve_command(settings: dict[str, Any], base_dir: Path) -> Path:
     configured = settings.get("openclaw_command", "openclaw")
     if not isinstance(configured, str) or not configured.strip():
@@ -468,14 +489,9 @@ def _openclaw_config(
     result["agents"]["entries"] = {agent_id: {}}
     if config.instructions is not None and config.instructions.system is not None:
         result["agents"]["defaults"]["contextInjection"] = "never"
-    if config.skills and config.skills.paths:
-        result["skills"] = {
-            "load": {
-                "extraDirs": [
-                    str((base_dir / path).resolve()) for path in config.skills.paths
-                ]
-            }
-        }
+    skill_paths = _resolve_skill_paths(config, base_dir)
+    if skill_paths:
+        result["skills"] = {"load": {"extraDirs": skill_paths}}
     if config.tools is not None:
         tools: dict[str, list[str]] = {}
         if config.tools.enabled == []:

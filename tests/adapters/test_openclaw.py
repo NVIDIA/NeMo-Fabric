@@ -49,7 +49,7 @@ def _context(workspace: Path, runtime_id: str = "openclaw-runtime") -> RuntimeCo
     return RuntimeContext.from_mapping(payload)
 
 
-def _config(command: Path) -> AgentConfig:
+def _config(command: Path, *, with_skills: bool = False) -> AgentConfig:
     settings: dict[str, object] = {"openclaw_command": str(command)}
     return AgentConfig.from_mapping(
         {
@@ -65,7 +65,7 @@ def _config(command: Path) -> AgentConfig:
                     "max_tokens": 64,
                 }
             },
-            "skills": {"paths": ["skills"]},
+            "skills": {"paths": ["skills"]} if with_skills else None,
             "tools": {
                 "enabled": ["browser", "web_search"],
                 "blocked": ["exec"],
@@ -85,7 +85,7 @@ def _config(command: Path) -> AgentConfig:
                         "custom_headers": {"X-Test": "value"},
                         "blocked_tools": ["delete_*"],
                     },
-                }
+                },
             },
         }
     )
@@ -249,6 +249,9 @@ def test_openclaw_gateway_command_uses_setpriv_on_linux_when_available(
 async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     mock_openclaw: Path, tmp_path: Path
 ):
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (skills / "SKILL.md").write_text("# Test skill\n", encoding="utf-8")
     capture = tmp_path / "config.json"
     request_capture = tmp_path / "request.json"
     readonly_capture = tmp_path / "config-readonly.txt"
@@ -264,7 +267,7 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
 
     await runtime.start(
         {
-            "config": _config(mock_openclaw),
+            "config": _config(mock_openclaw, with_skills=True),
             "runtime_context": context.to_mapping(),
             "base_dir": str(tmp_path),
         }
@@ -331,6 +334,39 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert generated["mcp"]["servers"]["remote"]["transport"] == ("streamable-http")
     assert "auth" not in generated["mcp"]["servers"]["remote"]
     assert not state_root.exists()
+
+
+@pytest.mark.parametrize(
+    ("invalid_path", "expected_code"),
+    [
+        ("missing", "openclaw_skill_not_found"),
+        ("file", "openclaw_skill_invalid"),
+        ("missing_manifest", "openclaw_skill_invalid"),
+    ],
+)
+def test_openclaw_rejects_invalid_skill_paths(
+    mock_openclaw: Path,
+    tmp_path: Path,
+    invalid_path: str,
+    expected_code: str,
+):
+    skill_path = tmp_path / "skills"
+    if invalid_path == "file":
+        skill_path.write_text("not a directory", encoding="utf-8")
+    elif invalid_path == "missing_manifest":
+        skill_path.mkdir()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._openclaw_config(
+            _config(mock_openclaw, with_skills=True),
+            _context(tmp_path),
+            base_dir=tmp_path,
+            port=20_000,
+            token_env="OPENCLAW_GATEWAY_TOKEN",
+        )
+
+    assert caught.value.code == expected_code
+    assert caught.value.metadata == {"field": "skills.paths[0]"}
 
 
 def test_openclaw_preserves_context_injection_without_system_instruction(
@@ -622,7 +658,7 @@ async def test_openclaw_channel_secret_refs_require_environment_variables(
 def test_openclaw_attach_rejects_deployment_owned_configuration(
     mock_openclaw: Path,
 ):
-    config = _config(mock_openclaw)
+    config = _config(mock_openclaw, with_skills=True)
     assert config.harness is not None
     config.harness.settings["channel_config"] = {
         "channels": {"telegram": {"enabled": True}},

@@ -1,6 +1,6 @@
 {
   "name": "nemo-fabric-adapters-opencode",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "OpenCode v2 SDK harness adapter for NVIDIA NeMo Fabric.",
   "license": "Apache-2.0",
   "type": "module",
@@ -42,8 +42,8 @@
     "bun": ">=1.4.2"
   },
   "dependencies": {
-    "nemo-fabric-adapter-contract": "0.4.0",
-    "nemo-fabric-adapters-common": "0.4.0"
+    "nemo-fabric-adapter-contract": "0.5.0",
+    "nemo-fabric-adapters-common": "0.5.0"
   },
   "peerDependencies": {
     "@opencode/core": "2.0.3",
