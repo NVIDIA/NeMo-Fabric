@@ -7,8 +7,8 @@
 # Attribution files require dependency approver review due to change in version(s)
 ATTRIBUTIONS-*.md @nvidia/nemo-fabric-dep-approvers
 
-# Documentation changes must go to Fabric documentation approvers.
-/docs/ @nvidia/nemo-fabric-doc-approvers
+# Request documentation review while allowing Fabric code reviewers to approve.
+/docs/ @nvidia/nemo-fabric-doc-approvers @nvidia/nemo-fabric-reviewers
 /docs/reference/api/ @nvidia/nemo-fabric-reviewers
 
 # Repository access policy requires Fabric maintainer or admin review.
