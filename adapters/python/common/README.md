@@ -131,6 +131,15 @@ other request IDs remain available as `nemo_fabric_request_id` metadata. The
 helper always preserves that metadata so Relay-backed streaming can identify
 the active turn.
 
+Pass `session_root_id(request.context)` as the helper's `session_root` to let a
+caller group invocations into one Relay session. It reads
+`SESSION_ROOT_CONTEXT_KEY` (`relay_session_root`) from the run request context.
+When that value is a UUID Relay accepts, it becomes the propagated root, the
+request stays the parent, and the value is recorded as
+`nemo_fabric_session_root` metadata. Relay derives ATIF `session_id` from the
+root, so invocations that share a session root export separate trajectories
+under one session. A missing, non-UUID, or nil value, or a UUID whose final eight bytes are zero, falls back to the request root. This requires NeMo Relay 0.9.
+
 This helper does not apply to adapters that send telemetry through an external
 Relay gateway or whose upstream integration creates an isolated scope context.
 Those adapters retain their native session correlation until their Relay
