@@ -992,8 +992,8 @@ contains adapter-specific result details.
 To group several invocations into one NeMo Relay session, set
 `RunRequest.context["relay_session_root"]` to the same UUID string on each
 invocation. Adapters that own an in-process Relay Agent scope, Deep Agents and
-mini-SWE-agent, use it as the propagated Relay root and keep the request as the
-parent, so ATIF exports one trajectory per invocation under one `session_id`.
+mini-SWE-agent, use it as the propagated Relay root. A UUID `request_id` stays
+the parent; otherwise the session root is also the parent. ATIF exports one trajectory per invocation under one `session_id`.
 NeMo Fabric does not reject an unusable value. A missing value, a non-string, a
 string that is not a UUID, the nil UUID, or a UUID whose final eight bytes are
 zero falls back to the per-request root, and the invocation still succeeds. A
