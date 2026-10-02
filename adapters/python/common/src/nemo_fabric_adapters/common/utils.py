@@ -277,10 +277,7 @@ def _uuid_or_none(value: object) -> str | None:
 
 
 def session_root_id(context: Mapping[str, Any] | None) -> str | None:
-    """Return the caller's Relay session root, or ``None`` when Relay cannot use it.
-
-    The key is not ``session_id`` so a caller's own session id cannot regroup its traces.
-    """
+    """Return the usable Relay session root, else ``None``; never reads ``session_id``."""
 
     return _uuid_or_none(context.get(SESSION_ROOT_CONTEXT_KEY)) if context else None
 
@@ -289,12 +286,7 @@ def relay_request_context(
     request_id: str,
     session_root: str | None = None,
 ) -> tuple[Any, dict[str, str]]:
-    """Root Relay's propagation at the session and parent it at the request.
-
-    Relay takes ATIF session identity from the root, so without a session root each
-    request becomes its own session. Relay rejects a non-UUID root, so one is dropped
-    here rather than raised from inside telemetry setup.
-    """
+    """Root Relay at a usable session root, else a UUID request ID; preserve metadata."""
 
     metadata = {"nemo_fabric_request_id": request_id}
     request_uuid = _uuid_or_none(request_id)
