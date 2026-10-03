@@ -109,6 +109,7 @@ async def observe_invocation(
     base_dir: Path,
     agent_name: str,
     model_name: str,
+    session_root: str | None = None,
 ) -> AsyncIterator[InvocationTelemetry]:
     """Activate Relay when NeMo Fabric supplies an enabled telemetry context."""
 
@@ -132,7 +133,7 @@ async def observe_invocation(
     async with plugin.activate(plugin_config) as activation:
         common_utils.reject_inherited_relay_plugin_config(activation.report)
         request_context, metadata = common_utils.relay_request_context(
-            context.request_id
+            context.request_id, session_root
         )
         metadata.update(
             {

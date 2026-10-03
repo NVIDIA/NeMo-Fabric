@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import uuid
+from collections.abc import Mapping
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -259,20 +260,49 @@ def native_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
     return config if isinstance(config, dict) else {}
 
 
-def relay_request_context(request_id: str) -> tuple[Any, dict[str, str]]:
-    """Use a UUID request ID as Relay's propagated root and preserve metadata."""
+SESSION_ROOT_CONTEXT_KEY = "relay_session_root"
+
+
+def _uuid_or_none(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError:
+        return None
+    # Relay derives the OTel span id from the low 8 bytes and rejects a zero one.
+    if not any(parsed.bytes[8:]):
+        return None
+    return str(parsed)
+
+
+def session_root_id(context: Mapping[str, Any] | None) -> str | None:
+    """Return the usable Relay session root, else ``None``; never reads ``session_id``."""
+
+    return _uuid_or_none(context.get(SESSION_ROOT_CONTEXT_KEY)) if context else None
+
+
+def relay_request_context(
+    request_id: str,
+    session_root: str | None = None,
+) -> tuple[Any, dict[str, str]]:
+    """Root Relay at a usable session root, else a UUID request ID; preserve metadata."""
 
     metadata = {"nemo_fabric_request_id": request_id}
-    try:
-        request_uuid = str(uuid.UUID(request_id))
-    except ValueError:
+    request_uuid = _uuid_or_none(request_id)
+    session_uuid = _uuid_or_none(session_root)
+
+    root_uuid = session_uuid or request_uuid
+    if root_uuid is None:
         return nullcontext(), metadata
+    if session_uuid is not None:
+        metadata["nemo_fabric_session_root"] = session_uuid
 
     from nemo_relay import PropagationContext
     from nemo_relay import create_scope_stack_from_propagation
     from nemo_relay import use_scope_stack
 
-    propagation = PropagationContext(request_uuid, root_uuid=request_uuid)
+    propagation = PropagationContext(request_uuid or root_uuid, root_uuid=root_uuid)
     stack = create_scope_stack_from_propagation(propagation)
     return use_scope_stack(stack), metadata
 
