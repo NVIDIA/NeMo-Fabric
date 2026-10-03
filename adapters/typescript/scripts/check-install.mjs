@@ -26,6 +26,7 @@ const packageRoots = [
   join(repositoryRoot, "adapters/typescript/pi"),
   join(repositoryRoot, "adapters/typescript/opencode"),
   join(repositoryRoot, "adapters/typescript/qwen"),
+  join(repositoryRoot, "adapters/typescript/kilo"),
 ];
 
 function npm(args, cwd) {
@@ -110,6 +111,18 @@ function runQwenCli(qwenRoot, consumerRoot, requests) {
   if (invocation.status !== 0) {
     throw new Error(`Installed Qwen CLI failed (status ${invocation.status}): ${invocation.stderr}`);
   }
+  return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+function runKiloCli(kiloRoot, consumerRoot, requests) {
+  const invocation = spawnSync(process.execPath, [join(kiloRoot, "dist/cli.js")], {
+    cwd: consumerRoot,
+    encoding: "utf8",
+    input: `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`,
+    timeout: 60_000,
+  });
+  if (invocation.error) throw invocation.error;
+  if (invocation.status !== 0) throw new Error(`Installed Kilo Code CLI failed: ${invocation.stderr}`);
   return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 
@@ -198,6 +211,14 @@ function qwenStartRequest(consumerRoot) {
       agent_name: "qwen-install-check",
       config: { models: { default: { api_key_env: "TEST_API_KEY", model: "test-model", provider: "openai" } } },
     },
+  };
+}
+
+function kiloStartRequest(consumerRoot) {
+  const request = openCodeStartRequest(consumerRoot);
+  return {
+    ...request,
+    payload: {...request.payload, agent_name: "kilo-install-check"},
   };
 }
 
@@ -391,6 +412,25 @@ try {
       qwenResponses[0].outcome?.status !== "succeeded" ||
       qwenResponses[1].outcome?.status !== "succeeded") {
     throw new Error(`Consumer-managed Qwen SDK failed to start: ${JSON.stringify(qwenResponses)}`);
+  }
+
+  const kiloRoot = join(consumerRoot, "node_modules/nemo-fabric-adapters-kilo");
+  const kiloDescriptor = JSON.parse(await readFile(join(kiloRoot, "kilo.fabric-adapter.json"), "utf8"));
+  if (kiloDescriptor.runner?.command !== "node" || kiloDescriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("Installed Kilo Code descriptor does not reference its packaged Node.js CLI");
+  }
+  for (const name of ["@kilocode/cli", "@kilocode/sdk"]) {
+    if (await pathExists(join(consumerRoot, "node_modules", name, "package.json"))) {
+      throw new Error(`Adapter-only install unexpectedly included ${name}`);
+    }
+  }
+  const [invalidKiloResponse] = runKiloCli(kiloRoot, consumerRoot, [{}]);
+  if (invalidKiloResponse.outcome?.error?.code !== "lifecycle_invalid_operation") {
+    throw new Error(`Installed Kilo Code CLI returned an unexpected response: ${JSON.stringify(invalidKiloResponse)}`);
+  }
+  const [missingKiloResponse] = runKiloCli(kiloRoot, consumerRoot, [kiloStartRequest(consumerRoot)]);
+  if (missingKiloResponse.outcome?.error?.code !== "kilo_harness_unavailable") {
+    throw new Error(`Adapter-only install did not report the missing Kilo Code harness: ${JSON.stringify(missingKiloResponse)}`);
   }
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

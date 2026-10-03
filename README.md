@@ -33,6 +33,7 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 | [Cline](adapters/typescript/cline/README.md) | ✅ | ✅ | ✅ | — |
 | [Codex](adapters/python/codex/README.md) | — | ✅ | ✅ | ✅ |
 | [Hermes Agent](adapters/python/hermes/README.md) | ✅ | ✅ | ✅ | ✅ |
+| [Kilo Code](adapters/typescript/kilo/README.md) | ✅ | ✅ | ✅ | — |
 | [LangChain Deep Agents](adapters/python/deepagents/README.md) | ✅ | ✅ | ✅ | ✅ |
 | [mini-SWE-agent](adapters/python/mini-swe-agent/README.md) | — | — | — | ✅ |
 | [NOOA](adapters/python/nooa/README.md) | — | ✅ | ✅ | ✅ |

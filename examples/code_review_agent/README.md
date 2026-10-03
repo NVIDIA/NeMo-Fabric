@@ -233,6 +233,29 @@ input.
 
 The initial Cline adapter does not support Relay telemetry or streaming.
 
+### Kilo Code (`kilo`)
+
+Install Node.js 22.19 or later, install the source adapter dependencies, and
+then install the caller-owned Kilo CLI:
+
+```bash
+just install-typescript-kilo
+just build-typescript
+npm install --prefix adapters/typescript \
+  --workspace nemo-fabric-adapters-kilo \
+  --include-workspace-root \
+  --no-save \
+  --package-lock=false \
+  --ignore-scripts \
+  --no-audit \
+  --no-fund \
+  @kilocode/cli@7.7.12
+```
+
+The variant maps the NVIDIA model endpoint, replacement review instruction,
+read-oriented tool policy, maximum turns, and default code-review skill. Kilo
+Code does not currently support Relay through this adapter.
+
 ### Pi (`pi`)
 
 Install Node.js 22.19 or later, and follow the

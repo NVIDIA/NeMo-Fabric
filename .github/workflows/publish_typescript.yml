@@ -151,7 +151,8 @@ jobs:
             adapters/typescript/cline \
             adapters/typescript/pi \
             adapters/typescript/opencode \
-            adapters/typescript/qwen; do
+            adapters/typescript/qwen \
+            adapters/typescript/kilo; do
             python3 scripts/ci/publish_typescript_package.py \
               --action publish \
               --package-directory "$package_directory" \
