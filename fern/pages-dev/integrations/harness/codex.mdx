@@ -138,45 +138,36 @@ does not declare or select the runtime package separately. A `codex` command on
 
 ## Choose an Authentication Mode
 
-Codex supports the following OpenAI authentication modes for local work:
+Codex supports the following OpenAI authentication modes:
 
 | Mode | Credential Source | Recommended Use |
 | --- | --- | --- |
-| ChatGPT login | Cached Codex login under `CODEX_HOME` | Local development with an eligible ChatGPT plan |
-| API key login | API key provisioned into the Codex credential store | Usage-based or noninteractive OpenAI Platform workloads |
+| Cached ChatGPT login | Existing Codex login under `CODEX_HOME` | Local development with an eligible ChatGPT plan |
+| Cached API key login | Existing Codex credential store under `CODEX_HOME` | OpenAI Platform workloads with a provisioned store |
+| Runtime API key login | Environment variable named by `models.<role>.api_key_env` | Noninteractive OpenAI Platform workloads |
 
-With ChatGPT login, NeMo Fabric can run without `OPENAI_API_KEY`. With API key login,
-usage is billed through the OpenAI Platform account instead of ChatGPT plan
-credits. Refer to the
-[Codex authentication documentation](https://developers.openai.com/codex/auth/)
-for current plan availability and login commands.
-
-## Reuse a Codex Login
-
-Complete the Codex login outside NeMo Fabric. The adapter inherits `CODEX_HOME`
-(default: `~/.codex`) and the SDK reuses the cached credential. If you select a
-different credential store, use the same value for login and execution:
+With a cached login, NeMo Fabric inherits `CODEX_HOME` (default: `~/.codex`)
+and the SDK reuses the credential. Complete the login before running NeMo Fabric.
+For a nondefault store, use the same value for login and execution:
 
 ```bash
 export CODEX_HOME=/path/to/codex-home
 codex login
 ```
 
-For API key login, provision the credential store according to the current
-Codex authentication procedure:
+For runtime API-key login, set `models.<role>.api_key_env` to the name of the
+environment variable containing the OpenAI API key. The adapter calls the
+Codex SDK's `login_api_key` during startup. It creates a private, temporary
+`CODEX_HOME` outside the artifact root, ignoring a host `CODEX_HOME` for this
+run, then removes the temporary store when the runtime stops or startup fails.
+API-key usage is billed through the OpenAI Platform account rather than
+ChatGPT plan credits.
 
-```bash
-export CODEX_HOME=/path/to/codex-home
-printenv OPENAI_API_KEY | codex login --with-api-key
-```
-
-The login command is a credential-provisioning step. NeMo Fabric's runtime path uses
-the SDK and does not invoke the command after the credential is cached. The
-adapter also forwards `OPENAI_API_KEY` and a selected model's `api_key_env`, but
-the current real-agent acceptance path validates cached Codex authentication.
-
-Treat `CODEX_HOME/auth.json` as a secret when Codex uses file-based credential
-storage. Do not commit or copy it into NeMo Fabric configuration or artifacts.
+Treat `CODEX_HOME/auth.json` as a secret when Codex uses file-based
+credential storage. Do not commit or copy it into NeMo Fabric configuration
+or artifacts. Refer to the
+[Codex authentication documentation](https://developers.openai.com/codex/auth/)
+for current plan availability and credential-storage options.
 
 ## Use a Compatible Custom Provider
 
