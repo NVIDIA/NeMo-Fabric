@@ -230,6 +230,15 @@ def install_mock_relay(monkeypatch, relay: adapter.CodexRelaySettings):
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", MagicMock())
 
 
+@pytest.fixture(name="base_codex_home", autouse=True)
+def base_codex_home_fixture(monkeypatch, tmp_path_factory) -> Path:
+    """Stand in for the user's Codex home so no test reads or links the real one."""
+
+    home = tmp_path_factory.mktemp("base-codex-home")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    return home
+
+
 @pytest.fixture(name="mock_codex")
 def mock_codex_fixture(monkeypatch):
     mock_codex = MagicMock(spec=AsyncCodex)
@@ -344,6 +353,7 @@ def test_explicit_openai_api_key_logs_in_under_invocation_home(
     assert client.config.env["OPENAI_API_KEY"] == "test-api-key"
     api_key_home = Path(client.config.env["CODEX_HOME"])
     assert not api_key_home.is_relative_to(tmp_path / "artifacts")
+    assert client.config.env["CODEX_SQLITE_HOME"] == str(api_key_home)
     assert not api_key_home.exists()
     assert os.environ["CODEX_HOME"] == str(tmp_path / "existing-codex-home")
 
@@ -405,6 +415,180 @@ def test_explicit_openai_api_key_rejects_temp_home_under_artifacts(
     assert error.code == "codex_invalid_configuration"
     assert mock_codex.instances == []
     assert list(artifact_root.iterdir()) == []
+
+
+def isolate_codex_home(payload) -> None:
+    payload["config"]["harness"]["settings"]["isolated_home"] = True
+
+
+def record_codex_homes(mock_codex) -> list[dict[str, Any]]:
+    """Record each client's Codex home, and what it held, while the runtime ran."""
+
+    homes: list[dict[str, Any]] = []
+    build_client = mock_codex.side_effect
+
+    def build_recording_client(*, config):
+        home = Path(config.env["CODEX_HOME"])
+        homes.append(
+            {
+                "home": home,
+                "sqlite_home": Path(config.env["CODEX_SQLITE_HOME"]),
+                "links": {
+                    entry.name: entry.readlink()
+                    for entry in home.iterdir()
+                    if entry.is_symlink()
+                },
+            }
+        )
+        return build_client(config=config)
+
+    mock_codex.side_effect = build_recording_client
+    return homes
+
+
+def test_openai_login_runs_in_a_private_home_linked_to_the_inherited_login(
+    codex_payload, mock_codex, base_codex_home
+):
+    """Concurrent runtimes sharing one fresh Codex home race on its SQLite state."""
+
+    (base_codex_home / "auth.json").write_text("{}", encoding="utf-8")
+    (base_codex_home / ".credentials.json").write_text("{}", encoding="utf-8")
+    isolate_codex_home(codex_payload)
+    homes = record_codex_homes(mock_codex)
+
+    async def two_runtimes():
+        first, second = adapter.CodexRuntime(), adapter.CodexRuntime()
+        await first.start(lifecycle_start_payload(codex_payload))
+        await second.start(lifecycle_start_payload(codex_payload))
+        await first.stop()
+        await second.stop()
+
+    asyncio.run(two_runtimes())
+
+    assert homes[0]["home"] != homes[1]["home"]
+    for recorded in homes:
+        assert recorded["home"] != base_codex_home
+        assert recorded["sqlite_home"] == recorded["home"]
+        assert recorded["links"] == {
+            "auth.json": base_codex_home / "auth.json",
+            ".credentials.json": base_codex_home / ".credentials.json",
+        }
+        assert not recorded["home"].exists()
+    assert (base_codex_home / "auth.json").read_text(encoding="utf-8") == "{}"
+
+
+def test_openai_login_without_a_stored_login_still_gets_a_private_home(
+    codex_payload, mock_codex, base_codex_home
+):
+    isolate_codex_home(codex_payload)
+    homes = record_codex_homes(mock_codex)
+
+    assert invoke_once(codex_payload)["completed"] is True
+
+    assert homes[0]["home"] != base_codex_home
+    assert homes[0]["links"] == {}
+    assert not homes[0]["home"].exists()
+
+
+def test_openai_login_links_a_relative_inherited_home_by_absolute_path(
+    codex_payload, mock_codex, monkeypatch, tmp_path
+):
+    """A relative link target would resolve against the private home, not the cwd."""
+
+    (tmp_path / "relative-home").mkdir()
+    (tmp_path / "relative-home" / "auth.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CODEX_HOME", "relative-home")
+    isolate_codex_home(codex_payload)
+    homes = record_codex_homes(mock_codex)
+
+    assert invoke_once(codex_payload)["completed"] is True
+
+    assert homes[0]["links"] == {"auth.json": tmp_path / "relative-home" / "auth.json"}
+
+
+@pytest.mark.parametrize("store", ["keyring", "auto"])
+def test_openai_keyring_login_keeps_the_inherited_home_and_isolates_sqlite(
+    codex_payload, mock_codex, base_codex_home, store
+):
+    """Codex keys a keyring login by its home path, so moving the home loses the login."""
+
+    (base_codex_home / "config.toml").write_text(
+        f'cli_auth_credentials_store = "{store}"\n', encoding="utf-8"
+    )
+    isolate_codex_home(codex_payload)
+    homes = record_codex_homes(mock_codex)
+
+    assert invoke_once(codex_payload)["completed"] is True
+
+    assert homes[0]["home"] == base_codex_home
+    assert homes[0]["sqlite_home"] != base_codex_home
+    assert not homes[0]["sqlite_home"].exists()
+    assert base_codex_home.exists()
+
+
+@pytest.mark.parametrize(
+    "config_toml",
+    ['cli_auth_credentials_store = "file"\n', "not = [valid toml\n"],
+)
+def test_openai_file_or_unreadable_login_config_uses_a_private_home(
+    codex_payload, mock_codex, base_codex_home, config_toml
+):
+    (base_codex_home / "config.toml").write_text(config_toml, encoding="utf-8")
+    isolate_codex_home(codex_payload)
+    homes = record_codex_homes(mock_codex)
+
+    assert invoke_once(codex_payload)["completed"] is True
+
+    assert homes[0]["home"] != base_codex_home
+
+
+def test_openai_login_shares_the_inherited_home_by_default(
+    codex_payload, mock_codex, base_codex_home
+):
+    assert invoke_once(codex_payload)["completed"] is True
+
+    env = mock_codex.instances[0].config.env
+    assert env["CODEX_HOME"] == str(base_codex_home)
+    assert "CODEX_SQLITE_HOME" not in env
+
+
+def test_isolated_home_links_the_login_from_a_configured_codex_home(
+    codex_payload, mock_codex, tmp_path
+):
+    configured = tmp_path / "configured-home"
+    configured.mkdir()
+    (configured / "auth.json").write_text("{}", encoding="utf-8")
+    codex_payload["runtime_context"]["environment"]["env"] = {
+        "CODEX_HOME": str(configured)
+    }
+    isolate_codex_home(codex_payload)
+    homes = record_codex_homes(mock_codex)
+
+    assert invoke_once(codex_payload)["completed"] is True
+
+    assert homes[0]["links"] == {"auth.json": configured / "auth.json"}
+
+
+def test_openai_login_failed_start_removes_private_home(
+    codex_payload, mock_codex, base_codex_home
+):
+    (base_codex_home / "auth.json").write_text("{}", encoding="utf-8")
+    isolate_codex_home(codex_payload)
+    homes = record_codex_homes(mock_codex)
+    build_client = mock_codex.side_effect
+
+    def build_failing_client(*, config):
+        client = build_client(config=config)
+        client.thread_start.side_effect = RuntimeError("thread start failed")
+        return client
+
+    mock_codex.side_effect = build_failing_client
+
+    runtime_start_error(codex_payload)
+
+    assert not homes[0]["home"].exists()
+    assert (base_codex_home / "auth.json").exists()
 
 
 def test_single_invocation_uses_native_thread_and_turn_contract(

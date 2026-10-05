@@ -73,6 +73,7 @@ _config = partial(
                 "personality": "pragmatic",
                 "reasoning_effort": "high",
                 "service_tier": "priority",
+                "isolated_home": True,
                 "output_schema": {
                     "type": "object",
                     "properties": {"summary": {"type": "string"}},
@@ -385,6 +386,12 @@ def test_openclaw_rejects_relay(tmp_path: Path):
             {"service_tier": ""},
             "harness.settings.service_tier",
             id="codex-service-tier",
+        ),
+        pytest.param(
+            "nvidia.fabric.codex",
+            {"isolated_home": "yes"},
+            "harness.settings.isolated_home",
+            id="codex-isolated-home",
         ),
         pytest.param(
             "nvidia.fabric.codex",

@@ -80,6 +80,7 @@ The resolved Codex descriptor accepts the following Codex-specific
 | `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` | No default |
 | `service_tier` | Nonempty string | No default |
 | `output_schema` | JSON Schema object for the final assistant message | No default |
+| `isolated_home` | Boolean; run each runtime in a private, temporary Codex home that reuses the inherited login | `false` |
 | `config_overrides` | Object that maps nonempty dotted Codex configuration keys to JSON-compatible values | `{}` |
 
 Planning rejects unknown keys, empty dotted-key segments, invalid types, and
@@ -148,6 +149,11 @@ Codex supports the following OpenAI authentication modes:
 
 With a cached login, NeMo Fabric inherits `CODEX_HOME` (default: `~/.codex`)
 and the SDK reuses the credential. Complete the login before running NeMo Fabric.
+Runtimes share that home by default. Set `isolated_home: true` to give each
+runtime its own temporary Codex home that links the login, so concurrent
+runtimes share no Codex state; the temporary home is removed when the runtime
+stops. A keyring-backed login keeps the inherited `CODEX_HOME`, and only Codex's
+SQLite state moves to the temporary home.
 For a nondefault store, use the same value for login and execution:
 
 ```bash

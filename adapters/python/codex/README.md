@@ -34,7 +34,9 @@ separate CLI installation.
 For a cached ChatGPT or Codex API-key login, NeMo Fabric reuses the
 authentication state under `CODEX_HOME` (default: `~/.codex`). Sign in with
 Codex before running NeMo Fabric. Set `CODEX_HOME` to the same location for login
-and execution if you use a nondefault credential store.
+and execution if you use a nondefault credential store. Set `isolated_home: true`
+to give each runtime its own temporary Codex home that links the login, so
+concurrent runtimes share no Codex state.
 
 For noninteractive OpenAI API-key authentication, set
 `models.<role>.api_key_env` to the name of an environment variable containing
@@ -116,6 +118,7 @@ Only Codex-specific controls belong in `harness.settings`:
 | `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` | No | No default |
 | `service_tier` | Nonempty string | No | No default |
 | `output_schema` | JSON Schema object for the final assistant message | No | No default |
+| `isolated_home` | Boolean; run each runtime in a private, temporary Codex home that reuses the inherited login | No | `false` |
 | `config_overrides` | Object that maps nonempty dotted Codex configuration keys to JSON-compatible values | No | `{}` |
 
 Planning validates these settings against the schema in the resolved Codex
