@@ -677,6 +677,22 @@ def _login_in_keyring(base: Path) -> bool:
     return config.get("cli_auth_credentials_store") in _CODEX_KEYRING_STORE_MODES
 
 
+def _link_login_file(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError:
+        # Windows refuses symlinks without Developer Mode or admin rights.
+        try:
+            link.hardlink_to(target)
+        except OSError as error:
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                f"isolated_home could not link {target.name} from the Codex home; "
+                "enable symbolic links or keep the temporary directory on the "
+                "same volume as CODEX_HOME",
+            ) from error
+
+
 def _shared_login_env(env: dict[str, str], home: Path) -> dict[str, str]:
     """Point Codex at a private home that reuses the login from the inherited one."""
 
@@ -688,7 +704,7 @@ def _shared_login_env(env: dict[str, str], home: Path) -> dict[str, str]:
         return {"CODEX_HOME": str(base), "CODEX_SQLITE_HOME": str(home)}
     for name in _CODEX_LOGIN_FILES:
         if (base / name).is_file():
-            (home / name).symlink_to(base / name)
+            _link_login_file(home / name, base / name)
     return {"CODEX_HOME": str(home), "CODEX_SQLITE_HOME": str(home)}
 
 

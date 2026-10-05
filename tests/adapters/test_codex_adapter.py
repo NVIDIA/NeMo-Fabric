@@ -478,6 +478,49 @@ def test_openai_login_runs_in_a_private_home_linked_to_the_inherited_login(
     assert (base_codex_home / "auth.json").read_text(encoding="utf-8") == "{}"
 
 
+def test_isolated_home_hard_links_the_login_when_symlinks_are_refused(
+    codex_payload, mock_codex, base_codex_home, monkeypatch
+):
+    """A hard link shares the file the same way, so token refreshes still land in
+    the inherited login."""
+
+    (base_codex_home / "auth.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        Path, "symlink_to", MagicMock(side_effect=OSError("symlinks refused"))
+    )
+    isolate_codex_home(codex_payload)
+    shared: list[bool] = []
+    build_client = mock_codex.side_effect
+
+    def build_checking_client(*, config):
+        link = Path(config.env["CODEX_HOME"]) / "auth.json"
+        shared.append(link.samefile(base_codex_home / "auth.json"))
+        return build_client(config=config)
+
+    mock_codex.side_effect = build_checking_client
+
+    assert invoke_once(codex_payload)["completed"] is True
+
+    assert shared == [True]
+    assert (base_codex_home / "auth.json").read_text(encoding="utf-8") == "{}"
+
+
+def test_isolated_home_reports_a_login_it_cannot_link(
+    codex_payload, mock_codex, base_codex_home, monkeypatch
+):
+    (base_codex_home / "auth.json").write_text("{}", encoding="utf-8")
+    refused = MagicMock(side_effect=OSError("links refused"))
+    monkeypatch.setattr(Path, "symlink_to", refused)
+    monkeypatch.setattr(Path, "hardlink_to", refused)
+    isolate_codex_home(codex_payload)
+
+    error = runtime_start_error(codex_payload)
+
+    assert error.code == "codex_invalid_configuration"
+    assert "auth.json" in error.message
+    assert mock_codex.instances == []
+
+
 def test_openai_login_without_a_stored_login_still_gets_a_private_home(
     codex_payload, mock_codex, base_codex_home
 ):
