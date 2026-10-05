@@ -154,7 +154,8 @@ runtime its own temporary Codex home, removed when the runtime stops. With
 file-based credentials, the temporary home links `auth.json` and
 `.credentials.json` from the inherited home, so runtimes share only those files.
 A keyring-backed login keeps the inherited `CODEX_HOME`, and only Codex's SQLite
-state moves to the temporary home.
+state moves to the temporary home. On Windows, linking the credential files
+requires Developer Mode or administrator rights.
 For a nondefault store, use the same value for login and execution:
 
 ```bash

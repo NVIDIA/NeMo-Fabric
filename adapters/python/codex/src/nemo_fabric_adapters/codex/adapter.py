@@ -680,17 +680,12 @@ def _login_in_keyring(base: Path) -> bool:
 def _link_login_file(link: Path, target: Path) -> None:
     try:
         link.symlink_to(target)
-    except OSError:
-        # Windows refuses symlinks without Developer Mode or admin rights.
-        try:
-            link.hardlink_to(target)
-        except OSError as error:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"isolated_home could not link {target.name} from the Codex home; "
-                "enable symbolic links or keep the temporary directory on the "
-                "same volume as CODEX_HOME",
-            ) from error
+    except OSError as error:
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            f"isolated_home could not symlink {target.name} from the Codex home; "
+            "on Windows, enable Developer Mode or run as an administrator",
+        ) from error
 
 
 def _shared_login_env(env: dict[str, str], home: Path) -> dict[str, str]:

@@ -39,6 +39,8 @@ to give each runtime its own temporary Codex home. With file-based credentials,
 the temporary home links `auth.json` and `.credentials.json` from the inherited
 home, so runtimes share only those files. A keyring-backed login keeps the
 inherited `CODEX_HOME`, and only Codex's SQLite state moves to the temporary home.
+On Windows, linking the credential files requires Developer Mode or
+administrator rights.
 
 For noninteractive OpenAI API-key authentication, set
 `models.<role>.api_key_env` to the name of an environment variable containing
