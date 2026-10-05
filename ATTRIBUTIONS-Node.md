@@ -147,7 +147,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-## @anthropic-ai/sdk - 0.124.0
+## @anthropic-ai/sdk - 0.129.0
 **Repository URL**: https://github.com/anthropics/anthropic-sdk-typescript
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
@@ -1667,214 +1667,6 @@ Apache License
    limitations under the License.
 ```
 
-## @aws-sdk/core - 3.977.9
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
 ## @aws-sdk/core - 3.978.1
 **Repository URL**: https://github.com/aws/aws-sdk-js-v3
 **License Type(s)**: Apache-2.0
@@ -2291,214 +2083,6 @@ Apache License
    limitations under the License.
 ```
 
-## @aws-sdk/credential-provider-env - 3.972.70
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
 ## @aws-sdk/credential-provider-env - 3.972.72
 **Repository URL**: https://github.com/aws/aws-sdk-js-v3
 **License Type(s)**: Apache-2.0
@@ -2707,23 +2291,6 @@ Apache License
    limitations under the License.
 ```
 
-## @aws-sdk/credential-provider-http - 3.972.72
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-# @aws-sdk/credential-provider-http
-
-[![NPM version](https://img.shields.io/npm/v/@aws-sdk/credential-provider-http/latest.svg)](https://www.npmjs.com/package/@aws-sdk/credential-provider-http)
-[![NPM downloads](https://img.shields.io/npm/dm/@aws-sdk/credential-provider-http.svg)](https://www.npmjs.com/package/@aws-sdk/credential-provider-http)
-
-> An internal transitively required package.
-
-## Usage
-
-See https://www.npmjs.com/package/@aws-sdk/credential-providers
-```
-
 ## @aws-sdk/credential-provider-http - 3.972.74
 **Repository URL**: https://github.com/aws/aws-sdk-js-v3
 **License Type(s)**: Apache-2.0
@@ -2739,214 +2306,6 @@ See https://www.npmjs.com/package/@aws-sdk/credential-providers
 ## Usage
 
 See https://www.npmjs.com/package/@aws-sdk/credential-providers
-```
-
-## @aws-sdk/credential-provider-ini - 3.973.15
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
 ```
 
 ## @aws-sdk/credential-provider-ini - 3.973.17
@@ -3157,29 +2516,6 @@ Apache License
    limitations under the License.
 ```
 
-## @aws-sdk/credential-provider-login - 3.972.77
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-# @aws-sdk/credential-provider-login
-
-### :warning: Internal API :warning:
-
-> This is an internal package.
-> That means this is used as a dependency for other, public packages, but
-> should not be taken directly as a dependency in your application's `package.json`.
-
-> If you are updating the version of this package, for example to bring in a
-> bug-fix, you should do so by updating your application lockfile with
-> e.g. `npm up @scope/package` or equivalent command in another
-> package manager, rather than taking a direct dependency.
-
----
-
-Please use [@aws-sdk/credential-providers](https://www.npmjs.com/package/@aws-sdk/credential-providers) instead.
-```
-
 ## @aws-sdk/credential-provider-login - 3.972.79
 **Repository URL**: https://github.com/aws/aws-sdk-js-v3
 **License Type(s)**: Apache-2.0
@@ -3201,214 +2537,6 @@ Please use [@aws-sdk/credential-providers](https://www.npmjs.com/package/@aws-sd
 ---
 
 Please use [@aws-sdk/credential-providers](https://www.npmjs.com/package/@aws-sdk/credential-providers) instead.
-```
-
-## @aws-sdk/credential-provider-node - 3.972.82
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
 ```
 
 ## @aws-sdk/credential-provider-node - 3.972.84
@@ -3605,214 +2733,6 @@ Apache License
       identification within third-party archives.
 
    Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
-## @aws-sdk/credential-provider-process - 3.972.70
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -4035,423 +2955,7 @@ Apache License
    limitations under the License.
 ```
 
-## @aws-sdk/credential-provider-sso - 3.973.14
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
 ## @aws-sdk/credential-provider-sso - 3.973.16
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
-## @aws-sdk/credential-provider-web-identity - 3.972.76
 **Repository URL**: https://github.com/aws/aws-sdk-js-v3
 **License Type(s)**: Apache-2.0
 ### License: https://spdx.org/licenses/Apache-2.0.html
@@ -5075,214 +3579,6 @@ Apache License
    limitations under the License.
 ```
 
-## @aws-sdk/eventstream-handler-node - 3.972.34
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
 ## @aws-sdk/eventstream-handler-node - 3.972.35
 **Repository URL**: https://github.com/aws/aws-sdk-js-v3
 **License Type(s)**: Apache-2.0
@@ -5477,214 +3773,6 @@ Apache License
       identification within third-party archives.
 
    Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
-## @aws-sdk/middleware-eventstream - 3.972.29
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -5907,214 +3995,6 @@ Apache License
    limitations under the License.
 ```
 
-## @aws-sdk/middleware-websocket - 3.972.52
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
 ## @aws-sdk/middleware-websocket - 3.972.54
 **Repository URL**: https://github.com/aws/aws-sdk-js-v3
 **License Type(s)**: Apache-2.0
@@ -6323,26 +4203,6 @@ Apache License
    limitations under the License.
 ```
 
-## @aws-sdk/nested-clients - 3.997.44
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-# @aws-sdk/nested-clients
-
-## Description
-
-This is an internal package. Do not install this as a direct dependency.
-
-This package contains separate internal implementations of the STS and SSO-OIDC AWS SDK clients
-to be used by the AWS SDK credential providers to break a cyclic dependency.
-
-### Bundlers
-
-This package may be marked as external if you do not use STS nor SSO-OIDC
-in your credential resolution process.
-```
-
 ## @aws-sdk/nested-clients - 3.997.46
 **Repository URL**: https://github.com/aws/aws-sdk-js-v3
 **License Type(s)**: Apache-2.0
@@ -6361,214 +4221,6 @@ to be used by the AWS SDK credential providers to break a cyclic dependency.
 
 This package may be marked as external if you do not use STS nor SSO-OIDC
 in your credential resolution process.
-```
-
-## @aws-sdk/signature-v4-multi-region - 3.996.46
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
 ```
 
 ## @aws-sdk/signature-v4-multi-region - 3.996.47
@@ -6765,214 +4417,6 @@ Apache License
       identification within third-party archives.
 
    Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
-## @aws-sdk/token-providers - 3.1116.0
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -7196,214 +4640,6 @@ Apache License
 ```
 
 ## @aws-sdk/token-providers - 3.1138.0
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
-## @aws-sdk/types - 3.974.5
 **Repository URL**: https://github.com/aws/aws-sdk-js-v3
 **License Type(s)**: Apache-2.0
 ### License: https://spdx.org/licenses/Apache-2.0.html
@@ -8027,214 +5263,6 @@ Apache License
    limitations under the License.
 ```
 
-## @aws-sdk/xml-builder - 3.972.40
-**Repository URL**: https://github.com/aws/aws-sdk-js-v3
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
 ## @aws-sdk/xml-builder - 3.972.41
 **Repository URL**: https://github.com/aws/aws-sdk-js-v3
 **License Type(s)**: Apache-2.0
@@ -8624,35 +5652,6 @@ Apache License
       of your accepting any such warranty or additional liability.
 ```
 
-## @babel/runtime - 7.29.2
-**Repository URL**: https://github.com/babel/babel
-**License Type(s)**: MIT
-### License: https://spdx.org/licenses/MIT.html
-```
-MIT License
-
-Copyright (c) 2014-present Sebastian McKenzie and other contributors
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-```
-
 ## @babel/runtime - 7.29.7
 **Repository URL**: https://github.com/babel/babel
 **License Type(s)**: MIT
@@ -8682,7 +5681,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-## @earendil-works/chord - 0.86.0
+## @earendil-works/chord - 1.0.3
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
@@ -8721,11 +5720,12 @@ The design has a few connected pieces:
   stable facade while a provider disconnects or is replaced.
 
 - **Replicated state** exposes authoritative state to local and remote
-  connected consumers. Producers mutate the tracked `state` proxy and call
-  `publish(context)`; consumers receive complete immutable values. Chord flushes
-  one decoded operation batch per publication, while each remote client/state
-  stream owns independent path-codec state. Replicas become unready on disconnect
-  or replacement until they are rehydrated.
+  connected consumers. Producers publish atomic overlay transactions with
+  `change(context, callback)`; consumers receive complete immutable values. Draft
+  proxies exist only during the callback and become unusable afterward. Preparation
+  materializes a structurally shared immutable candidate and one exact decoded
+  operation batch, while each remote client/state stream owns independent path-codec
+  state. Replicas become unready on disconnect or replacement until rehydrated.
 
 - **Delta tracking** records and coalesces operations over tracked plain JSON.
   It preserves common string and array operations, supports durable base
@@ -8775,40 +5775,98 @@ close, or fresh hydration. Applications may place these values inside any
 routing, request, response, or event envelope; Chord does not prescribe that
 outer protocol.
 
+Provider subscriptions atomically capture a snapshot and buffer subsequent
+updates until activation. Activation and reentrant publication use the same FIFO.
+The provider retains at most 100 pending updates per subscription, excluding the
+running delivery. Adding update 101 replaces the entire pending queue with
+`{ type: "reset", snapshot }`: a current full subscription snapshot whose state
+members contain `[["r", value]]` and their new sequence baselines. It also captures
+current instance membership, so discarded spawn/close/replacement events cannot
+leave stale instances behind. Live keyed generations retain their existing handles.
+The reset carries the context of the publication that triggered overflow.
+
+Consumers and codecs must handle this explicit reset before accepting subsequent
+ordinary deltas. A root operation in an ordinary `state` update does **not** permit
+a sequence gap. Resets restart the subscription's path dictionaries, and later
+deltas must be contiguous from each reset baseline. Transport adapters must
+preserve snapshot/reset/update order; they must not drop encoded delta batches or
+assume their own asynchronous queues are bounded by the provider's queue.
+
 ## Tracking JSON deltas
 
-Import the standalone delta primitive from `@earendil-works/chord/delta`:
+Import the standalone transactional tracker from `@earendil-works/chord/delta`:
 
 ```ts
-import { apply, track } from "@earendil-works/chord/delta";
+import { applyImmutable, track } from "@earendil-works/chord/delta";
 
-const changes = track({ output: "", count: 0 });
-changes.flush(); // opening base batch
-changes.state.output += "done\n";
-changes.state.count += 1;
+const tracker = track({ output: "", count: 0 });
+const change = tracker.beginChange();
+change.state.output += "done\n";
+change.state.count += 1;
+const prepared = change.prepare();
 
-const ops = changes.flush();
-const replica = apply({ output: "", count: 0 }, ops);
+tracker.adopt(prepared);
+const replica = applyImmutable(prepared.base, prepared.ops);
 ```
 
-The first flush is always a complete base batch. Later flushes contain path-based
-changes. `applyImmutable()` applies those batches while preserving prior replica
-revisions. `replicatedState(initial)` uses tracking directly:
+`tracker.value` is always the latest adopted immutable revision. Preparation does
+not change authority; adoption validates the preparation and swaps the root pointer.
+Assigned containers are copied by value and unchanged subtrees may be shared between
+revisions.
+
+The tracker uses trusted immutable ownership rather than defensive copying or
+freezing. `track(initial)`, `prepareReplace(value)`, `replicatedState(initial)`, and
+`replace(context, value)` take ownership of alias-free strict-JSON roots without
+walking them. Callers must not mutate transferred or published data. Values placed
+through drafts are already copied, so that walk also rejects non-strict JSON before
+the draft changes. Published values are not frozen. In-process loopback consumers
+may share their containers with the provider; mutating a consumed value violates
+the contract and can corrupt authority. Clone or serialize at any mutable trust
+boundary.
+
+Replicated state provides the same model through a callback:
 
 ```ts
-const status = env.replicatedState({ output: "", count: 0 });
-status.state.output += "done\n";
-status.state.count += 1;
-status.publish(context);
+const initial = { output: "", count: 0 };
+const status = env.replicatedState(initial); // transfers ownership of initial
+status.change(context, (draft) => {
+	draft.output += "done\n";
+	draft.count += 1;
+});
 ```
 
-`publish()` flushes once; remote connection plumbing encodes that operation batch
-independently for every client/state pairing. String assignments preserve pure
-appends and rolling-window movement as append and front-truncate operations;
-unrelated rewrites fall back to a set. Values inserted into tracked state become
-tracker-owned and must subsequently be mutated only through `state`. See the
-[Delta guide](src/delta/README.md) for mutation, array, lifecycle, and
-consumer-ownership rules.
+A successful `change()` publishes exactly one atomic revision. If its callback
+throws, the original value and sequence remain unchanged. Draft handles become
+unusable when the callback returns. Chord emits string append and front-truncate
+operations, array splices and permutations, sets, and deletes; large edit sets may
+fold into a complete replacement. Remote connection plumbing encodes each batch
+independently for every client/state pairing.
+
+### Public state subscriptions
+
+`state.subscribe(async (value, context, delivery) => { ... })` serializes callbacks
+independently for each subscription. Hydration starts immediately when a value is
+available, and its returned promise must settle before updates start. Synchronous
+callbacks still run synchronously. Read the captured `value` inside an asynchronous
+callback: `state.value` may already refer to a later revision.
+
+Each subscription retains at most 100 pending complete-value deliveries, excluding
+the running callback. On overflow, only the newest pending value, context, and
+delivery metadata are retained; a not-yet-started initial hydration is preserved.
+Thus public delivery sequences may skip. This is a frame-count policy, not a byte
+limit. Internal exact-operation subscriptions remain synchronous and receive every
+revision, independently of slow public callbacks.
+
+The returned unsubscribe function immediately discards pending work and prevents
+new callbacks. It neither aborts nor waits for the running callback. Synchronous
+throws and promise rejections are observed, reported, and do not stop other
+subscriptions or subsequent callbacks. Attached sources and remote bindings use
+their `onError` handler; local mutable states (and attached sources without a
+handler) report failures by throwing in a microtask. Unsubscribing does not hide a
+later rejection from the running callback.
+
+The standalone [Delta guide](src/delta/README.md) defines the complete ownership,
+lifecycle, operation, and replica contracts.
 
 ## Bundling and loading facets
 
@@ -8894,7 +5952,7 @@ See [PLANNING.md](PLANNING.md) for the broader RPC and generation-loading
 architecture.
 ````
 
-## @earendil-works/pi-agent-core - 0.86.0
+## @earendil-works/pi-agent-core - 1.0.3
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
@@ -8908,10 +5966,6 @@ Stateful agent with tool execution and event streaming. Built on `@earendil-work
 ```bash
 npm install @earendil-works/pi-agent-core
 ```
-
-### SQLite session backends
-
-The SQLite session backend and the `node:sqlite` adapter live in a separate package, `@earendil-works/pi-session-backend-sqlite-node`, so the core package does not pull in runtime builtins or native SQLite dependencies by default. The backend accepts a runtime-specific SQLite factory, allowing other session backends to ship as their own packages in the future.
 
 ## Quick Start
 
@@ -8942,10 +5996,6 @@ agent.subscribe((event) => {
 
 await agent.prompt("Hello!");
 ```
-
-## Experimental facet services
-
-Transport-neutral facet-service primitives live in `@earendil-works/chord`. The agent core does not export the service runtime.
 
 ## Core Concepts
 
@@ -9028,38 +6078,68 @@ The `beforeToolCall` hook runs after `tool_execution_start` and validated argume
 
 Tools, blocked `beforeToolCall` results, and `afterToolCall` overrides can return `terminate: true` to hint that the automatic follow-up LLM call should be skipped. The loop only stops early when every finalized tool result in that batch sets `terminate: true`. Mixed batches continue normally.
 
-The `Agent` class accepts `shouldStopAfterTurn` in `AgentOptions`. Low-level loop callers can set the same hook in `AgentLoopConfig`:
-
-```typescript
-const stream = agentLoop(
-  prompts,
-  context,
-  {
-    model,
-    convertToLlm,
-    shouldStopAfterTurn: async ({ message, toolResults, context, newMessages }) => {
-      return shouldCompactBeforeNextTurn(context.messages);
-    },
-  },
-  undefined,
-  models.streamSimple.bind(models),
-);
-```
-
-`shouldStopAfterTurn` runs after `turn_end` is emitted and after the assistant response and any tool executions have completed normally. If it returns `true`, the loop emits `agent_end` and exits before polling steering or follow-up queues, and before starting another LLM call. It does not abort the provider stream, does not cancel running tools, and does not alter the assistant message stop reason. The `AgentOptions` callback also receives the active run's `AbortSignal` as its second argument.
-
 When you use the `Agent` class, assistant `message_end` processing is treated as a barrier before tool preflight begins. That means `beforeToolCall` sees agent state that already includes the assistant message that requested the tool call.
 
-### continue() Event Sequence
+### Request preparation and turn finalization
 
-`continue()` resumes from existing context without adding a new message. Use it for retries after errors.
+`prepareRequest` runs immediately before every conversational provider request, including the first. Use it to install canonical persisted context after pending input has been emitted:
 
 ```typescript
-// After an error, retry from current state
-await agent.continue();
+agent.prepareRequest = async ({ context }) => ({
+  context: { ...context, messages: await session.loadModelContext() },
+});
 ```
 
-The last message in context must be `user` or `toolResult` (not `assistant`).
+`prepareRequest` does not poll queues. Steering queued while it runs waits for the next normal steering poll.
+
+`finishTurn` runs after the assistant and all tool results are finalized, but before `turn_end`. It runs for normal, error, and aborted responses:
+
+```typescript
+agent.finishTurn = async ({ message }) => {
+  if (message.stopReason === "error" || message.stopReason === "aborted") return;
+  if (shouldEndRun(message)) return { action: "end" };
+  return needsAnotherResponse(message) ? { action: "continue" } : undefined;
+};
+```
+
+Returning `undefined` preserves normal scheduling. `{ action: "end" }` stops immediately after `turn_end`, before polling steering or follow-up queues or preparing another request. On a normal response, `{ action: "continue" }` ensures one next provider request. If tool results, steering, or a follow-up already cause that request, they satisfy the decision and no additional request is made; otherwise the loop makes one context-only request. Error and aborted responses remain hard exits, so their decisions are ignored. `finishTurn` runs again after the next request, so returning `{ action: "continue" }` unconditionally creates an endless loop.
+
+To migrate from the removed `shouldStopAfterTurn`, return `{ action: "end" }`. Guard error and aborted responses to preserve the old hook's normal-response-only invocation, especially when the predicate has side effects or assumes a successful response:
+
+```typescript
+finishTurn: async (turn, signal) => {
+  if (turn.message.stopReason === "error" || turn.message.stopReason === "aborted") return;
+  return (await shouldStop(turn, signal)) ? { action: "end" } : undefined;
+},
+```
+
+Each provider turn follows this lifecycle:
+
+```text
+selected input events
+→ prepareRequest
+→ provider response
+→ tool results
+→ finishTurn
+→ turn_end
+→ existing continuation scheduling or agent_end
+```
+
+### continue() and queued input
+
+`continue()` retains its existing queue behavior. Empty and system-only transcripts reject without consuming queues. A non-assistant tail continues from existing context: steering is polled at startup, while follow-up input waits until the response naturally stops.
+
+```typescript
+agent.followUp({ role: "user", content: "After the retry", timestamp: Date.now() });
+await agent.continue(); // The first request retries the existing user/toolResult tail.
+```
+
+An assistant tail cannot be sent directly, so `continue()` falls back to one queued steering batch, then one queued follow-up batch. Queue mode still controls whether that selected batch contains one message or all messages:
+
+```typescript
+agent.steer({ role: "user", content: "Continue from here", timestamp: Date.now() });
+await agent.continue(); // Uses the queued message only because the tail is assistant.
+```
 
 ### Event Types
 
@@ -9134,9 +6214,16 @@ const agent = new Agent({
     }
   },
 
-  // Stop gracefully after a completed turn, before queued messages are polled.
-  shouldStopAfterTurn: async ({ context }, signal) => {
-    return shouldCompactBeforeNextTurn(context.messages, signal);
+  // Rebuild finalized context immediately before every provider request.
+  prepareRequest: async ({ context }, signal) => {
+    return { context: { ...context, messages: await loadCanonicalMessages(signal) } };
+  },
+
+  // Finalize a completed turn before turn_end is emitted.
+  // `continue` ensures one next request; existing tool/queue scheduling can satisfy it.
+  // `end` ends this run after turn_end without polling queues.
+  finishTurn: async ({ message, toolResults }, signal) => {
+    return shouldContinue(message, toolResults) ? { action: "continue" } : undefined;
   },
 
   // Custom thinking budgets for token-based providers
@@ -9199,7 +6286,7 @@ await agent.prompt("What's in this image?", [
 // AgentMessage directly
 await agent.prompt({ role: "user", content: "Hello", timestamp: Date.now() });
 
-// Continue from current context (last message must be user or toolResult)
+// Continue existing non-assistant input; an assistant tail may use queued input as fallback
 await agent.continue();
 ```
 
@@ -9212,9 +6299,13 @@ agent.state.tools = [myTool];
 agent.toolExecution = "sequential";
 agent.beforeToolCall = async ({ toolCall }) => undefined;
 agent.afterToolCall = async ({ toolCall, result }) => undefined;
-agent.shouldStopAfterTurn = async ({ context }) => shouldCompactBeforeNextTurn(context.messages);
+agent.prepareRequest = async ({ context }) => ({
+  context: { ...context, messages: await loadCanonicalMessages() },
+});
+agent.finishTurn = async () => undefined;
 agent.state.messages = newMessages; // top-level array is copied
 agent.state.messages.push(message);
+const nextQueuedMessages = agent.peekQueuedMessages(); // respects queue modes; does not consume
 agent.reset();
 ```
 
@@ -9371,6 +6462,10 @@ Thrown errors are caught by the agent and reported to the LLM as tool errors wit
 
 Return `terminate: true` from `execute()`, a blocked `beforeToolCall`, or `afterToolCall` to hint that the agent should stop after the current tool batch. This only takes effect when every finalized tool result in the batch is terminating. The hint is runtime-only; emitted `toolResult` transcript messages remain standard LLM tool results.
 
+### MCP and Codemode
+
+`@earendil-works/pi-mcp` connects to MCP servers and `@earendil-works/pi-codemode` runs model-written JavaScript that calls tools. [examples/mcp-codemode](examples/mcp-codemode) wraps both as `AgentTool`s: one tool per MCP tool, and a `codemode` tool whose scripts call the agent's tools through `runToolCall()`, so `beforeToolCall` and `afterToolCall` apply to those calls too.
+
 ## Proxy Usage
 
 For browser apps that proxy through a backend:
@@ -9428,7 +6523,7 @@ These low-level streams are observational. They preserve event order, but they d
 MIT
 ````
 
-## @earendil-works/pi-ai - 0.86.0
+## @earendil-works/pi-ai - 1.0.3
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
@@ -9437,7 +6532,7 @@ MIT
 
 Unified LLM API with provider collections, automatic auth resolution, token and cost tracking, and simple context persistence and hand-off to other models mid-session.
 
-**Note**: This library only includes models that support tool calling (function calling), as this is essential for agentic workflows.
+**Note**: The chat catalog only includes models that support tool calling (function calling), as this is essential for agentic workflows. Image and classifier catalogs use their operation-specific capabilities.
 
 ## Table of Contents
 
@@ -9464,6 +6559,7 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
   - [Compact Assistant Message Frames](#compact-assistant-message-frames)
 - [Image Input](#image-input)
 - [Image Generation](#image-generation)
+- [Classification](#classification)
 - [Thinking/Reasoning](#thinkingreasoning)
   - [Unified Interface](#unified-interface-streamsimplecompletesimple)
   - [Provider-Specific Options](#provider-specific-options-streamcomplete)
@@ -9473,6 +6569,7 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
   - [Aborting Requests](#aborting-requests)
   - [Continuing After Abort](#continuing-after-abort)
   - [Debugging Provider Payloads](#debugging-provider-payloads)
+  - [Observing Provider Stream Events](#observing-provider-stream-events)
 - [Custom Providers](#custom-providers)
   - [createProvider()](#createprovider)
   - [Calling API Implementations Directly](#calling-api-implementations-directly)
@@ -9496,8 +6593,9 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
 - **OpenAI**
 - **Ant Ling**
 - **Azure OpenAI (Responses)**
-- **OpenAI Codex** (ChatGPT Plus/Pro subscription, requires OAuth, see below)
+- **OpenAI Codex (legacy)** (ChatGPT Plus/Pro subscription, requires OAuth, see below)
 - **Radius** (API key or OAuth, with a dynamically refreshed gateway catalog)
+- **TypeSafe** (System One classifier API)
 - **DeepSeek**
 - **NVIDIA NIM**
 - **Anthropic**
@@ -9523,6 +6621,7 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
 - **OpenCode Go**
 - **Fireworks** (uses OpenAI- and Anthropic-compatible APIs)
 - **Kimi For Coding** (Moonshot AI subscription endpoint, uses Anthropic-compatible API)
+- **Meta** (Model API, uses OpenAI Responses-compatible API)
 - **Qwen Token Plan** (separate Individual and existing catalogs, with a separate China provider)
 - **Xiaomi MiMo** (defaults to API billing endpoint, with separate Token Plan providers for `cn`/`ams`/`sgp` regions)
 - **Any OpenAI-compatible API**: Ollama, vLLM, LM Studio, etc.
@@ -9709,7 +6808,7 @@ Reads are synchronous and return the last-known lists:
 const providers = models.getProviders();           // registered Provider objects
 const provider = models.getProvider('anthropic');  // one provider
 
-const all = models.getModels();                    // every model across providers
+const all = models.getModels();                    // every chat model across providers
 const anthropicModels = models.getModels('anthropic');
 const model = models.getModel('anthropic', 'claude-sonnet-4-5');
 
@@ -9722,7 +6821,31 @@ for (const m of anthropicModels) {
 }
 ```
 
-Dynamically listed models are typed `Model<Api>`. Narrow with the `hasApi()` guard when you need API-specific option typing:
+The unqualified reads `getModels()`/`getModel()`/`getAvailable()` return chat models (`Model<Api>`) usable with `stream()`. The `*OfType` reads return one model type, and `getAllModels()`/`getAllAvailable()` return every type as `AnyModel`:
+
+```typescript
+const images = models.getModelsOfType('image', 'openrouter');           // ImageModel[]
+const flux = models.getModelOfType('image', 'openrouter', 'black-forest-labs/flux.2-pro');
+const jev = models.getModelOfType('classifier', 'typesafe', 'jev-latest');
+const availableImages = await models.getAvailableOfType('image');
+const everything = models.getAllModels();                               // AnyModel[]
+```
+
+The model's `type` decides which operation accepts it: chat models stream, `type: "image"` models generate images, and `type: "classifier"` models classify structured state. `type` is optional on chat models, so a model without `type` is a chat model. Do not compare `type` directly; narrow mixed lists with `isModelType()` or read the effective type with `getModelType()`:
+
+```typescript
+import { isModelType } from '@earendil-works/pi-ai';
+
+for (const model of models.getAllModels()) {
+  if (isModelType(model, 'image')) {
+    // model: ImageModel<ImageApi>
+  }
+}
+```
+
+IDs are unique within each provider and type; one upstream model may have separate entries for different operations. On a provider, `getModels()` returns chat models and the optional `getAllModels()` returns every type; providers with only chat models can omit it.
+
+Dynamically listed chat models are typed `Model<Api>`. Narrow with the `hasApi()` guard when you need API-specific option typing:
 
 ```typescript
 import { hasApi } from '@earendil-works/pi-ai';
@@ -9739,12 +6862,26 @@ if (m && hasApi(m, 'anthropic-messages')) {
 For tooling that wants the generated built-in catalog with full literal typing (provider and model IDs auto-complete), independent of any collection:
 
 ```typescript
-import { getBuiltinModel, getBuiltinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
+import {
+  getAllBuiltinModels,
+  getBuiltinClassifierModel,
+  getBuiltinClassifierModels,
+  getBuiltinImageModel,
+  getBuiltinImageModels,
+  getBuiltinModel,
+  getBuiltinModels,
+  getBuiltinProviders,
+} from '@earendil-works/pi-ai/providers/all';
 
 const model = getBuiltinModel('openai', 'gpt-4o-mini'); // typed Model<'openai-responses'>
-const radius = getBuiltinModel('radius', 'balanced');     // typed Model<'pi-messages'>
+const radius = getBuiltinModel('radius', 'balanced');   // typed Model<'pi-messages'>
+const flux = getBuiltinImageModel('openrouter', 'black-forest-labs/flux.2-pro');
+const jev = getBuiltinClassifierModel('typesafe', 'jev-latest');
 const providers = getBuiltinProviders();
-const anthropic = getBuiltinModels('anthropic');
+const openrouterChat = getBuiltinModels('openrouter');        // Model[]
+const openrouterImages = getBuiltinImageModels('openrouter'); // ImageModel[]
+const typesafeClassifiers = getBuiltinClassifierModels('typesafe'); // ClassifierModel[]
+const openrouterAll = getAllBuiltinModels('openrouter');      // AnyModel[]
 ```
 
 ### Dynamic Providers
@@ -9856,6 +6993,7 @@ Built-in providers resolve these env vars (Node.js; in browsers pass `apiKey` ex
 | Azure OpenAI | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL` (e.g. `https://{resource}.ai.azure.com`) or `AZURE_OPENAI_RESOURCE_NAME`. Supports `*.openai.azure.com`, `*.cognitiveservices.azure.com` and `*.ai.azure.com`; root endpoints auto-normalize to `/openai/v1`. Optional: `AZURE_OPENAI_API_VERSION` (default `v1`), `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`. |
 | Anthropic | `ANTHROPIC_API_KEY` or `ANTHROPIC_OAUTH_TOKEN` |
 | Radius | `RADIUS_API_KEY` |
+| TypeSafe | `TYPESAFE_API_KEY` |
 | DeepSeek | `DEEPSEEK_API_KEY` |
 | NVIDIA NIM | `NVIDIA_API_KEY` |
 | Google | `GEMINI_API_KEY` |
@@ -9879,6 +7017,7 @@ Built-in providers resolve these env vars (Node.js; in browsers pass `apiKey` ex
 | Hugging Face | `HF_TOKEN` |
 | OpenCode Zen / OpenCode Go | `OPENCODE_API_KEY` |
 | Kimi For Coding | `KIMI_API_KEY` |
+| Meta | `META_API_KEY` |
 | Qwen Token Plan (existing catalog) | `QWEN_TOKEN_PLAN_API_KEY` |
 | Qwen Token Plan (Individual) | `QWEN_TOKEN_PLAN_API_KEY` |
 | Qwen Token Plan (China) | `QWEN_TOKEN_PLAN_CN_API_KEY` |
@@ -10180,20 +7319,19 @@ for (const block of response.content) {
 
 ## Image Generation
 
-Image generation uses a separate API surface from text/chat generation, mirroring the chat-side design: an `ImagesModels` collection holds `ImagesProvider`s, reads are sync, and auth resolves through the owning provider. Image generation is a one-shot API: `generateImages()` waits for the provider response and returns the final `AssistantImages` result — do not use the chat/stream APIs for it.
+Image models live in the same `Models` collection and on the same `Provider` as chat models, so one credential per provider covers both. They are typed `ImageModel` with `type: "image"` and are used through `generateImages()`, a one-shot API that waits for the provider response and returns the final `AssistantImages` result. Do not use the chat/stream APIs for them; `stream()` rejects image models.
 
 ### Basic Image Generation
 
 ```typescript
-import { builtinImagesModels } from '@earendil-works/pi-ai/providers/all';
+import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 
-// Every built-in image-generation provider; accepts the same options as createModels()
-const imagesModels = builtinImagesModels();
+const models = builtinModels();
 
-const model = imagesModels.getModel('openrouter', 'google/gemini-2.5-flash-image')!;
+const model = models.getModelOfType('image', 'openrouter', 'google/gemini-2.5-flash-image')!;
 
 // Auth resolves through the provider (OPENROUTER_API_KEY here); explicit apiKey wins
-const result = await imagesModels.generateImages(model, {
+const result = await models.generateImages(model, {
   input: [{ type: 'text', text: 'Generate a red circle on a plain white background.' }]
 });
 
@@ -10207,7 +7345,33 @@ for (const block of result.output) {
 }
 ```
 
-Like the chat side, you can build the collection from parts: `createImagesModels({ credentials?, authContext? })`, the `openrouterImagesProvider()` factory from `@earendil-works/pi-ai/providers/openrouter-images`, and `createImagesProvider({ id, auth, models, refreshModels?, api })` for custom image providers (with `imagesModels.refresh(provider?)` for dynamic lists). Failures never reject — they return an `AssistantImages` with `stopReason: "error"`. The collection's provider-scoped `getAuth(providerId)` works exactly like the chat-side one.
+`generateImages()` accepts only `ImageModel` values. If an upstream model supports both chat and image generation, the catalog contains separate entries with the same provider and ID: `getModel()` returns its chat operation and `getModelOfType('image', ...)` returns its image operation. Failures never reject; they return an `AssistantImages` with `stopReason: "error"`, including unknown providers, unconfigured auth, and providers without an image implementation.
+
+A provider declares image support with the `images` option of [`createProvider()`](#createprovider): a map from `model.api` to an implementation with `generateImages()`. Image models go into the same `models` list as chat models. `api` becomes optional when `images` is present, so an image-only provider is just a provider without chat models:
+
+```typescript
+import { createProvider, envApiKeyAuth } from '@earendil-works/pi-ai';
+
+const pixels = createProvider({
+  id: 'pixels',
+  auth: { apiKey: envApiKeyAuth('Pixels API key', ['PIXELS_API_KEY']) },
+  models: [{
+    type: 'image',
+    id: 'flux-pro',
+    name: 'FLUX Pro',
+    api: 'pixels-images',
+    provider: 'pixels',
+    baseUrl: 'https://api.pixels.test/v1',
+    input: ['text'],
+    output: ['image'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  }],
+  images: {
+    'pixels-images': { generateImages: async (model, context, options) => { /* ... */ } },
+  },
+});
+models.setProvider(pixels);
+```
 
 The old global API (`getImageModel()` / `getImageModels()` / `getImageProviders()` / `generateImages()`) remains available on the [compat entrypoint](#migrating-from-the-old-global-api):
 
@@ -10228,7 +7392,7 @@ Some models also support image input:
 import { readFileSync } from 'fs';
 
 const imageBuffer = readFileSync('input.png');
-const result = await imagesModels.generateImages(model, {
+const result = await models.generateImages(model, {
   input: [
     { type: 'text', text: 'Create a variation of this image with a blue background.' },
     { type: 'image', data: imageBuffer.toString('base64'), mimeType: 'image/png' }
@@ -10239,14 +7403,13 @@ const result = await imagesModels.generateImages(model, {
 Check capabilities on the model metadata:
 
 ```typescript
-console.log(model.input);   // ['text', 'image']
-console.log(model.output);  // ['image'] or ['image', 'text']
+console.log(model.input);  // ['text'] or ['text', 'image']
+console.log(model.output); // ['image'] or ['image', 'text']
 ```
 
 ### Notes and Limitations
 
-- Image models live in `ImagesModels` collections, chat models in `Models` collections; the two are separate surfaces.
-- Use `generateImages()`, not the chat/stream APIs.
+- Image models and chat models share `Models` and `Provider`; list them with `getModelsOfType('image')` and run them with `generateImages()`, never the chat/stream APIs.
 - Image-generation models do not participate in tool calling.
 - Outputs are returned in `AssistantImages.output` and can include both base64-encoded `ImageContent` blocks and `TextContent` blocks.
 - Some models return only images, others return images plus text. Check `model.output`.
@@ -10254,6 +7417,97 @@ console.log(model.output);  // ['image'] or ['image', 'text']
 - Like the streaming APIs, image generation supports options such as `apiKey`, `signal`, `headers`, `onPayload`, and `onResponse`, and results may include `stopReason`, `responseId`, and `usage`.
 - If you want a model to analyze images in a conversation or call tools, use the regular chat APIs with a model that supports image input.
 - At the moment, image generation is available through only one provider, OpenRouter.
+
+## Classification
+
+Classifier models consume structured JSON state and answer one or more typed questions. They do not use chat or image-generation APIs. TypeSafe's Jev model is available from these built-in providers:
+
+| Provider | Model IDs | Auth |
+| --- | --- | --- |
+| `typesafe` | `jev-latest` | `TYPESAFE_API_KEY` |
+| `openrouter` | `typesafe/jev-1.13`, `~typesafe/jev-latest` | `OPENROUTER_API_KEY` or OpenRouter OAuth |
+| `cloudflare-workers-ai` | `typesafe/jev`, `@cf/cloudflare/clef`, `@cf/cloudflare/clef-flash` | `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` |
+| `vercel-ai-gateway` | `typesafe-ai/jev` | `AI_GATEWAY_API_KEY` |
+| `opencode` | `jev-1.13`, `jev-1.13-free` | `OPENCODE_API_KEY` |
+
+```typescript
+import { builtinModels } from '@earendil-works/pi-ai/providers/all';
+
+const models = builtinModels();
+const model = models.getModelOfType('classifier', 'typesafe', 'jev-latest')!;
+const result = await models.classify(model, {
+  state: { message: 'The change works perfectly, thanks.' },
+  questions: {
+    category: {
+      type: 'choice',
+      instructions: 'Classify the message.',
+      criteria: {
+        approval: 'The user approves of the result',
+        correction: 'The user requests a correction'
+      }
+    },
+    satisfaction: {
+      type: 'score',
+      instructions: 'Score user satisfaction.',
+      criteria: ['dissatisfied', 'neutral', 'satisfied']
+    },
+    approved: {
+      type: 'bool',
+      instructions: 'Does the user approve?',
+      criteria: { true: 'Approval', false: 'No approval' }
+    }
+  }
+});
+
+console.log(result.answers);
+```
+
+The public contract uses `bool` questions and `{ type: "bool", probability }` answers. The TypeSafe adapter translates those to and from its `noul` wire representation. Like image generation, `classify()` resolves to a result with `stopReason: "error"` instead of rejecting for provider, authentication, or response errors.
+
+When the service reports token counts, `result.usage` carries them with their cost at the model's catalog price, the same `Usage` shape as chat messages. All System One services report token counts; a request that was answered with malformed answers keeps its usage. Local classifiers such as `llama-cpp-classify` report no usage.
+
+`ClassifierOptions.temperature` divides the answer logits by the given value before they are normalized; values above 1 soften the distribution. APIs that cannot apply it, such as System One, ignore it.
+
+### Chat models on llama.cpp
+
+The `llama-cpp-classify` API turns a chat model served by llama.cpp's `llama-server` into a classifier. Each question becomes one chat prompt: the state, every question of the request, the state again, and the question with its answers under single-token labels (letters for a choice, `Yes`/`No` for a bool, digits for a score). The prompt up to the final question is shared by all questions of a request, so the server's prompt cache evaluates the state once per request. The server returns the log-probabilities of the next token, and the answer is the softmax over the label tokens. Choices support up to 62 options and scores up to 10 levels. The model's `baseUrl` is the server URL; a trailing `/v1` is ignored. In router mode, the model ID selects the model.
+
+```typescript
+import { createProvider } from '@earendil-works/pi-ai';
+import { llamaCppClassifyApi } from '@earendil-works/pi-ai/api/llama-cpp-classify.lazy';
+
+const provider = createProvider({
+  id: 'local-llama',
+  auth: { apiKey: { name: 'llama.cpp', resolve: async () => ({ auth: {} }) } },
+  models: [{
+    type: 'classifier',
+    id: 'qwen3-4b',
+    name: 'Qwen3 4B',
+    api: 'llama-cpp-classify',
+    provider: 'local-llama',
+    baseUrl: 'http://127.0.0.1:8080',
+    input: ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 32768
+  }],
+  classifiers: { 'llama-cpp-classify': llamaCppClassifyApi() }
+});
+```
+
+Raw label probabilities are usually overconfident; pass `temperature` above 1 to soften them.
+
+Custom providers register classifier models and implementations by API ID:
+
+```typescript
+createProvider({
+  id: 'classifier-service',
+  auth,
+  models: [model],
+  classifiers: {
+    'classifier-api': { classify: async (model, context, options) => result }
+  }
+});
+```
 
 ## Thinking/Reasoning
 
@@ -10266,7 +7520,7 @@ Many models support thinking/reasoning capabilities where they can show their in
 const model = models.getModel('anthropic', 'claude-sonnet-4-5')!;
 // or models.getModel('openai', 'gpt-5-mini');
 // or models.getModel('google', 'gemini-2.5-flash');
-// or models.getModel('xai', 'grok-4.6');
+// or models.getModel('xai', 'grok-4.7');
 
 // Check if model supports reasoning
 if (model.reasoning) {
@@ -10463,11 +7717,30 @@ const response = await models.complete(model, context, {
 
 The callback is supported by `stream`, `complete`, `streamSimple`, and `completeSimple`.
 
+### Observing Provider Stream Events
+
+Use `onProviderStreamEvent` to inspect provider-specific fields that Pi does not include in `AssistantMessage`. The callback receives the parsed event available to the adapter before Pi normalizes it. Treat the event as read-only because mutations can affect normalization. This is not guaranteed to be the original HTTP bytes or SSE frame.
+
+```typescript
+const openRouterModel = models.getModel('openrouter', 'openrouter/auto')!;
+const response = await models.complete(openRouterModel, context, {
+  headers: { "X-OpenRouter-Metadata": "enabled" },
+  onProviderStreamEvent: (data) => {
+    const chunk = data as Record<string, unknown>;
+    if (chunk.openrouter_metadata) {
+      console.log(chunk.openrouter_metadata);
+    }
+  },
+});
+```
+
+Callbacks are awaited in stream order, so slow callbacks delay stream consumption and thrown errors fail the request. SDK-backed adapters can expose only fields retained by their SDK.
+
 ## Custom Providers
 
 ### createProvider()
 
-`createProvider()` builds a provider from parts: identity, auth, a model list, and an API implementation. Use it for local inference servers, proxies, or any OpenAI/Anthropic-compatible endpoint:
+`createProvider()` builds a provider from parts: identity, auth, a model list, and an API implementation (`api` for chat models, `images` for image generation, `classifiers` for classification; at least one is required, see [Image Generation](#image-generation)). Use it for local inference servers, proxies, or any OpenAI/Anthropic-compatible endpoint:
 
 ```typescript
 import { createModels, createProvider, envApiKeyAuth, type Model } from '@earendil-works/pi-ai';
@@ -10549,7 +7822,7 @@ const tenantGateway = createProvider({
 });
 ```
 
-Dynamic model lists use `fetchModels`. `Models.refresh()` refreshes every configured dynamic provider, passing its effective API-key or refreshed OAuth credential. A `ModelsStore` persists dynamic catalogs; both stores default to in-memory implementations. Its `read`, `write`, and `delete` operations accept optional cancellation, and `Models` binds those waits to the provider refresh signal.
+Dynamic model lists use `fetchModels`, which can return models of every type. `Models.refresh()` refreshes every configured dynamic provider, passing its effective API-key or refreshed OAuth credential. A `ModelsStore` persists dynamic catalogs; both stores default to in-memory implementations. Its `read`, `write`, and `delete` operations accept optional cancellation, and `Models` binds those waits to the provider refresh signal.
 
 ```typescript
 const models = createModels({ credentials, modelsStore });
@@ -10571,7 +7844,7 @@ for (const [provider, error] of result.errors) console.error(provider, error);
 
 Use `models.refresh({ providers: ['openrouter'] })` to restrict work to selected providers, `models.refresh({ allowNetwork: false })` to restore persisted catalogs without network access, or `models.refresh({ force: true })` to bypass provider freshness checks. Model reads stay synchronous and return the last restored or refreshed list.
 
-`createProvider()` handles dynamic publication and persistence automatically. Handwritten `Provider.refreshModels()` implementations receive the read-only `context.stored` snapshot and publish through `context.publish({ persist?, update? })`. Omit `persist` to leave storage unchanged, pass a `ModelsStoreEntry` to write it, or pass `persist: null` to delete it. Publication is generation-checked; put synchronous in-memory catalog changes in `update` rather than mutating state before publication.
+`createProvider()` handles dynamic publication and persistence automatically. Handwritten `Provider.refreshModels()` implementations receive the read-only `context.stored` snapshot and publish through `context.publish({ persist?, update? })`. Omit `persist` to leave storage unchanged, pass a `ModelsStoreEntry` to write it, or pass `persist: null` to delete it. `ModelsStoreEntry.models` contains models of every type. Publication is generation-checked; put synchronous in-memory catalog changes in `update` rather than mutating state before publication.
 
 Custom models can carry `headers` (e.g. proxies behind bot detection) and `compat` flags. `Models.getAuth(model)` includes those model headers, and stream methods merge them before explicit request headers and `transformHeaders`. See [OpenAI Compatibility Settings](#openai-compatibility-settings).
 
@@ -10646,7 +7919,7 @@ interface OpenAICompletionsCompat {
   supportsDeveloperRole?: boolean;   // Whether provider supports `developer` role vs `system` (default: true)
   supportsReasoningEffort?: boolean; // Whether provider supports `reasoning_effort` (default: true)
   supportsUsageInStreaming?: boolean; // Whether provider supports `stream_options: { include_usage: true }` (default: true)
-  supportsStrictMode?: boolean;      // Whether provider supports `strict` in tool definitions (default: true)
+  supportsStrictMode?: boolean;      // Whether provider supports `strict` in tool definitions (default: false; enabled in metadata for capable built-in models)
   supportsOpenAIGrammarTools?: boolean; // Whether to emit OpenAI custom Lark/regex grammar tools; false falls back to normal function tools (default: false; the generated catalog enables it for capable models)
   supportsMidConvoSystemMessages?: boolean; // Whether the model accepts system messages after the conversation started; false folds them into the leading prompt (default: false; the generated catalog enables it for verified models)
   supportsMidConvoToolAdditions?: boolean; // Whether system messages can add tools mid-conversation via Kimi-style `tools` system messages; requires supportsMidConvoSystemMessages (default: false)
@@ -10844,7 +8117,7 @@ getCurrentTools(messages);        // []
 
 A custom `Provider` or `ProviderStreams` implementation reads the prompt and tools the same way from `context.messages`; `context.systemPrompt` and `context.tools` do not exist at that layer.
 
-Models that accept system messages mid-conversation (`supportsMidConvoSystemMessages` in the model's compat settings, set by the generated catalog for verified models) receive each later system message in place, so the cached prefix stays intact; section changes are framed by name for the model. Every other model receives `collapseSystemMessages(transcript)`: the replayed prompt and current tools as the leading system message, with later system messages dropped. Anthropic models that also set `supportsMidConvoToolChanges` send tool changes as native `tool_addition`/`tool_removal` blocks: the initial tools stay active at the top level, every later declaration is sent with `defer_loading` (plus a stable deferred placeholder from the first request, which keeps Anthropic's deferred-tool scaffolding in the cached prefix), and removed tools stay declared, so tool changes do not invalidate the prompt cache. That needs at least one initial tool and no same-name redefinition; otherwise the current tool list is sent at the top level with the system text only. OpenAI Responses models with `supportsAdditionalTools` or `supportsToolSearch` anchor additive tool changes at their message; everything else sends the current tool list at the top level.
+Models that accept system messages mid-conversation (`supportsMidConvoSystemMessages` in the model's compat settings, set by the generated catalog for verified models) receive each later system message in place, so the cached prefix stays intact; section changes are framed by name for the model. Every other model receives `collapseSystemMessages(transcript)`: the replayed prompt and current tools as the leading system message, with later system messages dropped. Anthropic models that also set `supportsMidConvoToolChanges` send tool changes as native blocks (`inline-tools-2026-09-15` beta): the top-level tool list holds the initial tools plus a stable deferred placeholder and never changes, later tools are defined by value in `tool_addition` blocks (a new definition under an existing name replaces the old one), and removals are `tool_removal` references, so tool changes do not invalidate the prompt cache. That needs at least one initial tool; otherwise the current tool list is sent at the top level with the system text only. OpenAI Responses models with `supportsAdditionalTools` or `supportsToolSearch` anchor additive tool changes at their message; everything else sends the current tool list at the top level.
 
 ## Context Serialization
 
@@ -10910,10 +8183,10 @@ Browser compatibility notes:
 
 ## Bundling and Tree Shaking
 
-For small bundles, import only the providers you need:
+For small bundles and low-overhead unbundled scripts, import the model runtime and only the providers you need:
 
 ```typescript
-import { createModels } from '@earendil-works/pi-ai';
+import { createModels } from '@earendil-works/pi-ai/models';
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
 
 const models = createModels();
@@ -10922,7 +8195,8 @@ models.setProvider(openaiProvider());
 
 Rules:
 
-- `@earendil-works/pi-ai` is the core entrypoint and does not import built-in catalogs, provider factories, or SDK implementations.
+- `@earendil-works/pi-ai/models` exports the model runtime (`createModels`, `createProvider`, model helpers, and their types) without TypeBox, built-in catalogs, or SDK implementations. Other types can still use `import type` from the root.
+- `@earendil-works/pi-ai` is the core entrypoint and does not import built-in catalogs, real provider factories, or SDK implementations, but it eagerly imports TypeBox and schema validation. Unbundled Node scripts do not tree-shake its unused exports; prefer `./models`, `./providers/faux`, and specific `./utils/*` subpaths when those are all you need.
 - `@earendil-works/pi-ai/providers/<provider>` imports that provider's catalog and lazy API wrapper only.
 - `@earendil-works/pi-ai/providers/all` imports every built-in provider factory and all catalogs. Use it only when you want the full built-in set.
 - With code splitting, provider SDKs stay in lazy chunks and load on first request.
@@ -10986,7 +8260,8 @@ Use this when one process needs different provider settings per request, or when
 Several providers support OAuth authentication instead of static API keys:
 
 - **Anthropic** (Claude Pro/Max subscription)
-- **OpenAI Codex** (ChatGPT Plus/Pro subscription, access to GPT-5.x Codex models)
+- **OpenAI** (Sign in with ChatGPT: uses the ChatGPT subscription with the OpenAI API)
+- **OpenAI Codex (legacy)** (ChatGPT Plus/Pro subscription, access to GPT-5.x Codex models)
 - **GitHub Copilot** (Copilot subscription)
 - **OpenRouter** (OAuth PKCE that mints a user-controlled API key)
 
@@ -11066,7 +8341,7 @@ Built-in login and refresh flows are private provider implementations. Use provi
 
 Provider notes:
 
-**OpenAI Codex**: Requires a ChatGPT Plus or Pro subscription. Provides access to GPT-5.x Codex models with extended context windows and reasoning capabilities. The library automatically handles session-based prompt caching when `sessionId` is provided in stream options unless `cacheRetention` is `"none"`. You can set `transport` in stream options to `"sse"`, `"websocket"`, or `"auto"` for Codex Responses transport selection. When using WebSocket with a `sessionId` and cache retention enabled, connections are reused per session and expire after 5 minutes of inactivity. Call `cleanupSessionResources(sessionId)` when finished so the pooled connection does not keep the process alive.
+**OpenAI Codex (legacy)**: Superseded by Sign in with ChatGPT on the OpenAI provider. Requires a ChatGPT Plus or Pro subscription. Provides access to GPT-5.x Codex models with extended context windows and reasoning capabilities. The library automatically handles session-based prompt caching when `sessionId` is provided in stream options unless `cacheRetention` is `"none"`. You can set `transport` in stream options to `"sse"`, `"websocket"`, or `"auto"` for Codex Responses transport selection. When using WebSocket with a `sessionId` and cache retention enabled, connections are reused per session and expire after 5 minutes of inactivity. Call `cleanupSessionResources(sessionId)` when finished so the pooled connection does not keep the process alive.
 
 **Azure OpenAI (Responses)**: Uses the Responses API only. Set `AZURE_OPENAI_API_KEY` and either `AZURE_OPENAI_BASE_URL` or `AZURE_OPENAI_RESOURCE_NAME`. `AZURE_OPENAI_BASE_URL` supports both `https://<resource>.openai.azure.com` and `https://<resource>.cognitiveservices.azure.com`; root endpoints are normalized to `.../openai/v1` automatically. Use `AZURE_OPENAI_API_VERSION` (defaults to `v1`) to override the API version if needed. Deployment names are treated as model IDs by default, override with `azureDeploymentName` or `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` using comma-separated `model-id=deployment` pairs (for example `gpt-4o-mini=my-deployment,gpt-4o=prod`). Legacy deployment-based URLs are intentionally unsupported.
 
@@ -11095,6 +8370,9 @@ Compat is a strict superset of the root entrypoint, so a file can switch its imp
 | `getEnvApiKey('openai')` | `await models.getAuth(model.provider)` |
 | `streamAnthropic(model, ctx, opts)` | `stream` from `@earendil-works/pi-ai/api/anthropic-messages`, or a provider in a collection |
 | `registerFauxProvider()` | `fauxProvider()` + `models.setProvider()` |
+| `getImageModel('openrouter', id)` / `generateImages(model, ctx, { apiKey })` | `models.getModelOfType('image', 'openrouter', id)` / `models.generateImages(model, ctx)` |
+
+The separate `ImagesModels`/`ImagesProvider` collection that existed briefly (`createImagesModels()`, `createImagesProvider()`, `openrouterImagesProvider()`, `builtinImagesModels()`) is gone: image models now live on the regular provider. Replace `builtinImagesModels()` with `builtinModels()`, `imagesModels.getModel()` with `models.getModelOfType('image', ...)`, and `createImagesProvider({ models, api })` with `createProvider({ models, images })`. The old plural image type names are removed; use `ImageModel` and `ImageApi`, and add `type: "image"` to image model literals.
 
 ## Development
 
@@ -11119,11 +8397,11 @@ Create a new API implementation file (for example `bedrock-converse-stream.ts`) 
 
 Add a lazy wrapper `src/api/<api-id>.lazy.ts` (`<name>Api()` via `lazyApi()`) so providers can reference the implementation without importing its SDK. Add any root-level `export type` re-exports in `src/index.ts` that should remain available from `@earendil-works/pi-ai`.
 
-#### 3. Model Generation (`scripts/generate-models.ts`, `scripts/generate-image-models.ts`)
+#### 3. Model Generation (`scripts/generate-models.ts`)
 
 - Add logic to fetch and parse models from the provider's source (e.g., models.dev API)
-- Map chat/tool-capable provider model data to the standardized `Model` interface via `scripts/generate-models.ts`; hydration groups the ignored `src/providers/data/<id>.json` values by API, while stable `src/providers/<id>.models.ts` wrappers derive exact model/API types directly from those JSON keys
-- Map image-generation provider model data to the standardized `ImagesModel` interface via `scripts/generate-image-models.ts`
+- Map chat/tool-capable provider data to `Model`, image-generation data to `ImageModel`, and models.dev `type: "decision"` entries to `ClassifierModel`; hydration groups the ignored `src/providers/data/<id>.json` values by API while stable `src/providers/<id>.models.ts` wrappers derive exact model/API types directly from those JSON keys
+- Keep model ids unique within each provider and model type; emit separate entries when an upstream model supports multiple operations
 - Handle provider-specific quirks (pricing format, capability flags, model ID transformations)
 
 #### 4. Provider Factory (`src/providers/<id>.ts`)
@@ -11190,733 +8468,449 @@ Add an entry to `packages/ai/CHANGELOG.md` under `## [Unreleased]`:
 MIT
 ````
 
-## @earendil-works/pi-coding-agent - 0.86.0
+## @earendil-works/pi-codemode - 1.0.3
+**Repository URL**: https://github.com/earendil-works/pi
+**License Type(s)**: MIT
+### License: https://spdx.org/licenses/MIT.html
+````
+# @earendil-works/pi-codemode
+
+Runs model-written JavaScript in a QuickJS VM (compiled to WebAssembly) where the only capability is calling injected tools. Nested tool calls never enter the LLM context; only the script's output and return value do.
+
+Scripts use `tools`, `ALL_TOOLS`, `text`, `image`, `exit`, `store`, and `load`, and may start with a `// @options:` line. The coding agent uses it for its built-in `codemode` tool. It has no pi dependencies and can be used on its own to expose any functions (remote APIs, MCP servers, application services) to model-written scripts.
+
+## Usage
+
+```ts
+import { CodemodeSandbox } from "@earendil-works/pi-codemode";
+
+const sandbox = new CodemodeSandbox({
+	timeoutMs: 60_000,
+	tools: [
+		{
+			name: "read",
+			execute: async (args, { signal }) => {
+				const { path } = args as { path: string };
+				return await readFile(path, "utf8");
+			},
+		},
+	],
+});
+
+const result = await sandbox.execute(`
+	const source = await tools.read({ path: "package.json" });
+	text("bytes " + source.length);
+	return JSON.parse(source).name;
+`);
+
+console.log(result.output); // [{ type: "text", text: "bytes 1234" }]
+if (result.ok) console.log(result.value); // "@earendil-works/pi-codemode"
+else console.error(result.error.kind, result.error.message);
+
+await sandbox.close();
+```
+
+`code` is the body of an async function: `return` and top-level `await` work. Inside the script:
+
+- `tools.<name>(args)` returns a promise. Arguments and results make a JSON round trip. A tool that throws rejects with an `Error` carrying the same message. Tool names are also exposed as identifiers: characters that are not valid in identifiers become `_` (`toCodemodeIdentifier`), so `my-tool` is `tools.my_tool` as well as `tools["my-tool"]`.
+- `ALL_TOOLS` lists `{ name, description }` for every tool, with `name` as the identifier.
+- `text(value)` appends a text item to `result.output`; values other than strings are JSON-stringified. `console.log/info/warn/error/debug` append text items too.
+- `image(urlOrItem)` appends an image item. It accepts a base64 `data:` URL, `{ image_url }`, or an MCP `ImageContent` block (`{ type: "image", data, mimeType }`). Remote URLs are rejected.
+- `exit()` ends the script successfully right away, keeping its output and store writes.
+- `globals` passed to the sandbox are called as top-level functions, for example a host helper `image(ref)`. They behave like tools but are not recorded in `result.calls`. A name like `models.classify` puts the function on a frozen `models` object. With `spread: true`, `execute` receives all call arguments as an array instead of the first one, and `signature` replaces the declaration generated from the schemas.
+- `store(key, value)` and `load(key)` read and write JSON values synchronously. See [Store](#store).
+- Nothing else: no timers, `fetch`, `process`, `require`, modules, or `WebAssembly`. `eval` and `Function` work but only produce more code inside the same VM.
+
+`timeoutMs: Infinity` disables the deadline; the script then runs until it settles or `signal` aborts it. A script that waits on a promise nothing can settle (no tool call pending, and the VM has no timers or I/O) fails right away instead of hanging.
+
+`memoryLimitBytes` caps the VM's heap. Allocations beyond it fail inside the script as `InternalError: out of memory`.
+
+## Store
+
+`store`/`load` let scripts keep values across executions. The sandbox does not persist anything itself: pass the current values as `options.store`, and a successful result reports what the script changed as `result.storeWrites` (`{ set, delete }`). Failed executions report no writes.
+
+```ts
+const result = await sandbox.execute(`store("runs", (load("runs") ?? 0) + 1)`, { store: saved });
+if (result.ok) {
+	for (const key of result.storeWrites.delete) delete saved[key];
+	Object.assign(saved, result.storeWrites.set);
+}
+```
+
+`load` returns a copy, so mutating it does not change the store. Storing `undefined` deletes the key. A value may be at most `MAX_STORE_VALUE_CHARS` (256 Ki) characters of JSON and all values together at most `MAX_STORE_TOTAL_CHARS` (1 Mi); larger writes throw a `RangeError` inside the script.
+
+## Source format
+
+`parseCodemodeSource()` accepts a script whose first line may be an options line:
+
+```js
+// @options: {"max_output_tokens": 2000, "timeout_ms": 30000}
+const source = await tools.read({ path: "package.json" });
+text(JSON.parse(source).name);
+```
+
+Supported fields are `max_output_tokens`, a token budget for the output, and `timeout_ms`, a hard deadline. The sandbox does not act on them; the caller decides. The options line is replaced by an empty line, so line numbers in stack traces still match the input. Empty input, invalid JSON, unknown fields, or an options line without code throw `CodemodeSourceError`. `CODEMODE_SOURCE_GRAMMAR` is a Lark grammar for providers that support grammar-constrained tool input. Both are also available from the lightweight `@earendil-works/pi-codemode/source` entry.
+
+## Bundled hosts
+
+By default the sandbox loads `quickjs-wasi/quickjs.wasm` from the installed package and starts the worker file that sits next to this package's module. Neither exists on disk when the host is bundled, so pass both:
+
+```ts
+import { CodemodeSandbox, loadQuickJSWasm } from "@earendil-works/pi-codemode";
+
+const sandbox = new CodemodeSandbox({
+	tools,
+	// Compiled once per path and cached.
+	wasm: loadQuickJSWasm(pathToQuickJSWasm),
+	// A file of your build containing `import "@earendil-works/pi-codemode/worker";`
+	workerUrl: new URL("./codemode-worker.js", import.meta.url),
+});
+```
+
+`workerUrl` accepts a URL or string. For a Bun compiled executable, include the worker as an
+additional build entrypoint and pass its relative source path as a string, for example
+`"./src/codemode-worker.ts"`; Bun resolves that form from its embedded module graph.
+
+## Declarations for the model
+
+Tools and globals can carry `description`, `inputSchema`, and `outputSchema` (JSON Schema). `renderDeclarations()` turns them into TypeScript declarations for a model-facing tool description:
+
+```ts
+renderDeclarations({ tools: sandbox.tools, globals: sandbox.globals });
+// declare const tools: {
+//   /** Read a file */
+//   read(args: {
+//     path: string;
+//   }): Promise<string>;
+// };
+```
+
+Schemas only shape the declarations; values are not validated against them. Local references (`#/$defs/...`, `#/definitions/...`) are expanded; recursive and remote references render as `unknown`.
+
+## Using with pi-agent-core
+
+To give an `Agent` a codemode tool, expose its other tools to the sandbox and wrap `execute()` as an `AgentTool`:
+
+```ts
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import {
+	type CodemodeJsonSchema,
+	CodemodeSandbox,
+	type CodemodeTool,
+	renderDeclarations,
+} from "@earendil-works/pi-codemode";
+import { Type } from "typebox";
+
+const sandboxTools: CodemodeTool[] = agentTools.map((tool) => ({
+	name: tool.name,
+	description: tool.description,
+	inputSchema: tool.parameters as CodemodeJsonSchema,
+	outputSchema: (tool.outputSchema as CodemodeJsonSchema | undefined) ?? { type: "string" },
+	execute: async (args, { signal }) => {
+		const result = await tool.execute("nested", args as never, signal);
+		if (tool.outputSchema && result.structuredContent !== undefined) return result.structuredContent;
+		return result.content.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+	},
+}));
+
+const codemodeTool: AgentTool = {
+	name: "codemode",
+	label: "Codemode",
+	description: `Run JavaScript that calls tools as \`await tools.<name>(args)\`. Output with text() or return.\n\n${renderDeclarations({ tools: sandboxTools })}`,
+	parameters: Type.Object({ code: Type.String() }),
+	execute: async (_toolCallId, { code }, signal) => {
+		const sandbox = new CodemodeSandbox({ tools: sandboxTools });
+		try {
+			const result = await sandbox.execute(code, { signal });
+			const content = [...result.output];
+			if (result.ok && result.value !== undefined) content.push({ type: "text", text: JSON.stringify(result.value) });
+			if (!result.ok) content.push({ type: "text", text: result.error.stack ?? result.error.message });
+			return { content, details: undefined, isError: !result.ok };
+		} finally {
+			await sandbox.close();
+		}
+	},
+};
+```
+
+`result.output` items already have the shape of `@earendil-works/pi-ai`'s `TextContent` and `ImageContent`. Calling `tool.execute()` directly skips the agent's `beforeToolCall` and `afterToolCall` hooks. To apply them to nested calls too, run each call through `runToolCall()` from `@earendil-works/pi-agent-core`, as the [mcp-codemode example](https://github.com/earendil-works/pi/tree/main/packages/agent/examples/mcp-codemode) does. That example also rejects failed nested calls inside the script and combines codemode with MCP tools.
+
+## Results
+
+`execute()` never rejects for script failures. `result.error.kind` is one of:
+
+| kind      | meaning                                                                     |
+| --------- | --------------------------------------------------------------------------- |
+| `script`  | the script threw or failed to parse; `stack` points at `codemode.js:<line>` |
+| `timeout` | the deadline expired; the worker was terminated                             |
+| `aborted` | `options.signal` fired or `close()` was called; the worker was terminated   |
+| `sandbox` | the worker or VM failed, for example a wasm trap or a missing worker file   |
+
+`result.output` holds the text and image items in the order the script produced them, also for failed executions. The host keeps all of it until the script ends, so output is limited to `MAX_OUTPUT_CHARS` (16 Mi) characters of text and base64 image data and `MAX_OUTPUT_ITEMS` (100000) items. Past either limit the script fails with a `RangeError`, even if it catches the error. `result.calls` lists every tool call with `status: "ok" | "error" | "cancelled"`. A call that is still running when the script returns (not awaited) is aborted through the tool's `signal` and reported as `cancelled`.
+
+## How it works
+
+Each `execute()` starts a worker thread (about 20 ms including VM creation) that instantiates a fresh QuickJS VM from the compiled wasm module. The VM is a separate wasm instance with its own linear memory. Its only imports are a WASI shim (clock, random, and stdout/stderr writes, which the worker discards) and one host-call entry point, so the script cannot reach the host except through the functions the worker registers.
+
+The worker evaluates a prelude inside the VM that holds the single host bridge in a closure and builds `tools`, `console`, and globals on top of it. The script is compiled as an async function body.
+
+Tool calls are relayed to the host thread as messages; the host runs the tool and posts the JSON result back. The host owns the deadline and the abort signal. When either fires, it sets a shared interrupt flag that the VM polls, then calls `worker.terminate()`. The flag is needed on Bun, where `terminate()` cannot stop a thread that is spinning in wasm (`while (true) {}` or `while (true) await null`).
+
+The worker keeps script execution off the host thread: QuickJS runs synchronously, so a spinning script on the host thread would block its event loop.
+
+## Runtime notes
+
+- Works the same on Node and Bun, including memory limits, interrupts, and a catchable `RangeError` for deep recursion (QuickJS's stack guard is enabled; without it the wasm stack overflows and traps).
+- Stack traces use QuickJS frames (`at f (codemode.js:2:31)`), prefixed with `Name: message` like V8. The wrapper prefix shares line 1 with the script, so line numbers are exact; column numbers on line 1 are shifted.
+- QuickJS is an interpreter. Glue code and filtering tool results are fast enough; heavy computation is slower than in V8.
+````
+
+## @earendil-works/pi-coding-agent - 1.0.3
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
 ````
 <p align="center">
   <a href="https://pi.dev">
-    <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">
+    <img alt="Pi logo" src="https://pi.dev/logo-auto.svg" width="128">
   </a>
 </p>
 <p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square&logo=npm&logoColor=white" /></a>
 </p>
 
-> New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](../../CONTRIBUTING.md).
+> New issues and PRs from new contributors are closed automatically. Maintainers review closed submissions daily. See [CONTRIBUTING.md](https://github.com/earendil-works/pi/blob/main/CONTRIBUTING.md).
 
----
+# Pi
 
-Pi is a minimal terminal coding harness. Adapt pi to your workflows, not the other way around, without having to fork and modify pi internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Pi Packages](#pi-packages) and share them with others via npm or git.
+Pi is a minimal, extensible agent harness that you can make your own.
 
-Pi ships with powerful defaults but skips features like sub agents and plan mode. Instead, you can ask pi to build what you want or install a third party pi package that matches your workflow.
+Adapt Pi to your workflows, not the other way around. Customize Pi with [extensions](docs/extensions.md), [skills](docs/skills.md), [prompt templates](docs/prompt-templates.md), and [themes](docs/themes.md). Bundle them as [Pi packages](docs/packages.md) and share via npm or git.
 
-Pi runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps.
+Pi ships with powerful defaults but skips features like sub-agents and plan mode. Ask Pi to build what you want, or install a package that does it your way.
 
-## Share your OSS coding agent sessions
+Use Pi [interactively](docs/usage.md), automate it in [print or JSON mode](docs/cli.md), control it over [RPC](docs/rpc.md), or build apps with the [Pi TypeScript SDK](docs/sdk.md). See [OpenClaw](https://github.com/OpenClaw/OpenClaw) for a real-world integration.
 
-If you use pi for open source work, please share your coding agent sessions.
+## Getting started
 
-Public OSS session data helps improve models, prompts, tools, and evaluations using real development workflows.
-
-For the full explanation, see [this post on X](https://x.com/badlogicgames/status/2037811643774652911).
-
-To publish sessions, use [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf). Read its README.md for setup instructions. All you need is a Hugging Face account, the Hugging Face CLI, and `pi-share-hf`.
-
-You can also watch [this video](https://x.com/badlogicgames/status/2041151967695634619), where I show how I publish my `pi-mono` sessions.
-
-I regularly publish my own `pi-mono` work sessions here:
-
-- [badlogicgames/pi-mono on Hugging Face](https://huggingface.co/datasets/badlogicgames/pi-mono)
-
-## Table of Contents
-
-- [Quick Start](#quick-start)
-- [Providers & Models](#providers--models)
-- [Interactive Mode](#interactive-mode)
-  - [Editor](#editor)
-  - [Commands](#commands)
-  - [Keyboard Shortcuts](#keyboard-shortcuts)
-  - [Message Queue](#message-queue)
-- [Sessions](#sessions)
-  - [Branching](#branching)
-  - [Compaction](#compaction)
-- [Settings](#settings)
-- [Context Files](#context-files)
-- [Customization](#customization)
-  - [Prompt Templates](#prompt-templates)
-  - [Skills](#skills)
-  - [Extensions](#extensions)
-  - [Themes](#themes)
-  - [Pi Packages](#pi-packages)
-- [Programmatic Usage](#programmatic-usage)
-- [Philosophy](#philosophy)
-- [CLI Reference](#cli-reference)
-
----
-
-## Quick Start
-
-```bash
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-```
-
-`--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
-
-Installer alternative:
+Install the command-line interface:
 
 ```bash
 curl -fsSL https://pi.dev/install.sh | sh
 ```
 
-Authenticate with an API key:
+On Windows:
+
+```shell
+powershell -c "irm https://pi.dev/install.ps1 | iex"
+```
+
+The installer pins all dependencies and updates Pi with `pi update`. Alternatively, install directly with npm, which does not pin transitive dependencies:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+```
+
+Pi requires Node.js 22.19 or newer. The macOS, Linux, and Windows installers can install it if needed. Pi does not require dependency lifecycle scripts for a normal npm installation.
+
+On macOS and Linux, Nix users can install the latest release with `nix profile add github:earendil-works/pi/stable`. See the [quickstart](docs/quickstart.md#1-install-pi) for updating and pinning releases.
+
+Start Pi in the directory where you want it to work:
+
+```bash
+cd /path/to/project
 pi
 ```
 
-Or use your existing subscription:
+For a built-in AI provider, run `/login` inside Pi to connect a subscription or API key. Then give Pi a task.
+
+See the [documentation](docs/index.md) for full setup and usage instructions.
+
+## Share your OSS coding agent sessions
+
+If you use Pi for open source work, please share your coding agent sessions.
+
+Public OSS session data helps improve models, prompts, tools, and evaluations using real development workflows.
+
+For the full explanation, see [this post on X](https://x.com/badlogicgames/status/2037811643774652911).
+
+To publish sessions, use [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf) using a Hugging Face account and the Hugging Face CLI.
+
+- [Demo video](https://x.com/badlogicgames/status/2041151967695634619) on how to publish Pi sessions
+- Published Pi development sessions: [`badlogicgames/pi-mono` on Hugging Face](https://huggingface.co/datasets/badlogicgames/pi-mono).
+
+## Development
+
+Clone the repository, install its dependencies, and run Pi from source:
 
 ```bash
-pi
-/login  # Then select provider
+git clone https://github.com/earendil-works/pi
+cd pi
+npm install --ignore-scripts
+./pi-test.sh
 ```
 
-Then just talk to pi. By default, pi gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
+`pi-test.sh` can be called from any directory and preserves the caller's working directory.
 
-**Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
-
----
-
-## Providers & Models
-
-For each built-in provider, pi maintains a list of tool-capable models. Configured provider catalogs refresh automatically; run `pi update --models` to force an immediate refresh. Authenticate via subscription (`/login`) or API key, then select any model from that provider via `/model` (or Ctrl+L). Press Ctrl+S in the model picker to save the highlighted model as the startup default.
-
-**Subscriptions:**
-- Anthropic Claude Pro/Max
-- OpenAI ChatGPT Plus/Pro (Codex)
-- GitHub Copilot
-
-**API keys:**
-- Anthropic
-- Ant Ling
-- OpenAI
-- Azure OpenAI
-- DeepSeek
-- NVIDIA NIM
-- Google Gemini
-- Google Vertex
-- Amazon Bedrock
-- Mistral
-- Groq
-- Cerebras
-- Cloudflare AI Gateway
-- Cloudflare Workers AI
-- xAI
-- OpenRouter
-- Vercel AI Gateway
-- ZAI Coding Plan (Global)
-- ZAI Coding Plan (China)
-- OpenCode Zen
-- OpenCode Go
-- Hugging Face
-- Fireworks
-- Together AI
-- Baseten
-- Kimi For Coding
-- MiniMax
-- Xiaomi MiMo
-- Xiaomi MiMo Token Plan (China)
-- Xiaomi MiMo Token Plan (Amsterdam)
-- Xiaomi MiMo Token Plan (Singapore)
-
-Pi also supports the llama.cpp router server. Configure it with `/login llama.cpp`, manage downloads and loaded models with `/llama`, then select a loaded model with `/model`. See [docs/llama-cpp.md](docs/llama-cpp.md) for setup and usage.
-
-See [docs/providers.md](docs/providers.md) for other provider setup instructions.
-
-**Custom providers & models:** Add providers via `~/.pi/agent/models.json` if they speak a supported API (OpenAI, Anthropic, Google). For custom APIs or OAuth, use extensions. See [docs/models.md](docs/models.md) and [docs/custom-provider.md](docs/custom-provider.md).
-
----
-
-## Interactive Mode
-
-<p align="center"><img src="docs/images/interactive-mode.png" alt="Interactive Mode" width="600"></p>
-
-The interface from top to bottom:
-
-- **Startup header** - Shows shortcuts (`/hotkeys` for all), loaded AGENTS.md files, prompt templates, skills, and extensions
-- **Messages** - Your messages, assistant responses, tool calls and results, notifications, errors, and extension UI
-- **Editor** - Where you type; border color indicates thinking level and the border shows the streaming working indicator
-- **Footer** - Working directory, session name, total token/cache usage (`↑` input, `↓` output, `R` cache read, `W` cache write, `CH` latest cache hit rate), cost, context usage, current model. Totals include assistant responses, usage reported by tools, and summary generation.
-
-The editor can be temporarily replaced by other UI, like built-in `/settings` or custom UI from extensions (e.g., a Q&A tool that lets the user answer model questions in a structured format). [Extensions](#extensions) can also replace the editor, add widgets above/below it, a status line, custom footer, or overlays.
-
-### Editor
-
-| Feature | How |
-|---------|-----|
-| File reference | Type `@` to fuzzy-search project files |
-| Path completion | Tab to complete paths |
-| Multi-line | Shift+Enter (or Ctrl+Enter on Windows Terminal) |
-| External editor | Ctrl+G opens `externalEditor`, `$VISUAL`, `$EDITOR`, Notepad on Windows, or `nano` elsewhere |
-| Clipboard | Ctrl+V to paste an image or text (Alt+V on Windows), or drag images onto terminal |
-| Bash commands | `!command` runs and sends output to LLM, `!!command` runs without sending |
-
-Standard editing keybindings for delete word, undo, etc. See [docs/keybindings.md](docs/keybindings.md).
-
-### Commands
-
-Type `/` in the editor to trigger commands. [Extensions](#extensions) can register custom commands, [skills](#skills) are available as `/skill:name`, and [prompt templates](#prompt-templates) expand via `/templatename`.
-
-| Command | Description |
-|---------|-------------|
-| `/login`, `/logout` | Manage provider credentials |
-| [`/llama`](docs/llama-cpp.md) | Download, load, and unload llama.cpp router models |
-| `/model` | Switch models; Ctrl+S in the picker saves the startup default |
-| `/thinking` | Switch thinking level; Ctrl+S in the picker saves the startup default |
-| `/scoped-models` | Enable/disable models for Ctrl+P cycling |
-| `/settings` | Theme, message delivery, transport, and other preferences |
-| `/resume` | Pick from previous sessions |
-| `/new` | Start a new session |
-| `/name <name>` | Set session display name |
-| `/session` | Show session info (file, ID, messages, tokens, cost) |
-| `/tree` | Jump to any point in the session and continue from there |
-| `/trust` | Save project trust decision for future sessions (restart required) |
-| `/fork` | Create a new session from a previous user message |
-| `/clone` | Duplicate the current active branch into a new session |
-| `/compact [prompt]` | Manually compact context, optional custom instructions |
-| `/copy` | Copy last assistant message to clipboard |
-| `/export [file]` | Export session to HTML or JSONL file |
-| `/import <file>` | Import and resume a session from a JSONL file |
-| `/share` | Upload as private GitHub gist with shareable HTML link |
-| `/bug [description]` | Report a bug to the Pi developers; see [Sessions](docs/sessions.md#reporting-bugs) |
-| `/reload` | Reload keybindings, extensions, skills, prompts, themes, and context files |
-| `/hotkeys` | Show all keyboard shortcuts |
-| `/changelog` | Display version history |
-| `/quit` | Quit pi |
-
-### Keyboard Shortcuts
-
-See `/hotkeys` for the full list. Customize via `~/.pi/agent/keybindings.json`. See [docs/keybindings.md](docs/keybindings.md).
-
-**Commonly used:**
-
-| Key | Action |
-|-----|--------|
-| Ctrl+C | Clear editor |
-| Ctrl+C twice | Quit |
-| Escape | Cancel/abort |
-| Escape twice | Open `/tree` |
-| Ctrl+L | Open model selector |
-| Ctrl+P / Shift+Ctrl+P | Cycle scoped models forward/backward |
-| Shift+Tab | Cycle thinking level |
-| Ctrl+O | Collapse/expand tool output |
-| Ctrl+T | Collapse/expand thinking blocks |
-| Ctrl+X | Copy the last assistant message; with fullscreen copy-on-select disabled, copy the active text selection |
-
-### Message Queue
-
-Submit messages while the agent is working:
-
-- **Enter** queues a *steering* message, delivered after the current assistant turn finishes executing its tool calls
-- **Alt+Enter** queues a *follow-up* message, delivered only after the agent finishes all work
-- **Escape** aborts and restores queued messages to editor
-- **Alt+Up** retrieves queued messages back to editor
-
-On Windows Terminal, `Alt+Enter` is fullscreen by default. Remap it in [docs/terminal-setup.md](docs/terminal-setup.md) so pi can receive the follow-up shortcut.
-
-Configure delivery in [settings](docs/settings.md): `steeringMode` and `followUpMode` can be `"one-at-a-time"` (default, waits for response) or `"all"` (delivers all queued at once). `transport` selects provider transport preference (`"sse"`, `"websocket"`, or `"auto"`) for providers that support multiple transports.
-
----
-
-## Sessions
-
-Sessions are stored as JSONL files with a tree structure. Each entry has an `id` and `parentId`, enabling in-place branching without creating new files. See [docs/session-format.md](docs/session-format.md) for file format.
-
-### Management
-
-Sessions auto-save to `~/.pi/agent/sessions/` organized by working directory.
+Before submitting changes, run:
 
 ```bash
-pi -c                  # Continue most recent session
-pi -r                  # Browse and select from past sessions
-pi --no-session        # Ephemeral mode (don't save)
-pi --name "my task"    # Set session display name at startup
-pi --session <path|id> # Use specific session file or ID
-pi --fork <path|id>    # Fork specific session file or ID into a new session
+npm run check
+./test.sh
 ```
 
-Use `/session` in interactive mode to see the current session ID before reusing it with `--session <id>` or `--fork <id>`.
-
-### Branching
-
-**`/tree`** - Navigate the session tree in-place. Select any previous point, continue from there, and switch between branches. All history preserved in a single file. Selecting a point while the model is responding cancels that response. Navigation cannot proceed while compaction or another tree navigation is still running; wait for it to finish and retry.
-
-<p align="center"><img src="docs/images/tree-view.png" alt="Tree View" width="600"></p>
-
-- Search by typing, fold/unfold and jump between branches with Ctrl+←/Ctrl+→ or Alt+←/Alt+→, page with ←/→
-- Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
-- Press Ctrl+X to copy the selected message
-- Press Shift+L to label entries as bookmarks and Shift+T to toggle label timestamps
-
-**`/fork`** - Create a new session file from a previous user message on the active branch. Opens a selector, copies the active path up to that point, and places the selected prompt in the editor for modification.
-
-**`/clone`** - Duplicate the current active branch into a new session file at the current position. The new session keeps the full active-path history and opens with an empty editor.
-
-**`--fork <path|id>`** - Fork an existing session file or partial session UUID directly from the CLI. This copies the full source session into a new session file in the current project.
-
-### Compaction
-
-Long sessions can exhaust context windows. Compaction summarizes older messages while keeping recent ones.
-
-**Manual:** `/compact` or `/compact <custom instructions>`
-
-**Automatic:** Enabled by default. Triggers on context overflow (recovers and retries) or when approaching the limit (proactive). Configure via `/settings` or `settings.json`.
-
-Compaction is lossy. The full history remains in the JSONL file; use `/tree` to revisit. Customize compaction behavior via [extensions](#extensions). See [docs/compaction.md](docs/compaction.md) for internals.
-
----
-
-## Settings
-
-Use `/settings` to modify common options, or edit JSON files directly:
-
-| Location | Scope |
-|----------|-------|
-| `~/.pi/agent/settings.json` | Global (all projects) |
-| `.pi/settings.json` | Project (overrides global) |
-
-See [docs/settings.md](docs/settings.md) for all options.
-
-### Project Trust
-
-On interactive startup, pi asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.pi/agent/trust.json`. Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
-
-Before the trust decision, pi loads only context files, user/global extensions, and CLI `-e` extensions so they can handle the `project_trust` event. Project-local extensions, project package-managed extensions, and project settings are loaded only after the project is trusted. This split also applies when switching to a session from a different cwd whose trust has not been resolved in the current process.
-
-Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
-
-If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`, or change it with `/settings`.
-
-`pi config` and package commands use the same project trust flow, except `pi update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
-
-Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.pi/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
-
-### Telemetry and update checks
-
-Pi has two separate startup features:
-
-- **Update check:** fetches `https://pi.dev/api/latest-version` to check whether a newer Pi version exists. Disable it with `PI_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
-- **Install/update telemetry:** after first install or a changelog-detected update, sends an anonymous version ping to `https://pi.dev/api/report-install`. This setting also controls optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `PI_TELEMETRY=0`. This does not disable update checks; Pi may still contact `pi.dev` for the latest version unless update checks are disabled or offline mode is enabled.
-
-Use `--offline` or `PI_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
-
----
-
-## Context Files
-
-Pi loads `AGENTS.md` (or `CLAUDE.md`) at startup from:
-- `~/.pi/agent/AGENTS.md` (global)
-- Parent directories (walking up from cwd)
-- Current directory
-
-If a directory contains `AGENTS.override.md`, Pi loads it instead of `AGENTS.md` or `CLAUDE.md` from that directory. Context files from other directories are still concatenated.
-
-Use for project instructions (`AGENTS.md`/`CLAUDE.md`), conventions, common commands. All matching files are concatenated.
-
-Disable context file loading with `--no-context-files` (or `-nc`).
-
-### System Prompt
-
-Replace the default system prompt with `.pi/SYSTEM.md` (project) or `~/.pi/agent/SYSTEM.md` (global). Append without replacing via `APPEND_SYSTEM.md`.
-
----
-
-## Customization
-
-### Prompt Templates
-
-Reusable prompts as Markdown files. Type `/name` to expand.
-
-```markdown
-<!-- ~/.pi/agent/prompts/review.md -->
-Review this code for bugs, security issues, and performance problems.
-Focus on: {{focus}}
-```
-
-Place in `~/.pi/agent/prompts/`, `.pi/prompts/`, or a [pi package](#pi-packages) to share with others. See [docs/prompt-templates.md](docs/prompt-templates.md).
-
-### Skills
-
-On-demand capability packages following the [Agent Skills standard](https://agentskills.io). Invoke via `/skill:name` or let the agent load them automatically.
-
-```markdown
-<!-- ~/.pi/agent/skills/my-skill/SKILL.md -->
-# My Skill
-Use this skill when the user asks about X.
-
-## Steps
-1. Do this
-2. Then that
-```
-
-Place in `~/.pi/agent/skills/`, `~/.agents/skills/`, `.pi/skills/`, or `.agents/skills/` (from `cwd` up through parent directories) or a [pi package](#pi-packages) to share with others. See [docs/skills.md](docs/skills.md).
-
-### Extensions
-
-<p align="center"><img src="docs/images/doom-extension.png" alt="Doom Extension" width="600"></p>
-
-TypeScript modules that extend pi with custom tools, commands, keyboard shortcuts, event handlers, and UI components.
-
-```typescript
-export default function (pi: ExtensionAPI) {
-  pi.registerTool({ name: "deploy", ... });
-  pi.registerCommand("stats", { ... });
-  pi.on("tool_call", async (event, ctx) => { ... });
-}
-```
-
-The default export can also be `async`. pi waits for async extension factories before startup continues, which is useful for one-time initialization such as fetching remote model lists before calling `pi.registerProvider()`.
-
-**What's possible:**
-- Custom tools (or replace built-in tools entirely)
-- Sub-agents and plan mode
-- Custom compaction and summarization
-- Permission gates and path protection
-- Custom editors and UI components
-- Status lines, headers, footers
-- Git checkpointing and auto-commit
-- SSH and sandbox execution
-- MCP server integration
-- Make pi look like Claude Code
-- Games while waiting (yes, Doom runs)
-- ...anything you can dream up
-
-Place in `~/.pi/agent/extensions/`, `.pi/extensions/`, or a [pi package](#pi-packages) to share with others. See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).
-
-### Themes
-
-Built-in: `dark`, `light`. Themes hot-reload: modify the active theme file and pi immediately applies changes.
-
-Place in `~/.pi/agent/themes/`, `.pi/themes/`, or a [pi package](#pi-packages) to share with others. See [docs/themes.md](docs/themes.md).
-
-### Pi Packages
-
-Bundle and share extensions, skills, prompts, and themes via npm or git. Find packages on [npmjs.com](https://www.npmjs.com/search?q=keywords%3Api-package) or [Discord](https://discord.com/channels/1456806362351669492/1457744485428629628).
-
-> **Security:** Pi packages run with full system access. Extensions execute arbitrary code, and skills can instruct the model to perform any action including running executables. Review source code before installing third-party packages.
-
-```bash
-pi install npm:@foo/pi-tools
-pi install npm:@foo/pi-tools@1.2.3      # pinned version
-pi install git:github.com/user/repo
-pi install git:github.com/user/repo@v1  # tag or commit
-pi install git:git@github.com:user/repo
-pi install git:git@github.com:user/repo@v1  # tag or commit
-pi install https://github.com/user/repo
-pi install https://github.com/user/repo@v1      # tag or commit
-pi install ssh://git@github.com/user/repo
-pi install ssh://git@github.com/user/repo@v1    # tag or commit
-pi remove npm:@foo/pi-tools
-pi uninstall npm:@foo/pi-tools          # alias for remove
-pi list
-pi update                               # update pi only
-pi update --all                         # update pi and packages
-pi update --extensions                  # update packages only
-pi update --models                      # refresh model catalogs only
-pi update --self                        # update pi only
-pi update --self --force                # reinstall pi even if current
-pi update npm:@foo/pi-tools             # update one package
-pi config                               # enable/disable extensions, skills, prompts, themes
-```
-
-Packages install to `~/.pi/agent/git/` (git) or `~/.pi/agent/npm/` (npm). Use `-l` for project-local installs (`.pi/git/`, `.pi/npm/`). Git `@ref` values are pinned tags or commits; pinned packages are skipped by `pi update --extensions` and `pi update --all`, so use `pi install git:host/user/repo@new-ref` to move an existing package to a new ref. Git packages install dependencies with `npm install --omit=dev` by default, so runtime deps must be listed under `dependencies`; when `npmCommand` is configured, git packages use plain `install` for compatibility with wrappers. If you use a Node version manager and want package installs to reuse a stable npm context, set `npmCommand` in `settings.json`, for example `["mise", "exec", "node@20", "--", "npm"]`.
-
-Create a package by adding a `pi` key to `package.json`:
-
-```json
-{
-  "name": "my-pi-package",
-  "keywords": ["pi-package"],
-  "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"],
-    "prompts": ["./prompts"],
-    "themes": ["./themes"]
-  }
-}
-```
-
-Without a `pi` manifest, pi auto-discovers from conventional directories (`extensions/`, `skills/`, `prompts/`, `themes/`).
-
-See [docs/packages.md](docs/packages.md).
-
----
-
-## Programmatic Usage
-
-### SDK
-
-```typescript
-import { createAgentSession, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
-
-const modelRuntime = await ModelRuntime.create();
-const { session } = await createAgentSession({
-  sessionManager: SessionManager.inMemory(),
-  modelRuntime,
-});
-
-await session.prompt("What files are in the current directory?");
-```
-
-For advanced multi-session runtime replacement, use `createAgentSessionRuntime()` and `AgentSessionRuntime`.
-
-See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/).
-
-### RPC Mode
-
-For non-Node.js integrations, use RPC mode over stdin/stdout:
-
-```bash
-pi --mode rpc
-```
-
-RPC mode uses strict LF-delimited JSONL framing. Clients must split records on `\n` only. Do not use generic line readers like Node `readline`, which also split on Unicode separators inside JSON payloads.
-
-See [docs/rpc.md](docs/rpc.md) for the protocol.
-
----
-
-## Philosophy
-
-Pi is aggressively extensible so it doesn't have to dictate your workflow. Features that other tools bake in can be built with [extensions](#extensions), [skills](#skills), or installed from third-party [pi packages](#pi-packages). This keeps the core minimal while letting you shape pi to fit how you work.
-
-**No MCP.** Build CLI tools with READMEs (see [Skills](#skills)), or build an extension that adds MCP support. [Why?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
-
-**No sub-agents.** There's many ways to do this. Spawn pi instances via tmux, or build your own with [extensions](#extensions), or install a package that does it your way.
-
-**No permission popups.** Run in a container, or build your own confirmation flow with [extensions](#extensions) inline with your environment and security requirements.
-
-**No plan mode.** Write plans to files, or build it with [extensions](#extensions), or install a package.
-
-**No built-in to-dos.** They confuse models. Use a TODO.md file, or build your own with [extensions](#extensions).
-
-**No background bash.** Use tmux. Full observability, direct interaction.
-
-Read the [blog post](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) for the full rationale.
-
----
-
-## CLI Reference
-
-```bash
-pi [options] [--] [@files...] [messages...]
-```
-
-### Package Commands
-
-```bash
-pi install <source> [-l]     # Install package, -l for project-local
-pi remove <source> [-l]      # Remove package
-pi uninstall <source> [-l]   # Alias for remove
-pi update [source|self|pi]   # Update pi only, or one package source
-pi update --all              # Update pi and packages
-pi update --extensions       # Update packages only
-pi update --models           # Refresh model catalogs only
-pi update --self             # Update pi only
-pi update --self --force     # Reinstall pi even if current
-pi update --extension <src>  # Update one package
-pi list                      # List installed packages
-pi config                    # Enable/disable package resources
-```
-
-`pi config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `pi update` never prompts for project trust.
-
-### Modes
-
-| Flag | Description |
-|------|-------------|
-| (default) | Interactive mode |
-| `-p`, `--print` | Print response and exit |
-| `--mode json` | Output all events as JSON lines (see [docs/json.md](docs/json.md)) |
-| `--mode rpc` | RPC mode for process integration (see [docs/rpc.md](docs/rpc.md)) |
-| `--export <in> [out]` | Export session to HTML |
-
-In print mode, pi also reads piped stdin and merges it into the initial prompt:
-
-```bash
-cat README.md | pi -p "Summarize this text"
-```
-
-### Model Options
-
-| Option | Description |
-|--------|-------------|
-| `--provider <name>` | Provider (anthropic, openai, google, etc.) |
-| `--model <pattern>` | Model pattern or ID (supports `provider/id` and optional `:<thinking>`) |
-| `--api-key <key>` | API key (overrides env vars) |
-| `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling |
-| `--list-models [search]` | List available models |
-
-### Session Options
-
-| Option | Description |
-|--------|-------------|
-| `-c`, `--continue` | Continue most recent session |
-| `-r`, `--resume` | Browse and select session |
-| `--session <path\|id>` | Use specific session file or partial UUID |
-| `--fork <path\|id>` | Fork specific session file or partial UUID into a new session |
-| `--session-dir <dir>` | Custom session storage directory |
-| `--no-session` | Ephemeral mode (don't save) |
-| `--name <name>`, `-n <name>` | Set session display name at startup |
-
-### Tool Options
-
-| Option | Description |
-|--------|-------------|
-| `--tools <list>`, `-t <list>` | Allowlist specific tool names across built-in, extension, and custom tools |
-| `--exclude-tools <list>`, `-xt <list>` | Disable specific tool names across built-in, extension, and custom tools |
-| `--no-builtin-tools`, `-nbt` | Disable built-in tools by default but keep extension/custom tools enabled |
-| `--no-tools`, `-nt` | Disable all tools by default |
-
-Available built-in tools: `read`, `bash`, `powershell` (Windows), `edit`, `write`, `grep`, `find`, `ls`
-
-### Resource Options
-
-| Option | Description |
-|--------|-------------|
-| `-e`, `--extension <source>` | Load extension from path, npm, or git (repeatable) |
-| `--no-extensions` | Disable extension discovery |
-| `--skill <path>` | Load skill (repeatable) |
-| `--no-skills` | Disable skill discovery |
-| `--prompt-template <path>` | Load prompt template (repeatable) |
-| `--no-prompt-templates` | Disable prompt template discovery |
-| `--theme <path>` | Load theme (repeatable) |
-| `--no-themes` | Disable theme discovery |
-| `--no-context-files`, `-nc` | Disable AGENTS.md and CLAUDE.md context file discovery |
-
-Combine `--no-*` with explicit flags to load exactly what you need, ignoring settings.json (e.g., `--no-extensions -e ./my-ext.ts`).
-
-### Other Options
-
-| Option | Description |
-|--------|-------------|
-| `--system-prompt <text>` | Replace default prompt (context files and skills still appended) |
-| `--append-system-prompt <text>` | Append to system prompt |
-| `--tui-mode <mode>` | TUI mode: `regular` (default) or experimental `fullscreen` |
-| `--use-theme <name[/name]>` | Set the initial interactive theme for this run without changing settings |
-| `--verbose` | Force verbose startup |
-| `-a`, `--approve` | Trust project-local files for this run |
-| `-na`, `--no-approve` | Ignore project-local files for this run |
-| `--` | Stop option parsing; remaining arguments are prompts or `@file` inputs |
-| `-h`, `--help` | Show help |
-| `-v`, `--version` | Show version |
-
-### File Arguments
-
-Prefix files with `@` to include in the message:
-
-```bash
-pi @prompt.md "Answer this"
-pi -p @screenshot.png "What's in this image?"
-pi @code.ts @test.ts "Review these files"
-```
-
-### Examples
-
-```bash
-# Interactive with initial prompt
-pi "List all .ts files in src/"
-
-# Non-interactive
-pi -p "Summarize this codebase"
-
-# Prompt beginning with a dash
-pi -p -- "- Summarize these points"
-
-# Non-interactive with piped stdin
-cat README.md | pi -p "Summarize this text"
-
-# Named one-shot session
-pi --name "release audit" -p "Audit this repository"
-
-# Different model
-pi --provider openai --model gpt-4o "Help me refactor"
-
-# Model with provider prefix (no --provider needed)
-pi --model openai/gpt-4o "Help me refactor"
-
-# Model with thinking level shorthand
-pi --model sonnet:high "Solve this complex problem"
-
-# Limit model cycling
-pi --models "claude-*,gpt-4o"
-
-# Read-only mode
-pi --tools read,grep,find,ls -p "Review the code"
-
-# Disable one extension or built-in tool while keeping the rest available
-pi --exclude-tools ask_question
-
-# High thinking level
-pi --thinking high "Solve this complex problem"
-```
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `AI_AGENT` | Set to `pi` by the CLI and RPC entry points so generic tooling can attribute child processes to Pi |
-| `PI_CODING_AGENT` | Set to `true` by the CLI and RPC entry points so child processes can detect that they run inside Pi |
-| `PI_CODING_AGENT_DIR` | Override config directory (default: `~/.pi/agent`) |
-| `PI_CODING_AGENT_SESSION_DIR` | Override session storage directory (overridden by `--session-dir`) |
-| `PI_PACKAGE_DIR` | Override package directory (useful for Nix/Guix where store paths tokenize poorly) |
-| `PI_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |
-| `PI_SKIP_VERSION_CHECK` | Skip the Pi version update check at startup. This prevents the `pi.dev` latest-version request |
-| `PI_TELEMETRY` | Override install/update telemetry and provider attribution headers. Use `1`/`true`/`yes` to enable or `0`/`false`/`no` to disable. This does not disable update checks |
-| `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
-| `VISUAL`, `EDITOR` | Fallback external editor for Ctrl+G when `externalEditor` is unset; defaults to Notepad on Windows and `nano` elsewhere |
-
-Commands run by the LLM-callable `bash` and `powershell` tools also receive current session metadata:
-
-| Variable | Description |
-|----------|-------------|
-| `PI_SESSION_ID` | Current session ID |
-| `PI_SESSION_FILE` | Absolute session JSONL path; unset for ephemeral sessions |
-| `PI_PROVIDER` | Currently selected model provider |
-| `PI_MODEL` | Currently selected model ID |
-| `PI_REASONING_LEVEL` | Current effective reasoning level |
-
-These values are resolved when each command starts. See [Environment Variables](docs/environment-variables.md#shell-tool-session-environment) for semantics, examples, and custom-tool opt-out.
-
----
-
-## Contributing & Development
-
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines and [docs/development.md](docs/development.md) for setup, forking, and debugging.
+Read [CONTRIBUTING.md](https://github.com/earendil-works/pi/blob/main/CONTRIBUTING.md) before opening an issue or pull request. It defines the contribution gate, issue quality bar, and required checks. Read [AGENTS.md](https://github.com/earendil-works/pi/blob/main/AGENTS.md) for repository-specific implementation, testing, dependency, and release rules.
 
 ## License
 
 MIT
-
-## See Also
-
-- [@earendil-works/pi-ai](https://www.npmjs.com/package/@earendil-works/pi-ai): Core LLM toolkit
-- [@earendil-works/pi-agent-core](https://www.npmjs.com/package/@earendil-works/pi-agent-core): Agent framework
-- [@earendil-works/pi-tui](https://www.npmjs.com/package/@earendil-works/pi-tui): Terminal UI components
-
-<p align="center">
-  <a href="https://pi.dev">pi.dev</a> domain graciously donated by
-  <br /><br />
-  <a href="https://exe.dev"><img src="docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
-</p>
 ````
 
-## @earendil-works/pi-telemetry - 0.86.0
+## @earendil-works/pi-mcp - 1.0.3
+**Repository URL**: https://github.com/earendil-works/pi
+**License Type(s)**: MIT
+### License: https://spdx.org/licenses/MIT.html
+````
+# @earendil-works/pi-mcp
+
+A small, standalone Model Context Protocol client. It does not depend on the official MCP SDK or other pi packages.
+
+The package provides a transport-neutral client core, stdio and Streamable HTTP transports, and an in-memory testing transport.
+
+## Usage
+
+```typescript
+import { McpClient, StdioTransport } from "@earendil-works/pi-mcp";
+
+const transport = new StdioTransport({
+	command: "npx",
+	args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+});
+const client = new McpClient({
+	name: "my-client",
+	version: "1.0.0",
+	roots: [{ uri: "file:///workspace", name: "workspace" }],
+});
+
+await client.connect(transport);
+const tools = await client.listTools();
+const result = await client.callTool("search", { query: "MCP" });
+await client.close();
+```
+
+For a remote server, use `new StreamableHttpTransport({ url, headers })`. Fetch can be injected for proxying or custom networking.
+
+### Tools for an LLM
+
+`toLlmContent(result)` converts a `CallToolResult` to text and image content for a model, in the shape of `@earendil-works/pi-ai`'s `TextContent` and `ImageContent`. Text and images pass through, embedded text and image resources are unwrapped, and audio, resource links, and binary resources become short text placeholders. A result without content blocks but with `structuredContent` becomes its JSON.
+
+Wrapping an MCP tool as a `pi-agent-core` `AgentTool`:
+
+```typescript
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { toLlmContent } from "@earendil-works/pi-mcp";
+import { Type } from "typebox";
+
+const tools: AgentTool[] = (await client.listTools()).map((tool) => ({
+	// Providers allow at most 64 characters of [A-Za-z0-9_-].
+	name: `mcp_${tool.name}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64),
+	label: tool.title ?? tool.name,
+	description: tool.description ?? tool.name,
+	// Providers require an object schema, and some reject one without `properties`.
+	parameters: Type.Unsafe({ ...tool.inputSchema, type: "object", properties: tool.inputSchema.properties ?? {} }),
+	execute: async (_toolCallId, params, signal) => {
+		const result = await client.callTool(tool.name, params as Record<string, unknown>, { signal });
+		// MCP reports tool failures in the result instead of as a protocol error.
+		return { content: toLlmContent(result), details: undefined, isError: result.isError === true };
+	},
+}));
+```
+
+The [mcp-codemode example](https://github.com/earendil-works/pi/tree/main/packages/agent/examples/mcp-codemode) also forwards progress, passes `structuredContent` through, and lets `@earendil-works/pi-codemode` scripts call the tools.
+
+### OAuth
+
+`@earendil-works/pi-mcp/oauth` provides the MCP OAuth client subset without depending on the official SDK:
+
+```typescript
+import { McpClient, StreamableHttpTransport } from "@earendil-works/pi-mcp";
+import {
+	adaptOAuthProvider,
+	authorizeMcp,
+	McpOAuthAuthorizationRequiredError,
+	McpOAuthProvider,
+	OAuthCallbackServer,
+} from "@earendil-works/pi-mcp/oauth";
+
+const serverUrl = "https://mcp.example.com/mcp";
+const callback = await OAuthCallbackServer.listen();
+let authorizationUrl: URL | undefined;
+const oauth = new McpOAuthProvider({
+	serverUrl,
+	redirectUrl: callback.redirectUrl,
+	clientMetadata: { client_name: "My MCP client" },
+	onRedirect: (url) => {
+		authorizationUrl = url;
+	},
+});
+
+const connect = () => {
+	const client = new McpClient({ name: "my-client", version: "1.0.0" });
+	return {
+		client,
+		connected: client.connect(
+			new StreamableHttpTransport({ url: serverUrl, authProvider: adaptOAuthProvider(oauth) }),
+		),
+	};
+};
+
+const first = connect();
+try {
+	await first.connected;
+} catch (error) {
+	if (!(error instanceof McpOAuthAuthorizationRequiredError)) throw error;
+	const state = await oauth.state();
+	const result = callback.waitForCallback(state);
+	// Open authorizationUrl in the user's browser here.
+	const { code } = await result;
+	await authorizeMcp(oauth, { serverUrl, authorizationCode: code });
+}
+
+const { client, connected } = connect();
+await connected;
+```
+
+Inject `McpOAuthStateStore` into `McpOAuthProvider` for durable credentials. The package does not open a browser or choose where credentials are stored.
+
+The OAuth implementation is adapted from the MIT-licensed Model Context Protocol TypeScript SDK v1.29.0. Its license is included under `LICENSES/`.
+
+An MCP transport owns framing and I/O. It delivers individual JSON-RPC messages to `McpClient`; the client owns request correlation, initialization, timeouts, cancellation, server requests, and protocol-level helpers.
+
+## Supported protocol surface
+
+- MCP protocol version `2025-11-25`, accepting servers that negotiate `2025-06-18`, `2025-03-26`, or `2024-11-05`
+- initialization and `notifications/initialized`
+- ping
+- paginated `tools/list`
+- `tools/call`, including structured content
+- progress notifications and timeout renewal
+- request cancellation
+- Streamable HTTP sessions, the server-to-client GET stream with reconnection, and resumption of dropped response streams with `Last-Event-ID`
+- stdio shutdown per the spec (close stdin, then SIGTERM, then SIGKILL), applied to the server's whole process group
+- server `ping` and `roots/list` requests
+- logging and tool-list-change notifications through the generic notification API
+- OAuth protected-resource and authorization-server discovery
+- PKCE authorization code flow, dynamic client registration, token refresh (one refresh shared by concurrent 401s), and step-up authorization for `insufficient_scope`
+
+Batch JSON-RPC messages, legacy HTTP+SSE, servers, sampling, and tasks are outside the initial core.
+
+## Testing
+
+`@earendil-works/pi-mcp/testing` exports `createInMemoryTransportPair()` for client and adapter tests.
+````
+
+## @earendil-works/pi-telemetry - 1.0.3
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
@@ -12387,478 +9381,7 @@ npm run check
 MIT
 ````
 
-## @earendil-works/pi-telemetry - 0.86.1
-**Repository URL**: https://github.com/earendil-works/pi
-**License Type(s)**: MIT
-### License: https://spdx.org/licenses/MIT.html
-````
-# @earendil-works/pi-telemetry
-
-Vendor-neutral telemetry contracts and typed schema utilities for pi packages.
-
-This package provides:
-
-- an explicit, callback-based `TelemetryContext` / `TelemetrySpan` contract;
-- a shared `NOOP_TELEMETRY_CONTEXT`;
-- a reference `InMemoryTelemetryContext` implementation;
-- serializable schema definitions with inferred TypeScript types;
-- no exporter, global current-span state, or dependency on a telemetry backend.
-
-Applications can use the in-memory reference or provide an adapter for OpenTelemetry, Sentry, logs, or another backend. Pi packages pass telemetry contexts explicitly and define their domain schemas separately.
-
-## Table of Contents
-
-- [Installation](#installation)
-- [Telemetry Concepts](#telemetry-concepts)
-- [Core Context API](#core-context-api)
-- [Adapter Contract](#adapter-contract)
-- [No-op Context](#no-op-context)
-- [In-Memory Reference Adapter](#in-memory-reference-adapter)
-- [Adapter Conformance](#adapter-conformance)
-- [Typed Schemas](#typed-schemas)
-  - [Start and Completion Attributes](#start-and-completion-attributes)
-- [Schema Metadata](#schema-metadata)
-- [Pi Package Integration](#pi-package-integration)
-- [Security and Portability](#security-and-portability)
-- [API Reference](#api-reference)
-- [Development](#development)
-- [License](#license)
-
-## Installation
-
-```bash
-npm install @earendil-works/pi-telemetry
-```
-
-## Telemetry Concepts
-
-Telemetry describes what a program did while it was running. This package models that work using spans, attributes, events, statuses, and explicit context:
-
-| Concept | Plain-language meaning |
-|---|---|
-| **Span** | A timed record of one operation, such as loading an account or making an AI request. It begins before the work and ends when the work finishes. |
-| **Parent and child spans** | Operations can contain smaller operations. A request span might contain a cache lookup and a database query. Together they form a tree showing where time was spent. |
-| **Attribute** | A named fact attached to a span, such as `provider: "openai"`, `cache.hit: true`, or `item_count: 12`. Attributes describe the operation and its result. |
-| **Event** | A named occurrence at a point during a span, such as `retry.scheduled` or `cache.lookup`. Events have no duration and may carry their own attributes. |
-| **Status** | The operation's outcome: `ok` or `error`. An error status may include an error name and message. |
-| **Context** | A handle identifying where new work belongs in the span tree. Starting a span from a context makes it a child of that context. |
-
-For example, loading an account could produce this telemetry:
-
-```text
-example.account.load                         span
-├─ attributes: account.id=123, found=true   facts about the span
-├─ event: example.cache.lookup              occurrence during the span
-│  └─ attribute: cache.hit=false            fact about the event
-└─ status: ok                               final outcome
-```
-
-A span is diagnostic data, not business state. Recording it must not change whether the account load runs, succeeds, fails, or is persisted. An adapter translates these generic concepts into the corresponding concepts used by OpenTelemetry, Sentry, logs, or another backend.
-
-## Core Context API
-
-A `TelemetryContext` starts a span around a callback. The callback receives a `TelemetrySpan`, which is also the explicit parent context for child spans.
-
-```typescript
-import {
-  NOOP_TELEMETRY_CONTEXT,
-  type TelemetryContext,
-} from '@earendil-works/pi-telemetry';
-
-async function loadAccount(
-  accountId: string,
-  telemetryContext: TelemetryContext = NOOP_TELEMETRY_CONTEXT,
-) {
-  return telemetryContext.startSpan(
-    {
-      name: 'example.account.load',
-      attributes: { 'example.account.id': accountId },
-    },
-    async (span) => {
-      const account = await readAccount(accountId);
-      span.setAttributes({ 'example.account.found': account !== undefined });
-      return account;
-    },
-  );
-}
-```
-
-Pass the callback span to lower-level work to create explicit nesting:
-
-```typescript
-return telemetryContext.startSpan({ name: 'example.parent' }, async (parentSpan) => {
-  return parentSpan.startSpan({ name: 'example.child' }, async (childSpan) => {
-    childSpan.addEvent('example.cache.lookup', { 'example.cache.hit': true });
-    return performWork();
-  });
-});
-```
-
-There is no public `end()` method. `startSpan()` owns settlement and keeps the span open until the callback's value or promise settles. For an expected failure represented by a normal return value, set the status explicitly:
-
-```typescript
-return telemetryContext.startSpan({ name: 'example.save' }, async (span) => {
-  const result = await save();
-  if (!result.ok) {
-    span.setStatus({
-      status: 'error',
-      error: { name: 'SaveError', message: result.reason },
-    });
-  }
-  return result;
-});
-```
-
-## Adapter Contract
-
-An adapter implements `TelemetryContext` and bridges the generic API to its backend. It must:
-
-- create a child span and invoke the callback synchronously, exactly once;
-- preserve the callback's returned value and rejection value, returning a promise rejected with the same value after a synchronous throw;
-- keep the native span open until a returned promise settles;
-- treat normal completion as `ok` and throws/rejections as errors unless an explicit status was set;
-- make repeated `setStatus()` calls last-write-wins;
-- merge `setAttributes()` calls, with later defined values replacing earlier values and `undefined` ignored;
-- make recording methods synchronous, passive, and non-throwing;
-- ignore calls made after settlement;
-- ignore a failed recording call atomically, suppress backend failures, and still execute the business callback exactly once.
-
-Adapters may activate backend-native ambient context internally for automatic instrumentation, but pi code always propagates the parent through `TelemetryContext` arguments. Exporter buffering, flushing, sampling, backend IDs, and backend-specific context objects belong to the adapter. Use the [adapter conformance suite](#adapter-conformance) to check these observable semantics.
-
-## No-op Context
-
-Use `NOOP_TELEMETRY_CONTEXT` when telemetry is optional:
-
-```typescript
-import { NOOP_TELEMETRY_CONTEXT } from '@earendil-works/pi-telemetry';
-
-const result = await NOOP_TELEMETRY_CONTEXT.startSpan(
-  { name: 'example.operation' },
-  () => runOperation(),
-);
-```
-
-The no-op context:
-
-- invokes callbacks synchronously;
-- preserves returned values and asynchronous rejections, and converts a synchronous throw to a promise rejected with the same value;
-- uses one shared frozen inert span, including for nested spans;
-- does not inspect or retain names, attributes, events, or statuses.
-
-## In-Memory Reference Adapter
-
-`InMemoryTelemetryContext` is the backend-neutral reference implementation. It is useful for tests, local diagnostics, and applications that intentionally want process-local capture without an exporter:
-
-```typescript
-import { InMemoryTelemetryContext } from '@earendil-works/pi-telemetry';
-
-const telemetry = new InMemoryTelemetryContext();
-
-await telemetry.startSpan(
-  { name: 'example.operation', attributes: { input: 'demo' } },
-  async (span) => {
-    span.addEvent('example.started');
-    span.setAttributes({ output_count: 3 });
-  },
-);
-
-console.log(telemetry.getSpans());
-```
-
-`getSpans()` returns detached snapshots in span-start order. Each `RecordedTelemetrySpan` contains a deterministic numeric ID, parent ID, merged attributes, ordered events, final status, settlement state, and deterministic end sequence. It records no timestamps.
-
-The adapter is safe to use as an ordinary `TelemetryContext`, but storage is unbounded and process-local. Create a fresh instance to isolate tests or recording scopes, and do not capture sensitive attributes unless the caller's data policy allows them.
-
-## Adapter Conformance
-
-`@earendil-works/pi-telemetry/testing` exports a runner-independent conformance suite modeled as grouped cases. A fixture supplies a fresh context and converts its backend's finished spans into normalized `RecordedTelemetrySpan` snapshots:
-
-```typescript
-import {
-  createTelemetryAdapterConformance,
-  type TelemetryAdapterFixture,
-} from '@earendil-works/pi-telemetry/testing';
-import { describe, it } from 'vitest';
-
-const conformance = createTelemetryAdapterConformance(async () => {
-  const adapter = createMyTelemetryAdapter();
-  return {
-    context: adapter.context,
-    getSpans: async () => adapter.normalizedSpans(),
-    async [Symbol.asyncDispose]() {
-      await adapter.close();
-    },
-  } satisfies TelemetryAdapterFixture;
-});
-
-for (const group of new Set(conformance.map((testCase) => testCase.group))) {
-  describe(group, () => {
-    for (const testCase of conformance.filter((candidate) => candidate.group === group)) {
-      it(testCase.name, () => testCase.run());
-    }
-  });
-}
-```
-
-The suite checks synchronous single admission, result and rejection identity, automatic and explicit status, attribute merging, event ordering, inert post-settlement calls, nested and concurrent parentage, and suppression of unreadable telemetry payload failures. `getSpans()` may flush an asynchronous exporter before returning. The testing subpath uses Node's assertion APIs; the root telemetry package remains runtime-neutral.
-
-## Typed Schemas
-
-The low-level span API intentionally accepts open names and attribute bags so adapters remain generic. Domain packages can define closed, serializable schemas and infer exact TypeScript types from them.
-
-```typescript
-import {
-  createTypedSpanStarter,
-  defineTelemetrySchema,
-} from '@earendil-works/pi-telemetry';
-
-export const EXAMPLE_TELEMETRY_SCHEMA = defineTelemetrySchema({
-  version: 1,
-  spans: {
-    'example.read': {
-      description: 'Read one resource',
-      parents: { kind: 'any' },
-      startAttributes: {
-        'example.resource': {
-          type: 'string',
-          required: true,
-          values: ['account', 'project'],
-          description: 'Resource kind',
-        },
-      },
-      endAttributes: {
-        'example.item_count': {
-          type: 'number',
-          description: 'Number of returned items',
-        },
-      },
-      events: {
-        'example.cache': {
-          description: 'Cache lookup result',
-          attributes: {
-            'example.cache.hit': {
-              type: 'boolean',
-              required: true,
-              description: 'Whether the cache contained the resource',
-            },
-          },
-        },
-      },
-      status: {
-        default: 'ok',
-        errorWhen: 'The read throws or returns an error result',
-      },
-    },
-  },
-} as const);
-
-const startSpan = createTypedSpanStarter(
-  telemetryContext,
-  [EXAMPLE_TELEMETRY_SCHEMA],
-);
-```
-
-The starter exposes one overload per span and checks names and attributes at compile time. Union-valued names must be narrowed before a call, preserving the relationship between each runtime name and its attribute schema. Its callback receives a child starter over the same schemas, already bound to the callback span:
-
-```typescript
-await startSpan(
-  'example.read',
-  { 'example.resource': 'account' },
-  async (span, startChildSpan) => {
-    span.addEvent('example.cache', { 'example.cache.hit': true });
-    const accounts = await readAccounts();
-    span.setAttributes({ 'example.item_count': accounts.length });
-
-    await startChildSpan(
-      'example.read',
-      { 'example.resource': 'project' },
-      async (childSpan) => {
-        const projects = await readProjects();
-        childSpan.setAttributes({ 'example.item_count': projects.length });
-      },
-    );
-
-    return accounts;
-  },
-);
-```
-
-### Start and Completion Attributes
-
-`startAttributes` and `endAttributes` describe when an attribute is normally known, not separate runtime storage:
-
-| Schema field | How values are recorded | Requiredness |
-|---|---|---|
-| `startAttributes` | Passed in the typed starter's `attributes` argument when the span is created | Each definition explicitly sets `required: true` or `false` |
-| `endAttributes` | Added later through the schema-scoped span's `setAttributes()` method | Always optional |
-
-Both sets become ordinary attributes on the same backend span. There is no separate end-attribute payload or end callback. In the preceding example, `example.resource` is known when `example.read` starts, while `example.item_count` is known only after `readAccounts()` returns:
-
-```typescript
-await startSpan(
-  'example.read',
-  { 'example.resource': 'account' }, // required start attribute
-  async (span) => {
-    const accounts = await readAccounts();
-    span.setAttributes({
-      'example.item_count': accounts.length, // optional completion attribute
-    });
-    return accounts;
-  },
-); // resolving the callback settles the span
-```
-
-“End” means completion enrichment: an end attribute may be set at any point while the callback is active, and it may be omitted when unavailable. Calling `setAttributes()` zero times is valid. This matters for early failures, cancellation, and provider-specific data that may not exist on every path.
-
-Repeated `setAttributes()` calls merge into the same attribute bag. A later defined value replaces an earlier value for the same key, while `undefined` is ignored. The schema-scoped method accepts only the current span's declared end attributes.
-
-Attributes do not end the span. Returning, resolving, throwing, or rejecting from the callback controls settlement; `startSpan()` performs the actual end operation. Adapter calls made after settlement are inert.
-
-A starter can compose multiple independently versioned schemas:
-
-```typescript
-import { AGENT_TELEMETRY_SCHEMAS } from '@earendil-works/pi-agent-core';
-
-const startAgentSpan = createTypedSpanStarter(
-  telemetryContext,
-  AGENT_TELEMETRY_SCHEMAS,
-);
-```
-
-Inline schema arrays retain their tuple types automatically. Separately declared arrays should use `as const`. Literal duplicate span names across the array are rejected at compile time; schemas are not merged, inspected, or retained at runtime.
-
-Schema-derived types reject missing required attributes, unknown keys, invalid closed-set values, undeclared events, and attributes on empty schemas. End attributes are always optional enrichment; the type system does not require `setAttributes()` to be called.
-
-`defineTelemetrySchema()` is a typed identity function. It returns ordinary JSON-serializable data and performs no runtime validation or parent-rule enforcement.
-
-## Schema Metadata
-
-Supported attribute types are:
-
-- `string`, `number`, and `boolean`;
-- `string[]`, `number[]`, and `boolean[]`.
-
-Attribute definitions support:
-
-- `values`: a closed set for scalar values;
-- `elementValues`: a closed set for array elements;
-- `examples`: documentation examples;
-- `sensitive`: marks data requiring special handling;
-- `cardinality`: records expected `low` or `high` cardinality.
-
-Start and event attributes declare `required`. End attributes do not; see [Start and Completion Attributes](#start-and-completion-attributes).
-
-Parent metadata is descriptive schema data:
-
-- `{ kind: 'any' }`: root or any caller span;
-- `{ kind: 'root_or_external' }`: root or a caller-owned span outside the schema;
-- `{ kind: 'spans', spans: [...] }`: only the listed schema spans.
-
-Adapters do not need to understand schema objects. Instrumentation helpers and tests use them to keep emitted names and attributes consistent.
-
-## Pi Package Integration
-
-Package ownership is intentionally split:
-
-- `@earendil-works/pi-telemetry` owns the vendor-neutral contract, no-op and in-memory reference contexts, schema utilities, and adapter conformance suite;
-- `@earendil-works/pi-ai` accepts and propagates `telemetryContext` in provider request options but owns no telemetry schema;
-- `@earendil-works/pi-agent-core` owns and exports the pi AI-request and harness schemas, their combined readonly schema tuple, and typed span helpers.
-
-```typescript
-import {
-  AGENT_TELEMETRY_SCHEMAS,
-  AI_TELEMETRY_SCHEMA,
-  HARNESS_TELEMETRY_SCHEMA,
-  startAiSpan,
-  startHarnessSpan,
-} from '@earendil-works/pi-agent-core';
-```
-
-The pi schemas use pi-owned `pi.ai.*`, `pi.harness.*`, and `pi.session.*` names. Adapters may translate them to backend conventions without changing the emitted pi vocabulary.
-
-## Security and Portability
-
-Telemetry is process-local diagnostics, not durable application state. Do not persist a `TelemetryContext`, `TelemetrySpan`, or backend-native trace object in records, messages, snapshots, or deferred handles.
-
-Attribute values are intentionally limited to primitive scalars and arrays. Domain instrumentation should avoid prompts, completions, tool arguments or output, file contents, provider payloads, headers, credentials, and free-form error details unless its schema and data policy explicitly allow them.
-
-The package does not use `AsyncLocalStorage` or another runtime-specific ambient context API. It is suitable for Node.js, Bun, browsers, and workers; backend adapters remain responsible for their own runtime compatibility.
-
-## API Reference
-
-### Core types and values
-
-| Export | Purpose |
-|---|---|
-| `TelemetryContext` | Starts callback-managed child spans |
-| `TelemetrySpan` | Records attributes, events, and status; also acts as a child context |
-| `SpanOptions` | Span name and optional start attributes |
-| `SpanAttributes` / `AttributeValue` | Open adapter-level attribute bag and supported values |
-| `SpanStatus` | Explicit `ok` or `error` status |
-| `NOOP_TELEMETRY_CONTEXT` | Shared passive context for disabled telemetry |
-| `InMemoryTelemetryContext` | Reference adapter with deterministic process-local recording |
-| `RecordedTelemetrySpan` | Normalized captured span snapshot |
-| `RecordedTelemetryEvent` | Normalized captured event snapshot |
-
-### Schema definitions and inference
-
-| Export | Purpose |
-|---|---|
-| `defineTelemetrySchema()` | Typed identity helper for serializable schema data |
-| `createTypedSpanStarter()` | Binds a parent context to one or more schema vocabularies |
-| `TypedSpanStarter` | Exact starter type with recursively child-bound callbacks |
-| `TelemetrySchemaDefinition` | Top-level schema shape |
-| `TelemetrySpanDefinition` | Span metadata, parents, attributes, events, and status rule |
-| `TelemetryAttributeType` | Supported scalar and array type names |
-| `TelemetryAttributeMetadata` | Description, sensitivity, and cardinality metadata |
-| `TelemetryAttributeDefinition` | Attribute type, allowed values, examples, and metadata |
-| `TelemetryStartAttributeDefinition` | Start attribute definition with requiredness |
-| `TelemetryEventAttributeDefinition` | Event attribute definition with requiredness |
-| `TelemetryEventDefinition` | Event description and attribute definitions |
-| `TelemetryParentDefinition` | Open, external-root, or finite schema-parent rule |
-| `TelemetrySchemaSpanName` | Union of declared span names |
-| `TelemetrySchemaSpanStartAttributes` | Exact inferred start attributes for one span |
-| `TelemetrySchemaSpanEndAttributes` | Optional inferred end attributes for one span |
-| `TelemetrySchemaSpanEventName` | Union of events declared by one span |
-| `TelemetrySchemaSpanEventAttributes` | Exact inferred attributes for one event |
-| `SchemaTelemetrySpan` | Span view restricted to one schema span |
-| `TelemetrySchemaSpanUnion` | Discriminated union of all spans in a schema |
-| `InferStartAttributes` | Required and optional values inferred from start definitions |
-| `InferOptionalAttributes` | Optional values inferred from end definitions |
-| `InferEventAttributes` | Required and optional values inferred from event definitions |
-| `InferRequiredAndOptionalAttributes` | Shared inference utility for definitions with requiredness |
-| `ExactTelemetryAttributes` | Rejects keys outside an expected attribute set |
-
-### Testing subpath
-
-| Export | Purpose |
-|---|---|
-| `createTelemetryAdapterConformance()` | Creates runner-independent adapter conformance cases |
-| `TelemetryAdapterFixture` | Fresh context and normalized snapshot reader for one case |
-| `TelemetryAdapterFixtureFactory` | Creates isolated fixtures |
-| `TelemetryAdapterConformanceCase` | Grouped case that test runners execute |
-
-## Development
-
-From this package directory:
-
-```bash
-npm test
-npm run build
-```
-
-Repository-wide type checking, formatting, linting, and smoke checks run with:
-
-```bash
-npm run check
-```
-
-## License
-
-MIT
-````
-
-## @earendil-works/pi-tui - 0.86.0
+## @earendil-works/pi-tui - 1.0.3
 **Repository URL**: https://github.com/earendil-works/pi
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
@@ -12941,6 +9464,44 @@ tui.requestRender(); // Request a re-render
 
 // Global debug key handler (Shift+Ctrl+D)
 tui.onDebug = () => console.log("Debug triggered");
+```
+
+### Colors and terminal styles
+
+Colors are values that can be converted or mixed before terminal rendering:
+
+```typescript
+import {
+  colorToRgb,
+  foregroundAnsi,
+  getTerminalColorMode,
+  mixColors,
+  parseColor,
+  rgbColor,
+  styleText,
+} from "@earendil-works/pi-tui";
+
+const accent = parseColor("oklch(70% 0.12 220)");
+const background = parseColor("#20242a");
+const foreground = mixColors(accent, background, 0.2);
+
+const text = styleText(
+  "Ready",
+  { fg: foreground, bg: background, bold: true },
+  getTerminalColorMode(),
+);
+```
+
+`Color` is an indexed ANSI color, an sRGB color, or an OKLCH color. Every color converts to sRGB, so color math such as `mixColors()` always works. Indices 0-15 follow the user's terminal palette, so their sRGB values are approximations. `styleText()` converts colors to truecolor or 256-color output based on the requested terminal mode.
+
+`parseColor()` also accepts OKHSL, as in `okhsl(250 60% 55%)`; `okhslColor()` builds it in code and `colorToOkhsl()` reads any color's OKHSL channels. OKHSL saturation is relative to the most the sRGB gamut allows at the hue and lightness, so every value is in gamut and equal saturation looks equally colorful across hues. OKHSL colors are converted to sRGB when created.
+
+Conversions are not cached. OKLCH colors, especially ones outside the sRGB gamut, are more expensive to convert than sRGB or indexed colors. For colors used on every render, convert once and reuse the result:
+
+```typescript
+const { r, g, b } = colorToRgb(mixColors(accent, background, 0.2));
+const foreground = rgbColor(r, g, b); // cheap to render repeatedly
+const foregroundCode = foregroundAnsi(foreground, getTerminalColorMode());
 ```
 
 ### Alternate-screen viewport layouts
@@ -13078,7 +9639,7 @@ interface Component {
   render(width: number): string[];
   handleInput?(data: string): void;
   handleMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined;
-  invalidate?(): void;
+  invalidate(): void;
 }
 ```
 
@@ -13087,7 +9648,7 @@ interface Component {
 | `render(width)` | Returns an array of strings, one per line. Each line **must not exceed `width`** or the TUI will error. Use `truncateToWidth()` or manual wrapping to ensure this. |
 | `handleInput?(data)` | Called when the component has focus and receives keyboard input. The `data` string contains raw terminal input (may include ANSI escape sequences). |
 | `handleMouse?(event)` | Called by `TuiAltScreen` for normalized pointer input targeted at the component. |
-| `invalidate?()` | Called to clear any cached render state. Components should re-render from scratch on the next `render()` call. |
+| `invalidate()` | Required. Clear any cached render state so the next `render()` starts from scratch. Components without cached render state can use an empty implementation. |
 
 The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered line. Styles do not carry across lines. If you emit multi-line text with styling, reapply styles per line or use `wrapTextWithAnsi()` so styles are preserved for each wrapped line.
 
@@ -13145,6 +9706,8 @@ class MyInput implements Component, Focusable {
     // Emit marker right before the fake cursor
     return [`> ${beforeCursor}${marker}\x1b[7m${atCursor}\x1b[27m${afterCursor}`];
   }
+
+  invalidate(): void {}
 }
 ```
 
@@ -13655,6 +10218,8 @@ class MyInteractiveComponent implements Component {
       return truncateToWidth(prefix + item, width);
     });
   }
+
+  invalidate(): void {}
 }
 ```
 
@@ -13686,6 +10251,8 @@ class MyComponent implements Component {
     // Pad to exact width (optional, for backgrounds)
     return [line + " ".repeat(width - visible)];
   }
+
+  invalidate(): void {}
 }
 ```
 
@@ -13743,7 +10310,7 @@ See `test/chat-simple.ts` for a complete chat interface example with:
 
 Run it:
 ```bash
-npx tsx test/chat-simple.ts
+node test/chat-simple.ts
 ```
 
 ## Development
@@ -13756,7 +10323,7 @@ npm install
 npm run check
 
 # Run the demo
-npx tsx test/chat-simple.ts
+node test/chat-simple.ts
 ```
 
 ### Debug logging
@@ -13764,7 +10331,7 @@ npx tsx test/chat-simple.ts
 Set `PI_TUI_WRITE_LOG` to capture the raw ANSI stream written to stdout.
 
 ```bash
-PI_TUI_WRITE_LOG=/tmp/tui-ansi.log npx tsx test/chat-simple.ts
+PI_TUI_WRITE_LOG=/tmp/tui-ansi.log node test/chat-simple.ts
 ```
 ````
 
@@ -21678,39 +18245,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## @protobufjs/utf8 - 1.1.1
-**Repository URL**: https://github.com/dcodeIO/protobuf.js
-**License Type(s)**: BSD-3-Clause
-### License: https://spdx.org/licenses/BSD-3-Clause.html
-```
-Copyright (c) 2016, Daniel Wirtz  All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of its author, nor the names of its contributors
-  may be used to endorse or promote products derived from this software
-  without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-```
-
 ## @protobufjs/utf8 - 1.1.2
 **Repository URL**: https://github.com/protobufjs/protobuf.js
 **License Type(s)**: BSD-3-Clause
@@ -24114,214 +20648,6 @@ Apache License
    limitations under the License.
 ```
 
-## @smithy/core - 3.33.3
-**Repository URL**: https://github.com/smithy-lang/smithy-typescript
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
 ## @smithy/core - 3.35.0
 **Repository URL**: https://github.com/smithy-lang/smithy-typescript
 **License Type(s)**: Apache-2.0
@@ -25764,214 +22090,6 @@ Apache License
       identification within third-party archives.
 
    Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
-## @smithy/types - 4.18.0
-**Repository URL**: https://github.com/smithy-lang/smithy-typescript
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "{}"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -28586,36 +24704,6 @@ Original Author, when distributed with the Software.
 ```
 
 ## brace-expansion - 5.0.12
-**Repository URL**: https://github.com/juliangruber/brace-expansion
-**License Type(s)**: MIT
-### License: https://spdx.org/licenses/MIT.html
-```
-MIT License
-
-Copyright Julian Gruber <julian@juliangruber.com>
-
-TypeScript port Copyright Isaac Z. Schlueter <i@izs.me>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-## brace-expansion - 5.0.9
 **Repository URL**: https://github.com/juliangruber/brace-expansion
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html
@@ -31295,214 +27383,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## gaxios - 7.1.4
-**Repository URL**: https://github.com/googleapis/google-cloud-node-core
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright [yyyy] [name of copyright owner]
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
 ## gaxios - 7.3.1
 **Repository URL**: https://github.com/googleapis/google-cloud-node
 **License Type(s)**: Apache-2.0
@@ -32114,214 +27994,6 @@ software or this license, under any kind of legal claim.***
 
 ## google-auth-library - 10.5.0
 **Repository URL**: https://github.com/googleapis/google-auth-library-nodejs
-**License Type(s)**: Apache-2.0
-### License: https://spdx.org/licenses/Apache-2.0.html
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright [yyyy] [name of copyright owner]
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
-## google-auth-library - 10.6.2
-**Repository URL**: https://github.com/googleapis/google-cloud-node-core
 **License Type(s)**: Apache-2.0
 ### License: https://spdx.org/licenses/Apache-2.0.html
 ```
@@ -35169,68 +30841,6 @@ Apache License
    limitations under the License.
 ```
 
-## lru-cache - 11.4.0
-**Repository URL**: https://github.com/isaacs/node-lru-cache
-**License Type(s)**: BlueOak-1.0.0
-### License: https://spdx.org/licenses/BlueOak-1.0.0.html
-```
-# Blue Oak Model License
-
-Version 1.0.0
-
-## Purpose
-
-This license gives everyone as much permission to work with
-this software as possible, while protecting contributors
-from liability.
-
-## Acceptance
-
-In order to receive this license, you must agree to its
-rules.  The rules of this license are both obligations
-under that agreement and conditions to your license.
-You must not do anything with this software that triggers
-a rule that you cannot or will not follow.
-
-## Copyright
-
-Each contributor licenses you to do everything with this
-software that would otherwise infringe that contributor's
-copyright in it.
-
-## Notices
-
-You must ensure that everyone who gets a copy of
-any part of this software from you, with or without
-changes, also gets the text of this license or a link to
-<https://blueoakcouncil.org/license/1.0.0>.
-
-## Excuse
-
-If anyone notifies you in writing that you have not
-complied with [Notices](#notices), you can keep your
-license by taking all practical steps to comply within 30
-days after the notice.  If you do not do so, your license
-ends immediately.
-
-## Patent
-
-Each contributor licenses you to do everything with this
-software that would otherwise infringe any patent claims
-they can license or become able to license.
-
-## Reliability
-
-No contributor can revoke this license.
-
-## No Liability
-
-***As far as the law allows, this software comes as is,
-without any warranty or condition, and no contributor
-will be liable to anyone for any damages related to this
-software or this license, under any kind of legal claim.***
-```
-
 ## lru-cache - 11.5.3
 **Repository URL**: https://github.com/isaacs/node-lru-cache
 **License Type(s)**: BlueOak-1.0.0
@@ -36881,6 +32491,214 @@ Apache License
    limitations under the License.
 ```
 
+## openai - 7.19.0
+**Repository URL**: https://github.com/openai/openai-node
+**License Type(s)**: Apache-2.0
+### License: https://spdx.org/licenses/Apache-2.0.html
+```
+Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright 2026 OpenAI
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+```
+
 ## p-map - 7.0.8
 **Repository URL**: https://github.com/sindresorhus/p-map
 **License Type(s)**: MIT
@@ -37431,52 +33249,6 @@ standalone and requires a support library to be linked with it. This
 support library is itself covered by the above license.
 ```
 
-## protobufjs - 7.6.6
-**Repository URL**: https://github.com/protobufjs/protobuf.js
-**License Type(s)**: BSD-3-Clause
-### License: https://spdx.org/licenses/BSD-3-Clause.html
-```
-This license applies to all parts of protobuf.js except those files
-either explicitly including or referencing a different license or
-located in a directory containing a different LICENSE file.
-
----
-
-Copyright (c) 2016, Daniel Wirtz  All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of its author, nor the names of its contributors
-  may be used to endorse or promote products derived from this software
-  without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
----
-
-Code generated by the command line utilities is owned by the owner
-of the input file used when generating it. This code is not
-standalone and requires a support library to be linked with it. This
-support library is itself covered by the above license.
-```
-
 ## proxy-addr - 2.0.7
 **Repository URL**: https://github.com/jshttp/proxy-addr
 **License Type(s)**: MIT
@@ -37576,6 +33348,34 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## quickjs-wasi - 3.6.2
+**Repository URL**: https://github.com/vercel-labs/quickjs-wasi
+**License Type(s)**: MIT
+### License: https://spdx.org/licenses/MIT.html
+```
+MIT License
+
+Copyright (c) 2026 Vercel, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 ```
 
 ## range-parser - 1.3.0

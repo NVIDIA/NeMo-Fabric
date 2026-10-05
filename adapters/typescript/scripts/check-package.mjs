@@ -120,13 +120,13 @@ if (manifest.name === "nemo-fabric-adapters-pi") {
     if (manifest.dependencies?.[name] !== undefined) {
       throw new Error(`The Pi harness package ${name} must not be a production dependency`);
     }
-    if (manifest.peerDependencies?.[name] !== "^0.86.0") {
+    if (manifest.peerDependencies?.[name] !== "^1.0.0") {
       throw new Error(`The Pi harness package ${name} must declare the supported peer range`);
     }
     if (manifest.peerDependenciesMeta?.[name]?.optional !== true) {
       throw new Error(`The Pi harness package ${name} must be an optional peer`);
     }
-    if (manifest.devDependencies?.[name] !== "0.86.0") {
+    if (manifest.devDependencies?.[name] !== "1.0.3") {
       throw new Error(`The Pi harness package ${name} must be exact-pinned for development`);
     }
   }

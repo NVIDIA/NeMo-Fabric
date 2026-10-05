@@ -11,6 +11,8 @@ import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type {
   AgentSession,
   ExtensionCommandContextActions,
+  ExtensionFactory,
+  McpServerConfig,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti/static";
@@ -71,11 +73,12 @@ type PiToolFactory = (context: PiToolFactoryContext) => ToolDefinition | Promise
 const PI_BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 const TOOL_MODULE_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 const PI_HARNESS_INSTALL_COMMAND =
-  "npm install @earendil-works/pi-ai@^0.86.0 @earendil-works/pi-coding-agent@^0.86.0";
+  "npm install @earendil-works/pi-ai@^1.0.0 @earendil-works/pi-coding-agent@^1.0.0";
 
 interface PiSdkModules {
   InMemoryCredentialStore: typeof import("@earendil-works/pi-ai").InMemoryCredentialStore;
   createAgentSession: typeof import("@earendil-works/pi-coding-agent").createAgentSession;
+  createMcpExtension: typeof import("@earendil-works/pi-coding-agent").createMcpExtension;
   DefaultResourceLoader: typeof import("@earendil-works/pi-coding-agent").DefaultResourceLoader;
   ModelRuntime: typeof import("@earendil-works/pi-coding-agent").ModelRuntime;
   SessionManager: typeof import("@earendil-works/pi-coding-agent").SessionManager;
@@ -112,6 +115,7 @@ async function loadPiSdk(): Promise<PiSdkModules> {
   if (
     typeof ai.InMemoryCredentialStore !== "function" ||
     typeof codingAgent.createAgentSession !== "function" ||
+    typeof codingAgent.createMcpExtension !== "function" ||
     typeof codingAgent.DefaultResourceLoader !== "function" ||
     typeof codingAgent.ModelRuntime !== "function" ||
     typeof codingAgent.SessionManager !== "function" ||
@@ -126,10 +130,179 @@ async function loadPiSdk(): Promise<PiSdkModules> {
   return {
     InMemoryCredentialStore: ai.InMemoryCredentialStore,
     createAgentSession: codingAgent.createAgentSession,
+    createMcpExtension: codingAgent.createMcpExtension,
     DefaultResourceLoader: codingAgent.DefaultResourceLoader,
     ModelRuntime: codingAgent.ModelRuntime,
     SessionManager: codingAgent.SessionManager,
     SettingsManager: codingAgent.SettingsManager,
+  };
+}
+
+const MCP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
+const MCP_ENV_REFERENCE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/gu;
+const MCP_SERVER_NAME = /^[A-Za-z0-9_-]+$/u;
+
+function loopbackHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
+}
+
+function expandMcpHeader(
+  value: string,
+  configuredEnvironment: Record<string, string>,
+  parentEnvironment: NodeJS.ProcessEnv,
+): string {
+  return value.replaceAll(MCP_ENV_REFERENCE, (_reference, variable: string) => {
+    const configured = configuredEnvironment[variable];
+    if (Object.hasOwn(configuredEnvironment, variable) && configured !== undefined) {
+      return configured;
+    }
+    const inherited = parentEnvironment[variable];
+    if (Object.hasOwn(parentEnvironment, variable) && inherited !== undefined) {
+      return inherited;
+    }
+    throw new LifecycleError(
+      "pi_mcp_header_variable_missing",
+      "A configured Pi MCP header references an environment variable that is not available",
+    );
+  });
+}
+
+function validateMcpHeader(name: string, value: string): void {
+  if (!MCP_HEADER_NAME.test(name) || value.length === 0 || value.trim() !== value) {
+    throw new LifecycleError("pi_mcp_invalid_header", "A configured Pi MCP HTTP header is invalid");
+  }
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined || codePoint > 0xFF || (codePoint < 0x20 && codePoint !== 0x09) || codePoint === 0x7F) {
+      throw new LifecycleError("pi_mcp_invalid_header", "A configured Pi MCP HTTP header is invalid");
+    }
+  }
+}
+
+// Pi config values support command and environment expansion. Fabric has already
+// resolved its environment boundary, so preserve the resulting values literally.
+function literalPiConfigValue(value: string): string {
+  const escaped = value.replaceAll("$", () => "$$");
+  return escaped.startsWith("!") ? `$!${escaped.slice(1)}` : escaped;
+}
+
+function mcpToolExposure(
+  allowed: string[] | null | undefined,
+  blocked: string[] | undefined,
+): Pick<McpServerConfig, "exposure" | "toolExposure"> {
+  const toolExposure: Record<string, "direct" | "hidden"> = {};
+  if (allowed !== undefined && allowed !== null) {
+    for (const name of allowed) {
+      toolExposure[name] = "direct";
+    }
+  }
+  for (const name of blocked ?? []) {
+    toolExposure[name] = "hidden";
+  }
+  return {
+    exposure: allowed === undefined || allowed === null ? "direct" : "hidden",
+    ...(Object.keys(toolExposure).length === 0 ? {} : { toolExposure }),
+  };
+}
+
+export function selectPiMcpServers(
+  config: AgentConfig,
+  configuredEnvironment: Record<string, string>,
+  parentEnvironment: NodeJS.ProcessEnv,
+): Record<string, McpServerConfig> {
+  if (config.mcp?.extensions !== undefined) {
+    throw new LifecycleError("pi_mcp_extensions_unsupported", "Pi does not support Fabric MCP extensions");
+  }
+  const selected = Object.create(null) as Record<string, McpServerConfig>;
+  for (const [name, server] of Object.entries(config.mcp?.servers ?? {})) {
+    if (!MCP_SERVER_NAME.test(name) || server.extensions !== undefined) {
+      throw new LifecycleError("pi_mcp_invalid_server", "Pi MCP server configuration is unsupported or invalid");
+    }
+    if (server.authentication !== undefined && server.authentication !== null) {
+      throw new LifecycleError(
+        "pi_mcp_authentication_unsupported",
+        "Pi MCP authentication is unsupported; configure a custom authorization header instead",
+      );
+    }
+    const exposure = mcpToolExposure(server.allowed_tools, server.blocked_tools);
+    if (server.transport === "stdio") {
+      if (server.url.trim().length === 0 || Object.keys(server.custom_headers ?? {}).length > 0) {
+        throw new LifecycleError(
+          "pi_mcp_invalid_server",
+          "Pi stdio MCP servers require a command and do not accept HTTP headers",
+        );
+      }
+      selected[name] = {
+        type: "stdio",
+        command: server.url,
+        ...(server.args === undefined ? {} : { args: server.args }),
+        ...(server.env === undefined
+          ? {}
+          : { env: Object.fromEntries(Object.entries(server.env).map(([key, value]) => [key, literalPiConfigValue(value)])) }),
+        ...exposure,
+      };
+      continue;
+    }
+    if (server.transport === "streamable-http") {
+      if ((server.args?.length ?? 0) > 0 || Object.keys(server.env ?? {}).length > 0) {
+        throw new LifecycleError(
+          "pi_mcp_invalid_server",
+          "Pi streamable-HTTP MCP servers do not accept command arguments or environment variables",
+        );
+      }
+      let endpoint: URL;
+      try {
+        endpoint = new URL(server.url);
+      } catch {
+        throw new LifecycleError(
+          "pi_mcp_invalid_server",
+          "Pi streamable-HTTP MCP servers require an HTTP or HTTPS URL",
+        );
+      }
+      if (
+        (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") ||
+        (endpoint.protocol === "http:" && !loopbackHostname(endpoint.hostname))
+      ) {
+        throw new LifecycleError(
+          "pi_mcp_invalid_server",
+          "Pi streamable-HTTP MCP servers require HTTPS unless the endpoint is loopback",
+        );
+      }
+      const headers = Object.fromEntries(
+        Object.entries(server.custom_headers ?? {}).map(([headerName, value]) => {
+          const expanded = expandMcpHeader(value, configuredEnvironment, parentEnvironment);
+          validateMcpHeader(headerName, expanded);
+          return [headerName, literalPiConfigValue(expanded)];
+        }),
+      );
+      selected[name] = {
+        type: "http",
+        url: server.url,
+        ...(Object.keys(headers).length === 0 ? {} : { headers }),
+        ...exposure,
+      };
+      continue;
+    }
+    throw new LifecycleError(
+      "pi_mcp_transport_unsupported",
+      `Pi does not support MCP transport ${JSON.stringify(server.transport)}; supported transports: stdio, streamable-http`,
+      {
+        metadata: {
+          field: `mcp.servers.${name}.transport`,
+          transport: server.transport,
+          supported_transports: ["stdio", "streamable-http"],
+        },
+      },
+    );
+  }
+  return selected;
+}
+
+function mcpRegistrationExtension(servers: Record<string, McpServerConfig>): ExtensionFactory {
+  return (api) => {
+    for (const [name, server] of Object.entries(servers)) {
+      api.registerMcpServer(name, server);
+    }
   };
 }
 
@@ -431,8 +604,8 @@ class PiSdkSessionHandle implements PiSessionHandle {
       await this.session.prompt(text, {
         expandPromptTemplates: true,
         source: "interactive",
-        preflightResult: (result) => {
-          accepted = result;
+        preflightResult: () => {
+          accepted = true;
         },
       });
     } finally {
@@ -503,6 +676,11 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         },
       );
     }
+    const mcpServers = selectPiMcpServers(
+      input.config,
+      input.runtimeContext.environment.env ?? {},
+      process.env,
+    );
     const pi = await loadPiSdk();
     let workspace: string;
     try {
@@ -569,12 +747,25 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         extensionPaths.push(relay.extensionPath);
       }
       const agentDir = join(workspace, ".fabric-pi");
+      const extensionFactories = Object.keys(mcpServers).length === 0
+        ? []
+        : [
+            { name: "nemo-fabric-mcp-servers", hidden: true, factory: mcpRegistrationExtension(mcpServers) },
+            {
+              name: "nemo-fabric-mcp",
+              hidden: true,
+              factory: pi.createMcpExtension({
+                loadConfig: () => ({ servers: [], errors: [], autoEnableCodemode: false }),
+              }),
+            },
+          ];
       const resourceLoader = new pi.DefaultResourceLoader({
         cwd: workspace,
         agentDir,
         settingsManager: settings,
         additionalExtensionPaths: extensionPaths,
         additionalSkillPaths: skillPaths,
+        extensionFactories,
         noExtensions: true,
         noSkills: true,
         noPromptTemplates: true,

@@ -306,8 +306,8 @@ try {
       "--no-audit",
       "--no-fund",
       "--package-lock=false",
-      "@earendil-works/pi-ai@0.86.0",
-      "@earendil-works/pi-coding-agent@0.86.0",
+      "@earendil-works/pi-ai@1.0.3",
+      "@earendil-works/pi-coding-agent@1.0.3",
     ],
     consumerRoot,
   );

@@ -19,6 +19,7 @@ The adapter supports:
 - Tool allow and block policy
 - NeMo Fabric custom tools loaded through normalized `tools.definitions`
 - Explicit normalized `skills.paths`
+- Native stdio and streamable HTTP MCP servers with per-server tool filters
 - Explicit local `.ts` or `.js` extension files contained by the NeMo Fabric
   workspace
 - Slash commands registered by those explicit extensions
@@ -39,7 +40,7 @@ half of the context window for input.
 
 ## Install the Adapter
 
-Pi 0.86.x requires Node.js 22.19.0 or newer.
+Pi 1.0 requires Node.js 22.19.0 or newer.
 
 ### Install for Consumers
 
@@ -48,7 +49,7 @@ then install the compatible Pi SDK harness version selected by that project:
 
 ```bash
 npm install nemo-fabric-adapters-pi
-npm install @earendil-works/pi-ai@^0.86.0 @earendil-works/pi-coding-agent@^0.86.0
+npm install @earendil-works/pi-ai@^1.0.0 @earendil-works/pi-coding-agent@^1.0.0
 ```
 
 The adapter declares the Pi packages as optional peers. Installing the adapter
@@ -231,6 +232,14 @@ extension tools. The following configuration registers a custom tool module:
 }
 ```
 
+## Configure MCP Servers
+
+The adapter maps normalized stdio and streamable HTTP servers to Pi's native MCP extension. Stdio servers can define `args` and `env`, but not HTTP headers. Streamable HTTP servers can define `custom_headers`, but not process arguments or environment variables. Remote endpoints require HTTPS, except for loopback development endpoints.
+
+Header values can reference `${NAME}`. Resolution checks the NeMo Fabric runtime environment first and then the adapter process environment. The adapter maps `allowed_tools` and `blocked_tools` to Pi's per-server tool exposure. Normalized MCP authentication and MCP extensions are not supported.
+
+Only servers supplied by NeMo Fabric are loaded. Ambient Pi MCP configuration remains disabled.
+
 ## Run the Code-Review Example
 
 The maintained code-review example exercises the Pi adapter with an explicit
@@ -258,8 +267,7 @@ path explicitly:
 The command collects per-invocation model-turn ATOF records for successful Relay
 redirects, then prints one JSON document containing `atof_records` and the
 separate terminal `result`. Redirect-decision marks remain in configured Relay
-ATOF artifacts; Pi's startup marks are not included in `atof_records`. MCP is
-not currently supported.
+ATOF artifacts; Pi's startup marks are not included in `atof_records`.
 
 ## Dependency Rationale
 
@@ -269,7 +277,7 @@ process; maintaining a second JSON-RPC translation was rejected for the bundled
 adapter. `@earendil-works/pi-ai` supplies Pi's model catalog and credential
 store, which the coding-agent SDK expects. Both packages are optional peer
 dependencies so deployments control the compatible harness version. Exact
-0.86.0 development dependencies keep repository builds and tests reproducible.
+1.0.3 development dependencies keep repository builds and tests reproducible.
 
 `jiti` loads explicitly configured, trusted JavaScript and TypeScript tool
 modules. Native Node.js loading cannot execute TypeScript modules, while a

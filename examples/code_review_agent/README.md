@@ -240,8 +240,7 @@ Install Node.js 22.19 or later, and follow the
 initial `just build-all` command builds the Pi adapter.
 
 This variant adds an explicit `read` tool to the default code-review skill and
-uses `NVIDIA_API_KEY`. Pi does not currently support MCP, so do not use a
-configuration created by `with_github_mcp`.
+uses `NVIDIA_API_KEY`.
 
 For Relay telemetry, install `nemo-relay-cli-bin>=0.9.0,<0.10.0` as described in the
 [Pi adapter instructions](../../adapters/typescript/pi/README.md#install-nemo-relay)

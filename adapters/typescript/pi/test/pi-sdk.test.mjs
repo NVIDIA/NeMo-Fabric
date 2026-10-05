@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,6 +12,7 @@ import {
   modelAwareCompactionReserveTokens,
   PiSdkSessionFactory,
   resolveCustomTools,
+  selectPiMcpServers,
   withCustomBaseUrl,
 } from "../dist/pi-sdk.js";
 import { PiAdapterRuntime } from "../dist/runtime.js";
@@ -42,6 +43,184 @@ test("reserves output capacity without consuming more than half the context wind
   assert.equal(modelAwareCompactionReserveTokens(65_536, 32_768, 262_144), 65_536);
   assert.equal(modelAwareCompactionReserveTokens(16_384, 131_072, 131_072), 65_536);
   assert.equal(modelAwareCompactionReserveTokens(16_384, 65_536, 0), 65_536);
+});
+
+test("maps normalized MCP servers and tool filters to native Pi MCP configuration", () => {
+  const servers = selectPiMcpServers(
+    {
+      mcp: {
+        servers: {
+          local: {
+            transport: "stdio",
+            url: "node",
+            args: ["server.mjs"],
+            env: { LITERAL: "$VALUE", COMMAND: "!do-not-run" },
+            allowed_tools: ["read_issue", "edit_issue"],
+            blocked_tools: ["edit_issue"],
+          },
+          remote: {
+            transport: "streamable-http",
+            url: "https://mcp.example.com/api",
+            custom_headers: { Authorization: "Bearer ${TOKEN}" },
+            blocked_tools: ["delete_issue"],
+          },
+        },
+      },
+    },
+    { TOKEN: "secret$value" },
+    {},
+  );
+
+  assert.deepEqual({ ...servers.local }, {
+    type: "stdio",
+    command: "node",
+    args: ["server.mjs"],
+    env: { LITERAL: "$$VALUE", COMMAND: "$!do-not-run" },
+    exposure: "hidden",
+    toolExposure: { read_issue: "direct", edit_issue: "hidden" },
+  });
+  assert.deepEqual({ ...servers.remote }, {
+    type: "http",
+    url: "https://mcp.example.com/api",
+    headers: { Authorization: "Bearer secret$$value" },
+    exposure: "direct",
+    toolExposure: { delete_issue: "hidden" },
+  });
+});
+
+test("rejects normalized MCP fields that Pi cannot apply", () => {
+  assert.throws(
+    () => selectPiMcpServers({ mcp: { extensions: {} } }, {}, {}),
+    (error) => error.code === "pi_mcp_extensions_unsupported",
+  );
+  assert.throws(
+    () => selectPiMcpServers({ mcp: { servers: { remote: {
+      transport: "streamable-http",
+      url: "https://mcp.example.com",
+      args: ["ignored"],
+    } } } }, {}, {}),
+    (error) => error.code === "pi_mcp_invalid_server",
+  );
+  assert.throws(
+    () => selectPiMcpServers({ mcp: { servers: { authenticated: {
+      transport: "streamable-http",
+      url: "https://mcp.example.com",
+      authentication: { type: "oauth" },
+    } } } }, {}, {}),
+    (error) => error.code === "pi_mcp_authentication_unsupported",
+  );
+  assert.throws(
+    () => selectPiMcpServers({ mcp: { servers: { legacy: {
+      transport: "sse",
+      url: "https://mcp.example.com",
+    } } } }, {}, {}),
+    (error) => error.code === "pi_mcp_transport_unsupported",
+  );
+  assert.throws(
+    () => selectPiMcpServers({ mcp: { servers: { "invalid name": {
+      transport: "stdio",
+      url: "server",
+    } } } }, {}, {}),
+    (error) => error.code === "pi_mcp_invalid_server",
+  );
+});
+
+test("loads a Fabric-configured stdio server through Pi's native MCP extension", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-mcp-")));
+  const marker = join(workspace, "mcp-connected.txt");
+  const serverPath = join(workspace, "mcp-server.mjs");
+  await writeFile(
+    serverPath,
+    `import { writeFile } from "node:fs/promises";
+let buffer = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  let newline;
+  while ((newline = buffer.indexOf("\\n")) >= 0) {
+    const line = buffer.slice(0, newline);
+    buffer = buffer.slice(newline + 1);
+    if (!line) continue;
+    const message = JSON.parse(line);
+    if (message.id === undefined) continue;
+    let result;
+    if (message.method === "initialize") {
+      result = {
+        protocolVersion: message.params.protocolVersion,
+        capabilities: { tools: {}, resources: {} },
+        serverInfo: { name: "fabric-test", version: "1.0.0" }
+      };
+    } else if (message.method === "tools/list") {
+      result = { tools: [{ name: "echo", description: "Echo text", inputSchema: { type: "object", properties: { text: { type: "string" } } } }] };
+      void writeFile(process.env.MARKER_FILE, "connected", "utf8");
+    } else if (message.method === "resources/list") {
+      result = { resources: [] };
+    } else if (message.method === "resources/templates/list") {
+      result = { resourceTemplates: [] };
+    } else {
+      result = {};
+    }
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }) + "\\n");
+  }
+});
+`,
+    "utf8",
+  );
+
+  let handle;
+  try {
+    handle = await new PiSdkSessionFactory().create({
+      agentName: "pi-mcp-test",
+      baseDir: workspace,
+      config: {
+        models: {
+          default: {
+            api_key_env: "TEST_API_KEY",
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        },
+        mcp: {
+          servers: {
+            local: {
+              transport: "stdio",
+              url: process.execPath,
+              args: [serverPath],
+              env: { MARKER_FILE: marker },
+            },
+          },
+        },
+        tools: { enabled: [] },
+      },
+      runtimeContext: {
+        artifacts: {},
+        environment: {
+          control_location: "external_control",
+          env: { TEST_API_KEY: "not-a-real-key" },
+          environment_id: "environment-1",
+          ownership: "caller_owned",
+          provider: "local",
+          workspace,
+        },
+        invocation_id: "start",
+        request_id: "request-start",
+        runtime_id: "runtime-1",
+      },
+    });
+    const deadline = Date.now() + 5_000;
+    while (true) {
+      try {
+        assert.equal(await readFile(marker, "utf8"), "connected");
+        break;
+      } catch (error) {
+        if (Date.now() >= deadline) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+  } finally {
+    await handle?.stop();
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("rejects append system instructions before loading the Pi harness", async () => {
