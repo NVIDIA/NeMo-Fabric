@@ -435,7 +435,7 @@ def record_codex_homes(mock_codex) -> list[dict[str, Any]]:
                 "sqlite_home": Path(config.env["CODEX_SQLITE_HOME"]),
                 "config_overrides": config.config_overrides,
                 "links": {
-                    entry.name: entry.readlink()
+                    entry.name: entry.resolve()
                     for entry in home.iterdir()
                     if entry.is_symlink()
                 },
@@ -471,8 +471,8 @@ def test_openai_login_runs_in_a_private_home_linked_to_the_inherited_login(
         assert recorded["home"] != base_codex_home
         assert recorded["sqlite_home"] == recorded["home"]
         assert recorded["links"] == {
-            "auth.json": base_codex_home / "auth.json",
-            ".credentials.json": base_codex_home / ".credentials.json",
+            "auth.json": (base_codex_home / "auth.json").resolve(),
+            ".credentials.json": (base_codex_home / ".credentials.json").resolve(),
         }
         assert not recorded["home"].exists()
     assert (base_codex_home / "auth.json").read_text(encoding="utf-8") == "{}"
@@ -505,7 +505,9 @@ def test_openai_login_links_a_relative_inherited_home_by_absolute_path(
 
     assert invoke_once(codex_payload)["completed"] is True
 
-    assert homes[0]["links"] == {"auth.json": tmp_path / "relative-home" / "auth.json"}
+    assert homes[0]["links"] == {
+        "auth.json": (tmp_path / "relative-home" / "auth.json").resolve()
+    }
 
 
 @pytest.mark.parametrize("store", ["keyring", "auto"])
@@ -589,7 +591,7 @@ def test_isolated_home_links_the_login_from_a_configured_codex_home(
 
     assert invoke_once(codex_payload)["completed"] is True
 
-    assert homes[0]["links"] == {"auth.json": configured / "auth.json"}
+    assert homes[0]["links"] == {"auth.json": (configured / "auth.json").resolve()}
 
 
 def test_openai_login_failed_start_removes_private_home(
