@@ -35,8 +35,10 @@ For a cached ChatGPT or Codex API-key login, NeMo Fabric reuses the
 authentication state under `CODEX_HOME` (default: `~/.codex`). Sign in with
 Codex before running NeMo Fabric. Set `CODEX_HOME` to the same location for login
 and execution if you use a nondefault credential store. Set `isolated_home: true`
-to give each runtime its own temporary Codex home that links the login, so
-concurrent runtimes share no Codex state.
+to give each runtime its own temporary Codex home. With file-based credentials,
+the temporary home links `auth.json` and `.credentials.json` from the inherited
+home, so runtimes share only those files. A keyring-backed login keeps the
+inherited `CODEX_HOME`, and only Codex's SQLite state moves to the temporary home.
 
 For noninteractive OpenAI API-key authentication, set
 `models.<role>.api_key_env` to the name of an environment variable containing

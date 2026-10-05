@@ -433,6 +433,7 @@ def record_codex_homes(mock_codex) -> list[dict[str, Any]]:
             {
                 "home": home,
                 "sqlite_home": Path(config.env["CODEX_SQLITE_HOME"]),
+                "config_overrides": config.config_overrides,
                 "links": {
                     entry.name: entry.readlink()
                     for entry in home.iterdir()
@@ -525,6 +526,27 @@ def test_openai_keyring_login_keeps_the_inherited_home_and_isolates_sqlite(
     assert homes[0]["sqlite_home"] != base_codex_home
     assert not homes[0]["sqlite_home"].exists()
     assert base_codex_home.exists()
+
+
+def test_isolated_home_outranks_a_sqlite_home_in_the_inherited_config(
+    codex_payload, mock_codex, base_codex_home, tmp_path
+):
+    """Codex prefers config.toml's sqlite_home to CODEX_SQLITE_HOME, so only a
+    launch override keeps a keyring login's runtimes off the shared database."""
+
+    (base_codex_home / "config.toml").write_text(
+        'cli_auth_credentials_store = "keyring"\n'
+        f"sqlite_home = {json.dumps(str(tmp_path / 'shared-sqlite'))}\n",
+        encoding="utf-8",
+    )
+    isolate_codex_home(codex_payload)
+    homes = record_codex_homes(mock_codex)
+
+    assert invoke_once(codex_payload)["completed"] is True
+
+    assert homes[0]["config_overrides"][-1] == (
+        f"sqlite_home={json.dumps(str(homes[0]['sqlite_home']))}"
+    )
 
 
 @pytest.mark.parametrize(

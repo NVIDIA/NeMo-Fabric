@@ -1362,11 +1362,13 @@ class CodexRuntime:
                 and _settings(agent_config).get("isolated_home") is True
             ):
                 self._private_home = _private_codex_home(context, base_dir)
+                private_home = Path(self._private_home.name).resolve()
                 client_config.env.update(
-                    _shared_login_env(
-                        client_config.env,
-                        Path(self._private_home.name).resolve(),
-                    )
+                    _shared_login_env(client_config.env, private_home)
+                )
+                client_config.config_overrides = (
+                    *client_config.config_overrides,
+                    f"sqlite_home={json.dumps(str(private_home))}",
                 )
             elif model_config.provider != "openai":
                 await asyncio.to_thread(

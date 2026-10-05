@@ -150,10 +150,11 @@ Codex supports the following OpenAI authentication modes:
 With a cached login, NeMo Fabric inherits `CODEX_HOME` (default: `~/.codex`)
 and the SDK reuses the credential. Complete the login before running NeMo Fabric.
 Runtimes share that home by default. Set `isolated_home: true` to give each
-runtime its own temporary Codex home that links the login, so concurrent
-runtimes share no Codex state; the temporary home is removed when the runtime
-stops. A keyring-backed login keeps the inherited `CODEX_HOME`, and only Codex's
-SQLite state moves to the temporary home.
+runtime its own temporary Codex home, removed when the runtime stops. With
+file-based credentials, the temporary home links `auth.json` and
+`.credentials.json` from the inherited home, so runtimes share only those files.
+A keyring-backed login keeps the inherited `CODEX_HOME`, and only Codex's SQLite
+state moves to the temporary home.
 For a nondefault store, use the same value for login and execution:
 
 ```bash
