@@ -24,6 +24,7 @@ from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import hermes_config
 from examples.code_review_agent import nooa_config
 from examples.code_review_agent import openclaw_config
+from examples.code_review_agent import openhands_config
 from examples.code_review_agent import pi_config
 from examples.code_review_agent import qwen_config
 from examples.code_review_agent import with_github_mcp
@@ -47,6 +48,7 @@ def test_variant_builders_return_independent_complete_configs():
     deepagents = deepagents_config()
     nooa = nooa_config()
     openclaw = openclaw_config()
+    openhands = openhands_config()
     pi = pi_config()
     qwen = qwen_config()
 
@@ -59,6 +61,7 @@ def test_variant_builders_return_independent_complete_configs():
         deepagents,
         nooa,
         openclaw,
+        openhands,
         pi,
         qwen,
     ):
@@ -131,6 +134,12 @@ def test_variant_builders_return_independent_complete_configs():
     assert openclaw.skills.paths == ["./skills/code-review"]
     assert openclaw.tools is not None
     assert openclaw.tools.enabled == ["read"]
+    assert openhands.harness.adapter_id == "nvidia.fabric.openhands"
+    assert openhands.models["default"].provider == "nvidia"
+    assert openhands.skills is not None
+    assert openhands.skills.paths == ["./skills/code-review"]
+    assert openhands.tools is not None
+    assert openhands.tools.enabled == ["terminal", "file_editor"]
     assert base.mcp is None
     assert base.skills is not None
     skill_path = BASE_DIR / base.skills.paths[0]
@@ -262,6 +271,7 @@ def test_variants_plan_from_complete_configs():
         cline_config(),
         deepagents_config(),
         openclaw_config(),
+        openhands_config(),
         pi_config(),
         qwen_config(),
     ):
@@ -293,6 +303,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         ("deepagents", "nvidia.fabric.langchain.deepagents"),
         ("nooa", "nvidia.fabric.nooa"),
         ("openclaw", "nvidia.fabric.openclaw"),
+        ("openhands", "nvidia.fabric.openhands"),
         ("pi", "nvidia.fabric.pi"),
         ("qwen", "nvidia.fabric.qwen"),
     )
@@ -304,7 +315,8 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         )
         for variant, adapter_id in variants
         for relay_enabled in (False, True)
-        if variant not in {"cline", "openclaw", "qwen"} or not relay_enabled
+        if variant not in {"cline", "openclaw", "openhands", "qwen"}
+        or not relay_enabled
     )
 
     for options, adapter_id, relay_enabled in cases:
@@ -509,6 +521,26 @@ def test_cline_variant_rejects_relay_telemetry():
 
     assert completed.returncode == 2
     assert "Cline adapter does not support Relay telemetry" in completed.stderr
+
+
+def test_openhands_variant_rejects_relay_telemetry():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "openhands",
+            "--relay",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "OpenHands adapter does not support Relay telemetry" in completed.stderr
 
 
 def test_qwen_variant_rejects_relay_telemetry():
