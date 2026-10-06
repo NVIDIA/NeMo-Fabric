@@ -17,6 +17,9 @@ import {
 } from "../dist/pi-sdk.js";
 import { PiAdapterRuntime } from "../dist/runtime.js";
 
+const [major, minor] = process.versions.node.split(".").map(Number);
+const supportsPi = major > 22 || (major === 22 && minor >= 19);
+
 test("uses standard content when replaying reasoning through a custom model proxy", () => {
   const catalogModel = {
     api: "openai-completions",
@@ -125,7 +128,7 @@ test("rejects normalized MCP fields that Pi cannot apply", () => {
   );
 });
 
-test("loads a Fabric-configured stdio server through Pi's native MCP extension", async () => {
+async function loadFabricConfiguredStdioServer() {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-mcp-")));
   const marker = join(workspace, "mcp-connected.txt");
   const serverPath = join(workspace, "mcp-server.mjs");
@@ -221,7 +224,13 @@ process.stdin.on("data", (chunk) => {
     await handle?.stop();
     await rm(workspace, { recursive: true, force: true });
   }
-});
+}
+
+test(
+  "loads a Fabric-configured stdio server through Pi's native MCP extension",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  loadFabricConfiguredStdioServer,
+);
 
 test("rejects append system instructions before loading the Pi harness", async () => {
   const factory = new PiSdkSessionFactory();
