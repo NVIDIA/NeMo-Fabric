@@ -178,7 +178,7 @@ function validateRemoteUrl(name: string, value: string): void {
       metadata: { server: name },
     });
   }
-  const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
+  const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]";
   if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
     throw new LifecycleError(
       "droid_mcp_url_insecure",
@@ -484,6 +484,11 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
       }
     } catch (error) {
       throw new LifecycleError("droid_session_failed", sdkErrorMessage(error), { retryable: true });
+    }
+    if (terminal === undefined) {
+      throw new LifecycleError("droid_session_failed", "Droid session ended without a terminal result", {
+        retryable: true,
+      });
     }
     return normalizeResult(terminal);
   }

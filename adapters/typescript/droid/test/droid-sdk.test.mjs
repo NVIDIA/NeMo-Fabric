@@ -149,6 +149,7 @@ test("maps replacement instructions and native stdio, HTTP, and SSE MCP configur
         { name: "local", status: "connected" },
         { name: "remote", status: "connecting" },
         { name: "events", status: "connected" },
+        { name: "ipv6", status: "connected" },
       ],
     },
   });
@@ -164,6 +165,7 @@ test("maps replacement instructions and native stdio, HTTP, and SSE MCP configur
           custom_headers: { Authorization: "Bearer token" },
         },
         events: { transport: "sse", url: "http://127.0.0.1:3000/sse" },
+        ipv6: { transport: "sse", url: "http://[::1]:3001/sse" },
       },
     },
   });
@@ -183,6 +185,7 @@ test("maps replacement instructions and native stdio, HTTP, and SSE MCP configur
         headers: [{ name: "Authorization", value: "Bearer token" }],
       },
       { type: "sse", name: "events", url: "http://127.0.0.1:3000/sse", headers: [] },
+      { type: "sse", name: "ipv6", url: "http://[::1]:3001/sse", headers: [] },
     ],
   });
   assert.equal(sdk.calls.listMcpServers, 1);
@@ -328,7 +331,7 @@ test("rejects unsupported or incompatible normalized MCP fields", async () => {
   }
 });
 
-test("rejects a missing credential, unsupported provider, failed MCP server, and malformed result", async () => {
+test("rejects invalid startup inputs and missing or malformed terminal results", async () => {
   const missing = input();
   missing.runtimeContext.environment.env = {};
   await assert.rejects(
@@ -350,7 +353,17 @@ test("rejects a missing credential, unsupported provider, failed MCP server, and
   );
   assert.equal(mcp.calls.close, 1);
 
-  const malformed = fakeSdk({ results: [{ type: "assistant", text: "not terminal" }] });
+  const missingTerminal = fakeSdk({ results: [] });
+  const missingTerminalHandle = await new DroidSdkSessionFactory(missingTerminal.loader).create(
+    input({ tools: undefined }),
+  );
+  await assert.rejects(
+    missingTerminalHandle.prompt("one"),
+    (error) => error.code === "droid_session_failed" && error.retryable,
+  );
+  await missingTerminalHandle.stop();
+
+  const malformed = fakeSdk({ results: [{ type: "result", text: "not terminal" }] });
   const handle = await new DroidSdkSessionFactory(malformed.loader).create(input({ tools: undefined }));
   await assert.rejects(handle.prompt("one"), (error) => error.code === "droid_malformed_result");
   await handle.stop();

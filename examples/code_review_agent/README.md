@@ -282,7 +282,7 @@ Run the review with:
   --show-output
 ```
 
-The initial Factory Droid adapter does not support Relay telemetry or Fabric
+The initial Factory Droid adapter does not support Relay telemetry or NeMo Fabric
 streaming.
 
 ### Kilo Code (`kilo`)
