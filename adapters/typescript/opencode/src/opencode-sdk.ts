@@ -183,7 +183,10 @@ async function prepareRuntimeSkills(baseDir: string, configured: string[]): Prom
   if (configured.length === 0) {
     return { skills: [] };
   }
-  const root = await mkdtemp(join(tmpdir(), "nemo-fabric-opencode-skills-"));
+  // OpenCode reports canonical skill paths. Canonicalize the temporary root as
+  // well so platforms where /tmp is a symlink do not turn a configured skill
+  // into a false "unexpected" catalog entry.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "nemo-fabric-opencode-skills-")));
   const skills: OpenCodeSkill[] = [];
   try {
     for (const [index, entry] of configured.entries()) {
