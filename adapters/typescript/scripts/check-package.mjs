@@ -194,13 +194,13 @@ if (manifest.name === "nemo-fabric-adapters-opencode") {
     throw new Error("The OpenCode SDK must not be a production dependency");
   }
   for (const name of ["@opencode/core", "@opencode/sdk"]) {
-    if (manifest.peerDependencies?.[name] !== "2.0.3") {
+    if (manifest.peerDependencies?.[name] !== "2.0.23") {
       throw new Error(`The OpenCode package must exact-pin its supported ${name} peer`);
     }
     if (manifest.peerDependenciesMeta?.[name]?.optional !== true) {
       throw new Error(`The OpenCode package must declare ${name} as an optional peer`);
     }
-    if (manifest.devDependencies?.[name] !== "2.0.3") {
+    if (manifest.devDependencies?.[name] !== "2.0.23") {
       throw new Error(`The OpenCode package must exact-pin ${name} for development`);
     }
   }

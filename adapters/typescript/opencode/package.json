@@ -46,8 +46,8 @@
     "nemo-fabric-adapters-common": "0.5.0"
   },
   "peerDependencies": {
-    "@opencode/core": "2.0.3",
-    "@opencode/sdk": "2.0.3"
+    "@opencode/core": "2.0.23",
+    "@opencode/sdk": "2.0.23"
   },
   "peerDependenciesMeta": {
     "@opencode/core": {
@@ -58,8 +58,8 @@
     }
   },
   "devDependencies": {
-    "@opencode/core": "2.0.3",
-    "@opencode/sdk": "2.0.3",
+    "@opencode/core": "2.0.23",
+    "@opencode/sdk": "2.0.23",
     "@types/node": "24.12.4",
     "typescript": "5.9.3"
   }

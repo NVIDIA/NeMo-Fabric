@@ -38,6 +38,7 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 | [mini-SWE-agent](adapters/python/mini-swe-agent/README.md) | — | — | — | ✅ |
 | [NOOA](adapters/python/nooa/README.md) | — | ✅ | ✅ | ✅ |
 | [OpenClaw](adapters/python/openclaw/README.md) | ✅ | ✅ | ✅ | — |
+| [OpenHands](adapters/python/openhands/README.md) | ✅ | ✅ | ✅ | — |
 | [OpenCode](adapters/typescript/opencode/README.md) | — | ✅ | ✅ | — |
 | [Pi](adapters/typescript/pi/README.md) | ✅ | — | ✅ | ✅ |
 | [Qwen Code](adapters/typescript/qwen/README.md) | ✅ | ✅ | ✅ | — |

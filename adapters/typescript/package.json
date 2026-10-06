@@ -24,6 +24,9 @@
   "devDependencies": {
     "nemo-fabric-adapter-contract": "file:../../adapter-contract/typescript"
   },
+  "overrides": {
+    "@parcel/watcher": "2.6.0"
+  },
   "engines": {
     "node": ">=22.19.0"
   }

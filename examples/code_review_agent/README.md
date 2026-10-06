@@ -187,6 +187,29 @@ collects Relay ATOF records; it is not native model-response streaming.
 
 Install Node.js and OpenClaw, then install the [OpenClaw adapter](../../adapters/python/openclaw/README.md). This variant uses the `NVIDIA_API_KEY` configured for the default demo and retains the default code-review skill. OpenClaw does not currently support Relay telemetry.
 
+### OpenHands (`openhands`)
+
+On Python 3.12 or later, install the tested OpenHands SDK and tools, then install
+the NeMo Fabric extra:
+
+```bash
+pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0"
+pip install "nemo-fabric[openhands]"
+```
+
+The NeMo Fabric extra installs the adapter, but not the OpenHands packages. This
+variant uses the `NVIDIA_API_KEY` configured for the default demo, maps the
+terminal and file editor tools, and retains the default code-review skill.
+The 1.50.0 package pair is validated with NVIDIA NIM. OpenHands does not
+currently support Relay telemetry.
+
+When you run the source checkout without activating its virtual environment,
+select the same interpreter for the adapter subprocess:
+
+```bash
+export ADAPTER_PYTHON="$PWD/.venv/bin/python"
+```
+
 ### Cline (`cline`)
 
 Install Node.js 22.19 or newer and follow the

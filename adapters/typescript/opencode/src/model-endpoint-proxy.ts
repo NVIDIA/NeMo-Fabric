@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// OpenCode v2.0.3 always emits prompt_cache_key for its OpenAI-compatible
+// The supported OpenCode SDK emits prompt_cache_key for its OpenAI-compatible
 // protocol. Some compatible providers reject that OpenAI-specific extension,
 // so a loopback proxy removes it only for explicitly configured endpoints.
 
