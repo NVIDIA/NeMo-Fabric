@@ -34,6 +34,7 @@ PI_DESCRIPTOR = "../../adapters/typescript/pi/pi.fabric-adapter.json"
 CLINE_DESCRIPTOR = "../../adapters/typescript/cline/cline.fabric-adapter.json"
 DROID_DESCRIPTOR = "../../adapters/typescript/droid/droid.fabric-adapter.json"
 QWEN_DESCRIPTOR = "../../adapters/typescript/qwen/qwen.fabric-adapter.json"
+KILO_DESCRIPTOR = "../../adapters/typescript/kilo/kilo.fabric-adapter.json"
 CODE_REVIEW_INSTRUCTION = (
     "You are a concise code reviewer. Read the relevant workspace files before "
     "reporting correctness risks."
@@ -145,6 +146,35 @@ def pi_config() -> FabricConfig:
         provider="local",
         workspace=WORKSPACE,
         artifacts="./artifacts/pi",
+    )
+    return config
+
+
+def kilo_config() -> FabricConfig:
+    """Return the complete Kilo Code SDK adapter variant."""
+
+    config = base_config().model_copy(deep=True)
+    config.discovery = DiscoveryConfig(local_paths=[KILO_DESCRIPTOR])
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.kilo",
+        resolution="preinstalled",
+        settings={},
+    )
+    config.models = {"default": _nvidia_code_review_model()}
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content=CODE_REVIEW_INSTRUCTION)
+    )
+    config.tools = ToolsConfig(enabled=["read", "glob", "grep", "skill"])
+    config.runtime = RuntimeConfig(
+        input_schema="text",
+        output_schema="message",
+        artifacts="./artifacts/kilo",
+        max_turns=20,
+    )
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=WORKSPACE,
+        artifacts="./artifacts/kilo",
     )
     return config
 

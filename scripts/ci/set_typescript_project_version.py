@@ -27,6 +27,7 @@ DROID_PACKAGE = "nemo-fabric-adapters-droid"
 PI_PACKAGE = "nemo-fabric-adapters-pi"
 OPENCODE_PACKAGE = "nemo-fabric-adapters-opencode"
 QWEN_PACKAGE = "nemo-fabric-adapters-qwen"
+KILO_PACKAGE = "nemo-fabric-adapters-kilo"
 
 
 def _read_json_object(path: Path) -> dict[str, Any]:
@@ -80,6 +81,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     pi_package_path = root / ADAPTERS_DIRECTORY / "pi" / "package.json"
     opencode_package_path = root / ADAPTERS_DIRECTORY / "opencode" / "package.json"
     qwen_package_path = root / ADAPTERS_DIRECTORY / "qwen" / "package.json"
+    kilo_package_path = root / ADAPTERS_DIRECTORY / "kilo" / "package.json"
 
     contract_package = _read_json_object(contract_package_path)
     contract_lock = _read_json_object(contract_lock_path)
@@ -91,6 +93,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     pi_package = _read_json_object(pi_package_path)
     opencode_package = _read_json_object(opencode_package_path)
     qwen_package = _read_json_object(qwen_package_path)
+    kilo_package = _read_json_object(kilo_package_path)
 
     contract_lock_packages = _require_object(
         contract_lock.get("packages"), f"a packages object in {contract_lock_path}"
@@ -131,6 +134,10 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     adapters_lock_qwen = _require_object(
         adapters_lock_packages.get("qwen"),
         f"{QWEN_PACKAGE} metadata in {adapters_lock_path}",
+    )
+    adapters_lock_kilo = _require_object(
+        adapters_lock_packages.get("kilo"),
+        f"{KILO_PACKAGE} metadata in {adapters_lock_path}",
     )
 
     _require_named_package(
@@ -181,6 +188,10 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     _require_named_package(
         adapters_lock_qwen, QWEN_PACKAGE, f"qwen entry of {adapters_lock_path}"
     )
+    _require_named_package(kilo_package, KILO_PACKAGE, str(kilo_package_path))
+    _require_named_package(
+        adapters_lock_kilo, KILO_PACKAGE, f"kilo entry of {adapters_lock_path}"
+    )
 
     source_values = {
         path: json.dumps(value, sort_keys=True)
@@ -195,6 +206,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
             (pi_package_path, pi_package),
             (opencode_package_path, opencode_package),
             (qwen_package_path, qwen_package),
+            (kilo_package_path, kilo_package),
         )
     }
 
@@ -218,6 +230,8 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         adapters_lock_opencode,
         qwen_package,
         adapters_lock_qwen,
+        kilo_package,
+        adapters_lock_kilo,
     ):
         package["version"] = version
 
@@ -234,6 +248,8 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         (adapters_lock_opencode, f"opencode entry of {adapters_lock_path}"),
         (qwen_package, str(qwen_package_path)),
         (adapters_lock_qwen, f"qwen entry of {adapters_lock_path}"),
+        (kilo_package, str(kilo_package_path)),
+        (adapters_lock_kilo, f"kilo entry of {adapters_lock_path}"),
     ):
         _set_exact_dependency(package, CONTRACT_PACKAGE, version, description)
     for package, description in (
@@ -247,6 +263,8 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         (adapters_lock_opencode, f"opencode entry of {adapters_lock_path}"),
         (qwen_package, str(qwen_package_path)),
         (adapters_lock_qwen, f"qwen entry of {adapters_lock_path}"),
+        (kilo_package, str(kilo_package_path)),
+        (adapters_lock_kilo, f"kilo entry of {adapters_lock_path}"),
     ):
         _set_exact_dependency(package, COMMON_PACKAGE, version, description)
 
@@ -261,6 +279,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         pi_package_path: pi_package,
         opencode_package_path: opencode_package,
         qwen_package_path: qwen_package,
+        kilo_package_path: kilo_package,
     }
     changed_paths = [
         path

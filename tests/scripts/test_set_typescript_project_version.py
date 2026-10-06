@@ -117,6 +117,17 @@ def typescript_project_fixture(tmp_path: Path) -> Path:
         },
     )
     _write_json(
+        tmp_path / "adapters/typescript/kilo/package.json",
+        {
+            "name": "nemo-fabric-adapters-kilo",
+            "version": "0.2.0",
+            "dependencies": {
+                "nemo-fabric-adapter-contract": "0.2.0",
+                "nemo-fabric-adapters-common": "0.2.0",
+            },
+        },
+    )
+    _write_json(
         tmp_path / "adapters/typescript/package-lock.json",
         {
             "name": "nemo-fabric-typescript-adapters",
@@ -169,6 +180,14 @@ def typescript_project_fixture(tmp_path: Path) -> Path:
                 },
                 "qwen": {
                     "name": "nemo-fabric-adapters-qwen",
+                    "version": "0.2.0",
+                    "dependencies": {
+                        "nemo-fabric-adapter-contract": "0.2.0",
+                        "nemo-fabric-adapters-common": "0.2.0",
+                    },
+                },
+                "kilo": {
+                    "name": "nemo-fabric-adapters-kilo",
                     "version": "0.2.0",
                     "dependencies": {
                         "nemo-fabric-adapter-contract": "0.2.0",
@@ -230,6 +249,9 @@ def test_updates_the_complete_typescript_package_graph(
     qwen = json.loads(
         (typescript_project / "adapters/typescript/qwen/package.json").read_text()
     )
+    kilo = json.loads(
+        (typescript_project / "adapters/typescript/kilo/package.json").read_text()
+    )
 
     assert contract["version"] == version
     assert contract_lock["version"] == version
@@ -245,6 +267,7 @@ def test_updates_the_complete_typescript_package_graph(
         "pi",
         "opencode",
         "qwen",
+        "kilo",
     ):
         assert adapters_lock["packages"][workspace]["version"] == version
     assert common["version"] == version
@@ -264,6 +287,9 @@ def test_updates_the_complete_typescript_package_graph(
     assert qwen["version"] == version
     assert qwen["dependencies"]["nemo-fabric-adapter-contract"] == version
     assert qwen["dependencies"]["nemo-fabric-adapters-common"] == version
+    assert kilo["version"] == version
+    assert kilo["dependencies"]["nemo-fabric-adapter-contract"] == version
+    assert kilo["dependencies"]["nemo-fabric-adapters-common"] == version
     assert (
         adapters_lock["packages"]["common"]["dependencies"][
             "nemo-fabric-adapter-contract"
@@ -287,6 +313,10 @@ def test_updates_the_complete_typescript_package_graph(
         "nemo-fabric-adapters-common": version,
     }
     assert adapters_lock["packages"]["qwen"]["dependencies"] == {
+        "nemo-fabric-adapter-contract": version,
+        "nemo-fabric-adapters-common": version,
+    }
+    assert adapters_lock["packages"]["kilo"]["dependencies"] == {
         "nemo-fabric-adapter-contract": version,
         "nemo-fabric-adapters-common": version,
     }

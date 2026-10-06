@@ -48,6 +48,7 @@ def test_publisher_only_triggers_for_public_release_channels():
         "nemo-fabric-adapters-cline",
         "nemo-fabric-adapters-common",
         "nemo-fabric-adapters-droid",
+        "nemo-fabric-adapters-kilo",
         "nemo-fabric-adapters-opencode",
         "nemo-fabric-adapters-pi",
         "nemo-fabric-adapters-qwen",
@@ -88,6 +89,7 @@ def test_publisher_publishes_packages_in_dependency_order():
         "adapters/typescript/pi",
         "adapters/typescript/opencode",
         "adapters/typescript/qwen",
+        "adapters/typescript/kilo",
     )
     assert "Verify packages" not in steps
     run = steps["Publish packages"]["run"]
