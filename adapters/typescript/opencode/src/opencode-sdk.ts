@@ -9,7 +9,8 @@ import type { AgentUsage } from "nemo-fabric-adapter-contract";
 import type { AdapterStartInput } from "nemo-fabric-adapters-common";
 import { LifecycleError } from "nemo-fabric-adapters-common";
 import { randomUUID } from "node:crypto";
-import { realpath, stat } from "node:fs/promises";
+import { cp, mkdtemp, readdir, realpath, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { selectModel, selectSystemInstruction } from "./configuration.js";
@@ -33,6 +34,10 @@ type OpenCodeMcpServers = Record<string, OpenCodeMcpServer>;
 interface OpenCodeSkill {
   directory: string;
   location: string;
+}
+interface RuntimeSkills {
+  root?: string;
+  skills: OpenCodeSkill[];
 }
 type EmbeddedOpenCodeCreate = (
   options: Parameters<(typeof import("@opencode/sdk"))["OpenCode"]["create"]>[0],
@@ -157,40 +162,75 @@ function hostConfigContent(
   return content;
 }
 
-async function resolveSkills(baseDir: string, configured: string[]): Promise<OpenCodeSkill[]> {
-  const skills: OpenCodeSkill[] = [];
-  for (const entry of configured) {
-    if (typeof entry !== "string") {
-      throw new LifecycleError("opencode_invalid_skill", "OpenCode skill paths must be strings");
+async function rejectAdditionalDiscoverableSkills(directory: string, root = directory): Promise<void> {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const location = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      await rejectAdditionalDiscoverableSkills(location, root);
+      continue;
     }
-    let candidate: string;
-    try {
-      candidate = await realpath(resolve(baseDir, entry));
-    } catch {
-      throw new LifecycleError("opencode_skill_not_found", "A configured NeMo Fabric skill path does not exist");
-    }
-    try {
-      if (!(await stat(candidate)).isDirectory()) {
-        throw new Error("not a directory");
-      }
-    } catch {
-      throw new LifecycleError("opencode_skill_invalid", "NeMo Fabric skill paths must be directories");
-    }
-    let location: string;
-    try {
-      location = await realpath(join(candidate, "SKILL.md"));
-      if (!(await stat(location)).isFile()) {
-        throw new Error("not a file");
-      }
-    } catch {
+    const atRoot = directory === root;
+    if ((atRoot && entry.name.endsWith(".md") && entry.name !== "SKILL.md") || (!atRoot && entry.name === "SKILL.md")) {
       throw new LifecycleError(
-        "opencode_skill_invalid",
-        "NeMo Fabric skill directories must contain a SKILL.md file",
+        "opencode_skill_unexpected",
+        "Configured OpenCode skill directories must not contain additional discoverable skills",
       );
     }
-    skills.push({ directory: candidate, location });
   }
-  return skills;
+}
+
+async function prepareRuntimeSkills(baseDir: string, configured: string[]): Promise<RuntimeSkills> {
+  if (configured.length === 0) {
+    return { skills: [] };
+  }
+  // OpenCode reports canonical skill paths. Canonicalize the temporary root as
+  // well so platforms where /tmp is a symlink do not turn a configured skill
+  // into a false "unexpected" catalog entry.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "nemo-fabric-opencode-skills-")));
+  const skills: OpenCodeSkill[] = [];
+  try {
+    for (const [index, entry] of configured.entries()) {
+      if (typeof entry !== "string") {
+        throw new LifecycleError("opencode_invalid_skill", "OpenCode skill paths must be strings");
+      }
+      let source: string;
+      try {
+        source = await realpath(resolve(baseDir, entry));
+      } catch {
+        throw new LifecycleError("opencode_skill_not_found", "A configured NeMo Fabric skill path does not exist");
+      }
+      try {
+        if (!(await stat(source)).isDirectory()) {
+          throw new Error("not a directory");
+        }
+      } catch {
+        throw new LifecycleError("opencode_skill_invalid", "NeMo Fabric skill paths must be directories");
+      }
+      try {
+        const sourceLocation = await realpath(join(source, "SKILL.md"));
+        if (!(await stat(sourceLocation)).isFile()) {
+          throw new Error("not a file");
+        }
+      } catch {
+        throw new LifecycleError(
+          "opencode_skill_invalid",
+          "NeMo Fabric skill directories must contain a SKILL.md file",
+        );
+      }
+      const directory = join(root, String(index));
+      try {
+        await cp(source, directory, { recursive: true, dereference: true, errorOnExist: true });
+      } catch {
+        throw new LifecycleError("opencode_skill_invalid", "OpenCode could not snapshot a configured skill directory");
+      }
+      await rejectAdditionalDiscoverableSkills(directory);
+      skills.push({ directory, location: await realpath(join(directory, "SKILL.md")) });
+    }
+    return { root, skills };
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 async function verifyLoadedSkills(
@@ -203,7 +243,8 @@ async function verifyLoadedSkills(
   }
   const configuredLocations = new Set(configured.map((skill) => skill.location));
   // OpenCode catalogs are nonblocking as of 2.0.23. Poll until every configured
-  // skill appears or the bounded discovery window expires.
+  // skill appears or the bounded discovery window expires. Configured directories
+  // are immutable private snapshots, so no additional skill can appear afterward.
   const deadline = Date.now() + SKILL_DISCOVERY_TIMEOUT_MS;
   while (true) {
     const remainingMs = deadline - Date.now();
@@ -738,13 +779,21 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
   private readonly client: OpenCodeClient;
   private readonly environment: EnvironmentLease;
   private readonly endpointProxy?: EndpointProxy;
+  private readonly skillsRoot?: string;
   private stopped = false;
 
-  constructor(id: string, client: OpenCodeClient, environment: EnvironmentLease, endpointProxy?: EndpointProxy) {
+  constructor(
+    id: string,
+    client: OpenCodeClient,
+    environment: EnvironmentLease,
+    endpointProxy?: EndpointProxy,
+    skillsRoot?: string,
+  ) {
     this.id = id;
     this.client = client;
     this.environment = environment;
     this.endpointProxy = endpointProxy;
+    this.skillsRoot = skillsRoot;
   }
 
   async prompt(text: string): Promise<OpenCodePromptOutcome> {
@@ -784,7 +833,13 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
         try {
           await this.endpointProxy?.close();
         } finally {
-          this.environment.release();
+          try {
+            if (this.skillsRoot !== undefined) {
+              await rm(this.skillsRoot, { recursive: true, force: true });
+            }
+          } finally {
+            this.environment.release();
+          }
         }
       }
     }
@@ -810,15 +865,17 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
   async create(input: AdapterStartInput): Promise<OpenCodeSessionHandle> {
     const model = selectModel(input.config);
     const systemInstruction = selectSystemInstruction(input.config);
-    const skills = await resolveSkills(input.baseDir, input.config.skills?.paths ?? []);
     const configuredEnvironment = input.runtimeContext.environment.env ?? {};
     const mcpServers = selectMcpServers(input.config, configuredEnvironment, process.env);
     const workspace = input.runtimeContext.environment.workspace ?? input.baseDir;
-    const environment = leaseEnvironment(input, model.apiKeyEnv);
+    const runtimeSkills = await prepareRuntimeSkills(input.baseDir, input.config.skills?.paths ?? []);
+    const skills = runtimeSkills.skills;
+    let environment: EnvironmentLease | undefined;
     let client: OpenCodeClient | undefined;
     let endpointProxy: EndpointProxy | undefined;
     let sessionId: string | undefined;
     try {
+      environment = leaseEnvironment(input, model.apiKeyEnv);
       const sdk = await this.sdkLoader();
       if (model.baseUrl !== undefined) {
         endpointProxy = await this.endpointProxyFactory(model.baseUrl);
@@ -851,7 +908,7 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
       });
       sessionId = session.id;
       await waitForMcpConnections(client, workspace, Object.keys(mcpServers));
-      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy);
+      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy, runtimeSkills.root);
     } catch (error) {
       if (client !== undefined) {
         if (sessionId !== undefined) {
@@ -873,9 +930,17 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
         // Preserve the startup failure while releasing local adapter resources.
       } finally {
         try {
-          environment.release();
+          if (runtimeSkills.root !== undefined) {
+            await rm(runtimeSkills.root, { recursive: true, force: true });
+          }
         } catch {
-          // Preserve the startup failure when restoring the environment fails.
+          // Preserve the startup failure while releasing local adapter resources.
+        } finally {
+          try {
+            environment?.release();
+          } catch {
+            // Preserve the startup failure when restoring the environment fails.
+          }
         }
       }
       if (error instanceof LifecycleError) {

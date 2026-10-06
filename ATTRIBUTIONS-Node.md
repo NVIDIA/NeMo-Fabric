@@ -33249,7 +33249,7 @@ standalone and requires a support library to be linked with it. This
 support library is itself covered by the above license.
 ```
 
-## proxy-addr - 2.0.7
+## proxy-addr - 2.0.8
 **Repository URL**: https://github.com/jshttp/proxy-addr
 **License Type(s)**: MIT
 ### License: https://spdx.org/licenses/MIT.html

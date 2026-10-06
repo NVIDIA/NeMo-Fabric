@@ -25,6 +25,7 @@ from examples.code_review_agent.config import (
     hermes_config,
     nooa_config,
     openclaw_config,
+    openhands_config,
     pi_config,
     qwen_config,
     with_relay,
@@ -39,6 +40,7 @@ CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "deepagents": deepagents_config,
     "nooa": nooa_config,
     "openclaw": openclaw_config,
+    "openhands": openhands_config,
     "pi": pi_config,
     "qwen": qwen_config,
 }
@@ -143,10 +145,11 @@ async def main() -> None:
         parser.error("--stream requires --relay")
     if args.stream and args.plan:
         parser.error("--stream cannot be combined with --plan")
-    if args.variant in {"cline", "openclaw", "qwen"} and args.relay:
+    if args.variant in {"cline", "openclaw", "openhands", "qwen"} and args.relay:
         display_name = {
             "cline": "Cline",
             "openclaw": "OpenClaw",
+            "openhands": "OpenHands",
             "qwen": "Qwen Code",
         }[args.variant]
         parser.error(f"the {display_name} adapter does not support Relay telemetry")

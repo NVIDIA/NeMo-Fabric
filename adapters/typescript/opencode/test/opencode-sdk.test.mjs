@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -242,6 +242,7 @@ test("configures validated Fabric skill directories for OpenCode", async () => {
         OpenCode: {
           async create(options) {
             capturedConfig = options.config.content;
+            const [stagedSkillDirectory] = JSON.parse(capturedConfig).skills;
             return {
               skill: {
                 async list() {
@@ -249,7 +250,7 @@ test("configures validated Fabric skill directories for OpenCode", async () => {
                   return {
                     data: skillListCalls === 1
                       ? []
-                      : [{ name: "review", path: await realpath(join(skillDirectory, "SKILL.md")) }],
+                      : [{ name: "review", path: await realpath(join(stagedSkillDirectory, "SKILL.md")) }],
                   };
                 },
               },
@@ -269,16 +270,21 @@ test("configures validated Fabric skill directories for OpenCode", async () => {
 
     const handle = await factory.create(input);
 
-    assert.deepEqual(JSON.parse(capturedConfig), {
-      providers: {
-        nvidia: {
-          settings: { apiKey: "{env:OPENCODE_TEST_KEY}" },
-        },
+    const parsedConfig = JSON.parse(capturedConfig);
+    assert.deepEqual(parsedConfig.providers, {
+      nvidia: {
+        settings: { apiKey: "{env:OPENCODE_TEST_KEY}" },
       },
-      skills: [await realpath(skillDirectory)],
     });
+    assert.equal(parsedConfig.skills.length, 1);
+    assert.notEqual(parsedConfig.skills[0], await realpath(skillDirectory));
+    assert.equal(
+      await readFile(join(parsedConfig.skills[0], "SKILL.md"), "utf8"),
+      "---\nname: review\ndescription: FABRIC_SKILL_SENTINEL\n---\nReview the change.\n",
+    );
     assert.equal(skillListCalls, 2);
     await handle.stop();
+    await assert.rejects(stat(parsedConfig.skills[0]));
   } finally {
     await rm(baseDir, { recursive: true, force: true });
   }
@@ -293,13 +299,15 @@ test("aborts a stalled skill discovery request at the discovery deadline", async
   };
   const baseDir = await mkdtemp(join(tmpdir(), "fabric-opencode-stalled-skill-"));
   const skillDirectory = join(baseDir, "skills", "review");
+  let stagedSkillDirectory;
   let closed = false;
   try {
     await mkdir(skillDirectory, { recursive: true });
     await writeFile(join(skillDirectory, "SKILL.md"), "---\nname: review\n---\nReview the change.\n", "utf8");
     const factory = new OpenCodeSdkSessionFactory(async () => ({
       OpenCode: {
-        async create() {
+        async create(options) {
+          [stagedSkillDirectory] = JSON.parse(options.config.content).skills;
           return {
             skill: {
               async list(_input, requestOptions) {
@@ -328,6 +336,7 @@ test("aborts a stalled skill discovery request at the discovery deadline", async
 
     await assert.rejects(factory.create(input), (error) => error.code === "opencode_skill_load_failed");
     assert.equal(closed, true);
+    await assert.rejects(stat(stagedSkillDirectory));
   } finally {
     AbortSignal.timeout = originalTimeout;
     await rm(baseDir, { recursive: true, force: true });
@@ -374,7 +383,7 @@ test("rejects a configured skill that OpenCode did not load", async () => {
   }
 });
 
-test("rejects Markdown files and nested skills discovered outside configured skill paths", async () => {
+test("rejects additional OpenCode-discoverable files in a configured skill directory", async () => {
   const baseDir = await mkdtemp(join(tmpdir(), "fabric-opencode-unexpected-skills-"));
   const skillDirectory = join(baseDir, "skills", "review");
   const nestedDirectory = join(skillDirectory, "examples", "experimental");
@@ -385,23 +394,47 @@ test("rejects Markdown files and nested skills discovered outside configured ski
       writeFile(join(skillDirectory, "README.md"), "---\nname: readme\n---\nUnexpected skill.\n", "utf8"),
       writeFile(join(nestedDirectory, "SKILL.md"), "---\nname: experimental\n---\nUnexpected skill.\n", "utf8"),
     ]);
+    const factory = new OpenCodeSdkSessionFactory(async () => {
+      throw new Error("unexpected skills must fail before loading the SDK");
+    });
+    const input = startInput();
+    input.baseDir = baseDir;
+    input.config.skills = { paths: ["skills/review"] };
+
+    await assert.rejects(factory.create(input), (error) => error.code === "opencode_skill_unexpected");
+  } finally {
+    await rm(baseDir, { recursive: true, force: true });
+  }
+});
+
+test("isolates OpenCode discovery from skills added to the source after startup begins", async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), "fabric-opencode-snapshot-skills-"));
+  const skillDirectory = join(baseDir, "skills", "review");
+  const lateSkill = join(skillDirectory, "examples", "late", "SKILL.md");
+  let stagedSkillDirectory;
+  let skillListCalls = 0;
+  try {
+    await mkdir(skillDirectory, { recursive: true });
+    await writeFile(join(skillDirectory, "SKILL.md"), "---\nname: review\n---\nReview the change.\n", "utf8");
     const factory = new OpenCodeSdkSessionFactory(async () => ({
       OpenCode: {
-        async create() {
+        async create(options) {
+          [stagedSkillDirectory] = JSON.parse(options.config.content).skills;
+          await mkdir(join(skillDirectory, "examples", "late"), { recursive: true });
+          await writeFile(lateSkill, "---\nname: late\n---\nLate skill.\n", "utf8");
           return {
             skill: {
               async list() {
+                skillListCalls += 1;
                 return {
-                  data: [
-                    { name: "review", path: await realpath(join(skillDirectory, "SKILL.md")) },
-                    { name: "readme", path: await realpath(join(skillDirectory, "README.md")) },
-                    { name: "experimental", path: await realpath(join(nestedDirectory, "SKILL.md")) },
-                  ],
+                  data: skillListCalls === 1
+                    ? []
+                    : [{ name: "review", path: await realpath(join(stagedSkillDirectory, "SKILL.md")) }],
                 };
               },
             },
             sessions: {
-              async create() { throw new Error("unexpected skills must fail before session creation"); },
+              async create() { return { id: "session-snapshot-skill" }; },
               async remove() {},
             },
             async close() {},
@@ -413,7 +446,12 @@ test("rejects Markdown files and nested skills discovered outside configured ski
     input.baseDir = baseDir;
     input.config.skills = { paths: ["skills/review"] };
 
-    await assert.rejects(factory.create(input), (error) => error.code === "opencode_skill_unexpected");
+    const handle = await factory.create(input);
+
+    assert.equal(skillListCalls, 2);
+    await assert.rejects(stat(join(stagedSkillDirectory, "examples", "late", "SKILL.md")));
+    await handle.stop();
+    await assert.rejects(stat(stagedSkillDirectory));
   } finally {
     await rm(baseDir, { recursive: true, force: true });
   }
@@ -427,13 +465,14 @@ test("allows OpenCode built-in skills outside configured Fabric skill directorie
     await writeFile(join(skillDirectory, "SKILL.md"), "---\nname: review\n---\nReview the change.\n", "utf8");
     const factory = new OpenCodeSdkSessionFactory(async () => ({
       OpenCode: {
-        async create() {
+        async create(options) {
+          const [stagedSkillDirectory] = JSON.parse(options.config.content).skills;
           return {
             skill: {
               async list() {
                 return {
                   data: [
-                    { name: "review", path: await realpath(join(skillDirectory, "SKILL.md")) },
+                    { name: "review", path: await realpath(join(stagedSkillDirectory, "SKILL.md")) },
                     { name: "opencode", path: "/opencode-core/skills/opencode/SKILL.md" },
                   ],
                 };
@@ -472,14 +511,15 @@ test("rejects configured skills with duplicate loaded names", async () => {
     ]);
     const factory = new OpenCodeSdkSessionFactory(async () => ({
       OpenCode: {
-        async create() {
+        async create(options) {
+          const stagedSkillDirectories = JSON.parse(options.config.content).skills;
           return {
             skill: {
               async list() {
                 return {
                   data: [
-                    { name: "duplicate", path: await realpath(join(first, "SKILL.md")) },
-                    { name: "duplicate", path: await realpath(join(second, "SKILL.md")) },
+                    { name: "duplicate", path: await realpath(join(stagedSkillDirectories[0], "SKILL.md")) },
+                    { name: "duplicate", path: await realpath(join(stagedSkillDirectories[1], "SKILL.md")) },
                   ],
                 };
               },
@@ -503,7 +543,7 @@ test("rejects configured skills with duplicate loaded names", async () => {
   }
 });
 
-test("encodes configured skill paths literally before OpenCode parses configuration variables", async () => {
+test("resolves configured skill paths literally before staging them for OpenCode", async () => {
   const baseDir = await mkdtemp(join(tmpdir(), "fabric-opencode-literal-skills-"));
   const skillDirectory = join(baseDir, "skills", "{env:FABRIC_SKILL_SEGMENT}-{file:secret}");
   let capturedConfig;
@@ -514,10 +554,11 @@ test("encodes configured skill paths literally before OpenCode parses configurat
       OpenCode: {
         async create(options) {
           capturedConfig = options.config.content;
+          const [stagedSkillDirectory] = JSON.parse(capturedConfig).skills;
           return {
             skill: {
               async list() {
-                return { data: [{ name: "literal", path: await realpath(join(skillDirectory, "SKILL.md")) }] };
+                return { data: [{ name: "literal", path: await realpath(join(stagedSkillDirectory, "SKILL.md")) }] };
               },
             },
             sessions: {
@@ -535,9 +576,9 @@ test("encodes configured skill paths literally before OpenCode parses configurat
 
     const handle = await factory.create(input);
 
-    assert.ok(capturedConfig.includes("\\u007benv:FABRIC_SKILL_SEGMENT}"));
-    assert.ok(capturedConfig.includes("\\u007bfile:secret}"));
-    assert.deepEqual(JSON.parse(capturedConfig).skills, [await realpath(skillDirectory)]);
+    const [stagedSkillDirectory] = JSON.parse(capturedConfig).skills;
+    assert.notEqual(stagedSkillDirectory, await realpath(skillDirectory));
+    assert.equal(await readFile(join(stagedSkillDirectory, "SKILL.md"), "utf8"), "---\nname: literal\n---\nLiteral skill.\n");
     await handle.stop();
   } finally {
     await rm(baseDir, { recursive: true, force: true });
