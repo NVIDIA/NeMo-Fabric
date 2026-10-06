@@ -32,6 +32,7 @@ WORKSPACE = "./repos/my-service"
 SKILL_PATH = "./skills/code-review"
 PI_DESCRIPTOR = "../../adapters/typescript/pi/pi.fabric-adapter.json"
 CLINE_DESCRIPTOR = "../../adapters/typescript/cline/cline.fabric-adapter.json"
+DROID_DESCRIPTOR = "../../adapters/typescript/droid/droid.fabric-adapter.json"
 QWEN_DESCRIPTOR = "../../adapters/typescript/qwen/qwen.fabric-adapter.json"
 CODE_REVIEW_INSTRUCTION = (
     "You are a concise code reviewer. Read the relevant workspace files before "
@@ -172,6 +173,40 @@ def cline_config() -> FabricConfig:
         provider="local",
         workspace=WORKSPACE,
         artifacts="./artifacts/cline",
+    )
+    return config
+
+
+def droid_config() -> FabricConfig:
+    """Return the complete Factory Droid SDK adapter variant."""
+
+    config = base_config().model_copy(deep=True)
+    config.discovery = DiscoveryConfig(local_paths=[DROID_DESCRIPTOR])
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.droid",
+        resolution="preinstalled",
+        settings={},
+    )
+    config.models = {
+        "default": ModelConfig(
+            provider="factory",
+            model="auto",
+            api_key_env="FACTORY_API_KEY",
+        )
+    }
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content=CODE_REVIEW_INSTRUCTION, mode="append")
+    )
+    config.tools = ToolsConfig(enabled=["Read", "Grep", "Glob"])
+    config.runtime = RuntimeConfig(
+        input_schema="text",
+        output_schema="message",
+        artifacts="./artifacts/droid",
+    )
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=WORKSPACE,
+        artifacts="./artifacts/droid",
     )
     return config
 

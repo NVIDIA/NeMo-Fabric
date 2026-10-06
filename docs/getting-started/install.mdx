@@ -151,6 +151,19 @@ npm install nemo-fabric-adapters-cline
 
 The adapter does not declare or install the Cline SDK as a package dependency. Refer to the [Cline adapter guide](../integrations/harness/cline.mdx) to configure adapter discovery and supported capabilities.
 
+### Install Factory Droid
+
+The [Factory Droid adapter](../integrations/harness/droid.mdx) requires Node.js 22.19.0 or newer, Factory's supported TypeScript SDK, and a caller-installed Droid CLI:
+
+```bash
+pip install nemo-fabric
+npm install --global --save-exact droid@0.233.0
+npm install --save-exact @factory/droid-sdk@0.9.1
+npm install nemo-fabric-adapters-droid
+```
+
+The adapter never installs the Droid CLI at runtime. Refer to the [Factory Droid adapter guide](../integrations/harness/droid.mdx) for supported configuration and discovery.
+
 ### Install an Adapter and Harness Without the Runtime
 
 Use an adapter package's `harness` extra when a different environment runs NeMo

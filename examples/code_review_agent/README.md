@@ -233,6 +233,35 @@ input.
 
 The initial Cline adapter does not support Relay telemetry or streaming.
 
+### Factory Droid (`droid`)
+
+Install Node.js 22.19 or newer and follow the
+[Factory Droid adapter installation instructions](../../adapters/typescript/droid/README.md).
+The source workspace pins `@factory/droid-sdk@0.9.1`; install the caller-owned
+`droid@0.233.0` CLI separately and set `FACTORY_API_KEY`.
+
+This variant selects Factory's `auto` model, appends the code-review
+instruction to Droid's native system prompt, restricts built-in tools to
+`Read`, `Grep`, and `Glob`, and loads the default code-review skill.
+
+Inspect its plan with:
+
+```bash
+.venv/bin/python -m examples.code_review_agent --variant droid --plan
+```
+
+Run the review with:
+
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --variant droid \
+  --input "Review calculator.py for correctness risks." \
+  --show-output
+```
+
+The initial Factory Droid adapter does not support Relay telemetry or Fabric
+streaming.
+
 ### Pi (`pi`)
 
 Install Node.js 22.19 or later, and follow the

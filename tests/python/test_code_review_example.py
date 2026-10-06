@@ -21,6 +21,7 @@ from examples.code_review_agent import claude_config
 from examples.code_review_agent import cline_config
 from examples.code_review_agent import codex_config
 from examples.code_review_agent import deepagents_config
+from examples.code_review_agent import droid_config
 from examples.code_review_agent import hermes_config
 from examples.code_review_agent import nooa_config
 from examples.code_review_agent import openclaw_config
@@ -45,6 +46,7 @@ def test_variant_builders_return_independent_complete_configs():
     claude = claude_config()
     cline = cline_config()
     deepagents = deepagents_config()
+    droid = droid_config()
     nooa = nooa_config()
     openclaw = openclaw_config()
     pi = pi_config()
@@ -57,6 +59,7 @@ def test_variant_builders_return_independent_complete_configs():
         claude,
         cline,
         deepagents,
+        droid,
         nooa,
         openclaw,
         pi,
@@ -120,6 +123,14 @@ def test_variant_builders_return_independent_complete_configs():
     assert deepagents.instructions == pi.instructions
     assert deepagents.environment.workspace == pi.environment.workspace
     assert deepagents.tools is None
+    assert droid.harness.adapter_id == "nvidia.fabric.droid"
+    assert droid.models["default"].provider == "factory"
+    assert droid.models["default"].model == "auto"
+    assert droid.models["default"].api_key_env == "FACTORY_API_KEY"
+    assert droid.skills is not None
+    assert droid.skills.paths == ["./skills/code-review"]
+    assert droid.tools is not None
+    assert droid.tools.enabled == ["Read", "Grep", "Glob"]
     assert nooa.harness is None
     assert nooa.workflow is not None
     assert nooa.workflow.target_id == "nvidia.nooa.coding-agent"
@@ -338,7 +349,9 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
     [
         (["--variant", "pi"], [BASE_DIR / "skills/code-review"]),
         (["--variant", "cline"], [BASE_DIR / "skills/code-review"]),
+        (["--variant", "droid"], [BASE_DIR / "skills/code-review"]),
         (["--variant", "cline", "--no-skills"], []),
+        (["--variant", "droid", "--no-skills"], []),
         (["--variant", "pi", "--no-skills"], []),
         (["--variant", "deepagents"], [BASE_DIR / "skills/code-review"]),
         (
@@ -425,6 +438,18 @@ def test_cline_variant_projects_explicit_skill_and_tool_policy():
     assert agent_config["tools"] == {
         "enabled": ["read_files", "search_codebase", "skills"]
     }
+    assert plan.config.runtime.input_schema == "text"
+    assert plan.config.runtime.output_schema == "message"
+
+
+def test_droid_variant_projects_explicit_skill_and_tool_policy():
+    plan = Fabric().plan(droid_config(), base_dir=BASE_DIR)
+    agent_config = plan.to_mapping()["agent_config"]
+
+    assert agent_config["skills"] == {
+        "paths": [str((BASE_DIR / "skills/code-review").resolve())]
+    }
+    assert agent_config["tools"] == {"enabled": ["Read", "Grep", "Glob"]}
     assert plan.config.runtime.input_schema == "text"
     assert plan.config.runtime.output_schema == "message"
 
