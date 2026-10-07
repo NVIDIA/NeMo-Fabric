@@ -132,6 +132,48 @@ def test_cache_semantics_and_unknown_values(
 @pytest.mark.parametrize(
     ("usage", "expected"),
     [
+        ({"metadata": {"estimated_cost_usd": 9}}, (12, 3, 4, 0.25)),
+        ({"input_tokens": 20, "cached_input_tokens": 5}, (12, 5, 4, 0.25)),
+        ({"input_tokens": 20, "input_tokens_include_cache": False}, (12, 3, 4, 0.25)),
+        (
+            {
+                "input_tokens": 0,
+                "input_tokens_include_cache": True,
+                "cached_input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": 0,
+            },
+            (0, 0, 0, 0),
+        ),
+    ],
+)
+def test_unknown_usage_preserves_existing_context(result_path, usage, expected):
+    from harbor.models.agent.context import AgentContext
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+    )
+
+    document = json.loads(result_path.read_text())
+    document["usage"] = usage
+    result_path.write_text(json.dumps(document))
+    context = AgentContext(
+        n_input_tokens=12, n_cache_tokens=3, n_output_tokens=4, cost_usd=0.25
+    )
+
+    populate_context_from_result(context, result_path)
+    populate_context_from_result(context, result_path)
+
+    assert (
+        context.n_input_tokens,
+        context.n_cache_tokens,
+        context.n_output_tokens,
+        context.cost_usd,
+    ) == expected
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
         (
             {"input_tokens": 0, "input_tokens_include_cache": True, "cost_usd": 0},
             (0, 3, 4, 0),

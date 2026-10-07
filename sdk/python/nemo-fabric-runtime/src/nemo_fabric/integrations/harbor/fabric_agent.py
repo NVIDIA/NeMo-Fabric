@@ -868,10 +868,14 @@ def populate_context_from_result(
         elif includes_cache is None and cached_input_tokens != 0:
             # Neither missing cache nor an unspecified convention proves an inclusive total.
             input_tokens = None
-        context.n_input_tokens = input_tokens
-        context.n_cache_tokens = cached_input_tokens
-        context.n_output_tokens = usage.get("output_tokens")
-        context.cost_usd = usage.get("cost_usd")
+        if input_tokens is not None:
+            context.n_input_tokens = input_tokens
+        if cached_input_tokens is not None:
+            context.n_cache_tokens = cached_input_tokens
+        if usage.get("output_tokens") is not None:
+            context.n_output_tokens = usage["output_tokens"]
+        if usage.get("cost_usd") is not None:
+            context.cost_usd = usage["cost_usd"]
     return result
 
 
