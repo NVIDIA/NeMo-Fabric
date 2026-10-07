@@ -70,7 +70,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`types.RunOutput`](./nemo_fabric.types.md#class-runoutput): Normalized adapter output.
 - [`types.RunPlan`](./nemo_fabric.types.md#class-runplan): Immutable execution plan produced before a runtime is started.
 - [`types.RunResult`](./nemo_fabric.types.md#class-runresult): Normalized terminal result from one NeMo Fabric invocation.
-- [`types.RunUsage`](./nemo_fabric.types.md#class-runusage): Normalized invocation usage reported by an adapter target.
+- [`types.RunUsage`](./nemo_fabric.types.md#class-runusage): Normalized invocation-local usage reported by an adapter target.
 - [`types.RuntimeCapabilities`](./nemo_fabric.types.md#class-runtimecapabilities): Operations declared by the resolved runtime and adapter.
 - [`types.RuntimeHandle`](./nemo_fabric.types.md#class-runtimehandle): Opaque identity and binding for one started runtime.
 - [`types.ServiceHandle`](./nemo_fabric.types.md#class-servicehandle): Opaque identity and binding for one prepared or attached service.
