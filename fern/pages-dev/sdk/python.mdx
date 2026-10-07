@@ -967,6 +967,14 @@ All public SDK errors inherit from `FabricError`.
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 
 Consumers own job-level retries and rollout-level failure policy.
+Core host-operation deadlines (`host_timeout`) become Python `TimeoutError`, then
+`FabricRuntimeError` with `code == "timeout"` and the failed lifecycle stage.
+If invocation succeeds in `Fabric.run()` but stop reaches this deadline,
+it returns a failed `RunResult` with `error.stage == "stop"` and
+`error.code == "timeout"`. Check the returned result as well as raised errors.
+Adapters can report execution deadlines in normalized results with
+`result.error.code == "timeout"`. Other adapter-specific timeout codes are not
+automatically reclassified. Diagnostic text is not a timeout classifier.
 Single-invocation runs attempt to stop the runtime before returning. A `Runtime`
 used with `async with` also attempts cleanup after an invocation error; if cleanup
 fails, that failure is attached to the original exception rather than replacing

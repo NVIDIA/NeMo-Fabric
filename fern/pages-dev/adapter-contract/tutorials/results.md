@@ -93,6 +93,10 @@ Set retry guidance only when retrying at the consumer boundary is safe. NeMo
 Fabric propagates failure information but does not automatically retry adapter
 operations.
 
+Report an invocation deadline with the normalized error code `timeout`, rather
+than a harness-specific deadline code. Consumers must not infer deadlines from
+diagnostic messages or classify unrelated transport failures as timeouts.
+
 **Success Check**: A target failure returns a `FAILED` result while a lifecycle
 failure is reported at its NeMo Fabric error stage.
 
