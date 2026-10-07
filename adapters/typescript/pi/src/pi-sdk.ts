@@ -30,6 +30,18 @@ import {
 } from "./relay.js";
 import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runtime.js";
 
+// ProviderConfigInput isn't re-exported from pi's public entrypoint; derive it from
+// registerProvider's param type (ModelRuntime's constructor is private, so no InstanceType).
+type PiModelRuntime = Awaited<ReturnType<typeof import("@earendil-works/pi-coding-agent").ModelRuntime.create>>;
+type PiProviderConfigInput = Parameters<PiModelRuntime["registerProvider"]>[1];
+type PiCatalogModel = NonNullable<PiProviderConfigInput["models"]>[number];
+
+// Fallbacks for a gateway model whose metadata isn't supplied via extensions (below).
+const DEFAULT_MODEL_API = "openai-completions";
+const DEFAULT_CONTEXT_WINDOW = 200000;
+const DEFAULT_MAX_TOKENS = 8192;
+const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
+
 interface PiHarnessSettings {
   extensions: string[];
 }
@@ -482,6 +494,27 @@ function selectModel(config: AgentConfig): AgentModelConfig {
   return selected;
 }
 
+/**
+ * Build a Pi catalog model entry from a Fabric AgentModelConfig. Pi-specific metadata
+ * (api, context_window, cost, reasoning, input) comes from the adapter-owned `extensions`,
+ * falling back to the DEFAULT_* constants when omitted.
+ */
+function buildCatalogModel(model: AgentModelConfig): PiCatalogModel {
+  const ext = (model.extensions ?? {}) as Record<string, unknown>;
+  const num = (v: unknown, fallback: number): number => (typeof v === "number" ? v : fallback);
+  return {
+    id: model.model,
+    name: typeof ext.name === "string" ? ext.name : model.model,
+    api: typeof ext.api === "string" ? ext.api : DEFAULT_MODEL_API,
+    baseUrl: model.base_url ?? undefined,
+    reasoning: ext.reasoning === true,
+    input: Array.isArray(ext.input) ? (ext.input as ("text" | "image")[]) : ["text"],
+    cost: (ext.cost as PiCatalogModel["cost"] | undefined) ?? ZERO_COST,
+    contextWindow: num(ext.context_window, DEFAULT_CONTEXT_WINDOW),
+    maxTokens: num(model.max_tokens ?? ext.max_tokens, DEFAULT_MAX_TOKENS),
+  };
+}
+
 function harnessSettings(config: AgentConfig): PiHarnessSettings {
   const raw = config.harness?.settings;
   const extensions = raw?.extensions;
@@ -881,11 +914,33 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     });
     await modelRuntime.setRuntimeApiKey(selected.provider, apiKey);
     const relayEnabled = input.runtimeContext.telemetry?.relay_enabled === true;
-    if (relayEnabled && selected.base_url) {
-      // Configure the provider before Relay loads so its provider-wide redirect
-      // sees a consistent catalog instead of one overlaid selected model.
-      modelRuntime.registerProvider(selected.provider, {
-        baseUrl: selected.base_url,
+
+    // Register configured models into Pi's catalog (grouped by provider: registerProvider
+    // is provider-keyed and overwrites `models` on re-registration). Required because the
+    // runtime uses modelsPath:null + allowModelNetwork:false, so gateway models aren't known.
+    const modelsByProvider = new Map<string, AgentModelConfig[]>();
+    for (const entry of Object.values(input.config.models ?? {})) {
+      const group = modelsByProvider.get(entry.provider) ?? [];
+      group.push(entry);
+      modelsByProvider.set(entry.provider, group);
+    }
+    for (const [providerId, entries] of modelsByProvider) {
+      const keyEnv = entries.find((e) => e.api_key_env)?.api_key_env ?? undefined;
+      if (keyEnv) {
+        const providerKey = credentialValue(input, keyEnv);
+        if (providerKey && providerKey.length > 0) {
+          await modelRuntime.setRuntimeApiKey(providerId, providerKey);
+        }
+      }
+      const seen = new Set<string>();
+      const models = entries
+        .filter((e) => !seen.has(e.model) && seen.add(e.model) !== undefined)
+        .map(buildCatalogModel);
+      const providerBaseUrl = entries.find((e) => e.base_url)?.base_url ?? undefined;
+      modelRuntime.registerProvider(providerId, {
+        ...(providerBaseUrl ? { baseUrl: providerBaseUrl } : {}),
+        api: "openai-completions",
+        models,
       });
     }
     const catalogModel = modelRuntime.getModel(selected.provider, selected.model);
