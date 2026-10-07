@@ -302,7 +302,7 @@ try {
     throw new Error("Installed Pi descriptor does not reference its packaged CLI");
   }
 
-  for (const name of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent"]) {
+  for (const name of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-mcp"]) {
     if (await pathExists(join(consumerRoot, "node_modules", name, "package.json"))) {
       throw new Error(`Adapter-only install unexpectedly included ${name}`);
     }
@@ -329,6 +329,7 @@ try {
       "--package-lock=false",
       "@earendil-works/pi-ai@1.0.3",
       "@earendil-works/pi-coding-agent@1.0.3",
+      "@earendil-works/pi-mcp@1.0.3",
     ],
     consumerRoot,
   );

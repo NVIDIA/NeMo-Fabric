@@ -130,7 +130,7 @@ if (manifest.name === "nemo-fabric-adapters-pi") {
   if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
     throw new Error("The Pi descriptor runner must resolve inside the npm package");
   }
-  for (const name of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent"]) {
+  for (const name of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-mcp"]) {
     if (manifest.dependencies?.[name] !== undefined) {
       throw new Error(`The Pi harness package ${name} must not be a production dependency`);
     }
