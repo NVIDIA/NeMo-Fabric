@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { cp, mkdir, mkdtemp, realpath, rm, stat } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
@@ -17,6 +17,8 @@ import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-com
 import type { DroidPromptOutcome, DroidSessionFactory, DroidSessionHandle } from "./runtime.js";
 
 const DROID_SDK_INSTALL_COMMAND = "npm install @factory/droid-sdk@0.9.1";
+const MCP_STARTUP_TIMEOUT_MS = 10_000;
+const MCP_STATUS_POLL_INTERVAL_MS = 50;
 
 interface DroidTokenUsage {
   inputTokens: number;
@@ -197,10 +199,11 @@ function normalizedMcpServer(name: string, server: AgentMcpServerConfig): JsonOb
       });
     }
     return {
-      name,
+      type: "stdio",
       command: server.url,
       args: server.args ?? [],
       env: server.env ?? {},
+      disabled: false,
     };
   }
   if (server.transport === "streamable-http" || server.transport === "sse") {
@@ -214,12 +217,9 @@ function normalizedMcpServer(name: string, server: AgentMcpServerConfig): JsonOb
     validateRemoteUrl(name, server.url);
     return {
       type: server.transport === "sse" ? "sse" : "http",
-      name,
       url: server.url,
-      headers: Object.entries(server.custom_headers ?? {}).map(([headerName, value]) => ({
-        name: headerName,
-        value,
-      })),
+      headers: server.custom_headers ?? {},
+      disabled: false,
     };
   }
   throw new LifecycleError("droid_mcp_transport_unsupported", "Droid does not support the configured MCP transport", {
@@ -227,31 +227,45 @@ function normalizedMcpServer(name: string, server: AgentMcpServerConfig): JsonOb
   });
 }
 
-function normalizedMcp(input: AdapterStartInput): JsonObject[] {
+function normalizedMcp(input: AdapterStartInput): Record<string, JsonObject> {
   if (input.config.mcp?.extensions !== undefined && Object.keys(input.config.mcp.extensions).length > 0) {
     throw new LifecycleError("droid_mcp_extensions_unsupported", "Droid does not support top-level MCP extensions");
   }
-  return Object.entries(input.config.mcp?.servers ?? {}).map(([name, server]) => normalizedMcpServer(name, server));
+  return Object.fromEntries(
+    Object.entries(input.config.mcp?.servers ?? {}).map(([name, server]) => [name, normalizedMcpServer(name, server)]),
+  );
 }
 
-interface RuntimeSkills {
+interface RuntimeProfile {
   root?: string;
   home?: string;
   entrypoints: string[];
 }
 
-async function prepareRuntimeSkills(input: AdapterStartInput): Promise<RuntimeSkills> {
+async function prepareRuntimeProfile(
+  input: AdapterStartInput,
+  mcpServers: Record<string, JsonObject>,
+): Promise<RuntimeProfile> {
   if (input.config.skills?.extensions !== undefined) {
     throw new LifecycleError("droid_skill_extensions_unsupported", "Droid does not support skill extensions");
   }
   const configured = input.config.skills?.paths ?? [];
-  if (configured.length === 0) return { entrypoints: [] };
+  if (configured.length === 0 && Object.keys(mcpServers).length === 0) return { entrypoints: [] };
 
   const root = await mkdtemp(join(tmpdir(), "nemo-fabric-droid-"));
   const home = join(root, "home");
   const skillsRoot = join(home, ".agents", "skills");
   try {
-    await mkdir(skillsRoot, { recursive: true });
+    if (Object.keys(mcpServers).length > 0) {
+      const factoryRoot = join(home, ".factory");
+      await mkdir(factoryRoot, { recursive: true });
+      await writeFile(
+        join(factoryRoot, "mcp.json"),
+        `${JSON.stringify({ mcpServers }, null, 2)}\n`,
+        { encoding: "utf8", mode: 0o600 },
+      );
+    }
+    if (configured.length > 0) await mkdir(skillsRoot, { recursive: true });
     const names = new Set<string>();
     const entrypoints: string[] = [];
     for (const configuredPath of configured) {
@@ -405,16 +419,24 @@ function sdkErrorMessage(error: unknown): string {
   return "Droid session communication failed";
 }
 
-async function applyToolPolicy(session: DroidSdkSession, config: AgentConfig): Promise<void> {
+async function applyToolPolicy(
+  session: DroidSdkSession,
+  config: AgentConfig,
+  mcpServers: Record<string, JsonObject>,
+): Promise<void> {
   const enabled = config.tools?.enabled;
   const blocked = config.tools?.blocked ?? [];
   if (enabled === undefined && blocked.length === 0) return;
 
   const listed = await session.listTools();
+  const mcpPrefixes = Object.keys(mcpServers).map((name) => `${name}___`);
   const available = listed
     .map((tool) => tool.id)
-    .filter((id): id is string => typeof id === "string" && id.length > 0);
-  if (available.length !== listed.length || new Set(available).size !== available.length) {
+    .filter((id): id is string =>
+      typeof id === "string" && id.length > 0 && !mcpPrefixes.some((prefix) => id.startsWith(prefix)),
+    );
+  const malformed = listed.some((tool) => typeof tool.id !== "string" || tool.id.length === 0);
+  if (malformed || new Set(available).size !== available.length) {
     throw new LifecycleError("droid_tool_status_invalid", "Droid returned malformed built-in tool metadata");
   }
   const known = new Set(available);
@@ -435,29 +457,81 @@ async function applyToolPolicy(session: DroidSdkSession, config: AgentConfig): P
   await session.updateSettings({ disabledToolIds: [...disabled].sort() });
 }
 
-async function validateMcpStatus(session: DroidSdkSession, configured: JsonObject[]): Promise<void> {
-  if (configured.length === 0) return;
-  const expected = new Set(configured.map((server) => String(server.name)));
-  const report = await session.listMcpServers();
-  if (!Array.isArray(report.servers)) {
-    throw new LifecycleError("droid_mcp_status_unavailable", "Droid could not determine configured MCP server status");
-  }
-  const byName = new Map(report.servers.map((server) => [server.name, server]));
-  const missing = [...expected].filter((name) => !byName.has(name));
-  const failed = [...expected].filter((name) => {
-    const status = byName.get(name)?.status;
-    return status === "failed" || status === "disabled" || status === "disconnected";
-  });
-  if (missing.length > 0 || failed.length > 0) {
-    throw new LifecycleError("droid_mcp_load_failed", "Droid did not load every configured MCP server", {
-      metadata: {
-        missing,
-        failed: failed.map((name) => ({
-          name,
-          ...(typeof byName.get(name)?.error === "string" ? { error: String(byName.get(name)?.error) } : {}),
-        })),
-      },
+async function validateMcpStatus(
+  session: DroidSdkSession,
+  configured: Record<string, JsonObject>,
+  timeoutMs: number,
+): Promise<void> {
+  const expected = new Set(Object.keys(configured));
+  if (expected.size === 0) return;
+  const deadline = Date.now() + timeoutMs;
+  let missing = [...expected];
+  let pending: string[] = [];
+  while (true) {
+    const remainingBeforeRequestMs = deadline - Date.now();
+    if (remainingBeforeRequestMs <= 0) {
+      throw new LifecycleError("droid_mcp_load_failed", "Droid did not connect every configured MCP server", {
+        metadata: { missing, connecting: pending },
+      });
+    }
+    let cancelTimer: () => void = () => undefined;
+    let report: { servers: DroidMcpStatus[] } | undefined;
+    try {
+      report = await Promise.race([
+        session.listMcpServers(),
+        new Promise<undefined>((resolve) => {
+          const timer = setTimeout(resolve, remainingBeforeRequestMs);
+          cancelTimer = () => clearTimeout(timer);
+        }),
+      ]);
+    } catch {
+      throw new LifecycleError("droid_mcp_status_unavailable", "Droid could not determine configured MCP server status");
+    } finally {
+      cancelTimer();
+    }
+    if (report === undefined) {
+      throw new LifecycleError("droid_mcp_load_failed", "Droid did not connect every configured MCP server", {
+        metadata: { missing, connecting: pending },
+      });
+    }
+    if (!Array.isArray(report.servers)) {
+      throw new LifecycleError("droid_mcp_status_unavailable", "Droid could not determine configured MCP server status");
+    }
+    const byName = new Map(report.servers.map((server) => [server.name, server]));
+    missing = [...expected].filter((name) => !byName.has(name));
+    const failed = [...expected].filter((name) => {
+      const status = byName.get(name)?.status;
+      return status === "failed" || status === "disabled" || status === "disconnected";
     });
+    if (failed.length > 0) {
+      throw new LifecycleError("droid_mcp_load_failed", "Droid did not load every configured MCP server", {
+        metadata: {
+          missing,
+          failed: failed.map((name) => ({
+            name,
+            ...(typeof byName.get(name)?.error === "string" ? { error: String(byName.get(name)?.error) } : {}),
+          })),
+        },
+      });
+    }
+    pending = [...expected].filter((name) => byName.get(name)?.status === "connecting");
+    const invalid = [...expected].filter((name) => {
+      const status = byName.get(name)?.status;
+      return status !== undefined && status !== "connected" && status !== "connecting";
+    });
+    if (invalid.length > 0) {
+      throw new LifecycleError("droid_mcp_status_unavailable", "Droid returned an unknown MCP server status", {
+        metadata: { servers: invalid },
+      });
+    }
+    if (missing.length === 0 && pending.length === 0) return;
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new LifecycleError("droid_mcp_load_failed", "Droid did not connect every configured MCP server", {
+        metadata: { missing, connecting: pending },
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(MCP_STATUS_POLL_INTERVAL_MS, remainingMs)));
   }
 }
 
@@ -508,9 +582,11 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
 
 export class DroidSdkSessionFactory implements DroidSessionFactory {
   private readonly loader: DroidSdkLoader;
+  private readonly mcpStartupTimeoutMs: number;
 
-  constructor(loader: DroidSdkLoader = loadDroidSdk) {
+  constructor(loader: DroidSdkLoader = loadDroidSdk, mcpStartupTimeoutMs = MCP_STARTUP_TIMEOUT_MS) {
     this.loader = loader;
+    this.mcpStartupTimeoutMs = mcpStartupTimeoutMs;
   }
 
   async create(input: AdapterStartInput): Promise<DroidSessionHandle> {
@@ -535,7 +611,7 @@ export class DroidSdkSessionFactory implements DroidSessionFactory {
         `Droid does not support instructions.system.mode='${instruction.mode}'; supported modes: replace, append`,
       );
     }
-    const runtimeSkills = await prepareRuntimeSkills(input);
+    const runtimeProfile = await prepareRuntimeProfile(input, mcpServers);
 
     let session: DroidSdkSession | undefined;
     try {
@@ -545,9 +621,15 @@ export class DroidSdkSessionFactory implements DroidSessionFactory {
         modelId: selected.model,
         apiKey,
         autonomyLevel: "high",
-        ...(runtimeSkills.home === undefined
+        ...(runtimeProfile.home === undefined
           ? {}
-          : { env: { HOME: runtimeSkills.home, USERPROFILE: runtimeSkills.home } }),
+          : {
+              env: {
+                HOME: runtimeProfile.home,
+                USERPROFILE: runtimeProfile.home,
+                FACTORY_HOME_OVERRIDE: runtimeProfile.home,
+              },
+            }),
         ...(instruction === undefined || instruction === null
           ? {}
           : {
@@ -556,16 +638,15 @@ export class DroidSdkSessionFactory implements DroidSessionFactory {
                   ? { type: "preset", preset: "droid", append: instruction.content }
                   : instruction.content,
             }),
-        ...(mcpServers.length === 0 ? {} : { mcpServers }),
       });
-      await applyToolPolicy(session, input.config);
-      await validateMcpStatus(session, mcpServers);
-      await validateSkills(session, runtimeSkills.entrypoints);
-      return new DroidSdkSessionHandle(session, runtimeSkills.root);
+      await applyToolPolicy(session, input.config, mcpServers);
+      await validateMcpStatus(session, mcpServers, this.mcpStartupTimeoutMs);
+      await validateSkills(session, runtimeProfile.entrypoints);
+      return new DroidSdkSessionHandle(session, runtimeProfile.root);
     } catch (error) {
       await session?.close().catch(() => undefined);
-      if (runtimeSkills.root !== undefined) {
-        await rm(runtimeSkills.root, { recursive: true, force: true });
+      if (runtimeProfile.root !== undefined) {
+        await rm(runtimeProfile.root, { recursive: true, force: true });
       }
       if (error instanceof LifecycleError) throw error;
       const message = sdkErrorMessage(error);

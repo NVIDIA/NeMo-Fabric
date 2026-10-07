@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import test from "node:test";
@@ -83,7 +83,9 @@ function fakeSdk(options = {}) {
     async updateSettings(value) { calls.updateSettings.push(value); },
     async listMcpServers() {
       calls.listMcpServers += 1;
-      return options.mcpReport ?? { servers: [] };
+      return typeof options.mcpReport === "function"
+        ? options.mcpReport(calls.listMcpServers)
+        : options.mcpReport ?? { servers: [] };
     },
     async listSkills() {
       calls.listSkills += 1;
@@ -147,7 +149,7 @@ test("maps replacement instructions and native stdio, HTTP, and SSE MCP configur
     mcpReport: {
       servers: [
         { name: "local", status: "connected" },
-        { name: "remote", status: "connecting" },
+        { name: "remote", status: "connected" },
         { name: "events", status: "connected" },
         { name: "ipv6", status: "connected" },
       ],
@@ -170,26 +172,96 @@ test("maps replacement instructions and native stdio, HTTP, and SSE MCP configur
     },
   });
   const handle = await new DroidSdkSessionFactory(sdk.loader).create(configured);
-  assert.deepEqual(sdk.calls.create[0], {
+  const { env, ...created } = sdk.calls.create[0];
+  assert.deepEqual(created, {
     cwd: await realpath("/tmp"),
     modelId: "auto",
     apiKey: "secret",
     autonomyLevel: "high",
     systemPrompt: "Replace the prompt.",
-    mcpServers: [
-      { name: "local", command: "node", args: ["server.js"], env: { MODE: "test" } },
-      {
-        type: "http",
-        name: "remote",
-        url: "https://mcp.example.test/rpc",
-        headers: [{ name: "Authorization", value: "Bearer token" }],
-      },
-      { type: "sse", name: "events", url: "http://127.0.0.1:3000/sse", headers: [] },
-      { type: "sse", name: "ipv6", url: "http://[::1]:3001/sse", headers: [] },
-    ],
   });
+  assert.equal(env.HOME, env.USERPROFILE);
+  assert.equal(env.HOME, env.FACTORY_HOME_OVERRIDE);
+  assert.deepEqual(
+    JSON.parse(await readFile(join(env.HOME, ".factory", "mcp.json"), "utf8")),
+    {
+      mcpServers: {
+        local: { type: "stdio", command: "node", args: ["server.js"], env: { MODE: "test" }, disabled: false },
+        remote: {
+          type: "http",
+          url: "https://mcp.example.test/rpc",
+          headers: { Authorization: "Bearer token" },
+          disabled: false,
+        },
+        events: { type: "sse", url: "http://127.0.0.1:3000/sse", headers: {}, disabled: false },
+        ipv6: { type: "sse", url: "http://[::1]:3001/sse", headers: {}, disabled: false },
+      },
+    },
+  );
   assert.equal(sdk.calls.listMcpServers, 1);
   await handle.stop();
+});
+
+test("waits for configured MCP servers to connect", async () => {
+  const sdk = fakeSdk({
+    mcpReport(call) {
+      return {
+        servers: [{ name: "test", status: call === 1 ? "connecting" : "connected" }],
+      };
+    },
+  });
+  const handle = await new DroidSdkSessionFactory(sdk.loader).create(
+    input({ tools: undefined, mcp: { servers: { test: { transport: "stdio", url: "node" } } } }),
+  );
+
+  assert.equal(sdk.calls.listMcpServers, 2);
+  await handle.stop();
+});
+
+test("keeps configured MCP tools outside the built-in tool policy", async () => {
+  const sdk = fakeSdk({
+    tools: [{ id: "Read" }, { id: "Edit" }, { id: "test___echo" }],
+    mcpReport: { servers: [{ name: "test", status: "connected" }] },
+  });
+  const handle = await new DroidSdkSessionFactory(sdk.loader).create(
+    input({
+      tools: { enabled: ["Read"] },
+      mcp: { servers: { test: { transport: "stdio", url: "node" } } },
+    }),
+  );
+
+  assert.deepEqual(sdk.calls.updateSettings, [{ disabledToolIds: ["Edit"] }]);
+  await handle.stop();
+});
+
+test("rejects an MCP server that does not finish connecting", async () => {
+  const sdk = fakeSdk({
+    mcpReport: { servers: [{ name: "test", status: "connecting" }] },
+  });
+
+  await assert.rejects(
+    new DroidSdkSessionFactory(sdk.loader, 1).create(
+      input({ tools: undefined, mcp: { servers: { test: { transport: "stdio", url: "node" } } } }),
+    ),
+    (error) =>
+      error.code === "droid_mcp_load_failed" &&
+      error.metadata?.connecting?.includes("test"),
+  );
+  assert.equal(sdk.calls.close, 1);
+});
+
+test("times out when Droid does not return MCP status", async () => {
+  const sdk = fakeSdk({
+    mcpReport: () => new Promise(() => undefined),
+  });
+
+  await assert.rejects(
+    new DroidSdkSessionFactory(sdk.loader, 1).create(
+      input({ tools: undefined, mcp: { servers: { test: { transport: "stdio", url: "node" } } } }),
+    ),
+    (error) => error.code === "droid_mcp_load_failed",
+  );
+  assert.equal(sdk.calls.close, 1);
 });
 
 test("stages configured skills in an isolated Droid home and verifies discovery", async (t) => {
@@ -212,6 +284,7 @@ test("stages configured skills in an isolated Droid home and verifies discovery"
   }));
   const created = sdk.calls.create[0];
   assert.equal(created.env.HOME, created.env.USERPROFILE);
+  assert.equal(created.env.HOME, created.env.FACTORY_HOME_OVERRIDE);
   const stagedEntrypoint = join(created.env.HOME, ".agents", "skills", basename(source), "SKILL.md");
   assert.equal((await stat(stagedEntrypoint)).isFile(), true);
   assert.equal(sdk.calls.listSkills, 1);
