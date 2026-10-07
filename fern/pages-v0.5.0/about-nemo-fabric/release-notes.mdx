@@ -1,0 +1,113 @@
+---
+title: "Release Notes"
+description: "Review the current NVIDIA NeMo Fabric release status and find the official release history."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+{/* @tpl:naming
+Use title casing: Start with "Release Notes for" followed by the product name. Fern resolves the page title from frontmatter; do not add an H1 heading.
+*/}
+
+{/* @tpl:formatting
+This is the Release Notes template. Document one release version per page and use the documentation version selector or previous-release links for earlier versions. Include patch releases on the same page in reverse chronological order.
+*/}
+
+{/* @tpl:formatting
+- Release notes summarize what changed in a version. Link to guides and reference pages instead of duplicating full procedures.
+- Use tables for support matrices, compatibility lists, and fixed or known issue summaries when they improve scanability.
+- Use callouts for upgrade blockers, breaking changes, and security advisories.
+*/}
+
+This page summarizes the current documentation-visible release state. GitHub
+Releases remain the source of truth for complete release history and
+tag-specific notes.
+
+## Current Release
+
+NVIDIA NeMo Fabric 0.4 adds adapters for Cline, OpenClaw, OpenCode, and Qwen
+Code. It also adds a shared-service lifecycle for adapters that support it,
+extends Pi observability with NeMo Relay telemetry and streaming, and supports
+normalized model sampling and token-limit settings.
+
+For release artifacts and the complete change history, refer to
+[GitHub Releases](https://github.com/NVIDIA/NeMo-Fabric/releases).
+
+## Upgrade Notes
+
+<Warning>
+Relay-enabled integrations in NeMo Fabric 0.4 require NeMo Relay `>=0.9,<0.10`.
+Upgrade separately installed Relay Python packages and `nemo-relay` CLI
+installations before using Relay with 0.4 adapters. The published Hermes Agent
+v2026.9.24 release requires Relay 0.8, so Hermes Relay telemetry and streaming
+currently require the compatible, merged Hermes Relay 0.9 revision in a
+separate Python 3.14 environment. Ordinary Hermes Agent invocations do not
+require that development checkout.
+</Warning>
+
+The public Rust `ModelConfig` and `AgentModelConfig` structs now include
+optional `top_p` and `max_tokens` fields, and `RuntimeHandle` includes an
+optional `service_id`. Applications that construct these structs with explicit
+Rust struct literals must add the new fields or use a constructor or default
+that supplies them. Existing serialized configurations can omit the new fields.
+
+## Release Highlights
+
+### More Harness Integrations
+
+- [Cline](../integrations/harness/cline.mdx) runs a local Cline SDK session
+  across ordered invocations and maps supported model, tool, skill, and MCP
+  configuration.
+- [OpenClaw](../integrations/harness/openclaw.mdx) can run a Gateway for one
+  runtime or connect multiple runtimes to a shared Gateway.
+- [OpenCode](../integrations/harness/opencode.mdx) runs an embedded OpenCode
+  host and persistent session. The adapter can return a patch artifact for
+  files changed during an invocation.
+- [Qwen Code](../integrations/harness/qwen.mdx) runs the Qwen Code SDK and its
+  bundled CLI in an isolated child process, reusing one session across ordered
+  invocations.
+
+### Shared Adapter Services
+
+The [Python SDK](../sdk/python.mdx#shared-services) now exposes
+`Fabric.prepare_service()` for a NeMo Fabric-managed service and
+`Fabric.attach_service()` for a service managed by another system. Multiple
+runtimes can use one service while keeping separate runtime IDs and harness
+sessions. OpenClaw supports both service paths. Service handles are local to
+the creating process and cannot be used for cold resume.
+
+### Relay and Model Configuration
+
+The [Pi adapter](../integrations/harness/pi.mdx) now emits Relay telemetry and
+supports live ATOF records through `Runtime.invoke_stream()`. Pi streaming
+uses the embedded collector; its Relay 0.9 extension and CLI must be installed
+separately. Pi model telemetry also depends on a supported model API and a
+matching Relay gateway upstream.
+
+The normalized model configuration now accepts `models.<role>.top_p` and
+`models.<role>.max_tokens`. Adapters use these fields when their descriptors
+declare support; unsupported settings fail during planning. See the
+[Python SDK guide](../sdk/python.mdx) and the selected adapter guide for the
+exact mapping and limits.
+
+The [Deep Agents adapter](../integrations/harness/deepagents.mdx) also adds an
+opt-in local shell backend for supervised demonstrations. This backend runs
+commands with the adapter host user's permissions and provides no process
+isolation.
+
+## Current Limitations
+
+The current release has the following limitations:
+
+- Provider-backed third-party adapter registries are not included.
+- An automated adapter conformance suite is not included.
+- Cancellation, live updates, and cold resume are not exposed as supported
+  adapter lifecycle operations. Shared service handles cannot be persisted
+  across processes.
+- The [Remote Agent adapter](../integrations/harness/remote-agent.mdx) does not
+  normalize the remote service's MCP, skills, tool policy, or subagents. Relay
+  streaming requires a separately instrumented remote service and a collector
+  reachable by that service and NeMo Fabric.
+- The new Cline, OpenCode, and Qwen Code adapters do not support Relay
+  telemetry or native streaming. Consult each adapter guide for other
+  capability limits.
