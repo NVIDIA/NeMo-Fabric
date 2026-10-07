@@ -852,7 +852,26 @@ def populate_context_from_result(
         "artifacts": mapping["artifacts"],
         "telemetry": mapping["telemetry"],
         "error": mapping.get("error"),
+        "usage": mapping.get("usage"),
     }
+    if result.usage is not None:
+        usage = result.usage
+        input_tokens = usage.get("input_tokens")
+        cached_input_tokens = usage.get("cached_input_tokens")
+        includes_cache = usage.get("input_tokens_include_cache")
+        if includes_cache is False:
+            input_tokens = (
+                input_tokens + cached_input_tokens
+                if input_tokens is not None and cached_input_tokens is not None
+                else None
+            )
+        elif includes_cache is None and cached_input_tokens != 0:
+            # Neither missing cache nor an unspecified convention proves an inclusive total.
+            input_tokens = None
+        context.n_input_tokens = input_tokens
+        context.n_cache_tokens = cached_input_tokens
+        context.n_output_tokens = usage.get("output_tokens")
+        context.cost_usd = usage.get("cost_usd")
     return result
 
 
@@ -872,10 +891,15 @@ def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
     metrics = trajectory.final_metrics
     if metrics is None:
         return
-    context.n_input_tokens = metrics.total_prompt_tokens
-    context.n_cache_tokens = metrics.total_cached_tokens
-    context.n_output_tokens = metrics.total_completion_tokens
-    context.cost_usd = metrics.total_cost_usd
+    # These are two views of one invocation, not additive accounting sources.
+    if context.n_input_tokens is None:
+        context.n_input_tokens = metrics.total_prompt_tokens
+    if context.n_cache_tokens is None:
+        context.n_cache_tokens = metrics.total_cached_tokens
+    if context.n_output_tokens is None:
+        context.n_output_tokens = metrics.total_completion_tokens
+    if context.cost_usd is None:
+        context.cost_usd = metrics.total_cost_usd
 
 
 def _record_host_atif_validation(

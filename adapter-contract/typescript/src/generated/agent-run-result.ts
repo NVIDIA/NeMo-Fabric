@@ -87,6 +87,10 @@ export interface AgentArtifact {
  */
 export interface AgentUsage {
   /**
+   * Cached input tokens consumed by the invocation, when reported.
+   */
+  cached_input_tokens?: number | null;
+  /**
    * Invocation cost in US dollars when reported by the provider.
    */
   cost_usd?: number | null;
@@ -98,6 +102,10 @@ export interface AgentUsage {
    * Input tokens consumed by the invocation.
    */
   input_tokens?: number | null;
+  /**
+   * Whether input_tokens already includes cached_input_tokens; absent means unknown.
+   */
+  input_tokens_include_cache?: boolean | null;
   /**
    * Output tokens produced by the invocation.
    */

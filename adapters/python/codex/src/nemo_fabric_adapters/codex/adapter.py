@@ -111,6 +111,12 @@ INHERITED_ENV_NAMES = {
     "no_proxy",
 }
 LOGGER = logging.getLogger(__name__)
+USAGE_FIELDS = {
+    "input_tokens": "inputTokens",
+    "cached_input_tokens": "cachedInputTokens",
+    "output_tokens": "outputTokens",
+    "total_tokens": "totalTokens",
+}
 
 
 @dataclass(frozen=True)
@@ -1020,7 +1026,42 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
     )
 
 
-def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
+def _normalize_usage(
+    value: Any, cumulative_totals: dict[str, int]
+) -> AgentUsage | None:
+    """Difference thread totals, never the last model response, into invocation usage."""
+    if not isinstance(value, dict):
+        cumulative_totals.clear()
+        return None
+    cumulative = isinstance(value.get("total"), dict)
+    counters = value["total"] if cumulative else value
+    observed = {
+        name: count
+        for name, alias in USAGE_FIELDS.items()
+        if isinstance((count := counters.get(name, counters.get(alias))), int)
+        and not isinstance(count, bool)
+        and 0 <= count <= (1 << 64) - 1
+    }
+    if cumulative:
+        tokens = {
+            name: count - cumulative_totals[name]
+            for name, count in observed.items()
+            if name in cumulative_totals and count >= cumulative_totals[name]
+        }
+    else:
+        tokens = observed
+    # Missing snapshots invalidate the baseline; the next snapshot only rebaselines.
+    cumulative_totals.clear()
+    if cumulative:
+        cumulative_totals.update(observed)
+    if not tokens:
+        return None
+    return AgentUsage(**tokens, input_tokens_include_cache=True)
+
+
+def _agent_run_result(
+    output: dict[str, Any], cumulative_totals: dict[str, int] | None = None
+) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
     reported_error = normalized.pop("error", None)
@@ -1034,16 +1075,12 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
             retryable=bool(reported.get("retryable", False)),
             extensions=metadata if isinstance(metadata, dict) else {},
         )
-    raw_usage = normalized.get("usage")
-    usage = raw_usage if isinstance(raw_usage, dict) else {}
-    tokens = {
-        name: value
-        for name in ("input_tokens", "output_tokens", "total_tokens")
-        if isinstance((value := usage.get(name)), int)
-        and not isinstance(value, bool)
-        and 0 <= value <= (1 << 64) - 1
-    }
-    agent_usage = AgentUsage(**tokens) if tokens else None
+    baseline = (
+        dict.fromkeys(USAGE_FIELDS, 0)
+        if cumulative_totals is None
+        else cumulative_totals
+    )
+    agent_usage = _normalize_usage(normalized.get("usage"), baseline)
     return AgentRunResult(
         status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
         output=normalized,
@@ -1277,6 +1314,7 @@ class CodexRuntime:
         self._api_key_home: tempfile.TemporaryDirectory | None = None
         self._mcp_authentication_checked = False
         self._unusable = False
+        self._usage_totals: dict[str, int] = dict.fromkeys(USAGE_FIELDS, 0)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1361,6 +1399,7 @@ class CodexRuntime:
         self._base_dir = base_dir
         self._fabric_runtime_id = fabric_runtime_id
         self._thread = thread
+        self._usage_totals = dict.fromkeys(USAGE_FIELDS, 0)
 
     async def invoke(
         self,
@@ -1428,20 +1467,18 @@ class CodexRuntime:
                 )
                 if finalized is None:
                     self._unusable = True
-                    return _agent_run_result(
-                        _relay_output(
-                            adapter_failure(
-                                AdapterRelayError(
-                                    "codex_relay_atif_timeout",
-                                    "NeMo Relay did not finalize an ATIF artifact before the deadline",
-                                    metadata={
-                                        "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
-                                    },
-                                )
-                            ),
-                            relay,
-                            artifacts=[],
+                    failure = adapter_failure(
+                        AdapterRelayError(
+                            "codex_relay_atif_timeout",
+                            "NeMo Relay did not finalize an ATIF artifact before the deadline",
+                            metadata={
+                                "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                            },
                         )
+                    )
+                    failure["usage"] = output.get("usage")
+                    return _agent_run_result(
+                        _relay_output(failure, relay, artifacts=[]), self._usage_totals
                     )
         except AdapterRelayError as error:
             output = adapter_failure(error)
@@ -1453,7 +1490,7 @@ class CodexRuntime:
         self._unusable = not usable
         if self._relay is not None:
             output = _relay_output(output, self._relay)
-        return _agent_run_result(output)
+        return _agent_run_result(output, self._usage_totals)
 
     async def stop(self) -> None:
         client = self._client
@@ -1465,6 +1502,7 @@ class CodexRuntime:
         self._fabric_runtime_id = None
         self._mcp_authentication_checked = False
         self._unusable = True
+        self._usage_totals.clear()
 
         close_error: BaseException | None = None
         try:

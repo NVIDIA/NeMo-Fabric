@@ -164,6 +164,93 @@ def test_agent_run_result_discards_oversized_token_count():
     assert result.usage is None
 
 
+@pytest.mark.parametrize("failed", [False, True])
+def test_native_usage_preserves_known_counters_without_inventing_cost(failed):
+    output = {
+        "response": "done",
+        "failed": failed,
+        "usage": {
+            "total": {
+                "inputTokens": 40,
+                "cachedInputTokens": 10,
+                "outputTokens": 8,
+                "totalTokens": 48,
+            },
+            "last": {"inputTokens": 3, "outputTokens": 1, "totalTokens": 4},
+            "estimated_cost_usd": 0.25,
+        },
+    }
+
+    result = adapter._agent_run_result(output)
+
+    assert result.usage.to_mapping() == {
+        "input_tokens": 40,
+        "cached_input_tokens": 10,
+        "input_tokens_include_cache": True,
+        "output_tokens": 8,
+        "total_tokens": 48,
+    }
+    assert result.usage.cost_usd is None
+    assert result.output["usage"] == output["usage"]
+
+
+def test_cumulative_usage_is_invocation_local_and_missing_counts_are_not_guessed():
+    totals = dict.fromkeys(
+        ("input_tokens", "cached_input_tokens", "output_tokens", "total_tokens"), 0
+    )
+    first = adapter._agent_run_result(
+        {"usage": {"total": {"inputTokens": 40, "outputTokens": 8}}}, totals
+    )
+    second = adapter._agent_run_result(
+        {
+            "usage": {
+                "total": {"inputTokens": 60, "outputTokens": 12, "cachedInputTokens": 5}
+            }
+        },
+        totals,
+    )
+    assert first.usage.input_tokens == 40
+    assert second.usage.input_tokens == 20
+    assert second.usage.output_tokens == 4
+    assert second.usage.cached_input_tokens is None
+    assert second.usage.total_tokens is None
+    adapter._agent_run_result({}, totals)
+    missing_baseline = adapter._agent_run_result(
+        {"usage": {"total": {"inputTokens": 90}}}, totals
+    )
+    assert missing_baseline.usage is None
+    resumed = adapter._agent_run_result(
+        {"usage": {"total": {"inputTokens": 100}}}, totals
+    )
+    assert resumed.usage.input_tokens == 10
+
+
+@pytest.mark.parametrize("invalid", [-1, 1 << 64, True, 1.5, "20", None])
+def test_native_usage_rejects_invalid_counters_independently(invalid):
+    result = adapter._agent_run_result(
+        {
+            "usage": {"total": {"inputTokens": invalid, "outputTokens": 8}},
+        }
+    )
+    assert result.usage.input_tokens is None
+    assert result.usage.output_tokens == 8
+    assert result.usage.cost_usd is None
+
+
+def test_reset_cumulative_counter_rebaselines_without_negative_usage():
+    totals = {"input_tokens": 40, "output_tokens": 8}
+    reset = adapter._agent_run_result(
+        {"usage": {"total": {"inputTokens": 10, "outputTokens": 12}}}, totals
+    )
+    assert reset.usage.input_tokens is None
+    assert reset.usage.output_tokens == 4
+    resumed = adapter._agent_run_result(
+        {"usage": {"total": {"inputTokens": 20, "outputTokens": 14}}}, totals
+    )
+    assert resumed.usage.input_tokens == 10
+    assert resumed.usage.output_tokens == 2
+
+
 def mock_turn_handle(result=None):
     mock_handle = MagicMock(spec=AsyncTurnHandle)
     outcome = successful_result() if result is None else result
@@ -1217,7 +1304,8 @@ async def test_relay_atif_timeout_fails_successful_turn_explicitly(
 
     await runtime.start(lifecycle_start_payload(codex_payload))
     try:
-        output = result_view(await runtime.invoke(*lifecycle_invocation(codex_payload)))
+        result = await runtime.invoke(*lifecycle_invocation(codex_payload))
+        output = result_view(result)
         late_atif.write_text(
             '{"schema_version":"ATIF-v1.7","steps":[]}', encoding="utf-8"
         )
@@ -1239,6 +1327,9 @@ async def test_relay_atif_timeout_fails_successful_turn_explicitly(
     wait_for_atif.assert_awaited_once()
     assert output["relay_runtime"]["enabled"] is True
     assert output["relay_artifacts"] == []
+    assert result.usage.input_tokens == 10
+    assert result.usage.output_tokens == 3
+    assert result.usage.cost_usd is None
     assert unavailable["error"]["code"] == "codex_runtime_unavailable"
     assert "relay_runtime" not in unavailable
     assert "relay_artifacts" not in unavailable

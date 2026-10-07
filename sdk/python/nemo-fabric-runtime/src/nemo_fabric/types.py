@@ -1769,9 +1769,16 @@ class RunOutput(FabricMapping):
 
 
 class RunUsage(FabricMapping):
-    """Normalized invocation usage reported by an adapter target."""
+    """Normalized invocation-local usage reported by an adapter target.
+
+    Missing counters and cost are unknown, not zero. ``cached_input_tokens``
+    records cache usage; ``input_tokens_include_cache`` declares whether input
+    already includes that count. An absent flag means the semantics are unknown.
+    """
 
     input_tokens: int | None
+    cached_input_tokens: int | None
+    input_tokens_include_cache: bool | None
     output_tokens: int | None
     total_tokens: int | None
     cost_usd: float | None
@@ -1779,6 +1786,8 @@ class RunUsage(FabricMapping):
     _fields = frozenset(
         {
             "input_tokens",
+            "cached_input_tokens",
+            "input_tokens_include_cache",
             "output_tokens",
             "total_tokens",
             "cost_usd",
@@ -1789,7 +1798,12 @@ class RunUsage(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        for field in ("input_tokens", "output_tokens", "total_tokens"):
+        for field in (
+            "input_tokens",
+            "cached_input_tokens",
+            "output_tokens",
+            "total_tokens",
+        ):
             value = data.get(field)
             if value is not None and (
                 isinstance(value, bool)
@@ -1800,6 +1814,11 @@ class RunUsage(FabricMapping):
                     f"{field.replace('_', ' ')} must be a nonnegative integer "
                     f"no greater than {_UINT64_MAX}"
                 )
+        includes_cache = data.get("input_tokens_include_cache")
+        if includes_cache is not None:
+            data["input_tokens_include_cache"] = _boolean(
+                includes_cache, "input tokens include cache"
+            )
         cost = data.get("cost_usd")
         if cost is not None and (
             isinstance(cost, bool)

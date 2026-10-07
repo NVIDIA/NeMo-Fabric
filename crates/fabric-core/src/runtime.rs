@@ -179,6 +179,12 @@ pub struct RunUsage {
     /// Input tokens consumed by the invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u64>,
+    /// Cached input tokens consumed by the invocation, when reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_input_tokens: Option<u64>,
+    /// Whether input_tokens already includes cached_input_tokens; absent means unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens_include_cache: Option<bool>,
     /// Output tokens produced by the invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u64>,
@@ -2004,6 +2010,8 @@ fn error_info(error: &AgentRunError) -> ErrorInfo {
 fn run_usage(usage: &AgentUsage) -> RunUsage {
     RunUsage {
         input_tokens: usage.input_tokens,
+        cached_input_tokens: usage.cached_input_tokens,
+        input_tokens_include_cache: usage.input_tokens_include_cache,
         output_tokens: usage.output_tokens,
         total_tokens: usage.total_tokens,
         cost_usd: usage.cost_usd,
@@ -3624,6 +3632,8 @@ for line in sys.stdin:
                 "output": output,
                 "usage": {
                     "input_tokens": 3,
+                    "cached_input_tokens": 1,
+                    "input_tokens_include_cache": True,
                     "output_tokens": 5,
                     "total_tokens": 8,
                     "cost_usd": 0.25,
@@ -4638,6 +4648,8 @@ for line in sys.stdin:
             result.usage,
             Some(RunUsage {
                 input_tokens: Some(3),
+                cached_input_tokens: Some(1),
+                input_tokens_include_cache: Some(true),
                 output_tokens: Some(5),
                 total_tokens: Some(8),
                 cost_usd: Some(0.25),

@@ -87,6 +87,13 @@ pub struct AgentUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(max = u64::MAX))]
     pub input_tokens: Option<u64>,
+    /// Cached input tokens consumed by the invocation, when reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(max = u64::MAX))]
+    pub cached_input_tokens: Option<u64>,
+    /// Whether input_tokens already includes cached_input_tokens; absent means unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens_include_cache: Option<bool>,
     /// Output tokens produced by the invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(max = u64::MAX))]
