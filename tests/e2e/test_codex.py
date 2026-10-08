@@ -9,6 +9,7 @@ RUN_FABRIC_CODEX_INTEGRATION=1 uv run pytest tests/e2e/test_codex.py
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import shutil
 import sys
@@ -54,6 +55,77 @@ def _skill_tool_call(selected_skill, workdir):
             "workdir": str(workdir),
         },
     }
+
+
+@pytest.mark.usefixtures("requires_harbor")
+@pytest.mark.parametrize("tool_round_trip", [False, True])
+async def test_native_usage_round_trips_to_harbor_without_relay(
+    api_server, tmp_path, monkeypatch, tool_round_trip, default_skill
+):
+    from _utils import mock_api_server
+    from examples.code_review_agent import codex_config
+    from harbor.models.agent.context import AgentContext
+    from nemo_fabric import Fabric
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+    )
+
+    original_response = mock_api_server._responses_response
+
+    def counted_response(payload, output):
+        response = original_response(payload, output)
+        response["usage"] = {
+            "input_tokens": 20,
+            "input_tokens_details": {"cached_tokens": 5},
+            "output_tokens": 4,
+            "output_tokens_details": {"reasoning_tokens": 0},
+            "total_tokens": 24,
+        }
+        return response
+
+    monkeypatch.setattr(mock_api_server, "_responses_response", counted_response)
+    config = codex_config()
+    config.models["default"].provider = "fabric-test"
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment.workspace = tmp_path
+    config.environment.artifacts = tmp_path / "artifacts"
+    config.environment.env["FABRIC_TEST_API_KEY"] = "test"
+    config.runtime.artifacts = tmp_path / "artifacts"
+    if tool_round_trip:
+        response = requests.post(
+            f"{api_server}/_scenario",
+            json={"tool_call": _skill_tool_call(default_skill, tmp_path)},
+            timeout=5,
+        )
+        response.raise_for_status()
+
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        results = [await runtime.invoke(input="Reply hello.") for _ in range(2)]
+
+    for index, result in enumerate(results, start=1):
+        model_responses = 2 if tool_round_trip and index == 1 else 1
+        assert result.status == "succeeded", result.to_mapping()
+        assert result.usage.input_tokens == 20 * model_responses
+        assert result.usage.cached_input_tokens == 5 * model_responses
+        assert result.usage.input_tokens_include_cache is True
+        assert result.usage.output_tokens == 4 * model_responses
+        assert result.usage.total_tokens == 24 * model_responses
+        assert result.usage.get("cost_usd") is None
+        assert result.output["usage"]["total"]["inputTokens"] == 20 * (
+            index + int(tool_round_trip)
+        )
+        path = tmp_path / f"result-{index}.json"
+        path.write_text(json.dumps(result.to_mapping()))
+        context = AgentContext()
+        populate_context_from_result(context, path)
+        assert (
+            context.n_input_tokens,
+            context.n_cache_tokens,
+            context.n_output_tokens,
+        ) == (20 * model_responses, 5 * model_responses, 4 * model_responses)
+        assert context.cost_usd is None
 
 
 def test_skill_tool_call_uses_classic_shell_on_windows(monkeypatch, tmp_path):

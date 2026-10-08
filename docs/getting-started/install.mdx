@@ -79,6 +79,25 @@ pip install "nemo-fabric[streaming]"
 Applications that set `launch_collector=False` and use an externally managed
 collector do not need this extra.
 
+### Inspect Adapter Metadata Without Harness SDKs
+
+The optional `nemo-fabric-adapter-catalog` package provides release snapshots of bundled Python and TypeScript adapter descriptors and their registered targets, without installing the runtime or harness SDKs:
+
+```bash
+pip install nemo-fabric-adapter-catalog
+```
+
+Look up a descriptor by its exact ID; unknown IDs raise `KeyError`:
+
+```python
+from nemo_fabric_adapter_catalog import get_adapter_descriptor
+
+descriptor = get_adapter_descriptor("nvidia.fabric.codex")
+print(descriptor["config"]["accepts"])
+```
+
+Catalog resources do not register execution runners or change task-side discovery. Install actual adapters and harness dependencies separately, and verify snapshot claims against the task's descriptor before relying on them. A catalog package version or fingerprint is not runtime-observed provenance.
+
 ### Install a Complete Runtime and Harness
 
 Use a `nemo-fabric` harness extra when the runtime, adapter, and harness run in

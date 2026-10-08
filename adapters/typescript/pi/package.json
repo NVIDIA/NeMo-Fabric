@@ -47,8 +47,9 @@
     "nemo-fabric-adapters-common": "0.5.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "^0.86.0",
-    "@earendil-works/pi-coding-agent": "^0.86.0"
+    "@earendil-works/pi-ai": "^1.0.0",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "@earendil-works/pi-mcp": "^1.0.0"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-ai": {
@@ -56,11 +57,15 @@
     },
     "@earendil-works/pi-coding-agent": {
       "optional": true
+    },
+    "@earendil-works/pi-mcp": {
+      "optional": true
     }
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.86.0",
-    "@earendil-works/pi-coding-agent": "0.86.0",
+    "@earendil-works/pi-ai": "1.0.3",
+    "@earendil-works/pi-coding-agent": "1.0.3",
+    "@earendil-works/pi-mcp": "1.0.3",
     "@types/node": "24.12.4",
     "typescript": "5.9.3"
   }

@@ -114,6 +114,16 @@
       "additionalProperties": false,
       "description": "Normalized model usage reported by an adapter target.",
       "properties": {
+        "cached_input_tokens": {
+          "description": "Cached input tokens consumed by the invocation, when reported.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "cost_usd": {
           "description": "Invocation cost in US dollars when reported by the provider.",
           "format": "double",
@@ -135,6 +145,13 @@
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "input_tokens_include_cache": {
+          "description": "Whether input_tokens already includes cached_input_tokens; absent means unknown.",
+          "type": [
+            "boolean",
             "null"
           ]
         },

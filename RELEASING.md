@@ -33,7 +33,7 @@ package-specific tag pushes:
 |---|---|
 | crates.io | `nemo-fabric-core`, `nemo-fabric-cli` |
 | npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-cline`, `nemo-fabric-adapters-droid`, `nemo-fabric-adapters-pi`, `nemo-fabric-adapters-opencode`, `nemo-fabric-adapters-qwen` |
-| GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-collector`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, `nemo-fabric-adapters-hermes`, and `nemo-fabric-adapters-nooa` wheel artifacts |
+| GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-collector`, `nemo-fabric-adapter-catalog`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, `nemo-fabric-adapters-hermes`, and `nemo-fabric-adapters-nooa` wheel artifacts |
 | Fern | The documentation site |
 
 ## Version Model
@@ -47,6 +47,7 @@ NeMo Fabric versions are anchored on the workspace SemVer in the repository root
   `nemo-fabric-core` must stay aligned with that same version.
 - `sdk/python/nemo-fabric/pyproject.toml`,
   `sdk/python/nemo-fabric-collector/pyproject.toml`,
+  `sdk/python/nemo-fabric-adapter-catalog/pyproject.toml`,
   `adapter-contract/python/pyproject.toml`, and every
   `adapters/python/*/pyproject.toml` carry the Python package versions and internal
   dependency pins and must stay aligned with the same release version. The
@@ -197,12 +198,27 @@ stable base version. The tag workflows normalize the prerelease tag and stamp
 ecosystem-specific package metadata in their disposable checkouts. Do not
 commit RC-specific versions or internal dependency pins to the release branch.
 
+The adapter catalog is a separate, metadata-only wheel. `just set-version`
+regenerates its resource bundle after stamping both ecosystems. `just wheels`
+checks freshness and builds it with the other distributions. Run
+`just adapter-catalog` after descriptor edits; do not edit the generated bundle
+by hand. Catalog resources do not register execution runners.
+
+The catalog follows the existing nightly and release publication cadence:
+GitHub Actions builds it in `python-wheels-*`, GitLab collects its
+platform-independent wheel, and KitMaker publishes it to PyPI using the
+`nemo-fabric-adapter-catalog` project. That project must exist in KitMaker before
+the first publication. No separate package tag or manual upload is required.
+PR CI tests sdist-to-wheel builds, isolated installation without harness SDKs,
+and release dispatch with external writes mocked.
+
 The helper updates:
 
 1. The root [`Cargo.toml`](Cargo.toml) workspace version.
 2. The root [`Cargo.toml`](Cargo.toml) `workspace.dependencies` versions for
    `nemo-fabric-core`.
 3. [`sdk/python/nemo-fabric/pyproject.toml`](sdk/python/nemo-fabric/pyproject.toml),
+   [`sdk/python/nemo-fabric-adapter-catalog/pyproject.toml`](sdk/python/nemo-fabric-adapter-catalog/pyproject.toml),
    [`adapter-contract/python/pyproject.toml`](adapter-contract/python/pyproject.toml),
    every `adapters/python/*/pyproject.toml`, and their internal dependency pins to
    the same release version.

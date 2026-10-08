@@ -125,6 +125,13 @@ model API key from inside the task container; pair it with Harbor's
 `--ae <NAME>=<value>` so the variable is present there. Adapters that require an
 explicit credential name for non-OpenAI providers (deepagents, for example) need it
 whenever `--model` is not an `openai/` model.
+Use a name recognized by Harbor's redaction policy, such as `MODEL_API_KEY`.
+The bridge rejects model credential names such as `MODEL_DSN` before tasks are
+queued because Harbor cannot scrub their values from retained trial files.
+Pass literal credentials through `--ae`, not `--ak fabric_environment_env`.
+Sensitive `fabric_environment_env` entries require host-variable references such
+as `{"MODEL_API_KEY": "${MODEL_API_KEY}"}` without inline defaults; ordinary
+non-sensitive settings can remain literals.
 
 The result is the complete `FabricConfig` uploaded with the `RunRequest` and
 task-local `base_dir`. The container-side runner deserializes that payload and

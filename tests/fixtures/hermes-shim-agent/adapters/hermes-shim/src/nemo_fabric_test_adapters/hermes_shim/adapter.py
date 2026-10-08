@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
 from collections.abc import Mapping
@@ -42,6 +43,9 @@ class ShimRuntime:
                 "hermes_runtime_not_started",
                 "shim runtime is not started",
             )
+        delay = request.context.get("delay_seconds")
+        if delay is not None:
+            await asyncio.sleep(delay)
         payload = {
             **self._start_payload,
             "runtime_context": context.to_mapping(),

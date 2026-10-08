@@ -1168,7 +1168,9 @@ Return a detached, JSON-compatible mapping for serialization.
 
 ## <kbd>class</kbd> `RunUsage`
 
-Normalized invocation usage reported by an adapter target.
+Normalized invocation-local usage reported by an adapter target.
+
+Missing counters and cost are unknown, not zero. ``cached_input_tokens`` records cache usage; ``input_tokens_include_cache`` declares whether input already includes that count. An absent flag means the semantics are unknown.
 
 
 
@@ -1179,6 +1181,8 @@ The mapping exposes the following typed fields:
 | Field | Type |
 | --- | --- |
 | `input_tokens` | `int \| None` |
+| `cached_input_tokens` | `int \| None` |
+| `input_tokens_include_cache` | `bool \| None` |
 | `output_tokens` | `int \| None` |
 | `total_tokens` | `int \| None` |
 | `cost_usd` | `float \| None` |

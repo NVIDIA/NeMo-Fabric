@@ -145,14 +145,14 @@ async def test_harbor_integration(tmp_path: Path):
     assert spec["config"]["environment"]["workspace"] == "/testbed"
     assert spec["config"]["models"]["default"]["provider"] == "nvidia"
     assert spec["config"]["models"]["default"]["model"] == "nvidia/test-model"
-    assert spec["config"]["skills"]["paths"] == ["/opt/fabric-demo/skills"]
+    assert spec["config"]["skills"] is None
+    assert spec["skills_dir"] == "/opt/fabric-demo/skills"
     assert spec["config"]["mcp"]["servers"]["github"] == {
         "transport": "streamable-http",
         "url": "https://mcp.example.test",
         "exposure": "harness_native",
     }
     assert "model_name" not in spec
-    assert "skills_dir" not in spec
     assert "mcp_servers" not in spec
 
     fabric_commands = [
@@ -291,11 +291,15 @@ def test_harbor_discovers_task_local_pi_descriptor_with_uploaded_bundle(
     assert spec.config_base_dir == PurePosixPath("/tmp/nemo-fabric-config")
 
 
-def test_harbor_codex_defaults_allow_unattended_workspace_edits(tmp_path: Path):
+def test_harbor_codex_recipe_preserves_explicit_permissions(tmp_path: Path):
     agent = FabricAgent(
         logs_dir=tmp_path,
         fabric_adapter_id="nvidia.fabric.codex",
         model_name="openai/gpt-5.4",
+        fabric_harness_settings={
+            "sandbox": "workspace-write",
+            "approval_mode": "deny_all",
+        },
     )
 
     assert agent._build_spec("fix it").config.harness.settings == {
@@ -325,14 +329,12 @@ def test_harbor_generated_config_names_the_model_credential(tmp_path: Path):
 
 
 def test_harbor_model_credential_without_a_model_is_rejected(tmp_path: Path):
-    agent = FabricAgent(
-        logs_dir=tmp_path,
-        fabric_adapter_id="nvidia.fabric.langchain.deepagents",
-        fabric_model_api_key_env="NVIDIA_API_KEY",
-    )
-
     with pytest.raises(ValueError, match="model_api_key_env requires model_name"):
-        agent._build_spec("fix it")
+        FabricAgent(
+            logs_dir=tmp_path,
+            fabric_adapter_id="nvidia.fabric.langchain.deepagents",
+            fabric_model_api_key_env="NVIDIA_API_KEY",
+        )
 
 
 @pytest.mark.parametrize("name", ["", "   ", " NVIDIA_API_KEY", "NVIDIA_API_KEY "])
@@ -440,7 +442,7 @@ def test_harbor_propagates_runtime_identity(tmp_path: Path):
         "harbor_session_id": "trial__agent",
         "harbor_context_id": "594025f3-7d65-4655-8576-4bee95002eae",
     }
-    assert agent.SUPPORTS_ATIF is True
+    assert agent.SUPPORTS_ATIF is False
 
 
 async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):

@@ -1893,6 +1893,7 @@ deepagents = [
 ]
 harbor = [
     { name = "harbor", marker = "python_full_version >= '3.12'" },
+    { name = "nemo-fabric-adapter-catalog" },
     { name = "pyyaml" },
 ]
 hermes-agent = [
@@ -1923,6 +1924,7 @@ streaming = [
 [package.metadata]
 requires-dist = [
     { name = "harbor", marker = "python_full_version >= '3.12' and extra == 'harbor'", specifier = ">=0.23,<0.24" },
+    { name = "nemo-fabric-adapter-catalog", marker = "extra == 'harbor'", editable = "../nemo-fabric-adapter-catalog" },
     { name = "nemo-fabric-adapters-claude", extras = ["harness"], marker = "extra == 'claude'", editable = "../../../adapters/python/claude" },
     { name = "nemo-fabric-adapters-codex", extras = ["harness"], marker = "extra == 'codex'", editable = "../../../adapters/python/codex" },
     { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], marker = "extra == 'deepagents'", editable = "../../../adapters/python/deepagents" },
@@ -1938,6 +1940,11 @@ requires-dist = [
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
 ]
 provides-extras = ["claude", "codex", "streaming", "deepagents", "mini-swe-agent", "openhands", "nooa", "remote-agent", "openclaw", "harbor", "hermes-agent", "relay"]
+
+[[package]]
+name = "nemo-fabric-adapter-catalog"
+version = "0.5.0"
+source = { editable = "../nemo-fabric-adapter-catalog" }
 
 [[package]]
 name = "nemo-fabric-adapter-contract"

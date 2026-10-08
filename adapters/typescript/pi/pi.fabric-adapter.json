@@ -17,7 +17,9 @@
       "tools.definitions",
       "tools.enabled",
       "tools.blocked",
-      "skills"
+      "skills",
+      "mcp",
+      "mcp.tool_filters"
     ],
     "system_instruction_modes": ["replace"]
   },

@@ -92,6 +92,45 @@ in a new environment, call `plan(...)` to inspect adapter selection and
 
 The remaining examples reuse this `config` value.
 
+### Inspect Metadata On A Separate Host
+
+Use `inspect_adapter(config, descriptor)` when the admission host cannot access
+the task's installed adapter. Supply canonical metadata from the matching
+`nemo-fabric-adapter-catalog` release or an external adapter:
+
+```python
+from nemo_fabric import inspect_adapter
+from nemo_fabric_adapter_catalog import get_adapter_descriptor
+
+profile = inspect_adapter(config, get_adapter_descriptor(config.harness.adapter_id))
+print(profile.skills, profile.mcp, profile.atif)
+
+# In the task environment, resolve its own executable descriptor.
+result = await Fabric().run(
+    config,
+    input="Review the changes.",
+    expected_descriptor_sha256=profile.descriptor_sha256,
+)
+```
+
+The immutable `AdapterCapabilityProfile` reports declared skills and MCP support
+and ATIF availability for the selected telemetry configuration. Inspection uses
+the existing native planner without importing the harness SDK or reading
+task-local discovery paths. Unsupported requested configuration fails admission.
+Passing `None` as the descriptor permits basic execution with false capability
+claims, but rejects requested skills, MCP, or telemetry.
+
+The optional `expected_descriptor_sha256` argument on `run()` and
+`start_runtime()` verifies the normalized descriptor in the actual execution
+plan before startup. Catalog metadata never becomes an execution origin. A
+fingerprint confirms descriptor correspondence, not installed software versions
+or successful evidence production. ATIF requires a selected provider declaring
+that output; Relay additionally requires one explicitly enabled observability
+component with ATIF enabled. Unconfirmed ATIF requests, including ambiguous
+duplicate components, fail admission.
+This profile covers standalone adapters, not registered workflows or attached
+services, which need route-specific admission.
+
 ## Execution Model
 
 NeMo Fabric separates configuration, planning, runtime lifecycle, and individual
@@ -825,7 +864,7 @@ Important fields:
 | `status` | Terminal invocation status such as success, failure, or cancellation. |
 | `output` | Harness output normalized to the configured output schema. |
 | `error` | Structured failure metadata when available. |
-| `usage` | Optional `RunUsage` with input, output, and total token counts, estimated cost in USD, and provider metadata. |
+| `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
 | `artifacts` | Output files, logs, patches, native artifacts, and other materialized references. |
 | `telemetry` | References to NeMo Relay or other telemetry streams produced by the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
@@ -845,11 +884,15 @@ when `usage` is available:
 
 ```python
 if result.usage is not None:
-    print(result.usage.input_tokens)
-    print(result.usage.output_tokens)
-    print(result.usage.total_tokens)
-    print(result.usage.cost_usd)
+    print(result.usage.get("input_tokens"))
+    print(result.usage.get("cached_input_tokens"))
+    print(result.usage.get("input_tokens_include_cache"))
+    print(result.usage.get("output_tokens"))
+    print(result.usage.get("total_tokens"))
+    print(result.usage.get("cost_usd"))
 ```
+
+Each counter is optional: missing values are unknown, not zero. `cached_input_tokens` reports cached prompt tokens. `input_tokens_include_cache` is `True` when those tokens are already included in `input_tokens`, `False` when they are excluded, and absent when the adapter cannot establish the semantics. Consumers must not add cached tokens to an inclusive input count. `cost_usd` contains reported cost only; keep estimates separately in provider metadata rather than presenting them as measured charges.
 
 If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial
@@ -967,6 +1010,14 @@ All public SDK errors inherit from `FabricError`.
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 
 Consumers own job-level retries and rollout-level failure policy.
+Core host-operation deadlines (`host_timeout`) become Python `TimeoutError`, then
+`FabricRuntimeError` with `code == "timeout"` and the failed lifecycle stage.
+If invocation succeeds in `Fabric.run()` but stop reaches this deadline,
+it returns a failed `RunResult` with `error.stage == "stop"` and
+`error.code == "timeout"`. Check the returned result as well as raised errors.
+Adapters can report execution deadlines in normalized results with
+`result.error.code == "timeout"`. Other adapter-specific timeout codes are not
+automatically reclassified. Diagnostic text is not a timeout classifier.
 Single-invocation runs attempt to stop the runtime before returning. A `Runtime`
 used with `async with` also attempts cleanup after an invocation error; if cleanup
 fails, that failure is attached to the original exception rather than replacing

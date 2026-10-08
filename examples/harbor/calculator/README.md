@@ -117,6 +117,8 @@ uv run --extra harbor harbor run \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model anthropic/claude-sonnet-4-5 \
   --ak fabric_adapter_id=nvidia.fabric.claude \
+  --ak 'fabric_harness_settings={"permission_mode":"bypassPermissions"}' \
+  --ak 'fabric_environment_env={"IS_SANDBOX":"1"}' \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --ak fabric_max_turns=20 \
@@ -166,8 +168,9 @@ uv run --extra harbor harbor run \
 ## 5. Codex
 
 The task image installs the Codex Python adapter and its SDK-managed app-server.
-The Harbor wrapper gives Codex `workspace-write` sandboxing and denies interactive
-approval requests by default, so it can edit the isolated `/app` workspace.
+This recipe explicitly gives Codex `workspace-write` sandboxing and denies
+interactive approval requests so it can edit the isolated `/app` workspace.
+The Harbor bridge does not inject harness-specific permission defaults.
 Codex uses the OpenAI API credential named by `fabric_model_api_key_env`
 for a noninteractive, task-local login. A host Codex login is not copied into
 the container.
@@ -180,6 +183,7 @@ uv run --extra harbor harbor run \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model openai/gpt-5.4 \
   --ak fabric_adapter_id=nvidia.fabric.codex \
+  --ak 'fabric_harness_settings={"sandbox":"workspace-write","approval_mode":"deny_all"}' \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --ak fabric_model_api_key_env=OPENAI_API_KEY \

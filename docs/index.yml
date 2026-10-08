@@ -98,6 +98,8 @@ navigation:
                 path: ./reference/api/python-library-reference/index.md
               - page: Client
                 path: ./reference/api/python-library-reference/nemo_fabric.client.md
+              - page: Adapter Capability Inspection
+                path: ./reference/api/python-library-reference/nemo_fabric.capabilities.md
               - page: Runtime
                 path: ./reference/api/python-library-reference/nemo_fabric.runtime.md
               - page: Service

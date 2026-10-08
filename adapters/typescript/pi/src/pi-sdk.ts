@@ -5,12 +5,18 @@
 // into a controlled in-memory Pi session, including model credentials, skills,
 // extensions, custom tools, and workspace containment.
 
-import { realpath, stat } from "node:fs/promises";
+import { mkdtemp, realpath, rm, stat } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import type { AuthProvider, JsonRpcMessage, McpTransport } from "@earendil-works/pi-mcp";
 import type {
   AgentSession,
   ExtensionCommandContextActions,
+  ExtensionFactory,
+  McpExtensionOptions,
+  McpServerConfig,
+  McpTransportFactory,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti/static";
@@ -71,11 +77,15 @@ type PiToolFactory = (context: PiToolFactoryContext) => ToolDefinition | Promise
 const PI_BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
 const TOOL_MODULE_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 const PI_HARNESS_INSTALL_COMMAND =
-  "npm install @earendil-works/pi-ai@^0.86.0 @earendil-works/pi-coding-agent@^0.86.0";
+  "npm install @earendil-works/pi-ai@^1.0.0 @earendil-works/pi-coding-agent@^1.0.0 @earendil-works/pi-mcp@^1.0.0";
+const MCP_STARTUP_TIMEOUT_MS = 10_000;
 
 interface PiSdkModules {
   InMemoryCredentialStore: typeof import("@earendil-works/pi-ai").InMemoryCredentialStore;
+  StdioTransport: typeof import("@earendil-works/pi-mcp").StdioTransport;
+  StreamableHttpTransport: typeof import("@earendil-works/pi-mcp").StreamableHttpTransport;
   createAgentSession: typeof import("@earendil-works/pi-coding-agent").createAgentSession;
+  createMcpExtension: typeof import("@earendil-works/pi-coding-agent").createMcpExtension;
   DefaultResourceLoader: typeof import("@earendil-works/pi-coding-agent").DefaultResourceLoader;
   ModelRuntime: typeof import("@earendil-works/pi-coding-agent").ModelRuntime;
   SessionManager: typeof import("@earendil-works/pi-coding-agent").SessionManager;
@@ -94,10 +104,12 @@ function isMissingModuleError(error: unknown): boolean {
 async function loadPiSdk(): Promise<PiSdkModules> {
   let ai: typeof import("@earendil-works/pi-ai");
   let codingAgent: typeof import("@earendil-works/pi-coding-agent");
+  let mcp: typeof import("@earendil-works/pi-mcp");
   try {
-    [ai, codingAgent] = await Promise.all([
+    [ai, codingAgent, mcp] = await Promise.all([
       import("@earendil-works/pi-ai"),
       import("@earendil-works/pi-coding-agent"),
+      import("@earendil-works/pi-mcp"),
     ]);
   } catch (error) {
     if (isMissingModuleError(error)) {
@@ -111,7 +123,10 @@ async function loadPiSdk(): Promise<PiSdkModules> {
 
   if (
     typeof ai.InMemoryCredentialStore !== "function" ||
+    typeof mcp.StdioTransport !== "function" ||
+    typeof mcp.StreamableHttpTransport !== "function" ||
     typeof codingAgent.createAgentSession !== "function" ||
+    typeof codingAgent.createMcpExtension !== "function" ||
     typeof codingAgent.DefaultResourceLoader !== "function" ||
     typeof codingAgent.ModelRuntime !== "function" ||
     typeof codingAgent.SessionManager !== "function" ||
@@ -125,11 +140,330 @@ async function loadPiSdk(): Promise<PiSdkModules> {
 
   return {
     InMemoryCredentialStore: ai.InMemoryCredentialStore,
+    StdioTransport: mcp.StdioTransport,
+    StreamableHttpTransport: mcp.StreamableHttpTransport,
     createAgentSession: codingAgent.createAgentSession,
+    createMcpExtension: codingAgent.createMcpExtension,
     DefaultResourceLoader: codingAgent.DefaultResourceLoader,
     ModelRuntime: codingAgent.ModelRuntime,
     SessionManager: codingAgent.SessionManager,
     SettingsManager: codingAgent.SettingsManager,
+  };
+}
+
+const MCP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
+const MCP_ENV_REFERENCE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/gu;
+const MCP_SERVER_NAME = /^[A-Za-z0-9_-]+$/u;
+
+function loopbackHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
+}
+
+function expandMcpHeader(
+  value: string,
+  configuredEnvironment: Record<string, string>,
+  parentEnvironment: NodeJS.ProcessEnv,
+): string {
+  return value.replaceAll(MCP_ENV_REFERENCE, (_reference, variable: string) => {
+    const configured = configuredEnvironment[variable];
+    if (Object.hasOwn(configuredEnvironment, variable) && configured !== undefined) {
+      return configured;
+    }
+    const inherited = parentEnvironment[variable];
+    if (Object.hasOwn(parentEnvironment, variable) && inherited !== undefined) {
+      return inherited;
+    }
+    throw new LifecycleError(
+      "pi_mcp_header_variable_missing",
+      "A configured Pi MCP header references an environment variable that is not available",
+    );
+  });
+}
+
+function validateMcpHeader(name: string, value: string): void {
+  if (!MCP_HEADER_NAME.test(name) || value.length === 0 || value.trim() !== value) {
+    throw new LifecycleError("pi_mcp_invalid_header", "A configured Pi MCP HTTP header is invalid");
+  }
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined || codePoint > 0xFF || (codePoint < 0x20 && codePoint !== 0x09) || codePoint === 0x7F) {
+      throw new LifecycleError("pi_mcp_invalid_header", "A configured Pi MCP HTTP header is invalid");
+    }
+  }
+}
+
+function validateMcpToolNames(names: readonly string[] | null | undefined): void {
+  if (names?.some((name) => name.includes("*")) === true) {
+    throw new LifecycleError(
+      "pi_mcp_tool_pattern_unsupported",
+      "Pi MCP tool filters require exact tool names and do not accept patterns",
+    );
+  }
+}
+
+function mcpToolExposure(
+  allowed: string[] | null | undefined,
+  blocked: string[] | undefined,
+): Pick<McpServerConfig, "exposure" | "toolExposure"> {
+  validateMcpToolNames(allowed);
+  validateMcpToolNames(blocked);
+  const toolExposure: Record<string, "direct" | "hidden"> = {};
+  if (allowed !== undefined && allowed !== null) {
+    for (const name of allowed) {
+      toolExposure[name] = "direct";
+    }
+  }
+  for (const name of blocked ?? []) {
+    toolExposure[name] = "hidden";
+  }
+  return {
+    exposure: allowed === undefined || allowed === null ? "direct" : "hidden",
+    ...(Object.keys(toolExposure).length === 0 ? {} : { toolExposure }),
+  };
+}
+
+export function selectPiMcpServers(
+  config: AgentConfig,
+  configuredEnvironment: Record<string, string>,
+  parentEnvironment: NodeJS.ProcessEnv,
+): Record<string, McpServerConfig> {
+  if (config.mcp?.extensions !== undefined) {
+    throw new LifecycleError("pi_mcp_extensions_unsupported", "Pi does not support Fabric MCP extensions");
+  }
+  const selected = Object.create(null) as Record<string, McpServerConfig>;
+  for (const [name, server] of Object.entries(config.mcp?.servers ?? {})) {
+    if (!MCP_SERVER_NAME.test(name) || server.extensions !== undefined) {
+      throw new LifecycleError("pi_mcp_invalid_server", "Pi MCP server configuration is unsupported or invalid");
+    }
+    if (server.authentication !== undefined && server.authentication !== null) {
+      throw new LifecycleError(
+        "pi_mcp_authentication_unsupported",
+        "Pi MCP authentication is unsupported; configure a custom authorization header instead",
+      );
+    }
+    const exposure = mcpToolExposure(server.allowed_tools, server.blocked_tools);
+    if (server.transport === "stdio") {
+      if (server.url.trim().length === 0 || Object.keys(server.custom_headers ?? {}).length > 0) {
+        throw new LifecycleError(
+          "pi_mcp_invalid_server",
+          "Pi stdio MCP servers require a command and do not accept HTTP headers",
+        );
+      }
+      selected[name] = {
+        type: "stdio",
+        command: server.url,
+        ...(server.args === undefined ? {} : { args: server.args }),
+        ...(server.env === undefined ? {} : { env: server.env }),
+        ...exposure,
+      };
+      continue;
+    }
+    if (server.transport === "streamable-http") {
+      if ((server.args?.length ?? 0) > 0 || Object.keys(server.env ?? {}).length > 0) {
+        throw new LifecycleError(
+          "pi_mcp_invalid_server",
+          "Pi streamable-HTTP MCP servers do not accept command arguments or environment variables",
+        );
+      }
+      let endpoint: URL;
+      try {
+        endpoint = new URL(server.url);
+      } catch {
+        throw new LifecycleError(
+          "pi_mcp_invalid_server",
+          "Pi streamable-HTTP MCP servers require an HTTP or HTTPS URL",
+        );
+      }
+      if (
+        (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") ||
+        (endpoint.protocol === "http:" && !loopbackHostname(endpoint.hostname))
+      ) {
+        throw new LifecycleError(
+          "pi_mcp_invalid_server",
+          "Pi streamable-HTTP MCP servers require HTTPS unless the endpoint is loopback",
+        );
+      }
+      const headerNames = new Set<string>();
+      const headers = Object.fromEntries(
+        Object.entries(server.custom_headers ?? {}).map(([headerName, value]) => {
+          const normalizedName = headerName.toLowerCase();
+          if (headerNames.has(normalizedName)) {
+            throw new LifecycleError("pi_mcp_invalid_header", "A configured Pi MCP HTTP header is invalid");
+          }
+          headerNames.add(normalizedName);
+          const expanded = expandMcpHeader(value, configuredEnvironment, parentEnvironment);
+          validateMcpHeader(headerName, expanded);
+          return [headerName, expanded];
+        }),
+      );
+      selected[name] = {
+        type: "http",
+        url: server.url,
+        ...(Object.keys(headers).length === 0 ? {} : { headers }),
+        ...exposure,
+      };
+      continue;
+    }
+    throw new LifecycleError(
+      "pi_mcp_transport_unsupported",
+      `Pi does not support MCP transport ${JSON.stringify(server.transport)}; supported transports: stdio, streamable-http`,
+      {
+        metadata: {
+          field: `mcp.servers.${name}.transport`,
+          transport: server.transport,
+          supported_transports: ["stdio", "streamable-http"],
+        },
+      },
+    );
+  }
+  return selected;
+}
+
+type McpCredentials = NonNullable<McpExtensionOptions["credentials"]>;
+
+function isolatedMcpCredentials(): McpCredentials {
+  const credentials = {
+    forServer: () => ({
+      load: () => undefined,
+      save: () => undefined,
+      withRefreshLock: (operation: () => Promise<unknown>) => operation(),
+    }),
+    tokens: () => undefined,
+    remove: () => false,
+  };
+  // Pi types this option as its concrete credential-store class even though
+  // the extension uses only this public method surface.
+  return credentials as unknown as McpCredentials;
+}
+
+interface McpReadiness {
+  fail(): void;
+  ready(): void;
+  result: Promise<boolean>;
+}
+
+function mcpReadiness(): McpReadiness {
+  let settle: (ready: boolean) => void = () => undefined;
+  let settled = false;
+  const result = new Promise<boolean>((resolve) => {
+    settle = resolve;
+  });
+  const finish = (ready: boolean) => {
+    if (!settled) {
+      settled = true;
+      settle(ready);
+    }
+  };
+  return { fail: () => finish(false), ready: () => finish(true), result };
+}
+
+function trackedMcpTransport(transport: McpTransport, readiness: McpReadiness): McpTransport {
+  const toolListRequests = new Set<unknown>();
+  return {
+    async start() {
+      try {
+        await transport.start();
+      } catch (error) {
+        readiness.fail();
+        throw error;
+      }
+    },
+    async send(message: JsonRpcMessage) {
+      if ("method" in message && message.method === "tools/list" && "id" in message) {
+        toolListRequests.add(message.id);
+      }
+      try {
+        await transport.send(message);
+      } catch (error) {
+        readiness.fail();
+        throw error;
+      }
+    },
+    close: () => transport.close(),
+    onMessage: (listener) => transport.onMessage((message) => {
+      if ("id" in message && toolListRequests.has(message.id)) {
+        toolListRequests.delete(message.id);
+        if ("error" in message) {
+          readiness.fail();
+        } else {
+          readiness.ready();
+        }
+      }
+      listener(message);
+    }),
+    onError: (listener) => transport.onError((error) => {
+      readiness.fail();
+      listener(error);
+    }),
+    onClose: (listener) => transport.onClose(() => {
+      readiness.fail();
+      listener();
+    }),
+    ...(transport.setProtocolVersion === undefined
+      ? {}
+      : { setProtocolVersion: (version: string) => transport.setProtocolVersion?.(version) }),
+  };
+}
+
+function expandHome(value: string): string {
+  if (value === "~") {
+    return homedir();
+  }
+  if (value.startsWith("~/") || (process.platform === "win32" && value.startsWith("~\\"))) {
+    return join(homedir(), value.slice(2));
+  }
+  return value;
+}
+
+function mcpTransportFactory(pi: PiSdkModules, readiness: Map<string, McpReadiness>): McpTransportFactory {
+  return (entry, cwd, authProvider: AuthProvider | undefined) => {
+    const status = readiness.get(entry.name);
+    if (status === undefined) {
+      throw new Error("Unrecognized Pi MCP server");
+    }
+    const transport = "url" in entry.config
+      ? new pi.StreamableHttpTransport({
+          url: entry.config.url,
+          headers: entry.config.headers,
+          authProvider,
+        })
+      : new pi.StdioTransport({
+          command: expandHome(entry.config.command),
+          args: entry.config.args?.map(expandHome),
+          cwd: resolve(cwd, expandHome(entry.config.cwd ?? ".")),
+          env: entry.config.env,
+          stderr: "pipe",
+        });
+    return trackedMcpTransport(transport, status);
+  };
+}
+
+async function requireMcpConnections(readiness: Map<string, McpReadiness>): Promise<void> {
+  if (readiness.size === 0) {
+    return;
+  }
+  let cancelTimer: () => void = () => undefined;
+  const results = await Promise.race([
+    Promise.all(Array.from(readiness.values(), (status) => status.result)),
+    new Promise<undefined>((resolve) => {
+      const timer = setTimeout(resolve, MCP_STARTUP_TIMEOUT_MS);
+      cancelTimer = () => clearTimeout(timer);
+    }),
+  ]);
+  cancelTimer();
+  if (results === undefined || results.some((ready) => !ready)) {
+    throw new LifecycleError(
+      "pi_mcp_connection_failed",
+      "One or more configured Pi MCP servers could not connect",
+    );
+  }
+}
+
+function mcpRegistrationExtension(servers: Record<string, McpServerConfig>): ExtensionFactory {
+  return (api) => {
+    for (const [name, server] of Object.entries(servers)) {
+      api.registerMcpServer(name, server);
+    }
   };
 }
 
@@ -397,10 +731,12 @@ class PiSdkSessionHandle implements PiSessionHandle {
   private readonly unsubscribeTurnCounter: () => void;
   private stopped = false;
   private cumulativeTurnCount = 0;
+  private readonly runtimeDir: string;
 
-  constructor(session: AgentSession, state: { shutdownRequested: boolean }, relay?: PiRelayRuntime) {
+  constructor(session: AgentSession, state: { shutdownRequested: boolean }, runtimeDir: string, relay?: PiRelayRuntime) {
     this.session = session;
     this.state = state;
+    this.runtimeDir = runtimeDir;
     this.relay = relay;
     this.unsubscribeTurnCounter = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
@@ -431,8 +767,8 @@ class PiSdkSessionHandle implements PiSessionHandle {
       await this.session.prompt(text, {
         expandPromptTemplates: true,
         source: "interactive",
-        preflightResult: (result) => {
-          accepted = result;
+        preflightResult: () => {
+          accepted = true;
         },
       });
     } finally {
@@ -456,24 +792,28 @@ class PiSdkSessionHandle implements PiSessionHandle {
     this.stopped = true;
     let failure: unknown;
     try {
-      await this.session.abort();
-    } catch (error) {
-      failure = error;
-    }
-    try {
-      await this.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
-    } catch (error) {
-      failure ??= error;
-    }
-    try {
-      this.unsubscribeTurnCounter();
-    } catch (error) {
-      failure ??= error;
-    }
-    try {
-      this.session.dispose();
-    } catch (error) {
-      failure ??= error;
+      try {
+        await this.session.abort();
+      } catch (error) {
+        failure = error;
+      }
+      try {
+        await this.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+      } catch (error) {
+        failure ??= error;
+      }
+      try {
+        this.unsubscribeTurnCounter();
+      } catch (error) {
+        failure ??= error;
+      }
+      try {
+        this.session.dispose();
+      } catch (error) {
+        failure ??= error;
+      }
+    } finally {
+      await rm(this.runtimeDir, { recursive: true, force: true });
     }
     if (failure !== undefined) {
       throw failure;
@@ -503,6 +843,11 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         },
       );
     }
+    const mcpServers = selectPiMcpServers(
+      input.config,
+      input.runtimeContext.environment.env ?? {},
+      process.env,
+    );
     const pi = await loadPiSdk();
     let workspace: string;
     try {
@@ -560,6 +905,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     });
     let relay: PiRelayRuntime | undefined;
     let handle: PiSdkSessionHandle | undefined;
+    let runtimeDir: string | undefined;
     try {
       relay = await this.relayFactory.start(input, {
         api: model.api,
@@ -568,13 +914,32 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       if (relay !== undefined && !extensionPaths.includes(relay.extensionPath)) {
         extensionPaths.push(relay.extensionPath);
       }
-      const agentDir = join(workspace, ".fabric-pi");
+      runtimeDir = await mkdtemp(join(tmpdir(), "nemo-fabric-pi-"));
+      const agentDir = runtimeDir;
+      const mcpConnections = new Map(Object.keys(mcpServers).map((name) => [name, mcpReadiness()]));
+      const extensionFactories = Object.keys(mcpServers).length === 0
+        ? []
+        : [
+            { name: "nemo-fabric-mcp-servers", hidden: true, factory: mcpRegistrationExtension(mcpServers) },
+            {
+              name: "nemo-fabric-mcp",
+              hidden: true,
+              factory: pi.createMcpExtension({
+                loadConfig: () => ({ servers: [], errors: [], autoEnableCodemode: false }),
+                credentials: isolatedMcpCredentials(),
+                logPath: join(agentDir, "mcp.log"),
+                createTransport: mcpTransportFactory(pi, mcpConnections),
+                startupWaitMs: MCP_STARTUP_TIMEOUT_MS,
+              }),
+            },
+          ];
       const resourceLoader = new pi.DefaultResourceLoader({
         cwd: workspace,
         agentDir,
         settingsManager: settings,
         additionalExtensionPaths: extensionPaths,
         additionalSkillPaths: skillPaths,
+        extensionFactories,
         noExtensions: true,
         noSkills: true,
         noPromptTemplates: true,
@@ -643,7 +1008,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         tools: enabled === null ? undefined : enabled,
         excludeTools: blocked,
       });
-      handle = new PiSdkSessionHandle(session, state, relay);
+      handle = new PiSdkSessionHandle(session, state, runtimeDir, relay);
       const blockedNames = new Set(blocked);
       const availableNames = new Set(session.getAllTools().map((tool) => tool.name));
       const missing = (enabled ?? []).filter((name) => !blockedNames.has(name) && !availableNames.has(name));
@@ -675,6 +1040,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
           process.stderr.write("Pi extension handler failed\n");
         },
       });
+      await requireMcpConnections(mcpConnections);
       // bindExtensions emits session_start; emitting it here would create a
       // duplicate Relay session scope.
       return handle;
@@ -685,6 +1051,9 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       await relay?.stop().catch(() => {
         process.stderr.write("NeMo Relay cleanup failed after Pi adapter startup error\n");
       });
+      if (handle === undefined && runtimeDir !== undefined) {
+        await rm(runtimeDir, { recursive: true, force: true });
+      }
       throw error;
     }
   }

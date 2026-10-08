@@ -254,6 +254,10 @@ uv run --extra harbor harbor run \
   --agent "$FABRIC_AGENT" \
   --model anthropic/claude-sonnet-4-5 \
   --ak fabric_adapter_id=nvidia.fabric.claude \
+  --ak 'fabric_harness_settings={"permission_mode":"bypassPermissions"}' \
+  --ak 'fabric_environment_env={"IS_SANDBOX":"1"}' \
+  --ak fabric_max_turns=75 \
+  --ak fabric_runtime_timeout_seconds=1800 \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_telemetry=relay \
   --ak "fabric_package=$FABRIC_PACKAGE" \

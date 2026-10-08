@@ -2348,6 +2348,71 @@ pub fn resolve_run_plan_from_config_with_adapter_directories(
     )
 }
 
+/// Validated metadata for standalone host admission, never an execution plan.
+#[doc(hidden)]
+#[derive(Debug, Serialize)]
+pub struct AdapterInspection {
+    /// Core-normalized supplied descriptor.
+    pub descriptor: AdapterDescriptor,
+    /// Requested providers and their resolved configuration.
+    pub telemetry_plan: Option<TelemetryPlan>,
+}
+
+/// Inspect supplied host metadata without executable descriptor discovery.
+///
+/// The supplied file is an inspection-only metadata copy. Task-local discovery
+/// inputs, repository adapters, installed packages, and interpreters are not
+/// consulted. Only normalized metadata is returned; it cannot start a runtime.
+#[doc(hidden)]
+pub fn inspect_adapter_config(
+    mut config: FabricConfig,
+    descriptor_path: &Path,
+) -> Result<AdapterInspection> {
+    if config.workflow.is_some() {
+        return invalid_config(
+            "workflow",
+            "standalone inspection does not qualify workflow targets",
+        );
+    }
+    config.discovery = None;
+    validate_config(&config)?;
+    let path = descriptor_path
+        .canonicalize()
+        .map_err(|source| FabricError::Read {
+            path: descriptor_path.to_path_buf(),
+            source,
+        })?;
+    let descriptor = load_adapter_descriptor(&path)?;
+    if config
+        .harness
+        .as_ref()
+        .map(|harness| harness.adapter_id.as_str())
+        != Some(descriptor.adapter_id.as_str())
+    {
+        return invalid_config(
+            "harness.adapter_id",
+            "does not match supplied host metadata",
+        );
+    }
+    let base_dir = path
+        .parent()
+        .expect("canonical descriptor has a parent")
+        .to_path_buf();
+    let resolved = ResolvedAdapterDescriptor {
+        provenance: vec![DescriptorProvenance {
+            source: DescriptorSource::ExplicitLocal,
+            path,
+            root: base_dir.clone(),
+        }],
+        descriptor: descriptor.clone(),
+    };
+    let plan = resolve_selected_descriptors(config, base_dir, Some(resolved), None, true)?;
+    Ok(AdapterInspection {
+        descriptor,
+        telemetry_plan: plan.telemetry_plan,
+    })
+}
+
 /// Resolve a typed Fabric config while retaining adapter incompatibilities for diagnostics.
 #[doc(hidden)]
 pub fn resolve_diagnostic_plan_from_config(
@@ -2411,6 +2476,24 @@ fn resolve_run_plan(
 ) -> Result<RunPlan> {
     let registry = DescriptorRegistry::from_config(&config, &base_dir, installed_roots)?;
     let (adapter_descriptor, adapter_target_descriptor) = resolve_descriptors(&config, &registry)?;
+    resolve_selected_descriptors(
+        config,
+        base_dir,
+        adapter_descriptor,
+        adapter_target_descriptor,
+        enforce_compatibility,
+    )
+}
+
+// Share validation between execution planning and metadata-only inspection,
+// without allowing inspection to discover an execution origin.
+fn resolve_selected_descriptors(
+    config: FabricConfig,
+    base_dir: PathBuf,
+    adapter_descriptor: Option<ResolvedAdapterDescriptor>,
+    adapter_target_descriptor: Option<ResolvedAdapterTargetDescriptor>,
+    enforce_compatibility: bool,
+) -> Result<RunPlan> {
     validate_harness_settings(&config, adapter_descriptor.as_ref())?;
     validate_workflow(&config, adapter_target_descriptor.as_ref())?;
     let descriptor = adapter_descriptor
@@ -4134,6 +4217,34 @@ mod tests {
                 .to_string()
                 .contains("unknown field `implicit_extension`")
         );
+    }
+
+    #[test]
+    fn host_inspection_uses_only_supplied_metadata_and_returns_no_execution_plan() {
+        let path = repository_adapter_dir().join("python/hermes/hermes.fabric-adapter.json");
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.discovery = Some(DiscoveryConfig {
+            local_paths: vec![PathBuf::from("/task-only/nonexistent-descriptor")],
+            ..Default::default()
+        });
+        let inspection = inspect_adapter_config(config.clone(), &path).expect("host inspection");
+        assert_eq!(
+            inspection.descriptor,
+            load_adapter_descriptor(&path).expect("descriptor")
+        );
+        let value = serde_json::to_value(inspection).expect("inspection JSON");
+        assert!(value.get("adapter_descriptor").is_none());
+        assert!(value.get("adapter").is_none());
+        assert!(value.get("config").is_none());
+        config
+            .harness
+            .as_mut()
+            .expect("harness")
+            .settings
+            .insert("not_a_supported_setting".to_string(), Value::Bool(true));
+        assert!(inspect_adapter_config(config, &path).is_err());
+        let mismatch = typed_config("nvidia.fabric.codex");
+        assert!(inspect_adapter_config(mismatch, &path).is_err());
     }
 
     fn typed_config(adapter_id: &str) -> FabricConfig {

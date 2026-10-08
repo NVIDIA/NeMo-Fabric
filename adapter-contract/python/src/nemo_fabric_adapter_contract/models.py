@@ -503,12 +503,15 @@ class AgentUsage(AgentContractBlock):
     """Normalized model usage reported by an adapter target."""
 
     input_tokens: int | None = _optional()
+    cached_input_tokens: int | None = _optional()
+    input_tokens_include_cache: bool | None = _optional()
     output_tokens: int | None = _optional()
     total_tokens: int | None = _optional()
     cost_usd: float | None = _optional()
 
     def _validate(self) -> None:
         _bounded_int(self.input_tokens, "input_tokens", (1 << 64) - 1)
+        _bounded_int(self.cached_input_tokens, "cached_input_tokens", (1 << 64) - 1)
         _bounded_int(self.output_tokens, "output_tokens", (1 << 64) - 1)
         _bounded_int(self.total_tokens, "total_tokens", (1 << 64) - 1)
         if self.cost_usd is not None and self.cost_usd < 0:

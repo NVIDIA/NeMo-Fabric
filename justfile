@@ -12,9 +12,9 @@ ref_name := ""
 # Linux wheel artifacts target this minimum glibc version for compatibility.
 linux_glibc_version := "2.17"
 
-python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
+python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
 
-python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
+python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
 
 # List Python package paths, one per line.
 python-package-paths:
@@ -267,6 +267,7 @@ set_project_version() {
     set_cargo_workspace_version "$version"
     set_python_project_versions "$version"
     set_typescript_project_version "$version"
+    "$(uv_python_executable)" scripts/ci/generate_adapter_catalog.py
 }
 '''
 
@@ -463,6 +464,14 @@ lock-python:
         uv lock --project "$project"
     done
 
+# Refresh the metadata-only catalog from adapter-owned descriptors.
+adapter-catalog:
+    uv run --no-project python scripts/ci/generate_adapter_catalog.py
+
+# Verify that the committed catalog matches the adapter sources and package versions.
+check-adapter-catalog:
+    uv run --no-project python scripts/ci/generate_adapter_catalog.py --check
+
 # Normalize a release tag to the version used by package metadata.
 normalize-release-tag tag:
     @uv run --no-project --no-cache python scripts/ci/normalize_release_tag.py {{ quote(tag) }}
@@ -569,6 +578,7 @@ test-all: test-rust test-python test-typescript
 wheels:
     #!/usr/bin/env bash
     {{ bash_helpers }}
+    just check-adapter-catalog
     linux_glibc_version="{{ linux_glibc_version }}"
     uv sync --inexact --only-group package
     activate_project_venv

@@ -19,7 +19,7 @@ then install the compatible Pi SDK harness version selected by that project:
 
 ```bash
 npm install nemo-fabric-adapters-pi
-npm install @earendil-works/pi-ai@^0.86.0 @earendil-works/pi-coding-agent@^0.86.0
+npm install @earendil-works/pi-ai@^1.0.0 @earendil-works/pi-coding-agent@^1.0.0 @earendil-works/pi-mcp@^1.0.0
 ```
 
 The Pi packages are optional peers: installing `nemo-fabric-adapters-pi` alone
@@ -124,6 +124,32 @@ config.harness.settings["extensions"] = ["extensions/review.ts"]
 
 The adapter loads only the skill and extension paths in the configuration. It
 does not load ambient Pi resources from the user profile or workspace.
+
+## Configure MCP Servers
+
+Add normalized MCP servers through the Python SDK:
+
+```python
+config.add_mcp_server(
+    "repo",
+    transport="stdio",
+    url="repo-mcp",
+    args=["--root", "."],
+    allowed_tools=["search", "read_file"],
+    exposure="harness_native",
+)
+config.add_mcp_server(
+    "docs",
+    transport="streamable-http",
+    url="https://mcp.example.com/mcp",
+    custom_headers={"Authorization": "Bearer ${MCP_TOKEN}"},
+    exposure="harness_native",
+)
+```
+
+The adapter maps stdio and streamable HTTP servers to Pi's native MCP extension. Stdio servers can define `args` and `env`, but not HTTP headers. Streamable HTTP servers can define `custom_headers`, but not process arguments or environment variables. Remote endpoints require HTTPS, except for loopback development endpoints.
+
+Header values can reference `${NAME}`. Resolution checks the NeMo Fabric runtime environment first and then the adapter process environment. The adapter maps `allowed_tools` and `blocked_tools` to Pi's per-server tool exposure. Normalized MCP authentication and MCP extensions are not supported. Only servers supplied by NeMo Fabric are loaded; ambient Pi MCP configuration remains disabled.
 
 ## Configure NeMo Relay
 
@@ -268,7 +294,7 @@ skills, extensions, custom tools, or workspace.
 
 ## Current Limitations
 
-The current adapter does not expose MCP, native OpenAI streaming, caller-driven
+The current adapter does not expose native OpenAI streaming, caller-driven
 cancellation, or remote-service execution. Enabling a third-party extension
 can add extension-defined skills, prompts, or themes even though ambient Pi
 resources remain disabled. The Relay extension does not add those resources.

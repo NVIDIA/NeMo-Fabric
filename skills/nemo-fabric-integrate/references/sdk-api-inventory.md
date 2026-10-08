@@ -31,6 +31,13 @@ The following table lists the `Fabric` methods and when to use each:
 the common case; use `request=RunRequest(...)` when the invocation needs a
 caller-owned `request_id`, `context`, or overrides.
 
+The public `inspect_adapter(config, descriptor)` helper returns an immutable
+`AdapterCapabilityProfile` for standalone host admission without harness SDKs.
+Both `run()` and `start_runtime()` accept optional
+`expected_descriptor_sha256` to verify the task plan's descriptor before startup.
+The profile is configuration-dependent for telemetry and excludes workflow
+targets and attached services. It is not observed execution provenance.
+
 ## Runtime Methods
 
 The following table lists the `Runtime` members for driving a stateful runtime.

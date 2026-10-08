@@ -158,6 +158,75 @@ def _runtime_wrapper(
     )
 
 
+@pytest.mark.parametrize("stage", ["start", "invoke", "stop"])
+@pytest.mark.parametrize(
+    ("error_type", "expected_code"),
+    [(TimeoutError, "timeout"), (RuntimeError, None)],
+)
+async def test_deadline_identity_survives_stateful_sdk_boundaries(
+    native_client, mock_native, stage, error_type, expected_code
+):
+    if stage == "start":
+        mock_native.start_runtime.side_effect = error_type("deadline-looking text")
+        operation = native_client.start_runtime(_config())
+    else:
+        runtime = await native_client.start_runtime(_config())
+        if stage == "invoke":
+            mock_native.invoke_runtime.side_effect = error_type("deadline-looking text")
+            operation = runtime.invoke(input="test")
+        else:
+            mock_native.stop_runtime.side_effect = error_type("deadline-looking text")
+            operation = runtime.stop()
+    with pytest.raises(FabricRuntimeError) as caught:
+        await operation
+    assert caught.value.stage == stage
+    assert caught.value.code == expected_code
+    assert isinstance(caught.value.__cause__, error_type)
+    if stage == "invoke":
+        await runtime.stop()
+
+
+@pytest.mark.parametrize("stage", ["start", "invoke"])
+async def test_one_shot_deadline_preserves_stage_and_cleanup(
+    native_client, mock_native, stage
+):
+    getattr(mock_native, f"{stage}_runtime").side_effect = TimeoutError("deadline")
+    with pytest.raises(FabricRuntimeError) as caught:
+        await native_client.run(_config(), input="test")
+    assert caught.value.code == "timeout"
+    assert caught.value.stage == stage
+    if stage == "invoke":
+        mock_native.stop_runtime.assert_called_once()
+    else:
+        mock_native.stop_runtime.assert_not_called()
+
+
+@pytest.mark.parametrize("structured", [False, True])
+async def test_one_shot_stop_deadline_has_canonical_result_error(
+    native_client, mock_native, structured
+):
+    mock_native.stop_runtime.side_effect = (
+        FabricRuntimeError("deadline", stage="stop", code="timeout")
+        if structured
+        else TimeoutError("deadline")
+    )
+    result = await native_client.run(_config(), input="test")
+    assert result.status == "failed"
+    assert result.error.stage == "stop"
+    assert result.error.code == "timeout"
+
+
+@pytest.mark.parametrize("stage", ["start", "invoke"])
+async def test_one_shot_preserves_existing_structured_error(
+    native_client, mock_native, stage
+):
+    error = FabricRuntimeError("existing", stage=stage, code="adapter_failed")
+    getattr(mock_native, f"{stage}_runtime").side_effect = error
+    with pytest.raises(FabricRuntimeError) as caught:
+        await native_client.run(_config(), input="test")
+    assert caught.value is error
+
+
 async def test_start_runtime_supports_typed_source_and_base_dir(
     native_client: Fabric,
     mock_native: MagicMock,

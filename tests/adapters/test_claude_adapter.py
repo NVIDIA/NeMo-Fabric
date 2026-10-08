@@ -471,6 +471,21 @@ async def test_claude_invoke_passes_remaining_budget_to_query(
     assert run_query.await_args.args[2] == 7.0
 
 
+async def test_claude_invocation_deadline_interrupts_and_invalidates_client():
+    runtime = adapter.ClaudeRuntime()
+    client = MagicMock(spec=adapter.ClaudeSDKClient)
+    client.query.side_effect = TimeoutError("raw deadline secret")
+    runtime._client = client
+
+    output = await runtime._run_query(client, "test", 1)
+
+    assert output["failed"] is True
+    assert output["error"]["code"] == "timeout"
+    assert runtime._unusable is True
+    client.interrupt.assert_awaited_once()
+    assert "secret" not in json.dumps(output)
+
+
 async def test_tool_policy_hooks_gate_built_in_and_mcp_tools(claude_payload):
     claude_payload["config"]["tools"] = {
         "enabled": ["Read", "Edit"],
@@ -1598,6 +1613,7 @@ def test_build_options_preserves_unix_user_for_cached_login(
 @pytest.mark.parametrize(
     ("error", "code"),
     [
+        (TimeoutError("raw deadline secret"), "timeout"),
         (CLINotFoundError("raw path", "/secret/claude"), "claude_cli_not_found"),
         (CLIConnectionError("raw connection"), "claude_connection_failed"),
         (

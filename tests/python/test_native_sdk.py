@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -18,13 +19,90 @@ from examples.code_review_agent import base_config
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric import FabricConfigError
+from nemo_fabric import FabricRuntimeError
+from nemo_fabric import FabricStateError
 from nemo_fabric import RunRequest
+from nemo_fabric import RuntimeStatus
 
 
 async def test_native_sdk(hermes_shim_agent_dir: Path):
     assert native.version()
 
     await smoke(Fabric(), hermes_shim_agent_dir)
+
+
+async def test_native_deadline_keeps_type_and_evicts_runtime(hermes_shim_agent_dir):
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "deadline-probe"},
+            "harness": {
+                "adapter_id": "test.fabric.hermes_shim",
+                "resolution": "preinstalled",
+            },
+            "discovery": {"local_paths": ["adapters"]},
+            "runtime": {"timeout_seconds": 1},
+        }
+    )
+    runtime = await Fabric().start_runtime(config, base_dir=hermes_shim_agent_dir)
+    with pytest.raises(FabricRuntimeError) as caught:
+        await runtime.invoke(
+            request=RunRequest(input="hang", context={"delay_seconds": 30})
+        )
+    assert caught.value.code == "timeout"
+    assert caught.value.stage == "invoke"
+    assert isinstance(caught.value.__cause__, TimeoutError)
+    assert runtime.status == RuntimeStatus.FAILED
+    with pytest.raises(FabricStateError):
+        await runtime.invoke(input="retry")
+    await runtime.stop()
+    assert runtime.status == RuntimeStatus.STOPPED
+
+
+def test_runner_real_inner_deadline_preserves_failure_evidence(
+    hermes_shim_agent_dir, tmp_path
+):
+    from nemo_fabric.integrations.harbor.models import FabricRunPayload
+    from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
+
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "runner-deadline-probe"},
+            "harness": {
+                "adapter_id": "test.fabric.hermes_shim",
+                "resolution": "preinstalled",
+            },
+            "discovery": {"local_paths": ["adapters"]},
+            "runtime": {"timeout_seconds": 1},
+        }
+    )
+    payload = FabricRunPayload(
+        config=config,
+        config_base_dir=str(hermes_shim_agent_dir),
+        logs_dir=str(tmp_path),
+        request=RunRequest(input="hang", context={"delay_seconds": 30}),
+    )
+    spec = tmp_path / "spec.json"
+    result = tmp_path / "result.json"
+    spec.write_text(payload.model_dump_json(), encoding="utf-8")
+    process = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "nemo_fabric.integrations.harbor.runner",
+            "--spec",
+            str(spec),
+            "--result",
+            str(result),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert process.returncode == 1
+    failure = FabricRunnerFailure.model_validate_json(result.read_text())
+    assert failure.runner_error.code == "timeout"
+    assert failure.runner_error.stage == "invoke"
+    assert not failure.runner_error.retryable
 
 
 async def test_adapter_python_selects_python_adapter_interpreter(
@@ -133,8 +211,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert plan.base_dir == BASE_DIR
     assert plan.config.metadata.name == "code-review-agent"
     assert (
-        plan["adapter_descriptor"]["descriptor"]["adapter_id"]
-        == "nvidia.fabric.hermes"
+        plan["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes"
     )
     assert "mcp_servers" not in plan["capability_plan"]["native"]
     assert plan["capability_plan"]["native"]["skill_paths"]
@@ -207,8 +284,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     )
     assert typed_plan["agent_name"] == "typed-hermes-shim-agent"
     assert (
-        typed_plan["adapter_descriptor"]["provenance"][0]["source"]
-        == "explicit_local"
+        typed_plan["adapter_descriptor"]["provenance"][0]["source"] == "explicit_local"
     )
     assert typed_plan["telemetry_plan"]["relay_enabled"] is True
     native_mcp = typed_plan["capability_plan"]["native"]["mcp_servers"]["github"]

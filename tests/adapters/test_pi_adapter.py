@@ -62,6 +62,8 @@ def test_pi_descriptor_declares_the_supported_surface():
         "tools.enabled",
         "tools.blocked",
         "skills",
+        "mcp",
+        "mcp.tool_filters",
     ]
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
     assert descriptor["settings_schema"]["properties"]["relay_extension_path"] == {

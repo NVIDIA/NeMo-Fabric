@@ -1953,6 +1953,8 @@ def test_run_result_wraps_normalized_usage():
             output="done",
             usage={
                 "input_tokens": 3,
+                "cached_input_tokens": 1,
+                "input_tokens_include_cache": True,
                 "output_tokens": 5,
                 "total_tokens": 8,
                 "cost_usd": 0.25,
@@ -1963,18 +1965,25 @@ def test_run_result_wraps_normalized_usage():
 
     assert isinstance(result.usage, RunUsage)
     assert result.usage.total_tokens == 8
+    assert result.usage.cached_input_tokens == 1
+    assert result.usage.input_tokens_include_cache is True
     assert result.usage.cost_usd == 0.25
     assert isinstance(result.usage.cost_usd, float)
     assert result.usage.metadata == {"provider": "test"}
 
 
+@pytest.mark.parametrize(
+    "field", ["input_tokens", "cached_input_tokens", "output_tokens", "total_tokens"]
+)
 @pytest.mark.parametrize("value", [-1, True, 1.5])
-def test_run_usage_rejects_invalid_token_counts(value):
+def test_run_usage_rejects_invalid_token_counts(field, value):
     with pytest.raises(FabricConfigError, match="nonnegative integer"):
-        RunUsage.from_mapping({"input_tokens": value})
+        RunUsage.from_mapping({field: value})
 
 
-@pytest.mark.parametrize("field", ["input_tokens", "output_tokens", "total_tokens"])
+@pytest.mark.parametrize(
+    "field", ["input_tokens", "cached_input_tokens", "output_tokens", "total_tokens"]
+)
 def test_run_usage_rejects_token_counts_above_uint64(field):
     with pytest.raises(FabricConfigError, match="no greater than"):
         RunUsage.from_mapping({field: 1 << 64})
@@ -1984,6 +1993,12 @@ def test_run_usage_rejects_token_counts_above_uint64(field):
 def test_run_usage_rejects_invalid_costs(value):
     with pytest.raises(FabricConfigError, match="finite"):
         RunUsage.from_mapping({"cost_usd": value})
+
+
+@pytest.mark.parametrize("value", [0, 1, "true", [], {}])
+def test_run_usage_rejects_nonboolean_cache_semantics(value):
+    with pytest.raises(FabricConfigError, match="boolean"):
+        RunUsage.from_mapping({"input_tokens_include_cache": value})
 
 
 def test_run_result_exposes_detached_json_values():

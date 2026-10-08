@@ -73,6 +73,7 @@ runtime assumptions but never installs harnesses or credentials at run time.
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise
   `FabricNativeUnavailableError` when it is missing.
+- For descriptor inspection without harness SDKs, install the separate `nemo-fabric-adapter-catalog` package and call `nemo_fabric_adapter_catalog.get_adapter_descriptor(adapter_id)` or `get_target_descriptor(target_id)`. Refer to the [catalog guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-adapter-catalog/README.md). Catalog resources do not register execution runners; unknown IDs raise `KeyError`. Validate against the task environment's descriptor before relying on a snapshot claim. Catalog source versions and fingerprints are not runtime-observed provenance.
 
 ## Build The Typed Config From Consumer Config
 
@@ -310,6 +311,15 @@ print(plan.adapter.adapter_id, report.status)
   misspelled adapter settings fail before diagnostics or runtime startup. A
   resolved descriptor without a settings schema accepts only an empty settings
   map.
+- For a separate admission host, call public `inspect_adapter(config, descriptor)`
+  with matching catalog or canonical external metadata. The immutable
+  `AdapterCapabilityProfile` has `adapter_id`, `descriptor_sha256`, `skills`,
+  `mcp`, and `atif` fields. It does not import harness SDKs or read task-local
+  discovery paths. Missing metadata makes conservative claims and rejects
+  requested optional features. Pass `expected_descriptor_sha256=profile.descriptor_sha256`
+  to task-side `run()` or `start_runtime()` to reject descriptor drift before
+  startup. This standalone profile does not qualify workflow targets or attached
+  services. Declared support is not runtime provenance or proof of an artifact.
 
 ## Consume Results And Handle Errors
 

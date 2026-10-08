@@ -22,8 +22,8 @@ from nemo_fabric.errors import (
     FabricCapabilityError,
     FabricConfigError,
     FabricError,
-    FabricRuntimeError,
     FabricStateError,
+    _runtime_error,
 )
 from nemo_fabric.models import RunRequest
 from nemo_fabric.openai_streaming import OpenAIInvokeStream
@@ -85,7 +85,9 @@ class Runtime:
 
         self._plan = plan if isinstance(plan, RunPlan) else RunPlan.from_mapping(plan)
         self._runtime = (
-            runtime if isinstance(runtime, RuntimeHandle) else RuntimeHandle.from_mapping(runtime)
+            runtime
+            if isinstance(runtime, RuntimeHandle)
+            else RuntimeHandle.from_mapping(runtime)
         )
         self._client = client
         self._overrides = _json_mapping(overrides, "runtime overrides")
@@ -273,7 +275,9 @@ class Runtime:
                 try:
                     await _call_blocking(stop_after_cancel)
                 except asyncio.CancelledError:
-                    self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
+                    self._status = (
+                        RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
+                    )
                     raise
                 except Exception:
                     self._status = RuntimeStatus.FAILED
@@ -285,14 +289,14 @@ class Runtime:
                 raise
             except Exception as error:
                 self._status = RuntimeStatus.FAILED
-                raise FabricRuntimeError(str(error), stage="invoke") from error
+                raise _runtime_error(error, stage="invoke") from error
             if absorb_result:
                 self._absorb(typed_result)
             return typed_result
         except FabricError:
             raise
         except Exception as error:
-            raise FabricRuntimeError(str(error), stage="invoke") from error
+            raise _runtime_error(error, stage="invoke") from error
         finally:
             if not invocation_claimed:
                 self._current_task = None
@@ -782,7 +786,7 @@ class Runtime:
             raise
         except Exception as error:
             self._status = RuntimeStatus.FAILED
-            stop_error = FabricRuntimeError(str(error), stage="stop")
+            stop_error = _runtime_error(error, stage="stop")
             raise stop_error from error
         else:
             self._status = RuntimeStatus.STOPPED
@@ -885,7 +889,9 @@ def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:
     try:
         return json.loads(json.dumps(dict(value), allow_nan=False))
     except (TypeError, ValueError) as error:
-        raise FabricConfigError(f"{name} must contain JSON-compatible values") from error
+        raise FabricConfigError(
+            f"{name} must contain JSON-compatible values"
+        ) from error
 
 
 def _merge_overrides(
@@ -928,18 +934,28 @@ async def _run_native_lifecycle(
 ) -> dict[str, Any]:
     def run() -> dict[str, Any]:
         plan_json = json.dumps(dict(plan))
-        runtime = json.loads(native.start_runtime(plan_json))
+        try:
+            runtime = json.loads(native.start_runtime(plan_json))
+        except FabricError:
+            raise
+        except Exception as error:
+            raise _runtime_error(error, stage="start") from error
         runtime_json = json.dumps(runtime)
         result: dict[str, Any] | None = None
         invoke_error: Exception | None = None
         try:
             try:
                 result = json.loads(
-                    native.invoke_runtime(plan_json, runtime_json, json.dumps(dict(request)))
+                    native.invoke_runtime(
+                        plan_json, runtime_json, json.dumps(dict(request))
+                    )
                 )
-            except Exception as error:
+            except FabricError as error:
                 invoke_error = error
                 raise
+            except Exception as error:
+                invoke_error = _runtime_error(error, stage="invoke")
+                raise invoke_error from error
             return result
         finally:
             try:
@@ -952,7 +968,8 @@ async def _run_native_lifecycle(
                         result["status"] = "failed"
                         result["error"] = {
                             "stage": "stop",
-                            "code": "runtime_stop_failed",
+                            "code": _runtime_error(error, stage="stop").code
+                            or "runtime_stop_failed",
                             "message": str(error) or "runtime shutdown failed",
                             "retryable": False,
                         }
@@ -965,7 +982,7 @@ async def _run_native_lifecycle(
     except FabricError:
         raise
     except Exception as error:
-        raise FabricRuntimeError(str(error), stage="run") from error
+        raise _runtime_error(error, stage="run") from error
 
 
 async def _call_blocking(func: Any) -> Any:

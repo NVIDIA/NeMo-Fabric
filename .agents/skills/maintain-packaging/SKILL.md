@@ -36,8 +36,17 @@ consumed outside the source tree.
 - `justfile` build, test, clean, and documentation recipes
 - Release tags, registry publication, and release-facing documentation in
   `RELEASING.md`
+- Metadata-only adapter catalog under `sdk/python/nemo-fabric-adapter-catalog`: regenerate its single resource bundle with `just adapter-catalog` and check freshness with `just check-adapter-catalog`. Keep source metadata outside descriptor objects and catalog resources outside automatic execution discovery. `just set-version` refreshes the bundle after stamping both ecosystems; `just wheels` checks freshness and builds the package.
 
 ## Dependency Selection
+
+### Catalog Bundle Maintenance
+
+`scripts/ci/generate_adapter_catalog.py` collects canonical descriptors and registered targets from leaf packages under `adapters/python/` and `adapters/typescript/`, without an adapter-ID allowlist. Support packages, presets, fixtures, and source-only external integrations are excluded. The bundle keeps source package names, versions, paths, ecosystems, and fingerprints outside descriptor objects. Fingerprints use UTF-8 JSON with sorted keys, compact separators, and unescaped Unicode. These fields describe a release snapshot, not an observed execution environment.
+
+Run `just adapter-catalog`, `just check-adapter-catalog`, and `uv build --wheel --sdist --out-dir dist sdk/python/nemo-fabric-adapter-catalog` when maintaining the bundle. `just set-version` refreshes it after stamping Python and TypeScript versions. Python tests and wheel builds reject stale bundles; wheels and source distributions must build independently of the adapter source tree. Keep these maintainer details out of the PyPI-facing package README.
+
+### Select Dependencies
 
 Treat every direct dependency as a long-lived API, supply-chain, and licensing
 commitment.

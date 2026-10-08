@@ -39,6 +39,7 @@ packages = []
 
 [tool.uv.sources]
 nemo-fabric-runtime = { path = "../nemo-fabric-runtime", editable = true }
+nemo-fabric-adapter-catalog = { path = "../nemo-fabric-adapter-catalog", editable = true }
 nemo-fabric-collector = { path = "../nemo-fabric-collector", editable = true }
 nemo-fabric-adapter-contract = { path = "../../../adapter-contract/python", editable = true }
 nemo-fabric-adapters-common = { path = "../../../adapters/python/common", editable = true }
@@ -91,6 +92,7 @@ openclaw = [
 ]
 
 harbor = [
+  "nemo-fabric-adapter-catalog == 0.5.0",
   "harbor>=0.23,<0.24; python_version >= '3.12'",
   "pyyaml>=6.0",
 ]

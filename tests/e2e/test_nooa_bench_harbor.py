@@ -47,7 +47,6 @@ async def test_harbor_fabric_agent_runs_nooa_bench_adapter(
         fabric_adapter_id="nvidia.fabric.nooa.bench-agent",
         fabric_environment_env={
             "ADAPTER_PYTHON": sys.executable,
-            "OPENAI_API_KEY": "fixture-key",
             "PYTHONPATH": python_path,
         },
         fabric_python=sys.executable,

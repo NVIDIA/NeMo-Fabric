@@ -14,8 +14,10 @@ from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
 from typing import Literal
+from typing import NoReturn
 from typing import cast
 
+from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
@@ -23,6 +25,8 @@ from pydantic import model_validator
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import DiscoveryConfig
 from nemo_fabric import FabricConfig
+from nemo_fabric import FabricConfigError
+from nemo_fabric import inspect_adapter
 from nemo_fabric import HarnessConfig
 from nemo_fabric import InstructionConfig
 from nemo_fabric import InstructionsConfig
@@ -37,6 +41,7 @@ from nemo_fabric import RunResult
 from nemo_fabric import RuntimeConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
+from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
 from nemo_fabric.integrations.harbor.models import HarborMcpServer
 
 INSTALL_ENV_NAMES = {
@@ -65,6 +70,9 @@ try:
     from harbor.agents.options import AgentOptions
     from harbor.environments.base import BaseEnvironment
     from harbor.models.agent.context import AgentContext
+    from harbor.utils.env import get_required_host_vars
+    from harbor.utils.env import is_sensitive_env_key
+    from harbor.utils.env import resolve_env_vars
 except (
     ModuleNotFoundError
 ) as error:  # pragma: no cover - exercised without harbor extra
@@ -94,6 +102,8 @@ else:
     class FabricAgentOptions(AgentOptions):
         """Harbor-facing options for the task-local Fabric runner."""
 
+        model_config = ConfigDict(hide_input_in_errors=True)
+
         fabric_adapter_id: str = Field(description="Installed Fabric adapter ID.")
         fabric_config_base_dir: str | None = Field(
             default=None,
@@ -111,6 +121,10 @@ else:
             default=None,
             description="Task-local adapter descriptor paths for Fabric discovery.",
         )
+        fabric_adapter_descriptor: Path | None = Field(
+            default=None,
+            description="Host-readable canonical descriptor for an external adapter; task discovery remains separate.",
+        )
         fabric_workspace: str = Field(
             default=HARBOR_DEFAULT_WORKSPACE,
             description="Absolute task workspace path.",
@@ -124,7 +138,7 @@ else:
         )
         fabric_model_api_key_env: str | None = Field(
             default=None,
-            description="Name of a task-environment model credential variable.",
+            description="Name of a task-environment model credential variable recognized by Harbor's redaction policy.",
         )
         fabric_system_instruction: str | None = Field(
             default=None,
@@ -137,7 +151,8 @@ else:
             default=None, gt=0, description="Fabric runtime timeout in seconds."
         )
         fabric_environment_env: dict[str, str] | None = Field(
-            default=None, description="Task-local Fabric environment variables."
+            default=None,
+            description="Task-local Fabric environment variables; credentials require host-variable references without inline defaults.",
         )
         fabric_blocked_tools: list[str] | None = Field(
             default=None, description="Tools to block in the selected adapter."
@@ -186,6 +201,30 @@ else:
                 raise ValueError(
                     "fabric_model_api_key_env must be a non-empty environment variable name without surrounding whitespace"
                 )
+            if value is not None:
+                FabricRunPayload.validate_env_names((value,))
+                if not is_sensitive_env_key(value):
+                    raise ValueError(
+                        f"fabric_model_api_key_env '{value}' is not recognized by Harbor's redaction policy; use a credential name such as MODEL_API_KEY"
+                    )
+            return value
+
+        @field_validator("fabric_environment_env")
+        @classmethod
+        def validate_environment_env(
+            cls, value: dict[str, str] | None
+        ) -> dict[str, str] | None:
+            FabricRunPayload.validate_env_names(tuple(value or {}))
+            for name, entry in (value or {}).items():
+                if not is_sensitive_env_key(name):
+                    continue
+                references = get_required_host_vars({name: entry})
+                if not references or any(
+                    default is not None for _, default in references
+                ):
+                    raise ValueError(
+                        f"{name} requires a host-variable reference without an inline default in fabric_environment_env; use Harbor extra_env for literal credentials"
+                    )
             return value
 
         @field_validator("fabric_discovery_paths")
@@ -241,16 +280,7 @@ else:
 
         # Current Harbor main gates task skills and MCP servers on these fields;
         # the published 0.23.0 capabilities model does not define them yet.
-        capabilities = AgentCapabilities.model_validate(
-            {
-                "atif": True,
-                **{
-                    field: True
-                    for field in ("skills", "mcp_servers")
-                    if field in AgentCapabilities.model_fields
-                },
-            }
-        )
+        capabilities = AgentCapabilities()
         options_model = FabricAgentOptions
         options: FabricAgentOptions
 
@@ -281,6 +311,7 @@ else:
             *args: Any,
             fabric_model_api_key_env: str | None = None,
             fabric_discovery_paths: list[str] | None = None,
+            fabric_adapter_descriptor: Path | None = None,
             **kwargs: Any,
         ) -> None:
             super().__init__(
@@ -292,6 +323,7 @@ else:
                 fabric_config_bundle=fabric_config_bundle,
                 fabric_config_target=fabric_config_target,
                 fabric_discovery_paths=fabric_discovery_paths,
+                fabric_adapter_descriptor=fabric_adapter_descriptor,
                 fabric_workspace=fabric_workspace,
                 fabric_harness_settings=fabric_harness_settings,
                 fabric_model_base_url=fabric_model_base_url,
@@ -317,6 +349,7 @@ else:
             self.fabric_config_bundle = options.fabric_config_bundle
             self.fabric_config_target = options.fabric_config_target
             self.fabric_discovery_paths = list(options.fabric_discovery_paths or [])
+            self.fabric_adapter_descriptor = options.fabric_adapter_descriptor
             self.fabric_workspace = options.fabric_workspace
             self.fabric_harness_settings = dict(options.fabric_harness_settings or {})
             self.fabric_model_base_url = options.fabric_model_base_url
@@ -324,7 +357,16 @@ else:
             self.fabric_system_instruction = options.fabric_system_instruction
             self.fabric_max_turns = options.fabric_max_turns
             self.fabric_runtime_timeout_seconds = options.fabric_runtime_timeout_seconds
-            self.fabric_environment_env = dict(options.fabric_environment_env or {})
+            self.fabric_environment_env = resolve_env_vars(
+                options.fabric_environment_env or {}
+            )
+            for name, value in self.fabric_environment_env.items():
+                if name in self._extra_env and self._extra_env[name] != value:
+                    raise ValueError(
+                        f"{name} has conflicting values in extra_env and fabric_environment_env"
+                    )
+                # Harbor scrubs sensitive values collected from extra_env.
+                self._extra_env[name] = value
             self.fabric_blocked_tools = list(options.fabric_blocked_tools or [])
             self.fabric_enabled_tools = (
                 list(options.fabric_enabled_tools)
@@ -348,6 +390,43 @@ else:
                 self._resolve_environment_config_base_dir()
             )
             self._result_path: Path | None = None
+            if self.fabric_adapter_descriptor is not None:
+                self._host_descriptor = json.loads(
+                    self.fabric_adapter_descriptor.read_text(encoding="utf-8")
+                )
+            else:
+                try:
+                    from nemo_fabric_adapter_catalog import get_adapter_descriptor
+                except ModuleNotFoundError as error:
+                    if error.name != "nemo_fabric_adapter_catalog":
+                        raise
+                    self._host_descriptor = None
+                else:
+                    try:
+                        self._host_descriptor = get_adapter_descriptor(
+                            self.fabric_adapter_id
+                        )
+                    except KeyError:
+                        self._host_descriptor = None
+            self._capability_profile = inspect_adapter(
+                self._build_config(), self._host_descriptor
+            )
+            if self.skills_dir is not None and not self._capability_profile.skills:
+                raise FabricConfigError(
+                    f"Cannot confirm requested Harbor skills for {self.fabric_adapter_id}: "
+                    "host descriptor metadata must declare skills support"
+                )
+            self.capabilities = AgentCapabilities.model_validate(
+                {
+                    field: supported
+                    for field, supported in {
+                        "atif": self._capability_profile.atif,
+                        "skills": self._capability_profile.skills,
+                        "mcp_servers": self._capability_profile.mcp,
+                    }.items()
+                    if field in AgentCapabilities.model_fields
+                }
+            )
 
         @staticmethod
         def name() -> str:
@@ -422,10 +501,34 @@ else:
                 env=self._runner_env,
                 timeout_sec=self.fabric_timeout_sec,
             )
-            ensure_success("NeMo Fabric run failed", result)
-
-            await environment.download_file(remote_result_path, host_result_path)
+            try:
+                await environment.download_file(remote_result_path, host_result_path)
+            except Exception:
+                # Abrupt termination can leave no result: retain the process error.
+                ensure_success("NeMo Fabric run failed", result)
+                raise
+            try:
+                document = json.loads(host_result_path.read_text(encoding="utf-8"))
+                if isinstance(document, dict) and "runner_error" in document:
+                    diagnostic = FabricRunnerFailure.model_validate(document)
+                else:
+                    diagnostic = None
+                normalized = None if diagnostic else RunResult.from_mapping(document)
+            except (ValueError, TypeError, FabricConfigError):
+                ensure_success("NeMo Fabric run failed", result)
+                raise
             self._result_path = host_result_path
+            if diagnostic is not None:
+                raise_run_failure("failed", diagnostic.runner_error.model_dump())
+            assert normalized is not None
+            if normalized.status != "succeeded" or normalized.error is not None:
+                raise_run_failure(
+                    normalized.status,
+                    normalized.error.to_mapping()
+                    if normalized.error is not None
+                    else None,
+                )
+            ensure_success("NeMo Fabric run failed", result)
 
         def _build_request(self, instruction: str) -> RunRequest:
             context = {"source": "harbor"}
@@ -438,10 +541,18 @@ else:
             return RunRequest(input=instruction, context=context)
 
         def _build_spec(self, instruction: str) -> FabricRunPayload:
+            config = self._build_config()
+            profile = inspect_adapter(config, self._host_descriptor)
+            # Transport names; values arrive through Harbor's managed exec env.
+            for name in self.fabric_environment_env:
+                config.environment.env.pop(name, None)
             return FabricRunPayload(
-                config=self._build_config(),
+                config=config,
                 config_base_dir=self._environment_config_base_dir,
+                skills_dir=self.skills_dir,
                 request=self._build_request(instruction),
+                environment_env_names=tuple(self.fabric_environment_env),
+                adapter_descriptor_sha256=profile.descriptor_sha256,
             )
 
         def _build_config(self) -> FabricConfig:
@@ -459,7 +570,6 @@ else:
                 enabled_tools=self.fabric_enabled_tools,
                 telemetry=self.fabric_telemetry,
                 model_name=self.model_name,
-                skills_dir=self.skills_dir,
                 mcp_servers=tuple(
                     HarborMcpServer.model_validate(server.model_dump(mode="python"))
                     for server in self.mcp_servers
@@ -551,7 +661,6 @@ def build_harbor_config(
     enabled_tools: list[str] | None = None,
     telemetry: Literal["none", "relay"] = "none",
     model_name: str | None = None,
-    skills_dir: str | Path | None = None,
     mcp_servers: tuple[HarborMcpServer, ...] = (),
     discovery_paths: tuple[str | Path, ...] = (),
 ) -> FabricConfig:
@@ -559,17 +668,7 @@ def build_harbor_config(
 
     name = f"harbor-{adapter_id.rsplit('.', maxsplit=1)[-1]}"
     artifact_root = f"{HARBOR_ARTIFACT_ROOT}/{name}"
-    settings = harbor_harness_defaults(adapter_id)
-    settings.update(harness_settings or {})
-    if adapter_id == "nvidia.fabric.claude":
-        if max_turns is None:
-            max_turns = 75
-        if timeout_seconds is None:
-            timeout_seconds = 1800
-        environment_env = {
-            "IS_SANDBOX": "1",
-            **(environment_env or {}),
-        }
+    settings = dict(harness_settings or {})
     config = FabricConfig(
         metadata=MetadataConfig(
             name=name,
@@ -641,8 +740,6 @@ def build_harbor_config(
                 url=cast(str, server.url),
                 exposure="harness_native",
             )
-    if skills_dir is not None:
-        config.add_skill_path(skills_dir)
     if telemetry == "relay":
         relay_output = f"{artifact_root}/relay"
         config.enable_relay(
@@ -673,21 +770,6 @@ def model_provider(model_name: str) -> str:
     """Derive the Fabric provider from Harbor's model identifier."""
 
     return model_name.split("/", maxsplit=1)[0] if "/" in model_name else "openai"
-
-
-def harbor_harness_defaults(adapter_id: str) -> dict[str, Any]:
-    """Return the minimal unattended settings required in a Harbor task."""
-
-    if adapter_id == "nvidia.fabric.claude":
-        return {
-            "permission_mode": "bypassPermissions",
-        }
-    if adapter_id == "nvidia.fabric.codex":
-        return {
-            "sandbox": "workspace-write",
-            "approval_mode": "deny_all",
-        }
-    return {}
 
 
 def fabric_runner_command(
@@ -740,10 +822,33 @@ def ensure_success(message: str, result: Any) -> None:
     raise RuntimeError(f"{message} (exit {result.return_code}): {stderr or stdout}")
 
 
-def populate_context_from_result(context: AgentContext, path: Path) -> RunResult:
+def raise_run_failure(status: str, error: dict[str, Any] | None) -> NoReturn:
+    """Translate execution status, never verifier reward, into Harbor's error path."""
+    message = f"NeMo Fabric run failed (status: {status})"
+    if error is not None:
+        message += f": {error['message']}"
+    if status == "cancelled":
+        # An invocation outcome must not cancel Harbor's job orchestration.
+        # Actual task cancellation still propagates from the awaited operations.
+        raise RuntimeError(message)
+    if error is not None and error.get("code") == "timeout":
+        raise TimeoutError(message)
+    raise RuntimeError(message)
+
+
+def populate_context_from_result(
+    context: AgentContext, path: Path
+) -> RunResult | FabricRunnerFailure:
     """Validate a downloaded result and copy its summary into Harbor metadata."""
 
-    result = RunResult.from_mapping(json.loads(path.read_text(encoding="utf-8")))
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(document, dict) and "runner_error" in document:
+        failure = FabricRunnerFailure.model_validate(document)
+        if context.metadata is None:
+            context.metadata = {}
+        context.metadata["fabric"] = failure.model_dump()
+        return failure
+    result = RunResult.from_mapping(document)
     mapping = result.to_mapping()
     if context.metadata is None:
         context.metadata = {}
@@ -757,7 +862,30 @@ def populate_context_from_result(context: AgentContext, path: Path) -> RunResult
         "artifacts": mapping["artifacts"],
         "telemetry": mapping["telemetry"],
         "error": mapping.get("error"),
+        "usage": mapping.get("usage"),
     }
+    if result.usage is not None:
+        usage = result.usage
+        input_tokens = usage.get("input_tokens")
+        cached_input_tokens = usage.get("cached_input_tokens")
+        includes_cache = usage.get("input_tokens_include_cache")
+        if includes_cache is False:
+            input_tokens = (
+                input_tokens + cached_input_tokens
+                if input_tokens is not None and cached_input_tokens is not None
+                else None
+            )
+        elif includes_cache is None and cached_input_tokens != 0:
+            # Neither missing cache nor an unspecified convention proves an inclusive total.
+            input_tokens = None
+        if input_tokens is not None:
+            context.n_input_tokens = input_tokens
+        if cached_input_tokens is not None:
+            context.n_cache_tokens = cached_input_tokens
+        if usage.get("output_tokens") is not None:
+            context.n_output_tokens = usage["output_tokens"]
+        if usage.get("cost_usd") is not None:
+            context.cost_usd = usage["cost_usd"]
     return result
 
 
@@ -777,10 +905,15 @@ def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
     metrics = trajectory.final_metrics
     if metrics is None:
         return
-    context.n_input_tokens = metrics.total_prompt_tokens
-    context.n_cache_tokens = metrics.total_cached_tokens
-    context.n_output_tokens = metrics.total_completion_tokens
-    context.cost_usd = metrics.total_cost_usd
+    # These are two views of one invocation, not additive accounting sources.
+    if context.n_input_tokens is None:
+        context.n_input_tokens = metrics.total_prompt_tokens
+    if context.n_cache_tokens is None:
+        context.n_cache_tokens = metrics.total_cached_tokens
+    if context.n_output_tokens is None:
+        context.n_output_tokens = metrics.total_completion_tokens
+    if context.cost_usd is None:
+        context.cost_usd = metrics.total_cost_usd
 
 
 def _record_host_atif_validation(

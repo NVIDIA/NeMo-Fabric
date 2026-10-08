@@ -79,6 +79,8 @@ The result includes the SDK's typed terminal response, turn status, token
 usage, timing, and completed thread items. It does not expose CLI commands,
 return codes, stdout, or stderr.
 
+Normalized `usage` contains invocation-local token counts from the SDK's cumulative thread totals, including cached input tokens. Input tokens already include cached tokens (`input_tokens_include_cache=True`). Reused threads report the difference from the previous invocation rather than counting the thread total again. Missing, invalid, or reset counters remain unknown; a missing snapshot requires a new baseline before differences can be reported. The adapter preserves native usage in `output.usage`, does not infer cost, and retains available usage on unsuccessful results. If the SDK raises before returning usage, normalized usage remains unavailable.
+
 ## Configuration
 
 Use normalized `FabricConfig` fields for portable configuration:
@@ -98,6 +100,8 @@ Use normalized `FabricConfig` fields for portable configuration:
   registers each directory as a process-scoped Codex skill root so Codex can
   select matching skills through its normal discovery behavior.
 - `telemetry` enables native OpenTelemetry or NeMo Relay observability.
+
+Invocation deadlines return the normalized error code `timeout` (previously `codex_timed_out`). The adapter interrupts the active turn and closes the SDK before returning that outcome.
 
 The Codex adapter does not declare `tools.blocked` support. The current Codex
 runtime has per-MCP-server tool filters, but it does not provide one complete

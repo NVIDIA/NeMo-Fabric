@@ -59,7 +59,11 @@ surfaces touched by a change.
 - **Adapter behavior changed**
   Run the focused adapter tests under `tests/adapters`, then `just test-python`.
 - **Harbor integration changed**
-  Run `tests/test_harbor_runner.py`, then `just test-python`.
+  Run `tests/integrations/test_harbor_runner.py` and
+  `tests/python/test_adapter_capabilities.py`, then `just test-python`.
+  For host admission changes, verify metadata inspection without harness SDKs
+  or task discovery, selected telemetry claims, and task-side descriptor drift
+  rejection before startup.
 - **Schema or public contract changed**
   Run the Rust, Python, and TypeScript suites and review changes under
   `schemas/`, the checked-in Python adapter-contract representations, generated

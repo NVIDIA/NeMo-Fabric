@@ -11,11 +11,11 @@ use std::time::{Duration, Instant};
 
 use nemo_fabric_core::{
     FabricConfig, FabricError, OpenAiStreamTransport, ResolveContext, RunPlan, RunRequest,
-    RuntimeHandle, ServiceHandle, ServiceReference, doctor_plan,
+    RuntimeHandle, ServiceHandle, ServiceReference, doctor_plan, inspect_adapter_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyTimeoutError};
 use pyo3::prelude::*;
 
 pyo3::create_exception!(
@@ -53,6 +53,20 @@ fn plan_config(py: Python<'_>, config_json: String, base_dir: Option<String>) ->
         })
         .map_err(to_py_error)?;
     to_json(&plan)
+}
+
+/// Inspect supplied host metadata without probing executable adapter locations.
+#[pyfunction]
+fn inspect_adapter_metadata(
+    py: Python<'_>,
+    config_json: String,
+    descriptor_path: String,
+) -> PyResult<String> {
+    let config = parse_config(config_json)?;
+    let inspection = py
+        .detach(|| inspect_adapter_config(config, Path::new(&descriptor_path)))
+        .map_err(to_py_error)?;
+    to_json(&inspection)
 }
 
 /// Diagnose typed config JSON without installing or running it.
@@ -237,6 +251,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ServiceInUseError", m.py().get_type::<ServiceInUseError>())?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(plan_config, m)?)?;
+    m.add_function(wrap_pyfunction!(inspect_adapter_metadata, m)?)?;
     m.add_function(wrap_pyfunction!(doctor_config, m)?)?;
     m.add_function(wrap_pyfunction!(run_config, m)?)?;
     m.add_function(wrap_pyfunction!(start_runtime, m)?)?;
@@ -258,6 +273,12 @@ where
 }
 
 fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
+    if matches!(
+        &error,
+        FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"
+    ) {
+        return PyTimeoutError::new_err(error.to_string());
+    }
     PyRuntimeError::new_err(error.to_string())
 }
 

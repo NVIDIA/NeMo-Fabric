@@ -65,7 +65,7 @@ return AgentRunResult(
 | `status` | Required | Reports `succeeded`, `failed`, or `cancelled`. |
 | `output` | Required | Carries the primary JSON-compatible output and can be `null`. |
 | `error` | Required for `failed` | Carries a stable code, safe message, retry guidance, and declared extensions. |
-| `usage` | Optional | Carries normalized input, output, and total token counts plus cost when known. |
+| `usage` | Optional | Carries invocation-local input, cached-input, output, and total token counts plus reported cost when known. |
 | `artifacts` | Optional | Carries target-produced artifact references relative to the runtime artifact root. |
 | `extensions` | Optional | Carries adapter-owned result data validated by the descriptor. |
 
@@ -74,6 +74,8 @@ Use the canonical
 for the exact shape. A failed result contains an error; a successful result
 does not contain a non-null error. Status is explicit and is not inferred from
 arbitrary output fields.
+
+Report only observed invocation usage. For cumulative target counters, compute the difference between successive observations; do not sum cumulative snapshots or substitute the last model response for an entire invocation. Missing and reset counters remain unknown. `cached_input_tokens` records cached prompt tokens; `input_tokens_include_cache` declares whether they are included in `input_tokens` (`True`), excluded (`False`), or unknown (absent). Keep estimates separate from `cost_usd`, and retain available usage on unsuccessful terminal results.
 
 **Success Check**: `invoke` returns one typed `AgentRunResult` whose explicit
 status matches the presence or absence of an error.
@@ -92,6 +94,10 @@ Use these failure classes consistently:
 Set retry guidance only when retrying at the consumer boundary is safe. NeMo
 Fabric propagates failure information but does not automatically retry adapter
 operations.
+
+Report an invocation deadline with the normalized error code `timeout`, rather
+than a harness-specific deadline code. Consumers must not infer deadlines from
+diagnostic messages or classify unrelated transport failures as timeouts.
 
 **Success Check**: A target failure returns a `FAILED` result while a lifecycle
 failure is reported at its NeMo Fabric error stage.

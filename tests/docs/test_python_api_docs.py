@@ -37,6 +37,7 @@ QUICKSTART_PAGE = ROOT / "docs" / "getting-started" / "quickstart.mdx"
 NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
+    "nemo_fabric.capabilities": "/reference/api/python-library-reference/capabilities",
     "nemo_fabric.runtime": "/reference/api/python-library-reference/runtime",
     "nemo_fabric.service": "/reference/api/python-library-reference/service",
     "nemo_fabric.streaming": "/reference/api/python-library-reference/streaming",
@@ -68,7 +69,8 @@ def _exported_classes_by_module() -> dict[str, set[str]]:
     exports: dict[str, set[str]] = defaultdict(set)
     for name in nemo_fabric.__all__:
         exported = getattr(nemo_fabric, name)
-        exports[exported.__module__].add(name)
+        if isclass(exported):
+            exports[exported.__module__].add(name)
     return dict(exports)
 
 

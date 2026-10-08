@@ -23,6 +23,7 @@ PYTHONPATH="sdk/python/nemo-fabric-runtime/src" lazydocs \
   --output-path "$out" \
   --overview-file "index.md" \
   "nemo_fabric.client" \
+  "nemo_fabric.capabilities" \
   "nemo_fabric.runtime" \
   "nemo_fabric.service" \
   "nemo_fabric.streaming" \
@@ -82,6 +83,11 @@ add_frontmatter \
   "Client" \
   "Resolve, plan, diagnose, and run agents with NVIDIA NeMo Fabric." \
   "/reference/api/python-library-reference/client"
+add_frontmatter \
+  "$out/nemo_fabric.capabilities.md" \
+  "Adapter Capability Inspection" \
+  "Inspect standalone adapter metadata and verify host/task descriptor correspondence." \
+  "/reference/api/python-library-reference/capabilities"
 add_frontmatter \
   "$out/nemo_fabric.runtime.md" \
   "Runtime" \

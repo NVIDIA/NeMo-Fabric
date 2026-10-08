@@ -9,6 +9,7 @@ import type {
   AdapterTargetDescriptor,
   AdapterTelemetryProviderSupport,
   AgentConfig,
+  AgentUsage,
   ControlLocation,
   EnvironmentOwnership,
   InstructionMode,
@@ -28,6 +29,18 @@ const descriptor: AdapterDescriptor = {
     agent_config: { type: "object", additionalProperties: true },
   },
 };
+
+const usage: AgentUsage = {
+  input_tokens: 20,
+  cached_input_tokens: 5,
+  input_tokens_include_cache: true,
+};
+const invalidCacheSemantics: AgentUsage = {
+  // @ts-expect-error cache semantics require an explicit boolean, not a numeric flag
+  input_tokens_include_cache: 1,
+};
+void usage;
+void invalidCacheSemantics;
 
 const target: AdapterTargetDescriptor = {
   adapter_id: "pi",

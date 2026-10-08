@@ -224,9 +224,11 @@ units, defaults, validation bounds, and overflow behavior. Do not overload
 
 Keep session state separate from invocation state. Conversation context,
 required artifact references, and live workspace state may persist until
-`stop`; timeout state, counters, terminal markers, result assembly, usage, and
+`stop`; timeout state, invocation counters, terminal markers, result assembly, usage, and
 telemetry scopes reset for each `invoke`. Independent runtime instances must
 never share mutable continuation state.
+
+Normalize usage per invocation in `AgentUsage`. If the target reports cumulative session totals, retain a session-local baseline and difference successive observed counters rather than summing cumulative snapshots or using only the last model response. Missing or reset counters remain unknown. Report `cached_input_tokens` when available and declare whether `input_tokens` includes cache with `input_tokens_include_cache`; omit the flag when the target's semantics are unknown. Preserve available usage on unsuccessful terminal results. Do not infer missing cost or promote estimates to `cost_usd`.
 
 Test observable continuation rather than merely calling `invoke` twice: make
 the second result depend on the first turn without caller-side replay, then

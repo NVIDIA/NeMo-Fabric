@@ -801,7 +801,7 @@ def adapter_failure(error: ClaudeAdapterError) -> dict[str, Any]:
 
 def sdk_failure(error: BaseException) -> dict[str, Any]:
     if isinstance(error, TimeoutError):
-        return _failure("claude_timed_out", "Claude invocation timed out")
+        return _failure("timeout", "Claude invocation timed out")
     if isinstance(error, CLINotFoundError):
         return _failure("claude_cli_not_found", "Claude Code executable was not found")
     if isinstance(error, CLIConnectionError):

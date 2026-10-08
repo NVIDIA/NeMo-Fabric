@@ -89,6 +89,7 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
   adds the configured content after it.
 - `runtime.max_turns` sets the Claude turn limit.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
+  Invocation deadlines use the normalized error code `timeout` (previously `claude_timed_out`), not a transport or telemetry timeout code.
 - `environment.workspace` sets the Claude working directory, and
   `environment.env` supplies explicit harness-visible variables.
 - `tools.enabled` selects Claude built-in tools. `None` preserves the Claude
