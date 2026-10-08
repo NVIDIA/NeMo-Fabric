@@ -247,7 +247,13 @@ instead, a UUID request ID stays the parent (otherwise the session root is), and
 `nemo_fabric_session_root` is added to the metadata, so the caller's invocations
 share one Relay session. Context keys do not control propagation. An unusable
 session root falls back to a usable UUID request ID without raising; if neither
-value is usable, the helper returns `nullcontext()` without setting propagation. Do not apply this pattern to an external Relay gateway or an
+value is usable, the helper returns `nullcontext()` without setting propagation. Merge
+`nemo_fabric_adapters.common.utils.relay_correlation_metadata(context)` into
+that metadata with `metadata.update(...)` rather than replacing it, so keys
+from `relay_request_context()` reach the scope. `relay_correlation_metadata()`
+returns the reserved `nemo_fabric_request_id`, `nemo_fabric_invocation_id`, and
+`nemo_fabric_runtime_id` keys that consumers use to join Relay telemetry to a
+NeMo Fabric result. Do not apply this pattern to an external Relay gateway or an
 upstream integration that creates an isolated scope context unless its boundary
 accepts a per-turn propagation context.
 
