@@ -65,7 +65,7 @@ return AgentRunResult(
 | `status` | Required | Reports `succeeded`, `failed`, or `cancelled`. |
 | `output` | Required | Carries the primary JSON-compatible output and can be `null`. |
 | `error` | Required for `failed` | Carries a stable code, safe message, retry guidance, and declared extensions. |
-| `usage` | Optional | Carries invocation-local input, cached-input, output, and total token counts plus reported cost when known. |
+| `usage` | Optional | Carries invocation-local input, cached-input, cache-write, output, reasoning, total, and peak request token counts, reported cost, and an optional per-model breakdown when known. |
 | `artifacts` | Optional | Carries target-produced artifact references relative to the runtime artifact root. |
 | `extensions` | Optional | Carries adapter-owned result data validated by the descriptor. |
 
@@ -75,7 +75,11 @@ for the exact shape. A failed result contains an error; a successful result
 does not contain a non-null error. Status is explicit and is not inferred from
 arbitrary output fields.
 
-Report only observed invocation usage. For cumulative target counters, compute the difference between successive observations; do not sum cumulative snapshots or substitute the last model response for an entire invocation. Missing and reset counters remain unknown. `cached_input_tokens` records cached prompt tokens; `input_tokens_include_cache` declares whether they are included in `input_tokens` (`True`), excluded (`False`), or unknown (absent). Keep estimates separate from `cost_usd`, and retain available usage on unsuccessful terminal results.
+Report only observed invocation usage. For cumulative target counters, compute the difference between successive observations; do not sum cumulative snapshots or substitute the last model response for an entire invocation. Missing and reset counters remain unknown. `cached_input_tokens` records cached prompt tokens and `cache_write_input_tokens` records prompt tokens written to the provider cache; `input_tokens_include_cache` declares whether both are included in `input_tokens` (`True`), excluded (`False`), or unknown (absent). `reasoning_tokens` records reasoning output, and `output_tokens_include_reasoning` declares whether it is included in `output_tokens` with the same three states. `peak_request_input_tokens` records the input size of the largest single model request, including cached and cache-write input. Keep estimates separate from `cost_usd`, and retain available usage on unsuccessful terminal results.
+
+When the target reports usage per model, add one `AgentModelUsage` entry per model to `usage.models`. Each entry requires a non-blank `model`, accepts an optional non-blank `provider`, and uses the same token, flag, and cost fields as `AgentUsage`. A provider and model pair can appear only once, compared case-insensitively. Model entries have no `extensions`; keep adapter-owned usage data in `usage.extensions`.
+
+NeMo Fabric validates `cache_write_input_tokens`, `reasoning_tokens`, `output_tokens_include_reasoning`, `peak_request_input_tokens`, and `usage.models`, but does not copy any of them into the consumer `RunResult.usage`. `RunResult.usage` keeps the adapter's `input_tokens_include_cache` flag, so when the flag is `False`, a consumer that adds `cached_input_tokens` to `input_tokens` does not count reported cache-write input.
 
 **Success Check**: `invoke` returns one typed `AgentRunResult` whose explicit
 status matches the presence or absence of an error.
