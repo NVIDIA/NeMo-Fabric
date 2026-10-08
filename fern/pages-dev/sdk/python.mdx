@@ -92,6 +92,45 @@ in a new environment, call `plan(...)` to inspect adapter selection and
 
 The remaining examples reuse this `config` value.
 
+### Inspect Metadata On A Separate Host
+
+Use `inspect_adapter(config, descriptor)` when the admission host cannot access
+the task's installed adapter. Supply canonical metadata from the matching
+`nemo-fabric-adapter-catalog` release or an external adapter:
+
+```python
+from nemo_fabric import inspect_adapter
+from nemo_fabric_adapter_catalog import get_adapter_descriptor
+
+profile = inspect_adapter(config, get_adapter_descriptor(config.harness.adapter_id))
+print(profile.skills, profile.mcp, profile.atif)
+
+# In the task environment, resolve its own executable descriptor.
+result = await Fabric().run(
+    config,
+    input="Review the changes.",
+    expected_descriptor_sha256=profile.descriptor_sha256,
+)
+```
+
+The immutable `AdapterCapabilityProfile` reports declared skills and MCP support
+and ATIF availability for the selected telemetry configuration. Inspection uses
+the existing native planner without importing the harness SDK or reading
+task-local discovery paths. Unsupported requested configuration fails admission.
+Passing `None` as the descriptor permits basic execution with false capability
+claims, but rejects requested skills, MCP, or telemetry.
+
+The optional `expected_descriptor_sha256` argument on `run()` and
+`start_runtime()` verifies the normalized descriptor in the actual execution
+plan before startup. Catalog metadata never becomes an execution origin. A
+fingerprint confirms descriptor correspondence, not installed software versions
+or successful evidence production. ATIF requires a selected provider declaring
+that output; Relay additionally requires one explicitly enabled observability
+component with ATIF enabled. Unconfirmed ATIF requests, including ambiguous
+duplicate components, fail admission.
+This profile covers standalone adapters, not registered workflows or attached
+services, which need route-specific admission.
+
 ## Execution Model
 
 NeMo Fabric separates configuration, planning, runtime lifecycle, and individual
