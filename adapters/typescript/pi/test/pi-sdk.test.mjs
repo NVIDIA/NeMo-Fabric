@@ -953,6 +953,18 @@ test("includes Pi flag conflict diagnostics in extension errors", async () => {
 
 // --- Model catalog registration (gateway-served models) ---------------------
 
+// A complete Pi-metadata block for a model Pi does not ship. The adapter invents no defaults, so
+// every field Pi requires must be supplied for an unknown gateway model; tests reuse this and
+// omit one field when exercising a required-field rejection.
+const GATEWAY_EXTENSIONS = {
+  api: "openai-completions",
+  context_window: 32000,
+  max_tokens: 4096,
+  cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+  reasoning: false,
+  input: ["text"],
+};
+
 function makeRuntimeContext(workspace) {
   return {
     artifacts: {},
@@ -1039,7 +1051,7 @@ test("resolves a gateway model's api from extensions.api", async () => {
             base_url: "https://gateway.example.test/v1",
             model: "nvidia/some-gateway-model",
             provider: "nvidia",
-            extensions: { api: "openai-completions", context_window: 32000, max_tokens: 4096 },
+            extensions: { ...GATEWAY_EXTENSIONS, context_window: 32000, max_tokens: 4096 },
           },
         },
         tools: { enabled: [] },
@@ -1048,6 +1060,42 @@ test("resolves a gateway model's api from extensions.api", async () => {
     });
     await runtime.stop();
     // The relay factory receives the resolved model's wire api; settings.api must win.
+    assert.equal(capture.model.api, "openai-completions");
+    assert.equal(capture.model.baseUrl, "https://gateway.example.test/v1");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("registers a gateway model with only api supplied, leaving the rest for Pi to default", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-minimal-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  const capture = {};
+  const factory = captureModelFactory(capture);
+  const runtime = new PiAdapterRuntime(factory);
+  try {
+    await runtime.start({
+      agentName: "pi-catalog-minimal",
+      baseDir: workspace,
+      config: {
+        harness: { settings: { relay_extension_path: extensionPath } },
+        models: {
+          default: {
+            api_key_env: "TEST_API_KEY",
+            base_url: "https://gateway.example.test/v1",
+            model: "custom-gateway-model",
+            provider: "custom-gateway-provider",
+            // Only the wire protocol is supplied. The adapter must NOT invent context_window,
+            // max_tokens, cost, reasoning, or input defaults — it leaves them unset for Pi.
+            extensions: { api: "openai-completions" },
+          },
+        },
+        tools: { enabled: [] },
+      },
+      runtimeContext: makeRuntimeContext(workspace),
+    });
+    await runtime.stop();
     assert.equal(capture.model.api, "openai-completions");
     assert.equal(capture.model.baseUrl, "https://gateway.example.test/v1");
   } finally {
@@ -1073,6 +1121,8 @@ test("rejects an unknown gateway model with no extensions.api", async () => {
               base_url: "https://gateway.example.test/v1",
               model: "custom-gateway-model",
               provider: "custom-gateway-provider",
+              // Full metadata EXCEPT api, so the only missing required field is the wire protocol.
+              extensions: { context_window: 32000, max_tokens: 4096, cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 }, reasoning: false, input: ["text"] },
             },
           },
           tools: { enabled: [] },
@@ -1136,7 +1186,7 @@ test("rejects a model whose extensions.cost is incomplete", async () => {
               base_url: "https://gateway.example.test/v1",
               model: "custom-gateway-model",
               provider: "custom-gateway-provider",
-              extensions: { api: "openai-completions", cost: {} },
+              extensions: { ...GATEWAY_EXTENSIONS, cost: {} },
             },
           },
           tools: { enabled: [] },
@@ -1168,7 +1218,7 @@ test("rejects a model whose extensions.max_tokens is not positive", async () => 
               base_url: "https://gateway.example.test/v1",
               model: "custom-gateway-model",
               provider: "custom-gateway-provider",
-              extensions: { api: "openai-completions", max_tokens: 0 },
+              extensions: { ...GATEWAY_EXTENSIONS, max_tokens: 0 },
             },
           },
           tools: { enabled: [] },
@@ -1203,14 +1253,14 @@ test("registers only the selected role's model when multiple roles are configure
             base_url: "https://other.example.test/v1",
             model: "custom-analysis-model",
             provider: "custom-gateway-provider",
-            extensions: { api: "openai-completions" },
+            extensions: { ...GATEWAY_EXTENSIONS },
           },
           default: {
             api_key_env: "TEST_API_KEY",
             base_url: "https://selected.example.test/v1",
             model: "custom-default-model",
             provider: "custom-gateway-provider",
-            extensions: { api: "openai-completions" },
+            extensions: { ...GATEWAY_EXTENSIONS },
           },
         },
         tools: { enabled: [] },
@@ -1283,7 +1333,7 @@ test("accepts a well-formed extensions.cost", async () => {
             model: "custom-gateway-model",
             provider: "custom-gateway-provider",
             extensions: {
-              api: "openai-completions",
+              ...GATEWAY_EXTENSIONS,
               cost: { input: 1.5, output: 6, cacheRead: 0.3, cacheWrite: 0 },
             },
           },
