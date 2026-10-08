@@ -987,7 +987,7 @@ function captureModelFactory(capture) {
   });
 }
 
-test("inherits a built-in model's native api when settings.api is omitted", async () => {
+test("inherits a built-in model's native api when extensions.api is omitted", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-native-")));
   const extensionPath = join(workspace, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
@@ -1020,7 +1020,7 @@ test("inherits a built-in model's native api when settings.api is omitted", asyn
   }
 });
 
-test("resolves a gateway model's api from settings.api", async () => {
+test("resolves a gateway model's api from extensions.api", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-gateway-")));
   const extensionPath = join(workspace, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
@@ -1039,7 +1039,7 @@ test("resolves a gateway model's api from settings.api", async () => {
             base_url: "https://gateway.example.test/v1",
             model: "nvidia/some-gateway-model",
             provider: "nvidia",
-            settings: { api: "openai-completions", context_window: 32000, max_tokens: 4096 },
+            extensions: { api: "openai-completions", context_window: 32000, max_tokens: 4096 },
           },
         },
         tools: { enabled: [] },
@@ -1055,7 +1055,7 @@ test("resolves a gateway model's api from settings.api", async () => {
   }
 });
 
-test("rejects an unknown gateway model with no settings.api", async () => {
+test("rejects an unknown gateway model with no extensions.api", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-noapi-")));
   const extensionPath = join(workspace, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
@@ -1079,14 +1079,14 @@ test("rejects an unknown gateway model with no settings.api", async () => {
         },
         runtimeContext: makeRuntimeContext(workspace),
       }),
-      (error) => error.code === "pi_model_api_required" && error.message.includes("settings.api"),
+      (error) => error.code === "pi_model_api_required" && error.message.includes("extensions.api"),
     );
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
-test("rejects a model whose settings.api is not a supported protocol", async () => {
+test("rejects a model whose extensions.api is not a supported protocol", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-badapi-")));
   const extensionPath = join(workspace, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
@@ -1104,7 +1104,7 @@ test("rejects a model whose settings.api is not a supported protocol", async () 
               base_url: "https://gateway.example.test/v1",
               model: "nvidia/some-gateway-model",
               provider: "nvidia",
-              settings: { api: "not-a-real-api" },
+              extensions: { api: "not-a-real-api" },
             },
           },
           tools: { enabled: [] },
@@ -1118,7 +1118,7 @@ test("rejects a model whose settings.api is not a supported protocol", async () 
   }
 });
 
-test("rejects a model whose settings.cost is incomplete", async () => {
+test("rejects a model whose extensions.cost is incomplete", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-cost-")));
   const extensionPath = join(workspace, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
@@ -1136,21 +1136,21 @@ test("rejects a model whose settings.cost is incomplete", async () => {
               base_url: "https://gateway.example.test/v1",
               model: "custom-gateway-model",
               provider: "custom-gateway-provider",
-              settings: { api: "openai-completions", cost: {} },
+              extensions: { api: "openai-completions", cost: {} },
             },
           },
           tools: { enabled: [] },
         },
         runtimeContext: makeRuntimeContext(workspace),
       }),
-      (error) => error.code === "pi_model_settings_invalid" && error.message.includes("cost"),
+      (error) => error.code === "pi_model_extensions_invalid" && error.message.includes("cost"),
     );
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
-test("rejects a model whose settings.max_tokens is not positive", async () => {
+test("rejects a model whose extensions.max_tokens is not positive", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-maxtok-")));
   const extensionPath = join(workspace, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
@@ -1168,14 +1168,14 @@ test("rejects a model whose settings.max_tokens is not positive", async () => {
               base_url: "https://gateway.example.test/v1",
               model: "custom-gateway-model",
               provider: "custom-gateway-provider",
-              settings: { api: "openai-completions", max_tokens: 0 },
+              extensions: { api: "openai-completions", max_tokens: 0 },
             },
           },
           tools: { enabled: [] },
         },
         runtimeContext: makeRuntimeContext(workspace),
       }),
-      (error) => error.code === "pi_model_settings_invalid" && error.message.includes("max_tokens"),
+      (error) => error.code === "pi_model_extensions_invalid" && error.message.includes("max_tokens"),
     );
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -1203,14 +1203,14 @@ test("keeps the selected role's credential and base URL when roles share a provi
             base_url: "https://other.example.test/v1",
             model: "custom-analysis-model",
             provider: "custom-gateway-provider",
-            settings: { api: "openai-completions" },
+            extensions: { api: "openai-completions" },
           },
           default: {
             api_key_env: "TEST_API_KEY",
             base_url: "https://selected.example.test/v1",
             model: "custom-default-model",
             provider: "custom-gateway-provider",
-            settings: { api: "openai-completions" },
+            extensions: { api: "openai-completions" },
           },
         },
         tools: { enabled: [] },

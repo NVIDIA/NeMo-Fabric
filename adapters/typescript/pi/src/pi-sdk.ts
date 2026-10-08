@@ -45,7 +45,7 @@ const DEFAULT_CONTEXT_WINDOW = 200000;
 const DEFAULT_MAX_TOKENS = 8192;
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 
-// The wire protocols Pi understands; a configured `settings.api` must be one of these.
+// The wire protocols Pi understands; a configured model extensions.api must be one of these.
 const SUPPORTED_MODEL_APIS = [
   "openai-completions",
   "openai-responses",
@@ -512,24 +512,25 @@ function selectModel(config: AgentConfig): AgentModelConfig {
 }
 
 /**
- * Build a Pi catalog model entry from a Fabric AgentModelConfig. Pi-specific metadata
- * (api, context_window, max_tokens, cost, reasoning, input) is read from the model's
- * `settings` (the field the nemo-agents translator populates), falling back to `extensions`.
+ * Build a Pi catalog model entry from a Fabric AgentModelConfig. Pi-specific catalog metadata
+ * (api, context_window, max_tokens, cost, reasoning, input) is adapter-owned data Fabric's
+ * normalized model fields can't express, so it is carried through the model `extensions` block
+ * (the `model` extension point, validated by this adapter's extension_schemas).
  *
  * `api` is special: it is a hard per-model wire-protocol identifier that cannot be guessed,
- * so it is NOT defaulted. When `settings.api` is set it must be a {@link SUPPORTED_MODEL_APIS}
+ * so it is NOT defaulted. When `extensions.api` is set it must be a {@link SUPPORTED_MODEL_APIS}
  * value; when absent it is left unset here, deferring to Pi (which inherits the api of a
  * built-in model with the same id, or rejects an unknown model — see registration).
  */
 function buildCatalogModel(model: AgentModelConfig): PiCatalogModel {
-  const meta = { ...((model.extensions ?? {}) as Record<string, unknown>), ...((model.settings ?? {}) as Record<string, unknown>) };
+  const meta = (model.extensions ?? {}) as Record<string, unknown>;
   const fail = (reason: string): never => {
-    throw new LifecycleError("pi_model_settings_invalid", reason, { metadata: { model: model.model } });
+    throw new LifecycleError("pi_model_extensions_invalid", reason, { metadata: { model: model.model } });
   };
   if (meta.api !== undefined && !SUPPORTED_MODEL_APIS.includes(meta.api as (typeof SUPPORTED_MODEL_APIS)[number])) {
     throw new LifecycleError(
       "pi_model_api_invalid",
-      `Unsupported model api '${String(meta.api)}'; settings.api must be one of: ${SUPPORTED_MODEL_APIS.join(", ")}`,
+      `Unsupported model api '${String(meta.api)}'; model extensions.api must be one of: ${SUPPORTED_MODEL_APIS.join(", ")}`,
       { metadata: { model: model.model } },
     );
   }
@@ -539,7 +540,7 @@ function buildCatalogModel(model: AgentModelConfig): PiCatalogModel {
       return fallback;
     }
     if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-      return fail(`settings.${field} must be a positive number`);
+      return fail(`model extensions.${field} must be a positive number`);
     }
     return value;
   };
@@ -564,7 +565,7 @@ function parseCost(value: unknown, fail: (reason: string) => never): PiCatalogMo
     return ZERO_COST;
   }
   if (typeof value !== "object" || value === null) {
-    return fail("settings.cost must be an object with numeric input/output/cacheRead/cacheWrite rates");
+    return fail("model extensions.cost must be an object with numeric input/output/cacheRead/cacheWrite rates");
   }
   const record = value as Record<string, unknown>;
   const rates = ["input", "output", "cacheRead", "cacheWrite"] as const;
@@ -572,7 +573,7 @@ function parseCost(value: unknown, fail: (reason: string) => never): PiCatalogMo
   for (const rate of rates) {
     const amount = record[rate];
     if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) {
-      return fail(`settings.cost.${rate} must be a non-negative number`);
+      return fail(`model extensions.cost.${rate} must be a non-negative number`);
     }
     parsed[rate] = amount;
   }
@@ -1029,11 +1030,11 @@ export class PiSdkSessionFactory implements PiSessionFactory {
           models,
         });
       } catch (error) {
-        // Pi rejects a model it cannot resolve an `api` for (not a built-in and no settings.api).
+        // Pi rejects a model it cannot resolve an `api` for (not a built-in and no extensions.api).
         // Surface it as an actionable Fabric error rather than leaking the SDK's wording.
         throw new LifecycleError(
           "pi_model_api_required",
-          `Set settings.api for each gateway-served model (one of: ${SUPPORTED_MODEL_APIS.join(", ")}); provider '${providerId}' has a model Pi cannot resolve an api for`,
+          `Set extensions.api for each gateway-served model (one of: ${SUPPORTED_MODEL_APIS.join(", ")}); provider '${providerId}' has a model Pi cannot resolve an api for`,
           { metadata: { provider: providerId, cause: error instanceof Error ? error.message : String(error) } },
         );
       }
