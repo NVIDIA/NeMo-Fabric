@@ -127,7 +127,7 @@ class EmailPhishingRuntime:
             base_dir=self._base_dir,
             agent_name=self._agent_name,
             model_name=self._model_name,
-            session_root=common_utils.session_root_id(request.context),
+            session_root=request.relay_session_root,
         ) as telemetry:
             result = await self._graph.ainvoke(
                 {

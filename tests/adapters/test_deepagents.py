@@ -807,7 +807,7 @@ REQUEST_UUID = "018f47a4-3af7-7d94-8e61-9f0f89b5d312"
     ("request_id", "expected_parent"),
     [(REQUEST_UUID, REQUEST_UUID), ("request-1", SESSION_ROOT)],
 )
-async def test_session_root_in_request_context_roots_relay_propagation(
+async def test_typed_session_root_roots_relay_propagation(
     tmp_path,
     make_payload,
     monkeypatch,
@@ -822,9 +822,8 @@ async def test_session_root_in_request_context_roots_relay_propagation(
     )
     payload = make_payload(tmp_path)
     payload["request"]["request_id"] = request_id
-    payload["request"]["context"] = {
-        adapter.common_utils.SESSION_ROOT_CONTEXT_KEY: SESSION_ROOT
-    }
+    payload["request"]["relay_session_root"] = SESSION_ROOT
+    payload["request"]["context"] = {"relay_session_root": REQUEST_UUID}
     payload["runtime_context"]["telemetry"] = {
         "relay_enabled": True,
         "metadata": {"telemetry_providers": ["relay"]},

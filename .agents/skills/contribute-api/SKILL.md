@@ -23,7 +23,7 @@ runtime or bindings.
 - Decide whether the CLI, PyO3 binding, Python SDK, type stubs, schemas, or the
   Python and TypeScript adapter-contract bindings must expose the new surface
 - Keep every affected public surface in parity
-- `RunRequest.relay_session_root` is a northbound string field projected into adapter context. Preserve its typed-field precedence over the legacy context key and the adapter's fallback for unusable UUIDs without expanding the southbound wire schema.
+- `RunRequest.relay_session_root` is forwarded as the typed `AgentRunRequest.relay_session_root` field. Keep Rust, Python, TypeScript, and schema representations in parity. Context keys do not control Relay propagation; preserve the adapter fallback for unusable UUIDs.
 - Update docs and examples in the same branch
 
 ## Minimum Acceptance

@@ -188,23 +188,6 @@ def test_two_requests_share_one_session_root(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.parametrize(
-    ("context", "expected"),
-    [
-        ({common_utils.SESSION_ROOT_CONTEXT_KEY: SESSION_UUID}, SESSION_UUID),
-        ({common_utils.SESSION_ROOT_CONTEXT_KEY: "agent-session-TnDtpPhP"}, None),
-        ({common_utils.SESSION_ROOT_CONTEXT_KEY: NIL_UUID}, None),
-        ({common_utils.SESSION_ROOT_CONTEXT_KEY: ZERO_SPAN_UUID}, None),
-        ({common_utils.SESSION_ROOT_CONTEXT_KEY: 7}, None),
-        ({"session_id": SESSION_UUID}, None),
-        ({}, None),
-        (None, None),
-    ],
-)
-def test_session_root_id(context: dict[str, Any] | None, expected: str | None):
-    assert common_utils.session_root_id(context) == expected
-
-
-@pytest.mark.parametrize(
     ("value", "expected"),
     [
         ("hello", "hello"),

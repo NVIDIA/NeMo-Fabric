@@ -171,7 +171,7 @@ construction.
 
 ## Choose A Lifecycle
 
-For Deep Agents and mini-SWE-agent, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. The typed field overrides `context["relay_session_root"]`; an unusable UUID falls back to per-request propagation. Other adapters do not consume this field.
+For Deep Agents, mini-SWE-agent, and the LangGraph custom-agent example, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. Core forwards the typed field as `AgentRunRequest.relay_session_root`; context keys do not control Relay propagation. An unusable UUID preserves per-request behavior. The remaining adapters do not consume this field.
 
 Pick the smallest lifecycle the consumer needs:
 

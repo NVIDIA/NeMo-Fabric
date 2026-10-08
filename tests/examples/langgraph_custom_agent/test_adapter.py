@@ -163,21 +163,21 @@ def test_runtime_continuation_state_is_isolated_between_runtimes(
 
 
 @pytest.mark.parametrize(
-    ("context", "expected"),
+    ("session_root", "expected"),
     [
         (
-            {"relay_session_root": "018f47a4-0000-7d94-8e61-9f0f89b5d312"},
+            "018f47a4-0000-7d94-8e61-9f0f89b5d312",
             "018f47a4-0000-7d94-8e61-9f0f89b5d312",
         ),
-        ({"relay_session_root": "agent-session-1"}, None),
-        ({}, None),
+        ("agent-session-1", "agent-session-1"),
+        (None, None),
     ],
 )
 def test_invoke_forwards_the_request_session_root_to_telemetry(
     monkeypatch,
     runtime_context_factory,
     agent_config_mapping,
-    context,
+    session_root,
     expected,
 ):
     seen: list[str | None] = []
@@ -209,7 +209,11 @@ def test_invoke_forwards_the_request_session_root_to_telemetry(
 
     asyncio.run(
         runtime.invoke(
-            AgentRunRequest(input="Team lunch is at noon.", context=context),
+            AgentRunRequest(
+                input="Team lunch is at noon.",
+                relay_session_root=session_root,
+                context={"relay_session_root": "ignored", "session_id": "ignored"},
+            ),
             RuntimeContext.from_mapping(
                 runtime_context_factory("runtime-1", "invocation-1")
             ),

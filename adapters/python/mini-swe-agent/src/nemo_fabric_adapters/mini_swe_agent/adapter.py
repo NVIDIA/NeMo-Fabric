@@ -132,7 +132,7 @@ class MiniSweAgentRuntime:
         telemetry_errors: list[str] = []
         if self._relay_enabled:
             result, telemetry_errors = await self._run_with_relay(
-                task, context, common_utils.session_root_id(request.context)
+                task, context, request.relay_session_root
             )
         else:
             result = await self._run_agent(task)

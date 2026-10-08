@@ -11,7 +11,6 @@ import os
 import re
 import sys
 import uuid
-from collections.abc import Mapping
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -260,9 +259,6 @@ def native_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
     return config if isinstance(config, dict) else {}
 
 
-SESSION_ROOT_CONTEXT_KEY = "relay_session_root"
-
-
 def _uuid_or_none(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -274,12 +270,6 @@ def _uuid_or_none(value: object) -> str | None:
     if not any(parsed.bytes[8:]):
         return None
     return str(parsed)
-
-
-def session_root_id(context: Mapping[str, Any] | None) -> str | None:
-    """Return the usable Relay session root, else ``None``; never reads ``session_id``."""
-
-    return _uuid_or_none(context.get(SESSION_ROOT_CONTEXT_KEY)) if context else None
 
 
 def relay_request_context(

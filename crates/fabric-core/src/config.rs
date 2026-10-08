@@ -6723,6 +6723,7 @@ mod tests {
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         let request = AgentRunRequest {
             input: serde_json::json!("review"),
+            relay_session_root: None,
             context: BTreeMap::new(),
             extensions: BTreeMap::from([("profile".to_string(), serde_json::json!("strict"))]),
         };

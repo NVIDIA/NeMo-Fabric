@@ -735,7 +735,7 @@ class DeepAgentsRuntime:
                 user_message,
                 request_id,
                 runtime_context.invocation_id,
-                common_utils.session_root_id(request.context),
+                request.relay_session_root,
             )
 
         if outcome.error is None:

@@ -131,11 +131,11 @@ other request IDs remain available as `nemo_fabric_request_id` metadata. The
 helper always preserves that metadata so Relay-backed streaming can identify
 the active turn.
 
-Pass `session_root_id(request.context)` as the helper's `session_root` to let a
-caller group invocations into one Relay session. It reads
-`SESSION_ROOT_CONTEXT_KEY` (`relay_session_root`) from the run request context.
-
-SDK callers set `RunRequest.relay_session_root`; core projects this field into the adapter context and gives it precedence over the legacy context key.
+Pass `request.relay_session_root` as the helper's `session_root` to let a
+caller group invocations into one Relay session. SDK callers set
+`RunRequest.relay_session_root`; core forwards it as the typed
+`AgentRunRequest.relay_session_root` field. Context keys do not control Relay
+propagation.
 When that value is a UUID string Relay accepts, it becomes the propagated root
 and is recorded as `nemo_fabric_session_root` metadata. A UUID request ID stays
 the parent; otherwise the session root is also the parent. Relay derives ATIF

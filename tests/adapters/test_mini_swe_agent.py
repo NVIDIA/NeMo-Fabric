@@ -474,7 +474,7 @@ REQUEST_UUID = "018f47a4-3af7-7d94-8e61-9f0f89b5d312"
     ("request_id", "expected_parent"),
     [(REQUEST_UUID, REQUEST_UUID), ("request-1", SESSION_ROOT)],
 )
-async def test_session_root_in_request_context_roots_relay_propagation(
+async def test_typed_session_root_roots_relay_propagation(
     mock_mini,
     mini_payload,
     mock_relay,
@@ -487,9 +487,8 @@ async def test_session_root_in_request_context_roots_relay_propagation(
             "telemetry": {"relay_enabled": True},
         }
     )
-    mini_payload["request"]["context"] = {
-        adapter.common_utils.SESSION_ROOT_CONTEXT_KEY: SESSION_ROOT
-    }
+    mini_payload["request"]["relay_session_root"] = SESSION_ROOT
+    mini_payload["request"]["context"] = {"relay_session_root": REQUEST_UUID}
     runtime = adapter.MiniSweAgentRuntime()
     start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
     await runtime.start(start)
@@ -507,19 +506,15 @@ async def test_session_root_in_request_context_roots_relay_propagation(
 
 
 @pytest.mark.parametrize(
-    "context",
-    [
-        {adapter.common_utils.SESSION_ROOT_CONTEXT_KEY: ""},
-        {adapter.common_utils.SESSION_ROOT_CONTEXT_KEY: "not-a-uuid"},
-        {"session_id": SESSION_ROOT},
-    ],
-    ids=["empty", "non-uuid", "bare-session-id"],
+    "session_root",
+    ["", "not-a-uuid", None],
+    ids=["empty", "non-uuid", "context-keys-ignored"],
 )
 async def test_unusable_session_root_falls_back_to_the_request_root(
     mock_mini,
     mini_payload,
     mock_relay,
-    context,
+    session_root,
 ):
     mini_payload["runtime_context"].update(
         {
@@ -527,7 +522,11 @@ async def test_unusable_session_root_falls_back_to_the_request_root(
             "telemetry": {"relay_enabled": True},
         }
     )
-    mini_payload["request"]["context"] = context
+    mini_payload["request"]["relay_session_root"] = session_root
+    mini_payload["request"]["context"] = {
+        "relay_session_root": SESSION_ROOT,
+        "session_id": SESSION_ROOT,
+    }
     runtime = adapter.MiniSweAgentRuntime()
     start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
     await runtime.start(start)

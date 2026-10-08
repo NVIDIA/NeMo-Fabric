@@ -2673,13 +2673,6 @@ fn adapter_invocation(
 }
 
 fn project_agent_run_request(request: &RunRequest) -> Result<AgentRunRequest> {
-    let mut context = request.context.clone();
-    if let Some(root) = &request.relay_session_root {
-        context.insert(
-            "relay_session_root".to_string(),
-            Value::String(root.clone()),
-        );
-    }
     let extensions = match &request.overrides {
         Some(Value::Object(extensions)) => extensions
             .iter()
@@ -2695,7 +2688,8 @@ fn project_agent_run_request(request: &RunRequest) -> Result<AgentRunRequest> {
     };
     Ok(AgentRunRequest {
         input: request.input.clone(),
-        context,
+        relay_session_root: request.relay_session_root.clone(),
+        context: request.context.clone(),
         extensions,
     })
 }
@@ -4765,7 +4759,7 @@ for line in sys.stdin:
     }
 
     #[test]
-    fn typed_session_root_projects_into_adapter_context() {
+    fn typed_session_root_projects_into_adapter_request() {
         let root = "018f47a4-3af7-7d94-8e61-9f0f89b5d312";
         let mut request = RunRequest::text("first turn");
         request.relay_session_root = Some(root.to_string());
@@ -4774,15 +4768,25 @@ for line in sys.stdin:
             serde_json::json!("legacy"),
         );
         let projected = project_agent_run_request(&request).expect("project request");
-        assert_eq!(projected.context["relay_session_root"], root);
+        assert_eq!(projected.relay_session_root.as_deref(), Some(root));
+        assert_eq!(projected.context["relay_session_root"], "legacy");
+        let wire = serde_json::to_value(&projected).unwrap();
+        assert_eq!(wire["relay_session_root"], root);
+        let decoded_adapter: AgentRunRequest = serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded_adapter, projected);
         assert_eq!(request.context["relay_session_root"], "legacy");
         let decoded: RunRequest =
             serde_json::from_value(serde_json::to_value(&request).unwrap()).unwrap();
         assert_eq!(decoded.relay_session_root.as_deref(), Some(root));
         request.relay_session_root = None;
-        assert_eq!(
-            project_agent_run_request(&request).unwrap().context["relay_session_root"],
-            "legacy"
+        let projected = project_agent_run_request(&request).unwrap();
+        assert_eq!(projected.relay_session_root, None);
+        assert_eq!(projected.context["relay_session_root"], "legacy");
+        assert!(
+            serde_json::to_value(projected)
+                .unwrap()
+                .get("relay_session_root")
+                .is_none()
         );
     }
 

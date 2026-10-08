@@ -95,6 +95,7 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
             first_request = RunRequest(
                 input="first",
                 relay_session_root=session_root,
+                context={"relay_session_root": "018f47a4-3af7-7d94-8e61-9f0f89b5d399"},
                 **({"request_id": str(uuid.uuid4())} if uuid_request_ids else {}),
             )
             first_stream = runtime.invoke_stream(request=first_request)
@@ -112,6 +113,7 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
             second_request = RunRequest(
                 input="second",
                 relay_session_root=session_root,
+                context={"relay_session_root": "018f47a4-3af7-7d94-8e61-9f0f89b5d399"},
                 **({"request_id": str(uuid.uuid4())} if uuid_request_ids else {}),
             )
             second_stream = runtime.invoke_stream(request=second_request)

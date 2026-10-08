@@ -15,6 +15,13 @@
     },
     "input": {
       "description": "Request payload for the adapter target."
+    },
+    "relay_session_root": {
+      "description": "UUID propagation root shared across conversation turns.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

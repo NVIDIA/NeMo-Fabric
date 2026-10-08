@@ -439,6 +439,7 @@ class AgentRunRequest(AgentContractBlock):
     """Southbound invocation request passed to an adapter target."""
 
     input: JsonValue = _json_value_field()
+    relay_session_root: str | None = _optional()
     context: dict[str, JsonValue] = _json_dict()
 
 
