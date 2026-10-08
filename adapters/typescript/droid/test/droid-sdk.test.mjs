@@ -202,6 +202,44 @@ test("maps replacement instructions and native stdio, HTTP, and SSE MCP configur
   await handle.stop();
 });
 
+test("preserves Factory settings without copying ambient MCP configuration", async (t) => {
+  const sourceHome = await mkdtemp(join(tmpdir(), "fabric-droid-factory-home-"));
+  t.after(() => rm(sourceHome, { recursive: true, force: true }));
+  const sourceFactory = join(sourceHome, ".factory");
+  await mkdir(sourceFactory, { recursive: true });
+  const settings = {
+    customModels: [{
+      model: "nvidia/nemotron-3-super-120b-a12b",
+      displayName: "NVIDIA Nemotron 3 Super",
+      baseUrl: "https://integrate.api.nvidia.com/v1",
+      apiKey: "${NVIDIA_API_KEY}",
+      provider: "generic-chat-completion-api",
+      maxOutputTokens: 4096,
+    }],
+  };
+  await writeFile(join(sourceFactory, "settings.json"), `${JSON.stringify(settings)}\n`);
+  await writeFile(join(sourceFactory, "mcp.json"), '{"mcpServers":{"ambient":{"type":"stdio"}}}\n');
+  const sdk = fakeSdk({ mcpReport: { servers: [{ name: "configured", status: "connected" }] } });
+
+  const handle = await new DroidSdkSessionFactory(
+    sdk.loader,
+    10_000,
+    { FACTORY_HOME_OVERRIDE: sourceHome },
+  ).create(input({
+    tools: undefined,
+    mcp: { servers: { configured: { transport: "stdio", url: "node" } } },
+  }));
+  const runtimeFactory = join(sdk.calls.create[0].env.HOME, ".factory");
+  assert.deepEqual(JSON.parse(await readFile(join(runtimeFactory, "settings.json"), "utf8")), settings);
+  assert.deepEqual(JSON.parse(await readFile(join(runtimeFactory, "mcp.json"), "utf8")), {
+    mcpServers: {
+      configured: { type: "stdio", command: "node", args: [], env: {}, disabled: false },
+    },
+  });
+
+  await handle.stop();
+});
+
 test("waits for configured MCP servers to connect", async () => {
   const sdk = fakeSdk({
     mcpReport(call) {

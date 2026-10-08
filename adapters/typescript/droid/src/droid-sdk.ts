@@ -245,6 +245,7 @@ interface RuntimeProfile {
 async function prepareRuntimeProfile(
   input: AdapterStartInput,
   mcpServers: Record<string, JsonObject>,
+  parentEnvironment: NodeJS.ProcessEnv,
 ): Promise<RuntimeProfile> {
   if (input.config.skills?.extensions !== undefined) {
     throw new LifecycleError("droid_skill_extensions_unsupported", "Droid does not support skill extensions");
@@ -254,10 +255,28 @@ async function prepareRuntimeProfile(
 
   const root = await mkdtemp(join(tmpdir(), "nemo-fabric-droid-"));
   const home = join(root, "home");
+  const factoryRoot = join(home, ".factory");
   const skillsRoot = join(home, ".agents", "skills");
   try {
+    const sourceHome =
+      parentEnvironment.FACTORY_HOME_OVERRIDE || parentEnvironment.HOME || parentEnvironment.USERPROFILE;
+    if (sourceHome !== undefined) {
+      const sourceSettings = join(sourceHome, ".factory", "settings.json");
+      try {
+        if ((await stat(sourceSettings)).isFile()) {
+          await mkdir(factoryRoot, { recursive: true });
+          await cp(sourceSettings, join(factoryRoot, "settings.json"), { errorOnExist: true });
+        }
+      } catch (error) {
+        if (!(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")) {
+          throw new LifecycleError(
+            "droid_settings_unavailable",
+            "Droid settings could not be copied into the isolated NeMo Fabric runtime",
+          );
+        }
+      }
+    }
     if (Object.keys(mcpServers).length > 0) {
-      const factoryRoot = join(home, ".factory");
       await mkdir(factoryRoot, { recursive: true });
       await writeFile(
         join(factoryRoot, "mcp.json"),
@@ -583,10 +602,16 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
 export class DroidSdkSessionFactory implements DroidSessionFactory {
   private readonly loader: DroidSdkLoader;
   private readonly mcpStartupTimeoutMs: number;
+  private readonly parentEnvironment: NodeJS.ProcessEnv;
 
-  constructor(loader: DroidSdkLoader = loadDroidSdk, mcpStartupTimeoutMs = MCP_STARTUP_TIMEOUT_MS) {
+  constructor(
+    loader: DroidSdkLoader = loadDroidSdk,
+    mcpStartupTimeoutMs = MCP_STARTUP_TIMEOUT_MS,
+    parentEnvironment: NodeJS.ProcessEnv = process.env,
+  ) {
     this.loader = loader;
     this.mcpStartupTimeoutMs = mcpStartupTimeoutMs;
+    this.parentEnvironment = parentEnvironment;
   }
 
   async create(input: AdapterStartInput): Promise<DroidSessionHandle> {
@@ -611,7 +636,7 @@ export class DroidSdkSessionFactory implements DroidSessionFactory {
         `Droid does not support instructions.system.mode='${instruction.mode}'; supported modes: replace, append`,
       );
     }
-    const runtimeProfile = await prepareRuntimeProfile(input, mcpServers);
+    const runtimeProfile = await prepareRuntimeProfile(input, mcpServers, this.parentEnvironment);
 
     let session: DroidSdkSession | undefined;
     try {

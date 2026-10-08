@@ -86,6 +86,9 @@ Configured skill directories are copied into a runtime-scoped temporary home
 using Droid's compatible personal `.agents/skills` layout. The adapter verifies
 them with `listSkills()` and removes the temporary home during shutdown. This
 keeps Fabric-provided skills isolated without modifying the workspace.
+The isolated profile preserves Factory `settings.json` for custom model
+definitions but does not copy ambient MCP configuration or authentication
+state.
 
 The adapter intentionally does not accept normalized custom model endpoints.
 Droid custom endpoints are configured outside a session in Droid settings. It
