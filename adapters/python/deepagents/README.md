@@ -292,7 +292,7 @@ includes the NeMo Relay Python package.
     scope, so the whole NeMo Fabric turn is captured under one Agent scope.
     A UUID `request_id` roots that scope's propagation. To group turns into one
     Relay session, send the same UUID string as
-    `RunRequest.context["relay_session_root"]`
+    `RunRequest.relay_session_root`
     on each invocation: it becomes the propagated root, a UUID `request_id`
     stays the parent (otherwise the session root is), and ATIF exports one trajectory per turn under one `session_id`.
     Values Relay cannot use fall back to the request root without an error.

@@ -145,7 +145,7 @@ package or job layout, so nothing depends on the process working directory.
   limit, runtime, environment, tools, skills, MCP, and telemetry.
 - Supply request context through `RunRequest.context` for each invocation;
   request context is not part of `FabricConfig`. To group invocations into one
-  NeMo Relay session, set `RunRequest.context["relay_session_root"]` to the
+  NeMo Relay session, set `RunRequest.relay_session_root` to the
   same UUID string on each. Adapters that own an in-process Relay Agent scope
   root propagation at it. An unusable value falls back to per-request sessions
   without an error.

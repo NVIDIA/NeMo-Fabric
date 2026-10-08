@@ -990,13 +990,15 @@ but does not copy them into `RunResult.metadata`. Use `request_id` and
 contains adapter-specific result details.
 
 To group several invocations into one NeMo Relay session, set
-`RunRequest.context["relay_session_root"]` to the same UUID string on each
+`RunRequest.relay_session_root` to the same UUID string on each
 invocation. Deep Agents and mini-SWE-agent, which own an in-process Relay Agent
 scope, use it as the propagated Relay root. A UUID `request_id` stays the
 parent; otherwise the session root is also the parent. ATIF exports one
 trajectory per invocation under one `session_id`. An unusable value falls back
 to the per-request root without an error, and the invocation still succeeds. A
 context key named `session_id` does not group traces.
+
+For example, invoke each turn with `RunRequest(input=message, relay_session_root=conversation_uuid)`. The typed field takes precedence over the legacy `context["relay_session_root"]` key. Omitting both preserves per-request behavior.
 
 Adapter settings are not portable by default. The exact descriptor selected
 during planning owns their JSON Schema. Planning and doctor reject settings

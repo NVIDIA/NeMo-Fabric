@@ -77,6 +77,9 @@ static LOCAL_SERVICES: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalServiceRec
 pub struct RunRequest {
     /// Request id.
     pub request_id: String,
+    /// Optional UUID propagation root shared across conversation turns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relay_session_root: Option<String>,
     /// Request payload for the harness.
     #[serde(default)]
     pub input: Value,
@@ -93,6 +96,7 @@ impl RunRequest {
     pub fn text(input: impl Into<String>) -> Self {
         Self {
             request_id: new_id("request"),
+            relay_session_root: None,
             input: Value::String(input.into()),
             context: BTreeMap::new(),
             overrides: None,
@@ -2669,6 +2673,13 @@ fn adapter_invocation(
 }
 
 fn project_agent_run_request(request: &RunRequest) -> Result<AgentRunRequest> {
+    let mut context = request.context.clone();
+    if let Some(root) = &request.relay_session_root {
+        context.insert(
+            "relay_session_root".to_string(),
+            Value::String(root.clone()),
+        );
+    }
     let extensions = match &request.overrides {
         Some(Value::Object(extensions)) => extensions
             .iter()
@@ -2684,7 +2695,7 @@ fn project_agent_run_request(request: &RunRequest) -> Result<AgentRunRequest> {
     };
     Ok(AgentRunRequest {
         input: request.input.clone(),
-        context: request.context.clone(),
+        context,
         extensions,
     })
 }
@@ -4730,6 +4741,7 @@ for line in sys.stdin:
     fn agent_run_request_projection_keeps_only_southbound_fields() {
         let request = RunRequest {
             request_id: "request-1".to_string(),
+            relay_session_root: None,
             input: serde_json::json!({"task": "review"}),
             context: BTreeMap::from([("rollout".to_string(), serde_json::json!(2))]),
             overrides: Some(serde_json::json!({"acme": {"mode": "strict"}})),
@@ -4749,6 +4761,28 @@ for line in sys.stdin:
                 .as_object()
                 .expect("request object")
                 .contains_key("request_id")
+        );
+    }
+
+    #[test]
+    fn typed_session_root_projects_into_adapter_context() {
+        let root = "018f47a4-3af7-7d94-8e61-9f0f89b5d312";
+        let mut request = RunRequest::text("first turn");
+        request.relay_session_root = Some(root.to_string());
+        request.context.insert(
+            "relay_session_root".to_string(),
+            serde_json::json!("legacy"),
+        );
+        let projected = project_agent_run_request(&request).expect("project request");
+        assert_eq!(projected.context["relay_session_root"], root);
+        assert_eq!(request.context["relay_session_root"], "legacy");
+        let decoded: RunRequest =
+            serde_json::from_value(serde_json::to_value(&request).unwrap()).unwrap();
+        assert_eq!(decoded.relay_session_root.as_deref(), Some(root));
+        request.relay_session_root = None;
+        assert_eq!(
+            project_agent_run_request(&request).unwrap().context["relay_session_root"],
+            "legacy"
         );
     }
 

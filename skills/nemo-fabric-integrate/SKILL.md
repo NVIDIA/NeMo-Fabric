@@ -171,6 +171,8 @@ construction.
 
 ## Choose A Lifecycle
 
+For Deep Agents and mini-SWE-agent, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. The typed field overrides `context["relay_session_root"]`; an unusable UUID falls back to per-request propagation. Other adapters do not consume this field.
+
 Pick the smallest lifecycle the consumer needs:
 
 - **Single invocation** — one input, no retained state after the call.

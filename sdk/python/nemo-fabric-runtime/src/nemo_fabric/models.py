@@ -1241,6 +1241,10 @@ class RunRequest(FabricBaseModel):
     """One validated NeMo Fabric invocation request."""
 
     input: Any = ""
+    relay_session_root: str | None = Field(
+        default=None,
+        description="UUID propagation root shared across conversation turns; unusable values fall back to the request ID.",
+    )
     request_id: str = Field(
         default_factory=lambda: f"request-{uuid.uuid4().hex}",
         min_length=1,

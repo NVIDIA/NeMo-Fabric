@@ -19,6 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 from nemo_fabric_adapters.deepagents import adapter
+from nemo_fabric_adapters.common.utils import relay_request_context
 
 nemo_relay = pytest.importorskip("nemo_relay", reason="requires the nemo-relay extra")
 
@@ -83,6 +84,31 @@ async def test_a_clean_turn_leaves_the_stack_restored():
         await asyncio.sleep(0)
 
     assert adapter._scope_top_unchanged(baseline) is True
+
+
+@pytest.mark.parametrize(
+    "request_ids",
+    [
+        [
+            "018f47a4-3af7-7d94-8e61-9f0f89b5d312",
+            "018f47a4-3af7-7d94-8e61-9f0f89b5d313",
+        ],
+        ["request-first", "request-second"],
+    ],
+)
+def test_two_turns_share_a_real_relay_root_and_restore_scope(request_ids):
+    root = "018f47a4-3af7-7d94-8e61-9f0f89b5d314"
+    baseline = nemo_relay.scope.get_handle()
+    roots = []
+    for request_id in request_ids:
+        context, metadata = relay_request_context(request_id, root)
+        with context:
+            with nemo_relay.scope.scope("turn", nemo_relay.ScopeType.Agent):
+                propagation = nemo_relay.capture_propagation_context()
+                roots.append(str(propagation.root_uuid))
+                assert metadata["nemo_fabric_request_id"] == request_id
+        assert nemo_relay.scope.get_handle().uuid == baseline.uuid
+    assert roots == [root, root]
 
 
 class _RecordingScope:

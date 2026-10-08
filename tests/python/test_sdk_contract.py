@@ -1899,6 +1899,17 @@ def test_run_request_constructor_generates_request_metadata():
     assert request.context == {}
 
 
+def test_run_request_has_typed_relay_session_root():
+    root = "018f47a4-3af7-7d94-8e61-9f0f89b5d312"
+    request = RunRequest(input="hello", relay_session_root=root)
+    assert request.relay_session_root == root
+    assert request.to_mapping()["relay_session_root"] == root
+    assert "relay_session_root" not in request.extra_fields
+    assert "relay_session_root" not in RunRequest(input="hello").to_mapping()
+    with pytest.raises(ValidationError):
+        RunRequest(input="hello", relay_session_root=123)
+
+
 def test_run_request_preserves_extension_fields():
     request = RunRequest(
         input={"messages": [{"role": "user", "content": "hello"}]},
@@ -2238,6 +2249,7 @@ async def test_runtime_invoke_accepts_run_request():
         request=RunRequest(
             input="hello",
             request_id="request-2",
+            relay_session_root="018f47a4-3af7-7d94-8e61-9f0f89b5d312",
             context={"job_id": "job-2"},
             overrides={"request": True, "limits": {"request": 1}},
         ),
@@ -2248,6 +2260,7 @@ async def test_runtime_invoke_accepts_run_request():
     assert native.requests[0] == {
         "input": "hello",
         "request_id": "request-2",
+        "relay_session_root": "018f47a4-3af7-7d94-8e61-9f0f89b5d312",
         "context": {"job_id": "job-2"},
         "overrides": {
             "runtime": True,

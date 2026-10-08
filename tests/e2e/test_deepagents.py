@@ -10,10 +10,12 @@ RUN_FABRIC_DEEPAGENTS_INTEGRATION=1 NVIDIA_API_KEY=... \
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
 import uuid
 import warnings
+from pathlib import Path
 
 import pytest
 import requests
@@ -54,8 +56,9 @@ async def test_deepagents_persistent_host_with_mock_model(api_server, tmp_path):
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+@pytest.mark.parametrize("session_root", [None, "018f47a4-3af7-7d94-8e61-9f0f89b5d314"])
 async def test_deepagents_persistent_host_with_relay_and_mock_model(
-    api_server, tmp_path
+    api_server, tmp_path, session_root
 ):
     pytest.importorskip("deepagents")
     from examples.code_review_agent import deepagents_config, with_relay
@@ -81,19 +84,44 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
             base_dir=tmp_path,
             streaming=True,
         ) as runtime:
-            first_request = RunRequest(input="first", request_id=str(uuid.uuid4()))
+            first_request = RunRequest(
+                input="first",
+                request_id=str(uuid.uuid4()),
+                relay_session_root=session_root,
+            )
             first_stream = runtime.invoke_stream(request=first_request)
             first_records = [record async for record in first_stream]
             first = await first_stream.result()
+            first_atif_paths = {
+                a["path"]
+                for a in first["output"]["relay_artifacts"]
+                if a["kind"] == "atif"
+            }
+            first_atif = json.loads(Path(next(iter(first_atif_paths))).read_text())
 
-            second_request = RunRequest(input="second", request_id=str(uuid.uuid4()))
+            second_request = RunRequest(
+                input="second",
+                request_id=str(uuid.uuid4()),
+                relay_session_root=session_root,
+            )
             second_stream = runtime.invoke_stream(request=second_request)
             second_records = [record async for record in second_stream]
             second = await second_stream.result()
+            second_atif = json.loads(
+                Path(
+                    next(
+                        a["path"]
+                        for a in second["output"]["relay_artifacts"]
+                        if a["kind"] == "atif" and a["path"] not in first_atif_paths
+                    )
+                ).read_text()
+            )
 
     results = (first.to_mapping(), second.to_mapping())
     assert first_records
     assert second_records
+    assert first_atif["session_id"] == (session_root or first_request.request_id)
+    assert second_atif["session_id"] == (session_root or second_request.request_id)
     for request, records in (
         (first_request, first_records),
         (second_request, second_records),

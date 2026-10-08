@@ -763,14 +763,10 @@ def test_load_relay_plugin_config_preserves_core_authored_atif_model_name(
         metadata=MetadataConfig(name="core-authored-relay-test"),
         harness=HarnessConfig(adapter_id="nvidia.fabric.codex"),
         discovery=DiscoveryConfig(local_paths=[CODEX_DESCRIPTOR]),
-        models={
-            "default": ModelConfig(provider="openai", model="gpt-5-codex")
-        },
+        models={"default": ModelConfig(provider="openai", model="gpt-5-codex")},
     )
     config.enable_relay(
-        observability=RelayObservabilityConfig(
-            atif=RelayAtifConfig(enabled=True)
-        )
+        observability=RelayObservabilityConfig(atif=RelayAtifConfig(enabled=True))
     )
     plan = Fabric().plan(config, base_dir=ROOT)
     relay_config = plan.telemetry_plan["relay_config"]
@@ -790,8 +786,7 @@ def test_load_relay_plugin_config_preserves_core_authored_atif_model_name(
     )
 
     assert (
-        plugin_config["components"][0]["config"]["atif"]["model_name"]
-        == "gpt-5-codex"
+        plugin_config["components"][0]["config"]["atif"]["model_name"] == "gpt-5-codex"
     )
 
 

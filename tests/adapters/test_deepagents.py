@@ -184,7 +184,9 @@ def fake_sdks_fixture(monkeypatch):
                 raise recorder["stream_error"]
             recorder["astream_agent"] = agent_name
             recorder["astream_recursion_limit"] = recorder.get(
-                "bound_recursion_limit" if agent_name == "bound" else "original_recursion_limit"
+                "bound_recursion_limit"
+                if agent_name == "bound"
+                else "original_recursion_limit"
             )
             recorder["config"] = config
             recorder["subgraphs"] = subgraphs
@@ -1683,7 +1685,9 @@ async def test_local_shell_backend_requires_workspace(tmp_path, make_payload):
     }
     payload["config"]["tools"] = {"enabled": ["execute"]}
 
-    with pytest.raises(adapter.AdapterConfigError, match="requires environment.workspace"):
+    with pytest.raises(
+        adapter.AdapterConfigError, match="requires environment.workspace"
+    ):
         await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
@@ -1728,11 +1732,7 @@ async def test_local_shell_backend_accepts_explicit_execute_policy(
     ("settings", "error_path"),
     [
         (
-            {
-                "interrupt_on": {
-                    "execute": {"allowed_decisions": ["approve", "reject"]}
-                }
-            },
+            {"interrupt_on": {"execute": {"allowed_decisions": ["approve", "reject"]}}},
             "interrupt_on.execute",
         ),
         (
@@ -1851,9 +1851,7 @@ async def test_omitted_max_turns_preserves_deepagents_default(
     assert fake_sdks["astream_recursion_limit"] is None
 
 
-async def test_recursion_limit_failure_is_normalized(
-    tmp_path, make_payload, fake_sdks
-):
+async def test_recursion_limit_failure_is_normalized(tmp_path, make_payload, fake_sdks):
     fake_sdks["stream_error"] = GraphRecursionError("internal limit details")
 
     result = await invoke_once(make_payload(tmp_path))
