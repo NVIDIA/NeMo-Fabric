@@ -47,6 +47,7 @@ class OpenHandsApi(NamedTuple):
     TerminalTool: Any
     FileEditorTool: Any
     get_agent_final_response: Any
+    default_condenser: Any
 
 
 def _load_openhands_api() -> OpenHandsApi:
@@ -68,6 +69,7 @@ def _load_openhands_api() -> OpenHandsApi:
     from openhands.sdk import ConversationExecutionStatus
     from openhands.sdk import LLM
     from openhands.sdk import Tool
+    from openhands.sdk.context.condenser import default_condenser
     from openhands.sdk.conversation import get_agent_final_response
     from openhands.sdk.conversation.impl.local_conversation import LocalConversation
     from openhands.sdk.mcp import MCPServer
@@ -88,6 +90,7 @@ def _load_openhands_api() -> OpenHandsApi:
         TerminalTool=TerminalTool,
         FileEditorTool=FileEditorTool,
         get_agent_final_response=get_agent_final_response,
+        default_condenser=default_condenser,
     )
 
 
@@ -342,6 +345,9 @@ class OpenHandsRuntime:
             "tools": _tools(api, config),
             "mcp_config": _mcp_servers(api, config),
             "agent_context": agent_context,
+            # Share the agent LLM instead of a copy so summarization calls
+            # accrue to the metrics that invoke() reports as usage.
+            "condenser": api.default_condenser(llm),
         }
         if instruction is not None and instruction.mode == "replace":
             agent_kwargs["system_prompt"] = instruction.content

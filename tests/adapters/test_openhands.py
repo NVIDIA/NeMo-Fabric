@@ -124,6 +124,7 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
     conversation.arun = AsyncMock(side_effect=arun)
     conversation.close = MagicMock()
     conversation_factory = MagicMock(return_value=conversation)
+    default_condenser = MagicMock()
 
     api = adapter.OpenHandsApi(
         Agent=agent_factory,
@@ -138,6 +139,7 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
         TerminalTool=SimpleNamespace(name="TerminalTool"),
         FileEditorTool=SimpleNamespace(name="FileEditorTool"),
         get_agent_final_response=lambda events: events[-1] if events else "",
+        default_condenser=default_condenser,
     )
     monkeypatch.setattr(adapter, "_load_openhands_api", lambda: api)
     calls.update(
@@ -146,6 +148,7 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
             "agent_factory": agent_factory,
             "conversation": conversation,
             "conversation_factory": conversation_factory,
+            "default_condenser": default_condenser,
             "llm_factory": llm_factory,
             "mcp_server_factory": mcp_server_factory,
             "skill_type": skill_type,
@@ -279,6 +282,21 @@ async def test_start_maps_normalized_configuration(
         mock_openhands["conversation_factory"].call_args.kwargs["profile_store_dir"]
     )
     assert profile_store.is_dir()
+
+
+async def test_start_condenses_history_with_the_agent_llm(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
+
+    llm = mock_openhands["llm_factory"].return_value
+    default_condenser = mock_openhands["default_condenser"]
+    default_condenser.assert_called_once_with(llm)
+    agent_kwargs = mock_openhands["agent_factory"].call_args.kwargs
+    assert agent_kwargs["condenser"] is default_condenser.return_value
 
 
 async def test_replace_instruction_uses_exact_system_prompt(
