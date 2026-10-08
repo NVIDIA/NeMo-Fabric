@@ -1182,7 +1182,7 @@ test("rejects a model whose extensions.max_tokens is not positive", async () => 
   }
 });
 
-test("registers each role's own model with its own base URL when roles share a provider", async () => {
+test("registers only the selected role's model when multiple roles are configured", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-selected-")));
   const extensionPath = join(workspace, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
@@ -1196,9 +1196,8 @@ test("registers each role's own model with its own base URL when roles share a p
       config: {
         harness: { settings: { relay_extension_path: extensionPath } },
         models: {
-          // A second role under the same provider is declared FIRST with a different base URL;
-          // the selected default role resolves to its OWN base URL (Pi uses the per-model url),
-          // never the sibling's.
+          // Only the `default` role is registered/used; the sibling never reaches Pi, so there
+          // is no cross-role credential/base-URL contamination.
           analysis: {
             api_key_env: "TEST_API_KEY",
             base_url: "https://other.example.test/v1",
@@ -1220,6 +1219,45 @@ test("registers each role's own model with its own base URL when roles share a p
     });
     await runtime.stop();
     assert.equal(capture.model.baseUrl, "https://selected.example.test/v1");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("rejects multiple model roles with no default", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-ambiguous-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  const factory = captureModelFactory({});
+  try {
+    await assert.rejects(
+      factory.create({
+        agentName: "pi-catalog-ambiguous",
+        baseDir: workspace,
+        config: {
+          harness: { settings: { relay_extension_path: extensionPath } },
+          models: {
+            reviewer_a: {
+              api_key_env: "TEST_API_KEY",
+              base_url: "https://a.example.test/v1",
+              model: "model-a",
+              provider: "custom-gateway-provider",
+              extensions: { api: "openai-completions" },
+            },
+            reviewer_b: {
+              api_key_env: "TEST_API_KEY",
+              base_url: "https://b.example.test/v1",
+              model: "model-b",
+              provider: "custom-gateway-provider",
+              extensions: { api: "openai-completions" },
+            },
+          },
+          tools: { enabled: [] },
+        },
+        runtimeContext: makeRuntimeContext(workspace),
+      }),
+      (error) => error.code === "pi_model_ambiguous",
+    );
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

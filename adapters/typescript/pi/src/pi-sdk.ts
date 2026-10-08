@@ -982,50 +982,32 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     await modelRuntime.setRuntimeApiKey(selected.provider, apiKey);
     const relayEnabled = input.runtimeContext.telemetry?.relay_enabled === true;
 
-    // Register the configured models into Pi's catalog, grouped by provider (registerProvider is
-    // provider-keyed and overwrites `models` per provider). Required because the runtime uses
+    // Register the selected model into Pi's catalog. Required because the runtime uses
     // modelsPath:null + allowModelNetwork:false, so a gateway model isn't otherwise known.
-    //
-    // In practice a Fabric agent runs ONE model per session (one role), so there is normally a
-    // single entry here; the loop simply registers whatever roles the config declares. Each
-    // model carries its own baseUrl (from buildCatalogModel), which Pi resolves ahead of any
-    // provider-level baseUrl, so no provider-wide URL is synthesized from one role.
-    const modelsByProvider = new Map<string, AgentModelConfig[]>();
-    for (const entry of Object.values(input.config.models ?? {})) {
-      const group = modelsByProvider.get(entry.provider) ?? [];
-      group.push(entry);
-      modelsByProvider.set(entry.provider, group);
-    }
-    for (const [providerId, entries] of modelsByProvider) {
-      const keyEnv = entries.find((entry) => entry.api_key_env)?.api_key_env ?? undefined;
-      if (keyEnv) {
-        const providerKey = credentialValue(input, keyEnv);
-        if (providerKey && providerKey.length > 0) {
-          await modelRuntime.setRuntimeApiKey(providerId, providerKey);
-        }
-      }
-      const models = entries.map(buildCatalogModel);
-      try {
-        modelRuntime.registerProvider(providerId, { models });
-      } catch (error) {
-        const cause = error instanceof Error ? error.message : String(error);
-        // Pi throws here with a 'no "api" specified' message when it can't resolve a model's
-        // wire protocol (not a built-in and no extensions.api). Only THAT cause maps to the
-        // api-required remediation; any other registration failure keeps a generic code so the
-        // message isn't misleading.
-        if (/no "api" specified/i.test(cause)) {
-          throw new LifecycleError(
-            "pi_model_api_required",
-            `Set extensions.api for a gateway-served model (one of: ${SUPPORTED_MODEL_APIS.join(", ")}); provider '${providerId}' has a model Pi cannot resolve an api for`,
-            { metadata: { provider: providerId, cause } },
-          );
-        }
+    // A Fabric agent runs ONE model role per session (selectModel enforces default-or-sole),
+    // mirroring the other single-model adapters, so exactly one model is registered here.
+    // The selected provider's credential was set above.
+    const catalogEntry = buildCatalogModel(selected);
+    try {
+      modelRuntime.registerProvider(selected.provider, { models: [catalogEntry] });
+    } catch (error) {
+      const cause = error instanceof Error ? error.message : String(error);
+      // Pi throws here with a 'no "api" specified' message when it can't resolve the model's
+      // wire protocol (not a built-in and no extensions.api). Only THAT cause maps to the
+      // api-required remediation; any other registration failure keeps a generic code so the
+      // message isn't misleading.
+      if (/no "api" specified/i.test(cause)) {
         throw new LifecycleError(
-          "pi_provider_registration_failed",
-          `Pi rejected the configuration for provider '${providerId}'`,
-          { metadata: { provider: providerId, cause } },
+          "pi_model_api_required",
+          `Set extensions.api for a gateway-served model (one of: ${SUPPORTED_MODEL_APIS.join(", ")}); the selected model has no api Pi can resolve`,
+          { metadata: { provider: selected.provider, model: selected.model, cause } },
         );
       }
+      throw new LifecycleError(
+        "pi_provider_registration_failed",
+        `Pi rejected the configuration for provider '${selected.provider}'`,
+        { metadata: { provider: selected.provider, cause } },
+      );
     }
     const catalogModel = modelRuntime.getModel(selected.provider, selected.model);
     if (catalogModel === undefined) {
