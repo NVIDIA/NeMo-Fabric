@@ -110,15 +110,19 @@ commands.
 
 ## Configure MCP Servers
 
-Normalized MCP servers are written into a runtime-scoped Droid profile. The
-adapter supports unauthenticated stdio, SSE, and
+Normalized MCP servers are supplied directly to the runtime-scoped Droid
+session. The adapter supports unauthenticated stdio, SSE, and
 streamable HTTP servers. Stdio servers accept `args` and `env`, but not HTTP
 headers. Network servers accept `custom_headers`, but not process arguments or
 environment variables. Remote network endpoints require HTTPS; loopback HTTP
 is allowed for development.
 
 Normalized MCP authentication, `allowed_tools`, and `blocked_tools` are not
-supported and fail during startup.
+supported and fail during startup. Each configured server must expose at least
+one tool so the adapter can verify session-scoped discovery before invocation.
+The Droid process and its stdio MCP children inherit safe operating-system
+variables, Fabric `environment.env`, the selected model credential, and each
+server's explicit `env`; unrelated variables from the adapter host are removed.
 
 ## Configure Skills
 
@@ -131,8 +135,9 @@ Droid-owned ambient configuration.
 
 When an isolated profile is required for MCP servers or skills, the adapter
 copies the user's Factory `settings.json` into it so externally configured
-custom models remain available. Fabric supplies its own `mcp.json`; ambient
-MCP configuration and Factory authentication state are not copied.
+custom models remain available. Fabric supplies MCP servers directly to the
+Droid session; ambient MCP configuration and Factory authentication state are
+not copied.
 
 ## Understand Runtime Behavior
 

@@ -63,7 +63,7 @@ function result(overrides = {}) {
 
 function fakeSdk(options = {}) {
   const calls = {
-    create: [], stream: [], close: 0, listTools: 0, updateSettings: [], listMcpServers: 0, listSkills: 0,
+    create: [], createEnvironment: [], stream: [], close: 0, listTools: 0, updateSettings: [], listMcpTools: 0, listSkills: 0,
   };
   const results = [...(options.results ?? [result(), result({ text: "second", turnCount: 2 })])];
   const session = {
@@ -81,11 +81,13 @@ function fakeSdk(options = {}) {
       return options.tools ?? [{ id: "Read" }, { id: "Edit" }, { id: "Execute" }];
     },
     async updateSettings(value) { calls.updateSettings.push(value); },
-    async listMcpServers() {
-      calls.listMcpServers += 1;
-      return typeof options.mcpReport === "function"
-        ? options.mcpReport(calls.listMcpServers)
-        : options.mcpReport ?? { servers: [] };
+    async listMcpTools() {
+      calls.listMcpTools += 1;
+      if (typeof options.mcpTools === "function") return options.mcpTools(calls.listMcpTools);
+      return options.mcpTools ?? (calls.create.at(-1)?.mcpServers ?? []).map((server) => ({
+        serverName: server.name,
+        name: "test-tool",
+      }));
     },
     async listSkills() {
       calls.listSkills += 1;
@@ -99,6 +101,7 @@ function fakeSdk(options = {}) {
     loader: async () => ({
       async createSession(value) {
         calls.create.push(value);
+        calls.createEnvironment.push({ ...process.env });
         if (options.createError) throw options.createError;
         return session;
       },
@@ -145,17 +148,38 @@ test("maps model, credential, append instructions, and an exact built-in tool po
   assert.equal(sdk.calls.close, 1);
 });
 
+test("isolates the Droid child environment and restores the adapter environment", async () => {
+  const ambientName = "DROID_TEST_AMBIENT_SECRET";
+  const explicitName = "DROID_TEST_EXPLICIT_VALUE";
+  const previousAmbient = process.env[ambientName];
+  process.env[ambientName] = "must-not-leak";
+  try {
+    const configured = input();
+    configured.runtimeContext.environment.env[explicitName] = "configured";
+    const sdk = fakeSdk();
+    const handle = await new DroidSdkSessionFactory(sdk.loader).create(configured);
+
+    assert.equal(sdk.calls.createEnvironment[0][ambientName], undefined);
+    assert.equal(sdk.calls.createEnvironment[0][explicitName], "configured");
+    assert.equal(sdk.calls.createEnvironment[0].FACTORY_API_KEY, "secret");
+    assert.equal(process.env[ambientName], "must-not-leak");
+    await handle.stop();
+
+    const failing = fakeSdk({ createError: new Error("failed") });
+    await assert.rejects(
+      new DroidSdkSessionFactory(failing.loader).create(configured),
+      (error) => error.code === "droid_start_failed",
+    );
+    assert.equal(failing.calls.createEnvironment[0][ambientName], undefined);
+    assert.equal(process.env[ambientName], "must-not-leak");
+  } finally {
+    if (previousAmbient === undefined) delete process.env[ambientName];
+    else process.env[ambientName] = previousAmbient;
+  }
+});
+
 test("maps replacement instructions and native stdio, HTTP, and SSE MCP configuration", async () => {
-  const sdk = fakeSdk({
-    mcpReport: {
-      servers: [
-        { name: "local", status: "connected" },
-        { name: "remote", status: "connected" },
-        { name: "events", status: "connected" },
-        { name: "ipv6", status: "connected" },
-      ],
-    },
-  });
+  const sdk = fakeSdk();
   const configured = input({
     instructions: { system: { content: "Replace the prompt.", mode: "replace" } },
     tools: undefined,
@@ -179,28 +203,24 @@ test("maps replacement instructions and native stdio, HTTP, and SSE MCP configur
     modelId: "auto",
     apiKey: "secret",
     autonomyLevel: "high",
+    mcpServers: [
+      { name: "local", command: "node", args: ["server.js"], env: { MODE: "test" } },
+      {
+        name: "remote",
+        type: "http",
+        url: "https://mcp.example.test/rpc",
+        headers: [{ name: "Authorization", value: "Bearer token" }],
+      },
+      { name: "events", type: "sse", url: "http://127.0.0.1:3000/sse", headers: [] },
+      { name: "ipv6", type: "sse", url: "http://[::1]:3001/sse", headers: [] },
+    ],
     systemPrompt: "Replace the prompt.",
   });
   assert.equal(env.HOME, env.USERPROFILE);
   assert.equal(env.HOME, env.FACTORY_HOME_OVERRIDE);
   assert.equal(env.FACTORY_API_KEY, "secret");
-  assert.deepEqual(
-    JSON.parse(await readFile(join(env.HOME, ".factory", "mcp.json"), "utf8")),
-    {
-      mcpServers: {
-        local: { type: "stdio", command: "node", args: ["server.js"], env: { MODE: "test" }, disabled: false },
-        remote: {
-          type: "http",
-          url: "https://mcp.example.test/rpc",
-          headers: { Authorization: "Bearer token" },
-          disabled: false,
-        },
-        events: { type: "sse", url: "http://127.0.0.1:3000/sse", headers: {}, disabled: false },
-        ipv6: { type: "sse", url: "http://[::1]:3001/sse", headers: {}, disabled: false },
-      },
-    },
-  );
-  assert.equal(sdk.calls.listMcpServers, 1);
+  await assert.rejects(readFile(join(env.HOME, ".factory", "mcp.json"), "utf8"), { code: "ENOENT" });
+  assert.equal(sdk.calls.listMcpTools, 1);
   await handle.stop();
 });
 
@@ -221,7 +241,7 @@ test("preserves Factory settings without copying ambient MCP configuration", asy
   };
   await writeFile(join(sourceFactory, "settings.json"), `${JSON.stringify(settings)}\n`);
   await writeFile(join(sourceFactory, "mcp.json"), '{"mcpServers":{"ambient":{"type":"stdio"}}}\n');
-  const sdk = fakeSdk({ mcpReport: { servers: [{ name: "configured", status: "connected" }] } });
+  const sdk = fakeSdk();
 
   const configured = input({
     tools: undefined,
@@ -236,35 +256,31 @@ test("preserves Factory settings without copying ambient MCP configuration", asy
   const runtimeFactory = join(sdk.calls.create[0].env.HOME, ".factory");
   assert.equal(sdk.calls.create[0].env.FACTORY_API_KEY, "secret");
   assert.deepEqual(JSON.parse(await readFile(join(runtimeFactory, "settings.json"), "utf8")), settings);
-  assert.deepEqual(JSON.parse(await readFile(join(runtimeFactory, "mcp.json"), "utf8")), {
-    mcpServers: {
-      configured: { type: "stdio", command: "node", args: [], env: {}, disabled: false },
-    },
-  });
+  assert.deepEqual(sdk.calls.create[0].mcpServers, [
+    { name: "configured", command: "node", args: [], env: {} },
+  ]);
+  await assert.rejects(readFile(join(runtimeFactory, "mcp.json"), "utf8"), { code: "ENOENT" });
 
   await handle.stop();
 });
 
-test("waits for configured MCP servers to connect", async () => {
+test("waits for configured MCP servers to expose tools", async () => {
   const sdk = fakeSdk({
-    mcpReport(call) {
-      return {
-        servers: [{ name: "test", status: call === 1 ? "connecting" : "connected" }],
-      };
+    mcpTools(call) {
+      return call === 1 ? [] : [{ serverName: "test", name: "echo" }];
     },
   });
   const handle = await new DroidSdkSessionFactory(sdk.loader).create(
     input({ tools: undefined, mcp: { servers: { test: { transport: "stdio", url: "node" } } } }),
   );
 
-  assert.equal(sdk.calls.listMcpServers, 2);
+  assert.equal(sdk.calls.listMcpTools, 2);
   await handle.stop();
 });
 
 test("keeps configured MCP tools outside the built-in tool policy", async () => {
   const sdk = fakeSdk({
     tools: [{ id: "Read" }, { id: "Edit" }, { id: "test___echo" }],
-    mcpReport: { servers: [{ name: "test", status: "connected" }] },
   });
   const handle = await new DroidSdkSessionFactory(sdk.loader).create(
     input({
@@ -277,9 +293,9 @@ test("keeps configured MCP tools outside the built-in tool policy", async () => 
   await handle.stop();
 });
 
-test("rejects an MCP server that does not finish connecting", async () => {
+test("rejects an MCP server that does not expose a tool", async () => {
   const sdk = fakeSdk({
-    mcpReport: { servers: [{ name: "test", status: "connecting" }] },
+    mcpTools: [],
   });
 
   await assert.rejects(
@@ -288,14 +304,14 @@ test("rejects an MCP server that does not finish connecting", async () => {
     ),
     (error) =>
       error.code === "droid_mcp_load_failed" &&
-      error.metadata?.connecting?.includes("test"),
+      error.metadata?.missing?.includes("test"),
   );
   assert.equal(sdk.calls.close, 1);
 });
 
-test("times out when Droid does not return MCP status", async () => {
+test("times out when Droid does not return MCP tool status", async () => {
   const sdk = fakeSdk({
-    mcpReport: () => new Promise(() => undefined),
+    mcpTools: () => new Promise(() => undefined),
   });
 
   await assert.rejects(
@@ -462,9 +478,9 @@ test("rejects invalid startup inputs and missing or malformed terminal results",
     (error) => error.code === "droid_provider_unsupported",
   );
 
-  const mcp = fakeSdk({ mcpReport: { servers: [{ name: "test", status: "failed", error: "spawn failed" }] } });
+  const mcp = fakeSdk({ mcpTools: [] });
   await assert.rejects(
-    new DroidSdkSessionFactory(mcp.loader).create(input({ mcp: { servers: { test: { transport: "stdio", url: "missing" } } } })),
+    new DroidSdkSessionFactory(mcp.loader, 1).create(input({ mcp: { servers: { test: { transport: "stdio", url: "missing" } } } })),
     (error) => error.code === "droid_mcp_load_failed",
   );
   assert.equal(mcp.calls.close, 1);
