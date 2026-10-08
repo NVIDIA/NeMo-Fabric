@@ -202,6 +202,18 @@ def test_descriptor_declares_only_initial_openhands_surface():
         "updates": False,
         "cancellation": False,
     }
+    assert descriptor["settings_schema"]["properties"] == {
+        "condenser": {
+            "type": "string",
+            "enum": ["default", "none"],
+            "default": "default",
+            "description": (
+                "OpenHands conversation history condenser. Use none to keep "
+                "the full history."
+            ),
+        }
+    }
+    assert descriptor["settings_schema"]["additionalProperties"] is False
     assert "telemetry" not in descriptor
 
 
@@ -297,6 +309,20 @@ async def test_start_condenses_history_with_the_agent_llm(
     default_condenser.assert_called_once_with(llm)
     agent_kwargs = mock_openhands["agent_factory"].call_args.kwargs
     assert agent_kwargs["condenser"] is default_condenser.return_value
+
+
+async def test_start_without_condenser_when_disabled(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    openhands_payload["config"]["harness"] = {"settings": {"condenser": "none"}}
+    await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
+
+    mock_openhands["default_condenser"].assert_not_called()
+    agent_kwargs = mock_openhands["agent_factory"].call_args.kwargs
+    assert agent_kwargs.get("condenser") is None
 
 
 async def test_replace_instruction_uses_exact_system_prompt(

@@ -131,6 +131,13 @@ def _llm(api: OpenHandsApi, model: contract.AgentModelConfig) -> Any:
     return api.LLM(**kwargs)
 
 
+def _condenser_enabled(config: contract.AgentConfig) -> bool:
+    """Return whether to condense history; planning validates the setting value."""
+
+    settings = config.harness.settings if config.harness is not None else {}
+    return settings.get("condenser", "default") != "none"
+
+
 def _workspace(context: contract.RuntimeContext, base_dir: str) -> Path:
     path = Path(context.environment.workspace or base_dir)
     if not path.is_absolute():
@@ -345,10 +352,11 @@ class OpenHandsRuntime:
             "tools": _tools(api, config),
             "mcp_config": _mcp_servers(api, config),
             "agent_context": agent_context,
+        }
+        if _condenser_enabled(config):
             # Share the agent LLM instead of a copy so summarization calls
             # accrue to the metrics that invoke() reports as usage.
-            "condenser": api.default_condenser(llm),
-        }
+            agent_kwargs["condenser"] = api.default_condenser(llm)
         if instruction is not None and instruction.mode == "replace":
             agent_kwargs["system_prompt"] = instruction.content
         agent = api.Agent(**agent_kwargs)

@@ -1664,7 +1664,17 @@
         "settings_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
-          "properties": {},
+          "properties": {
+            "condenser": {
+              "default": "default",
+              "description": "OpenHands conversation history condenser. Use none to keep the full history.",
+              "enum": [
+                "default",
+                "none"
+              ],
+              "type": "string"
+            }
+          },
           "type": "object"
         }
       },
@@ -1673,7 +1683,7 @@
         "name": "nemo-fabric-adapters-openhands",
         "version": "0.5.0"
       },
-      "sha256": "151335fc5bbc1e1689112b0629aa0e517e4de9b4a5a3ba52cfa4a8ec7001ae7d",
+      "sha256": "062ef09ba5e82dfdf0b4374632a8b39b7ff975160b0c6f62e68d2f4ac6f0b59e",
       "source": "adapters/python/openhands/openhands.fabric-adapter.json"
     },
     "nvidia.fabric.pi": {
