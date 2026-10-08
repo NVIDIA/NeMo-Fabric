@@ -950,3 +950,170 @@ test("includes Pi flag conflict diagnostics in extension errors", async () => {
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+// --- Model catalog registration (gateway-served models) ---------------------
+
+function makeRuntimeContext(workspace) {
+  return {
+    artifacts: {},
+    environment: {
+      control_location: "external_control",
+      env: { TEST_API_KEY: "not-a-real-key" },
+      environment_id: "environment-1",
+      ownership: "caller_owned",
+      provider: "local",
+      workspace,
+    },
+    invocation_id: "start",
+    request_id: "request-start",
+    runtime_id: "runtime-1",
+    telemetry: { relay_enabled: true },
+  };
+}
+
+function captureModelFactory(capture) {
+  return new PiSdkSessionFactory({
+    async start(input, model) {
+      capture.model = model;
+      return {
+        extensionPath: input.config.harness?.settings?.relay_extension_path ?? "relay-extension.js",
+        pluginConfig: { version: 1, components: [] },
+        async output() {
+          return {};
+        },
+        async stop() {},
+      };
+    },
+  });
+}
+
+test("inherits a built-in model's native api when settings.api is omitted", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-native-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  const capture = {};
+  const factory = captureModelFactory(capture);
+  const runtime = new PiAdapterRuntime(factory);
+  try {
+    await runtime.start({
+      agentName: "pi-catalog-native",
+      baseDir: workspace,
+      config: {
+        harness: { settings: { relay_extension_path: extensionPath } },
+        models: {
+          default: {
+            api_key_env: "TEST_API_KEY",
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        },
+        tools: { enabled: [] },
+      },
+      runtimeContext: makeRuntimeContext(workspace),
+    });
+    await runtime.stop();
+    // gpt-4.1-mini is a Pi built-in whose native api is openai-responses; with no settings.api
+    // the adapter must NOT force a value — Pi inherits the built-in's api.
+    assert.equal(capture.model.api, "openai-responses");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("resolves a gateway model's api from settings.api", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-gateway-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  const capture = {};
+  const factory = captureModelFactory(capture);
+  const runtime = new PiAdapterRuntime(factory);
+  try {
+    await runtime.start({
+      agentName: "pi-catalog-gateway",
+      baseDir: workspace,
+      config: {
+        harness: { settings: { relay_extension_path: extensionPath } },
+        models: {
+          default: {
+            api_key_env: "TEST_API_KEY",
+            base_url: "https://gateway.example.test/v1",
+            model: "nvidia/some-gateway-model",
+            provider: "nvidia",
+            settings: { api: "openai-completions", context_window: 32000, max_tokens: 4096 },
+          },
+        },
+        tools: { enabled: [] },
+      },
+      runtimeContext: makeRuntimeContext(workspace),
+    });
+    await runtime.stop();
+    // The relay factory receives the resolved model's wire api; settings.api must win.
+    assert.equal(capture.model.api, "openai-completions");
+    assert.equal(capture.model.baseUrl, "https://gateway.example.test/v1");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("rejects an unknown gateway model with no settings.api", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-noapi-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  const factory = captureModelFactory({});
+  try {
+    await assert.rejects(
+      factory.create({
+        agentName: "pi-catalog-noapi",
+        baseDir: workspace,
+        config: {
+          harness: { settings: { relay_extension_path: extensionPath } },
+          models: {
+            default: {
+              api_key_env: "TEST_API_KEY",
+              base_url: "https://gateway.example.test/v1",
+              model: "custom-gateway-model",
+              provider: "custom-gateway-provider",
+            },
+          },
+          tools: { enabled: [] },
+        },
+        runtimeContext: makeRuntimeContext(workspace),
+      }),
+      (error) => error.code === "pi_model_api_required" && error.message.includes("settings.api"),
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("rejects a model whose settings.api is not a supported protocol", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-badapi-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  const factory = captureModelFactory({});
+  try {
+    await assert.rejects(
+      factory.create({
+        agentName: "pi-catalog-badapi",
+        baseDir: workspace,
+        config: {
+          harness: { settings: { relay_extension_path: extensionPath } },
+          models: {
+            default: {
+              api_key_env: "TEST_API_KEY",
+              base_url: "https://gateway.example.test/v1",
+              model: "nvidia/some-gateway-model",
+              provider: "nvidia",
+              settings: { api: "not-a-real-api" },
+            },
+          },
+          tools: { enabled: [] },
+        },
+        runtimeContext: makeRuntimeContext(workspace),
+      }),
+      (error) => error.code === "pi_model_api_invalid" && error.message.includes("not-a-real-api"),
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

@@ -49,7 +49,34 @@
       "model": {"type": "string", "minLength": 1},
       "api_key_env": {"type": "string", "minLength": 1},
       "base_url": {"type": ["string", "null"], "format": "uri"},
-      "settings": {"type": "object", "description": "Pi-specific model metadata (api, context_window, max_tokens, cost, reasoning, input) registered into Pi's catalog for a gateway-served model.", "additionalProperties": true}
+      "settings": {
+        "type": "object",
+        "description": "Pi-specific model metadata registered into Pi's catalog for a gateway-served model. `api` is the model's wire protocol and is required for a model Pi does not already ship natively.",
+        "properties": {
+          "api": {
+            "type": "string",
+            "enum": [
+              "openai-completions",
+              "openai-responses",
+              "azure-openai-responses",
+              "openai-codex-responses",
+              "anthropic-messages",
+              "bedrock-converse-stream",
+              "google-generative-ai",
+              "google-vertex",
+              "mistral-conversations",
+              "pi-messages"
+            ],
+            "description": "The wire protocol Pi uses to talk to this model."
+          },
+          "context_window": {"type": "integer", "minimum": 1},
+          "max_tokens": {"type": "integer", "minimum": 1},
+          "reasoning": {"type": "boolean"},
+          "input": {"type": "array", "items": {"type": "string", "enum": ["text", "image"]}},
+          "name": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
     },
     "required": ["provider", "model", "api_key_env"],
     "additionalProperties": false

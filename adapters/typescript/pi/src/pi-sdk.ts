@@ -36,13 +36,28 @@ type PiModelRuntime = Awaited<ReturnType<typeof import("@earendil-works/pi-codin
 type PiProviderConfigInput = Parameters<PiModelRuntime["registerProvider"]>[1];
 type PiCatalogModel = NonNullable<PiProviderConfigInput["models"]>[number];
 
-// Fallbacks for a gateway model whose metadata isn't supplied via extensions (below).
-// Pi's default API for a gateway OpenAI model when none is supplied (matches the
-// pre-adapter behavior where a bare model resolved to the Responses API).
-const DEFAULT_MODEL_API = "openai-responses";
+// Defaults for a gateway model whose Pi-specific metadata isn't supplied via `settings`.
+// `api` is deliberately NOT defaulted: it is a hard per-model protocol identifier (which
+// wire API Pi speaks to the model) that the adapter cannot infer. When omitted, we leave it
+// unset so Pi inherits it from a built-in model of the same id, and raise a clear error when
+// the model is genuinely unknown (see the registration loop in PiSdkSessionFactory.create).
 const DEFAULT_CONTEXT_WINDOW = 200000;
 const DEFAULT_MAX_TOKENS = 8192;
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
+
+// The wire protocols Pi understands; a configured `settings.api` must be one of these.
+const SUPPORTED_MODEL_APIS = [
+  "openai-completions",
+  "openai-responses",
+  "azure-openai-responses",
+  "openai-codex-responses",
+  "anthropic-messages",
+  "bedrock-converse-stream",
+  "google-generative-ai",
+  "google-vertex",
+  "mistral-conversations",
+  "pi-messages",
+] as const;
 
 interface PiHarnessSettings {
   extensions: string[];
@@ -498,17 +513,28 @@ function selectModel(config: AgentConfig): AgentModelConfig {
 
 /**
  * Build a Pi catalog model entry from a Fabric AgentModelConfig. Pi-specific metadata
- * (api, context_window, cost, reasoning, input) comes from the model's `settings`
- * (the field the nemo-agents translator populates), falling back to `extensions`
- * and then the DEFAULT_* constants when omitted.
+ * (api, context_window, max_tokens, cost, reasoning, input) is read from the model's
+ * `settings` (the field the nemo-agents translator populates), falling back to `extensions`.
+ *
+ * `api` is special: it is a hard per-model wire-protocol identifier that cannot be guessed,
+ * so it is NOT defaulted. When `settings.api` is set it must be a {@link SUPPORTED_MODEL_APIS}
+ * value; when absent it is left unset here, deferring to Pi (which inherits the api of a
+ * built-in model with the same id, or rejects an unknown model — see registration).
  */
 function buildCatalogModel(model: AgentModelConfig): PiCatalogModel {
   const meta = { ...((model.extensions ?? {}) as Record<string, unknown>), ...((model.settings ?? {}) as Record<string, unknown>) };
   const num = (value: unknown, fallback: number): number => (typeof value === "number" ? value : fallback);
+  if (meta.api !== undefined && !SUPPORTED_MODEL_APIS.includes(meta.api as (typeof SUPPORTED_MODEL_APIS)[number])) {
+    throw new LifecycleError(
+      "pi_model_api_invalid",
+      `Unsupported model api '${String(meta.api)}'; settings.api must be one of: ${SUPPORTED_MODEL_APIS.join(", ")}`,
+      { metadata: { model: model.model } },
+    );
+  }
   return {
     id: model.model,
     name: typeof meta.name === "string" ? meta.name : model.model,
-    api: typeof meta.api === "string" ? meta.api : DEFAULT_MODEL_API,
+    ...(typeof meta.api === "string" ? { api: meta.api as PiCatalogModel["api"] } : {}),
     baseUrl: model.base_url ?? undefined,
     reasoning: meta.reasoning === true,
     input: Array.isArray(meta.input) ? (meta.input as ("text" | "image")[]) : ["text"],
@@ -946,11 +972,20 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       });
       const models = uniqueEntries.map(buildCatalogModel);
       const providerBaseUrl = entries.find((entry) => entry.base_url)?.base_url ?? undefined;
-      modelRuntime.registerProvider(providerId, {
-        ...(providerBaseUrl ? { baseUrl: providerBaseUrl } : {}),
-        api: "openai-completions",
-        models,
-      });
+      try {
+        modelRuntime.registerProvider(providerId, {
+          ...(providerBaseUrl ? { baseUrl: providerBaseUrl } : {}),
+          models,
+        });
+      } catch (error) {
+        // Pi rejects a model it cannot resolve an `api` for (not a built-in and no settings.api).
+        // Surface it as an actionable Fabric error rather than leaking the SDK's wording.
+        throw new LifecycleError(
+          "pi_model_api_required",
+          `Set settings.api for each gateway-served model (one of: ${SUPPORTED_MODEL_APIS.join(", ")}); provider '${providerId}' has a model Pi cannot resolve an api for`,
+          { metadata: { provider: providerId, cause: error instanceof Error ? error.message : String(error) } },
+        );
+      }
     }
     const catalogModel = modelRuntime.getModel(selected.provider, selected.model);
     if (catalogModel === undefined) {
