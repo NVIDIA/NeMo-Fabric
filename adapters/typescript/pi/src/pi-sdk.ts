@@ -522,7 +522,7 @@ function selectModel(config: AgentConfig): AgentModelConfig {
  * are still validated (`api` must be a {@link SUPPORTED_MODEL_APIS} value, token limits positive,
  * cost well-formed) so a malformed override fails fast instead of reaching Pi.
  */
-function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel | undefined): PiCatalogModel {
+export function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel | undefined): PiCatalogModel {
   const meta = (model.extensions ?? {}) as Record<string, unknown>;
   const fail = (reason: string): never => {
     throw new LifecycleError("pi_model_extensions_invalid", reason, { metadata: { model: model.model } });

@@ -9,6 +9,7 @@ import test from "node:test";
 import { createServer } from "node:http";
 
 import {
+  buildCatalogModel,
   modelAwareCompactionReserveTokens,
   PiSdkSessionFactory,
   resolveCustomTools,
@@ -61,6 +62,72 @@ test("reserves output capacity without consuming more than half the context wind
   assert.equal(modelAwareCompactionReserveTokens(65_536, 32_768, 262_144), 65_536);
   assert.equal(modelAwareCompactionReserveTokens(16_384, 131_072, 131_072), 65_536);
   assert.equal(modelAwareCompactionReserveTokens(16_384, 65_536, 0), 65_536);
+});
+
+// A model Pi already ships, as getModel() would resolve it: every native field populated.
+const NATIVE_MODEL = {
+  id: "gpt-4.1-mini",
+  name: "GPT-4.1 mini",
+  api: "openai-responses",
+  provider: "openai",
+  baseUrl: "https://api.openai.com/v1",
+  reasoning: true,
+  input: ["text", "image"],
+  cost: { input: 0.4, output: 1.6, cacheRead: 0.1, cacheWrite: 0 },
+  contextWindow: 1_000_000,
+  maxTokens: 32_768,
+};
+
+test("buildCatalogModel preserves every native field of a known model when nothing is overridden", () => {
+  // Selecting a known model with no extensions and no base_url must not change any property.
+  const entry = buildCatalogModel({ provider: "openai", model: "gpt-4.1-mini", api_key_env: "K" }, NATIVE_MODEL);
+  assert.equal(entry.api, NATIVE_MODEL.api);
+  assert.equal(entry.baseUrl, NATIVE_MODEL.baseUrl);
+  assert.equal(entry.name, NATIVE_MODEL.name);
+  assert.equal(entry.reasoning, NATIVE_MODEL.reasoning);
+  assert.deepEqual(entry.input, NATIVE_MODEL.input);
+  assert.deepEqual(entry.cost, NATIVE_MODEL.cost);
+  assert.equal(entry.contextWindow, NATIVE_MODEL.contextWindow);
+  assert.equal(entry.maxTokens, NATIVE_MODEL.maxTokens);
+});
+
+test("buildCatalogModel overrides only the explicitly supplied fields of a known model", () => {
+  // Supply base_url + one extension; every other native field must survive unchanged.
+  const entry = buildCatalogModel(
+    {
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      api_key_env: "K",
+      base_url: "https://proxy.example.test/v1",
+      extensions: { max_tokens: 4096 },
+    },
+    NATIVE_MODEL,
+  );
+  assert.equal(entry.baseUrl, "https://proxy.example.test/v1"); // overridden
+  assert.equal(entry.maxTokens, 4096); // overridden
+  // Everything else preserved from the native entry.
+  assert.equal(entry.api, NATIVE_MODEL.api);
+  assert.equal(entry.name, NATIVE_MODEL.name);
+  assert.equal(entry.reasoning, NATIVE_MODEL.reasoning);
+  assert.deepEqual(entry.input, NATIVE_MODEL.input);
+  assert.deepEqual(entry.cost, NATIVE_MODEL.cost);
+  assert.equal(entry.contextWindow, NATIVE_MODEL.contextWindow);
+});
+
+test("buildCatalogModel invents no defaults for an unknown model, leaving omitted fields unset", () => {
+  // No base (Pi does not know the model) and only api supplied: the adapter must not fabricate
+  // context_window/max_tokens/cost/reasoning/input, so Pi applies its own defaults.
+  const entry = buildCatalogModel(
+    { provider: "gw", model: "gw/model", api_key_env: "K", base_url: "https://gw/v1", extensions: { api: "openai-completions" } },
+    undefined,
+  );
+  assert.equal(entry.api, "openai-completions");
+  assert.equal(entry.baseUrl, "https://gw/v1");
+  assert.equal(entry.contextWindow, undefined);
+  assert.equal(entry.maxTokens, undefined);
+  assert.equal(entry.cost, undefined);
+  assert.equal(entry.reasoning, undefined);
+  assert.equal(entry.input, undefined);
 });
 
 test("maps normalized MCP servers and tool filters to native Pi MCP configuration", () => {

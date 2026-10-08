@@ -149,6 +149,41 @@ def test_pi_descriptor_plans_and_projects_the_selected_model():
     }
 
 
+def test_pi_descriptor_projects_flattened_model_extensions_for_a_gateway_model():
+    # A consumer sets Pi-specific metadata as flattened top-level ModelConfig fields. Planning
+    # must project them into the southbound AgentModelConfig.extensions block the adapter reads.
+    gateway = FabricConfig(
+        metadata=MetadataConfig(name="pi-adapter-test"),
+        harness=HarnessConfig(adapter_id="nvidia.fabric.pi"),
+        discovery=DiscoveryConfig(local_paths=[DESCRIPTOR]),
+        models={
+            "default": ModelConfig(
+                provider="nvidia-build",
+                model="nvidia/some-gateway-model",
+                api_key_env="TEST_API_KEY",
+                base_url="https://gateway.example/v1",
+                api="openai-completions",
+                context_window=32_000,
+                max_tokens=4_096,
+            )
+        },
+    )
+
+    plan = Fabric().plan(gateway, base_dir=ROOT)
+
+    assert plan.agent_config["models"]["default"] == {
+        "provider": "nvidia-build",
+        "model": "nvidia/some-gateway-model",
+        "api_key_env": "TEST_API_KEY",
+        "base_url": "https://gateway.example/v1",
+        "extensions": {
+            "api": "openai-completions",
+            "context_window": 32_000,
+            "max_tokens": 4_096,
+        },
+    }
+
+
 def test_pi_descriptor_plans_relay_telemetry():
     adapter_config = config()
     adapter_config.enable_relay(output_dir="./artifacts/relay")
