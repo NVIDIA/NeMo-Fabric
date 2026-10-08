@@ -48,7 +48,8 @@
       "provider": {"type": "string", "minLength": 1},
       "model": {"type": "string", "minLength": 1},
       "api_key_env": {"type": "string", "minLength": 1},
-      "base_url": {"type": ["string", "null"], "format": "uri"}
+      "base_url": {"type": ["string", "null"], "format": "uri"},
+      "settings": {"type": "object", "description": "Pi-specific model metadata (api, context_window, max_tokens, cost, reasoning, input) registered into Pi's catalog for a gateway-served model.", "additionalProperties": true}
     },
     "required": ["provider", "model", "api_key_env"],
     "additionalProperties": false

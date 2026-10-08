@@ -37,7 +37,9 @@ type PiProviderConfigInput = Parameters<PiModelRuntime["registerProvider"]>[1];
 type PiCatalogModel = NonNullable<PiProviderConfigInput["models"]>[number];
 
 // Fallbacks for a gateway model whose metadata isn't supplied via extensions (below).
-const DEFAULT_MODEL_API = "openai-completions";
+// Pi's default API for a gateway OpenAI model when none is supplied (matches the
+// pre-adapter behavior where a bare model resolved to the Responses API).
+const DEFAULT_MODEL_API = "openai-responses";
 const DEFAULT_CONTEXT_WINDOW = 200000;
 const DEFAULT_MAX_TOKENS = 8192;
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
@@ -496,22 +498,23 @@ function selectModel(config: AgentConfig): AgentModelConfig {
 
 /**
  * Build a Pi catalog model entry from a Fabric AgentModelConfig. Pi-specific metadata
- * (api, context_window, cost, reasoning, input) comes from the adapter-owned `extensions`,
- * falling back to the DEFAULT_* constants when omitted.
+ * (api, context_window, cost, reasoning, input) comes from the model's `settings`
+ * (the field the nemo-agents translator populates), falling back to `extensions`
+ * and then the DEFAULT_* constants when omitted.
  */
 function buildCatalogModel(model: AgentModelConfig): PiCatalogModel {
-  const ext = (model.extensions ?? {}) as Record<string, unknown>;
+  const meta = { ...((model.extensions ?? {}) as Record<string, unknown>), ...((model.settings ?? {}) as Record<string, unknown>) };
   const num = (v: unknown, fallback: number): number => (typeof v === "number" ? v : fallback);
   return {
     id: model.model,
-    name: typeof ext.name === "string" ? ext.name : model.model,
-    api: typeof ext.api === "string" ? ext.api : DEFAULT_MODEL_API,
+    name: typeof meta.name === "string" ? meta.name : model.model,
+    api: typeof meta.api === "string" ? meta.api : DEFAULT_MODEL_API,
     baseUrl: model.base_url ?? undefined,
-    reasoning: ext.reasoning === true,
-    input: Array.isArray(ext.input) ? (ext.input as ("text" | "image")[]) : ["text"],
-    cost: (ext.cost as PiCatalogModel["cost"] | undefined) ?? ZERO_COST,
-    contextWindow: num(ext.context_window, DEFAULT_CONTEXT_WINDOW),
-    maxTokens: num(model.max_tokens ?? ext.max_tokens, DEFAULT_MAX_TOKENS),
+    reasoning: meta.reasoning === true,
+    input: Array.isArray(meta.input) ? (meta.input as ("text" | "image")[]) : ["text"],
+    cost: (meta.cost as PiCatalogModel["cost"] | undefined) ?? ZERO_COST,
+    contextWindow: num(meta.context_window, DEFAULT_CONTEXT_WINDOW),
+    maxTokens: num(model.max_tokens ?? meta.max_tokens, DEFAULT_MAX_TOKENS),
   };
 }
 
