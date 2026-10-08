@@ -57,6 +57,124 @@
       ],
       "type": "object"
     },
+    "AgentModelUsage": {
+      "additionalProperties": false,
+      "description": "Usage of one model within one invocation.\n\nToken fields have the same meaning as the matching `AgentUsage` fields,\nrestricted to requests served by this model.",
+      "properties": {
+        "cache_write_input_tokens": {
+          "description": "Input tokens this model wrote to the provider prompt cache, when reported.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cached_input_tokens": {
+          "description": "Cached input tokens consumed by this model, when reported.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cost_usd": {
+          "description": "Cost in US dollars for this model when reported by the provider.",
+          "format": "double",
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "input_tokens": {
+          "description": "Input tokens consumed by this model.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "input_tokens_include_cache": {
+          "description": "Whether input_tokens already includes cached_input_tokens and\ncache_write_input_tokens; absent means unknown.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "Model identifier as reported by the harness or provider response.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "output_tokens": {
+          "description": "Output tokens produced by this model.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output_tokens_include_reasoning": {
+          "description": "Whether output_tokens already includes reasoning_tokens; absent means unknown.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "peak_request_input_tokens": {
+          "description": "Input tokens of the largest single request served by this model,\nincluding cached and cache-write input, when reported.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "provider": {
+          "description": "Provider or route that served the model, when known.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoning_tokens": {
+          "description": "Reasoning tokens produced by this model, when reported.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total_tokens": {
+          "description": "Total tokens reported by the provider for this model.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "model"
+      ],
+      "type": "object"
+    },
     "AgentRunError": {
       "additionalProperties": false,
       "description": "Error reported by an adapter target.",
@@ -114,6 +232,16 @@
       "additionalProperties": false,
       "description": "Normalized model usage reported by an adapter target.",
       "properties": {
+        "cache_write_input_tokens": {
+          "description": "Input tokens written to the provider prompt cache, when reported.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "cached_input_tokens": {
           "description": "Cached input tokens consumed by the invocation, when reported.",
           "format": "uint64",
@@ -149,14 +277,48 @@
           ]
         },
         "input_tokens_include_cache": {
-          "description": "Whether input_tokens already includes cached_input_tokens; absent means unknown.",
+          "description": "Whether input_tokens already includes cached_input_tokens and\ncache_write_input_tokens; absent means unknown.",
           "type": [
             "boolean",
             "null"
           ]
         },
+        "models": {
+          "description": "Usage broken out by the model that served the requests; empty when not\nreported. Each provider and model pair appears at most once, compared\ncase-insensitively.",
+          "items": {
+            "$ref": "#/$defs/AgentModelUsage"
+          },
+          "type": "array"
+        },
         "output_tokens": {
           "description": "Output tokens produced by the invocation.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output_tokens_include_reasoning": {
+          "description": "Whether output_tokens already includes reasoning_tokens; absent means unknown.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "peak_request_input_tokens": {
+          "description": "Input tokens of the largest single model request in the invocation,\nincluding cached and cache-write input, when reported.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "reasoning_tokens": {
+          "description": "Reasoning tokens produced by the invocation, when reported.",
           "format": "uint64",
           "maximum": 18446744073709551615,
           "minimum": 0,

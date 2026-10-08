@@ -9,6 +9,7 @@ import type {
   AdapterTargetDescriptor,
   AdapterTelemetryProviderSupport,
   AgentConfig,
+  AgentModelUsage,
   AgentUsage,
   ControlLocation,
   EnvironmentOwnership,
@@ -41,6 +42,36 @@ const invalidCacheSemantics: AgentUsage = {
 };
 void usage;
 void invalidCacheSemantics;
+
+const detailedUsage: AgentUsage = {
+  cache_write_input_tokens: 3,
+  output_tokens: 12,
+  output_tokens_include_reasoning: true,
+  peak_request_input_tokens: 18,
+  reasoning_tokens: 8,
+  models: [
+    {
+      model: "example-model",
+      provider: "example-provider",
+      reasoning_tokens: 8,
+    },
+  ],
+};
+const invalidReasoningSemantics: AgentUsage = {
+  // @ts-expect-error reasoning semantics require an explicit boolean, not a numeric flag
+  output_tokens_include_reasoning: 1,
+};
+// @ts-expect-error model usage requires the model identifier
+const modelUsageWithoutModel: AgentModelUsage = { provider: "example-provider" };
+const modelUsageWithUnknownField: AgentModelUsage = {
+  model: "example-model",
+  // @ts-expect-error closed model usage objects reject unknown keys
+  reasoning: 1,
+};
+void detailedUsage;
+void invalidReasoningSemantics;
+void modelUsageWithoutModel;
+void modelUsageWithUnknownField;
 
 const target: AdapterTargetDescriptor = {
   adapter_id: "pi",
