@@ -3,14 +3,14 @@ title: "Enum Agent RunResult Validation Error"
 sidebar-title: "AgentRunResultValidationError"
 slug: "/reference/api/rust-library-reference/nemo-fabric-core/agent_execution/enum-agentrunresultvalidationerror"
 description: "Invalid relationship or value within an adapter result."
-position: 7
+position: 8
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum AgentRunResultValidationError &#123;\n    FailedWithoutError,\n    SucceededWithError,\n    BlankField(&amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>),\n    InvalidArtifactPath(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum AgentRunResultValidationError &#123;\n    FailedWithoutError,\n    SucceededWithError,\n    BlankField(&amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>),\n    InvalidArtifactPath(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n    DuplicateModelUsage(<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>),\n    InvalidCost(&amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>),\n&#125;"}} /></pre>
 
 Invalid relationship or value within an adapter result.
 
@@ -39,6 +39,18 @@ A result string violated the non-blank contract.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "InvalidArtifactPath(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>)"}} /></pre>
 
 An artifact path was blank, absolute, or contained parent traversal.
+
+### `DuplicateModelUsage(String)`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "DuplicateModelUsage(<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>)"}} /></pre>
+
+Model usage repeated a provider and model pair, compared case-insensitively.
+
+### `InvalidCost(&'static str)`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "InvalidCost(&amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>)"}} /></pre>
+
+A cost was negative or not a finite number.
 
 ## Trait Implementations
 

@@ -3,14 +3,14 @@ title: "Struct Agent Usage"
 sidebar-title: "AgentUsage"
 slug: "/reference/api/rust-library-reference/nemo-fabric-core/agent_execution/struct-agentusage"
 description: "Normalized model usage reported by an adapter target."
-position: 9
+position: 10
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct AgentUsage &#123;\n    pub input_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub cached_input_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub input_tokens_include_cache: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>&gt;,\n    pub output_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub total_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub cost_usd: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.f64.html\">f64</a>&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct AgentUsage &#123;\n    pub input_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub cached_input_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub cache_write_input_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub input_tokens_include_cache: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>&gt;,\n    pub output_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub reasoning_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub output_tokens_include_reasoning: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>&gt;,\n    pub total_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub peak_request_input_tokens: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n    pub cost_usd: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.f64.html\">f64</a>&gt;,\n    pub models: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-agentmodelusage.mdx\">AgentModelUsage</a>&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
 
 Normalized model usage reported by an adapter target.
 
@@ -24,21 +24,41 @@ Input tokens consumed by the invocation.
 
 Cached input tokens consumed by the invocation, when reported.
 
+### `cache_write_input_tokens: Option<u64>`
+
+Input tokens written to the provider prompt cache, when reported.
+
 ### `input_tokens_include_cache: Option<bool>`
 
-Whether input_tokens already includes cached_input_tokens; absent means unknown.
+Whether input_tokens already includes cached_input_tokens and cache_write_input_tokens; absent means unknown.
 
 ### `output_tokens: Option<u64>`
 
 Output tokens produced by the invocation.
 
+### `reasoning_tokens: Option<u64>`
+
+Reasoning tokens produced by the invocation, when reported.
+
+### `output_tokens_include_reasoning: Option<bool>`
+
+Whether output_tokens already includes reasoning_tokens; absent means unknown.
+
 ### `total_tokens: Option<u64>`
 
 Total tokens reported by the provider.
 
+### `peak_request_input_tokens: Option<u64>`
+
+Input tokens of the largest single model request in the invocation, including cached and cache-write input, when reported.
+
 ### `cost_usd: Option<f64>`
 
 Invocation cost in US dollars when reported by the provider.
+
+### `models: Vec<AgentModelUsage>`
+
+Usage broken out by the model that served the requests; empty when not reported. Each provider and model pair appears at most once, compared case-insensitively.
 
 ### `extensions: BTreeMap<String, Value>`
 
