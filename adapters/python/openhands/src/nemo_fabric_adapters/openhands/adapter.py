@@ -132,10 +132,20 @@ def _llm(api: OpenHandsApi, model: contract.AgentModelConfig) -> Any:
 
 
 def _condenser_enabled(config: contract.AgentConfig) -> bool:
-    """Return whether to condense history; planning validates the setting value."""
+    """Return whether to condense history, rejecting values the descriptor forbids.
+
+    Planning already validates the setting, but a host that skips planning must
+    not turn an unknown value into model-billed summarization calls.
+    """
 
     settings = config.harness.settings if config.harness is not None else {}
-    return settings.get("condenser", "default") != "none"
+    condenser = settings.get("condenser", "default")
+    if condenser not in ("default", "none"):
+        raise lifecycle.LifecycleError(
+            "openhands_condenser_invalid",
+            "The OpenHands condenser setting must be 'default' or 'none'.",
+        )
+    return condenser == "default"
 
 
 def _workspace(context: contract.RuntimeContext, base_dir: str) -> Path:

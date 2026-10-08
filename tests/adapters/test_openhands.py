@@ -325,6 +325,26 @@ async def test_start_without_condenser_when_disabled(
     assert agent_kwargs.get("condenser") is None
 
 
+@pytest.mark.parametrize(
+    "condenser", ["off", "None", None], ids=["off", "string-None", "null"]
+)
+async def test_start_rejects_unknown_condenser_setting(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    condenser: str | None,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    openhands_payload["config"]["harness"] = {"settings": {"condenser": condenser}}
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
+
+    assert caught.value.code == "openhands_condenser_invalid"
+    mock_openhands["default_condenser"].assert_not_called()
+    mock_openhands["agent_factory"].assert_not_called()
+
+
 async def test_replace_instruction_uses_exact_system_prompt(
     openhands_payload: dict,
     mock_openhands: dict,
