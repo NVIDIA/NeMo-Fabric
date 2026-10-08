@@ -1773,7 +1773,10 @@ class RunUsage(FabricMapping):
 
     Missing counters and cost are unknown, not zero. ``cached_input_tokens``
     records cache usage; ``input_tokens_include_cache`` declares whether input
-    already includes that count. An absent flag means the semantics are unknown.
+    already includes that count and any cache-write input the adapter reported.
+    An absent flag means the semantics are unknown. Cache-write input is not
+    reported here, so when the flag is ``False``, input plus cached input can
+    understate total input.
     """
 
     input_tokens: int | None

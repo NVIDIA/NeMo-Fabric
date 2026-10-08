@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from nemo_fabric_adapter_contract.models import AgentArtifact
+from nemo_fabric_adapter_contract.models import AgentModelUsage
 from nemo_fabric_adapter_contract.models import AgentRunError
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
@@ -52,6 +53,149 @@ def test_usage_rejects_invalid_cache_counter(value):
 def test_usage_rejects_invalid_cache_semantics(value):
     with pytest.raises(ContractValidationError):
         AgentUsage(input_tokens_include_cache=value)
+
+
+DETAILED_USAGE = {
+    "input_tokens": 1200,
+    "cached_input_tokens": 800,
+    "cache_write_input_tokens": 300,
+    "input_tokens_include_cache": True,
+    "output_tokens": 90,
+    "reasoning_tokens": 40,
+    "output_tokens_include_reasoning": False,
+    "total_tokens": 1330,
+    "peak_request_input_tokens": 700,
+    "cost_usd": 0.5,
+    "models": [
+        {
+            "model": "planner-model",
+            "provider": "openai",
+            "input_tokens": 1000,
+            "cached_input_tokens": 700,
+            "cache_write_input_tokens": 250,
+            "input_tokens_include_cache": True,
+            "output_tokens": 60,
+            "reasoning_tokens": 30,
+            "output_tokens_include_reasoning": True,
+            "total_tokens": 1060,
+            "peak_request_input_tokens": 600,
+            "cost_usd": 0.375,
+        },
+        {"model": "summarizer-model"},
+    ],
+    "extensions": {"source": "native"},
+}
+
+
+def test_usage_detailed_fields_round_trip():
+    usage = AgentUsage.from_mapping(DETAILED_USAGE)
+
+    assert usage.models[0] == AgentModelUsage(
+        model="planner-model",
+        provider="openai",
+        input_tokens=1000,
+        cached_input_tokens=700,
+        cache_write_input_tokens=250,
+        input_tokens_include_cache=True,
+        output_tokens=60,
+        reasoning_tokens=30,
+        output_tokens_include_reasoning=True,
+        total_tokens=1060,
+        peak_request_input_tokens=600,
+        cost_usd=0.375,
+    )
+    assert usage.to_mapping() == DETAILED_USAGE
+    assert type_adapter(AgentUsage).validate_python(DETAILED_USAGE) == usage
+
+
+def test_usage_without_detailed_fields_keeps_wire_shape():
+    usage = AgentUsage(input_tokens=3, output_tokens=5)
+
+    assert usage.models == []
+    assert usage.to_mapping() == {"input_tokens": 3, "output_tokens": 5}
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["cache_write_input_tokens", "reasoning_tokens", "peak_request_input_tokens"],
+)
+@pytest.mark.parametrize("model", [AgentUsage, AgentModelUsage])
+@pytest.mark.parametrize("value", [-1, 1 << 64, True, 1.5])
+def test_usage_rejects_invalid_detailed_counter(model, field_name, value):
+    required = {"model": "planner-model"} if model is AgentModelUsage else {}
+    with pytest.raises(ContractValidationError):
+        model(**required, **{field_name: value})
+
+
+@pytest.mark.parametrize("model", [AgentUsage, AgentModelUsage])
+@pytest.mark.parametrize("value", [0, 1, "true"])
+def test_usage_rejects_invalid_reasoning_semantics(model, value):
+    required = {"model": "planner-model"} if model is AgentModelUsage else {}
+    with pytest.raises(ContractValidationError):
+        model(**required, output_tokens_include_reasoning=value)
+
+
+@pytest.mark.parametrize(
+    ("mapping", "message"),
+    [
+        ({}, "missing required field 'model'"),
+        ({"model": " \t"}, "model: must be a non-empty string"),
+        (
+            {"model": "planner-model", "provider": " \t"},
+            "provider: must be a non-empty string",
+        ),
+        (
+            {"model": "planner-model", "cost_usd": -1.0},
+            "cost_usd: must be greater than or equal to 0",
+        ),
+        (
+            {"model": "planner-model", "cost_usd": float("nan")},
+            "cost_usd: must be a finite number",
+        ),
+        (
+            {"model": "planner-model", "cost_usd": float("inf")},
+            "cost_usd: must be a finite number",
+        ),
+        ({"model": "planner-model", "reasoning": 1}, "unexpected field 'reasoning'"),
+        (
+            {"model": "planner-model", "extensions": {}},
+            "unexpected field 'extensions'",
+        ),
+    ],
+)
+def test_model_usage_rejects_invalid_values(mapping, message):
+    with pytest.raises(ContractValidationError, match=message):
+        AgentModelUsage.from_mapping(mapping)
+
+
+@pytest.mark.parametrize(
+    "models",
+    [
+        [{"model": "planner-model"}, {"model": "Planner-Model"}],
+        [
+            {"model": "planner-model", "provider": "openai"},
+            {"model": "PLANNER-MODEL", "provider": "OpenAI"},
+        ],
+    ],
+)
+def test_usage_rejects_duplicate_models_case_insensitively(models):
+    with pytest.raises(
+        ContractValidationError,
+        match="models.1: must report each provider and model pair once",
+    ):
+        AgentUsage.from_mapping({"models": models})
+
+
+def test_usage_accepts_one_model_served_by_distinct_providers():
+    usage = AgentUsage(
+        models=[
+            AgentModelUsage(model="planner-model"),
+            AgentModelUsage(model="planner-model", provider="openai"),
+            AgentModelUsage(model="planner-model", provider="azure"),
+        ]
+    )
+
+    assert len(usage.models) == 3
 
 
 def test_agent_run_request_contains_only_southbound_request_fields():
@@ -148,7 +292,7 @@ def test_agent_execution_models_track_rust_schema_root_fields(model, filename):
     [
         (
             "agent-run-result.schema.json",
-            (AgentArtifact, AgentRunError, AgentUsage),
+            (AgentArtifact, AgentModelUsage, AgentRunError, AgentUsage),
         ),
         (
             "runtime-context.schema.json",
