@@ -14,10 +14,12 @@ import asyncio
 import contextlib
 import os
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.deepagents import adapter
 from nemo_fabric_adapters.common.utils import relay_request_context
 
@@ -39,6 +41,30 @@ def isolated_scope_stack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         yield
     finally:
         nemo_relay._scope_stack_var.reset(token)
+
+
+@pytest.fixture(name="make_runtime_context")
+def make_runtime_context_fixture(
+    tmp_path: Path,
+) -> Callable[[str, str], RuntimeContext]:
+    def make(request_id: str, invocation_id: str) -> RuntimeContext:
+        return RuntimeContext.from_mapping(
+            {
+                "runtime_id": "runtime-1",
+                "invocation_id": invocation_id,
+                "request_id": request_id,
+                "environment": {
+                    "environment_id": "test-environment",
+                    "provider": "test",
+                    "control_location": "in_env_control",
+                    "workspace": str(tmp_path),
+                    "ownership": "caller_owned",
+                },
+                "artifacts": {},
+            }
+        )
+
+    return make
 
 
 async def _overlapping_chain_runs(handler: NemoRelayCallbackHandler) -> None:
@@ -138,7 +164,9 @@ class _NoopPlugin:
         )
 
 
-async def test_uuid_request_id_seeds_real_relay_parent(monkeypatch):
+async def test_uuid_request_id_seeds_real_relay_parent(
+    monkeypatch, make_runtime_context
+):
     async def fake_invoke(agent, user_message, thread_id, callbacks=None):
         return {"messages": []}, [], []
 
@@ -157,8 +185,7 @@ async def test_uuid_request_id_seeds_real_relay_parent(monkeypatch):
 
     outcome = await runtime._invoke_with_telemetry(
         "hello",
-        request_id,
-        "invocation-1",
+        make_runtime_context(request_id, "invocation-1"),
         None,
     )
 
@@ -169,12 +196,15 @@ async def test_uuid_request_id_seeds_real_relay_parent(monkeypatch):
         {
             "nemo_fabric_request_id": request_id,
             "nemo_fabric_invocation_id": "invocation-1",
+            "nemo_fabric_runtime_id": "runtime-1",
         }
     ]
     assert nemo_relay.scope.get_handle().uuid == baseline.uuid
 
 
-async def test_overlapping_turns_stay_telemetry_clean(monkeypatch):
+async def test_overlapping_turns_stay_telemetry_clean(
+    monkeypatch, make_runtime_context
+):
     """Two ordered turns end to end: real scope, real callback, real stack."""
 
     async def fake_invoke(agent, user_message, thread_id, callbacks=None):
@@ -193,10 +223,10 @@ async def test_overlapping_turns_stay_telemetry_clean(monkeypatch):
     runtime._callback_handler_type = NemoRelayCallbackHandler
 
     first = await runtime._invoke_with_telemetry(
-        "hello", "request-1", "invocation-1", None
+        "hello", make_runtime_context("request-1", "invocation-1"), None
     )
     second = await runtime._invoke_with_telemetry(
-        "hello again", "request-2", "invocation-2", None
+        "hello again", make_runtime_context("request-2", "invocation-2"), None
     )
 
     assert (first.error, first.telemetry_error) == (None, None)

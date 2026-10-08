@@ -422,6 +422,7 @@ async def test_relay_enabled_uses_instrumented_subclass_and_reports_artifacts(
     assert request_scope[2]["metadata"] == {
         "nemo_fabric_request_id": "mini-request",
         "nemo_fabric_invocation_id": "mini-invocation",
+        "nemo_fabric_runtime_id": "mini-runtime",
     }
     assert mock_relay["step_starts"][0][2]["handle"] is mock_relay["request_handle"]
     assert mock_relay["llm_starts"][0][2]["handle"] is mock_relay["step_handle"]
@@ -463,6 +464,7 @@ async def test_uuid_request_id_seeds_relay_propagation(
     assert mock_relay["request_scopes"][0][2]["metadata"] == {
         "nemo_fabric_request_id": request_id,
         "nemo_fabric_invocation_id": "mini-invocation",
+        "nemo_fabric_runtime_id": "mini-runtime",
     }
 
 
@@ -502,6 +504,7 @@ async def test_typed_session_root_roots_relay_propagation(
         "nemo_fabric_request_id": request_id,
         "nemo_fabric_session_root": SESSION_ROOT,
         "nemo_fabric_invocation_id": "mini-invocation",
+        "nemo_fabric_runtime_id": "mini-runtime",
     }
 
 

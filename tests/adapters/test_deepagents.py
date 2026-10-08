@@ -740,6 +740,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
         {
             "nemo_fabric_request_id": "request-1",
             "nemo_fabric_invocation_id": "inv-1",
+            "nemo_fabric_runtime_id": "run-1",
         }
     ]
     # the Deep Agents callback handler is added to the LangGraph run config so
@@ -758,6 +759,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
             {
                 "nemo_fabric_request_id": "018f47a4-3af7-7d94-8e61-9f0f89b5d312",
                 "nemo_fabric_invocation_id": "inv-1",
+                "nemo_fabric_runtime_id": "run-1",
             },
         ),
         (
@@ -766,6 +768,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
             {
                 "nemo_fabric_request_id": "request-1",
                 "nemo_fabric_invocation_id": "inv-1",
+                "nemo_fabric_runtime_id": "run-1",
             },
         ),
     ],
@@ -1411,6 +1414,7 @@ async def test_native_telemetry_exports_without_artifacts(
         {
             "nemo_fabric_request_id": "request-1",
             "nemo_fabric_invocation_id": "inv-1",
+            "nemo_fabric_runtime_id": "run-1",
         }
     ]
     assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get(
@@ -2216,10 +2220,12 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
         {
             "nemo_fabric_request_id": "request-1",
             "nemo_fabric_invocation_id": "inv-1",
+            "nemo_fabric_runtime_id": "run-relay-persistent",
         },
         {
             "nemo_fabric_request_id": "request-1",
             "nemo_fabric_invocation_id": "inv-2",
+            "nemo_fabric_runtime_id": "run-relay-persistent",
         },
     ]
     assert fake_sdks["saver_exits"] == 1

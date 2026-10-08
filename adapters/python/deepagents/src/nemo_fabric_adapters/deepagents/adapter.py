@@ -724,7 +724,6 @@ class DeepAgentsRuntime:
             )
 
         user_message = common_utils.normalize_user_input(request.input)
-        request_id = runtime_context.request_id
 
         resumed = self._completed_invocations > 0
         inherited_quarantine = self._telemetry_quarantine is not None
@@ -733,8 +732,7 @@ class DeepAgentsRuntime:
         else:
             outcome = await self._invoke_with_telemetry(
                 user_message,
-                request_id,
-                runtime_context.invocation_id,
+                runtime_context,
                 request.relay_session_root,
             )
 
@@ -806,8 +804,7 @@ class DeepAgentsRuntime:
     async def _invoke_with_telemetry(
         self,
         user_message: str,
-        request_id: str,
-        invocation_id: str,
+        runtime_context: RuntimeContext,
         session_root: str | None,
     ) -> TurnOutcome:
         """Run one turn inside the Relay plugin/scope, isolating telemetry faults.
@@ -838,9 +835,11 @@ class DeepAgentsRuntime:
                 # turn, which would lose one of the two.
                 try:
                     request_context, metadata = common_utils.relay_request_context(
-                        request_id, session_root
+                        runtime_context.request_id, session_root
                     )
-                    metadata["nemo_fabric_invocation_id"] = invocation_id
+                    metadata.update(
+                        common_utils.relay_correlation_metadata(runtime_context)
+                    )
                     with request_context:
                         with self._relay_scope.scope(
                             "deepagents-request",

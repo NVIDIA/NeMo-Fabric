@@ -213,7 +213,7 @@ class MiniSweAgentRuntime:
                 request_context, metadata = common_utils.relay_request_context(
                     context.request_id, session_root
                 )
-                metadata["nemo_fabric_invocation_id"] = context.invocation_id
+                metadata.update(common_utils.relay_correlation_metadata(context))
                 with (
                     request_context,
                     self._relay_scope.scope(
