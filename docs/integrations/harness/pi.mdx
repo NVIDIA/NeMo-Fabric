@@ -112,11 +112,11 @@ pair that does not exactly match a Pi built-in is treated as a new
 gateway-served model (there is no aliasing onto a built-in by a different id).
 
 For a gateway model, set `base_url` to the gateway endpoint and declare the
-model's wire protocol in `models.<role>.extensions.api`. This value is the
+model's wire protocol with the model's `api` field. This value is the
 protocol your gateway speaks, not the model's vendor: a Bedrock- or
 Anthropic-trained model served over an OpenAI-compatible `/v1/chat/completions`
 endpoint uses `openai-completions`; use `anthropic-messages` only when the
-endpoint speaks Anthropic's native Messages API. `extensions.api` is required for
+endpoint speaks Anthropic's native Messages API. `api` is required for
 a model Pi does not already know — the adapter does not guess it — and must be
 one of:
 
@@ -131,8 +131,8 @@ one of:
 - `mistral-conversations`
 - `pi-messages`
 
-The remaining Pi-specific catalog fields are optional and also go under
-`models.<role>.extensions`:
+The remaining Pi-specific model fields are optional and set directly on the
+model alongside `api`:
 
 - `context_window` — the model's context window, in tokens.
 - `max_tokens` — the maximum response length, in tokens.
@@ -152,25 +152,23 @@ example below registers an NVIDIA Nemotron model from the OpenAI-compatible
 ```python
 from nemo_fabric import ModelConfig
 
+# api is the gateway's wire protocol: NVIDIA Build serves this model over an
+# OpenAI-compatible endpoint.
 ModelConfig(
     provider="nvidia-build",
     model="nvidia/nemotron-3-super-120b-a12b",
     api_key_env="NVIDIA_API_KEY",
     base_url="https://integrate.api.nvidia.com/v1",
-    extensions={
-        # api is the gateway's wire protocol: NVIDIA Build serves this model
-        # over an OpenAI-compatible endpoint.
-        "api": "openai-completions",
-        "context_window": 256000,
-        "max_tokens": 32768,
-        "reasoning": True,
-        "input": ["text"],
-        "name": "Nemotron 3 Super 120B (NVIDIA Build)",
-    },
+    api="openai-completions",
+    context_window=256_000,
+    max_tokens=32_768,
+    reasoning=True,
+    input=["text"],
+    name="Nemotron 3 Super 120B (NVIDIA Build)",
 )
 ```
 
-Every `extensions` field except `api` is optional; omit the ones you don't need.
+Every Pi-specific field except `api` is optional; omit the ones you don't need.
 
 ## Configure Skills and Extensions
 
