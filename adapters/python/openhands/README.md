@@ -74,6 +74,8 @@ directory. Each skill path must be a directory containing `SKILL.md`. The
 adapter disables ambient OpenHands user, public, project, and memory loading;
 only explicitly configured NeMo Fabric skills are loaded.
 
+The adapter configures the OpenHands SDK standard summarizing condenser, `default_condenser`, with the agent model. When the conversation exceeds 80 events, or exceeds the model input token limit when OpenHands knows it, OpenHands replaces older events with a model-generated summary and keeps the first 4 events. When the model rejects a request for exceeding its context window, OpenHands condenses the history and continues instead of failing the invocation. Summarization calls count toward invocation usage. NeMo Fabric does not expose settings to disable or tune the condenser.
+
 The initial adapter does not support Relay telemetry, native streaming,
 interactive confirmation, MCP authentication, or per-server MCP tool filters.
 
