@@ -504,7 +504,7 @@ function selectModel(config: AgentConfig): AgentModelConfig {
  */
 function buildCatalogModel(model: AgentModelConfig): PiCatalogModel {
   const meta = { ...((model.extensions ?? {}) as Record<string, unknown>), ...((model.settings ?? {}) as Record<string, unknown>) };
-  const num = (v: unknown, fallback: number): number => (typeof v === "number" ? v : fallback);
+  const num = (value: unknown, fallback: number): number => (typeof value === "number" ? value : fallback);
   return {
     id: model.model,
     name: typeof meta.name === "string" ? meta.name : model.model,
@@ -590,6 +590,7 @@ function validateToolDefinition(name: string, value: unknown): ToolDefinition {
       { metadata: { tool: name } },
     );
   }
+  // SAFETY: the checks above verify every field of the ToolDefinition contract at runtime.
   return value as unknown as ToolDefinition;
 }
 
@@ -928,7 +929,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       modelsByProvider.set(entry.provider, group);
     }
     for (const [providerId, entries] of modelsByProvider) {
-      const keyEnv = entries.find((e) => e.api_key_env)?.api_key_env ?? undefined;
+      const keyEnv = entries.find((entry) => entry.api_key_env)?.api_key_env ?? undefined;
       if (keyEnv) {
         const providerKey = credentialValue(input, keyEnv);
         if (providerKey && providerKey.length > 0) {
@@ -936,10 +937,15 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         }
       }
       const seen = new Set<string>();
-      const models = entries
-        .filter((e) => !seen.has(e.model) && seen.add(e.model) !== undefined)
-        .map(buildCatalogModel);
-      const providerBaseUrl = entries.find((e) => e.base_url)?.base_url ?? undefined;
+      const uniqueEntries = entries.filter((entry) => {
+        if (seen.has(entry.model)) {
+          return false;
+        }
+        seen.add(entry.model);
+        return true;
+      });
+      const models = uniqueEntries.map(buildCatalogModel);
+      const providerBaseUrl = entries.find((entry) => entry.base_url)?.base_url ?? undefined;
       modelRuntime.registerProvider(providerId, {
         ...(providerBaseUrl ? { baseUrl: providerBaseUrl } : {}),
         api: "openai-completions",
