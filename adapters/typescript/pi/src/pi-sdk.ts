@@ -360,7 +360,7 @@ function isolatedMcpCredentials(): McpCredentials {
     tokens: () => undefined,
     remove: () => false,
   };
-  // Pi types this option as its concrete credential-store class even though
+  // SAFETY: Pi types this option as its concrete credential-store class even though
   // the extension uses only this public method surface.
   return credentials as unknown as McpCredentials;
 }
@@ -982,9 +982,14 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     await modelRuntime.setRuntimeApiKey(selected.provider, apiKey);
     const relayEnabled = input.runtimeContext.telemetry?.relay_enabled === true;
 
-    // Register configured models into Pi's catalog (grouped by provider: registerProvider
-    // is provider-keyed and overwrites `models` on re-registration). Required because the
-    // runtime uses modelsPath:null + allowModelNetwork:false, so gateway models aren't known.
+    // Register the configured models into Pi's catalog, grouped by provider (registerProvider is
+    // provider-keyed and overwrites `models` per provider). Required because the runtime uses
+    // modelsPath:null + allowModelNetwork:false, so a gateway model isn't otherwise known.
+    //
+    // In practice a Fabric agent runs ONE model per session (one role), so there is normally a
+    // single entry here; the loop simply registers whatever roles the config declares. Each
+    // model carries its own baseUrl (from buildCatalogModel), which Pi resolves ahead of any
+    // provider-level baseUrl, so no provider-wide URL is synthesized from one role.
     const modelsByProvider = new Map<string, AgentModelConfig[]>();
     for (const entry of Object.values(input.config.models ?? {})) {
       const group = modelsByProvider.get(entry.provider) ?? [];
@@ -992,50 +997,33 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       modelsByProvider.set(entry.provider, group);
     }
     for (const [providerId, entries] of modelsByProvider) {
-      // Order the selected role first so first-wins resolution (credential, model dedup, and
-      // provider base URL below) stays authoritative for the model this session will actually
-      // use, rather than depending on the order roles appear in the config map.
-      let orderedEntries = entries;
-      if (selected.provider === providerId) {
-        orderedEntries = [...entries].sort((a, b) => {
-          if (a === selected) {
-            return -1;
-          }
-          if (b === selected) {
-            return 1;
-          }
-          return 0;
-        });
-      }
-      const keyEnv = orderedEntries.find((entry) => entry.api_key_env)?.api_key_env ?? undefined;
+      const keyEnv = entries.find((entry) => entry.api_key_env)?.api_key_env ?? undefined;
       if (keyEnv) {
         const providerKey = credentialValue(input, keyEnv);
         if (providerKey && providerKey.length > 0) {
           await modelRuntime.setRuntimeApiKey(providerId, providerKey);
         }
       }
-      const seen = new Set<string>();
-      const uniqueEntries = orderedEntries.filter((entry) => {
-        if (seen.has(entry.model)) {
-          return false;
-        }
-        seen.add(entry.model);
-        return true;
-      });
-      const models = uniqueEntries.map(buildCatalogModel);
-      const providerBaseUrl = orderedEntries.find((entry) => entry.base_url)?.base_url ?? undefined;
+      const models = entries.map(buildCatalogModel);
       try {
-        modelRuntime.registerProvider(providerId, {
-          ...(providerBaseUrl ? { baseUrl: providerBaseUrl } : {}),
-          models,
-        });
+        modelRuntime.registerProvider(providerId, { models });
       } catch (error) {
-        // Pi rejects a model it cannot resolve an `api` for (not a built-in and no extensions.api).
-        // Surface it as an actionable Fabric error rather than leaking the SDK's wording.
+        const cause = error instanceof Error ? error.message : String(error);
+        // Pi throws here with a 'no "api" specified' message when it can't resolve a model's
+        // wire protocol (not a built-in and no extensions.api). Only THAT cause maps to the
+        // api-required remediation; any other registration failure keeps a generic code so the
+        // message isn't misleading.
+        if (/no "api" specified/i.test(cause)) {
+          throw new LifecycleError(
+            "pi_model_api_required",
+            `Set extensions.api for a gateway-served model (one of: ${SUPPORTED_MODEL_APIS.join(", ")}); provider '${providerId}' has a model Pi cannot resolve an api for`,
+            { metadata: { provider: providerId, cause } },
+          );
+        }
         throw new LifecycleError(
-          "pi_model_api_required",
-          `Set extensions.api for each gateway-served model (one of: ${SUPPORTED_MODEL_APIS.join(", ")}); provider '${providerId}' has a model Pi cannot resolve an api for`,
-          { metadata: { provider: providerId, cause: error instanceof Error ? error.message : String(error) } },
+          "pi_provider_registration_failed",
+          `Pi rejected the configuration for provider '${providerId}'`,
+          { metadata: { provider: providerId, cause } },
         );
       }
     }

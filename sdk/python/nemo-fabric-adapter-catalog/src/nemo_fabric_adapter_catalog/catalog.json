@@ -1728,6 +1728,35 @@
                 "minimum": 1,
                 "type": "integer"
               },
+              "cost": {
+                "additionalProperties": false,
+                "description": "Per-million-token pricing. All four rates are required and non-negative.",
+                "properties": {
+                  "cacheRead": {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "cacheWrite": {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "input": {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "output": {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "input",
+                  "output",
+                  "cacheRead",
+                  "cacheWrite"
+                ],
+                "type": "object"
+              },
               "input": {
                 "items": {
                   "enum": [
@@ -1866,7 +1895,7 @@
         "name": "nemo-fabric-adapters-pi",
         "version": "0.5.0"
       },
-      "sha256": "26cf1d4c6dd18124c3d8730ff0e826291fa2234bdac964c02550e8668bf6e839",
+      "sha256": "17830064b0004623d582e3e28e2254245c6e5efb7c3a9609bde24a06e3e89cff",
       "source": "adapters/typescript/pi/pi.fabric-adapter.json"
     },
     "nvidia.fabric.qwen": {

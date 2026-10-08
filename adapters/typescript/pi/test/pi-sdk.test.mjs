@@ -1182,7 +1182,7 @@ test("rejects a model whose extensions.max_tokens is not positive", async () => 
   }
 });
 
-test("keeps the selected role's credential and base URL when roles share a provider", async () => {
+test("registers each role's own model with its own base URL when roles share a provider", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-selected-")));
   const extensionPath = join(workspace, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
@@ -1196,8 +1196,9 @@ test("keeps the selected role's credential and base URL when roles share a provi
       config: {
         harness: { settings: { relay_extension_path: extensionPath } },
         models: {
-          // A non-default role under the same provider is declared FIRST; the selected
-          // default role's base URL must still win for the session.
+          // A second role under the same provider is declared FIRST with a different base URL;
+          // the selected default role resolves to its OWN base URL (Pi uses the per-model url),
+          // never the sibling's.
           analysis: {
             api_key_env: "TEST_API_KEY",
             base_url: "https://other.example.test/v1",
@@ -1219,6 +1220,42 @@ test("keeps the selected role's credential and base URL when roles share a provi
     });
     await runtime.stop();
     assert.equal(capture.model.baseUrl, "https://selected.example.test/v1");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("accepts a well-formed extensions.cost", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-cost-ok-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  const capture = {};
+  const factory = captureModelFactory(capture);
+  const runtime = new PiAdapterRuntime(factory);
+  try {
+    await runtime.start({
+      agentName: "pi-catalog-cost-ok",
+      baseDir: workspace,
+      config: {
+        harness: { settings: { relay_extension_path: extensionPath } },
+        models: {
+          default: {
+            api_key_env: "TEST_API_KEY",
+            base_url: "https://gateway.example.test/v1",
+            model: "custom-gateway-model",
+            provider: "custom-gateway-provider",
+            extensions: {
+              api: "openai-completions",
+              cost: { input: 1.5, output: 6, cacheRead: 0.3, cacheWrite: 0 },
+            },
+          },
+        },
+        tools: { enabled: [] },
+      },
+      runtimeContext: makeRuntimeContext(workspace),
+    });
+    await runtime.stop();
+    assert.equal(capture.model.api, "openai-completions");
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
