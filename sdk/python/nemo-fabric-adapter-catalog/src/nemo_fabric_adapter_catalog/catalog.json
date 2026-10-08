@@ -493,6 +493,136 @@
       "sha256": "f66fb66d3a366977619bc9e88a4d926e0b71bbc28ac965b9a416bf2559106ce5",
       "source": "adapters/python/codex/codex.fabric-adapter.json"
     },
+    "nvidia.fabric.droid": {
+      "descriptor": {
+        "adapter_id": "nvidia.fabric.droid",
+        "adapter_kind": "process",
+        "capabilities": {
+          "cancellation": false,
+          "service": false,
+          "streaming": false,
+          "updates": false
+        },
+        "config": {
+          "accepts": [
+            "models",
+            "instructions.system",
+            "tools.enabled",
+            "tools.blocked",
+            "mcp",
+            "skills"
+          ],
+          "system_instruction_modes": [
+            "replace",
+            "append"
+          ]
+        },
+        "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "duration_ms": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "finish_reason": {
+                "enum": [
+                  "success",
+                  "interrupted",
+                  "error_during_execution",
+                  "error_structured_output"
+                ],
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "turn_count": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "session_id",
+              "finish_reason",
+              "duration_ms",
+              "turn_count"
+            ],
+            "type": "object"
+          },
+          "usage": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "cache_read_tokens": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "cache_write_tokens": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "factory_credits": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "thinking_tokens": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "model_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "api_key_env": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "model": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "provider": {
+              "const": "factory"
+            }
+          },
+          "required": [
+            "provider",
+            "model",
+            "api_key_env"
+          ],
+          "type": "object"
+        },
+        "requirements": {
+          "binaries": [
+            "node",
+            "droid"
+          ]
+        },
+        "runner": {
+          "command": "node",
+          "script": "dist/cli.js"
+        },
+        "settings_schema": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        }
+      },
+      "ecosystem": "typescript",
+      "package": {
+        "name": "nemo-fabric-adapters-droid",
+        "version": "0.5.0"
+      },
+      "sha256": "6d1b3e67bf4d7b803c292057a27aa6c1c272f1160118cf0bb349ee273b067f14",
+      "source": "adapters/typescript/droid/droid.fabric-adapter.json"
+    },
     "nvidia.fabric.hermes": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.hermes",

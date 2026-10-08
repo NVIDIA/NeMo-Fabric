@@ -117,6 +117,7 @@ test("maps model, credential, append instructions, and an exact built-in tool po
     modelId: "auto",
     apiKey: "secret",
     autonomyLevel: "high",
+    env: { FACTORY_API_KEY: "secret" },
     systemPrompt: { type: "preset", preset: "droid", append: "Be concise." },
   }]);
   assert.deepEqual(sdk.calls.updateSettings, [{ disabledToolIds: ["Edit", "Execute"] }]);
@@ -182,6 +183,7 @@ test("maps replacement instructions and native stdio, HTTP, and SSE MCP configur
   });
   assert.equal(env.HOME, env.USERPROFILE);
   assert.equal(env.HOME, env.FACTORY_HOME_OVERRIDE);
+  assert.equal(env.FACTORY_API_KEY, "secret");
   assert.deepEqual(
     JSON.parse(await readFile(join(env.HOME, ".factory", "mcp.json"), "utf8")),
     {
@@ -221,15 +223,18 @@ test("preserves Factory settings without copying ambient MCP configuration", asy
   await writeFile(join(sourceFactory, "mcp.json"), '{"mcpServers":{"ambient":{"type":"stdio"}}}\n');
   const sdk = fakeSdk({ mcpReport: { servers: [{ name: "configured", status: "connected" }] } });
 
+  const configured = input({
+    tools: undefined,
+    mcp: { servers: { configured: { transport: "stdio", url: "node" } } },
+  });
+  configured.runtimeContext.environment.env.FACTORY_HOME_OVERRIDE = sourceHome;
   const handle = await new DroidSdkSessionFactory(
     sdk.loader,
     10_000,
-    { FACTORY_HOME_OVERRIDE: sourceHome },
-  ).create(input({
-    tools: undefined,
-    mcp: { servers: { configured: { transport: "stdio", url: "node" } } },
-  }));
+    { FACTORY_HOME_OVERRIDE: join(sourceHome, "missing") },
+  ).create(configured);
   const runtimeFactory = join(sdk.calls.create[0].env.HOME, ".factory");
+  assert.equal(sdk.calls.create[0].env.FACTORY_API_KEY, "secret");
   assert.deepEqual(JSON.parse(await readFile(join(runtimeFactory, "settings.json"), "utf8")), settings);
   assert.deepEqual(JSON.parse(await readFile(join(runtimeFactory, "mcp.json"), "utf8")), {
     mcpServers: {

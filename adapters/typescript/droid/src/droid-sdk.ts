@@ -258,8 +258,14 @@ async function prepareRuntimeProfile(
   const factoryRoot = join(home, ".factory");
   const skillsRoot = join(home, ".agents", "skills");
   try {
+    const runtimeEnvironment = input.runtimeContext.environment.env ?? {};
     const sourceHome =
-      parentEnvironment.FACTORY_HOME_OVERRIDE || parentEnvironment.HOME || parentEnvironment.USERPROFILE;
+      runtimeEnvironment.FACTORY_HOME_OVERRIDE ||
+      runtimeEnvironment.HOME ||
+      runtimeEnvironment.USERPROFILE ||
+      parentEnvironment.FACTORY_HOME_OVERRIDE ||
+      parentEnvironment.HOME ||
+      parentEnvironment.USERPROFILE;
     if (sourceHome !== undefined) {
       const sourceSettings = join(sourceHome, ".factory", "settings.json");
       try {
@@ -637,6 +643,7 @@ export class DroidSdkSessionFactory implements DroidSessionFactory {
       );
     }
     const runtimeProfile = await prepareRuntimeProfile(input, mcpServers, this.parentEnvironment);
+    const runtimeEnvironment = input.runtimeContext.environment.env ?? {};
 
     let session: DroidSdkSession | undefined;
     try {
@@ -646,15 +653,15 @@ export class DroidSdkSessionFactory implements DroidSessionFactory {
         modelId: selected.model,
         apiKey,
         autonomyLevel: "high",
-        ...(runtimeProfile.home === undefined
-          ? {}
-          : {
-              env: {
+        env:
+          runtimeProfile.home === undefined
+            ? runtimeEnvironment
+            : {
+                ...runtimeEnvironment,
                 HOME: runtimeProfile.home,
                 USERPROFILE: runtimeProfile.home,
                 FACTORY_HOME_OVERRIDE: runtimeProfile.home,
               },
-            }),
         ...(instruction === undefined || instruction === null
           ? {}
           : {

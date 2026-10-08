@@ -13,7 +13,7 @@ Install the supported SDK and caller-owned Droid CLI separately, then install
 the adapter in the same Node.js project:
 
 ```bash
-npm install --global --save-exact droid@0.233.0
+npm install --global droid@0.233.0
 npm install --save-exact @factory/droid-sdk@0.9.1
 npm install nemo-fabric-adapters-droid
 ```
