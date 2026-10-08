@@ -1117,3 +1117,109 @@ test("rejects a model whose settings.api is not a supported protocol", async () 
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("rejects a model whose settings.cost is incomplete", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-cost-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  const factory = captureModelFactory({});
+  try {
+    await assert.rejects(
+      factory.create({
+        agentName: "pi-catalog-cost",
+        baseDir: workspace,
+        config: {
+          harness: { settings: { relay_extension_path: extensionPath } },
+          models: {
+            default: {
+              api_key_env: "TEST_API_KEY",
+              base_url: "https://gateway.example.test/v1",
+              model: "custom-gateway-model",
+              provider: "custom-gateway-provider",
+              settings: { api: "openai-completions", cost: {} },
+            },
+          },
+          tools: { enabled: [] },
+        },
+        runtimeContext: makeRuntimeContext(workspace),
+      }),
+      (error) => error.code === "pi_model_settings_invalid" && error.message.includes("cost"),
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("rejects a model whose settings.max_tokens is not positive", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-maxtok-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  const factory = captureModelFactory({});
+  try {
+    await assert.rejects(
+      factory.create({
+        agentName: "pi-catalog-maxtok",
+        baseDir: workspace,
+        config: {
+          harness: { settings: { relay_extension_path: extensionPath } },
+          models: {
+            default: {
+              api_key_env: "TEST_API_KEY",
+              base_url: "https://gateway.example.test/v1",
+              model: "custom-gateway-model",
+              provider: "custom-gateway-provider",
+              settings: { api: "openai-completions", max_tokens: 0 },
+            },
+          },
+          tools: { enabled: [] },
+        },
+        runtimeContext: makeRuntimeContext(workspace),
+      }),
+      (error) => error.code === "pi_model_settings_invalid" && error.message.includes("max_tokens"),
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("keeps the selected role's credential and base URL when roles share a provider", async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-selected-")));
+  const extensionPath = join(workspace, "relay-extension.js");
+  await writeFile(extensionPath, "export default function () {}\n", "utf8");
+  const capture = {};
+  const factory = captureModelFactory(capture);
+  const runtime = new PiAdapterRuntime(factory);
+  try {
+    await runtime.start({
+      agentName: "pi-catalog-selected",
+      baseDir: workspace,
+      config: {
+        harness: { settings: { relay_extension_path: extensionPath } },
+        models: {
+          // A non-default role under the same provider is declared FIRST; the selected
+          // default role's base URL must still win for the session.
+          analysis: {
+            api_key_env: "TEST_API_KEY",
+            base_url: "https://other.example.test/v1",
+            model: "custom-analysis-model",
+            provider: "custom-gateway-provider",
+            settings: { api: "openai-completions" },
+          },
+          default: {
+            api_key_env: "TEST_API_KEY",
+            base_url: "https://selected.example.test/v1",
+            model: "custom-default-model",
+            provider: "custom-gateway-provider",
+            settings: { api: "openai-completions" },
+          },
+        },
+        tools: { enabled: [] },
+      },
+      runtimeContext: makeRuntimeContext(workspace),
+    });
+    await runtime.stop();
+    assert.equal(capture.model.baseUrl, "https://selected.example.test/v1");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

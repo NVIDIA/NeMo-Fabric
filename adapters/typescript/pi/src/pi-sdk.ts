@@ -523,7 +523,9 @@ function selectModel(config: AgentConfig): AgentModelConfig {
  */
 function buildCatalogModel(model: AgentModelConfig): PiCatalogModel {
   const meta = { ...((model.extensions ?? {}) as Record<string, unknown>), ...((model.settings ?? {}) as Record<string, unknown>) };
-  const num = (value: unknown, fallback: number): number => (typeof value === "number" ? value : fallback);
+  const fail = (reason: string): never => {
+    throw new LifecycleError("pi_model_settings_invalid", reason, { metadata: { model: model.model } });
+  };
   if (meta.api !== undefined && !SUPPORTED_MODEL_APIS.includes(meta.api as (typeof SUPPORTED_MODEL_APIS)[number])) {
     throw new LifecycleError(
       "pi_model_api_invalid",
@@ -531,17 +533,51 @@ function buildCatalogModel(model: AgentModelConfig): PiCatalogModel {
       { metadata: { model: model.model } },
     );
   }
+  // A supplied token limit must be a positive number; Pi rejects <= 0 with an opaque error.
+  const positiveOr = (value: unknown, fallback: number, field: string): number => {
+    if (value === undefined) {
+      return fallback;
+    }
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      return fail(`settings.${field} must be a positive number`);
+    }
+    return value;
+  };
+  const input = Array.isArray(meta.input) ? meta.input.filter((item) => item === "text" || item === "image") : undefined;
   return {
     id: model.model,
     name: typeof meta.name === "string" ? meta.name : model.model,
     ...(typeof meta.api === "string" ? { api: meta.api as PiCatalogModel["api"] } : {}),
     baseUrl: model.base_url ?? undefined,
     reasoning: meta.reasoning === true,
-    input: Array.isArray(meta.input) ? (meta.input as ("text" | "image")[]) : ["text"],
-    cost: (meta.cost as PiCatalogModel["cost"] | undefined) ?? ZERO_COST,
-    contextWindow: num(meta.context_window, DEFAULT_CONTEXT_WINDOW),
-    maxTokens: num(model.max_tokens ?? meta.max_tokens, DEFAULT_MAX_TOKENS),
+    input: input !== undefined && input.length > 0 ? (input as ("text" | "image")[]) : ["text"],
+    cost: parseCost(meta.cost, fail),
+    contextWindow: positiveOr(meta.context_window, DEFAULT_CONTEXT_WINDOW, "context_window"),
+    maxTokens: positiveOr(model.max_tokens ?? meta.max_tokens, DEFAULT_MAX_TOKENS, "max_tokens"),
   };
+}
+
+// Accept a fully-formed cost (all four numeric rates) or fall back to zero-cost; reject a
+// partial object (e.g. `{}`), which Pi would turn into NaN costs.
+function parseCost(value: unknown, fail: (reason: string) => never): PiCatalogModel["cost"] {
+  if (value === undefined) {
+    return ZERO_COST;
+  }
+  if (typeof value !== "object" || value === null) {
+    return fail("settings.cost must be an object with numeric input/output/cacheRead/cacheWrite rates");
+  }
+  const record = value as Record<string, unknown>;
+  const rates = ["input", "output", "cacheRead", "cacheWrite"] as const;
+  const parsed: Record<string, number> = {};
+  for (const rate of rates) {
+    const amount = record[rate];
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) {
+      return fail(`settings.cost.${rate} must be a non-negative number`);
+    }
+    parsed[rate] = amount;
+  }
+  // SAFETY: every rate was just validated as a finite non-negative number above.
+  return parsed as unknown as PiCatalogModel["cost"];
 }
 
 function harnessSettings(config: AgentConfig): PiHarnessSettings {
@@ -955,7 +991,22 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       modelsByProvider.set(entry.provider, group);
     }
     for (const [providerId, entries] of modelsByProvider) {
-      const keyEnv = entries.find((entry) => entry.api_key_env)?.api_key_env ?? undefined;
+      // Order the selected role first so first-wins resolution (credential, model dedup, and
+      // provider base URL below) stays authoritative for the model this session will actually
+      // use, rather than depending on the order roles appear in the config map.
+      let orderedEntries = entries;
+      if (selected.provider === providerId) {
+        orderedEntries = [...entries].sort((a, b) => {
+          if (a === selected) {
+            return -1;
+          }
+          if (b === selected) {
+            return 1;
+          }
+          return 0;
+        });
+      }
+      const keyEnv = orderedEntries.find((entry) => entry.api_key_env)?.api_key_env ?? undefined;
       if (keyEnv) {
         const providerKey = credentialValue(input, keyEnv);
         if (providerKey && providerKey.length > 0) {
@@ -963,7 +1014,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         }
       }
       const seen = new Set<string>();
-      const uniqueEntries = entries.filter((entry) => {
+      const uniqueEntries = orderedEntries.filter((entry) => {
         if (seen.has(entry.model)) {
           return false;
         }
@@ -971,7 +1022,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         return true;
       });
       const models = uniqueEntries.map(buildCatalogModel);
-      const providerBaseUrl = entries.find((entry) => entry.base_url)?.base_url ?? undefined;
+      const providerBaseUrl = orderedEntries.find((entry) => entry.base_url)?.base_url ?? undefined;
       try {
         modelRuntime.registerProvider(providerId, {
           ...(providerBaseUrl ? { baseUrl: providerBaseUrl } : {}),
