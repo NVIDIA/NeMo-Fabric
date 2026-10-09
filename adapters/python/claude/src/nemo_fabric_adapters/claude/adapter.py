@@ -797,7 +797,8 @@ def adapter_failure(error: ClaudeAdapterError) -> dict[str, Any]:
 
 def sdk_failure(error: BaseException) -> dict[str, Any]:
     if isinstance(error, TimeoutError):
-        return _failure("timeout", "Claude invocation timed out")
+        # Only Fabric's invocation deadline is reported as `timeout`.
+        return _failure("claude_timed_out", "Claude SDK request timed out")
     if isinstance(error, CLINotFoundError):
         return _failure("claude_cli_not_found", "Claude Code executable was not found")
     if isinstance(error, CLIConnectionError):
@@ -1142,8 +1143,9 @@ class ClaudeRuntime:
 
         messages: list[Message] = []
         result: ResultMessage | None = None
+        deadline = asyncio.timeout(remaining_timeout)
         try:
-            async with asyncio.timeout(remaining_timeout):
+            async with deadline:
                 await client.query(prompt)
                 async for message in client.receive_response():
                     if isinstance(message, ResultMessage):
@@ -1153,7 +1155,11 @@ class ClaudeRuntime:
         except (TimeoutError, ClaudeSDKError) as error:
             self._unusable = True
             await self._interrupt_failed_invocation()
-            output = sdk_failure(error)
+            output = (
+                _failure("timeout", "Claude invocation timed out")
+                if deadline.expired()
+                else sdk_failure(error)
+            )
         except Exception:
             # Claude Agent SDK 0.2.120 can yield an error ResultMessage and then
             # raise a plain Exception while closing the response stream.

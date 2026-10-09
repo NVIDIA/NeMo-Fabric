@@ -1883,22 +1883,30 @@ def test_native_telemetry_requires_mapping(codex_payload):
         adapter.native_codex_telemetry_config(runtime_input(codex_payload)[1])
 
 
-def test_timeout_interrupts_native_turn_and_closes_sdk(codex_payload, mock_codex):
+@pytest.mark.parametrize("deadline_expires", [True, False])
+def test_timeout_interrupts_native_turn_and_closes_sdk(
+    codex_payload, mock_codex, deadline_expires
+):
     mock_blocking_thread = mock_thread("thread-timeout")
 
     async def block():
         await asyncio.sleep(60)
 
-    mock_blocking_thread.handle.run.side_effect = block
+    # An SDK timeout before Fabric's deadline is not invocation expiry.
+    mock_blocking_thread.handle.run.side_effect = (
+        block if deadline_expires else TimeoutError("SDK request timed out")
+    )
     mock_codex.next_thread = mock_blocking_thread
     codex_payload["runtime_context"]["deadline_millis"] = int(
-        (time.time() + 0.05) * 1000
+        (time.time() + (0.05 if deadline_expires else 60)) * 1000
     )
 
     output = invoke_once(codex_payload)
 
     client = mock_codex.instances[0]
-    assert output["error"]["code"] == "timeout"
+    assert output["error"]["code"] == (
+        "timeout" if deadline_expires else "codex_timed_out"
+    )
     assert client.thread.handle.interrupted is True
     assert client.closed is True
 

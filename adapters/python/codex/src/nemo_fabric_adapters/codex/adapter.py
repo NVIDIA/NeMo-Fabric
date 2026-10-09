@@ -1013,7 +1013,8 @@ def adapter_failure(error: CodexAdapterError) -> dict[str, Any]:
 
 def sdk_failure(error: BaseException) -> dict[str, Any]:
     if isinstance(error, TimeoutError):
-        return _failure("timeout", "Codex invocation timed out")
+        # Only Fabric's invocation deadline is reported as `timeout`.
+        return _failure("codex_timed_out", "Codex SDK request timed out")
     if isinstance(error, TransportClosedError):
         return _failure(
             "codex_connection_failed", "Codex SDK runtime connection closed"
@@ -1209,8 +1210,9 @@ async def _invoke_thread(
     """Run one turn and report whether the connected SDK transport remains usable."""
 
     handle = None
+    deadline = asyncio.timeout_at(invocation_deadline)
     try:
-        async with asyncio.timeout_at(invocation_deadline):
+        async with deadline:
             handle = await thread.turn(
                 request_prompt(request),
                 effort=_reasoning_effort(config),
@@ -1225,6 +1227,8 @@ async def _invoke_thread(
             )
     except TimeoutError as error:
         await _interrupt_turn(handle)
+        if deadline.expired():
+            return _failure("timeout", "Codex invocation timed out"), False
         return sdk_failure(error), False
     except CodexAdapterError:
         raise
