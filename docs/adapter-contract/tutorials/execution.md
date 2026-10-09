@@ -130,7 +130,7 @@ value:
 | `environment` | Supplies the resolved workspace, artifact root, environment values, ownership, and provider context. |
 | `artifacts` | Lists artifacts visible when the operation begins. |
 | `telemetry` | Supplies invocation telemetry context, including generated Relay configuration when enabled. |
-| `deadline_millis` | Gives the Unix time in milliseconds by which an invocation should return. NeMo Fabric's own invocation timeout fires shortly after. |
+| `deadline_millis` | Gives the Unix time in milliseconds by which an invocation should return. NeMo Fabric's own invocation timeout fires shortly after and kills the host with its descendant processes. |
 
 Use the canonical
 [`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/runtime-context.schema.json)

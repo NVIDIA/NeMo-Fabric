@@ -16,6 +16,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -61,6 +62,7 @@ from nemo_fabric_adapters.common import lifecycle
 
 
 INTERRUPT_TIMEOUT_SECONDS = 5.0
+CLOCK_RESOLUTION_SECONDS = time.get_clock_info("monotonic").resolution
 SANDBOXES = {
     "read-only": Sandbox.read_only,
     "workspace-write": Sandbox.workspace_write,
@@ -500,7 +502,8 @@ async def _authenticate_mcp_servers(
                 ),
             )
     except CodexAdapterError as error:
-        if _remaining_timeout(invocation_deadline) == 0:
+        # asyncio fires timers up to one clock tick early, so allow that tolerance.
+        if _remaining_timeout(invocation_deadline) <= CLOCK_RESOLUTION_SECONDS:
             # Fabric's deadline, not the authentication step, ended the invocation.
             raise CodexAdapterError("timeout", "Codex invocation timed out") from error
         raise
@@ -1487,13 +1490,12 @@ class CodexRuntime:
                 and relay is not None
                 and atif_before is not None
             ):
+                atif_timeout = min(
+                    relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                    _remaining_timeout(invocation_deadline),
+                )
                 finalized = await relay_artifacts.wait_for_finalized_atif(
-                    relay.plugin_config,
-                    atif_before,
-                    timeout_seconds=min(
-                        relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
-                        _remaining_timeout(invocation_deadline),
-                    ),
+                    relay.plugin_config, atif_before, timeout_seconds=atif_timeout
                 )
                 if finalized is None:
                     self._unusable = True
@@ -1501,9 +1503,7 @@ class CodexRuntime:
                         AdapterRelayError(
                             "codex_relay_atif_timeout",
                             "NeMo Relay did not finalize an ATIF artifact before the deadline",
-                            metadata={
-                                "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
-                            },
+                            metadata={"timeout_seconds": atif_timeout},
                         )
                     )
                     failure["usage"] = output.get("usage")

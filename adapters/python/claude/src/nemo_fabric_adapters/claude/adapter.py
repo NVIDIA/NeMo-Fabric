@@ -1103,13 +1103,12 @@ class ClaudeRuntime:
                 and relay is not None
                 and atif_before is not None
             ):
+                atif_timeout = min(
+                    relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                    _remaining_timeout(invocation_deadline),
+                )
                 finalized = await relay_artifacts.wait_for_finalized_atif(
-                    relay.plugin_config,
-                    atif_before,
-                    timeout_seconds=min(
-                        relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
-                        _remaining_timeout(invocation_deadline),
-                    ),
+                    relay.plugin_config, atif_before, timeout_seconds=atif_timeout
                 )
                 if finalized is None:
                     self._unusable = True
@@ -1119,9 +1118,7 @@ class ClaudeRuntime:
                                 AdapterRelayError(
                                     "claude_relay_atif_timeout",
                                     "NeMo Relay did not finalize an ATIF artifact before the deadline",
-                                    metadata={
-                                        "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
-                                    },
+                                    metadata={"timeout_seconds": atif_timeout},
                                 )
                             ),
                             relay,
