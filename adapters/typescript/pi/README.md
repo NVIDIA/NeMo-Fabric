@@ -13,16 +13,16 @@ The adapter supports:
 
 - One explicit selected model from the `default` role or the sole configured
   role: either a model Pi already ships, or a model served by an
-  OpenAI-compatible gateway Pi does not ship (set its wire protocol in
-  `models.<role>.extensions.api`)
+  OpenAI-compatible gateway Pi does not ship (set its wire protocol with the
+  model's `api` field)
 - Runtime API-key credentials named by `models.<role>.api_key_env`
 - Optional `models.<role>.base_url` (the gateway endpoint, or an endpoint
   override for a Pi-known model)
-- Optional Pi-specific model metadata under `models.<role>.extensions`
+- Optional Pi-specific model metadata set directly on the model
   (`api`, `context_window`, `max_tokens`, `cost`, `reasoning`, `input`, `name`);
   a field you set overrides, a field you omit keeps a Pi-known model's existing
-  value or is left to Pi's own default (the adapter adds no defaults; `api` is
-  required for a model Pi does not already ship)
+  value. The adapter adds no defaults: a gateway model Pi does not ship must
+  supply `api`, `base_url`, `context_window`, and `max_tokens`.
 - Optional replacement system instructions
 - Tool allow and block policy
 - NeMo Fabric custom tools loaded through normalized `tools.definitions`

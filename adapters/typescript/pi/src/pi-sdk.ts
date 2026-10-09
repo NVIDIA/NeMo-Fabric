@@ -516,11 +516,15 @@ function selectModel(config: AgentConfig): AgentModelConfig {
  * model's existing Pi catalog entry, or undefined when Pi doesn't know it). The rule is a thin
  * pass-through: a field the config SUPPLIES (via the model `extensions` block, or `base_url` for
  * the endpoint) is used; a field it OMITS falls back to `base`'s value, and if there is no base
- * (an unknown gateway model) the field is left UNSET so Pi applies its own default where it has
- * one. The adapter invents no defaults of its own and requires nothing beyond what Pi itself
- * requires — Pi rejects a model it cannot resolve an `api` for at registration. Supplied values
- * are still validated (`api` must be a {@link SUPPORTED_MODEL_APIS} value, token limits positive,
- * cost well-formed) so a malformed override fails fast instead of reaching Pi.
+ * (an unknown gateway model) an optional field is left UNSET so Pi applies its own default. The
+ * adapter invents no defaults of its own.
+ *
+ * It does, however, require what Pi has no usable default for. For an unknown model that means a
+ * complete-enough definition: `api` (enforced at registration — Pi can't resolve the wire
+ * protocol otherwise), `base_url`, and `context_window`/`max_tokens` (absent, these resolve to
+ * undefined and break compaction/limit math rather than getting a sane default). Supplied values
+ * are validated (`api` a {@link SUPPORTED_MODEL_APIS} value, token limits positive, cost
+ * well-formed) so a malformed override fails fast instead of reaching Pi.
  */
 export function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel | undefined): PiCatalogModel {
   const meta = (model.extensions ?? {}) as Record<string, unknown>;
@@ -555,9 +559,27 @@ export function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel
   const cost = parseCost(meta.cost, fail) ?? base?.cost;
   const contextWindow = positive(meta.context_window, base?.contextWindow, "context_window");
   const maxTokens = positive(model.max_tokens ?? meta.max_tokens, base?.maxTokens, "max_tokens");
-  // Only include fields that resolved to a value. Omitted ones are left unset so Pi defaults them
-  // (Pi reads these fields defensively, e.g. `contextWindow ?? 0`). The SDK's input type marks
-  // some non-optional, but it tolerates their absence at runtime, so build a sparse object.
+  // For an unknown model (not in Pi's catalog), require the fields Pi has no usable default for:
+  // base_url (Pi can't reach it otherwise) and context_window/max_tokens (absent, they resolve to
+  // undefined and break compaction/limit math rather than getting a sane Pi default). `api` is
+  // enforced separately at registration. The adapter still invents nothing — it requires the
+  // config to supply what Pi genuinely needs, failing fast with a clear error.
+  if (base === undefined) {
+    const missing = [
+      baseUrl === undefined ? "base_url" : undefined,
+      contextWindow === undefined ? "context_window" : undefined,
+      maxTokens === undefined ? "max_tokens" : undefined,
+    ].filter((field): field is string => field !== undefined);
+    if (missing.length > 0) {
+      fail(
+        `model '${model.model}' is not known to Pi, so a complete definition is required; ` +
+          `missing: ${missing.join(", ")} (set base_url and extensions.context_window/max_tokens)`,
+      );
+    }
+  }
+  // Build a sparse entry: include only resolved fields. Omitted optional ones (cost, reasoning,
+  // input) are left unset so Pi applies its own defaults — the adapter adds none. The SDK input
+  // type marks some fields non-optional but tolerates their absence at runtime.
   const entry: Record<string, unknown> = { id: model.model };
   if (typeof meta.name === "string" || base?.name !== undefined) {
     entry.name = typeof meta.name === "string" ? meta.name : base?.name;

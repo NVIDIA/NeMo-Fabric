@@ -142,12 +142,14 @@ model alongside `api`:
 - `input` — the accepted input modalities, a list of `"text"` and/or `"image"`.
 - `name` — a display name for the model.
 
-Any field you set overrides. Any field you omit keeps the model's existing
-value for a Pi-known model, or is left to Pi's own default for an unknown gateway
-model — the adapter supplies no defaults of its own. Only `api` must be set for
-an unknown model, since Pi cannot resolve its wire protocol otherwise. The
-example below registers an NVIDIA Nemotron model from the OpenAI-compatible
-[NVIDIA Build](https://build.nvidia.com) API, which Pi does not ship:
+Any field you set overrides. For a Pi-known model, any field you omit keeps that
+model's existing catalog value; the adapter supplies no defaults of its own. A
+gateway model Pi does not ship has no existing entry to fall back on, so a
+complete definition is required — `api`, `base_url`, `context_window`, and
+`max_tokens` — and planning fails fast otherwise; `cost`, `reasoning`, `input`,
+and `name` remain optional. The example below registers an NVIDIA Nemotron model
+from the OpenAI-compatible [NVIDIA Build](https://build.nvidia.com) API, which Pi
+does not ship:
 
 ```python
 from nemo_fabric import ModelConfig
@@ -168,7 +170,7 @@ ModelConfig(
 )
 ```
 
-Every Pi-specific field except `api` is optional; omit the ones you don't need.
+The `reasoning`, `input`, `cost`, and `name` fields are optional; omit any you don't need.
 
 ## Configure Skills and Extensions
 

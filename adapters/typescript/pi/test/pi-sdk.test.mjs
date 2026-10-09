@@ -114,17 +114,40 @@ test("buildCatalogModel overrides only the explicitly supplied fields of a known
   assert.equal(entry.contextWindow, NATIVE_MODEL.contextWindow);
 });
 
-test("buildCatalogModel invents no defaults for an unknown model, leaving omitted fields unset", () => {
-  // No base (Pi does not know the model) and only api supplied: the adapter must not fabricate
-  // context_window/max_tokens/cost/reasoning/input, so Pi applies its own defaults.
+test("buildCatalogModel requires context_window and max_tokens for an unknown model", () => {
+  // No base (Pi does not know the model) and only api/base_url supplied: context_window and
+  // max_tokens have no usable Pi default, so a complete definition is required rather than
+  // silently registering a model with undefined (compaction-breaking) limits.
+  assert.throws(
+    () =>
+      buildCatalogModel(
+        { provider: "gw", model: "gw/model", api_key_env: "K", base_url: "https://gw/v1", extensions: { api: "openai-completions" } },
+        undefined,
+      ),
+    (error) =>
+      error.code === "pi_model_extensions_invalid" &&
+      error.message.includes("context_window") &&
+      error.message.includes("max_tokens"),
+  );
+});
+
+test("buildCatalogModel accepts a complete unknown-model definition and invents no optional defaults", () => {
+  // api + base_url + context_window + max_tokens is complete; optional fields (cost, reasoning,
+  // input) stay unset so Pi defaults them — the adapter adds none.
   const entry = buildCatalogModel(
-    { provider: "gw", model: "gw/model", api_key_env: "K", base_url: "https://gw/v1", extensions: { api: "openai-completions" } },
+    {
+      provider: "gw",
+      model: "gw/model",
+      api_key_env: "K",
+      base_url: "https://gw/v1",
+      extensions: { api: "openai-completions", context_window: 32_000, max_tokens: 4_096 },
+    },
     undefined,
   );
   assert.equal(entry.api, "openai-completions");
   assert.equal(entry.baseUrl, "https://gw/v1");
-  assert.equal(entry.contextWindow, undefined);
-  assert.equal(entry.maxTokens, undefined);
+  assert.equal(entry.contextWindow, 32_000);
+  assert.equal(entry.maxTokens, 4_096);
   assert.equal(entry.cost, undefined);
   assert.equal(entry.reasoning, undefined);
   assert.equal(entry.input, undefined);
@@ -1134,37 +1157,39 @@ test("resolves a gateway model's api from extensions.api", async () => {
   }
 });
 
-test("registers a gateway model with only api supplied, leaving the rest for Pi to default", async () => {
+test("rejects an unknown gateway model that omits context_window/max_tokens", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-minimal-")));
   const extensionPath = join(workspace, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
-  const capture = {};
-  const factory = captureModelFactory(capture);
-  const runtime = new PiAdapterRuntime(factory);
+  const factory = captureModelFactory({});
   try {
-    await runtime.start({
-      agentName: "pi-catalog-minimal",
-      baseDir: workspace,
-      config: {
-        harness: { settings: { relay_extension_path: extensionPath } },
-        models: {
-          default: {
-            api_key_env: "TEST_API_KEY",
-            base_url: "https://gateway.example.test/v1",
-            model: "custom-gateway-model",
-            provider: "custom-gateway-provider",
-            // Only the wire protocol is supplied. The adapter must NOT invent context_window,
-            // max_tokens, cost, reasoning, or input defaults — it leaves them unset for Pi.
-            extensions: { api: "openai-completions" },
+    await assert.rejects(
+      factory.create({
+        agentName: "pi-catalog-minimal",
+        baseDir: workspace,
+        config: {
+          harness: { settings: { relay_extension_path: extensionPath } },
+          models: {
+            default: {
+              api_key_env: "TEST_API_KEY",
+              base_url: "https://gateway.example.test/v1",
+              model: "custom-gateway-model",
+              provider: "custom-gateway-provider",
+              // Only the wire protocol is supplied. context_window/max_tokens have no usable Pi
+              // default, so an incomplete gateway definition must be rejected (not registered
+              // with undefined limits that break compaction).
+              extensions: { api: "openai-completions" },
+            },
           },
+          tools: { enabled: [] },
         },
-        tools: { enabled: [] },
-      },
-      runtimeContext: makeRuntimeContext(workspace),
-    });
-    await runtime.stop();
-    assert.equal(capture.model.api, "openai-completions");
-    assert.equal(capture.model.baseUrl, "https://gateway.example.test/v1");
+        runtimeContext: makeRuntimeContext(workspace),
+      }),
+      (error) =>
+        error.code === "pi_model_extensions_invalid" &&
+        error.message.includes("context_window") &&
+        error.message.includes("max_tokens"),
+    );
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
