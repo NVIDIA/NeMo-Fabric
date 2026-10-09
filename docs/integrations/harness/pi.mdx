@@ -146,7 +146,7 @@ Any field you set overrides. For a Pi-known model, any field you omit keeps that
 model's existing catalog value; the adapter supplies no defaults of its own. A
 gateway model Pi does not ship has no existing entry to fall back on, so a
 complete definition is required — `api`, `base_url`, `context_window`, and
-`max_tokens` — and planning fails fast otherwise; `cost`, `reasoning`, `input`,
+`max_tokens` — and adapter startup fails fast otherwise; `cost`, `reasoning`, `input`,
 and `name` remain optional. The example below registers an NVIDIA Nemotron model
 from the OpenAI-compatible [NVIDIA Build](https://build.nvidia.com) API, which Pi
 does not ship:
