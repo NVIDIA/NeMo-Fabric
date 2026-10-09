@@ -107,8 +107,11 @@ export interface AgentUsage {
    */
   input_tokens?: number | null;
   /**
-   * Whether input_tokens already includes cached_input_tokens and
-   * cache_write_input_tokens; absent means unknown.
+   * Whether input_tokens already includes both cached_input_tokens (cache
+   * reads) and cache_write_input_tokens (cache writes); absent means
+   * unknown. True means both are included and false means both are
+   * excluded. When the provider includes only one of the two, the adapter
+   * normalizes input_tokens to one of these states before reporting.
    */
   input_tokens_include_cache?: boolean | null;
   /**
@@ -166,8 +169,11 @@ export interface AgentModelUsage {
    */
   input_tokens?: number | null;
   /**
-   * Whether input_tokens already includes cached_input_tokens and
-   * cache_write_input_tokens; absent means unknown.
+   * Whether input_tokens already includes both cached_input_tokens (cache
+   * reads) and cache_write_input_tokens (cache writes); absent means
+   * unknown. True means both are included and false means both are
+   * excluded. When the provider includes only one of the two, the adapter
+   * normalizes input_tokens to one of these states before reporting.
    */
   input_tokens_include_cache?: boolean | null;
   /**

@@ -565,8 +565,11 @@ class AgentUsage(AgentContractBlock):
     """Normalized model usage reported by an adapter target.
 
     ``input_tokens_include_cache`` covers both ``cached_input_tokens`` and
-    ``cache_write_input_tokens``. ``models`` reports each provider and model
-    pair at most once, compared case-insensitively.
+    ``cache_write_input_tokens``: ``True`` means both are included in
+    ``input_tokens`` and ``False`` means both are excluded. When the provider
+    includes only one of the two, normalize ``input_tokens`` before reporting.
+    ``models`` reports each provider and model pair at most once, compared
+    case-insensitively.
     """
 
     input_tokens: int | None = _optional()
