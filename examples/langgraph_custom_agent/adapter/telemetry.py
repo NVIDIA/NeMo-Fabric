@@ -58,7 +58,7 @@ def _load_plugin_config(
                     {
                         "kind": "observability",
                         "enabled": True,
-                        "config": plugin_config or {"version": 3},
+                        "config": plugin_config or {"version": 4},
                     }
                 ],
             }

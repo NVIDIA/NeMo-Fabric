@@ -1780,7 +1780,7 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `version` | `Literal[3]` | No | `3` | — | — |
+| `version` | `Literal[4]` | No | `4` | — | — |
 | `atof` | `RelayAtofConfig \| dict[str, Any] \| None` | No | `None` | — | — |
 | `atif` | `RelayAtifConfig \| dict[str, Any] \| None` | No | `None` | — | — |
 | `opentelemetry` | `RelayOpenTelemetryConfig \| None` | No | `None` | — | — |

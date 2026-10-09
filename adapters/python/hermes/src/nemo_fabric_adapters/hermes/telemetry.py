@@ -8,6 +8,7 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version
 from pathlib import Path
+import re
 from typing import Any
 
 from nemo_fabric_adapter_contract.models import RuntimeContext
@@ -49,18 +50,22 @@ def validate_hermes_telemetry_provider(runtime_context: RuntimeContext) -> None:
         raise ValueError("only relay telemetry is supported for Hermes")
 
 
+# Stable 0.9.x and 0.10.x releases only, like the other Relay version checks; prereleases are rejected.
+_SUPPORTED_RELAY_VERSION = re.compile(r"0\.(?:9|10)\.\d+(?:\+\S+)?")
+
+
 def validate_hermes_relay_compatibility() -> None:
     """Reject Hermes/Relay combinations that cannot activate Fabric telemetry."""
     try:
         relay_version = version("nemo-relay")
     except PackageNotFoundError as error:
         raise RuntimeError(
-            "Hermes Relay telemetry requires nemo-relay 0.9; install the Hermes "
+            "Hermes Relay telemetry requires nemo-relay 0.9 or 0.10; install the Hermes "
             "adapter's relay extra in the Hermes environment"
         ) from error
-    if relay_version.split(".")[:2] != ["0", "9"]:
+    if _SUPPORTED_RELAY_VERSION.fullmatch(relay_version) is None:
         raise RuntimeError(
-            f"Hermes Relay telemetry requires nemo-relay 0.9; found {relay_version}"
+            f"Hermes Relay telemetry requires nemo-relay 0.9 or 0.10; found {relay_version}"
         )
 
     try:
@@ -68,11 +73,11 @@ def validate_hermes_relay_compatibility() -> None:
     except ImportError as error:
         raise RuntimeError(
             "Hermes Relay telemetry requires a Hermes Agent checkout with "
-            "Relay 0.9 support; see the NeMo Fabric Hermes installation guide"
+            "Relay 0.9 or 0.10 support; see the NeMo Fabric Hermes installation guide"
         ) from error
     if not callable(getattr(relay_runtime, "resolve_plugin_sources", None)):
         raise RuntimeError(
-            "Installed Hermes Agent does not support Relay 0.9 telemetry; "
+            "Installed Hermes Agent does not support Relay 0.9 or 0.10 telemetry; "
             "use the Hermes checkout in `just install-hermes-agent` or a "
             "compatible upstream release"
         )

@@ -22,7 +22,7 @@ RELAY_HEALTH_TIMEOUT_SECONDS = 10.0
 RELAY_STOP_TIMEOUT_SECONDS = 5.0
 RELAY_VERSION_TIMEOUT_SECONDS = 5.0
 RELAY_MINIMUM_VERSION = (0, 9, 0)
-RELAY_MAXIMUM_VERSION = (0, 10, 0)
+RELAY_MAXIMUM_VERSION = (0, 11, 0)
 
 
 class RelayGatewayError(RuntimeError):
@@ -103,7 +103,7 @@ def relay_cli_contract(executable: Path) -> RelayCliContract:
         raise RelayGatewayError(
             "unsupported NeMo Relay CLI version "
             f"{'.'.join(str(value) for value in version)}; "
-            "NeMo Fabric requires >=0.9.0,<0.10.0"
+            "NeMo Fabric requires >=0.9.0,<0.11.0"
         )
     return RelayCliContract(version=version)
 

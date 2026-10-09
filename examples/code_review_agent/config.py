@@ -572,7 +572,7 @@ def with_native_otel(base: FabricConfig) -> FabricConfig:
         }
     elif adapter_id == "nvidia.fabric.langchain.deepagents":
         observability = {
-            "version": 3,
+            "version": 4,
             "opentelemetry": {
                 "enabled": True,
                 "endpoints": [

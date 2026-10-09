@@ -122,9 +122,9 @@ export async function relayCliContract(
     throw new RelayGatewayError("NeMo Relay CLI version could not be determined");
   }
   const version: [number, number, number] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  if (match[4] !== undefined || version[0] !== 0 || version[1] !== 9) {
+  if (match[4] !== undefined || version[0] !== 0 || (version[1] !== 9 && version[1] !== 10)) {
     throw new RelayGatewayError(
-      `unsupported NeMo Relay CLI version ${version.join(".")}; NeMo Fabric Pi requires >=0.9.0,<0.10.0`,
+      `unsupported NeMo Relay CLI version ${version.join(".")}; NeMo Fabric Pi requires >=0.9.0,<0.11.0`,
     );
   }
   return { version };

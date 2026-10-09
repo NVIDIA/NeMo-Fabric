@@ -727,12 +727,12 @@ class RelayOpenTelemetryConfig(FabricBaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate_v3_shape(self) -> Self:
+    def _validate_v4_shape(self) -> Self:
         legacy_fields = _LEGACY_FLAT_OTEL_FIELDS.intersection(self.model_extra or {})
         if legacy_fields:
             fields = ", ".join(sorted(legacy_fields))
             raise ValueError(
-                "NeMo Relay observability config version 3 requires exporter "
+                "NeMo Relay observability config version 4 requires exporter "
                 f"fields inside opentelemetry.endpoints: {fields}"
             )
         if self.enabled and not self.endpoints:
@@ -745,7 +745,7 @@ class RelayOpenTelemetryConfig(FabricBaseModel):
 class RelayObservabilityConfig(FabricBaseModel):
     """NeMo Relay observability component configuration."""
 
-    version: Literal[3] = 3
+    version: Literal[4] = 4
     atof: RelayAtofConfig | dict[str, Any] | None = None
     atif: RelayAtifConfig | dict[str, Any] | None = None
     opentelemetry: RelayOpenTelemetryConfig | None = None
@@ -755,15 +755,15 @@ class RelayObservabilityConfig(FabricBaseModel):
     @field_validator("version", mode="before")
     @classmethod
     def _validate_version(cls, value: Any) -> Any:
-        if not isinstance(value, int) or isinstance(value, bool) or value != 3:
-            raise ValueError("NeMo Relay 0.7 requires observability config version 3")
+        if not isinstance(value, int) or isinstance(value, bool) or value != 4:
+            raise ValueError("NeMo Fabric requires Relay observability config version 4")
         return value
 
     @model_validator(mode="after")
     def _reject_legacy_openinference_section(self) -> Self:
         if "openinference" in (self.model_extra or {}):
             raise ValueError(
-                "NeMo Relay observability config version 3 requires OpenInference "
+                "NeMo Relay observability config version 4 requires OpenInference "
                 "as an opentelemetry endpoint"
             )
         return self
@@ -809,15 +809,15 @@ class RelayConfig(FabricBaseModel):
                 if (
                     not isinstance(version, int)
                     or isinstance(version, bool)
-                    or version != 3
+                    or version != 4
                 ):
                     raise ValueError(
-                        "NeMo Relay 0.7 requires observability config version 3 "
+                        "NeMo Fabric requires Relay observability config version 4 "
                         f"for relay.components[{index}]"
                     )
             if "openinference" in config:
                 raise ValueError(
-                    "NeMo Relay observability config version 3 requires OpenInference "
+                    "NeMo Relay observability config version 4 requires OpenInference "
                     f"as an opentelemetry endpoint for relay.components[{index}]"
                 )
             if "opentelemetry" not in config:
@@ -834,7 +834,7 @@ class RelayConfig(FabricBaseModel):
             if legacy_fields:
                 fields = ", ".join(legacy_fields)
                 raise ValueError(
-                    "NeMo Relay observability config version 3 requires exporter "
+                    "NeMo Relay observability config version 4 requires exporter "
                     "fields inside opentelemetry.endpoints for "
                     f"relay.components[{index}]: {fields}"
                 )
