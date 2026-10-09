@@ -98,13 +98,79 @@ config = FabricConfig(
 For a source build, set `discovery.local_paths` to
 `adapters/typescript/pi/pi.fabric-adapter.json` instead.
 
-The adapter supports one selected model from Pi's catalog, an optional base URL
-override, `replace` system instructions, tool policy, explicit skill paths,
-and explicit local Pi extensions. Set `models.<role>.api_key_env` to the name of
-the environment variable that contains the provider credential.
+The adapter supports one selected model, an optional base URL override, `replace`
+system instructions, tool policy, explicit skill paths, and explicit local Pi
+extensions. Set `models.<role>.api_key_env` to the name of the environment
+variable that contains the provider credential.
 
-The provider and model pair must already exist in Pi's catalog. A base URL can
-override a known model endpoint, but it does not define a new provider.
+The selected model can be either a model Pi already ships (addressed by its
+built-in `provider`/`model`) or a model served by an OpenAI-compatible gateway
+that Pi does not ship. For a Pi-known model, set only `provider`, `model`, and
+`api_key_env`; its catalog metadata is used as-is, and an optional `base_url`
+redirects its endpoint without changing any other property. A `provider`/`model`
+pair that does not exactly match a Pi built-in is treated as a new
+gateway-served model (there is no aliasing onto a built-in by a different id).
+
+For a gateway model, set `base_url` to the gateway endpoint and declare the
+model's wire protocol with the model's `api` field. This value is the
+protocol your gateway speaks, not the model's vendor: a Bedrock- or
+Anthropic-trained model served over an OpenAI-compatible `/v1/chat/completions`
+endpoint uses `openai-completions`; use `anthropic-messages` only when the
+endpoint speaks Anthropic's native Messages API. `api` is required for
+a model Pi does not already know — the adapter does not guess it — and must be
+one of:
+
+- `openai-completions`
+- `openai-responses`
+- `azure-openai-responses`
+- `openai-codex-responses`
+- `anthropic-messages`
+- `bedrock-converse-stream`
+- `google-generative-ai`
+- `google-vertex`
+- `mistral-conversations`
+- `pi-messages`
+
+The remaining Pi-specific model fields are optional and set directly on the
+model alongside `api`:
+
+- `context_window` — the model's context window, in tokens.
+- `max_tokens` — the maximum response length, in tokens.
+- `cost` — an object with `input`, `output`, `cacheRead`, and `cacheWrite`
+  per-million-token rates.
+- `reasoning` — whether the model supports reasoning/thinking.
+- `input` — the accepted input modalities, a list of `"text"` and/or `"image"`.
+- `name` — a display name for the model.
+
+Any field you set overrides. For a Pi-known model, any field you omit keeps that
+model's existing catalog value; the adapter supplies no defaults of its own. A
+gateway model Pi does not ship has no existing entry to fall back on, so a
+complete definition is required — `api`, `base_url`, `context_window`, and
+`max_tokens` — and adapter startup fails fast otherwise; `cost`, `reasoning`, `input`,
+and `name` remain optional. The example below registers an NVIDIA Nemotron model
+from the OpenAI-compatible [NVIDIA Build](https://build.nvidia.com) API, which Pi
+does not ship:
+
+```python
+from nemo_fabric import ModelConfig
+
+# api is the gateway's wire protocol: NVIDIA Build serves this model over an
+# OpenAI-compatible endpoint.
+ModelConfig(
+    provider="nvidia-build",
+    model="nvidia/nemotron-3-super-120b-a12b",
+    api_key_env="NVIDIA_API_KEY",
+    base_url="https://integrate.api.nvidia.com/v1",
+    api="openai-completions",
+    context_window=256_000,
+    max_tokens=32_768,
+    reasoning=True,
+    input=["text"],
+    name="Nemotron 3 Super 120B (NVIDIA Build)",
+)
+```
+
+The `reasoning`, `input`, `cost`, and `name` fields are optional; omit any you don't need.
 
 ## Configure Skills and Extensions
 
