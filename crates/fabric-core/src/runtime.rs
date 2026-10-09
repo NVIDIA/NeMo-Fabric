@@ -39,6 +39,9 @@ const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
 // Protocol liveness backstop. Adapters remain responsible for normal request
 // timeouts and should return a normalized response before this bound.
 const LOCAL_HOST_INVOKE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+// Adapters receive a deadline this much earlier than the host timeout so they
+// can interrupt native work and return a normalized result before it fires.
+const LOCAL_HOST_ADAPTER_RESERVE: Duration = Duration::from_secs(10);
 const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(10);
 const LOCAL_HOST_EXIT_GRACE: Duration = Duration::from_secs(2);
 const LOCAL_HOST_DIAGNOSTIC_LIMIT: usize = 16 * 1024;
@@ -409,6 +412,10 @@ pub struct RuntimeContext {
     /// Runtime telemetry context generated for this invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<RuntimeTelemetryContext>,
+    /// Unix time in milliseconds by which the adapter should return its result.
+    /// Present on every invocation, shortly before Fabric's own invocation timeout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline_millis: Option<u64>,
 }
 
 /// Runtime telemetry config passed to adapters.
@@ -1743,7 +1750,7 @@ fn run_local_host_invocation_with_timeout(
         let artifacts = host_guard.artifacts.clone();
         let relay_config = host_guard.relay_config.clone();
         let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
-        let adapter_invocation = adapter_invocation(
+        let mut adapter_invocation = adapter_invocation(
             plan,
             runtime,
             &invocation,
@@ -1751,6 +1758,8 @@ fn run_local_host_invocation_with_timeout(
             &artifacts,
             relay_config.as_ref(),
         )?;
+        adapter_invocation.runtime_context.deadline_millis =
+            adapter_deadline_millis(invoke_timeout);
         let (lifecycle_request, adapter_payload) = match invocation_kind {
             LocalHostInvocation::Invoke => {
                 let mut persisted = adapter_invocation.clone();
@@ -2740,7 +2749,19 @@ fn adapter_runtime_context(
         environment: runtime.environment.clone(),
         artifacts: artifacts.clone(),
         telemetry: runtime_telemetry_context(plan, relay_config),
+        deadline_millis: None,
     }
+}
+
+/// Converts Fabric's invocation timeout to the adapter's wall-clock deadline,
+/// keeping a reserve so the adapter can return before the host timeout fires.
+fn adapter_deadline_millis(invoke_timeout: Duration) -> Option<u64> {
+    let budget = invoke_timeout
+        .saturating_sub(LOCAL_HOST_ADAPTER_RESERVE)
+        .max(invoke_timeout / 2);
+    let deadline = SystemTime::now().checked_add(budget)?;
+    let millis = deadline.duration_since(UNIX_EPOCH).ok()?.as_millis();
+    Some(u64::try_from(millis).unwrap_or(u64::MAX))
 }
 
 fn runtime_telemetry_context(
@@ -3619,6 +3640,7 @@ for line in sys.stdin:
             "invocation_id": invocation["runtime_context"]["invocation_id"],
             "request_id": invocation["runtime_context"]["request_id"],
             "normalized_env": os.environ.get("FABRIC_NORMALIZED_ENV"),
+            "deadline_millis": invocation["runtime_context"].get("deadline_millis"),
         }
         if MODE in {"adapter_reported_failure", "blank_error_code"}:
             result = {
@@ -4255,6 +4277,22 @@ for line in sys.stdin:
         assert!(message.contains("fake_start"), "{message}");
         assert!(message.contains("start diagnostic"), "{message}");
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_supplies_fresh_adapter_deadlines() {
+        let (root, mut plan) = local_host_plan("success");
+        plan.config.runtime.timeout_seconds = Some(60.0);
+        let runtime = start_runtime(&plan).expect("start local host");
+        for input in ["first", "second"] {
+            let before = now_millis();
+            let result = invoke_runtime(&plan, &runtime, RunRequest::text(input)).expect("invoke");
+            let deadline = u128::from(result.output["deadline_millis"].as_u64().unwrap());
+            // Adapters must return before Fabric's own 60-second timeout fires.
+            assert!((before + 50_000..=now_millis() + 50_000).contains(&deadline));
+        }
+        stop_runtime(&plan, &runtime).expect("stop local host");
         let _ = fs::remove_dir_all(root);
     }
 

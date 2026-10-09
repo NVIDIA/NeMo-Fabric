@@ -7,6 +7,7 @@ import asyncio
 import io
 import json
 import os
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -958,3 +959,9 @@ def test_lifecycle_host_exits_without_traceback_on_keyboard_interrupt(monkeypatc
         lifecycle.serve(object)
 
     assert caught.value.code == 130
+
+
+async def test_invocation_deadline_is_unbounded_when_host_omits_it():
+    # Hosts that predate Fabric-owned deadlines enforce their own timeout.
+    context = SimpleNamespace(deadline_millis=None)
+    assert lifecycle.invocation_deadline(context) == float("inf")

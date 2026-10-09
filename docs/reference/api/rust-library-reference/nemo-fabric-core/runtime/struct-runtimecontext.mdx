@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeContext &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub invocation_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub request_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub environment: <a href=\"struct-environmenthandle.mdx\">EnvironmentHandle</a>,\n    pub artifacts: <a href=\"struct-artifactmanifest.mdx\">ArtifactManifest</a>,\n    pub telemetry: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-runtimetelemetrycontext.mdx\">RuntimeTelemetryContext</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeContext &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub invocation_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub request_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub environment: <a href=\"struct-environmenthandle.mdx\">EnvironmentHandle</a>,\n    pub artifacts: <a href=\"struct-artifactmanifest.mdx\">ArtifactManifest</a>,\n    pub telemetry: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-runtimetelemetrycontext.mdx\">RuntimeTelemetryContext</a>&gt;,\n    pub deadline_millis: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u64.html\">u64</a>&gt;,\n&#125;"}} /></pre>
 
 Context generated for one invocation of a started runtime.
 
@@ -38,6 +38,10 @@ Artifact manifest visible to the adapter at invocation start.
 ### `telemetry: Option<RuntimeTelemetryContext>`
 
 Runtime telemetry context generated for this invocation.
+
+### `deadline_millis: Option<u64>`
+
+Unix time in milliseconds by which the adapter should return its result. Present on every invocation, shortly before Fabric's own invocation timeout.
 
 ## Trait Implementations
 
