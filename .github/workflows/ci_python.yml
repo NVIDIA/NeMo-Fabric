@@ -105,6 +105,58 @@ jobs:
           set -euo pipefail
           just --set no_uv true test-python
 
+  relay-0-9:
+    name: Relay 0.9 (Python 3.12, linux-amd64)
+    # The locks resolve Relay 0.10; this lane keeps the lowest supported minor
+    # working until the supported range drops 0.9.
+    if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      RELAY_VERSION: 0.9.4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Install just
+        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        with:
+          tool: just@1.50.0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: fabric-rust-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Create virtual environment
+        run: uv venv --python 3.12 .venv
+
+      - name: Build SDK with native extension
+        run: |
+          uv sync --no-default-groups --group adapter-tests --group collector --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent --extra openclaw --extra openhands --extra remote-agent --extra nooa --extra harbor --extra relay
+
+      - name: Install Relay ${{ env.RELAY_VERSION }}
+        run: uv pip install --python .venv/bin/python "nemo-relay==${RELAY_VERSION}" "nemo-relay-cli-bin==${RELAY_VERSION}"
+
+      - name: Run pytest
+        run: |
+          set -euo pipefail
+          just --set no_uv true test-python
+
   hermes:
     name: Hermes adapter (upstream Relay 0.9, Python 3.14)
     if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}
@@ -304,8 +356,8 @@ jobs:
 
   build-wheels:
     name: Build wheels (${{ matrix.platform }})
-    needs: [test, hermes]
-    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') }}
+    needs: [test, relay-0-9, hermes]
+    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.relay-0-9.result == 'success' || needs.relay-0-9.result == 'skipped') && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
