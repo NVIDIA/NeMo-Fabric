@@ -101,7 +101,7 @@ Use normalized `FabricConfig` fields for portable configuration:
   select matching skills through its normal discovery behavior.
 - `telemetry` enables native OpenTelemetry or NeMo Relay observability.
 
-Invocation deadlines return the normalized error code `timeout`; a Codex SDK request that times out earlier returns `codex_timed_out`. The adapter interrupts the active turn and closes the SDK before returning either outcome.
+Invocation deadlines return the normalized error code `timeout`, including when the deadline expires during MCP authentication; a Codex SDK request that times out earlier returns `codex_timed_out`. The adapter interrupts the active turn and closes the SDK before returning either outcome.
 
 The Codex adapter does not declare `tools.blocked` support. The current Codex
 runtime has per-MCP-server tool filters, but it does not provide one complete

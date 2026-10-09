@@ -940,6 +940,42 @@ def test_codex_reports_failed_mcp_oauth_login_before_turn(
     mock_codex.instances[0].thread.turn.assert_not_awaited()
 
 
+@pytest.mark.parametrize("deadline_expires", [True, False])
+def test_codex_reports_timeout_only_when_mcp_login_exhausts_deadline(
+    codex_payload, mock_codex, monkeypatch, deadline_expires
+):
+    codex_payload["runtime_context"]["deadline_millis"] = int(
+        (time.time() + (0.2 if deadline_expires else 60)) * 1000
+    )
+    configure_mcp(
+        codex_payload,
+        {
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {
+                    "type": "oauth2",
+                    "authorization_timeout_seconds": 1,
+                },
+            },
+        },
+    )
+    mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
+
+    async def block(url):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(adapter, "_open_authorization_url", block)
+
+    output = invoke_once(codex_payload)
+
+    # The login's own shorter timeout is an authentication failure, not expiry.
+    assert output["error"]["code"] == (
+        "timeout" if deadline_expires else "codex_mcp_authentication_failed"
+    )
+    mock_codex.instances[0].thread.turn.assert_not_awaited()
+
+
 def test_codex_reports_missing_mcp_auth_status_before_turn(codex_payload, mock_codex):
     configure_mcp(
         codex_payload,

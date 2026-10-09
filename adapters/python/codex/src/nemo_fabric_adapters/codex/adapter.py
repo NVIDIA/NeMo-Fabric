@@ -499,7 +499,10 @@ async def _authenticate_mcp_servers(
                     oauth.authorization_timeout_seconds,
                 ),
             )
-    except CodexAdapterError:
+    except CodexAdapterError as error:
+        if _remaining_timeout(invocation_deadline) == 0:
+            # Fabric's deadline, not the authentication step, ended the invocation.
+            raise CodexAdapterError("timeout", "Codex invocation timed out") from error
         raise
     except (CodexError, RuntimeError, OSError) as error:
         raise AdapterConfigError(
