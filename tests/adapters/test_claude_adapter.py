@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 import tomllib
 from collections.abc import AsyncIterator
 from collections.abc import Callable
@@ -249,7 +250,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
 
 
 @pytest.fixture(name="claude_payload")
-def claude_payload_fixture(tmp_path) -> dict[str, Any]:
+def claude_payload_fixture(tmp_path, deadline_millis) -> dict[str, Any]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     skill_path = tmp_path / "skills" / "review"
@@ -295,6 +296,7 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
             },
         },
         "runtime_context": {
+            "deadline_millis": deadline_millis,
             "runtime_id": "runtime-claude-1",
             "invocation_id": "invocation-1",
             "environment": {
@@ -462,10 +464,14 @@ async def test_claude_invoke_passes_remaining_budget_to_query(
 
     after = loop.time()
     invocation_deadline = remaining_timeout.call_args.args[0]
+    expected_timeout = (
+        claude_payload["runtime_context"]["deadline_millis"] / 1000
+        - time.time()
+    )
     assert (
-        before + adapter.timeout_seconds()
+        before + expected_timeout - 0.1
         <= invocation_deadline
-        <= after + adapter.timeout_seconds()
+        <= after + expected_timeout + 0.1
     )
     remaining_timeout.assert_called_once_with(invocation_deadline)
     assert run_query.await_args.args[2] == 7.0

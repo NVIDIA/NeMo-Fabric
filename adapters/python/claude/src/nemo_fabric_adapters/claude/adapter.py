@@ -706,10 +706,6 @@ def build_options(
         raise
 
 
-def timeout_seconds() -> float:
-    return 1800.0
-
-
 def _remaining_timeout(deadline: float) -> float:
     return max(0.0, deadline - asyncio.get_running_loop().time())
 
@@ -1081,7 +1077,7 @@ class ClaudeRuntime:
                 )
             )
 
-        invocation_deadline = asyncio.get_running_loop().time() + timeout_seconds()
+        invocation_deadline = lifecycle.invocation_deadline(runtime_context)
         try:
             prompt = request_prompt(request)
         except ClaudeAdapterError as error:
@@ -1107,7 +1103,12 @@ class ClaudeRuntime:
                 and atif_before is not None
             ):
                 finalized = await relay_artifacts.wait_for_finalized_atif(
-                    relay.plugin_config, atif_before
+                    relay.plugin_config,
+                    atif_before,
+                    timeout_seconds=min(
+                        relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                        _remaining_timeout(invocation_deadline),
+                    ),
                 )
                 if finalized is None:
                     self._unusable = True
