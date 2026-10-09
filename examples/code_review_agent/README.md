@@ -131,9 +131,9 @@ harness supports.
 
 Codex and Claude omit the default code-review skill; add
 `--skill-path ./skills/code-review` to retain it. Relay configurations for
-Codex, Claude, and Pi require a NeMo Relay CLI in the `>=0.9,<0.10` range.
+Codex, Claude, and Pi require a NeMo Relay CLI in the `>=0.9,<0.11` range.
 Pi also requires its Relay Pi extension. Hermes Agent and Deep Agents require
-the `nemo-relay>=0.9,<0.10` Python package. Cline does not support Relay
+the `nemo-relay>=0.9,<0.11` Python package. Cline does not support Relay
 telemetry in this initial adapter.
 Additional requirements appear in the corresponding subsections.
 
@@ -180,7 +180,7 @@ it through the same `--variant` option. The variant discovers
 `nvidia.nooa.coding-agent` and uses the `NVIDIA_API_KEY` configured for the
 default demo.
 
-Its Relay integration requires `nemo-relay>=0.9,<0.10`. The `--stream` option
+Its Relay integration requires `nemo-relay>=0.9,<0.11`. The `--stream` option
 collects Relay ATOF records; it is not native model-response streaming.
 
 ### OpenClaw (`openclaw`)
@@ -310,7 +310,7 @@ This variant adds an explicit `read` tool to the default code-review skill and
 uses `NVIDIA_API_KEY`. Pi supports normalized stdio and streamable HTTP MCP
 servers.
 
-For Relay telemetry, install `nemo-relay-cli-bin>=0.9.0,<0.10.0` as described in the
+For Relay telemetry, install `nemo-relay-cli-bin>=0.9.0,<0.11.0` as described in the
 [Pi adapter instructions](../../adapters/typescript/pi/README.md#install-nemo-relay)
 and pass the Relay Pi extension path explicitly:
 

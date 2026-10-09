@@ -31,7 +31,7 @@ The adapter supports:
 - Explicit local `.ts` or `.js` extension files contained by the NeMo Fabric
   workspace
 - Slash commands registered by those explicit extensions
-- NeMo Relay 0.9 telemetry through a runtime-owned gateway and an explicitly
+- NeMo Relay 0.9 or 0.10 telemetry through a runtime-owned gateway and an explicitly
   configured Relay Pi extension
 - Live model-turn ATOF records for successful Relay redirects through the
   default embedded NeMo Fabric collector. Startup `model_redirect` marks remain
@@ -84,11 +84,11 @@ The full build installs its own dependencies, so you do not need to run
 
 ### Install NeMo Relay
 
-Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.10.0` on `PATH`. Install it
+Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.11.0` on `PATH`. Install it
 separately from the npm adapter:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.9.0,<0.10.0"
+pip install "nemo-relay-cli-bin>=0.9.0,<0.11.0"
 ```
 
 To select a specific Relay executable instead of relying on `PATH`, set
@@ -99,8 +99,8 @@ FABRIC_NEMO_RELAY_COMMAND="/absolute/path/to/nemo-relay" uv run python your_app.
 ```
 
 The adapter does not bundle the Relay Pi extension. Obtain the
-[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/0.9.0/crates/cli/assets/pi-extension)
-directory from the Relay 0.9 release and configure its path as described in the
+[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/0.10.0/crates/cli/assets/pi-extension)
+directory from the Relay release that matches the CLI and configure its path as described in the
 next section.
 
 ## Configure the Adapter
@@ -143,7 +143,7 @@ file or a Pi extension package directory. Unlike user-configured Pi extensions,
 the Relay extension does not need to remain inside `environment.workspace` when
 an absolute path is used.
 
-When the runtime starts, the adapter validates the Relay 0.9 CLI, writes an
+When the runtime starts, the adapter validates the Relay CLI version, writes an
 explicit `plugins.toml`, starts a loopback gateway, and loads the extension into
 the isolated Pi session. The result includes `relay_runtime` and
 `relay_artifacts` in `output`. The gateway can produce ATOF, ATIF,
@@ -151,7 +151,7 @@ OpenTelemetry, and OpenInference output from the Relay observability
 configuration.
 
 The adapter supports one Relay-enabled Pi runtime per adapter process because
-the Relay 0.9 extension receives its gateway and upstream configuration through
+the Relay Pi extension receives its gateway and upstream configuration through
 process environment variables. NeMo Fabric starts each runtime in a separate
 adapter process, so concurrent NeMo Fabric runtimes remain isolated. Direct
 embedders must likewise place concurrent Relay-enabled Pi runtimes in separate
