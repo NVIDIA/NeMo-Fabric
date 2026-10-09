@@ -11,6 +11,11 @@ import type { JsonObject } from "../json.js";
  */
 export interface RuntimeContext {
   artifacts: ArtifactManifest;
+  /**
+   * Unix time in milliseconds by which the adapter should return its result.
+   * Present on every invocation, shortly before Fabric's own invocation timeout.
+   */
+  deadline_millis?: number | null;
   environment: EnvironmentHandle;
   /**
    * Invocation handle id.

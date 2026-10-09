@@ -616,8 +616,11 @@ class RuntimeContext(ContractModel):
     environment: EnvironmentHandle
     artifacts: ArtifactManifest
     telemetry: RuntimeTelemetryContext | None = _optional()
+    deadline_millis: int | None = _optional()
 
     def _validate(self) -> None:
         _nonblank(self.runtime_id, "runtime_id")
         _nonblank(self.invocation_id, "invocation_id")
         _nonblank(self.request_id, "request_id")
+        if self.deadline_millis is not None:
+            _bounded_int(self.deadline_millis, "deadline_millis", (1 << 64) - 1)

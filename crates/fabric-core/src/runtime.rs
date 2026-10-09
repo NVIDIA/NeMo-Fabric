@@ -39,6 +39,9 @@ const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
 // Protocol liveness backstop. Adapters remain responsible for normal request
 // timeouts and should return a normalized response before this bound.
 const LOCAL_HOST_INVOKE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+// Adapters receive a deadline this much earlier than the host timeout so they
+// can interrupt native work and return a normalized result before it fires.
+const LOCAL_HOST_ADAPTER_RESERVE: Duration = Duration::from_secs(10);
 const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(10);
 const LOCAL_HOST_EXIT_GRACE: Duration = Duration::from_secs(2);
 const LOCAL_HOST_DIAGNOSTIC_LIMIT: usize = 16 * 1024;
@@ -409,6 +412,10 @@ pub struct RuntimeContext {
     /// Runtime telemetry context generated for this invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<RuntimeTelemetryContext>,
+    /// Unix time in milliseconds by which the adapter should return its result.
+    /// Present on every invocation, shortly before Fabric's own invocation timeout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline_millis: Option<u64>,
 }
 
 /// Runtime telemetry config passed to adapters.
@@ -805,6 +812,8 @@ struct RelayRuntimeConfig {
 
 struct LocalAdapterHost {
     child: Child,
+    #[cfg(windows)]
+    job: Option<std::os::windows::io::OwnedHandle>,
     stdin: ChildStdin,
     responses: Receiver<std::result::Result<String, String>>,
     command: String,
@@ -1743,7 +1752,7 @@ fn run_local_host_invocation_with_timeout(
         let artifacts = host_guard.artifacts.clone();
         let relay_config = host_guard.relay_config.clone();
         let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
-        let adapter_invocation = adapter_invocation(
+        let mut adapter_invocation = adapter_invocation(
             plan,
             runtime,
             &invocation,
@@ -1751,6 +1760,8 @@ fn run_local_host_invocation_with_timeout(
             &artifacts,
             relay_config.as_ref(),
         )?;
+        adapter_invocation.runtime_context.deadline_millis =
+            adapter_deadline_millis(invoke_timeout);
         let (lifecycle_request, adapter_payload) = match invocation_kind {
             LocalHostInvocation::Invoke => {
                 let mut persisted = adapter_invocation.clone();
@@ -2187,6 +2198,12 @@ fn spawn_local_host(
     if let Some(root) = artifacts.root.as_ref() {
         command.env("FABRIC_ARTIFACTS", root);
     }
+    // Start suspended so the host joins its job before it can start a process.
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(
+        &mut command,
+        windows_sys::Win32::System::Threading::CREATE_SUSPENDED,
+    );
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(source) => {
@@ -2197,6 +2214,18 @@ fn spawn_local_host(
             });
         }
     };
+    #[cfg(windows)]
+    let job = host_job(&child);
+    #[cfg(windows)]
+    if let Err(source) = resume_host(child.id()) {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&runtime_dir);
+        return Err(FabricError::ProcessRunner {
+            command: command_display,
+            source,
+        });
+    }
     let Some(stdin) = child.stdin.take() else {
         let _ = child.kill();
         let _ = child.wait();
@@ -2256,6 +2285,8 @@ fn spawn_local_host(
     }
     Ok(LocalAdapterHost {
         child,
+        #[cfg(windows)]
+        job,
         stdin,
         responses,
         command: command_display,
@@ -2523,6 +2554,21 @@ fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
         thread::sleep(Duration::from_millis(10));
     }
 
+    #[cfg(unix)]
+    kill_host_descendants(host.child.id());
+    #[cfg(windows)]
+    if let Some(job) = &host.job
+        // SAFETY: the host owns this job handle until it is dropped.
+        && unsafe {
+            windows_sys::Win32::System::JobObjects::TerminateJobObject(
+                std::os::windows::io::AsRawHandle::as_raw_handle(job),
+                1,
+            )
+        } != 0
+    {
+        host.child.wait()?;
+        return Ok(());
+    }
     if let Err(source) = host.child.kill()
         && host.child.try_wait()?.is_none()
     {
@@ -2530,6 +2576,149 @@ fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
     }
     host.child.wait()?;
     Ok(())
+}
+
+/// Kills every live descendant of a host that ignored shutdown, including
+/// children that started their own session. Processes that already detached
+/// from the host's process tree cannot be found this way.
+#[cfg(unix)]
+fn kill_host_descendants(host_pid: u32) {
+    let Ok(host_pid) = libc::pid_t::try_from(host_pid) else {
+        return;
+    };
+    // Snapshot the whole tree first: killed processes' children are re-parented.
+    let mut descendants = Vec::new();
+    let mut parents = vec![host_pid];
+    while let Some(parent) = parents.pop() {
+        let children = child_pids(parent);
+        parents.extend(&children);
+        descendants.extend(children);
+    }
+    for pid in descendants {
+        // SAFETY: kill has no memory-safety preconditions. PIDs are allocated
+        // sequentially, so reuse within this short window is not a practical risk.
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn child_pids(parent: libc::pid_t) -> Vec<libc::pid_t> {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let pid = entry.file_name().to_str()?.parse().ok()?;
+            let stat = std::fs::read_to_string(entry.path().join("stat")).ok()?;
+            // The command name may contain spaces or parentheses; the parent PID
+            // is the second field after it.
+            let ppid: libc::pid_t = stat
+                .rsplit_once(')')?
+                .1
+                .split_whitespace()
+                .nth(1)?
+                .parse()
+                .ok()?;
+            (ppid == parent).then_some(pid)
+        })
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn child_pids(parent: libc::pid_t) -> Vec<libc::pid_t> {
+    let mut children = vec![0; 64];
+    loop {
+        let Ok(bytes) = i32::try_from(std::mem::size_of_val(children.as_slice())) else {
+            return Vec::new();
+        };
+        // SAFETY: the buffer is writable and sized in bytes as libproc requires.
+        let count =
+            unsafe { libc::proc_listchildpids(parent, children.as_mut_ptr().cast(), bytes) };
+        let Ok(count) = usize::try_from(count) else {
+            return Vec::new();
+        };
+        if count < children.len() {
+            children.truncate(count);
+            return children;
+        }
+        children.resize(children.len() * 2, 0);
+    }
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn child_pids(_parent: libc::pid_t) -> Vec<libc::pid_t> {
+    Vec::new()
+}
+
+/// Puts the suspended host in a job object so a forced kill reaches every
+/// process it starts, even through launchers or other intermediates that
+/// already exited. Like Cargo, fall back to killing only the host if the job
+/// is unavailable.
+#[cfg(windows)]
+fn host_job(child: &Child) -> Option<std::os::windows::io::OwnedHandle> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW};
+
+    // SAFETY: null security attributes and name are allowed; null means failure.
+    let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+    if job.is_null() {
+        return None;
+    }
+    // SAFETY: CreateJobObjectW returned a new handle that nothing else owns.
+    let job = unsafe { OwnedHandle::from_raw_handle(job) };
+    // SAFETY: both handles stay valid for the duration of the call.
+    let assigned = unsafe { AssignProcessToJobObject(job.as_raw_handle(), child.as_raw_handle()) };
+    (assigned != 0).then_some(job)
+}
+
+/// Resumes the main thread of a host spawned with `CREATE_SUSPENDED`.
+#[cfg(windows)]
+fn resume_host(pid: u32) -> std::io::Result<()> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
+    use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+
+    // SAFETY: a thread snapshot takes no pointers; failure is reported below.
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: the snapshot handle is new and owned only here.
+    let snapshot = unsafe { OwnedHandle::from_raw_handle(snapshot) };
+    // SAFETY: THREADENTRY32 is plain data; zero is a valid initial value.
+    let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+    // SAFETY: `entry` is a writable THREADENTRY32 with `dwSize` set.
+    let mut found = unsafe { Thread32First(snapshot.as_raw_handle(), &mut entry) } != 0;
+    let mut resumed = false;
+    while found {
+        if entry.th32OwnerProcessID == pid {
+            // SAFETY: OpenThread takes no pointers; null means failure.
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+            if thread.is_null() {
+                return Err(std::io::Error::last_os_error());
+            }
+            // SAFETY: OpenThread returned a new handle owned only here.
+            let thread = unsafe { OwnedHandle::from_raw_handle(thread) };
+            // SAFETY: the handle has THREAD_SUSPEND_RESUME access.
+            if unsafe { ResumeThread(thread.as_raw_handle()) } == u32::MAX {
+                return Err(std::io::Error::last_os_error());
+            }
+            resumed = true;
+        }
+        // SAFETY: same buffer as above.
+        found = unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) } != 0;
+    }
+    if resumed {
+        Ok(())
+    } else {
+        // A host left suspended would hang until the start timeout.
+        Err(std::io::Error::other("suspended host thread was not found"))
+    }
 }
 
 fn remove_local_host_files(host: &LocalAdapterHost) -> std::io::Result<()> {
@@ -2740,7 +2929,19 @@ fn adapter_runtime_context(
         environment: runtime.environment.clone(),
         artifacts: artifacts.clone(),
         telemetry: runtime_telemetry_context(plan, relay_config),
+        deadline_millis: None,
     }
+}
+
+/// Converts Fabric's invocation timeout to the adapter's wall-clock deadline,
+/// keeping a reserve so the adapter can return before the host timeout fires.
+fn adapter_deadline_millis(invoke_timeout: Duration) -> Option<u64> {
+    let budget = invoke_timeout
+        .saturating_sub(LOCAL_HOST_ADAPTER_RESERVE)
+        .max(invoke_timeout / 2);
+    let deadline = SystemTime::now().checked_add(budget)?;
+    let millis = deadline.duration_since(UNIX_EPOCH).ok()?.as_millis();
+    Some(u64::try_from(millis).unwrap_or(u64::MAX))
 }
 
 fn runtime_telemetry_context(
@@ -3619,6 +3820,7 @@ for line in sys.stdin:
             "invocation_id": invocation["runtime_context"]["invocation_id"],
             "request_id": invocation["runtime_context"]["request_id"],
             "normalized_env": os.environ.get("FABRIC_NORMALIZED_ENV"),
+            "deadline_millis": invocation["runtime_context"].get("deadline_millis"),
         }
         if MODE in {"adapter_reported_failure", "blank_error_code"}:
             result = {
@@ -4255,6 +4457,22 @@ for line in sys.stdin:
         assert!(message.contains("fake_start"), "{message}");
         assert!(message.contains("start diagnostic"), "{message}");
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_supplies_fresh_adapter_deadlines() {
+        let (root, mut plan) = local_host_plan("success");
+        plan.config.runtime.timeout_seconds = Some(60.0);
+        let runtime = start_runtime(&plan).expect("start local host");
+        for input in ["first", "second"] {
+            let before = now_millis();
+            let result = invoke_runtime(&plan, &runtime, RunRequest::text(input)).expect("invoke");
+            let deadline = u128::from(result.output["deadline_millis"].as_u64().unwrap());
+            // Adapters must return before Fabric's own 60-second timeout fires.
+            assert!((before + 50_000..=now_millis() + 50_000).contains(&deadline));
+        }
+        stop_runtime(&plan, &runtime).expect("stop local host");
         let _ = fs::remove_dir_all(root);
     }
 

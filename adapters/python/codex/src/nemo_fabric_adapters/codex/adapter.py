@@ -7,13 +7,16 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import math
 import os
+import signal
 import subprocess
+import sys
 import tempfile
-import webbrowser
+import time
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -58,8 +61,8 @@ import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.common import lifecycle
 
 
-DEFAULT_TIMEOUT_SECONDS = 1800.0
 INTERRUPT_TIMEOUT_SECONDS = 5.0
+CLOCK_RESOLUTION_SECONDS = time.get_clock_info("monotonic").resolution
 SANDBOXES = {
     "read-only": Sandbox.read_only,
     "workspace-write": Sandbox.workspace_write,
@@ -72,9 +75,31 @@ APPROVAL_MODES = {
 
 
 async def _open_authorization_url(authorization_url: str) -> bool:
-    """Open a Codex OAuth authorization URL without blocking the event loop."""
+    """Open a Codex OAuth authorization URL in a process that cancellation can kill.
 
-    return await asyncio.to_thread(webbrowser.open, authorization_url)
+    ``webbrowser.open`` can block, and a worker thread cannot be cancelled.
+    """
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-I",
+        "-c",
+        "import sys, webbrowser; sys.exit(0 if webbrowser.open(sys.argv[1]) else 1)",
+        authorization_url,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,  # POSIX only: lets cancellation kill launcher children.
+    )
+    try:
+        return await process.wait() == 0
+    finally:
+        if process.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                if os.name == "posix":
+                    os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
+            await process.wait()
 
 
 INHERITED_ENV_NAMES = {
@@ -398,20 +423,20 @@ async def _login_mcp_server(
     }
     if scopes:
         params["scopes"] = scopes
-    response = await client.request(
-        "mcpServer/oauth/login",
-        params,
-        response_model=McpServerOauthLoginResponse,
-    )
-    opened = await _open_authorization_url(response.authorization_url)
-    if not opened:
-        raise AdapterConfigError(
-            "codex_mcp_authentication_failed",
-            f"Codex could not open a browser to authenticate MCP server {name!r}",
-        )
-
     try:
         async with asyncio.timeout(timeout):
+            response = await client.request(
+                "mcpServer/oauth/login",
+                params,
+                response_model=McpServerOauthLoginResponse,
+            )
+            opened = await _open_authorization_url(response.authorization_url)
+            if not opened:
+                raise AdapterConfigError(
+                    "codex_mcp_authentication_failed",
+                    f"Codex could not open a browser to authenticate MCP server {name!r}",
+                )
+
             while True:
                 notification = await client.next_notification()
                 completed = notification.payload
@@ -438,7 +463,7 @@ async def _authenticate_mcp_servers(
     codex: AsyncCodex,
     thread: Any,
     config: AgentConfig,
-    invocation_timeout_seconds: float,
+    invocation_deadline: float,
 ) -> None:
     oauth_servers = _mcp_oauth_servers(config)
     if not oauth_servers:
@@ -450,7 +475,7 @@ async def _authenticate_mcp_servers(
         statuses = await _mcp_auth_statuses(
             client,
             thread_id=thread_id,
-            timeout=invocation_timeout_seconds,
+            timeout=_remaining_timeout(invocation_deadline),
         )
         for name, oauth in oauth_servers.items():
             status = statuses.get(name)
@@ -472,17 +497,25 @@ async def _authenticate_mcp_servers(
                 scopes=list(oauth.scopes) or None,
                 thread_id=thread_id,
                 timeout=min(
-                    invocation_timeout_seconds,
+                    _remaining_timeout(invocation_deadline),
                     oauth.authorization_timeout_seconds,
                 ),
             )
-    except CodexAdapterError:
+    except CodexAdapterError as error:
+        # asyncio fires timers up to one clock tick early, so allow that tolerance.
+        if _remaining_timeout(invocation_deadline) <= CLOCK_RESOLUTION_SECONDS:
+            # Fabric's deadline, not the authentication step, ended the invocation.
+            raise CodexAdapterError("timeout", "Codex invocation timed out") from error
         raise
     except (CodexError, RuntimeError, OSError) as error:
         raise AdapterConfigError(
             "codex_mcp_authentication_failed",
             "Codex MCP OAuth login could not be completed",
         ) from error
+
+
+def _remaining_timeout(deadline: float) -> float:
+    return max(0.0, deadline - asyncio.get_running_loop().time())
 
 
 def resolve_cwd(context: RuntimeContext, base_dir: str) -> Path:
@@ -579,20 +612,6 @@ def approval_mode(config: AgentConfig) -> ApprovalMode:
             "codex_invalid_configuration",
             f"approval_mode must be one of: {', '.join(sorted(APPROVAL_MODES))}",
         ) from error
-
-
-def timeout_seconds() -> float:
-    value = DEFAULT_TIMEOUT_SECONDS
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise AdapterConfigError(
-            "codex_invalid_configuration", "timeout_seconds must be positive"
-        )
-    result = float(value)
-    if result <= 0 or not math.isfinite(result):
-        raise AdapterConfigError(
-            "codex_invalid_configuration", "timeout_seconds must be positive"
-        )
-    return result
 
 
 def _optional_string(settings: dict[str, Any], name: str) -> str | None:
@@ -935,7 +954,6 @@ def validate_runtime_payload(
     selected_model(config)
     sandbox(config)
     approval_mode(config)
-    timeout_seconds()
     for name in (
         "developer_instructions",
         "service_tier",
@@ -1001,7 +1019,8 @@ def adapter_failure(error: CodexAdapterError) -> dict[str, Any]:
 
 def sdk_failure(error: BaseException) -> dict[str, Any]:
     if isinstance(error, TimeoutError):
-        return _failure("timeout", "Codex invocation timed out")
+        # Only Fabric's invocation deadline is reported as `timeout`.
+        return _failure("codex_timed_out", "Codex SDK request timed out")
     if isinstance(error, TransportClosedError):
         return _failure(
             "codex_connection_failed", "Codex SDK runtime connection closed"
@@ -1192,12 +1211,14 @@ async def _invoke_thread(
     base_dir: str,
     request: AgentRunRequest,
     thread: Any,
+    invocation_deadline: float,
 ) -> tuple[dict[str, Any], bool]:
     """Run one turn and report whether the connected SDK transport remains usable."""
 
     handle = None
+    deadline = asyncio.timeout_at(invocation_deadline)
     try:
-        async with asyncio.timeout(timeout_seconds()):
+        async with deadline:
             handle = await thread.turn(
                 request_prompt(request),
                 effort=_reasoning_effort(config),
@@ -1212,6 +1233,8 @@ async def _invoke_thread(
             )
     except TimeoutError as error:
         await _interrupt_turn(handle)
+        if deadline.expired():
+            return _failure("timeout", "Codex invocation timed out"), False
         return sdk_failure(error), False
     except CodexAdapterError:
         raise
@@ -1434,9 +1457,9 @@ class CodexRuntime:
                 )
             )
 
+        invocation_deadline = lifecycle.invocation_deadline(runtime_context)
         try:
             request_prompt(request)
-            invocation_timeout_seconds = timeout_seconds()
             _reasoning_effort(config)
             _output_schema(config)
             if not self._mcp_authentication_checked:
@@ -1444,7 +1467,7 @@ class CodexRuntime:
                     self._client,
                     self._thread,
                     config,
-                    invocation_timeout_seconds,
+                    invocation_deadline,
                 )
                 self._mcp_authentication_checked = True
             relay = self._relay
@@ -1455,15 +1478,24 @@ class CodexRuntime:
                 else None
             )
             output, usable = await _invoke_thread(
-                config, runtime_context, base_dir, request, self._thread
+                config,
+                runtime_context,
+                base_dir,
+                request,
+                self._thread,
+                invocation_deadline,
             )
             if (
                 output.get("completed")
                 and relay is not None
                 and atif_before is not None
             ):
+                atif_timeout = min(
+                    relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                    _remaining_timeout(invocation_deadline),
+                )
                 finalized = await relay_artifacts.wait_for_finalized_atif(
-                    relay.plugin_config, atif_before
+                    relay.plugin_config, atif_before, timeout_seconds=atif_timeout
                 )
                 if finalized is None:
                     self._unusable = True
@@ -1471,9 +1503,7 @@ class CodexRuntime:
                         AdapterRelayError(
                             "codex_relay_atif_timeout",
                             "NeMo Relay did not finalize an ATIF artifact before the deadline",
-                            metadata={
-                                "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
-                            },
+                            metadata={"timeout_seconds": atif_timeout},
                         )
                     )
                     failure["usage"] = output.get("usage")

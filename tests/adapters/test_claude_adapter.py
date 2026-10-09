@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 import tomllib
 from collections.abc import AsyncIterator
 from collections.abc import Callable
@@ -249,7 +250,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
 
 
 @pytest.fixture(name="claude_payload")
-def claude_payload_fixture(tmp_path) -> dict[str, Any]:
+def claude_payload_fixture(tmp_path, deadline_millis) -> dict[str, Any]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     skill_path = tmp_path / "skills" / "review"
@@ -295,6 +296,7 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
             },
         },
         "runtime_context": {
+            "deadline_millis": deadline_millis,
             "runtime_id": "runtime-claude-1",
             "invocation_id": "invocation-1",
             "environment": {
@@ -462,25 +464,41 @@ async def test_claude_invoke_passes_remaining_budget_to_query(
 
     after = loop.time()
     invocation_deadline = remaining_timeout.call_args.args[0]
+    expected_timeout = (
+        claude_payload["runtime_context"]["deadline_millis"] / 1000
+        - time.time()
+    )
     assert (
-        before + adapter.timeout_seconds()
+        before + expected_timeout - 0.1
         <= invocation_deadline
-        <= after + adapter.timeout_seconds()
+        <= after + expected_timeout + 0.1
     )
     remaining_timeout.assert_called_once_with(invocation_deadline)
     assert run_query.await_args.args[2] == 7.0
 
 
-async def test_claude_invocation_deadline_interrupts_and_invalidates_client():
+@pytest.mark.parametrize("deadline_expires", [True, False])
+async def test_claude_invocation_deadline_interrupts_and_invalidates_client(
+    deadline_expires,
+):
     runtime = adapter.ClaudeRuntime()
     client = MagicMock(spec=adapter.ClaudeSDKClient)
-    client.query.side_effect = TimeoutError("raw deadline secret")
+
+    async def block(prompt):
+        await asyncio.Event().wait()
+
+    # An SDK timeout before Fabric's deadline is not invocation expiry.
+    client.query.side_effect = (
+        block if deadline_expires else TimeoutError("raw deadline secret")
+    )
     runtime._client = client
 
-    output = await runtime._run_query(client, "test", 1)
+    output = await runtime._run_query(client, "test", 0.01 if deadline_expires else 60)
 
     assert output["failed"] is True
-    assert output["error"]["code"] == "timeout"
+    assert output["error"]["code"] == (
+        "timeout" if deadline_expires else "claude_timed_out"
+    )
     assert runtime._unusable is True
     client.interrupt.assert_awaited_once()
     assert "secret" not in json.dumps(output)
@@ -1613,7 +1631,7 @@ def test_build_options_preserves_unix_user_for_cached_login(
 @pytest.mark.parametrize(
     ("error", "code"),
     [
-        (TimeoutError("raw deadline secret"), "timeout"),
+        (TimeoutError("raw deadline secret"), "claude_timed_out"),
         (CLINotFoundError("raw path", "/secret/claude"), "claude_cli_not_found"),
         (CLIConnectionError("raw connection"), "claude_connection_failed"),
         (

@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -87,7 +88,7 @@ def runtime_start_error(payload):
 
 
 @pytest.fixture(name="codex_payload")
-def codex_payload_fixture(tmp_path):
+def codex_payload_fixture(tmp_path, deadline_millis):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     return {
@@ -115,6 +116,7 @@ def codex_payload_fixture(tmp_path):
             "runtime": {},
         },
         "runtime_context": {
+            "deadline_millis": deadline_millis,
             "runtime_id": "runtime-1",
             "invocation_id": "invocation-1",
             "request_id": "request-1",
@@ -830,6 +832,30 @@ async def test_mcp_auth_statuses_distinguishes_request_timeout():
     assert caught.value.__cause__ is request_timeout
 
 
+@pytest.mark.parametrize("stalled_step", ["login_request", "browser_launch"])
+async def test_mcp_login_deadline_covers_request_and_browser_launch(
+    monkeypatch, stalled_step
+):
+    async def block(*args, **kwargs):
+        await asyncio.Event().wait()
+
+    client = MagicMock()
+    if stalled_step == "login_request":
+        client.request = AsyncMock(side_effect=block)
+    else:
+        client.request = AsyncMock(
+            return_value=MagicMock(authorization_url="https://auth.example.test")
+        )
+        monkeypatch.setattr(adapter, "_open_authorization_url", block)
+
+    with pytest.raises(adapter.AdapterConfigError, match="login timed out") as caught:
+        await adapter._login_mcp_server(
+            client, name="remote", scopes=None, thread_id="thread-123", timeout=0.01
+        )
+
+    assert caught.value.code == "codex_mcp_authentication_failed"
+
+
 @pytest.mark.parametrize(
     ("invocation_timeout", "oauth_timeout", "expected_timeout"),
     [(30, 12, 12), (5, 12, 5), (5.1, 12, 6)],
@@ -842,7 +868,9 @@ def test_codex_logs_into_mcp_server_before_first_turn(
     oauth_timeout,
     expected_timeout,
 ):
-    monkeypatch.setattr(adapter, "timeout_seconds", lambda: invocation_timeout)
+    codex_payload["runtime_context"]["deadline_millis"] = int(
+        (time.time() + invocation_timeout) * 1000
+    )
     configure_mcp(
         codex_payload,
         {
@@ -912,6 +940,42 @@ def test_codex_reports_failed_mcp_oauth_login_before_turn(
     mock_codex.instances[0].thread.turn.assert_not_awaited()
 
 
+@pytest.mark.parametrize("deadline_expires", [True, False])
+def test_codex_reports_timeout_only_when_mcp_login_exhausts_deadline(
+    codex_payload, mock_codex, monkeypatch, deadline_expires
+):
+    codex_payload["runtime_context"]["deadline_millis"] = int(
+        (time.time() + (0.2 if deadline_expires else 60)) * 1000
+    )
+    configure_mcp(
+        codex_payload,
+        {
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {
+                    "type": "oauth2",
+                    "authorization_timeout_seconds": 1,
+                },
+            },
+        },
+    )
+    mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
+
+    async def block(url):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(adapter, "_open_authorization_url", block)
+
+    output = invoke_once(codex_payload)
+
+    # The login's own shorter timeout is an authentication failure, not expiry.
+    assert output["error"]["code"] == (
+        "timeout" if deadline_expires else "codex_mcp_authentication_failed"
+    )
+    mock_codex.instances[0].thread.turn.assert_not_awaited()
+
+
 def test_codex_reports_missing_mcp_auth_status_before_turn(codex_payload, mock_codex):
     configure_mcp(
         codex_payload,
@@ -942,13 +1006,42 @@ def test_codex_reports_missing_mcp_auth_status_before_turn(codex_payload, mock_c
 
 @pytest.mark.parametrize("opened", [True, False])
 async def test_codex_opens_mcp_authorization_url_without_blocking(monkeypatch, opened):
-    open_browser = MagicMock(return_value=opened)
-    monkeypatch.setattr(adapter.webbrowser, "open", open_browser)
-    to_thread = AsyncMock(return_value=opened)
-    monkeypatch.setattr(adapter.asyncio, "to_thread", to_thread)
-
+    process = MagicMock(spec=asyncio.subprocess.Process)
+    process.returncode = 0 if opened else 1
+    process.wait = AsyncMock(return_value=process.returncode)
+    spawn = AsyncMock(return_value=process)
+    monkeypatch.setattr(adapter.asyncio, "create_subprocess_exec", spawn)
     assert await adapter._open_authorization_url("https://auth.example.test") is opened
-    to_thread.assert_awaited_once_with(open_browser, "https://auth.example.test")
+    assert spawn.call_args.args[-1] == "https://auth.example.test"
+
+
+async def test_browser_launcher_is_reaped_on_cancellation(monkeypatch):
+    spawn = asyncio.create_subprocess_exec
+    processes = []
+    launched = asyncio.Event()
+
+    async def launch_probe(*args, **kwargs):
+        if args[0] != sys.executable:
+            return await spawn(*args, **kwargs)
+        process = await spawn(
+            sys.executable, "-c", "import time; time.sleep(60)", **kwargs
+        )
+        processes.append(process)
+        launched.set()
+        return process
+
+    monkeypatch.setattr(adapter.asyncio, "create_subprocess_exec", launch_probe)
+    task = asyncio.create_task(
+        adapter._open_authorization_url("https://auth.example.test")
+    )
+    try:
+        await asyncio.wait_for(launched.wait(), timeout=5)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert len(processes) == 1
+    assert processes[0].returncode is not None
 
 
 def test_codex_rejects_mcp_service_account_authentication(codex_payload):
@@ -1826,26 +1919,35 @@ def test_native_telemetry_requires_mapping(codex_payload):
         adapter.native_codex_telemetry_config(runtime_input(codex_payload)[1])
 
 
+@pytest.mark.parametrize("deadline_expires", [True, False])
 def test_timeout_interrupts_native_turn_and_closes_sdk(
-    codex_payload, mock_codex, monkeypatch
+    codex_payload, mock_codex, deadline_expires
 ):
     mock_blocking_thread = mock_thread("thread-timeout")
 
     async def block():
         await asyncio.sleep(60)
 
-    mock_blocking_thread.handle.run.side_effect = block
+    # An SDK timeout before Fabric's deadline is not invocation expiry.
+    mock_blocking_thread.handle.run.side_effect = (
+        block if deadline_expires else TimeoutError("SDK request timed out")
+    )
     mock_codex.next_thread = mock_blocking_thread
-    monkeypatch.setattr(adapter, "timeout_seconds", lambda: 0.01)
+    codex_payload["runtime_context"]["deadline_millis"] = int(
+        (time.time() + (0.05 if deadline_expires else 60)) * 1000
+    )
 
     output = invoke_once(codex_payload)
 
     client = mock_codex.instances[0]
-    assert output["error"]["code"] == "timeout"
+    assert output["error"]["code"] == (
+        "timeout" if deadline_expires else "codex_timed_out"
+    )
     assert client.thread.handle.interrupted is True
     assert client.closed is True
 
 
+@pytest.mark.usefixtures("mock_codex")
 def test_adapter_rejects_structured_input(codex_payload):
     codex_payload["request"]["input"] = {
         "messages": [{"role": "user", "content": "Inspect the change."}]

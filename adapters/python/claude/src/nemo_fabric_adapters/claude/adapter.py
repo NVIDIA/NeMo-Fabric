@@ -706,10 +706,6 @@ def build_options(
         raise
 
 
-def timeout_seconds() -> float:
-    return 1800.0
-
-
 def _remaining_timeout(deadline: float) -> float:
     return max(0.0, deadline - asyncio.get_running_loop().time())
 
@@ -801,7 +797,8 @@ def adapter_failure(error: ClaudeAdapterError) -> dict[str, Any]:
 
 def sdk_failure(error: BaseException) -> dict[str, Any]:
     if isinstance(error, TimeoutError):
-        return _failure("timeout", "Claude invocation timed out")
+        # Only Fabric's invocation deadline is reported as `timeout`.
+        return _failure("claude_timed_out", "Claude SDK request timed out")
     if isinstance(error, CLINotFoundError):
         return _failure("claude_cli_not_found", "Claude Code executable was not found")
     if isinstance(error, CLIConnectionError):
@@ -1081,7 +1078,7 @@ class ClaudeRuntime:
                 )
             )
 
-        invocation_deadline = asyncio.get_running_loop().time() + timeout_seconds()
+        invocation_deadline = lifecycle.invocation_deadline(runtime_context)
         try:
             prompt = request_prompt(request)
         except ClaudeAdapterError as error:
@@ -1106,8 +1103,12 @@ class ClaudeRuntime:
                 and relay is not None
                 and atif_before is not None
             ):
+                atif_timeout = min(
+                    relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                    _remaining_timeout(invocation_deadline),
+                )
                 finalized = await relay_artifacts.wait_for_finalized_atif(
-                    relay.plugin_config, atif_before
+                    relay.plugin_config, atif_before, timeout_seconds=atif_timeout
                 )
                 if finalized is None:
                     self._unusable = True
@@ -1117,9 +1118,7 @@ class ClaudeRuntime:
                                 AdapterRelayError(
                                     "claude_relay_atif_timeout",
                                     "NeMo Relay did not finalize an ATIF artifact before the deadline",
-                                    metadata={
-                                        "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
-                                    },
+                                    metadata={"timeout_seconds": atif_timeout},
                                 )
                             ),
                             relay,
@@ -1141,8 +1140,9 @@ class ClaudeRuntime:
 
         messages: list[Message] = []
         result: ResultMessage | None = None
+        deadline = asyncio.timeout(remaining_timeout)
         try:
-            async with asyncio.timeout(remaining_timeout):
+            async with deadline:
                 await client.query(prompt)
                 async for message in client.receive_response():
                     if isinstance(message, ResultMessage):
@@ -1152,7 +1152,11 @@ class ClaudeRuntime:
         except (TimeoutError, ClaudeSDKError) as error:
             self._unusable = True
             await self._interrupt_failed_invocation()
-            output = sdk_failure(error)
+            output = (
+                _failure("timeout", "Claude invocation timed out")
+                if deadline.expired()
+                else sdk_failure(error)
+            )
         except Exception:
             # Claude Agent SDK 0.2.120 can yield an error ResultMessage and then
             # raise a plain Exception while closing the response stream.
