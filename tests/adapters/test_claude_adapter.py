@@ -700,6 +700,36 @@ def test_build_options_adds_relay_plugin_and_gateway_environment(
     ).exists()
 
 
+@pytest.mark.parametrize(
+    "logging_environment",
+    [
+        {
+            "NEMO_RELAY_LOG": "debug",
+            "NEMO_RELAY_LOG_STDERR": "true",
+            "NEMO_RELAY_LOG_STDERR_FORMAT": "jsonl",
+        },
+        {"NEMO_RELAY_LOG_CONFIG_PATH": "/etc/relay/logging.toml"},
+    ],
+)
+def test_build_options_relay_logging_environment_set_forwards_parent_values(
+    relay_payload, tmp_path, logging_environment
+):
+    # Relay rejects an empty logging variable, so a blanked value makes every
+    # Claude hook fail before it reaches the gateway.
+    os.environ.update(logging_environment)
+    os.environ["NEMO_RELAY_CLIENT_TOKEN"] = "parent-route-token"
+    os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
+
+    options = build_options(relay_payload, relay=relay_settings(tmp_path, {}))
+
+    forwarded_logging_environment = {
+        name: options.env[name] for name in logging_environment
+    }
+    assert forwarded_logging_environment == logging_environment
+    assert options.env["NEMO_RELAY_CLIENT_TOKEN"] == ""
+    assert options.env["FABRIC_UNRELATED_SECRET"] == ""
+
+
 def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
     relay_payload, tmp_path
 ):
