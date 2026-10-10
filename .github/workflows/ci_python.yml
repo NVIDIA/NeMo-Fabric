@@ -105,6 +105,12 @@ jobs:
           set -euo pipefail
           just --set no_uv true test-python
 
+      - name: Test OpenHands condensation with the SDK
+        if: matrix.platform == 'linux-amd64' && matrix.python-version == '3.12'
+        run: |
+          uv pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0"
+          uv run --no-sync pytest tests/adapters/test_openhands.py -k test_invoke_condenses_history_and_counts_summary_usage -q
+
   hermes:
     name: Hermes adapter (upstream Relay 0.9, Python 3.14)
     if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}

@@ -47,6 +47,7 @@ class OpenHandsApi(NamedTuple):
     TerminalTool: Any
     FileEditorTool: Any
     get_agent_final_response: Any
+    default_condenser: Any
 
 
 def _load_openhands_api() -> OpenHandsApi:
@@ -68,6 +69,7 @@ def _load_openhands_api() -> OpenHandsApi:
     from openhands.sdk import ConversationExecutionStatus
     from openhands.sdk import LLM
     from openhands.sdk import Tool
+    from openhands.sdk.context.condenser import default_condenser
     from openhands.sdk.conversation import get_agent_final_response
     from openhands.sdk.conversation.impl.local_conversation import LocalConversation
     from openhands.sdk.mcp import MCPServer
@@ -88,6 +90,7 @@ def _load_openhands_api() -> OpenHandsApi:
         TerminalTool=TerminalTool,
         FileEditorTool=FileEditorTool,
         get_agent_final_response=get_agent_final_response,
+        default_condenser=default_condenser,
     )
 
 
@@ -126,6 +129,23 @@ def _llm(api: OpenHandsApi, model: contract.AgentModelConfig) -> Any:
     if model.max_tokens is not None:
         kwargs["max_output_tokens"] = model.max_tokens
     return api.LLM(**kwargs)
+
+
+def _condenser_enabled(config: contract.AgentConfig) -> bool:
+    """Return whether to condense history, rejecting values the descriptor forbids.
+
+    Planning already validates the setting, but a host that skips planning must
+    not turn an unknown value into model-billed summarization calls.
+    """
+
+    settings = config.harness.settings if config.harness is not None else {}
+    condenser = settings.get("condenser", "default")
+    if condenser not in ("default", "none"):
+        raise lifecycle.LifecycleError(
+            "openhands_condenser_invalid",
+            "The OpenHands condenser setting must be 'default' or 'none'.",
+        )
+    return condenser == "default"
 
 
 def _workspace(context: contract.RuntimeContext, base_dir: str) -> Path:
@@ -343,6 +363,10 @@ class OpenHandsRuntime:
             "mcp_config": _mcp_servers(api, config),
             "agent_context": agent_context,
         }
+        if _condenser_enabled(config):
+            # Share the agent LLM instead of a copy so summarization calls
+            # accrue to the metrics that invoke() reports as usage.
+            agent_kwargs["condenser"] = api.default_condenser(llm)
         if instruction is not None and instruction.mode == "replace":
             agent_kwargs["system_prompt"] = instruction.content
         agent = api.Agent(**agent_kwargs)
