@@ -119,10 +119,18 @@ def test_validate_hermes_relay_compatibility_accepts_supported_checkout():
     telemetry.validate_hermes_relay_compatibility()
 
 
-def test_validate_hermes_relay_compatibility_rejects_relay_08(monkeypatch):
-    monkeypatch.setattr(telemetry, "version", lambda _name: "0.8.4")
+@pytest.mark.parametrize(
+    "relay_version", ["0.8.4", "0.11.0", "0.9.0rc1", "0.10.0rc1", "0.9.0.dev1"]
+)
+def test_validate_hermes_relay_compatibility_rejects_relay_outside_0_9_and_0_10(
+    monkeypatch, relay_version
+):
+    monkeypatch.setattr(telemetry, "version", lambda _name: relay_version)
 
-    with pytest.raises(RuntimeError, match="requires nemo-relay 0.9; found 0.8.4"):
+    with pytest.raises(
+        RuntimeError,
+        match=f"requires nemo-relay 0.9 or 0.10; found {relay_version}",
+    ):
         telemetry.validate_hermes_relay_compatibility()
 
 
@@ -142,7 +150,7 @@ async def test_runtime_start_rejects_published_hermes_relay_before_setup(
         ).to_mapping(),
     }
 
-    with pytest.raises(RuntimeError, match="does not support Relay 0.9 telemetry"):
+    with pytest.raises(RuntimeError, match="does not support Relay 0.9 or 0.10 telemetry"):
         await adapter.HermesRuntime().start(payload)
 
     assert not (tmp_path / "artifacts" / ".fabric").exists()
@@ -201,7 +209,7 @@ async def test_runtime_start_rejects_append_system_instruction(tmp_path: Path):
     assert caught.value.metadata["field"] == "instructions.system.mode"
 
 
-def test_write_hermes_relay_plugin_config_passes_through_v3(
+def test_write_hermes_relay_plugin_config_passes_through_v4(
     monkeypatch,
     tmp_path: Path,
 ):
@@ -217,7 +225,7 @@ def test_write_hermes_relay_plugin_config_passes_through_v3(
             {
                 "relay": {
                     "config": {
-                        "version": 3,
+                        "version": 4,
                         "atof": {"enabled": True, "sinks": [{"type": "file"}]},
                         "atif": {"enabled": True},
                         "opentelemetry": {
@@ -255,7 +263,7 @@ def test_write_hermes_relay_plugin_config_passes_through_v3(
     with plugin_config_path.open("rb") as stream:
         staged_plugin_config = tomllib.load(stream)
     staged_observability = staged_plugin_config["components"][0]["config"]
-    assert staged_observability["version"] == 3
+    assert staged_observability["version"] == 4
     assert staged_observability["atif"]["enabled"] is True
     assert staged_observability["atof"]["sinks"][0]["mode"] == "append"
     assert staged_observability["opentelemetry"] == {
@@ -278,7 +286,7 @@ def test_write_hermes_relay_plugin_config_passes_through_v3(
     ambient_guard.assert_called_once_with()
 
 
-def test_write_hermes_relay_plugin_config_preserves_typed_v3_otlp_endpoints(
+def test_write_hermes_relay_plugin_config_preserves_typed_v4_otlp_endpoints(
     monkeypatch,
     tmp_path: Path,
 ):
@@ -293,7 +301,7 @@ def test_write_hermes_relay_plugin_config_preserves_typed_v3_otlp_endpoints(
             {
                 "relay": {
                     "config": {
-                        "version": 3,
+                        "version": 4,
                         "opentelemetry": {
                             "enabled": True,
                             "endpoints": [
@@ -335,7 +343,7 @@ def test_write_hermes_relay_plugin_config_preserves_typed_v3_otlp_endpoints(
 
     with plugin_config_path.open("rb") as stream:
         staged_observability = tomllib.load(stream)["components"][0]["config"]
-    assert staged_observability["version"] == 3
+    assert staged_observability["version"] == 4
     assert staged_observability["opentelemetry"] == {
         "enabled": True,
         "endpoints": [
@@ -615,7 +623,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
             {
                 "relay": {
                     "config": {
-                        "version": 3,
+                        "version": 4,
                         "atof": {
                             "enabled": True,
                             "sinks": [

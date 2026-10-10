@@ -461,12 +461,17 @@ def test_harbor_generated_paths_are_ignored():
 
 
 def test_swebench_setup_pins_a_supported_relay_cli():
-    from nemo_fabric_adapters.common.relay_gateway import RELAY_MINIMUM_VERSION
+    from nemo_fabric_adapters.common.relay_gateway import (
+        RELAY_MAXIMUM_VERSION,
+        RELAY_MINIMUM_VERSION,
+    )
 
     swebench = SWEBENCH_README.read_text(encoding="utf-8")
-    minimum = ".".join(str(part) for part in RELAY_MINIMUM_VERSION)
+    pinned = re.search(r"NEMO_RELAY_VERSION=(\d+)\.(\d+)\.(\d+) ", swebench)
 
-    assert f"NEMO_RELAY_VERSION={minimum}" in swebench
+    assert pinned is not None
+    version = tuple(int(part) for part in pinned.groups())
+    assert RELAY_MINIMUM_VERSION <= version < RELAY_MAXIMUM_VERSION
     assert '--install-dir "$FABRIC_BUNDLE/.relay/bin"' in swebench
 
 

@@ -1849,7 +1849,7 @@
               "uniqueItems": true
             },
             "relay_extension_path": {
-              "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9 Pi extension",
+              "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9 or 0.10 Pi extension",
               "minLength": 1,
               "type": "string"
             }
@@ -1895,7 +1895,7 @@
         "name": "nemo-fabric-adapters-pi",
         "version": "0.5.0"
       },
-      "sha256": "17830064b0004623d582e3e28e2254245c6e5efb7c3a9609bde24a06e3e89cff",
+      "sha256": "3cb85c7a0e52e49827e889631da96ca7936c7260d52aac8b52835484a0cafad9",
       "source": "adapters/typescript/pi/pi.fabric-adapter.json"
     },
     "nvidia.fabric.qwen": {

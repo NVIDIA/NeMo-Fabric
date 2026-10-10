@@ -1506,7 +1506,7 @@ async def test_relay_lifecycle_correlates_once_and_collects_current_artifacts(
     monkeypatch.setattr(
         nooa_telemetry.importlib.metadata,
         "version",
-        MagicMock(return_value="0.9.0"),
+        MagicMock(return_value="0.10.0"),
     )
     monkeypatch.setattr(
         nooa_telemetry.common_utils,
@@ -1587,7 +1587,7 @@ async def test_relay_records_none_result_and_collects_artifacts(
     monkeypatch.setattr(
         nooa_telemetry.importlib.metadata,
         "version",
-        MagicMock(return_value="0.9.0"),
+        MagicMock(return_value="0.10.0"),
     )
     monkeypatch.setattr(
         nooa_telemetry.common_utils,
@@ -1679,7 +1679,7 @@ async def test_relay_emits_correlated_atof_and_atif(
                                 "kind": "observability",
                                 "enabled": True,
                                 "config": {
-                                    "version": 3,
+                                    "version": 4,
                                     "atof": {
                                         "enabled": True,
                                         "sinks": [
@@ -1761,7 +1761,7 @@ async def test_relay_scope_leak_preserves_result_and_quarantines_later_turns(
     monkeypatch.setattr(
         nooa_telemetry.importlib.metadata,
         "version",
-        MagicMock(return_value="0.9.0"),
+        MagicMock(return_value="0.10.0"),
     )
     monkeypatch.setattr(
         nooa_telemetry.common_utils,

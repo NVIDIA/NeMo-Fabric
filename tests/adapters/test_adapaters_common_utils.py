@@ -651,7 +651,7 @@ def test_without_none_preserves_falsey_values():
     }
 
 
-def test_load_relay_plugin_config_wraps_and_normalizes_bare_v3_observability_config(
+def test_load_relay_plugin_config_wraps_and_normalizes_bare_v4_observability_config(
     tmp_path: Path,
 ):
     config_path = tmp_path / "relay.json"
@@ -660,7 +660,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_v3_observability_con
             {
                 "relay": {
                     "config": {
-                        "version": 3,
+                        "version": 4,
                         "atof": {
                             "enabled": True,
                             "sinks": [
@@ -703,7 +703,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_v3_observability_con
 
     assert plugin_config["version"] == 1
     assert plugin_config["components"][0]["kind"] == "observability"
-    assert observability["version"] == 3
+    assert observability["version"] == 4
     file_sink, stream_sink = observability["atof"]["sinks"]
     assert file_sink["output_directory"] == str(
         tmp_path / "custom-relay" / "runtime-current"
@@ -789,7 +789,7 @@ def test_load_relay_plugin_config_keeps_empty_config_component_free(tmp_path: Pa
     assert not (tmp_path / "artifacts").exists()
 
 
-def test_load_relay_plugin_config_accepts_implicit_v3_without_inserting_version(
+def test_load_relay_plugin_config_accepts_implicit_v4_without_inserting_version(
     tmp_path: Path,
 ):
     config_path = tmp_path / "relay.json"
@@ -1068,7 +1068,7 @@ def test_collect_relay_artifacts_ignores_malformed_paths(tmp_path: Path):
     assert common_utils.collect_relay_artifacts(plugin_config) == []
 
 
-def test_relay_validates_v3_plugin_config():
+def test_relay_validates_v4_plugin_config():
     from nemo_relay import plugin
 
     os.environ["TOKEN"] = "test-token"
@@ -1079,7 +1079,7 @@ def test_relay_validates_v3_plugin_config():
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "atof": {
                         "enabled": True,
                         "sinks": [
@@ -1106,11 +1106,11 @@ def test_relay_validates_v3_plugin_config():
         ],
     }
 
-    common_utils.validate_relay_observability_v3(plugin_config)
+    common_utils.validate_relay_observability(plugin_config)
     assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
 
 
-async def test_relay_initializes_v3_atof_atif_config(
+async def test_relay_initializes_v4_atof_atif_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -1129,7 +1129,7 @@ async def test_relay_initializes_v3_atof_atif_config(
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "atof": {
                         "enabled": True,
                         "sinks": [
@@ -1153,13 +1153,13 @@ async def test_relay_initializes_v3_atof_atif_config(
             }
         ],
     }
-    common_utils.validate_relay_observability_v3(plugin_config)
+    common_utils.validate_relay_observability(plugin_config)
     assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
     async with plugin.activate(plugin_config) as activation:
         assert activation.report["config"]["diagnostics"] == []
 
 
-def test_relay_validates_all_v3_otlp_fields():
+def test_relay_validates_all_v4_otlp_fields():
     from nemo_relay import plugin
 
     os.environ["OTEL_TOKEN"] = "test-token"
@@ -1170,7 +1170,7 @@ def test_relay_validates_all_v3_otlp_fields():
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "atif": {
                         "enabled": True,
                         "output_directory": "/tmp/atif",
@@ -1214,7 +1214,7 @@ def test_relay_validates_all_v3_otlp_fields():
         ],
     }
 
-    common_utils.validate_relay_observability_v3(plugin_config)
+    common_utils.validate_relay_observability(plugin_config)
     assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
 
 
@@ -1228,7 +1228,7 @@ def test_relay_validates_unknown_atof_sink_type():
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "atof": {
                         "enabled": True,
                         "sinks": [{"type": "unknown"}],
@@ -1284,14 +1284,14 @@ def test_write_relay_configs(
                 assert tomllib.load(stream) == config
 
 
-def test_validate_relay_observability_v3_accepts_v3_and_implicit_v3_without_mutation():
+def test_validate_relay_observability_accepts_v4_and_implicit_v4_without_mutation():
     plugin_config = {
         "version": 1,
         "components": [
             {
                 "kind": "observability",
                 "enabled": True,
-                "config": {"version": 3, "atif": {"enabled": False}},
+                "config": {"version": 4, "atif": {"enabled": False}},
             },
             {
                 "kind": "observability",
@@ -1307,12 +1307,12 @@ def test_validate_relay_observability_v3_accepts_v3_and_implicit_v3_without_muta
     }
     original = json.loads(json.dumps(plugin_config))
 
-    common_utils.validate_relay_observability_v3(plugin_config)
+    common_utils.validate_relay_observability(plugin_config)
 
     assert plugin_config == original
 
 
-def test_validate_relay_observability_v3_matches_relay_implicit_version():
+def test_validate_relay_observability_matches_relay_implicit_version():
     from nemo_relay import plugin
 
     plugin_config = {
@@ -1326,7 +1326,7 @@ def test_validate_relay_observability_v3_matches_relay_implicit_version():
         ],
     }
 
-    common_utils.validate_relay_observability_v3(plugin_config)
+    common_utils.validate_relay_observability(plugin_config)
 
     assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
 
@@ -1337,15 +1337,17 @@ def test_validate_relay_observability_v3_matches_relay_implicit_version():
         (1, True),
         (2, True),
         (2, False),
-        (4, True),
+        (3, True),
+        (3, False),
+        (5, True),
         (True, True),
         (False, True),
-        ("3", True),
-        (3.0, True),
+        ("4", True),
+        (4.0, True),
         (None, True),
     ],
 )
-def test_validate_relay_observability_v3_rejects_explicit_non_v3_versions(
+def test_validate_relay_observability_rejects_explicit_non_v4_versions(
     version: object,
     enabled: bool,
 ):
@@ -1362,12 +1364,12 @@ def test_validate_relay_observability_v3_rejects_explicit_non_v3_versions(
 
     with pytest.raises(
         ValueError,
-        match=r"unsupported NeMo Relay observability config version .*expected version 3",
+        match=r"unsupported NeMo Relay observability config version .*expected version 4",
     ):
-        common_utils.validate_relay_observability_v3(plugin_config)
+        common_utils.validate_relay_observability(plugin_config)
 
 
-def test_validate_relay_observability_v3_reports_version_before_v3_shape():
+def test_validate_relay_observability_reports_version_before_v4_shape():
     plugin_config = {
         "version": 1,
         "components": [
@@ -1389,7 +1391,7 @@ def test_validate_relay_observability_v3_reports_version_before_v3_shape():
         ValueError,
         match=r"unsupported NeMo Relay observability config version 2",
     ):
-        common_utils.validate_relay_observability_v3(plugin_config)
+        common_utils.validate_relay_observability(plugin_config)
 
 
 @pytest.mark.parametrize(
@@ -1400,7 +1402,7 @@ def test_validate_relay_observability_v3_reports_version_before_v3_shape():
         ({"enabled": False, "endpoints": []}, True),
     ],
 )
-def test_validate_relay_observability_v3_requires_endpoint_when_enabled(
+def test_validate_relay_observability_requires_endpoint_when_enabled(
     opentelemetry: dict[str, object],
     valid: bool,
 ):
@@ -1411,7 +1413,7 @@ def test_validate_relay_observability_v3_requires_endpoint_when_enabled(
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "opentelemetry": opentelemetry,
                 },
             }
@@ -1419,10 +1421,10 @@ def test_validate_relay_observability_v3_requires_endpoint_when_enabled(
     }
 
     if valid:
-        common_utils.validate_relay_observability_v3(plugin_config)
+        common_utils.validate_relay_observability(plugin_config)
     else:
         with pytest.raises(ValueError, match="requires at least one endpoint"):
-            common_utils.validate_relay_observability_v3(plugin_config)
+            common_utils.validate_relay_observability(plugin_config)
 
 
 @pytest.mark.parametrize(
@@ -1457,7 +1459,7 @@ def test_validate_relay_observability_v3_requires_endpoint_when_enabled(
         ),
     ],
 )
-def test_validate_relay_observability_v3_rejects_malformed_opentelemetry(
+def test_validate_relay_observability_rejects_malformed_opentelemetry(
     opentelemetry: object,
     message: str,
 ):
@@ -1467,18 +1469,18 @@ def test_validate_relay_observability_v3_rejects_malformed_opentelemetry(
             {
                 "kind": "observability",
                 "enabled": True,
-                "config": {"version": 3, "opentelemetry": opentelemetry},
+                "config": {"version": 4, "opentelemetry": opentelemetry},
             }
         ],
     }
 
     with pytest.raises(ValueError, match=message):
-        common_utils.validate_relay_observability_v3(plugin_config)
+        common_utils.validate_relay_observability(plugin_config)
 
 
 @pytest.mark.parametrize("endpoint_type", ["full", "gen_ai", "openinference"])
-def test_validate_relay_observability_v3_accepts_endpoint_types(endpoint_type: str):
-    common_utils.validate_relay_observability_v3(
+def test_validate_relay_observability_accepts_endpoint_types(endpoint_type: str):
+    common_utils.validate_relay_observability(
         {
             "version": 1,
             "components": [
@@ -1486,7 +1488,7 @@ def test_validate_relay_observability_v3_accepts_endpoint_types(endpoint_type: s
                     "kind": "observability",
                     "enabled": True,
                     "config": {
-                        "version": 3,
+                        "version": 4,
                         "opentelemetry": {
                             "endpoints": [
                                 {
@@ -1503,7 +1505,7 @@ def test_validate_relay_observability_v3_accepts_endpoint_types(endpoint_type: s
 
 
 @pytest.mark.parametrize("endpoint", [None, 42, "", " \t "])
-def test_validate_relay_observability_v3_rejects_invalid_endpoint(endpoint: object):
+def test_validate_relay_observability_rejects_invalid_endpoint(endpoint: object):
     plugin_config = {
         "version": 1,
         "components": [
@@ -1511,7 +1513,7 @@ def test_validate_relay_observability_v3_rejects_invalid_endpoint(endpoint: obje
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "opentelemetry": {
                         "enabled": True,
                         "endpoints": [{"type": "full", "endpoint": endpoint}],
@@ -1525,11 +1527,11 @@ def test_validate_relay_observability_v3_rejects_invalid_endpoint(endpoint: obje
         ValueError,
         match=r"non-empty string for opentelemetry\.endpoints\[0\]",
     ):
-        common_utils.validate_relay_observability_v3(plugin_config)
+        common_utils.validate_relay_observability(plugin_config)
 
 
 @pytest.mark.parametrize("config", [None, [], "version = 3", 3])
-def test_validate_relay_observability_v3_requires_object_config(config: object):
+def test_validate_relay_observability_requires_object_config(config: object):
     plugin_config = {
         "version": 1,
         "components": [
@@ -1545,21 +1547,21 @@ def test_validate_relay_observability_v3_requires_object_config(config: object):
         ValueError,
         match="NeMo Relay observability component config must be an object",
     ):
-        common_utils.validate_relay_observability_v3(plugin_config)
+        common_utils.validate_relay_observability(plugin_config)
 
 
 @pytest.mark.parametrize(
     "config",
     [
         {
-            "version": 3,
+            "version": 4,
             "openinference": {
                 "enabled": True,
                 "endpoint": "http://localhost:6006/v1/traces",
             },
         },
         {
-            "version": 3,
+            "version": 4,
             "opentelemetry": {
                 "enabled": True,
                 "endpoint": "http://localhost:4318/v1/traces",
@@ -1567,7 +1569,7 @@ def test_validate_relay_observability_v3_requires_object_config(config: object):
         },
     ],
 )
-def test_validate_relay_observability_v3_rejects_legacy_exporter_shapes(config):
+def test_validate_relay_observability_rejects_legacy_exporter_shapes(config):
     plugin_config = {
         "version": 1,
         "components": [
@@ -1579,8 +1581,10 @@ def test_validate_relay_observability_v3_rejects_legacy_exporter_shapes(config):
         ],
     }
 
-    with pytest.raises(ValueError, match="observability config version 3"):
-        common_utils.validate_relay_observability_v3(plugin_config)
+    with pytest.raises(
+        ValueError, match=r"observability config version (3 removed|4 requires)"
+    ):
+        common_utils.validate_relay_observability(plugin_config)
 
 
 def test_normalize_relay_output_dirs_validates_all_components_before_mutation(
@@ -1593,7 +1597,7 @@ def test_normalize_relay_output_dirs_validates_all_components_before_mutation(
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "atof": {
                         "enabled": True,
                         "sinks": [
@@ -1670,7 +1674,7 @@ def test_load_relay_plugin_config_rejects_v2_before_creating_directories(
     assert not (tmp_path / "artifacts").exists()
 
 
-def test_write_relay_configs_preserves_v3_plugin_config_exactly(tmp_path: Path):
+def test_write_relay_configs_preserves_v4_plugin_config_exactly(tmp_path: Path):
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
     plugin_config = {
         "version": 1,
@@ -1680,7 +1684,7 @@ def test_write_relay_configs_preserves_v3_plugin_config_exactly(tmp_path: Path):
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "atif": {"enabled": False},
                     "opentelemetry": {
                         "enabled": True,
@@ -1745,7 +1749,7 @@ def test_write_relay_configs_rejects_null_endpoints_before_creating_directory(
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "opentelemetry": {"endpoints": None},
                 },
             }

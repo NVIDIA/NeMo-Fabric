@@ -629,7 +629,7 @@ async def test_agent_creation_error_fails_runtime_start(
         )
 
 
-def test_resolve_relay_observability_passes_through_relay_v3(
+def test_resolve_relay_observability_passes_through_relay_v4(
     tmp_path, make_payload, monkeypatch
 ):
     source = {
@@ -638,7 +638,7 @@ def test_resolve_relay_observability_passes_through_relay_v3(
             {
                 "kind": "observability",
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "opentelemetry": {
                         "enabled": True,
                         "endpoints": [
@@ -671,7 +671,7 @@ def test_resolve_relay_observability_passes_through_relay_v3(
     assert observability is not None
     assert observability.plugin_config is source
     config = observability.plugin_config["components"][0]["config"]
-    assert config["version"] == 3
+    assert config["version"] == 4
     assert config["opentelemetry"]["endpoints"][0]["type"] == "openinference"
 
 
@@ -1373,7 +1373,7 @@ async def test_native_telemetry_exports_without_artifacts(
                         "kind": "observability",
                         "enabled": True,
                         "config": {
-                            "version": 3,
+                            "version": 4,
                             "opentelemetry": {
                                 "enabled": True,
                                 "endpoints": [
@@ -1486,7 +1486,7 @@ async def test_missing_nemo_relay_with_native_telemetry_fails_runtime_start(
                     {
                         "kind": "observability",
                         "enabled": True,
-                        "config": {"version": 3},
+                        "config": {"version": 4},
                     }
                 ],
             },
@@ -1513,7 +1513,7 @@ async def test_incomplete_nemo_relay_install_fails_runtime_start(
                     {
                         "kind": "observability",
                         "enabled": True,
-                        "config": {"version": 3},
+                        "config": {"version": 4},
                     }
                 ],
             },

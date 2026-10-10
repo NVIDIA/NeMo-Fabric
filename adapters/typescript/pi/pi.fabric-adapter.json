@@ -37,7 +37,7 @@
       "relay_extension_path": {
         "type": "string",
         "minLength": 1,
-        "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9 Pi extension"
+        "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9 or 0.10 Pi extension"
       }
     },
     "additionalProperties": false

@@ -117,7 +117,7 @@ test(
                   kind: "observability",
                   enabled: true,
                   config: {
-                    version: 3,
+                    version: 4,
                     atof: {
                       enabled: true,
                       sinks: [

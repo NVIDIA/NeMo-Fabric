@@ -77,7 +77,7 @@ function relayModelName(input: AdapterStartInput): string {
   return selected?.model || "unknown";
 }
 
-export function validateRelayObservabilityV3(pluginConfig: RelayPluginConfig): void {
+export function validateRelayObservability(pluginConfig: RelayPluginConfig): void {
   for (const component of components(pluginConfig)) {
     if (!isRecord(component) || component.enabled === false) {
       continue;
@@ -90,9 +90,9 @@ export function validateRelayObservabilityV3(pluginConfig: RelayPluginConfig): v
     if (!isRecord(config)) {
       throw new Error("NeMo Relay observability component config must be an object");
     }
-    if ("version" in config && config.version !== 3) {
+    if ("version" in config && config.version !== 4) {
       throw new Error(
-        `unsupported NeMo Relay observability config version ${JSON.stringify(config.version)}; expected version 3`,
+        `unsupported NeMo Relay observability config version ${JSON.stringify(config.version)}; expected version 4`,
       );
     }
     if ("openinference" in config) {
@@ -113,7 +113,7 @@ export function validateRelayObservabilityV3(pluginConfig: RelayPluginConfig): v
       .sort();
     if (legacyFields.length > 0) {
       throw new Error(
-        "NeMo Relay observability config version 3 requires exporter fields inside " +
+        "NeMo Relay observability config version 4 requires exporter fields inside " +
           `opentelemetry.endpoints: ${legacyFields.join(", ")}`,
       );
     }
@@ -192,7 +192,7 @@ export async function normalizeRelayOutputDirs(
   pluginConfig: RelayPluginConfig,
   input: AdapterStartInput,
 ): Promise<void> {
-  validateRelayObservabilityV3(pluginConfig);
+  validateRelayObservability(pluginConfig);
   const base = resolve(input.baseDir);
   const runtimeId = input.runtimeContext.runtime_id;
 
@@ -377,7 +377,7 @@ export async function writeRelayConfigs(pluginConfig: RelayPluginConfig): Promis
       (component) => !isRecord(component) || component.enabled !== false,
     ),
   };
-  validateRelayObservabilityV3(enabledPluginConfig);
+  validateRelayObservability(enabledPluginConfig);
   validateUniqueRelayComponentKinds(enabledPluginConfig);
   const configDir = join(dirname(runtimeConfigPath), "relay-config");
   const configPath = join(configDir, "config.toml");

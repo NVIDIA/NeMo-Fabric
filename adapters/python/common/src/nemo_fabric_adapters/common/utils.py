@@ -444,7 +444,7 @@ def dump_yaml(value: dict[str, Any]) -> str:
         return json.dumps(value, indent=2, sort_keys=False) + "\n"
 
 
-def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
+def validate_relay_observability(plugin_config: dict[str, Any]) -> None:
     """Validate Fabric's Relay observability schema boundary without mutation."""
 
     endpoint_types = {"full", "gen_ai", "openinference"}
@@ -478,11 +478,11 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
             if (
                 isinstance(version, bool)
                 or not isinstance(version, int)
-                or version != 3
+                or version != 4
             ):
                 raise ValueError(
                     "unsupported NeMo Relay observability config version "
-                    f"{version!r}; expected version 3"
+                    f"{version!r}; expected version 4"
                 )
         if "openinference" in config:
             raise ValueError(
@@ -498,7 +498,7 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
         legacy_fields = sorted(legacy_flat_otel_fields.intersection(opentelemetry))
         if legacy_fields:
             raise ValueError(
-                "NeMo Relay observability config version 3 requires exporter "
+                "NeMo Relay observability config version 4 requires exporter "
                 "fields inside opentelemetry.endpoints: " + ", ".join(legacy_fields)
             )
         enabled = opentelemetry.get("enabled", False)
@@ -567,7 +567,7 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
 def normalize_relay_output_dirs(
     plugin_config: dict[str, Any], payload: dict[str, Any]
 ) -> None:
-    validate_relay_observability_v3(plugin_config)
+    validate_relay_observability(plugin_config)
 
     base = Path(base_dir(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
@@ -706,7 +706,7 @@ def write_relay_configs(
         config_path = Path(config_path)
         config_dir = config_path.parent / "relay-config"
         if plugin_config is not None:
-            validate_relay_observability_v3(plugin_config)
+            validate_relay_observability(plugin_config)
         config_dir.mkdir(parents=True, exist_ok=True)
         relay_config_path = None
         plugin_config_path = None

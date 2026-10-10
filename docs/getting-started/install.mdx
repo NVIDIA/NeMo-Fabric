@@ -151,7 +151,7 @@ pip install "nemo-fabric[hermes-agent]"
 
 These packages do not install Hermes Agent. Released Hermes Agent v2026.9.24
 requires Relay 0.8.x and supports ordinary runs only with this adapter. Do not
-install the adapter's Relay 0.9 `relay` or `full` extra into that environment.
+install the adapter's `relay` or `full` extra into that environment.
 Relay telemetry and streaming require the merged, unreleased upstream Hermes
 revision on Python 3.14. For local development, create its isolated environment
 from the repository root:
@@ -267,12 +267,14 @@ pip install "nemo-fabric-adapters-nooa[full]"
 
 Use `relay` when the environment already manages the harness. For Deep Agents,
 mini-SWE-agent, and NOOA, use `full` to install the harness and Relay package
-together. Hermes Agent's `relay` and `full` extras install Relay 0.9 but not
-Hermes Agent. Claude and Codex do not provide a
+together. Hermes Agent's `relay` and `full` extras install Relay but not
+Hermes Agent; next to current upstream Hermes Agent, which requires
+`nemo-relay<0.10`, they resolve to Relay 0.9. Claude and Codex do not provide a
 `relay` extra because their adapters launch the external CLI instead of
 importing this Python package.
 
-Python-backed Relay integrations require `nemo-relay>=0.9,<0.10`. NeMo Fabric
+Python-backed Relay integrations require `nemo-relay>=0.9,<0.11`; Relay 0.10
+is recommended. NeMo Fabric
 does not merge user or workspace `plugins.toml` files with its runtime-owned
 configuration. Remove or relocate a user
 `plugins.toml` or the nearest `.nemo-relay/plugins.toml` before starting a
@@ -280,36 +282,56 @@ Relay-enabled Deep Agents, Hermes Agent, or mini-SWE-agent runtime. System
 configuration in `/etc/nemo-relay/plugins.toml` remains administrator
 controlled.
 
-#### Migrate Relay Observability Configurations from 0.6
+#### Migrate Relay Observability Configurations to Version 4
 
-Relay 0.7 requires observability schema version 3. Move flat OpenTelemetry
-exporter fields into entries under `opentelemetry.endpoints`. In the Python SDK,
-replace the removed `RelayOtlpConfig` model with `RelayOpenTelemetryConfig` and
-one or more `RelayOpenTelemetryEndpointConfig` entries.
+NeMo Fabric writes and accepts observability configuration version 4 and
+rejects version 3. Relay 0.9.0 and later accept version 4, and Relay 0.10
+requires it. Change `version = 3` to `version = 4` in each observability
+component configuration, including `RelayObservabilityConfig(version=...)` and
+`relay.components[].config.version`. Typed OpenTelemetry endpoints keep the
+same shape, and the outer plugin configuration stays `version = 1`. Omitting
+the observability version selects version 4.
+
+With Relay 0.10, Relay also enables automatic OTLP export when an
+`OTEL_EXPORTER_OTLP_ENDPOINT` or signal-specific OTLP endpoint variable is set
+in the runtime environment, and it skips configured endpoints while global
+OTLP header variables are set. Automatic traces use the `gen_ai` projection,
+which exports prompt and response content. Remove unintended OTLP variables
+from the environment that starts the runtime, set
+`opentelemetry.enabled = false` in the observability configuration, or set
+`OTEL_SDK_DISABLED=true` to turn off every Relay OTLP exporter. Refer to the NeMo Relay
+[migration guide](https://github.com/NVIDIA/NeMo-Relay/blob/0.10.0/docs/reference/migration-guides.mdx)
+for the complete list of 0.10 changes.
+
+Configurations from Relay 0.6 must also move flat OpenTelemetry exporter fields
+into entries under `opentelemetry.endpoints`. In the Python SDK, replace the
+removed `RelayOtlpConfig` model with `RelayOpenTelemetryConfig` and one or more
+`RelayOpenTelemetryEndpointConfig` entries.
 
 #### NeMo Relay CLI
 
 Claude and Codex harness extras install their compatible CLI binary without
 the Relay Python package. Pi requires a separate CLI installation alongside
-the npm adapter. Install the `>=0.9,<0.10` range:
+the npm adapter. Install the `>=0.9,<0.11` range:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.9,<0.10"
+pip install "nemo-relay-cli-bin>=0.9,<0.11"
 ```
 
 If `cargo-binstall` is available, install the pinned CLI with Cargo:
 
 ```bash
-cargo binstall nemo-relay-cli --version 0.9.3
+cargo binstall nemo-relay-cli --version 0.10.0
 ```
 
 After installation, run `nemo-relay --version` and confirm the version is in
-the `>=0.9,<0.10` range. When Relay is enabled with
+the `>=0.9,<0.11` range. When Relay is enabled with
 `FabricConfig.enable_relay(...)`, the Claude, Codex, and Pi adapters start and
 supervise the CLI gateway automatically.
 
 The Pi adapter also requires a user-supplied path to the
-[Relay 0.9 Pi extension](https://github.com/NVIDIA/NeMo-Relay/tree/0.9.3/crates/cli/assets/pi-extension).
+[Relay Pi extension](https://github.com/NVIDIA/NeMo-Relay/tree/0.10.0/crates/cli/assets/pi-extension)
+from the Relay release that matches the CLI.
 Set
 `harness.settings.relay_extension_path` to the extension file or package
 directory; relative paths resolve from `environment.workspace`. Relay-enabled

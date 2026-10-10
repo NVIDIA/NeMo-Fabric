@@ -38,7 +38,7 @@ just build-all
   --input "Reply with exactly: NeMo Fabric works"
 ```
 
-The Pi variant supports Relay telemetry with `nemo-relay>=0.9.0,<0.10.0` and an
+The Pi variant supports Relay telemetry with `nemo-relay>=0.9.0,<0.11.0` and an
 explicit extension path. Pass
 `--variant pi --relay --stream --pi-relay-extension-path <PATH>` to collect
 per-invocation model-turn ATOF records for successful Relay redirects, then

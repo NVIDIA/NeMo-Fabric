@@ -1120,7 +1120,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       if (relayErrors.length > 0) {
         throw new LifecycleError(
           "pi_relay_extension_load_failed",
-          "The configured NeMo Relay Pi extension failed to load; use the Pi extension from the NeMo Relay 0.9 release",
+          "The configured NeMo Relay Pi extension failed to load; use the Pi extension from a NeMo Relay 0.9 or 0.10 release",
           {
             metadata: {
               count: relayErrors.length,
