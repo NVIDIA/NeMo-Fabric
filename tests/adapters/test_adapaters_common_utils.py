@@ -25,6 +25,7 @@ from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayObservabilityConfig
+from nemo_fabric_adapter_contract.models import RuntimeContext
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -185,6 +186,30 @@ def test_two_requests_share_one_session_root(monkeypatch: pytest.MonkeyPatch):
         REQUEST_UUID,
         second_request,
     ]
+
+
+def test_relay_correlation_metadata_returns_reserved_fabric_ids(tmp_path: Path):
+    context = RuntimeContext.from_mapping(
+        {
+            "runtime_id": "runtime-1",
+            "invocation_id": "invocation-1",
+            "request_id": "request-1",
+            "environment": {
+                "environment_id": "test-environment",
+                "provider": "test",
+                "control_location": "in_env_control",
+                "workspace": str(tmp_path),
+                "ownership": "caller_owned",
+            },
+            "artifacts": {},
+        }
+    )
+
+    assert common_utils.relay_correlation_metadata(context) == {
+        "nemo_fabric_request_id": "request-1",
+        "nemo_fabric_invocation_id": "invocation-1",
+        "nemo_fabric_runtime_id": "runtime-1",
+    }
 
 
 @pytest.mark.parametrize(

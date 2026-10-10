@@ -259,11 +259,7 @@ class RelayTelemetry:
                 common_utils.reject_inherited_relay_plugin_config(activation.report)
                 uninstall = install_nemo_relay_compat(agent.event_manager)
                 try:
-                    metadata = {
-                        "nemo_fabric_request_id": runtime_context.request_id,
-                        "nemo_fabric_invocation_id": runtime_context.invocation_id,
-                        "nemo_fabric_runtime_id": runtime_context.runtime_id,
-                    }
+                    metadata = common_utils.relay_correlation_metadata(runtime_context)
                     try:
                         with scope.scope(
                             self._scope_name,

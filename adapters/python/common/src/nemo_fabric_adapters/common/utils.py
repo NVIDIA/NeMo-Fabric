@@ -16,9 +16,16 @@ from pathlib import Path
 from typing import Any
 
 from nemo_fabric_adapter_contract.codec import JsonValue
+from nemo_fabric_adapter_contract.models import RuntimeContext
 
 
 _FIELD_NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
+
+# Reserved Relay metadata keys that join Relay telemetry to NeMo Fabric IDs.
+# Consumers match these names literally, so treat them as a stable contract.
+RELAY_REQUEST_ID_METADATA_KEY = "nemo_fabric_request_id"
+RELAY_INVOCATION_ID_METADATA_KEY = "nemo_fabric_invocation_id"
+RELAY_RUNTIME_ID_METADATA_KEY = "nemo_fabric_runtime_id"
 
 
 def normalize_user_input(value: JsonValue) -> str:
@@ -278,7 +285,7 @@ def relay_request_context(
 ) -> tuple[Any, dict[str, str]]:
     """Root Relay at a usable session root, else a UUID request ID; preserve metadata."""
 
-    metadata = {"nemo_fabric_request_id": request_id}
+    metadata = {RELAY_REQUEST_ID_METADATA_KEY: request_id}
     request_uuid = _uuid_or_none(request_id)
     session_uuid = _uuid_or_none(session_root)
 
@@ -295,6 +302,16 @@ def relay_request_context(
     propagation = PropagationContext(request_uuid or root_uuid, root_uuid=root_uuid)
     stack = create_scope_stack_from_propagation(propagation)
     return use_scope_stack(stack), metadata
+
+
+def relay_correlation_metadata(context: RuntimeContext) -> dict[str, str]:
+    """Return the NeMo Fabric IDs to attach to an invocation's Relay root scope."""
+
+    return {
+        RELAY_REQUEST_ID_METADATA_KEY: context.request_id,
+        RELAY_INVOCATION_ID_METADATA_KEY: context.invocation_id,
+        RELAY_RUNTIME_ID_METADATA_KEY: context.runtime_id,
+    }
 
 
 def ambient_relay_plugin_config_paths() -> list[Path]:
