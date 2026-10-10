@@ -178,7 +178,7 @@ fn check_resolution(plan: &RunPlan) -> DoctorCheck {
             "selected resolution strategy `service` is modeled but not implemented by NeMo Fabric runtime execution".to_string()
         }
         DoctorStatus::Warn => format!(
-            "selected resolution strategy `{resolution:?}` is declared but not executed by this POC"
+            "selected resolution strategy `{resolution:?}` is declared but not executed by this implementation"
         ),
         DoctorStatus::Fail => unreachable!("resolution check never fails directly"),
     };
@@ -274,7 +274,7 @@ fn check_requirements(plan: &RunPlan) -> Vec<DoctorCheck> {
                 "requirements.resolution",
                 DoctorStatus::Warn,
                 format!(
-                    "requirements are declared for `{}` but this POC does not execute that resolution strategy",
+                    "requirements are declared for `{}` but this implementation does not execute that resolution strategy",
                     resolution_name(plan.resolution)
                 ),
             )];
@@ -341,14 +341,16 @@ fn check_requirements(plan: &RunPlan) -> Vec<DoctorCheck> {
         checks.push(check(
             "requirement.service",
             DoctorStatus::Warn,
-            format!("service requirement `{service}` is declared but not probed by this POC"),
+            format!(
+                "service requirement `{service}` is declared but not probed by this implementation"
+            ),
         ));
     }
     for hook in &descriptor.requirements.plugin_hooks {
         checks.push(check(
             "requirement.plugin_hook",
             DoctorStatus::Warn,
-            format!("plugin hook `{hook}` is declared but not probed by this POC"),
+            format!("plugin hook `{hook}` is declared but not probed by this implementation"),
         ));
     }
     checks
@@ -383,7 +385,7 @@ fn non_local_preinstalled_check(plan: &RunPlan) -> Option<DoctorCheck> {
         "requirements.environment",
         DoctorStatus::Warn,
         format!(
-            "`preinstalled` requirements are expected inside `{}` and are not probed by this POC",
+            "`preinstalled` requirements are expected inside `{}` and are not probed by this implementation",
             environment.provider
         ),
     ))

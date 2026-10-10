@@ -23,6 +23,7 @@ pub enum SchemaName {
     OpenAiStreamRecord,
     RuntimeContext,
     EnvironmentHandle,
+    EnvironmentReference,
     RuntimeHandle,
     ServiceReference,
     ServiceHandle,
@@ -111,6 +112,12 @@ Runtime context schema.
 
 Environment handle schema.
 
+### `EnvironmentReference`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "EnvironmentReference"}} /></pre>
+
+Existing environment reference schema.
+
 ### `RuntimeHandle`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "RuntimeHandle"}} /></pre>
@@ -173,7 +180,7 @@ NeMo Fabric lifecycle event schema.
 
 #### `ALL`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">21</a>]"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">22</a>]"}} /></pre>
 
 All public schemas in stable output order.
 

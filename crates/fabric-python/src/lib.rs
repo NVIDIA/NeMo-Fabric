@@ -10,8 +10,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use nemo_fabric_core::{
-    FabricConfig, FabricError, OpenAiStreamTransport, ResolveContext, RunPlan, RunRequest,
-    RuntimeHandle, ServiceHandle, ServiceReference, doctor_plan, inspect_adapter_config,
+    EnvironmentHandle, EnvironmentReference, FabricConfig, FabricError, OpenAiStreamTransport,
+    ResolveContext, RunPlan, RunRequest, RuntimeHandle, ServiceHandle, ServiceReference,
+    doctor_plan, inspect_adapter_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
@@ -199,6 +200,54 @@ fn release_service(py: Python<'_>, plan_json: String, service_json: String) -> P
     to_json(&events)
 }
 
+/// Resolve or prepare an environment for a run plan and return its EnvironmentHandle JSON.
+#[pyfunction]
+fn prepare_environment(py: Python<'_>, plan_json: String) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let environment = py
+        .detach(|| nemo_fabric_core::prepare_environment(&plan))
+        .map_err(to_py_error)?;
+    to_json(&environment)
+}
+
+/// Verify and attach to a caller-owned execution environment.
+#[pyfunction]
+fn attach_environment(
+    py: Python<'_>,
+    plan_json: String,
+    reference_json: String,
+) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let reference = parse_environment_reference(reference_json)?;
+    let environment = py
+        .detach(|| nemo_fabric_core::attach_environment(&plan, &reference))
+        .map_err(to_py_error)?;
+    to_json(&environment)
+}
+
+/// Start a runtime in an explicitly prepared environment.
+#[pyfunction]
+fn start_runtime_in(
+    py: Python<'_>,
+    plan_json: String,
+    environment_json: String,
+) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let environment = parse_environment_handle(environment_json)?;
+    let runtime = py
+        .detach(|| nemo_fabric_core::start_runtime_in(&plan, &environment))
+        .map_err(to_py_error)?;
+    to_json(&runtime)
+}
+
+/// Release or detach an explicitly prepared environment.
+#[pyfunction]
+fn release_environment(py: Python<'_>, environment_json: String) -> PyResult<()> {
+    let environment = parse_environment_handle(environment_json)?;
+    py.detach(|| nemo_fabric_core::release_environment(&environment))
+        .map_err(to_py_error)
+}
+
 /// Invoke a previously started runtime and return RunResult JSON.
 #[pyfunction]
 fn invoke_runtime(
@@ -255,6 +304,10 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(doctor_config, m)?)?;
     m.add_function(wrap_pyfunction!(run_config, m)?)?;
     m.add_function(wrap_pyfunction!(start_runtime, m)?)?;
+    m.add_function(wrap_pyfunction!(prepare_environment, m)?)?;
+    m.add_function(wrap_pyfunction!(attach_environment, m)?)?;
+    m.add_function(wrap_pyfunction!(start_runtime_in, m)?)?;
+    m.add_function(wrap_pyfunction!(release_environment, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_service, m)?)?;
     m.add_function(wrap_pyfunction!(attach_service, m)?)?;
     m.add_function(wrap_pyfunction!(start_runtime_with_service, m)?)?;
@@ -449,6 +502,14 @@ fn parse_run_request(contents: String) -> PyResult<RunRequest> {
 }
 
 fn parse_run_plan(contents: String) -> PyResult<RunPlan> {
+    serde_json::from_str(&contents).map_err(|error| PyRuntimeError::new_err(error.to_string()))
+}
+
+fn parse_environment_handle(contents: String) -> PyResult<EnvironmentHandle> {
+    serde_json::from_str(&contents).map_err(|error| PyRuntimeError::new_err(error.to_string()))
+}
+
+fn parse_environment_reference(contents: String) -> PyResult<EnvironmentReference> {
     serde_json::from_str(&contents).map_err(|error| PyRuntimeError::new_err(error.to_string()))
 }
 

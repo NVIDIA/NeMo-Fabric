@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Provider-specific reference to an existing execution environment.",
+  "properties": {
+    "provider": {
+      "description": "Environment provider that owns the referenced resource.",
+      "type": "string"
+    },
+    "resource": {
+      "additionalProperties": true,
+      "description": "Provider-specific resource identity used to verify and attach.",
+      "type": "object"
+    }
+  },
+  "required": [
+    "provider"
+  ],
+  "title": "EnvironmentReference",
+  "type": "object"
+}
