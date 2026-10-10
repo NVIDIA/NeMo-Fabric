@@ -25,7 +25,7 @@ Cached input tokens consumed by the invocation, when reported.
 
 ### `input_tokens_include_cache: Option<bool>`
 
-Whether input_tokens already includes cached_input_tokens; absent means unknown.
+Whether input_tokens already includes cached_input_tokens and any cache-write input tokens the adapter reported; absent means unknown. RunUsage does not report cache-write input tokens, so input_tokens plus cached_input_tokens can understate total input when this is false.
 
 ### `output_tokens: Option<u64>`
 

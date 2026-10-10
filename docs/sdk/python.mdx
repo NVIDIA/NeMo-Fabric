@@ -892,7 +892,7 @@ if result.usage is not None:
     print(result.usage.get("cost_usd"))
 ```
 
-Each counter is optional: missing values are unknown, not zero. `cached_input_tokens` reports cached prompt tokens. `input_tokens_include_cache` is `True` when those tokens are already included in `input_tokens`, `False` when they are excluded, and absent when the adapter cannot establish the semantics. Consumers must not add cached tokens to an inclusive input count. `cost_usd` contains reported cost only; keep estimates separately in provider metadata rather than presenting them as measured charges.
+Each counter is optional: missing values are unknown, not zero. `cached_input_tokens` reports cached prompt tokens. `input_tokens_include_cache` is `True` when those tokens are already included in `input_tokens`, `False` when they are excluded, and absent when the adapter cannot establish the semantics. Consumers must not add cached tokens to an inclusive input count. The flag also covers cache-write input tokens that an adapter reports, which `RunUsage` does not expose, so `input_tokens` plus `cached_input_tokens` can understate total input when the flag is `False`. `cost_usd` contains reported cost only; keep estimates separately in provider metadata rather than presenting them as measured charges.
 
 If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial

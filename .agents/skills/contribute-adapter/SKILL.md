@@ -57,7 +57,7 @@ Keep descriptor claims, implementation, focused tests, public documentation,
 catalog entries, and packaged metadata synchronized. Start with the narrowest
 truthful capability set.
 
-For usage changes, verify invocation-local accounting through the adapter contract and consumer SDK, including warm-session deltas, unknown counters, cache semantics, and unsuccessful results. Keep generated schemas and language bindings in parity; use the shared `cached_input_tokens` and `input_tokens_include_cache` fields instead of consumer-specific parsing of native output.
+For usage changes, verify invocation-local accounting through the adapter contract and consumer SDK, including warm-session deltas, unknown counters, cache semantics, and unsuccessful results. Keep generated schemas and language bindings in parity; use the shared cache, cache-write, reasoning, peak request, and per-model `AgentUsage` fields instead of consumer-specific parsing of native output.
 
 For `instructions.system`, keep `config.system_instruction_modes`, planning
 behavior, direct adapter validation, and target-native composition synchronized.

@@ -186,7 +186,10 @@ pub struct RunUsage {
     /// Cached input tokens consumed by the invocation, when reported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_input_tokens: Option<u64>,
-    /// Whether input_tokens already includes cached_input_tokens; absent means unknown.
+    /// Whether input_tokens already includes cached_input_tokens and any
+    /// cache-write input tokens the adapter reported; absent means unknown.
+    /// RunUsage does not report cache-write input tokens, so input_tokens plus
+    /// cached_input_tokens can understate total input when this is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens_include_cache: Option<bool>,
     /// Output tokens produced by the invocation.
@@ -3653,6 +3656,30 @@ for line in sys.stdin:
                 }],
                 "extensions": {"trace_id": "trace-1"},
             }
+        elif MODE == "detailed_usage_result":
+            result = {
+                "status": "succeeded",
+                "output": output,
+                "usage": {
+                    "input_tokens": 3,
+                    "cached_input_tokens": 1,
+                    "cache_write_input_tokens": 2,
+                    "input_tokens_include_cache": True,
+                    "output_tokens": 5,
+                    "reasoning_tokens": 4,
+                    "output_tokens_include_reasoning": True,
+                    "total_tokens": 8,
+                    "peak_request_input_tokens": 3,
+                    "cost_usd": 0.25,
+                    "models": [{
+                        "model": "test-model",
+                        "provider": "fake",
+                        "input_tokens": 3,
+                        "reasoning_tokens": 4,
+                    }],
+                    "extensions": {"provider": "fake"},
+                },
+            }
         else:
             result = {"status": "succeeded", "output": output}
         response(operation, output=result)
@@ -4675,6 +4702,42 @@ for line in sys.stdin:
         assert_eq!(
             result.metadata.get("adapter"),
             Some(&serde_json::json!({"trace_id": "trace-1"}))
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_accepts_detailed_usage_without_changing_run_usage() {
+        let (root, plan) = local_host_plan("detailed_usage_result");
+
+        let result = run_plan(&plan, RunRequest::text("usage")).expect("normalized result");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        let usage = result.usage.expect("run usage");
+        assert_eq!(
+            usage,
+            RunUsage {
+                input_tokens: Some(3),
+                cached_input_tokens: Some(1),
+                input_tokens_include_cache: Some(true),
+                output_tokens: Some(5),
+                total_tokens: Some(8),
+                cost_usd: Some(0.25),
+                metadata: BTreeMap::from([("provider".to_string(), serde_json::json!("fake"))]),
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&usage).expect("serialize run usage"),
+            serde_json::json!({
+                "input_tokens": 3,
+                "cached_input_tokens": 1,
+                "input_tokens_include_cache": true,
+                "output_tokens": 5,
+                "total_tokens": 8,
+                "cost_usd": 0.25,
+                "metadata": {"provider": "fake"}
+            })
         );
 
         let _ = fs::remove_dir_all(root);

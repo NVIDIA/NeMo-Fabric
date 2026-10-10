@@ -499,26 +499,94 @@ class AgentArtifact(AgentContractBlock):
             _nonblank(self.media_type, "media_type")
 
 
-@dataclass(slots=True, kw_only=True)
-class AgentUsage(AgentContractBlock):
-    """Normalized model usage reported by an adapter target."""
+_USAGE_TOKEN_FIELDS = (
+    "input_tokens",
+    "cached_input_tokens",
+    "cache_write_input_tokens",
+    "output_tokens",
+    "reasoning_tokens",
+    "total_tokens",
+    "peak_request_input_tokens",
+)
 
+
+def _validate_usage_counts(usage: AgentUsage | AgentModelUsage) -> None:
+    for field_name in _USAGE_TOKEN_FIELDS:
+        _bounded_int(getattr(usage, field_name), field_name, (1 << 64) - 1)
+    if usage.cost_usd is not None and usage.cost_usd < 0:
+        raise ContractValidationError(
+            "must be greater than or equal to 0", path=("cost_usd",)
+        )
+
+
+@dataclass(slots=True, kw_only=True)
+class AgentModelUsage(ContractModel):
+    """Usage of one model within one invocation.
+
+    Token fields have the same meaning as the matching ``AgentUsage`` fields,
+    restricted to requests served by this model.
+    """
+
+    model: str
+    provider: str | None = _optional()
     input_tokens: int | None = _optional()
     cached_input_tokens: int | None = _optional()
+    cache_write_input_tokens: int | None = _optional()
     input_tokens_include_cache: bool | None = _optional()
     output_tokens: int | None = _optional()
+    reasoning_tokens: int | None = _optional()
+    output_tokens_include_reasoning: bool | None = _optional()
     total_tokens: int | None = _optional()
+    peak_request_input_tokens: int | None = _optional()
     cost_usd: float | None = _optional()
 
     def _validate(self) -> None:
-        _bounded_int(self.input_tokens, "input_tokens", (1 << 64) - 1)
-        _bounded_int(self.cached_input_tokens, "cached_input_tokens", (1 << 64) - 1)
-        _bounded_int(self.output_tokens, "output_tokens", (1 << 64) - 1)
-        _bounded_int(self.total_tokens, "total_tokens", (1 << 64) - 1)
-        if self.cost_usd is not None and self.cost_usd < 0:
+        _nonblank(self.model, "model")
+        if self.provider is not None:
+            _nonblank(self.provider, "provider")
+        _validate_usage_counts(self)
+
+
+def _validate_unique_models(models: list[AgentModelUsage]) -> None:
+    reported: set[tuple[str | None, str]] = set()
+    for index, usage in enumerate(models):
+        provider = usage.provider.lower() if usage.provider is not None else None
+        key = (provider, usage.model.lower())
+        if key in reported:
             raise ContractValidationError(
-                "must be greater than or equal to 0", path=("cost_usd",)
+                "must report each provider and model pair once",
+                path=("models", str(index)),
             )
+        reported.add(key)
+
+
+@dataclass(slots=True, kw_only=True)
+class AgentUsage(AgentContractBlock):
+    """Normalized model usage reported by an adapter target.
+
+    ``input_tokens_include_cache`` covers both ``cached_input_tokens`` and
+    ``cache_write_input_tokens``: ``True`` means both are included in
+    ``input_tokens`` and ``False`` means both are excluded. When the provider
+    includes only one of the two, normalize ``input_tokens`` before reporting.
+    ``models`` reports each provider and model pair at most once, compared
+    case-insensitively.
+    """
+
+    input_tokens: int | None = _optional()
+    cached_input_tokens: int | None = _optional()
+    cache_write_input_tokens: int | None = _optional()
+    input_tokens_include_cache: bool | None = _optional()
+    output_tokens: int | None = _optional()
+    reasoning_tokens: int | None = _optional()
+    output_tokens_include_reasoning: bool | None = _optional()
+    total_tokens: int | None = _optional()
+    peak_request_input_tokens: int | None = _optional()
+    cost_usd: float | None = _optional()
+    models: list[AgentModelUsage] = _empty_list()
+
+    def _validate(self) -> None:
+        _validate_usage_counts(self)
+        _validate_unique_models(self.models)
 
 
 @dataclass(slots=True, kw_only=True)

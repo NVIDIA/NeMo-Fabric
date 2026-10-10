@@ -87,6 +87,10 @@ export interface AgentArtifact {
  */
 export interface AgentUsage {
   /**
+   * Input tokens written to the provider prompt cache, when reported.
+   */
+  cache_write_input_tokens?: number | null;
+  /**
    * Cached input tokens consumed by the invocation, when reported.
    */
   cached_input_tokens?: number | null;
@@ -103,15 +107,102 @@ export interface AgentUsage {
    */
   input_tokens?: number | null;
   /**
-   * Whether input_tokens already includes cached_input_tokens; absent means unknown.
+   * Whether input_tokens already includes both cached_input_tokens (cache
+   * reads) and cache_write_input_tokens (cache writes); absent means
+   * unknown. True means both are included and false means both are
+   * excluded. When the provider includes only one of the two, the adapter
+   * normalizes input_tokens to one of these states before reporting.
    */
   input_tokens_include_cache?: boolean | null;
+  /**
+   * Usage broken out by the model that served the requests; empty when not
+   * reported. Each provider and model pair appears at most once, compared
+   * case-insensitively.
+   */
+  models?: AgentModelUsage[];
   /**
    * Output tokens produced by the invocation.
    */
   output_tokens?: number | null;
   /**
+   * Whether output_tokens already includes reasoning_tokens; absent means unknown.
+   */
+  output_tokens_include_reasoning?: boolean | null;
+  /**
+   * Input tokens of the largest single model request in the invocation,
+   * including cached and cache-write input, when reported.
+   */
+  peak_request_input_tokens?: number | null;
+  /**
+   * Reasoning tokens produced by the invocation, when reported.
+   */
+  reasoning_tokens?: number | null;
+  /**
    * Total tokens reported by the provider.
+   */
+  total_tokens?: number | null;
+}
+/**
+ * Usage of one model within one invocation.
+ *
+ * Token fields have the same meaning as the matching `AgentUsage` fields,
+ * restricted to requests served by this model.
+ *
+ * This interface was referenced by `AgentRunResultCommon`'s JSON-Schema
+ * via the `definition` "AgentModelUsage".
+ */
+export interface AgentModelUsage {
+  /**
+   * Input tokens this model wrote to the provider prompt cache, when reported.
+   */
+  cache_write_input_tokens?: number | null;
+  /**
+   * Cached input tokens consumed by this model, when reported.
+   */
+  cached_input_tokens?: number | null;
+  /**
+   * Cost in US dollars for this model when reported by the provider.
+   */
+  cost_usd?: number | null;
+  /**
+   * Input tokens consumed by this model.
+   */
+  input_tokens?: number | null;
+  /**
+   * Whether input_tokens already includes both cached_input_tokens (cache
+   * reads) and cache_write_input_tokens (cache writes); absent means
+   * unknown. True means both are included and false means both are
+   * excluded. When the provider includes only one of the two, the adapter
+   * normalizes input_tokens to one of these states before reporting.
+   */
+  input_tokens_include_cache?: boolean | null;
+  /**
+   * Model identifier as reported by the harness or provider response.
+   */
+  model: string;
+  /**
+   * Output tokens produced by this model.
+   */
+  output_tokens?: number | null;
+  /**
+   * Whether output_tokens already includes reasoning_tokens; absent means unknown.
+   */
+  output_tokens_include_reasoning?: boolean | null;
+  /**
+   * Input tokens of the largest single request served by this model,
+   * including cached and cache-write input, when reported.
+   */
+  peak_request_input_tokens?: number | null;
+  /**
+   * Provider or route that served the model, when known.
+   */
+  provider?: string | null;
+  /**
+   * Reasoning tokens produced by this model, when reported.
+   */
+  reasoning_tokens?: number | null;
+  /**
+   * Total tokens reported by the provider for this model.
    */
   total_tokens?: number | null;
 }

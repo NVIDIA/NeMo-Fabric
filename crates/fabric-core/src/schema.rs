@@ -553,11 +553,62 @@ mod tests {
         );
 
         let result = generate_schema(SchemaName::AgentRunResult).expect("schema generation");
-        for field in ["input_tokens", "output_tokens", "total_tokens"] {
-            assert_eq!(
-                result["$defs"]["AgentUsage"]["properties"][field]["maximum"],
-                u64::MAX
-            );
+        for definition in ["AgentUsage", "AgentModelUsage"] {
+            for field in [
+                "input_tokens",
+                "cached_input_tokens",
+                "cache_write_input_tokens",
+                "output_tokens",
+                "reasoning_tokens",
+                "total_tokens",
+                "peak_request_input_tokens",
+            ] {
+                assert_eq!(
+                    result["$defs"][definition]["properties"][field]["maximum"],
+                    u64::MAX
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn agent_run_result_schema_matches_model_usage_constraints() {
+        let schema = generate_schema(SchemaName::AgentRunResult).expect("schema generation");
+        let validator = jsonschema::validator_for(&schema).expect("valid result schema");
+        let result_with_models = |models: Value| {
+            serde_json::json!({
+                "status": "succeeded",
+                "output": null,
+                "usage": {"models": models}
+            })
+        };
+
+        assert!(validator.is_valid(&serde_json::json!({
+            "status": "succeeded",
+            "output": null,
+            "usage": {
+                "cache_write_input_tokens": 2,
+                "reasoning_tokens": 4,
+                "output_tokens_include_reasoning": false,
+                "peak_request_input_tokens": 3,
+                "models": [{
+                    "model": "planner-model",
+                    "provider": "openai",
+                    "reasoning_tokens": 4,
+                    "cost_usd": 0.5
+                }]
+            }
+        })));
+        for models in [
+            serde_json::json!([{}]),
+            serde_json::json!([{"model": " \t"}]),
+            serde_json::json!([{"model": "planner-model", "provider": " \t"}]),
+            serde_json::json!([{"model": "planner-model", "cost_usd": -1.0}]),
+            serde_json::json!([{"model": "planner-model", "reasoning_tokens": -1}]),
+            serde_json::json!([{"model": "planner-model", "reasoning": 1}]),
+            serde_json::json!([{"model": "planner-model", "extensions": {}}]),
+        ] {
+            assert!(!validator.is_valid(&result_with_models(models)));
         }
     }
 
