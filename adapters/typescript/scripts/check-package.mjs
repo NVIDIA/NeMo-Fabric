@@ -40,6 +40,18 @@ const expectedByPackage = {
     "dist/runtime.js",
     "package.json",
   ],
+  "nemo-fabric-adapters-droid": [
+    "LICENSE",
+    "README.md",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/droid-sdk.d.ts",
+    "dist/droid-sdk.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "droid.fabric-adapter.json",
+    "package.json",
+  ],
   "nemo-fabric-adapters-pi": [
     "LICENSE",
     "README.md",
@@ -162,6 +174,21 @@ if (manifest.name === "nemo-fabric-adapters-cline") {
     manifest.devDependencies?.["@cline/sdk"] !== undefined
   ) {
     throw new Error("The caller-managed Cline SDK harness must not be an adapter package dependency");
+  }
+}
+if (manifest.name === "nemo-fabric-adapters-droid") {
+  if (manifest.exports?.["./descriptor"] !== "./droid.fabric-adapter.json") {
+    throw new Error("The Droid package must export its adapter descriptor");
+  }
+  const descriptor = JSON.parse(await readFile(join(packageRoot, "droid.fabric-adapter.json"), "utf8"));
+  if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("The Droid descriptor must run its packaged CLI with Node.js");
+  }
+  if (manifest.dependencies?.["@factory/droid-sdk"] !== undefined ||
+      manifest.peerDependencies?.["@factory/droid-sdk"] !== "^0.9.1" ||
+      manifest.peerDependenciesMeta?.["@factory/droid-sdk"]?.optional !== true ||
+      manifest.devDependencies?.["@factory/droid-sdk"] !== "0.9.1") {
+    throw new Error("The Droid SDK must be a compatible optional peer and exact-pinned development dependency");
   }
 }
 if (manifest.name === "nemo-fabric-adapters-opencode") {

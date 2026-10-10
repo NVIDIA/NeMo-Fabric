@@ -23,6 +23,7 @@ const packageRoots = [
   join(repositoryRoot, "adapter-contract/typescript"),
   join(repositoryRoot, "adapters/typescript/common"),
   join(repositoryRoot, "adapters/typescript/cline"),
+  join(repositoryRoot, "adapters/typescript/droid"),
   join(repositoryRoot, "adapters/typescript/pi"),
   join(repositoryRoot, "adapters/typescript/opencode"),
   join(repositoryRoot, "adapters/typescript/qwen"),
@@ -78,6 +79,20 @@ function runClineCli(clineRoot, consumerRoot, requests) {
     throw new Error(
       `Installed Cline CLI failed (status ${invocation.status}, signal ${invocation.signal}): ${invocation.stderr}`,
     );
+  }
+  return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+function runDroidCli(droidRoot, consumerRoot, requests) {
+  const invocation = spawnSync(process.execPath, [join(droidRoot, "dist/cli.js")], {
+    cwd: consumerRoot,
+    encoding: "utf8",
+    input: `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`,
+    timeout: 60_000,
+  });
+  if (invocation.error) throw invocation.error;
+  if (invocation.status !== 0) {
+    throw new Error(`Installed Droid CLI failed (status ${invocation.status}): ${invocation.stderr}`);
   }
   return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
@@ -166,6 +181,26 @@ function clineStartRequest(consumerRoot) {
     payload: {
       ...startRequest(consumerRoot).payload,
       agent_name: "cline-install-check",
+    },
+  };
+}
+
+function droidStartRequest(consumerRoot) {
+  const request = startRequest(consumerRoot);
+  return {
+    ...request,
+    payload: {
+      ...request.payload,
+      agent_name: "droid-install-check",
+      config: {
+        models: {
+          default: {
+            api_key_env: "TEST_API_KEY",
+            model: "auto",
+            provider: "factory",
+          },
+        },
+      },
     },
   };
 }
@@ -294,6 +329,41 @@ try {
   ]);
   if (clineResponses.length !== 2 || clineResponses[0].outcome?.status !== "succeeded") {
     throw new Error(`Consumer-managed Cline harness failed to start: ${JSON.stringify(clineResponses)}`);
+  }
+
+  const droidRoot = join(consumerRoot, "node_modules/nemo-fabric-adapters-droid");
+  const droidDescriptor = JSON.parse(await readFile(join(droidRoot, "droid.fabric-adapter.json"), "utf8"));
+  if (droidDescriptor.runner?.command !== "node" || droidDescriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("Installed Droid descriptor does not reference its packaged CLI");
+  }
+  const [invalidDroidResponse] = runDroidCli(droidRoot, consumerRoot, [{}]);
+  if (invalidDroidResponse.outcome?.error?.code !== "lifecycle_invalid_operation") {
+    throw new Error(`Installed Droid CLI returned an unexpected response: ${JSON.stringify(invalidDroidResponse)}`);
+  }
+  if (!(await pathExists(join(consumerRoot, "node_modules/@factory/droid-sdk/package.json")))) {
+    const [missingDroidHarnessResponse] = runDroidCli(droidRoot, consumerRoot, [droidStartRequest(consumerRoot)]);
+    if (missingDroidHarnessResponse.outcome?.error?.code !== "droid_harness_unavailable") {
+      throw new Error(
+        `Adapter-only install did not report the missing Droid SDK: ${JSON.stringify(missingDroidHarnessResponse)}`,
+      );
+    }
+    npm(
+      [
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--package-lock=false",
+        "@factory/droid-sdk@0.9.1",
+      ],
+      consumerRoot,
+    );
+  }
+  const [missingDroidCliResponse] = runDroidCli(droidRoot, consumerRoot, [droidStartRequest(consumerRoot)]);
+  if (missingDroidCliResponse.outcome?.error?.code !== "droid_cli_unavailable") {
+    throw new Error(
+      `Consumer-managed Droid SDK did not report the missing CLI: ${JSON.stringify(missingDroidCliResponse)}`,
+    );
   }
 
   const piRoot = join(consumerRoot, "node_modules/nemo-fabric-adapters-pi");

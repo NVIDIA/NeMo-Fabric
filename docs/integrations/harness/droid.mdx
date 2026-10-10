@@ -1,0 +1,156 @@
+---
+title: "Use the Factory Droid Adapter"
+description: "Install and configure the NVIDIA NeMo Fabric harness integration for Factory Droid."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the NVIDIA NeMo Fabric `nvidia.fabric.droid` adapter to run Factory Droid
+through its supported TypeScript SDK while retaining conversation context for
+the lifetime of a NeMo Fabric runtime.
+
+## Install Droid, the SDK, and the Adapter
+
+The adapter requires Node.js 22.19.0 or newer. Install the supported caller-owned
+Droid CLI, SDK, and adapter:
+
+```bash
+npm install --global droid@0.233.0
+npm install --save-exact @factory/droid-sdk@0.9.1
+npm install nemo-fabric-adapters-droid
+```
+
+The adapter never installs Droid at runtime. A missing SDK produces
+`droid_harness_unavailable`, and a missing CLI produces
+`droid_cli_unavailable`.
+
+For source development in the NeMo Fabric repository, run:
+
+```bash
+just install-typescript-droid
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-droid
+```
+
+## Configure the Adapter
+
+Select the Droid adapter and point discovery at its installed descriptor:
+
+```python
+from nemo_fabric import DiscoveryConfig, FabricConfig, HarnessConfig
+from nemo_fabric import InstructionConfig, InstructionsConfig
+from nemo_fabric import MetadataConfig, ModelConfig, ToolsConfig
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="droid-review"),
+    discovery=DiscoveryConfig(
+        local_paths=[
+            "./node_modules/nemo-fabric-adapters-droid/droid.fabric-adapter.json"
+        ]
+    ),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.droid"),
+    models={
+        "default": ModelConfig(
+            provider="factory",
+            model="auto",
+            api_key_env="FACTORY_API_KEY",
+        )
+    },
+    instructions=InstructionsConfig(
+        system=InstructionConfig(
+            content="Review code for correctness risks.",
+            mode="append",
+        )
+    ),
+    tools=ToolsConfig(enabled=["Read", "Grep", "Glob"]),
+)
+config.add_skill_path("./skills/code-review")
+```
+
+For a source build, use
+`adapters/typescript/droid/droid.fabric-adapter.json`. Set the environment
+variable named by `api_key_env` before starting the runtime.
+
+Start one runtime and reuse it for ordered turns:
+
+```python
+from nemo_fabric import Fabric
+
+async with await Fabric().start_runtime(config) as runtime:
+    first = await runtime.invoke(input="Review the authentication changes.")
+    second = await runtime.invoke(input="Now summarize the highest-risk finding.")
+```
+
+The second invocation uses the conversation retained by the Droid session.
+
+## Understand Configuration Mapping
+
+The initial adapter selects a Factory-managed model by ID and passes the
+credential named by `api_key_env` to the SDK as the Factory API key. It does
+not map `models.base_url` or arbitrary providers because custom model endpoints
+are configured through external Droid settings, not the SDK session API.
+
+System instructions support both modes. `replace` replaces Droid's default
+system prompt. `append` preserves the native Droid prompt and appends the
+configured content.
+
+Tool policy names are Droid built-in tool IDs. The adapter lists the tools
+available to the created session, rejects unknown IDs, and translates
+`tools.enabled` into an exact allowlist by disabling every unselected tool.
+It then applies `tools.blocked`. Inspect tool IDs with:
+
+```bash
+droid exec --model MODEL_ID --list-tools --output-format json
+```
+
+Tool policy limits Droid's available tools; it is not a host sandbox. Use an
+isolated task environment when enabling tools that edit files or execute
+commands.
+
+## Configure MCP Servers
+
+Normalized MCP servers are supplied directly to the runtime-scoped Droid
+session. The adapter supports unauthenticated stdio, SSE, and
+streamable HTTP servers. Stdio servers accept `args` and `env`, but not HTTP
+headers. Network servers accept `custom_headers`, but not process arguments or
+environment variables. Remote network endpoints require HTTPS; loopback HTTP
+is allowed for development.
+
+Normalized MCP authentication, `allowed_tools`, and `blocked_tools` are not
+supported and fail during startup. Each configured server must expose at least
+one tool so the adapter can verify session-scoped discovery before invocation.
+The Droid process and its stdio MCP children inherit safe operating-system
+variables, Fabric `environment.env`, the selected model credential, and each
+server's explicit `env`; unrelated variables from the adapter host are removed.
+
+## Configure Skills
+
+The adapter supports normalized `skills.paths`. It validates each configured
+directory and its `SKILL.md`, copies the skill into a runtime-scoped temporary
+home using Droid's compatible personal `.agents/skills` layout, and verifies
+discovery through the SDK. Runtime shutdown removes the temporary files.
+Project skills already placed in Droid's documented discovery locations remain
+Droid-owned ambient configuration.
+
+When an isolated profile is required for MCP servers or skills, the adapter
+copies the user's Factory `settings.json` into it so externally configured
+custom models remain available. Fabric supplies MCP servers directly to the
+Droid session; ambient MCP configuration and Factory authentication state are
+not copied.
+
+## Understand Runtime Behavior
+
+Each NeMo Fabric runtime creates an isolated `DroidSession`. Every ordered
+invocation streams one prompt through the same session, and runtime shutdown
+closes the session and its CLI subprocess. Independent runtimes do not share
+session history.
+
+Successful results include normalized response text and token usage. Usage
+extensions preserve cache, thinking-token, and Factory-credit metadata.
+Result extensions preserve the Droid session ID, finish reason, duration, and
+turn count.
+
+The initial adapter does not support NeMo Relay telemetry, native Fabric
+streaming, Relay-backed streaming, custom model endpoints, or adapter-specific
+`harness.settings`.
