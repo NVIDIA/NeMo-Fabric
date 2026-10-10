@@ -79,6 +79,12 @@ INHERITED_ENV_NAMES = {
     "LC_ALL",
     "LC_CTYPE",
     "LOCALAPPDATA",
+    # Relay hook commands reject these when set to an empty string, and the
+    # SDK can only override inherited variables, so keep the parent's values.
+    "NEMO_RELAY_LOG",
+    "NEMO_RELAY_LOG_CONFIG_PATH",
+    "NEMO_RELAY_LOG_STDERR",
+    "NEMO_RELAY_LOG_STDERR_FORMAT",
     "NO_PROXY",
     "PATH",
     "PATHEXT",

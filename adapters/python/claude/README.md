@@ -118,8 +118,10 @@ Schema defaults are documentation only; planning preserves the supplied settings
 without adding `setting_sources`.
 
 The adapter filters the inherited environment before launching Claude Code.
-It retains portable OS/config variables, the selected model's `api_key_env`,
-and explicitly configured `environment.env` values. Raw Claude stderr is consumed
+It retains portable OS/config variables, NeMo Relay logging variables
+(`NEMO_RELAY_LOG`, `NEMO_RELAY_LOG_CONFIG_PATH`, `NEMO_RELAY_LOG_STDERR`, and
+`NEMO_RELAY_LOG_STDERR_FORMAT`), the selected model's `api_key_env`, and
+explicitly configured `environment.env` values. Raw Claude stderr is consumed
 by the SDK and is not persisted as a NeMo Fabric artifact.
 
 ## Relay Observability
