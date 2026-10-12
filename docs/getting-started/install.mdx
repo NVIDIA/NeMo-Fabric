@@ -281,10 +281,10 @@ pip install "nemo-fabric-adapters-nooa[full]"
 Use `relay` when the environment already manages the harness. For Deep Agents,
 mini-SWE-agent, and NOOA, use `full` to install the harness and Relay package
 together. Hermes Agent's `relay` and `full` extras install Relay but not
-Hermes Agent; next to current upstream Hermes Agent, which requires
-`nemo-relay<0.10`, they resolve to Relay 0.9. Claude and Codex do not provide a
-`relay` extra because their adapters launch the external CLI instead of
-importing this Python package.
+Hermes Agent. On supported Python 3.14 platforms, the pinned upstream Hermes
+revision requires `nemo-relay>=0.10,<0.11`, so these extras resolve to Relay
+0.10. Claude and Codex do not provide a `relay` extra because their adapters
+launch the external CLI instead of importing this Python package.
 
 Python-backed Relay integrations require `nemo-relay>=0.9,<0.11`; Relay 0.10
 is recommended. NeMo Fabric

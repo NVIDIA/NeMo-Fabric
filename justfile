@@ -376,11 +376,11 @@ install-typescript-kilo: install-typescript-contract
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters
 
-# Pin the merged upstream Hermes Relay 0.9 integration until it is released.
+# Pin the merged upstream Hermes Relay 0.10 integration until it is released.
 install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
-    hermes_commit="dccb84b92401234db294667ec203d3ac3dc1b87f"
+    hermes_commit="a62979dc3601c9eae455bff5b35ba8f9bed0df30"
     hermes_checkout="$REPO_ROOT/external/hermes-agent"
     hermes_diff_pathspec=()
 
