@@ -114,9 +114,9 @@ Ordered invocations reuse those objects and the conversation history until the
 runtime stops. The adapter finalizes and flushes Relay subscriber output after
 each invocation so ATOF and ATIF artifacts are complete when it returns.
 
-With Relay telemetry enabled, the pinned Hermes revision emits a `compaction`
-mark when a history or provider rewrite commits and a `compaction.attempt` mark
-for every other compaction outcome.
+With a live Relay runtime, Hermes emits `compaction` when a tracked compaction
+rewrites history or provider state. It emits `compaction.attempt` when the
+attempt is blocked, skipped, fails, or aborts without a rewrite.
 
 For the complete configuration and lifecycle reference, refer to the
 [Hermes Agent adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/hermes).
