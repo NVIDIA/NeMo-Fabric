@@ -2543,9 +2543,18 @@ fn take_local_host_stderr(host: &mut LocalAdapterHost) -> String {
 }
 
 fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
+    if host.child.try_wait()?.is_some() {
+        return Ok(());
+    }
+    // Snapshot before the grace wait: once the host exits, its children are
+    // re-parented and can no longer be found from its PID.
+    #[cfg(unix)]
+    let mut descendants = host_descendants(host.child.id());
     let deadline = Instant::now() + LOCAL_HOST_EXIT_GRACE;
     loop {
         if host.child.try_wait()?.is_some() {
+            #[cfg(unix)]
+            kill_pids(&descendants);
             return Ok(());
         }
         if Instant::now() >= deadline {
@@ -2555,7 +2564,11 @@ fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
     }
 
     #[cfg(unix)]
-    kill_host_descendants(host.child.id());
+    {
+        // Also reach processes the host started during the grace wait.
+        descendants.extend(host_descendants(host.child.id()));
+        kill_pids(&descendants);
+    }
     #[cfg(windows)]
     if let Some(job) = &host.job
         // SAFETY: the host owns this job handle until it is dropped.
@@ -2578,13 +2591,13 @@ fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Kills every live descendant of a host that ignored shutdown, including
-/// children that started their own session. Processes that already detached
-/// from the host's process tree cannot be found this way.
+/// Lists every live descendant of a host, including children that started
+/// their own session. Processes that already detached from the host's process
+/// tree cannot be found this way, so cleanup stays best-effort.
 #[cfg(unix)]
-fn kill_host_descendants(host_pid: u32) {
+fn host_descendants(host_pid: u32) -> Vec<libc::pid_t> {
     let Ok(host_pid) = libc::pid_t::try_from(host_pid) else {
-        return;
+        return Vec::new();
     };
     // Snapshot the whole tree first: killed processes' children are re-parented.
     let mut descendants = Vec::new();
@@ -2594,9 +2607,14 @@ fn kill_host_descendants(host_pid: u32) {
         parents.extend(&children);
         descendants.extend(children);
     }
-    for pid in descendants {
+    descendants
+}
+
+#[cfg(unix)]
+fn kill_pids(pids: &[libc::pid_t]) {
+    for &pid in pids {
         // SAFETY: kill has no memory-safety preconditions. PIDs are allocated
-        // sequentially, so reuse within this short window is not a practical risk.
+        // sequentially, so reuse within the exit grace is not a practical risk.
         unsafe { libc::kill(pid, libc::SIGKILL) };
     }
 }
@@ -3680,6 +3698,7 @@ mod tests {
             r#"import json
 import os
 import socket
+import subprocess
 import sys
 import time
 
@@ -3759,6 +3778,11 @@ for line in sys.stdin:
             print("start diagnostic", file=sys.stderr, flush=True)
             response("start", error=failure("start", "fake_start", "start rejected"))
             sys.exit(16)
+        if MODE == "invoke_timeout_exit":
+            child = subprocess.Popen(["sleep", "30"])
+            root = os.path.dirname(os.environ["FABRIC_FAKE_HOST_STOP_MARKER"])
+            with open(os.path.join(root, "child.pid"), "w", encoding="utf-8") as stream:
+                stream.write(str(child.pid))
         service = message["payload"].get("service")
         if service and service["operation"] in {"prepare", "attach"}:
             with open(service["connection_path"], "w", encoding="utf-8") as stream:
@@ -3783,6 +3807,10 @@ for line in sys.stdin:
         if MODE == "invoke_timeout":
             print("invoke accepted without response", file=sys.stderr, flush=True)
             continue
+        if MODE == "invoke_timeout_exit":
+            # Exit during Fabric's grace wait and leave the child running.
+            time.sleep(1)
+            os._exit(0)
         if MODE == "invoke_failure":
             response("invoke", error=failure("invoke", "fake_invoke", "invoke rejected"))
             continue
@@ -4532,6 +4560,55 @@ for line in sys.stdin:
         ));
         let stopped = stop_runtime(&plan, &runtime).expect("stop after timeout is idempotent");
         assert_eq!(stopped[0].metadata["already_stopped"], true);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_host_invoke_timeout_kills_children_of_host_exiting_during_grace() {
+        let (root, plan) = local_host_plan("invoke_timeout_exit");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let child = fs::read_to_string(root.join("child.pid"))
+            .expect("read host child pid")
+            .parse::<libc::pid_t>()
+            .expect("host child pid");
+
+        let error = run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("unresponsive host must time out");
+        assert!(
+            matches!(
+                &error,
+                FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"
+            ),
+            "{error}"
+        );
+
+        // Orphans can linger as zombies until reaped; they no longer run.
+        let running = || {
+            let output = Command::new("ps")
+                .args(["-o", "stat=", "-p", &child.to_string()])
+                .output()
+                .expect("inspect host child");
+            let state = String::from_utf8_lossy(&output.stdout);
+            let state = state.trim();
+            !state.is_empty() && !state.starts_with('Z')
+        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while running() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let survived = running();
+        if survived {
+            // SAFETY: kill has no memory-safety preconditions.
+            unsafe { libc::kill(child, libc::SIGKILL) };
+        }
+        assert!(!survived, "host child survived the host's exit");
 
         let _ = fs::remove_dir_all(root);
     }
