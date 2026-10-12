@@ -16,9 +16,16 @@ from pathlib import Path
 from typing import Any
 
 from nemo_fabric_adapter_contract.codec import JsonValue
+from nemo_fabric_adapter_contract.models import RuntimeContext
 
 
 _FIELD_NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
+
+# Reserved Relay metadata keys that join Relay telemetry to NeMo Fabric IDs.
+# Consumers match these names literally, so treat them as a stable contract.
+RELAY_REQUEST_ID_METADATA_KEY = "nemo_fabric_request_id"
+RELAY_INVOCATION_ID_METADATA_KEY = "nemo_fabric_invocation_id"
+RELAY_RUNTIME_ID_METADATA_KEY = "nemo_fabric_runtime_id"
 
 
 def normalize_user_input(value: JsonValue) -> str:
@@ -278,7 +285,7 @@ def relay_request_context(
 ) -> tuple[Any, dict[str, str]]:
     """Root Relay at a usable session root, else a UUID request ID; preserve metadata."""
 
-    metadata = {"nemo_fabric_request_id": request_id}
+    metadata = {RELAY_REQUEST_ID_METADATA_KEY: request_id}
     request_uuid = _uuid_or_none(request_id)
     session_uuid = _uuid_or_none(session_root)
 
@@ -295,6 +302,16 @@ def relay_request_context(
     propagation = PropagationContext(request_uuid or root_uuid, root_uuid=root_uuid)
     stack = create_scope_stack_from_propagation(propagation)
     return use_scope_stack(stack), metadata
+
+
+def relay_correlation_metadata(context: RuntimeContext) -> dict[str, str]:
+    """Return the NeMo Fabric IDs to attach to an invocation's Relay root scope."""
+
+    return {
+        RELAY_REQUEST_ID_METADATA_KEY: context.request_id,
+        RELAY_INVOCATION_ID_METADATA_KEY: context.invocation_id,
+        RELAY_RUNTIME_ID_METADATA_KEY: context.runtime_id,
+    }
 
 
 def ambient_relay_plugin_config_paths() -> list[Path]:
@@ -444,7 +461,7 @@ def dump_yaml(value: dict[str, Any]) -> str:
         return json.dumps(value, indent=2, sort_keys=False) + "\n"
 
 
-def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
+def validate_relay_observability(plugin_config: dict[str, Any]) -> None:
     """Validate Fabric's Relay observability schema boundary without mutation."""
 
     endpoint_types = {"full", "gen_ai", "openinference"}
@@ -478,11 +495,11 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
             if (
                 isinstance(version, bool)
                 or not isinstance(version, int)
-                or version != 3
+                or version != 4
             ):
                 raise ValueError(
                     "unsupported NeMo Relay observability config version "
-                    f"{version!r}; expected version 3"
+                    f"{version!r}; expected version 4"
                 )
         if "openinference" in config:
             raise ValueError(
@@ -498,7 +515,7 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
         legacy_fields = sorted(legacy_flat_otel_fields.intersection(opentelemetry))
         if legacy_fields:
             raise ValueError(
-                "NeMo Relay observability config version 3 requires exporter "
+                "NeMo Relay observability config version 4 requires exporter "
                 "fields inside opentelemetry.endpoints: " + ", ".join(legacy_fields)
             )
         enabled = opentelemetry.get("enabled", False)
@@ -567,7 +584,7 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
 def normalize_relay_output_dirs(
     plugin_config: dict[str, Any], payload: dict[str, Any]
 ) -> None:
-    validate_relay_observability_v3(plugin_config)
+    validate_relay_observability(plugin_config)
 
     base = Path(base_dir(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
@@ -706,7 +723,7 @@ def write_relay_configs(
         config_path = Path(config_path)
         config_dir = config_path.parent / "relay-config"
         if plugin_config is not None:
-            validate_relay_observability_v3(plugin_config)
+            validate_relay_observability(plugin_config)
         config_dir.mkdir(parents=True, exist_ok=True)
         relay_config_path = None
         plugin_config_path = None

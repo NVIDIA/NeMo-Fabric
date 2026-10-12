@@ -71,7 +71,7 @@ def test_pi_descriptor_declares_the_supported_surface():
         "minLength": 1,
         "description": (
             "Absolute path or environment.workspace-relative path to the "
-            "NeMo Relay 0.9 Pi extension"
+            "NeMo Relay 0.9 or 0.10 Pi extension"
         ),
     }
     assert descriptor["extension_schemas"]["run_result"] == {
@@ -146,6 +146,41 @@ def test_pi_descriptor_plans_and_projects_the_selected_model():
                 "api_key_env": "TEST_API_KEY",
             }
         }
+    }
+
+
+def test_pi_descriptor_projects_flattened_model_extensions_for_a_gateway_model():
+    # A consumer sets Pi-specific metadata as flattened top-level ModelConfig fields. Planning
+    # must project them into the southbound AgentModelConfig.extensions block the adapter reads.
+    gateway = FabricConfig(
+        metadata=MetadataConfig(name="pi-adapter-test"),
+        harness=HarnessConfig(adapter_id="nvidia.fabric.pi"),
+        discovery=DiscoveryConfig(local_paths=[DESCRIPTOR]),
+        models={
+            "default": ModelConfig(
+                provider="nvidia-build",
+                model="nvidia/some-gateway-model",
+                api_key_env="TEST_API_KEY",
+                base_url="https://gateway.example/v1",
+                api="openai-completions",
+                context_window=32_000,
+                max_tokens=4_096,
+            )
+        },
+    )
+
+    plan = Fabric().plan(gateway, base_dir=ROOT)
+
+    assert plan.agent_config["models"]["default"] == {
+        "provider": "nvidia-build",
+        "model": "nvidia/some-gateway-model",
+        "api_key_env": "TEST_API_KEY",
+        "base_url": "https://gateway.example/v1",
+        "extensions": {
+            "api": "openai-completions",
+            "context_window": 32_000,
+            "max_tokens": 4_096,
+        },
     }
 
 

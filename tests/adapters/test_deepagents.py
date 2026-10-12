@@ -629,7 +629,7 @@ async def test_agent_creation_error_fails_runtime_start(
         )
 
 
-def test_resolve_relay_observability_passes_through_relay_v3(
+def test_resolve_relay_observability_passes_through_relay_v4(
     tmp_path, make_payload, monkeypatch
 ):
     source = {
@@ -638,7 +638,7 @@ def test_resolve_relay_observability_passes_through_relay_v3(
             {
                 "kind": "observability",
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "opentelemetry": {
                         "enabled": True,
                         "endpoints": [
@@ -671,7 +671,7 @@ def test_resolve_relay_observability_passes_through_relay_v3(
     assert observability is not None
     assert observability.plugin_config is source
     config = observability.plugin_config["components"][0]["config"]
-    assert config["version"] == 3
+    assert config["version"] == 4
     assert config["opentelemetry"]["endpoints"][0]["type"] == "openinference"
 
 
@@ -740,6 +740,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
         {
             "nemo_fabric_request_id": "request-1",
             "nemo_fabric_invocation_id": "inv-1",
+            "nemo_fabric_runtime_id": "run-1",
         }
     ]
     # the Deep Agents callback handler is added to the LangGraph run config so
@@ -758,6 +759,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
             {
                 "nemo_fabric_request_id": "018f47a4-3af7-7d94-8e61-9f0f89b5d312",
                 "nemo_fabric_invocation_id": "inv-1",
+                "nemo_fabric_runtime_id": "run-1",
             },
         ),
         (
@@ -766,6 +768,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
             {
                 "nemo_fabric_request_id": "request-1",
                 "nemo_fabric_invocation_id": "inv-1",
+                "nemo_fabric_runtime_id": "run-1",
             },
         ),
     ],
@@ -1373,7 +1376,7 @@ async def test_native_telemetry_exports_without_artifacts(
                         "kind": "observability",
                         "enabled": True,
                         "config": {
-                            "version": 3,
+                            "version": 4,
                             "opentelemetry": {
                                 "enabled": True,
                                 "endpoints": [
@@ -1411,6 +1414,7 @@ async def test_native_telemetry_exports_without_artifacts(
         {
             "nemo_fabric_request_id": "request-1",
             "nemo_fabric_invocation_id": "inv-1",
+            "nemo_fabric_runtime_id": "run-1",
         }
     ]
     assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get(
@@ -1486,7 +1490,7 @@ async def test_missing_nemo_relay_with_native_telemetry_fails_runtime_start(
                     {
                         "kind": "observability",
                         "enabled": True,
-                        "config": {"version": 3},
+                        "config": {"version": 4},
                     }
                 ],
             },
@@ -1513,7 +1517,7 @@ async def test_incomplete_nemo_relay_install_fails_runtime_start(
                     {
                         "kind": "observability",
                         "enabled": True,
-                        "config": {"version": 3},
+                        "config": {"version": 4},
                     }
                 ],
             },
@@ -2216,10 +2220,12 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
         {
             "nemo_fabric_request_id": "request-1",
             "nemo_fabric_invocation_id": "inv-1",
+            "nemo_fabric_runtime_id": "run-relay-persistent",
         },
         {
             "nemo_fabric_request_id": "request-1",
             "nemo_fabric_invocation_id": "inv-2",
+            "nemo_fabric_runtime_id": "run-relay-persistent",
         },
     ]
     assert fake_sdks["saver_exits"] == 1

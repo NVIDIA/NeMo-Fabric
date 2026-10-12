@@ -161,6 +161,11 @@ _config = partial(
             id="openclaw",
         ),
         pytest.param(
+            "nvidia.fabric.openhands",
+            {"condenser": "none"},
+            id="openhands",
+        ),
+        pytest.param(
             "nvidia.fabric.remote-agent",
             {
                 "base_url": "https://agents.example.test/v1",
@@ -488,6 +493,12 @@ def test_openclaw_rejects_relay(tmp_path: Path):
             {"terminal_timeout": False},
             "harness.settings.terminal_timeout",
             id="hermes-terminal-timeout",
+        ),
+        pytest.param(
+            "nvidia.fabric.openhands",
+            {"condenser": "llm_summarizing"},
+            "harness.settings.condenser",
+            id="openhands-condenser",
         ),
     ],
 )

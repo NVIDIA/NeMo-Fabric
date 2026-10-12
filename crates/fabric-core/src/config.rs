@@ -1779,7 +1779,7 @@ impl TelemetryProvider {
     }
 }
 
-const RELAY_OBSERVABILITY_VERSION: u32 = 3;
+const RELAY_OBSERVABILITY_VERSION: u32 = 4;
 
 fn relay_observability_version_schema(generator: &mut SchemaGenerator) -> Schema {
     let mut schema = u32::json_schema(generator);
@@ -1802,7 +1802,7 @@ where
         Ok(version)
     } else {
         Err(serde::de::Error::custom(format!(
-            "NeMo Relay 0.7 requires observability config version {RELAY_OBSERVABILITY_VERSION}; found {version}"
+            "NeMo Fabric requires Relay observability config version {RELAY_OBSERVABILITY_VERSION}; found {version}"
         )))
     }
 }
@@ -1962,7 +1962,7 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                 return invalid_config(
                     "relay.observability.version",
                     format!(
-                        "NeMo Relay 0.7 requires observability config version {RELAY_OBSERVABILITY_VERSION}"
+                        "NeMo Fabric requires Relay observability config version {RELAY_OBSERVABILITY_VERSION}"
                     ),
                 );
             }
@@ -2007,7 +2007,7 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                 return invalid_config(
                     format!("relay.components.{index}.config.version"),
                     format!(
-                        "NeMo Relay 0.7 requires observability config version {RELAY_OBSERVABILITY_VERSION}"
+                        "NeMo Fabric requires Relay observability config version {RELAY_OBSERVABILITY_VERSION}"
                     ),
                 );
             }
@@ -4373,7 +4373,7 @@ mod tests {
     }
 
     #[test]
-    fn relay_observability_uses_v3_typed_endpoints() {
+    fn relay_observability_uses_v4_typed_endpoints() {
         let observability: RelayObservabilityConfig = serde_json::from_value(serde_json::json!({
             "atof": {
                 "enabled": true,
@@ -4404,10 +4404,10 @@ mod tests {
                 ]
             }
         }))
-        .expect("Relay v3 observability config");
+        .expect("Relay v4 observability config");
 
         let value = serde_json::to_value(observability).expect("serialized observability");
-        assert_eq!(value["version"], 3);
+        assert_eq!(value["version"], 4);
         assert_eq!(value["atof"]["sinks"][0]["type"], "file");
         assert_eq!(value["atof"]["sinks"][1]["type"], "stream");
         assert_eq!(
@@ -4501,7 +4501,7 @@ mod tests {
     }
 
     #[test]
-    fn relay_opentelemetry_deserializes_complete_typed_v3_config() {
+    fn relay_opentelemetry_deserializes_complete_typed_v4_config() {
         let opentelemetry: RelayOpenTelemetryConfig = serde_json::from_value(serde_json::json!({
             "enabled": true,
             "endpoints": [
@@ -4523,7 +4523,7 @@ mod tests {
                 }
             ]
         }))
-        .expect("complete Relay v3 OpenTelemetry config");
+        .expect("complete Relay v4 OpenTelemetry config");
 
         assert!(opentelemetry.enabled);
         assert!(opentelemetry.extensions.is_empty());
@@ -4540,24 +4540,25 @@ mod tests {
     }
 
     #[test]
-    fn relay_observability_rejects_explicit_v2() {
-        let error = serde_json::from_value::<RelayObservabilityConfig>(serde_json::json!({
-            "version": 2,
-            "atif": {"enabled": true}
-        }))
-        .expect_err("Relay v2 observability config must fail");
+    fn relay_observability_rejects_versions_before_v4() {
+        for version in [2, 3] {
+            let error = serde_json::from_value::<RelayObservabilityConfig>(serde_json::json!({
+                "version": version,
+                "atif": {"enabled": true}
+            }))
+            .expect_err("Relay observability config before v4 must fail");
 
-        assert!(
-            error
-                .to_string()
-                .contains("NeMo Relay 0.7 requires observability config version 3")
-        );
+            assert!(error.to_string().contains(&format!(
+                "NeMo Fabric requires Relay observability config version 4; found {version}"
+            )));
+        }
     }
 
     #[test]
-    fn generic_relay_observability_component_rejects_explicit_v2() {
+    fn generic_relay_observability_component_rejects_versions_before_v4() {
         for component_config in [
             BTreeMap::from([("version".to_string(), serde_json::json!(2))]),
+            BTreeMap::from([("version".to_string(), serde_json::json!(3))]),
             BTreeMap::from([
                 ("version".to_string(), serde_json::json!(2)),
                 (
@@ -4580,17 +4581,22 @@ mod tests {
                 ..RelayConfig::default()
             });
 
-            let error = validate_config(&config).expect_err("Relay v2 component must fail");
+            let error = validate_config(&config).expect_err("pre-v4 component must fail");
             assert!(matches!(
-                error,
+                &error,
                 FabricError::InvalidConfig { field, .. }
                     if field == "relay.components.0.config.version"
             ));
+            assert!(
+                error
+                    .to_string()
+                    .contains("NeMo Fabric requires Relay observability config version 4")
+            );
         }
     }
 
     #[test]
-    fn generic_relay_observability_component_accepts_implicit_v3() {
+    fn generic_relay_observability_component_accepts_implicit_v4() {
         let mut config = typed_config("nvidia.fabric.hermes");
         config.relay = Some(RelayConfig {
             components: vec![RelayComponentConfig {
@@ -4602,7 +4608,7 @@ mod tests {
             ..RelayConfig::default()
         });
 
-        validate_config(&config).expect("Relay 0.7 defaults a missing version to v3");
+        validate_config(&config).expect("Relay 0.9 and 0.10 default a missing version to v4");
     }
 
     #[test]
@@ -4618,7 +4624,7 @@ mod tests {
                     kind: "observability".to_string(),
                     enabled: true,
                     config: BTreeMap::from([
-                        ("version".to_string(), serde_json::json!(3)),
+                        ("version".to_string(), serde_json::json!(4)),
                         ("opentelemetry".to_string(), opentelemetry),
                     ]),
                     extensions: BTreeMap::new(),
@@ -4655,7 +4661,7 @@ mod tests {
                     kind: "observability".to_string(),
                     enabled: true,
                     config: BTreeMap::from([
-                        ("version".to_string(), serde_json::json!(3)),
+                        ("version".to_string(), serde_json::json!(4)),
                         (
                             "opentelemetry".to_string(),
                             serde_json::json!({
@@ -4692,7 +4698,7 @@ mod tests {
                 kind: "observability".to_string(),
                 enabled: true,
                 config: BTreeMap::from([
-                    ("version".to_string(), serde_json::json!(3)),
+                    ("version".to_string(), serde_json::json!(4)),
                     (
                         "opentelemetry".to_string(),
                         serde_json::json!({
@@ -4718,7 +4724,7 @@ mod tests {
             ..RelayConfig::default()
         });
 
-        validate_config(&config).expect("all Relay 0.7 endpoint types must pass");
+        validate_config(&config).expect("all Relay endpoint types must pass");
     }
 
     #[test]
@@ -4766,7 +4772,7 @@ mod tests {
                     kind: "observability".to_string(),
                     enabled: true,
                     config: BTreeMap::from([
-                        ("version".to_string(), serde_json::json!(3)),
+                        ("version".to_string(), serde_json::json!(4)),
                         ("opentelemetry".to_string(), opentelemetry),
                     ]),
                     extensions: BTreeMap::new(),
@@ -4810,7 +4816,7 @@ mod tests {
         config.relay = Some(RelayConfig {
             observability: Some(
                 serde_json::from_value(serde_json::json!({
-                    "version": 3,
+                    "version": 4,
                     "openinference": {
                         "enabled": true,
                         "endpoint": "http://localhost:6006/v1/traces"

@@ -32,7 +32,7 @@ export FABRIC_PACKAGE='nemo-fabric[claude,hermes-agent,relay]==0.5.0'
 export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
 
 curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
-  NEMO_RELAY_VERSION=0.9.0 sh -s -- \
+  NEMO_RELAY_VERSION=0.10.0 sh -s -- \
     --install-dir "$FABRIC_BUNDLE/.relay/bin"
 ```
 
@@ -43,12 +43,12 @@ task image by following the
 [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation)
 and ensure that the Fabric runner uses the Python environment containing Hermes
 Agent and `nemo-fabric-adapters-hermes`. Relay-enabled Hermes runs require a
-Hermes build compatible with Relay 0.9, such as the upstream source used by
+Hermes build compatible with Relay 0.10, such as the upstream source used by
 `just install-hermes-agent`; set `ADAPTER_PYTHON` to that task environment's
 interpreter. The dynamic `fabric_package` install is not a substitute for that
 image preparation.
 
-The curl command downloads and installs the standalone NeMo Relay 0.9.0 CLI tool
+The curl command downloads and installs the standalone NeMo Relay 0.10.0 CLI tool
 and verifies its checksum. For other installation methods, refer to the
 [NeMo Relay installation instructions](../../../docs/getting-started/install.mdx#install-nemo-relay).
 

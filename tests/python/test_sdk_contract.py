@@ -936,7 +936,7 @@ def test_fabric_config_authors_first_class_relay_observability():
     assert config.to_mapping()["relay"] == {
         "output_dir": "./artifacts/relay",
         "observability": {
-            "version": 3,
+            "version": 4,
             "atof": {
                 "enabled": True,
                 "sinks": [
@@ -1006,22 +1006,22 @@ def test_relay_atif_model_name_serializes_only_when_explicit():
     )
 
 
-@pytest.mark.parametrize("version", [1, 2, 4, True, 3.0, "3"])
-def test_typed_relay_observability_requires_exact_v3(version):
+@pytest.mark.parametrize("version", [1, 2, 3, 5, True, 4.0, "4"])
+def test_typed_relay_observability_requires_exact_v4(version):
     with pytest.raises(
-        ValidationError, match="requires observability config version 3"
+        ValidationError, match="requires Relay observability config version 4"
     ):
         RelayObservabilityConfig(version=version)
 
 
-def test_relay_mapping_inputs_validate_typed_v3_observability():
+def test_relay_mapping_inputs_validate_typed_v4_observability():
     with pytest.raises(
-        ValidationError, match="requires observability config version 3"
+        ValidationError, match="requires Relay observability config version 4"
     ):
         RelayConfig(observability={"version": 2})
 
     with pytest.raises(
-        ValidationError, match="requires observability config version 3"
+        ValidationError, match="requires Relay observability config version 4"
     ):
         FabricConfig(
             metadata=MetadataConfig(name="demo"),
@@ -1031,7 +1031,7 @@ def test_relay_mapping_inputs_validate_typed_v3_observability():
 
     config = _fabric_config()
     with pytest.raises(
-        ValidationError, match="requires observability config version 3"
+        ValidationError, match="requires Relay observability config version 4"
     ):
         config.enable_relay(observability={"version": 2})
     assert config.relay is None
@@ -1040,16 +1040,16 @@ def test_relay_mapping_inputs_validate_typed_v3_observability():
     valid = FabricConfig(
         metadata=MetadataConfig(name="demo"),
         harness=HarnessConfig(adapter_id="test.fabric.shim"),
-        relay={"observability": {"version": 3}},
+        relay={"observability": {"version": 4}},
     )
     assert isinstance(valid.relay, RelayConfig)
     assert isinstance(valid.relay.observability, RelayObservabilityConfig)
 
 
-@pytest.mark.parametrize("version", [1, 2, 4, True, 3.0, "3"])
-def test_relay_generic_observability_component_requires_explicit_v3(version):
+@pytest.mark.parametrize("version", [1, 2, 3, 5, True, 4.0, "4"])
+def test_relay_generic_observability_component_requires_explicit_v4(version):
     with pytest.raises(
-        ValidationError, match="requires observability config version 3"
+        ValidationError, match="requires Relay observability config version 4"
     ):
         RelayConfig(
             components=[
@@ -1061,8 +1061,8 @@ def test_relay_generic_observability_component_requires_explicit_v3(version):
         )
 
 
-def test_relay_generic_observability_component_allows_implicit_or_v3_version():
-    for config in ({}, {"version": 3}):
+def test_relay_generic_observability_component_allows_implicit_or_v4_version():
+    for config in ({}, {"version": 4}):
         relay = RelayConfig(
             components=[
                 RelayComponentConfig(kind="observability", config=config),
@@ -1083,10 +1083,10 @@ def test_relay_generic_observability_component_requires_mapping_config():
         )
 
 
-def test_relay_generic_observability_component_reports_version_before_v3_shape():
+def test_relay_generic_observability_component_reports_version_before_v4_shape():
     with pytest.raises(
         ValidationError,
-        match="requires observability config version 3",
+        match="requires Relay observability config version 4",
     ):
         RelayConfig(
             components=[
@@ -1117,7 +1117,7 @@ def test_relay_generic_observability_component_requires_enabled_endpoint(
     valid: bool,
 ):
     config = {
-        "version": 3,
+        "version": 4,
         "opentelemetry": opentelemetry,
     }
     if valid:
@@ -1174,7 +1174,7 @@ def test_relay_generic_observability_component_rejects_malformed_opentelemetry(
                 {
                     "kind": "observability",
                     "config": {
-                        "version": 3,
+                        "version": 4,
                         "opentelemetry": opentelemetry,
                     },
                 }
@@ -1191,7 +1191,7 @@ def test_relay_generic_observability_component_accepts_endpoint_types(
             {
                 "kind": "observability",
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "opentelemetry": {
                         "endpoints": [
                             {
@@ -1223,7 +1223,7 @@ def test_relay_generic_observability_component_requires_nonblank_endpoint(endpoi
                 {
                     "kind": "observability",
                     "config": {
-                        "version": 3,
+                        "version": 4,
                         "opentelemetry": {
                             "enabled": True,
                             "endpoints": [endpoint],
@@ -1238,14 +1238,14 @@ def test_relay_generic_observability_component_requires_nonblank_endpoint(endpoi
     "config",
     [
         {
-            "version": 3,
+            "version": 4,
             "openinference": {
                 "enabled": True,
                 "endpoint": "http://localhost:6006/v1/traces",
             },
         },
         {
-            "version": 3,
+            "version": 4,
             "opentelemetry": {
                 "enabled": True,
                 "endpoint": "http://localhost:4318/v1/traces",
@@ -1254,7 +1254,7 @@ def test_relay_generic_observability_component_requires_nonblank_endpoint(endpoi
     ],
 )
 def test_relay_generic_observability_component_rejects_legacy_exporters(config):
-    with pytest.raises(ValidationError, match="observability config version 3"):
+    with pytest.raises(ValidationError, match="observability config version 4"):
         RelayConfig(
             components=[
                 RelayComponentConfig(kind="observability", config=config),

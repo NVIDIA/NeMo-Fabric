@@ -546,7 +546,7 @@ def relay_payload_fixture(claude_payload, tmp_path) -> dict[str, Any]:
             {
                 "relay": {
                     "config": {
-                        "version": 3,
+                        "version": 4,
                         "atof": {"enabled": True},
                         "atif": {"enabled": True},
                     }
@@ -606,8 +606,8 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
     with (relay.gateway.config_path.parent / "plugins.toml").open("rb") as stream:
         plugin_config = tomllib.load(stream)
     assert plugin_config["components"][0]["kind"] == "observability"
-    assert plugin_config["components"][0]["config"]["version"] == 3
-    assert relay.plugin_config["components"][0]["config"]["version"] == 3
+    assert plugin_config["components"][0]["config"]["version"] == 4
+    assert relay.plugin_config["components"][0]["config"]["version"] == 4
 
     manifest = json.loads(
         (relay.plugin_path / ".claude-plugin" / "plugin.json").read_text(
@@ -679,7 +679,7 @@ def test_prepare_claude_relay_rejects_v2_observability_config(
     assert caught.value.code == "claude_relay_configuration_failed"
     assert isinstance(caught.value.__cause__, ValueError)
     assert str(caught.value.__cause__) == (
-        "unsupported NeMo Relay observability config version 2; expected version 3"
+        "unsupported NeMo Relay observability config version 2; expected version 4"
     )
 
 
@@ -716,6 +716,36 @@ def test_build_options_adds_relay_plugin_and_gateway_environment(
     assert (
         Path(options.plugins[0]["path"]) / "skills" / "review" / "SKILL.md"
     ).exists()
+
+
+@pytest.mark.parametrize(
+    "logging_environment",
+    [
+        {
+            "NEMO_RELAY_LOG": "debug",
+            "NEMO_RELAY_LOG_STDERR": "true",
+            "NEMO_RELAY_LOG_STDERR_FORMAT": "jsonl",
+        },
+        {"NEMO_RELAY_LOG_CONFIG_PATH": "/etc/relay/logging.toml"},
+    ],
+)
+def test_build_options_relay_logging_environment_set_forwards_parent_values(
+    relay_payload, tmp_path, logging_environment
+):
+    # Relay rejects an empty logging variable, so a blanked value makes every
+    # Claude hook fail before it reaches the gateway.
+    os.environ.update(logging_environment)
+    os.environ["NEMO_RELAY_CLIENT_TOKEN"] = "parent-route-token"
+    os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
+
+    options = build_options(relay_payload, relay=relay_settings(tmp_path, {}))
+
+    forwarded_logging_environment = {
+        name: options.env[name] for name in logging_environment
+    }
+    assert forwarded_logging_environment == logging_environment
+    assert options.env["NEMO_RELAY_CLIENT_TOKEN"] == ""
+    assert options.env["FABRIC_UNRELATED_SECRET"] == ""
 
 
 def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
@@ -1124,7 +1154,7 @@ def atif_plugin_config(output_directory: Path) -> dict[str, Any]:
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "atif": {
                         "enabled": True,
                         "output_directory": str(output_directory),

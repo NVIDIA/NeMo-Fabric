@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Relay 0.9 compatibility for NOOA 0.0.10 tool middleware."""
+"""Relay 0.9 and 0.10 compatibility for NOOA 0.0.10 tool middleware."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from nooa.runtime.middleware import MIDDLEWARE_LLM_CALL
 
 
 async def _tool_middleware(ctx: Any, nxt: Any) -> Any:
-    """Use NOOA's tool behavior with Relay 0.9's typed callback result."""
+    """Use NOOA's tool behavior with the typed callback result of Relay 0.9 and 0.10."""
     args = {
         "code": ctx.code,
         **{
@@ -73,7 +73,7 @@ async def _tool_middleware(ctx: Any, nxt: Any) -> Any:
 
 
 def install_nemo_relay_compat(event_manager: Any) -> Any:
-    """Install NOOA middleware with a Relay 0.9 compatible tool callback."""
+    """Install NOOA middleware with a tool callback compatible with Relay 0.9 and 0.10."""
     unsub_agent = event_manager.intercept(
         MIDDLEWARE_AGENT_CALL, nemo_relay_agent_call_middleware
     )

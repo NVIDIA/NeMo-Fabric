@@ -22,11 +22,10 @@ from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import relay_artifacts
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.common.relay_version import is_supported_relay_version
 
 LOGGER = logging.getLogger(__name__)
 
-_RELAY_MINIMUM = (0, 9, 0)
-_RELAY_MAXIMUM = (0, 10, 0)
 _RELAY_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:\+[^\s]+)?$")
 _QUARANTINE_NOTE = (
     "telemetry is disabled for later turns because an earlier Relay scope "
@@ -75,8 +74,8 @@ def _relay_version() -> tuple[int, int, int]:
     if match is None:
         raise RuntimeError("the installed nemo-relay version is not a stable release")
     version = tuple(int(part) for part in match.groups())
-    if not (_RELAY_MINIMUM <= version < _RELAY_MAXIMUM):
-        raise RuntimeError("nemo-relay must satisfy >=0.9,<0.10")
+    if not is_supported_relay_version(version):
+        raise RuntimeError("nemo-relay must satisfy >=0.9,<0.11")
     return version
 
 
@@ -259,11 +258,7 @@ class RelayTelemetry:
                 common_utils.reject_inherited_relay_plugin_config(activation.report)
                 uninstall = install_nemo_relay_compat(agent.event_manager)
                 try:
-                    metadata = {
-                        "nemo_fabric_request_id": runtime_context.request_id,
-                        "nemo_fabric_invocation_id": runtime_context.invocation_id,
-                        "nemo_fabric_runtime_id": runtime_context.runtime_id,
-                    }
+                    metadata = common_utils.relay_correlation_metadata(runtime_context)
                     try:
                         with scope.scope(
                             self._scope_name,

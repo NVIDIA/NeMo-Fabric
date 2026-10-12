@@ -9,12 +9,11 @@ This adapter runs Hermes Agent through its Python SDK.
 
 ## Install
 
-The adapter supports Python 3.11 through 3.14. The merged upstream Hermes Relay
-0.9 integration requires Python 3.14. Hermes Agent 0.20 and later is not
-installable from PyPI. Install Hermes Agent by following
-the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
-then install the NeMo Fabric packages into the Python environment that runs
-Hermes Agent.
+The adapter supports Python 3.11 through 3.14. The pinned upstream Hermes
+revision requires Python 3.14 and Relay 0.10 on supported platforms. Hermes
+Agent 0.20 and later is not installable from PyPI. Follow the
+[Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
+then install the NeMo Fabric packages into the same Python environment.
 
 The following table shows which NeMo Fabric components each package expression
 provides. None of these expressions installs Hermes Agent:
@@ -30,7 +29,10 @@ provides. None of these expressions installs Hermes Agent:
 Released Hermes Agent v2026.9.24 requires Relay 0.8.x. NeMo Fabric tests Relay
 telemetry with the merged, unreleased upstream Hermes revision on Python 3.14.
 Install the adapter's `relay` or `full` extra only with a Hermes checkout that
-supports Relay 0.9; those extras conflict with the published Hermes release.
+supports Relay 0.9 or 0.10; those extras conflict with the published Hermes
+release. The adapter extras support `nemo-relay>=0.9,<0.11`. The pinned upstream
+Hermes revision narrows that range to `nemo-relay>=0.10,<0.11` on supported
+Python 3.14 platforms.
 The adapter rejects an incompatible Hermes or Relay installation at startup
 when Relay telemetry is enabled.
 
@@ -46,7 +48,7 @@ matching NeMo Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
 Relay telemetry and `Runtime.invoke_stream()` require the merged Hermes revision
-above until an upstream release supports Relay 0.9. Ordinary `Runtime.invoke()`
+above until an upstream release supports Relay 0.9 or 0.10. Ordinary `Runtime.invoke()`
 also works with released Hermes in a separate environment.
 
 ## What It Maps

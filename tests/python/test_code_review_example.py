@@ -240,7 +240,7 @@ def test_native_otel_variants_match_adapter_contracts():
     ],
 )
 @pytest.mark.usefixtures("nemo_relay")
-def test_relay_otel_variants_author_v3_endpoints(
+def test_relay_otel_variants_author_v4_endpoints(
     variant,
     endpoint_type: str,
     endpoint: str,
@@ -250,7 +250,7 @@ def test_relay_otel_variants_author_v3_endpoints(
     config = variant(hermes_config())
 
     observability = config.to_mapping()["relay"]["observability"]
-    assert observability["version"] == 3
+    assert observability["version"] == 4
     assert "openinference" not in observability
     assert observability["opentelemetry"]["enabled"] is True
     assert observability["opentelemetry"]["endpoints"][0]["type"] == endpoint_type
