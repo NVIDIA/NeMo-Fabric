@@ -164,7 +164,7 @@ jobs:
           just --set no_uv true test-python
 
   hermes:
-    name: Hermes adapter (upstream Relay 0.9, Python 3.14)
+    name: Hermes adapter (upstream Relay 0.10, Python 3.14)
     if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -177,11 +177,11 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.ref || github.sha }}
 
-      - name: Checkout merged upstream Hermes Relay 0.9 revision
+      - name: Checkout merged upstream Hermes Relay 0.10 revision
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: NousResearch/hermes-agent
-          ref: dccb84b92401234db294667ec203d3ac3dc1b87f
+          ref: a62979dc3601c9eae455bff5b35ba8f9bed0df30
           path: external/hermes-agent
           persist-credentials: false
 
