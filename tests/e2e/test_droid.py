@@ -73,7 +73,9 @@ async def test_droid_live_provider_retains_and_isolates_context(tmp_path):
 
     config = FabricConfig(
         metadata=MetadataConfig(name="droid-live"),
-        harness=HarnessConfig(adapter_id="nvidia.fabric.droid"),
+        harness=HarnessConfig(
+            adapter_id="nvidia.fabric.droid", resolution="preinstalled"
+        ),
         discovery=DiscoveryConfig(local_paths=[DESCRIPTOR]),
         models={
             "default": ModelConfig(

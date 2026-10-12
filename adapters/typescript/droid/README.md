@@ -69,7 +69,7 @@ config.add_skill_path("./skills/code-review")
 For a source build, use
 `adapters/typescript/droid/droid.fabric-adapter.json`.
 
-The initial adapter supports Factory-managed model IDs, a Factory API-key
+The initial adapter supports model IDs resolved by Droid, a Factory API-key
 environment reference, replacement or appended system instructions, exact
 Droid built-in tool enable/block policy, normalized skill paths, and
 unauthenticated stdio, SSE, and streamable HTTP MCP servers. Tool values are
@@ -86,9 +86,23 @@ Configured skill directories are copied into a runtime-scoped temporary home
 using Droid's compatible personal `.agents/skills` layout. The adapter verifies
 them with `listSkills()` and removes the temporary home during shutdown. This
 keeps Fabric-provided skills isolated without modifying the workspace.
-The isolated profile preserves Factory `settings.json` for custom model
-definitions but does not copy ambient MCP configuration or authentication
-state.
+The isolated profile preserves Factory `settings.json` and
+`settings.local.json` for custom model definitions but does not copy ambient
+MCP configuration or authentication state.
+
+## Optional: Configure a Custom BYOK Model
+
+The default configuration above uses Droid's `auto` model selection and a
+Factory API key. Use the following optional configuration only when Droid must
+call a custom model endpoint through BYOK. The integration guide uses an
+NVIDIA-hosted model as one example.
+
+To use a custom BYOK model, define the unprefixed model ID in either Factory
+settings file and set `apiKey` to an exact reference to the provider's existing
+credential variable, such as `${NVIDIA_API_KEY}`. The adapter forwards only the
+variable referenced by the selected custom model. Refer to the
+[Droid integration guide](../../../docs/integrations/harness/droid.mdx#optional-use-a-custom-byok-model)
+for the complete optional setup.
 
 The adapter intentionally does not accept normalized custom model endpoints.
 Droid custom endpoints are configured outside a session in Droid settings. It

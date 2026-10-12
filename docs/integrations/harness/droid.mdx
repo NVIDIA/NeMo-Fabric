@@ -86,7 +86,7 @@ The second invocation uses the conversation retained by the Droid session.
 
 ## Understand Configuration Mapping
 
-The initial adapter selects a Factory-managed model by ID and passes the
+The initial adapter selects a model resolved by Droid and passes the
 credential named by `api_key_env` to the SDK as the Factory API key. It does
 not map `models.base_url` or arbitrary providers because custom model endpoints
 are configured through external Droid settings, not the SDK session API.
@@ -134,10 +134,64 @@ Project skills already placed in Droid's documented discovery locations remain
 Droid-owned ambient configuration.
 
 When an isolated profile is required for MCP servers or skills, the adapter
-copies the user's Factory `settings.json` into it so externally configured
-custom models remain available. Fabric supplies MCP servers directly to the
-Droid session; ambient MCP configuration and Factory authentication state are
-not copied.
+copies the user's Factory `settings.json` and `settings.local.json` into it so
+externally configured custom models remain available. Fabric supplies MCP
+servers directly to the Droid session; ambient MCP configuration and Factory
+authentication state are not copied.
+
+## Optional: Use a Custom BYOK Model
+
+The default configuration uses Droid's `auto` model selection and a Factory
+API key. Use the following optional configuration only when Droid must call a
+custom model endpoint through BYOK. The configuration below uses an
+NVIDIA-hosted model as one example.
+
+Define the model in `~/.factory/settings.json` or
+`~/.factory/settings.local.json`. The settings entry uses the model's
+unprefixed provider ID. Set `apiKey` to an exact environment-variable reference
+such as `${NVIDIA_API_KEY}`. The variable name is the existing credential for
+the configured provider; the adapter forwards only that referenced variable
+when the custom model is selected. This NVIDIA configuration is one example:
+
+```json
+{
+  "cloudSessionSync": false,
+  "customModels": [
+    {
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "displayName": "NVIDIA Nemotron 3 Super",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "apiKey": "${NVIDIA_API_KEY}",
+      "provider": "generic-chat-completion-api"
+    }
+  ]
+}
+```
+
+Select the model through Fabric with Droid's `custom:` prefix. The Factory SDK
+credential and the external model-provider credential are separate. For local
+BYOK, set `FACTORY_API_KEY=EMPTY`. In this example, the adapter forwards
+`NVIDIA_API_KEY` because the selected custom model explicitly references it in
+Droid settings; unrelated ambient credentials remain isolated:
+
+```python
+from nemo_fabric import ModelConfig
+
+config.models = {
+    "default": ModelConfig(
+        provider="factory",
+        model="custom:nvidia/nemotron-3-super-120b-a12b",
+        api_key_env="FACTORY_API_KEY",
+    )
+}
+```
+
+Export both variables before starting Fabric:
+
+```bash
+export FACTORY_API_KEY=EMPTY
+export NVIDIA_API_KEY=nvapi-...
+```
 
 ## Understand Runtime Behavior
 

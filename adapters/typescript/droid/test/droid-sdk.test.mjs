@@ -224,22 +224,23 @@ test("maps replacement instructions and native stdio, HTTP, and SSE MCP configur
   await handle.stop();
 });
 
-test("preserves Factory settings without copying ambient MCP configuration", async (t) => {
+test("preserves Factory settings and its local overlay without copying ambient MCP configuration", async (t) => {
   const sourceHome = await mkdtemp(join(tmpdir(), "fabric-droid-factory-home-"));
   t.after(() => rm(sourceHome, { recursive: true, force: true }));
   const sourceFactory = join(sourceHome, ".factory");
   await mkdir(sourceFactory, { recursive: true });
-  const settings = {
+  const settings = { cloudSessionSync: false };
+  const localSettings = {
     customModels: [{
       model: "nvidia/nemotron-3-super-120b-a12b",
-      displayName: "NVIDIA Nemotron 3 Super",
+      displayName: "Local NVIDIA Nemotron 3 Super",
       baseUrl: "https://integrate.api.nvidia.com/v1",
       apiKey: "${NVIDIA_API_KEY}",
       provider: "generic-chat-completion-api",
-      maxOutputTokens: 4096,
     }],
   };
   await writeFile(join(sourceFactory, "settings.json"), `${JSON.stringify(settings)}\n`);
+  await writeFile(join(sourceFactory, "settings.local.json"), `${JSON.stringify(localSettings)}\n`);
   await writeFile(join(sourceFactory, "mcp.json"), '{"mcpServers":{"ambient":{"type":"stdio"}}}\n');
   const sdk = fakeSdk();
 
@@ -247,15 +248,21 @@ test("preserves Factory settings without copying ambient MCP configuration", asy
     tools: undefined,
     mcp: { servers: { configured: { transport: "stdio", url: "node" } } },
   });
+  configured.config.models.default.model = "custom:nvidia/nemotron-3-super-120b-a12b";
   configured.runtimeContext.environment.env.FACTORY_HOME_OVERRIDE = sourceHome;
   const handle = await new DroidSdkSessionFactory(
     sdk.loader,
     10_000,
-    { FACTORY_HOME_OVERRIDE: join(sourceHome, "missing") },
+    { FACTORY_HOME_OVERRIDE: join(sourceHome, "missing"), NVIDIA_API_KEY: "provider-secret" },
   ).create(configured);
   const runtimeFactory = join(sdk.calls.create[0].env.HOME, ".factory");
   assert.equal(sdk.calls.create[0].env.FACTORY_API_KEY, "secret");
+  assert.equal(sdk.calls.create[0].env.NVIDIA_API_KEY, "provider-secret");
   assert.deepEqual(JSON.parse(await readFile(join(runtimeFactory, "settings.json"), "utf8")), settings);
+  assert.deepEqual(
+    JSON.parse(await readFile(join(runtimeFactory, "settings.local.json"), "utf8")),
+    localSettings,
+  );
   assert.deepEqual(sdk.calls.create[0].mcpServers, [
     { name: "configured", command: "node", args: [], env: {} },
   ]);

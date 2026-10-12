@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { cp, mkdir, mkdtemp, realpath, rm, stat } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
@@ -180,7 +180,7 @@ function selectModel(config: AgentConfig): AgentModelConfig {
     );
   }
   if (selected.provider !== "factory") {
-    throw new LifecycleError("droid_provider_unsupported", "The Droid adapter supports Factory-managed model IDs only");
+    throw new LifecycleError("droid_provider_unsupported", "The Droid adapter requires models to use provider='factory'");
   }
   return selected;
 }
@@ -328,45 +328,99 @@ interface RuntimeProfile {
   root?: string;
   home?: string;
   entrypoints: string[];
+  settingsEnvironment: Record<string, string>;
+}
+
+function settingsHome(input: AdapterStartInput, parentEnvironment: NodeJS.ProcessEnv): string | undefined {
+  const runtimeEnvironment = input.runtimeContext.environment.env ?? {};
+  return (
+    runtimeEnvironment.FACTORY_HOME_OVERRIDE ||
+    runtimeEnvironment.HOME ||
+    runtimeEnvironment.USERPROFILE ||
+    parentEnvironment.FACTORY_HOME_OVERRIDE ||
+    parentEnvironment.HOME ||
+    parentEnvironment.USERPROFILE
+  );
+}
+
+async function customModelSettingsEnvironment(
+  input: AdapterStartInput,
+  model: string,
+  sourceHome: string | undefined,
+  parentEnvironment: NodeJS.ProcessEnv,
+): Promise<Record<string, string>> {
+  if (!model.startsWith("custom:") || sourceHome === undefined) return {};
+  const modelId = model.slice("custom:".length);
+  let apiKey: unknown;
+  for (const filename of ["settings.json", "settings.local.json"]) {
+    try {
+      const settings: unknown = JSON.parse(await readFile(join(sourceHome, ".factory", filename), "utf8"));
+      if (typeof settings !== "object" || settings === null || !("customModels" in settings)) continue;
+      const customModels = settings.customModels;
+      if (!Array.isArray(customModels)) continue;
+      const configured = customModels.find(
+        (candidate) =>
+          typeof candidate === "object" &&
+          candidate !== null &&
+          "model" in candidate &&
+          candidate.model === modelId,
+      );
+      if (configured !== undefined && "apiKey" in configured) apiKey = configured.apiKey;
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") continue;
+      if (error instanceof SyntaxError) continue; // Droid reports malformed settings during session creation.
+      throw new LifecycleError(
+        "droid_settings_unavailable",
+        "Droid settings could not be read by NeMo Fabric",
+      );
+    }
+  }
+  if (typeof apiKey !== "string") return {};
+  const match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(apiKey);
+  if (match === null) return {};
+  const name = match[1];
+  if (name === undefined) return {};
+  const value = credentialValue(input, name, parentEnvironment);
+  if (value === undefined || value.length === 0) {
+    throw new LifecycleError("droid_credential_missing", `Credential environment variable ${name} is not set`);
+  }
+  return { [name]: value };
 }
 
 async function prepareRuntimeProfile(
   input: AdapterStartInput,
   hasMcpServers: boolean,
   parentEnvironment: NodeJS.ProcessEnv,
+  model: string,
 ): Promise<RuntimeProfile> {
   if (input.config.skills?.extensions !== undefined) {
     throw new LifecycleError("droid_skill_extensions_unsupported", "Droid does not support skill extensions");
   }
   const configured = input.config.skills?.paths ?? [];
-  if (configured.length === 0 && !hasMcpServers) return { entrypoints: [] };
+  const sourceHome = settingsHome(input, parentEnvironment);
+  const settingsEnvironment = await customModelSettingsEnvironment(input, model, sourceHome, parentEnvironment);
+  if (configured.length === 0 && !hasMcpServers) return { entrypoints: [], settingsEnvironment };
 
   const root = await mkdtemp(join(tmpdir(), "nemo-fabric-droid-"));
   const home = join(root, "home");
   const factoryRoot = join(home, ".factory");
   const skillsRoot = join(home, ".agents", "skills");
   try {
-    const runtimeEnvironment = input.runtimeContext.environment.env ?? {};
-    const sourceHome =
-      runtimeEnvironment.FACTORY_HOME_OVERRIDE ||
-      runtimeEnvironment.HOME ||
-      runtimeEnvironment.USERPROFILE ||
-      parentEnvironment.FACTORY_HOME_OVERRIDE ||
-      parentEnvironment.HOME ||
-      parentEnvironment.USERPROFILE;
     if (sourceHome !== undefined) {
-      const sourceSettings = join(sourceHome, ".factory", "settings.json");
-      try {
-        if ((await stat(sourceSettings)).isFile()) {
-          await mkdir(factoryRoot, { recursive: true });
-          await cp(sourceSettings, join(factoryRoot, "settings.json"), { errorOnExist: true });
-        }
-      } catch (error) {
-        if (!(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")) {
-          throw new LifecycleError(
-            "droid_settings_unavailable",
-            "Droid settings could not be copied into the isolated NeMo Fabric runtime",
-          );
+      for (const filename of ["settings.json", "settings.local.json"]) {
+        const sourceSettings = join(sourceHome, ".factory", filename);
+        try {
+          if ((await stat(sourceSettings)).isFile()) {
+            await mkdir(factoryRoot, { recursive: true });
+            await cp(sourceSettings, join(factoryRoot, filename), { errorOnExist: true });
+          }
+        } catch (error) {
+          if (!(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")) {
+            throw new LifecycleError(
+              "droid_settings_unavailable",
+              "Droid settings could not be copied into the isolated NeMo Fabric runtime",
+            );
+          }
         }
       }
     }
@@ -398,7 +452,7 @@ async function prepareRuntimeProfile(
       await cp(source, destination, { recursive: true, errorOnExist: true });
       entrypoints.push(await realpath(join(destination, "SKILL.md")));
     }
-    return { root, home, entrypoints };
+    return { root, home, entrypoints, settingsEnvironment };
   } catch (error) {
     await rm(root, { recursive: true, force: true });
     throw error;
@@ -705,13 +759,19 @@ export class DroidSdkSessionFactory implements DroidSessionFactory {
         `Droid does not support instructions.system.mode='${instruction.mode}'; supported modes: replace, append`,
       );
     }
-    const runtimeProfile = await prepareRuntimeProfile(input, mcpServers.length > 0, this.parentEnvironment);
+    const runtimeProfile = await prepareRuntimeProfile(
+      input,
+      mcpServers.length > 0,
+      this.parentEnvironment,
+      selected.model,
+    );
     const runtimeEnvironment = input.runtimeContext.environment.env ?? {};
     const sessionEnvironment =
       runtimeProfile.home === undefined
-        ? { ...runtimeEnvironment }
+        ? { ...runtimeEnvironment, ...runtimeProfile.settingsEnvironment }
         : {
             ...runtimeEnvironment,
+            ...runtimeProfile.settingsEnvironment,
             HOME: runtimeProfile.home,
             USERPROFILE: runtimeProfile.home,
             FACTORY_HOME_OVERRIDE: runtimeProfile.home,
