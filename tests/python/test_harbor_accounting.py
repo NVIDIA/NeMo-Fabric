@@ -198,6 +198,7 @@ def test_cache_semantics_and_unknown_values(
             5,
             0,
         ),
+        ({"reasoning_tokens": 4}, 999, None, 999),
         ({"models": []}, 999, 999, 999),
     ],
 )
