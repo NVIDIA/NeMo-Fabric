@@ -36,6 +36,17 @@ authentication state under `CODEX_HOME` (default: `~/.codex`). Sign in with
 Codex before running NeMo Fabric. Set `CODEX_HOME` to the same location for login
 and execution if you use a nondefault credential store.
 
+Set `isolated_home: true` to give each runtime its own temporary Codex home. Use
+it when runtimes must not share Codex state: evaluation or benchmark trials that
+must not see each other's sessions or memories, and workloads that start several
+Codex runtimes concurrently. Leave it off for an interactive or long-lived agent
+that should keep its Codex history across runs. With file-based credentials, the
+temporary home links `auth.json` and `.credentials.json` from the inherited
+home, so runtimes share only those files. A keyring-backed login keeps the
+inherited `CODEX_HOME`, so only Codex's SQLite state is isolated; the rest of
+`CODEX_HOME`, including session history, is still shared. On Windows, linking
+the credential files requires Developer Mode or administrator rights.
+
 For noninteractive OpenAI API-key authentication, set
 `models.<role>.api_key_env` to the name of an environment variable containing
 the key. The adapter calls the Codex SDK's `login_api_key` during startup. It
@@ -120,6 +131,7 @@ Only Codex-specific controls belong in `harness.settings`:
 | `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` | No | No default |
 | `service_tier` | Nonempty string | No | No default |
 | `output_schema` | JSON Schema object for the final assistant message | No | No default |
+| `isolated_home` | Boolean; run each runtime in a private, temporary Codex home that reuses the inherited login | No | `false` |
 | `config_overrides` | Object that maps nonempty dotted Codex configuration keys to JSON-compatible values | No | `{}` |
 
 Planning validates these settings against the schema in the resolved Codex

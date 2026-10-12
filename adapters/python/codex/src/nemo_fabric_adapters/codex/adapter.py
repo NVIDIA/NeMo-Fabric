@@ -13,6 +13,7 @@ import math
 import os
 import subprocess
 import tempfile
+import tomllib
 import webbrowser
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
@@ -651,6 +652,61 @@ def _artifact_root(context: RuntimeContext, base_dir: str) -> Path:
 
 def state_dir(context: RuntimeContext, base_dir: str) -> Path:
     return _artifact_root(context, base_dir) / ".fabric" / "codex"
+
+
+_CODEX_LOGIN_FILES = ("auth.json", ".credentials.json")
+_CODEX_KEYRING_STORE_MODES = frozenset({"keyring", "auto"})
+
+
+def _private_codex_home(
+    context: RuntimeContext, base_dir: str
+) -> tempfile.TemporaryDirectory:
+    home = tempfile.TemporaryDirectory(prefix="nemo-fabric-codex-")
+    if (
+        Path(home.name)
+        .resolve()
+        .is_relative_to(_artifact_root(context, base_dir).resolve())
+    ):
+        home.cleanup()
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "Temporary Codex credential directory must be outside artifacts",
+        )
+    return home
+
+
+def _login_in_keyring(base: Path) -> bool:
+    try:
+        config = tomllib.loads((base / "config.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    return config.get("cli_auth_credentials_store") in _CODEX_KEYRING_STORE_MODES
+
+
+def _link_login_file(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as error:
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            f"isolated_home could not symlink {target.name} from the Codex home; "
+            "on Windows, enable Developer Mode or run as an administrator",
+        ) from error
+
+
+def _shared_login_env(env: dict[str, str], home: Path) -> dict[str, str]:
+    """Point Codex at a private home that reuses the login from the inherited one."""
+
+    inherited = env.get("CODEX_HOME")
+    base = (
+        Path(inherited).expanduser().absolute() if inherited else Path.home() / ".codex"
+    )
+    if _login_in_keyring(base):
+        return {"CODEX_HOME": str(base), "CODEX_SQLITE_HOME": str(home)}
+    for name in _CODEX_LOGIN_FILES:
+        if (base / name).is_file():
+            _link_login_file(home / name, base / name)
+    return {"CODEX_HOME": str(home), "CODEX_SQLITE_HOME": str(home)}
 
 
 def _merge_config(target: dict[str, Any], layer: dict[str, Any]) -> None:
@@ -1311,7 +1367,7 @@ class CodexRuntime:
         self._thread: Any = None
         self._relay: CodexRelaySettings | None = None
         self._gateway_process: subprocess.Popen[Any] | None = None
-        self._api_key_home: tempfile.TemporaryDirectory | None = None
+        self._private_home: tempfile.TemporaryDirectory | None = None
         self._mcp_authentication_checked = False
         self._unusable = False
         self._usage_totals: dict[str, int] = dict.fromkeys(USAGE_FIELDS, 0)
@@ -1346,18 +1402,23 @@ class CodexRuntime:
                         "codex_invalid_configuration",
                         f"{api_key_env} is required for Codex API-key authentication",
                     )
-                self._api_key_home = tempfile.TemporaryDirectory(
-                    prefix="nemo-fabric-codex-"
+                self._private_home = _private_codex_home(context, base_dir)
+                private_home = str(Path(self._private_home.name).resolve())
+                client_config.env["CODEX_HOME"] = private_home
+                client_config.env["CODEX_SQLITE_HOME"] = private_home
+            elif (
+                model_config.provider == "openai"
+                and _settings(agent_config).get("isolated_home") is True
+            ):
+                self._private_home = _private_codex_home(context, base_dir)
+                private_home = Path(self._private_home.name).resolve()
+                client_config.env.update(
+                    _shared_login_env(client_config.env, private_home)
                 )
-                private_home = Path(self._api_key_home.name).resolve()
-                if private_home.is_relative_to(
-                    _artifact_root(context, base_dir).resolve()
-                ):
-                    raise AdapterConfigError(
-                        "codex_invalid_configuration",
-                        "Temporary Codex credential directory must be outside artifacts",
-                    )
-                client_config.env["CODEX_HOME"] = str(private_home)
+                client_config.config_overrides = (
+                    *client_config.config_overrides,
+                    f"sqlite_home={json.dumps(str(private_home))}",
+                )
             elif model_config.provider != "openai":
                 await asyncio.to_thread(
                     Path(client_config.env["CODEX_HOME"]).mkdir,
@@ -1516,9 +1577,9 @@ class CodexRuntime:
             cleanup_error = _cleanup_relay(self._relay, self._gateway_process)
             self._relay = None
             self._gateway_process = None
-            if self._api_key_home is not None:
-                self._api_key_home.cleanup()
-                self._api_key_home = None
+            if self._private_home is not None:
+                self._private_home.cleanup()
+                self._private_home = None
 
         if isinstance(close_error, asyncio.CancelledError):
             raise close_error
@@ -1546,9 +1607,9 @@ class CodexRuntime:
         cleanup_error = _cleanup_relay(self._relay, self._gateway_process)
         self._relay = None
         self._gateway_process = None
-        if self._api_key_home is not None:
-            self._api_key_home.cleanup()
-            self._api_key_home = None
+        if self._private_home is not None:
+            self._private_home.cleanup()
+            self._private_home = None
         if cleanup_error is not None:
             LOGGER.error(
                 "Codex Relay cleanup after start failure also failed: %s",

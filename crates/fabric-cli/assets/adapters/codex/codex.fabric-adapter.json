@@ -70,6 +70,11 @@
         "type": "object",
         "description": "JSON Schema that constrains the final assistant message for each turn."
       },
+      "isolated_home": {
+        "type": "boolean",
+        "default": false,
+        "description": "Run each runtime in a private, temporary Codex home that reuses the inherited login."
+      },
       "config_overrides": {
         "type": "object",
         "propertyNames": {
