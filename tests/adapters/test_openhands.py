@@ -124,6 +124,7 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
     conversation.arun = AsyncMock(side_effect=arun)
     conversation.close = MagicMock()
     conversation_factory = MagicMock(return_value=conversation)
+    default_condenser = MagicMock()
 
     api = adapter.OpenHandsApi(
         Agent=agent_factory,
@@ -138,6 +139,7 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
         TerminalTool=SimpleNamespace(name="TerminalTool"),
         FileEditorTool=SimpleNamespace(name="FileEditorTool"),
         get_agent_final_response=lambda events: events[-1] if events else "",
+        default_condenser=default_condenser,
     )
     monkeypatch.setattr(adapter, "_load_openhands_api", lambda: api)
     calls.update(
@@ -146,6 +148,7 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
             "agent_factory": agent_factory,
             "conversation": conversation,
             "conversation_factory": conversation_factory,
+            "default_condenser": default_condenser,
             "llm_factory": llm_factory,
             "mcp_server_factory": mcp_server_factory,
             "skill_type": skill_type,
@@ -199,6 +202,18 @@ def test_descriptor_declares_only_initial_openhands_surface():
         "updates": False,
         "cancellation": False,
     }
+    assert descriptor["settings_schema"]["properties"] == {
+        "condenser": {
+            "type": "string",
+            "enum": ["default", "none"],
+            "default": "default",
+            "description": (
+                "OpenHands conversation history condenser. Use none to keep "
+                "the full history."
+            ),
+        }
+    }
+    assert descriptor["settings_schema"]["additionalProperties"] is False
     assert "telemetry" not in descriptor
 
 
@@ -279,6 +294,153 @@ async def test_start_maps_normalized_configuration(
         mock_openhands["conversation_factory"].call_args.kwargs["profile_store_dir"]
     )
     assert profile_store.is_dir()
+
+
+async def test_start_condenses_history_with_the_agent_llm(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
+
+    llm = mock_openhands["llm_factory"].return_value
+    default_condenser = mock_openhands["default_condenser"]
+    default_condenser.assert_called_once_with(llm)
+    agent_kwargs = mock_openhands["agent_factory"].call_args.kwargs
+    assert agent_kwargs["condenser"] is default_condenser.return_value
+
+
+async def test_start_without_condenser_when_disabled(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    openhands_payload["config"]["harness"] = {"settings": {"condenser": "none"}}
+    await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
+
+    mock_openhands["default_condenser"].assert_not_called()
+    agent_kwargs = mock_openhands["agent_factory"].call_args.kwargs
+    assert agent_kwargs.get("condenser") is None
+
+
+@pytest.mark.parametrize(
+    "condenser", ["off", "None", None], ids=["off", "string-None", "null"]
+)
+async def test_start_rejects_unknown_condenser_setting(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    condenser: str | None,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    openhands_payload["config"]["harness"] = {"settings": {"condenser": condenser}}
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
+
+    assert caught.value.code == "openhands_condenser_invalid"
+    mock_openhands["default_condenser"].assert_not_called()
+    mock_openhands["agent_factory"].assert_not_called()
+
+
+# Event limit: the system prompt, the user message, and 40 think action and
+# observation pairs exceed the 80-event limit, so the condenser runs before the
+# 41st agent call. Context window error: the rejected 11th call triggers the
+# condensation, and the 12th call finishes.
+@pytest.mark.parametrize(
+    ("context_error_at_call", "expected_agent_calls"),
+    [(None, 41), (11, 12)],
+    ids=["event-limit", "context-window-error"],
+)
+async def test_invoke_condenses_history_and_counts_summary_usage(
+    openhands_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    context_error_at_call: int | None,
+    expected_agent_calls: int,
+):
+    pytest.importorskip("openhands.sdk")
+    pytest.importorskip("openhands.tools")
+    from litellm.exceptions import ContextWindowExceededError
+    from litellm.types.utils import ModelResponse
+    from openhands.sdk.event import Condensation
+    from openhands.sdk.llm import llm as openhands_llm
+
+    calls = {"agent": 0, "summary": 0}
+
+    def respond(**kwargs) -> ModelResponse:
+        # Agent steps send tools; the condenser's summary request does not.
+        if kwargs.get("tools"):
+            calls["agent"] += 1
+            if calls["agent"] == context_error_at_call:
+                raise ContextWindowExceededError(
+                    message="context length exceeded",
+                    model="test-model",
+                    llm_provider="openai",
+                )
+            tool, arguments = (
+                # Distinct thoughts keep the SDK stuck detector quiet.
+                ("think", {"thought": f"Step {calls['agent']}."})
+                if calls["summary"] == 0
+                else ("finish", {"message": "done"})
+            )
+            message = {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": f"call-{calls['agent']}",
+                        "type": "function",
+                        "function": {"name": tool, "arguments": json.dumps(arguments)},
+                    }
+                ],
+            }
+            prompt_tokens, completion_tokens = 10, 1
+        else:
+            calls["summary"] += 1
+            message = {"role": "assistant", "content": "Summary of earlier steps."}
+            prompt_tokens, completion_tokens = 1000, 100
+        return ModelResponse(
+            model="test-model",
+            choices=[{"index": 0, "finish_reason": "stop", "message": message}],
+            usage={
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        )
+
+    monkeypatch.setattr(
+        openhands_llm, "litellm_completion", MagicMock(side_effect=respond)
+    )
+    monkeypatch.setattr(
+        openhands_llm, "litellm_acompletion", AsyncMock(side_effect=respond)
+    )
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    config = openhands_payload["config"]
+    config["tools"] = {"enabled": [], "blocked": []}
+    config["runtime"] = {"max_turns": 100}
+    del config["skills"], config["mcp"]
+    runtime = adapter.OpenHandsRuntime()
+    await runtime.start(_start_payload(openhands_payload))
+    try:
+        result = await runtime.invoke(
+            *_invocation(openhands_payload, "Think until the history condenses.")
+        )
+        events = list(runtime._conversation.state.events)
+    finally:
+        await runtime.stop()
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert result.output == {"response": "done"}
+    assert calls["summary"] == 1
+    assert calls["agent"] == expected_agent_calls
+    assert sum(isinstance(event, Condensation) for event in events) == 1
+    # A rejected request reports no usage; every other call counts once.
+    answered_calls = calls["agent"] - (context_error_at_call is not None)
+    assert result.usage.input_tokens == 10 * answered_calls + 1000
+    assert result.usage.output_tokens == answered_calls + 100
 
 
 async def test_replace_instruction_uses_exact_system_prompt(

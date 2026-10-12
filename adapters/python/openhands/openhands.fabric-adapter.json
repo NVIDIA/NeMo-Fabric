@@ -28,7 +28,14 @@
   "settings_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
-    "properties": {},
+    "properties": {
+      "condenser": {
+        "type": "string",
+        "enum": ["default", "none"],
+        "default": "default",
+        "description": "OpenHands conversation history condenser. Use none to keep the full history."
+      }
+    },
     "additionalProperties": false
   },
   "requirements": {},
