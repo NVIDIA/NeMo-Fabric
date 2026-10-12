@@ -13,6 +13,7 @@ from typing import Any
 
 from nemo_fabric_adapter_contract.models import RuntimeContext
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.common.relay_version import is_supported_relay_version
 
 
 # Hermes selects the generated Relay TOML through this path. Clear stale
@@ -50,8 +51,8 @@ def validate_hermes_telemetry_provider(runtime_context: RuntimeContext) -> None:
         raise ValueError("only relay telemetry is supported for Hermes")
 
 
-# Stable 0.9.x and 0.10.x releases only, like the other Relay version checks; prereleases are rejected.
-_SUPPORTED_RELAY_VERSION = re.compile(r"0\.(?:9|10)\.\d+(?:\+\S+)?")
+# Reject prereleases before applying the shared supported range.
+_STABLE_RELAY_VERSION = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(\d+)(?:\+\S+)?")
 
 
 def validate_hermes_relay_compatibility() -> None:
@@ -63,7 +64,10 @@ def validate_hermes_relay_compatibility() -> None:
             "Hermes Relay telemetry requires nemo-relay 0.9 or 0.10; install the Hermes "
             "adapter's relay extra in the Hermes environment"
         ) from error
-    if _SUPPORTED_RELAY_VERSION.fullmatch(relay_version) is None:
+    match = _STABLE_RELAY_VERSION.fullmatch(relay_version)
+    if match is None or not is_supported_relay_version(
+        (int(match[1]), int(match[2]), int(match[3]))
+    ):
         raise RuntimeError(
             f"Hermes Relay telemetry requires nemo-relay 0.9 or 0.10; found {relay_version}"
         )

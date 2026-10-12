@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import types
@@ -1495,6 +1496,23 @@ def _install_relay_doubles(
         middleware_module,
     )
     return install, scope_metadata
+
+
+@pytest.mark.parametrize(
+    ("relay_version", "message"),
+    [
+        ("0.8.9", "nemo-relay must satisfy >=0.9,<0.11"),
+        ("0.11.0", "nemo-relay must satisfy >=0.9,<0.11"),
+        ("0.10.0rc1", "the installed nemo-relay version is not a stable release"),
+    ],
+)
+def test_relay_version_rejects_unsupported_release(monkeypatch, relay_version, message):
+    monkeypatch.setattr(
+        nooa_telemetry.importlib.metadata, "version", lambda _name: relay_version
+    )
+
+    with pytest.raises(RuntimeError, match=re.escape(message)):
+        nooa_telemetry._relay_version()
 
 
 async def test_relay_lifecycle_correlates_once_and_collects_current_artifacts(
