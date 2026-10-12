@@ -14,8 +14,8 @@ pub mod schema;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
 pub use agent_execution::{
-    AgentArtifact, AgentModelUsage, AgentRunError, AgentRunRequest, AgentRunResult,
-    AgentRunResultValidationError, AgentRunStatus, AgentUsage,
+    AgentArtifact, AgentRunError, AgentRunRequest, AgentRunResult, AgentRunResultValidationError,
+    AgentRunStatus, AgentUsage,
 };
 pub use config::{
     AdapterConfigField, AdapterConfigSupport, AdapterDescriptor, AdapterInspection, AdapterKind,

@@ -186,10 +186,7 @@ pub struct RunUsage {
     /// Cached input tokens consumed by the invocation, when reported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_input_tokens: Option<u64>,
-    /// Whether input_tokens already includes cached_input_tokens and any
-    /// cache-write input tokens the adapter reported; absent means unknown.
-    /// RunUsage does not report cache-write input tokens, so input_tokens plus
-    /// cached_input_tokens can understate total input when this is false.
+    /// Whether input_tokens already includes cached_input_tokens; absent means unknown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens_include_cache: Option<bool>,
     /// Output tokens produced by the invocation.
@@ -3455,7 +3452,38 @@ mod tests {
     },
     "usage": {
       "type": "object",
-      "properties": {"provider": {"type": "string"}},
+      "properties": {
+        "provider": {"type": "string"},
+        "nemo_fabric.detailed_token_usage.v1": {
+          "type": "object",
+          "properties": {
+            "input_tokens": {"type": "integer", "minimum": 0},
+            "cached_input_tokens": {"type": "integer", "minimum": 0},
+            "cache_write_input_tokens": {"type": "integer", "minimum": 0},
+            "input_tokens_include_cache": {"type": "boolean"},
+            "output_tokens": {"type": "integer", "minimum": 0},
+            "reasoning_tokens": {"type": "integer", "minimum": 0},
+            "output_tokens_include_reasoning": {"type": "boolean"},
+            "total_tokens": {"type": "integer", "minimum": 0},
+            "peak_request_input_tokens": {"type": "integer", "minimum": 0},
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "model": {"type": "string", "minLength": 1},
+                  "provider": {"type": "string", "minLength": 1},
+                  "input_tokens": {"type": "integer", "minimum": 0},
+                  "reasoning_tokens": {"type": "integer", "minimum": 0}
+                },
+                "required": ["model"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
       "additionalProperties": false
     },
     "artifact": {
@@ -3663,21 +3691,30 @@ for line in sys.stdin:
                 "usage": {
                     "input_tokens": 3,
                     "cached_input_tokens": 1,
-                    "cache_write_input_tokens": 2,
                     "input_tokens_include_cache": True,
                     "output_tokens": 5,
-                    "reasoning_tokens": 4,
-                    "output_tokens_include_reasoning": True,
                     "total_tokens": 8,
-                    "peak_request_input_tokens": 3,
                     "cost_usd": 0.25,
-                    "models": [{
-                        "model": "test-model",
+                    "extensions": {
                         "provider": "fake",
-                        "input_tokens": 3,
-                        "reasoning_tokens": 4,
-                    }],
-                    "extensions": {"provider": "fake"},
+                        "nemo_fabric.detailed_token_usage.v1": {
+                            "input_tokens": 20,
+                            "cached_input_tokens": 5,
+                            "cache_write_input_tokens": 3,
+                            "input_tokens_include_cache": False,
+                            "output_tokens": 5,
+                            "reasoning_tokens": 4,
+                            "output_tokens_include_reasoning": False,
+                            "total_tokens": 37,
+                            "peak_request_input_tokens": 18,
+                            "models": [{
+                                "model": "test-model",
+                                "provider": "fake",
+                                "input_tokens": 20,
+                                "reasoning_tokens": 4,
+                            }],
+                        },
+                    },
                 },
             }
         else:
@@ -4708,7 +4745,7 @@ for line in sys.stdin:
     }
 
     #[test]
-    fn local_host_accepts_detailed_usage_without_changing_run_usage() {
+    fn local_host_preserves_detailed_usage_in_metadata() {
         let (root, plan) = local_host_plan("detailed_usage_result");
 
         let result = run_plan(&plan, RunRequest::text("usage")).expect("normalized result");
@@ -4724,22 +4761,31 @@ for line in sys.stdin:
                 output_tokens: Some(5),
                 total_tokens: Some(8),
                 cost_usd: Some(0.25),
-                metadata: BTreeMap::from([("provider".to_string(), serde_json::json!("fake"))]),
+                metadata: BTreeMap::from([
+                    ("provider".to_string(), serde_json::json!("fake")),
+                    (
+                        "nemo_fabric.detailed_token_usage.v1".to_string(),
+                        serde_json::json!({
+                            "input_tokens": 20,
+                            "cached_input_tokens": 5,
+                            "cache_write_input_tokens": 3,
+                            "input_tokens_include_cache": false,
+                            "output_tokens": 5,
+                            "reasoning_tokens": 4,
+                            "output_tokens_include_reasoning": false,
+                            "total_tokens": 37,
+                            "peak_request_input_tokens": 18,
+                            "models": [{
+                                "model": "test-model",
+                                "provider": "fake",
+                                "input_tokens": 20,
+                                "reasoning_tokens": 4
+                            }]
+                        }),
+                    ),
+                ]),
             }
         );
-        assert_eq!(
-            serde_json::to_value(&usage).expect("serialize run usage"),
-            serde_json::json!({
-                "input_tokens": 3,
-                "cached_input_tokens": 1,
-                "input_tokens_include_cache": true,
-                "output_tokens": 5,
-                "total_tokens": 8,
-                "cost_usd": 0.25,
-                "metadata": {"provider": "fake"}
-            })
-        );
-
         let _ = fs::remove_dir_all(root);
     }
 

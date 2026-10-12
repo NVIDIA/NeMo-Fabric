@@ -10,6 +10,7 @@ import json
 import shlex
 import uuid
 import warnings
+from collections.abc import Mapping
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
@@ -63,6 +64,7 @@ INSTALL_ENV_NAMES = {
 }
 HARBOR_ARTIFACT_ROOT = "/logs/agent/fabric-artifacts"
 HARBOR_DEFAULT_WORKSPACE = "/testbed"
+_DETAILED_TOKEN_USAGE_V1_KEY = "nemo_fabric.detailed_token_usage.v1"
 
 try:
     from harbor.agents.base import BaseAgent
@@ -836,6 +838,44 @@ def raise_run_failure(status: str, error: dict[str, Any] | None) -> NoReturn:
     raise RuntimeError(message)
 
 
+def _usage_counter(usage: Mapping[str, Any], field: str) -> int | None:
+    value = usage.get(field)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _inclusive_token_count(
+    usage: Mapping[str, Any],
+    *,
+    primary_field: str,
+    included_field: str,
+    component_fields: tuple[str, ...],
+) -> int | None:
+    primary = _usage_counter(usage, primary_field)
+    if primary is None:
+        return None
+    included = usage.get(included_field)
+    if included is True:
+        return primary
+    components = [_usage_counter(usage, field) for field in component_fields]
+    if included is False:
+        if any(value is None for value in components):
+            return None
+        return primary + sum(cast(int, value) for value in components)
+    if included is None and all(value == 0 for value in components):
+        return primary
+    return None
+
+
+def _detailed_token_usage(usage: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    metadata = usage.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return None
+    detailed = metadata.get(_DETAILED_TOKEN_USAGE_V1_KEY)
+    return detailed if isinstance(detailed, Mapping) else None
+
+
 def populate_context_from_result(
     context: AgentContext, path: Path
 ) -> RunResult | FabricRunnerFailure:
@@ -866,24 +906,63 @@ def populate_context_from_result(
     }
     if result.usage is not None:
         usage = result.usage
-        input_tokens = usage.get("input_tokens")
-        cached_input_tokens = usage.get("cached_input_tokens")
-        includes_cache = usage.get("input_tokens_include_cache")
-        if includes_cache is False:
-            input_tokens = (
-                input_tokens + cached_input_tokens
-                if input_tokens is not None and cached_input_tokens is not None
-                else None
+        detailed_usage = _detailed_token_usage(usage)
+        has_detailed_input = detailed_usage is not None and any(
+            field in detailed_usage
+            for field in (
+                "input_tokens",
+                "cached_input_tokens",
+                "cache_write_input_tokens",
+                "input_tokens_include_cache",
             )
-        elif includes_cache is None and cached_input_tokens != 0:
-            # Neither missing cache nor an unspecified convention proves an inclusive total.
-            input_tokens = None
+        )
+        if has_detailed_input:
+            input_tokens = _inclusive_token_count(
+                cast(Mapping[str, Any], detailed_usage),
+                primary_field="input_tokens",
+                included_field="input_tokens_include_cache",
+                component_fields=("cached_input_tokens", "cache_write_input_tokens"),
+            )
+            cached_input_tokens = _usage_counter(
+                cast(Mapping[str, Any], detailed_usage), "cached_input_tokens"
+            )
+        else:
+            input_tokens = usage.get("input_tokens")
+            cached_input_tokens = usage.get("cached_input_tokens")
+            includes_cache = usage.get("input_tokens_include_cache")
+            if includes_cache is False:
+                input_tokens = (
+                    input_tokens + cached_input_tokens
+                    if input_tokens is not None and cached_input_tokens is not None
+                    else None
+                )
+            elif includes_cache is None and cached_input_tokens != 0:
+                # Neither missing cache nor an unspecified convention proves an inclusive total.
+                input_tokens = None
+
+        has_detailed_output = detailed_usage is not None and any(
+            field in detailed_usage
+            for field in (
+                "output_tokens",
+                "reasoning_tokens",
+                "output_tokens_include_reasoning",
+            )
+        )
+        if has_detailed_output:
+            output_tokens = _inclusive_token_count(
+                cast(Mapping[str, Any], detailed_usage),
+                primary_field="output_tokens",
+                included_field="output_tokens_include_reasoning",
+                component_fields=("reasoning_tokens",),
+            )
+        else:
+            output_tokens = usage.get("output_tokens")
         if input_tokens is not None:
             context.n_input_tokens = input_tokens
         if cached_input_tokens is not None:
             context.n_cache_tokens = cached_input_tokens
-        if usage.get("output_tokens") is not None:
-            context.n_output_tokens = usage["output_tokens"]
+        if output_tokens is not None:
+            context.n_output_tokens = output_tokens
         if usage.get("cost_usd") is not None:
             context.cost_usd = usage["cost_usd"]
     return result
