@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import nemo_fabric._native as native
@@ -31,7 +32,25 @@ async def test_native_sdk(hermes_shim_agent_dir: Path):
     await smoke(Fabric(), hermes_shim_agent_dir)
 
 
-async def test_native_deadline_keeps_type_and_evicts_runtime(hermes_shim_agent_dir):
+def _process_running(pid: int) -> bool:
+    if sys.platform == "win32":
+        tasks = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return f'"{pid}"' in tasks.stdout
+    state = subprocess.run(
+        ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True
+    ).stdout.strip()
+    # Orphans can linger as zombies until reaped; they no longer run.
+    return bool(state) and not state.startswith("Z")
+
+
+async def test_native_deadline_keeps_type_and_evicts_runtime(
+    hermes_shim_agent_dir, tmp_path
+):
     config = FabricConfig.from_mapping(
         {
             "metadata": {"name": "deadline-probe"},
@@ -40,14 +59,29 @@ async def test_native_deadline_keeps_type_and_evicts_runtime(hermes_shim_agent_d
                 "resolution": "preinstalled",
             },
             "discovery": {"local_paths": ["adapters"]},
-            "runtime": {"timeout_seconds": 1},
+            # Leave the host time to start its children on slow runners.
+            "runtime": {"timeout_seconds": 5},
         }
     )
     runtime = await Fabric().start_runtime(config, base_dir=hermes_shim_agent_dir)
+    pid_file = tmp_path / "children.pids"
     with pytest.raises(FabricRuntimeError) as caught:
         await runtime.invoke(
-            request=RunRequest(input="hang", context={"delay_seconds": 30})
+            request=RunRequest(
+                input="hang",
+                context={"delay_seconds": 30, "child_pid_file": str(pid_file)},
+            )
         )
+    child, grandchild = (int(pid) for pid in pid_file.read_text().split())
+    # Only a Windows job object reaches a grandchild whose launcher exited.
+    killed = [child, grandchild] if sys.platform == "win32" else [child]
+    deadline = time.monotonic() + 5
+    while any(map(_process_running, killed)) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    survivors = [pid for pid in (child, grandchild) if _process_running(pid)]
+    for pid in survivors:
+        os.kill(pid, 9)
+    assert not set(survivors) & set(killed), f"host children survived: {survivors}"
     assert caught.value.code == "timeout"
     assert caught.value.stage == "invoke"
     assert isinstance(caught.value.__cause__, TimeoutError)

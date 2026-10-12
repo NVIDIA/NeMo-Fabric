@@ -236,3 +236,23 @@ def test_typed_session_root_round_trips_in_adapter_request():
     assert "relay_session_root" not in AgentRunRequest(input="hello").to_mapping()
     with pytest.raises(ContractValidationError):
         AgentRunRequest(input="hello", relay_session_root=123)
+
+
+@pytest.mark.parametrize("deadline", [-1, True])
+def test_runtime_context_rejects_invalid_deadlines(deadline):
+    with pytest.raises(ContractValidationError, match="deadline_millis"):
+        RuntimeContext.from_mapping(
+            {
+                "runtime_id": "runtime-1",
+                "invocation_id": "invocation-1",
+                "request_id": "request-1",
+                "environment": {
+                    "environment_id": "environment-1",
+                    "provider": "local",
+                    "control_location": "external_control",
+                    "ownership": "caller_owned",
+                },
+                "artifacts": {"artifacts": []},
+                "deadline_millis": deadline,
+            }
+        )

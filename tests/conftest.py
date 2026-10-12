@@ -20,6 +20,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+@pytest.fixture(name="deadline_millis")
+def deadline_millis_fixture():
+    return int((time.time() + 3600) * 1000)
+
+
 @pytest.fixture(name="requires_harbor", scope="session")
 def requires_harbor_fixture():
     try:
