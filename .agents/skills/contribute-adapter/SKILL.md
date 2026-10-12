@@ -57,7 +57,7 @@ Keep descriptor claims, implementation, focused tests, public documentation,
 catalog entries, and packaged metadata synchronized. Start with the narrowest
 truthful capability set.
 
-For usage changes, verify invocation-local accounting through the adapter contract and consumer SDK, including warm-session deltas, unknown counters, cache semantics, and unsuccessful results. Keep generated schemas and language bindings in parity. Preserve the closed `fabric.adapter/v1alpha2` `AgentUsage` shape; carry detailed cache-write, reasoning, peak request, and per-model data in the descriptor-declared `usage.extensions["nemo_fabric.detailed_token_usage.v1"]` object until a new adapter contract revision negotiates those fields.
+For usage changes, verify invocation-local accounting through the adapter contract and consumer SDK, including warm-session deltas, unknown counters, cache semantics, and unsuccessful results. Keep generated schemas and language bindings in parity. Preserve the closed `fabric.adapter/v1alpha2` `AgentUsage` shape; carry detailed cache-write, reasoning, peak request, and per-model data in the descriptor-declared `usage.extensions["nemo_fabric.detailed_token_usage.v1"]` object until a new adapter contract revision negotiates those fields. Consumers treat any detailed field for an input or output dimension as selecting the detailed counters for that dimension, so require complete, internally consistent counters instead of relying on the top-level view as a fallback.
 
 For `instructions.system`, keep `config.system_instruction_modes`, planning
 behavior, direct adapter validation, and target-native composition synchronized.

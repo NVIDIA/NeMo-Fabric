@@ -907,6 +907,8 @@ def populate_context_from_result(
     if result.usage is not None:
         usage = result.usage
         detailed_usage = _detailed_token_usage(usage)
+        # Do not mix top-level and detailed counters within one dimension. Any
+        # dimension-specific detailed field selects that view, even if incomplete.
         has_detailed_input = detailed_usage is not None and any(
             field in detailed_usage
             for field in (

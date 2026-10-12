@@ -198,11 +198,24 @@ def test_cache_semantics_and_unknown_values(
             5,
             0,
         ),
-        ({"reasoning_tokens": 4}, 999, None, 999),
+        pytest.param(
+            {"cache_write_input_tokens": 3},
+            None,
+            999,
+            None,
+            id="cache-write-only-selects-detailed-input",
+        ),
+        pytest.param(
+            {"reasoning_tokens": 4},
+            999,
+            None,
+            999,
+            id="reasoning-only-selects-detailed-output",
+        ),
         ({"models": []}, 999, 999, 999),
     ],
 )
-def test_detailed_usage_reports_only_complete_inclusive_totals(
+def test_detailed_usage_is_authoritative_per_dimension(
     result_path,
     detailed_usage,
     expected_input,
