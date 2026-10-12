@@ -22,4 +22,8 @@ export interface AgentRunRequest {
    * Request payload for the adapter target.
    */
   input: JsonValue;
+  /**
+   * UUID propagation root shared across conversation turns.
+   */
+  relay_session_root?: string | null;
 }

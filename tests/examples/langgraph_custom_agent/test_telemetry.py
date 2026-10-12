@@ -80,7 +80,7 @@ def test_relay_disabled_path_does_not_import_relay(tmp_path, monkeypatch):
     assert imported == []
 
 
-def test_partial_relay_config_defaults_to_observability_version_3(tmp_path):
+def test_partial_relay_config_defaults_to_observability_version_4(tmp_path):
     config_path = tmp_path / "relay-config.json"
     config_path.write_text('{"relay":{"config":{}}}', encoding="utf-8")
 
@@ -97,13 +97,14 @@ def test_partial_relay_config_defaults_to_observability_version_3(tmp_path):
             {
                 "kind": "observability",
                 "enabled": True,
-                "config": {"version": 3},
+                "config": {"version": 4},
             }
         ],
     }
 
 
-def test_uuid_request_id_seeds_relay_propagation(tmp_path, monkeypatch):
+@pytest.mark.parametrize("session_root", [None, "018f47a4-0000-7d94-8e61-9f0f89b5d312"])
+def test_uuid_request_id_seeds_relay_propagation(tmp_path, monkeypatch, session_root):
     request_id = "018f47a4-3af7-7d94-8e61-9f0f89b5d312"
     request_scope = MagicMock()
     request_context = MagicMock(
@@ -157,12 +158,13 @@ def test_uuid_request_id_seeds_relay_propagation(tmp_path, monkeypatch):
             base_dir=tmp_path,
             agent_name="email-phishing",
             model_name="test-model",
+            session_root=session_root,
         ):
             pass
 
     asyncio.run(run())
 
-    request_context.assert_called_once_with(request_id)
+    request_context.assert_called_once_with(request_id, session_root)
     request_scope.__enter__.assert_called_once_with()
     request_scope.__exit__.assert_called_once()
     scope_api.scope.assert_called_once_with(
@@ -191,7 +193,7 @@ def test_relay_observes_graph_and_model_backed_node(tmp_path, monkeypatch):
                                 "kind": "observability",
                                 "enabled": True,
                                 "config": {
-                                    "version": 3,
+                                    "version": 4,
                                     "atof": {
                                         "enabled": True,
                                         "sinks": [
@@ -246,7 +248,7 @@ def test_relay_observes_graph_and_model_backed_node(tmp_path, monkeypatch):
             == "test-model"
         )
         assert telemetry.plugin_config["version"] == 1
-        assert telemetry.plugin_config["components"][0]["config"]["version"] == 3
+        assert telemetry.plugin_config["components"][0]["config"]["version"] == 4
         return telemetry.artifacts()
 
     artifacts = asyncio.run(run("invocation-1"))
@@ -292,7 +294,7 @@ def test_relay_rejects_observability_config_version_2(tmp_path):
 
     with pytest.raises(
         ValueError,
-        match="unsupported NeMo Relay observability config version 2; expected version 3",
+        match="unsupported NeMo Relay observability config version 2; expected version 4",
     ):
         _load_plugin_config(
             _context(config_path),

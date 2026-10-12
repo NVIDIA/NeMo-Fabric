@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+from contextlib import asynccontextmanager
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
@@ -20,6 +21,7 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 
 from examples.langgraph_custom_agent.adapter.configuration import AgentDependencies
 from examples.langgraph_custom_agent.adapter import runtime as runtime_module
+from examples.langgraph_custom_agent.adapter.telemetry import InvocationTelemetry
 
 
 def invocation(
@@ -158,6 +160,68 @@ def test_runtime_continuation_state_is_isolated_between_runtimes(
     assert "previous_classification" not in isolated.output
     asyncio.run(first_runtime.stop())
     asyncio.run(second_runtime.stop())
+
+
+@pytest.mark.parametrize(
+    ("session_root", "expected"),
+    [
+        (
+            "018f47a4-0000-7d94-8e61-9f0f89b5d312",
+            "018f47a4-0000-7d94-8e61-9f0f89b5d312",
+        ),
+        ("agent-session-1", "agent-session-1"),
+        (None, None),
+    ],
+)
+def test_invoke_forwards_the_request_session_root_to_telemetry(
+    monkeypatch,
+    runtime_context_factory,
+    agent_config_mapping,
+    session_root,
+    expected,
+):
+    seen: list[str | None] = []
+
+    @asynccontextmanager
+    async def fake_observe(_context, *, session_root=None, **_kwargs):
+        seen.append(session_root)
+        yield InvocationTelemetry()
+
+    monkeypatch.setattr(runtime_module, "observe_invocation", fake_observe)
+    monkeypatch.setattr(
+        runtime_module,
+        "resolve_agent_dependencies",
+        lambda _config: AgentDependencies(
+            FakeListChatModel(responses=["explanation"]), "Explain the assessment."
+        ),
+    )
+    runtime = runtime_module.EmailPhishingRuntime()
+    asyncio.run(
+        runtime.start(
+            {
+                "config": AgentConfig.from_mapping(agent_config_mapping),
+                "runtime_context": runtime_context_factory(
+                    "runtime-1", "runtime-start"
+                ),
+            }
+        )
+    )
+
+    asyncio.run(
+        runtime.invoke(
+            AgentRunRequest(
+                input="Team lunch is at noon.",
+                relay_session_root=session_root,
+                context={"relay_session_root": "ignored", "session_id": "ignored"},
+            ),
+            RuntimeContext.from_mapping(
+                runtime_context_factory("runtime-1", "invocation-1")
+            ),
+        )
+    )
+
+    assert seen == [expected]
+    asyncio.run(runtime.stop())
 
 
 def test_stop_discards_runtime_continuation_state(

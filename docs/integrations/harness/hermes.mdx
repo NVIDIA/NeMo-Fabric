@@ -32,8 +32,9 @@ NeMo Fabric, install only the bare adapter in the Hermes Agent environment:
 python -m pip install nemo-fabric-adapters-hermes
 ```
 
-The adapter package provides `relay` and `full` extras for Relay 0.9. Use them
-only with a Hermes Agent checkout that supports Relay 0.9; the published release
+The adapter package provides `relay` and `full` extras for Relay
+(`nemo-relay>=0.9,<0.11`). Use them only with a Hermes Agent checkout that
+supports Relay 0.9 or 0.10; the published release
 requires a conflicting Relay version. Neither extra installs Hermes Agent. If
 Relay telemetry is enabled with an incompatible Hermes or Relay installation,
 the adapter fails at startup with a compatibility error.

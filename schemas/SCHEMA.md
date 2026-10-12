@@ -113,7 +113,7 @@ descriptor schema.
 - `sdk/run-plan`: executable plan containing the canonical northbound config, its
   projected southbound `AgentConfig`, the selected adapter, and derived
   execution metadata.
-- `sdk/run-request`: northbound per-invocation request and input.
+- `sdk/run-request`: northbound per-invocation request and input, including the optional string `relay_session_root`. Core forwards this field as the optional typed `AgentRunRequest.relay_session_root` field. Context keys do not control Relay propagation. Deep Agents and mini-SWE-agent use a usable UUID as their Relay propagation root; unusable values preserve the per-request fallback.
 
 ### Runtime Lifecycle
 

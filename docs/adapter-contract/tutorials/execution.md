@@ -137,6 +137,15 @@ for the exact shape. Runtime identity belongs in `RuntimeContext`, not in
 `AgentConfig.workflow`. Per-invocation task input belongs in the request, not in
 workflow settings.
 
+For in-process Relay telemetry, the optional typed
+`AgentRunRequest.relay_session_root` carries the caller's conversation UUID.
+Pass it directly to `relay_request_context(context.request_id,
+request.relay_session_root)` when opening the invocation Agent scope. A usable
+root groups trajectories from separate invocations under one Relay session.
+Context keys do not control propagation. Omit the field to retain per-request
+behavior. Runtime and adapter-contract versions must support the field when
+it is supplied.
+
 **Success Check**: The adapter reads correlation and environment context from
 `RuntimeContext` and treats every ID as opaque.
 

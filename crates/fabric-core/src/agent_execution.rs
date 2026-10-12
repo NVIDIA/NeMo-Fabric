@@ -17,6 +17,9 @@ use thiserror::Error;
 pub struct AgentRunRequest {
     /// Request payload for the adapter target.
     pub input: Value,
+    /// UUID propagation root shared across conversation turns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relay_session_root: Option<String>,
     /// Caller-provided task, rollout, workflow, or application context.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub context: BTreeMap<String, Value>,

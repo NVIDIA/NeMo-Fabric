@@ -75,7 +75,7 @@ def make_job(
                         {
                             "kind": "observability",
                             "enabled": True,
-                            "config": {"version": 3},
+                            "config": {"version": 4},
                         }
                     ],
                 }
@@ -135,7 +135,7 @@ def test_verify_accepts_rewarded_relay_run(tmp_path: Path):
         "atif_schema_version": "ATIF-v1.7",
         "atif_steps": 1,
         "relay_config_version": 1,
-        "observability_config_version": 3,
+        "observability_config_version": 4,
         "root_invocations": 1,
     }
 

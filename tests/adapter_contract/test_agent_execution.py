@@ -66,6 +66,7 @@ def test_agent_run_request_contains_only_southbound_request_fields():
     }
     assert {item.name for item in fields(AgentRunRequest)} == {
         "input",
+        "relay_session_root",
         "context",
         "extensions",
     }
@@ -225,3 +226,13 @@ def test_contract_dataclasses_validate_assignment():
 def test_agent_artifact_rejects_unsafe_paths(path: str):
     with pytest.raises(ContractValidationError, match="artifact path must be"):
         AgentArtifact(name="output", kind="file", path=path)
+
+
+def test_typed_session_root_round_trips_in_adapter_request():
+    root = "018f47a4-3af7-7d94-8e61-9f0f89b5d312"
+    request = AgentRunRequest(input="hello", relay_session_root=root)
+    assert request.to_mapping() == {"input": "hello", "relay_session_root": root}
+    assert AgentRunRequest.from_mapping(request.to_mapping()) == request
+    assert "relay_session_root" not in AgentRunRequest(input="hello").to_mapping()
+    with pytest.raises(ContractValidationError):
+        AgentRunRequest(input="hello", relay_session_root=123)

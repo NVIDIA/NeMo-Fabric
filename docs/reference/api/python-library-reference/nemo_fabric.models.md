@@ -1780,7 +1780,7 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `version` | `Literal[3]` | No | `3` | — | — |
+| `version` | `Literal[4]` | No | `4` | — | — |
 | `atof` | `RelayAtofConfig \| dict[str, Any] \| None` | No | `None` | — | — |
 | `atif` | `RelayAtifConfig \| dict[str, Any] \| None` | No | `None` | — | — |
 | `opentelemetry` | `RelayOpenTelemetryConfig \| None` | No | `None` | — | — |
@@ -2550,6 +2550,7 @@ The model defines the following fields:
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
 | `input` | `Any` | No | `''` | — | — |
+| `relay_session_root` | `str \| None` | No | `None` | — | UUID propagation root shared across conversation turns; unusable values fall back to the request ID. |
 | `request_id` | `str` | No | `<generated>` | `MinLen(min_length=1)` | — |
 | `context` | `dict[str, Any]` | No | `dict()` | — | — |
 | `overrides` | `dict[str, Any] \| None` | No | `None` | — | — |

@@ -15,7 +15,7 @@ import {
   loadRelayPluginConfig,
   normalizeRelayOutputDirs,
   prepareRelayAtifMatchers,
-  validateRelayObservabilityV3,
+  validateRelayObservability,
   writeRelayConfigs,
 } from "../dist/relay-config.js";
 import {
@@ -68,7 +68,7 @@ function observability(config) {
       {
         kind: "observability",
         enabled: true,
-        config: { version: 3, ...config },
+        config: { version: 4, ...config },
       },
     ],
   };
@@ -85,21 +85,22 @@ class MockChild extends EventEmitter {
   }
 }
 
-test("accepts only stable NeMo Relay 0.9 CLI versions", async () => {
-  for (const version of ["0.9.0", "0.9.7", "0.9.0+build.4"]) {
+test("accepts only stable NeMo Relay 0.9 and 0.10 CLI versions", async () => {
+  for (const version of ["0.9.0", "0.9.4", "0.10.0", "0.10.7", "0.10.0+build.4"]) {
     const contract = await relayCliContract("nemo-relay", async () => ({
       stdout: `nemo-relay ${version}\n`,
       exitCode: 0,
     }));
-    assert.deepEqual(contract.version, [0, 9, Number(version.split(".")[2].split("+")[0])]);
+    const [, minor, patch] = version.split("+")[0].split(".").map(Number);
+    assert.deepEqual(contract.version, [0, minor, patch]);
   }
-  for (const version of ["0.8.9", "1.0.0", "0.9.0-rc.1"]) {
+  for (const version of ["0.8.9", "0.11.0", "1.0.0", "0.9.0-rc.1", "0.10.0-rc.1"]) {
     await assert.rejects(
       relayCliContract("nemo-relay", async () => ({
         stdout: `nemo-relay ${version}\n`,
         exitCode: 0,
       })),
-      />=0\.9\.0,<0\.10\.0/,
+      />=0\.9\.0,<0\.11\.0/,
     );
   }
   await assert.rejects(
@@ -249,7 +250,7 @@ kind = "observability"
 enabled = true
 
 [components.config]
-version = 3
+version = 4
 
 [components.config.atof]
 enabled = true
@@ -275,7 +276,7 @@ kind = "observability"
 enabled = true
 
 [components.config]
-version = 3
+version = 4
 
 [components.config.atif]
 enabled = true
@@ -297,7 +298,7 @@ kind = "observability"
 enabled = true
 
 [components.config]
-version = 3
+version = 4
 
 [components.config.opentelemetry]
 enabled = true
@@ -326,7 +327,7 @@ kind = "observability"
 enabled = true
 
 [components.config]
-version = 3
+version = 4
 
 [components.config.opentelemetry]
 enabled = true
@@ -358,16 +359,16 @@ endpoint = "http://127.0.0.1:4320/v1/traces"
 
 test("rejects removed and malformed Relay OpenTelemetry shapes", () => {
   assert.throws(
-    () => validateRelayObservabilityV3(observability({ openinference: {} })),
+    () => validateRelayObservability(observability({ openinference: {} })),
     /removed the standalone openinference section/,
   );
   assert.throws(
-    () => validateRelayObservabilityV3(observability({ opentelemetry: { enabled: true } })),
+    () => validateRelayObservability(observability({ opentelemetry: { enabled: true } })),
     /requires at least one endpoint/,
   );
   assert.throws(
     () =>
-      validateRelayObservabilityV3(
+      validateRelayObservability(
         observability({
           opentelemetry: {
             enabled: true,
@@ -385,10 +386,10 @@ test("checks duplicate enabled Relay component kinds only when writing plugin co
   pluginConfig.components.push({
     kind: "observability",
     enabled: true,
-    config: { version: 3 },
+    config: { version: 4 },
   });
 
-  validateRelayObservabilityV3(pluginConfig);
+  validateRelayObservability(pluginConfig);
 
   const previous = process.env.FABRIC_RELAY_CONFIG_PATH;
   process.env.FABRIC_RELAY_CONFIG_PATH = join(root, "relay.json");
@@ -400,7 +401,7 @@ test("checks duplicate enabled Relay component kinds only when writing plugin co
 
     pluginConfig.components[0].config.version = 2;
     assert.throws(
-      () => validateRelayObservabilityV3(pluginConfig),
+      () => validateRelayObservability(pluginConfig),
       /unsupported NeMo Relay observability config version 2/,
     );
     await assert.rejects(
@@ -561,9 +562,9 @@ test("ignores disabled observability validation shapes at load time", async () =
       {
         kind: "observability",
         enabled: false,
-        config: { version: 3, opentelemetry: { endpoint: "http://localhost:4318/v1/traces" } },
+        config: { version: 4, opentelemetry: { endpoint: "http://localhost:4318/v1/traces" } },
       },
-      { kind: "observability", enabled: false, config: { version: 3, openinference: {} } },
+      { kind: "observability", enabled: false, config: { version: 4, openinference: {} } },
     ]) {
       const expected = { version: 1, components: [component] };
       await writeFile(configPath, JSON.stringify({ relay: { config: expected } }), "utf8");
@@ -591,7 +592,7 @@ test("writes the complete enabled Relay plugin document without mutation", async
         {
           kind: "observability",
           enabled: true,
-          config: { version: 3, atif: { enabled: false } },
+          config: { version: 4, atif: { enabled: false } },
         },
         {
           kind: "model_pricing",
@@ -822,7 +823,7 @@ test("reserves process-wide Relay state before asynchronous setup can interleave
       return "/opt/bin/nemo-relay";
     },
     async checkContract() {
-      return { version: [0, 9, 0] };
+      return { version: [0, 10, 0] };
     },
     async loadPluginConfig() {
       return { version: 1, components: [] };
@@ -888,7 +889,7 @@ test("keeps non-Relay startup inert and allows one Relay runtime per process", a
   };
   process.env.NEMO_RELAY_PI_GATEWAY_URL = "http://ambient.invalid";
   process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM = "https://ambient.invalid";
-  process.env.FABRIC_NEMO_RELAY_COMMAND = "/opt/relay-0.9/bin/nemo-relay";
+  process.env.FABRIC_NEMO_RELAY_COMMAND = "/opt/relay-0.10/bin/nemo-relay";
   process.env.FABRIC_TEST_NEMO_RELAY_COMMAND = "/opt/test/bin/nemo-relay";
   try {
     const unexpected = () => {
@@ -910,11 +911,11 @@ test("keeps non-Relay startup inert and allows one Relay runtime per process", a
     const factory = new PiRelayFactory({
       async resolveCommand(baseDir, command) {
         assert.equal(baseDir, root);
-        assert.equal(command, "/opt/relay-0.9/bin/nemo-relay");
+        assert.equal(command, "/opt/relay-0.10/bin/nemo-relay");
         return "/opt/bin/nemo-relay";
       },
       async checkContract() {
-        return { version: [0, 9, 0] };
+        return { version: [0, 10, 0] };
       },
       async loadPluginConfig() {
         return { version: 1, components: [] };
@@ -1014,7 +1015,7 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
       }).start(input, model),
       (error) =>
         error.code === "pi_relay_unavailable" &&
-        error.message.includes('Install "nemo-relay-cli-bin>=0.9.0,<0.10.0"') &&
+        error.message.includes('Install "nemo-relay-cli-bin>=0.9.0,<0.11.0"') &&
         error.metadata.relay_error === "missing",
     );
     await assert.rejects(
@@ -1034,10 +1035,10 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
           return "/opt/bin/nemo-relay";
         },
         async checkContract() {
-          return { version: [0, 9, 0] };
+          return { version: [0, 10, 0] };
         },
         async loadPluginConfig() {
-          throw new Error("unsupported NeMo Relay observability config version 2; expected version 3");
+          throw new Error("unsupported NeMo Relay observability config version 2; expected version 4");
         },
       }).start(input, model),
       (error) =>
@@ -1051,7 +1052,7 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
           return "/opt/bin/nemo-relay";
         },
         async checkContract() {
-          return { version: [0, 9, 0] };
+          return { version: [0, 10, 0] };
         },
         async loadPluginConfig() {
           return { version: 1, components: [] };
@@ -1080,7 +1081,7 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
           return "/opt/bin/nemo-relay";
         },
         async checkContract() {
-          return { version: [0, 9, 0] };
+          return { version: [0, 10, 0] };
         },
         async loadPluginConfig() {
           return { version: 1, components: [] };

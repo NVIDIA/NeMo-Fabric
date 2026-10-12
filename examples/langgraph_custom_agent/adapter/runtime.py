@@ -15,6 +15,7 @@ from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import utils as common_utils
 
 from examples.langgraph_custom_agent.adapter.configuration import (
     DEFAULT_MAX_HISTORY_ENTRIES,
@@ -126,6 +127,7 @@ class EmailPhishingRuntime:
             base_dir=self._base_dir,
             agent_name=self._agent_name,
             model_name=self._model_name,
+            session_root=request.relay_session_root,
         ) as telemetry:
             result = await self._graph.ainvoke(
                 {

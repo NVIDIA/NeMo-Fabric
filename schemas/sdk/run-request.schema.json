@@ -14,6 +14,13 @@
     "overrides": {
       "description": "Per-invocation overrides allowed by the resolved config."
     },
+    "relay_session_root": {
+      "description": "Optional UUID propagation root shared across conversation turns.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "request_id": {
       "description": "Request id.",
       "type": "string"

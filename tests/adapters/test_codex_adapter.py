@@ -282,7 +282,7 @@ def atif_plugin_config(output_directory: Path) -> dict[str, Any]:
             {
                 "kind": "observability",
                 "config": {
-                    "version": 3,
+                    "version": 4,
                     "atif": {
                         "enabled": True,
                         "output_directory": str(output_directory),
@@ -1622,7 +1622,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
             "components": [
                 {
                     "kind": "observability",
-                    "config": {"version": 3, "atif": {"enabled": True}},
+                    "config": {"version": 4, "atif": {"enabled": True}},
                 }
             ],
         }
@@ -1642,7 +1642,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
     assert relay.gateway.executable == executable
     assert relay.gateway.url == "http://127.0.0.1:43210"
     assert relay.gateway.openai_base_url == "https://acme.example/v1"
-    assert relay.plugin_config["components"][0]["config"]["version"] == 3
+    assert relay.plugin_config["components"][0]["config"]["version"] == 4
     resolve.assert_called_once_with(
         Path(codex_payload["base_dir"]).resolve(),
         "nemo-relay",
@@ -1663,7 +1663,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
             "components": [
                 {
                     "kind": "observability",
-                    "config": {"version": 3, "atif": {"enabled": True}},
+                    "config": {"version": 4, "atif": {"enabled": True}},
                 }
             ],
         },
@@ -1707,7 +1707,7 @@ def test_prepare_relay_rejects_v2_observability_config(
     assert caught.value.code == "codex_relay_configuration_failed"
     assert isinstance(caught.value.__cause__, ValueError)
     assert str(caught.value.__cause__) == (
-        "unsupported NeMo Relay observability config version 2; expected version 3"
+        "unsupported NeMo Relay observability config version 2; expected version 4"
     )
 
 
