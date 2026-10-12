@@ -2935,6 +2935,8 @@ fn adapter_runtime_context(
 
 /// Converts Fabric's invocation timeout to the adapter's wall-clock deadline,
 /// keeping a reserve so the adapter can return before the host timeout fires.
+/// Timeouts under twice the reserve keep only half in reserve; adapter cleanup
+/// that outlasts it falls back to the host timeout, which kills the host tree.
 fn adapter_deadline_millis(invoke_timeout: Duration) -> Option<u64> {
     let budget = invoke_timeout
         .saturating_sub(LOCAL_HOST_ADAPTER_RESERVE)
@@ -4474,6 +4476,14 @@ for line in sys.stdin:
         }
         stop_runtime(&plan, &runtime).expect("stop local host");
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn short_invocation_timeouts_split_adapter_deadline_and_reserve() {
+        let before = now_millis();
+        let deadline = u128::from(adapter_deadline_millis(Duration::from_secs(4)).unwrap());
+        // Half of a 4-second timeout remains for the adapter to clean up and return.
+        assert!((before + 2_000..=now_millis() + 2_000).contains(&deadline));
     }
 
     #[test]
