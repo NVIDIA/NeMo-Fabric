@@ -148,3 +148,69 @@ This helper does not apply to adapters that send telemetry through an external
 Relay gateway or whose upstream integration creates an isolated scope context.
 Those adapters retain their native session correlation until their Relay
 boundary accepts a per-turn propagation context.
+
+### Correlation Metadata Keys
+
+Adapters that own their invocation-level Agent scope attach NeMo Fabric IDs to
+that root scope as Relay metadata. The following metadata keys are reserved for
+this purpose, and telemetry consumers match them literally:
+
+| Relay metadata key | `RuntimeContext` field | Meaning |
+| --- | --- | --- |
+| `nemo_fabric_request_id` | `request_id` | Correlates the caller's logical request. A caller can reuse the value across retries, so several invocations can share it. |
+| `nemo_fabric_invocation_id` | `invocation_id` | Identifies one invocation. NeMo Fabric assigns a new value to every invocation, so this key joins Relay telemetry to exactly one `RunResult`. |
+| `nemo_fabric_runtime_id` | `runtime_id` | Identifies the runtime that processed the invocation. One runtime can process multiple invocations. |
+
+Build the keys with
+`nemo_fabric_adapters.common.utils.relay_correlation_metadata()` and merge them
+into the metadata that `relay_request_context()` returns, as in the following
+example. Merging rather than replacing keeps any key that
+`relay_request_context()` adds, such as `nemo_fabric_session_root`.
+
+```python
+import nemo_fabric_adapters.common.utils as common_utils
+from nemo_relay import ScopeType
+from nemo_relay import scope
+
+request_context, metadata = common_utils.relay_request_context(
+    context.request_id, request.relay_session_root
+)
+metadata.update(common_utils.relay_correlation_metadata(context))
+with (
+    request_context,
+    scope.scope("my-adapter.request", ScopeType.Agent, metadata=metadata),
+):
+    ...
+```
+
+Nested scopes do not repeat the keys because the Relay scope hierarchy already
+links them to the root scope. The LangChain Deep Agents, mini-SWE-agent, and
+NOOA adapters attach all three keys. NOOA calls only
+`relay_correlation_metadata()`, so its request ID does not become the
+propagated Relay root.
+
+Claude, Codex, and Pi send telemetry through an external Relay gateway and do
+not yet carry per-invocation NeMo Fabric IDs into Relay. Hermes Agent emits
+Relay telemetry through its own plugin, so its adapter does not attach these
+keys either. Remote Agent forwards only `nemo_fabric_request_id`, in the remote
+API request body.
+
+ATOF records carry these keys in the root scope's event metadata. To export
+them as OpenTelemetry span attributes, add the `nemo_fabric_` prefix to
+`promote_metadata_prefixes` on the trace endpoint. NeMo Fabric passes the field
+to Relay unchanged:
+
+```python
+from nemo_fabric import RelayOpenTelemetryEndpointConfig
+
+endpoint = RelayOpenTelemetryEndpointConfig(
+    type="gen_ai",
+    endpoint="http://localhost:4318/v1/traces",
+    promote_metadata_prefixes=["nemo_fabric_"],
+)
+```
+
+Relay promotes the keys onto the invocation's root Agent span; child spans
+share that span's trace. Refer to "Event Metadata Promotion" in the
+[NeMo Relay OpenTelemetry documentation](https://github.com/NVIDIA/NeMo-Relay/blob/0.9.3/docs/configure-plugins/observability/opentelemetry.mdx)
+for prefix syntax and collision rules.

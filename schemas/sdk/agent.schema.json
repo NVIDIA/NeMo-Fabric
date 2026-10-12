@@ -1042,8 +1042,8 @@
           "description": "Relay config validation policy."
         },
         "version": {
-          "const": 3,
-          "default": 3,
+          "const": 4,
+          "default": 4,
           "description": "Relay observability config version.",
           "format": "uint32",
           "minimum": 0,

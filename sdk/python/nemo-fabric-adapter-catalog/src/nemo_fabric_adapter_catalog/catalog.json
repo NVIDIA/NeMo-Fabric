@@ -1704,6 +1704,82 @@
         },
         "contract_version": "fabric.adapter/v1alpha2",
         "extension_schemas": {
+          "model": {
+            "additionalProperties": false,
+            "description": "Pi-specific catalog metadata for a model Pi does not already ship natively. `api` is the model's wire protocol and must be supplied for an unknown (gateway-served) model; when omitted Pi inherits a built-in model's native api.",
+            "properties": {
+              "api": {
+                "description": "The wire protocol Pi uses to talk to this model.",
+                "enum": [
+                  "openai-completions",
+                  "openai-responses",
+                  "azure-openai-responses",
+                  "openai-codex-responses",
+                  "anthropic-messages",
+                  "bedrock-converse-stream",
+                  "google-generative-ai",
+                  "google-vertex",
+                  "mistral-conversations",
+                  "pi-messages"
+                ],
+                "type": "string"
+              },
+              "context_window": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "cost": {
+                "additionalProperties": false,
+                "description": "Per-million-token pricing. All four rates are required and non-negative.",
+                "properties": {
+                  "cacheRead": {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "cacheWrite": {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "input": {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "output": {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "input",
+                  "output",
+                  "cacheRead",
+                  "cacheWrite"
+                ],
+                "type": "object"
+              },
+              "input": {
+                "items": {
+                  "enum": [
+                    "text",
+                    "image"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "max_tokens": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "reasoning": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
           "run_result": {
             "additionalProperties": false,
             "properties": {
@@ -1773,7 +1849,7 @@
               "uniqueItems": true
             },
             "relay_extension_path": {
-              "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9 Pi extension",
+              "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9 or 0.10 Pi extension",
               "minLength": 1,
               "type": "string"
             }
@@ -1819,7 +1895,7 @@
         "name": "nemo-fabric-adapters-pi",
         "version": "0.5.0"
       },
-      "sha256": "23043c9930702202250177f270a720953d84c52eb11dff4db750c1683e3d0d08",
+      "sha256": "3cb85c7a0e52e49827e889631da96ca7936c7260d52aac8b52835484a0cafad9",
       "source": "adapters/typescript/pi/pi.fabric-adapter.json"
     },
     "nvidia.fabric.qwen": {

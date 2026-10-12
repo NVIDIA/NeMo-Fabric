@@ -30,6 +30,35 @@ import {
 } from "./relay.js";
 import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runtime.js";
 
+// ProviderConfigInput isn't re-exported from pi's public entrypoint; derive it from
+// registerProvider's param type (ModelRuntime's constructor is private, so no InstanceType).
+type PiModelRuntime = Awaited<ReturnType<typeof import("@earendil-works/pi-coding-agent").ModelRuntime.create>>;
+type PiProviderConfigInput = Parameters<PiModelRuntime["registerProvider"]>[1];
+type PiCatalogModel = NonNullable<PiProviderConfigInput["models"]>[number];
+// A model already resolved from Pi's catalog (getModel), used as the base to overlay onto.
+type PiResolvedModel = NonNullable<ReturnType<PiModelRuntime["getModel"]>>;
+
+// Per-model Pi metadata (api, context_window, max_tokens, cost, reasoning, input) is adapter-
+// owned data carried in the model `extensions` block. It is only used to DEFINE a model Pi does
+// not already know (a gateway model); a model already in Pi's catalog is used as-is and never
+// rebuilt, so none of its native properties change. The adapter supplies no defaults of its own
+// — for an unknown model every field Pi requires must be configured, mirroring how defining a
+// custom model in a local Pi models.json requires those fields.
+
+// The wire protocols Pi understands; a configured model extensions.api must be one of these.
+const SUPPORTED_MODEL_APIS = [
+  "openai-completions",
+  "openai-responses",
+  "azure-openai-responses",
+  "openai-codex-responses",
+  "anthropic-messages",
+  "bedrock-converse-stream",
+  "google-generative-ai",
+  "google-vertex",
+  "mistral-conversations",
+  "pi-messages",
+] as const;
+
 interface PiHarnessSettings {
   extensions: string[];
 }
@@ -331,7 +360,7 @@ function isolatedMcpCredentials(): McpCredentials {
     tokens: () => undefined,
     remove: () => false,
   };
-  // Pi types this option as its concrete credential-store class even though
+  // SAFETY: Pi types this option as its concrete credential-store class even though
   // the extension uses only this public method surface.
   return credentials as unknown as McpCredentials;
 }
@@ -482,6 +511,113 @@ function selectModel(config: AgentConfig): AgentModelConfig {
   return selected;
 }
 
+/**
+ * Build the Pi catalog entry to register for the selected model, as an OVERLAY on `base` (the
+ * model's existing Pi catalog entry, or undefined when Pi doesn't know it). The rule is a thin
+ * pass-through: a field the config SUPPLIES (via the model `extensions` block, or `base_url` for
+ * the endpoint) is used; a field it OMITS falls back to `base`'s value, and if there is no base
+ * (an unknown gateway model) an optional field is left UNSET so Pi applies its own default. The
+ * adapter invents no defaults of its own.
+ *
+ * It does, however, require what Pi has no usable default for. For an unknown model that means a
+ * complete-enough definition: `api` (enforced at registration — Pi can't resolve the wire
+ * protocol otherwise), `base_url`, and `context_window`/`max_tokens` (absent, these resolve to
+ * undefined and break compaction/limit math rather than getting a sane default). Supplied values
+ * are validated (`api` a {@link SUPPORTED_MODEL_APIS} value, token limits positive, cost
+ * well-formed) so a malformed override fails fast instead of reaching Pi.
+ */
+export function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel | undefined): PiCatalogModel {
+  const meta = (model.extensions ?? {}) as Record<string, unknown>;
+  const fail = (reason: string): never => {
+    throw new LifecycleError("pi_model_extensions_invalid", reason, { metadata: { model: model.model } });
+  };
+  if (meta.api !== undefined && !SUPPORTED_MODEL_APIS.includes(meta.api as (typeof SUPPORTED_MODEL_APIS)[number])) {
+    throw new LifecycleError(
+      "pi_model_api_invalid",
+      `Unsupported model api '${String(meta.api)}'; model extensions.api must be one of: ${SUPPORTED_MODEL_APIS.join(", ")}`,
+      { metadata: { model: model.model } },
+    );
+  }
+  // Validate a SUPPLIED token limit (positive number); when absent, inherit base's value or leave
+  // it unset for Pi to default. Never fabricate a value.
+  const positive = (value: unknown, inherited: number | undefined, field: string): number | undefined => {
+    if (value === undefined) {
+      return inherited;
+    }
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      return fail(`model extensions.${field} must be a positive number`);
+    }
+    return value;
+  };
+  const suppliedInput = Array.isArray(meta.input)
+    ? (meta.input.filter((item) => item === "text" || item === "image") as ("text" | "image")[])
+    : undefined;
+  const api = typeof meta.api === "string" ? (meta.api as PiCatalogModel["api"]) : base?.api;
+  const baseUrl = model.base_url ?? base?.baseUrl;
+  const reasoning = meta.reasoning !== undefined ? meta.reasoning === true : base?.reasoning;
+  const input = suppliedInput !== undefined && suppliedInput.length > 0 ? suppliedInput : base?.input;
+  const cost = parseCost(meta.cost, fail) ?? base?.cost;
+  const contextWindow = positive(meta.context_window, base?.contextWindow, "context_window");
+  const maxTokens = positive(model.max_tokens ?? meta.max_tokens, base?.maxTokens, "max_tokens");
+  // For an unknown model (not in Pi's catalog), require the fields Pi has no usable default for:
+  // base_url (Pi can't reach it otherwise) and context_window/max_tokens (absent, they resolve to
+  // undefined and break compaction/limit math rather than getting a sane Pi default). `api` is
+  // enforced separately at registration. The adapter still invents nothing — it requires the
+  // config to supply what Pi genuinely needs, failing fast with a clear error.
+  if (base === undefined) {
+    const missing = [
+      baseUrl === undefined ? "base_url" : undefined,
+      contextWindow === undefined ? "context_window" : undefined,
+      maxTokens === undefined ? "max_tokens" : undefined,
+    ].filter((field): field is string => field !== undefined);
+    if (missing.length > 0) {
+      fail(
+        `model '${model.model}' is not known to Pi, so a complete definition is required; ` +
+          `missing: ${missing.join(", ")} (set base_url and extensions.context_window/max_tokens)`,
+      );
+    }
+  }
+  // Build a sparse entry: include only resolved fields. Omitted optional ones (cost, reasoning,
+  // input) are left unset so Pi applies its own defaults — the adapter adds none. The SDK input
+  // type marks some fields non-optional but tolerates their absence at runtime.
+  const entry: Record<string, unknown> = { id: model.model };
+  if (typeof meta.name === "string" || base?.name !== undefined) {
+    entry.name = typeof meta.name === "string" ? meta.name : base?.name;
+  }
+  if (api !== undefined) entry.api = api;
+  if (baseUrl !== undefined) entry.baseUrl = baseUrl;
+  if (reasoning !== undefined) entry.reasoning = reasoning;
+  if (input !== undefined) entry.input = input;
+  if (cost !== undefined) entry.cost = cost;
+  if (contextWindow !== undefined) entry.contextWindow = contextWindow;
+  if (maxTokens !== undefined) entry.maxTokens = maxTokens;
+  return entry as unknown as PiCatalogModel;
+}
+
+// Validate a supplied cost (all four numeric rates) and reject a partial object (e.g. `{}`),
+// which Pi would turn into NaN costs. Returns undefined when no cost is configured, so the
+// caller keeps the base/default cost instead.
+function parseCost(value: unknown, fail: (reason: string) => never): PiCatalogModel["cost"] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null) {
+    return fail("model extensions.cost must be an object with numeric input/output/cacheRead/cacheWrite rates");
+  }
+  const record = value as Record<string, unknown>;
+  const rates = ["input", "output", "cacheRead", "cacheWrite"] as const;
+  const parsed: Record<string, number> = {};
+  for (const rate of rates) {
+    const amount = record[rate];
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) {
+      return fail(`model extensions.cost.${rate} must be a non-negative number`);
+    }
+    parsed[rate] = amount;
+  }
+  // SAFETY: every rate was just validated as a finite non-negative number above.
+  return parsed as unknown as PiCatalogModel["cost"];
+}
+
 function harnessSettings(config: AgentConfig): PiHarnessSettings {
   const raw = config.harness?.settings;
   const extensions = raw?.extensions;
@@ -554,6 +690,7 @@ function validateToolDefinition(name: string, value: unknown): ToolDefinition {
       { metadata: { tool: name } },
     );
   }
+  // SAFETY: the checks above verify every field of the ToolDefinition contract at runtime.
   return value as unknown as ToolDefinition;
 }
 
@@ -880,23 +1017,48 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       refreshOnCreate: false,
     });
     await modelRuntime.setRuntimeApiKey(selected.provider, apiKey);
-    const relayEnabled = input.runtimeContext.telemetry?.relay_enabled === true;
-    if (relayEnabled && selected.base_url) {
-      // Configure the provider before Relay loads so its provider-wide redirect
-      // sees a consistent catalog instead of one overlaid selected model.
-      modelRuntime.registerProvider(selected.provider, {
-        baseUrl: selected.base_url,
-      });
+
+    // Register the selected model into Pi's catalog as an overlay on its existing entry (if any):
+    // supplied config fields override, omitted ones keep Pi's native value, and for an unknown
+    // (gateway) model the overlay base is empty so defaults + a required `api` apply. This way
+    // selecting a known provider/model and changing nothing preserves all its native properties,
+    // while an explicit base_url / extensions field is still honored. A Fabric agent runs ONE
+    // model role per session (selectModel enforces default-or-sole), mirroring the other
+    // single-model adapters. The selected provider's credential was set above.
+    const existing = modelRuntime.getModel(selected.provider, selected.model);
+    const catalogEntry = buildCatalogModel(selected, existing);
+    try {
+      modelRuntime.registerProvider(selected.provider, { models: [catalogEntry] });
+    } catch (error) {
+      const cause = error instanceof Error ? error.message : String(error);
+      // Pi throws here with a 'no "api" specified' message when it can't resolve the model's
+      // wire protocol (not a built-in and no extensions.api). Only THAT cause maps to the
+      // api-required remediation; any other registration failure keeps a generic code so the
+      // message isn't misleading.
+      if (/no "api" specified/i.test(cause)) {
+        throw new LifecycleError(
+          "pi_model_api_required",
+          `Set extensions.api for a gateway-served model (one of: ${SUPPORTED_MODEL_APIS.join(", ")}); the selected model has no api Pi can resolve`,
+          { metadata: { provider: selected.provider, model: selected.model, cause } },
+        );
+      }
+      throw new LifecycleError(
+        "pi_provider_registration_failed",
+        `Pi rejected the configuration for provider '${selected.provider}'`,
+        { metadata: { provider: selected.provider, cause } },
+      );
     }
     const catalogModel = modelRuntime.getModel(selected.provider, selected.model);
     if (catalogModel === undefined) {
       throw new LifecycleError("pi_model_unknown", "The selected provider and model are not present in Pi's catalog");
     }
-    const model = withCustomBaseUrl(catalogModel, selected.base_url, !relayEnabled);
+    // base_url was already applied during registration; withCustomBaseUrl only adds the
+    // OpenAI-compatible-proxy compat shim here (never re-overriding the resolved baseUrl).
+    const model = withCustomBaseUrl(catalogModel, selected.base_url, false);
     const compactionReserveTokens = modelAwareCompactionReserveTokens(
       settings.getCompactionReserveTokens(),
-      model.maxTokens,
-      model.contextWindow,
+      model.maxTokens ?? 0,
+      model.contextWindow ?? 0,
     );
     settings.applyOverrides({
       compaction: {
@@ -958,7 +1120,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       if (relayErrors.length > 0) {
         throw new LifecycleError(
           "pi_relay_extension_load_failed",
-          "The configured NeMo Relay Pi extension failed to load; use the Pi extension from the NeMo Relay 0.9 release",
+          "The configured NeMo Relay Pi extension failed to load; use the Pi extension from a NeMo Relay 0.9 or 0.10 release",
           {
             metadata: {
               count: relayErrors.length,
