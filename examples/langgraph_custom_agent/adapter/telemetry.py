@@ -58,7 +58,7 @@ def _load_plugin_config(
                     {
                         "kind": "observability",
                         "enabled": True,
-                        "config": plugin_config or {"version": 3},
+                        "config": plugin_config or {"version": 4},
                     }
                 ],
             }
@@ -135,12 +135,7 @@ async def observe_invocation(
         request_context, metadata = common_utils.relay_request_context(
             context.request_id, session_root
         )
-        metadata.update(
-            {
-                "nemo_fabric_runtime_id": context.runtime_id,
-                "nemo_fabric_invocation_id": context.invocation_id,
-            }
-        )
+        metadata.update(common_utils.relay_correlation_metadata(context))
         with (
             request_context,
             scope.scope(

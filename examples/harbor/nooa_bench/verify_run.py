@@ -75,7 +75,7 @@ def verify(
             if component["kind"] == "observability" and component["enabled"] is True
         ]
         assert len(observability) == 1
-        assert observability[0]["config"]["version"] == 3
+        assert observability[0]["config"]["version"] == 4
 
         validation = load_json(trial_dir / "agent" / "telemetry-validation.json")
         assert validation["status"] == "succeeded"
@@ -136,7 +136,7 @@ def verify(
             "atif_schema_version": atif["schema_version"],
             "atif_steps": len(atif["steps"]),
             "relay_config_version": 1,
-            "observability_config_version": 3,
+            "observability_config_version": 4,
             "root_invocations": 1,
         }
 

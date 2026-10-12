@@ -80,7 +80,7 @@ def test_relay_disabled_path_does_not_import_relay(tmp_path, monkeypatch):
     assert imported == []
 
 
-def test_partial_relay_config_defaults_to_observability_version_3(tmp_path):
+def test_partial_relay_config_defaults_to_observability_version_4(tmp_path):
     config_path = tmp_path / "relay-config.json"
     config_path.write_text('{"relay":{"config":{}}}', encoding="utf-8")
 
@@ -97,7 +97,7 @@ def test_partial_relay_config_defaults_to_observability_version_3(tmp_path):
             {
                 "kind": "observability",
                 "enabled": True,
-                "config": {"version": 3},
+                "config": {"version": 4},
             }
         ],
     }
@@ -193,7 +193,7 @@ def test_relay_observes_graph_and_model_backed_node(tmp_path, monkeypatch):
                                 "kind": "observability",
                                 "enabled": True,
                                 "config": {
-                                    "version": 3,
+                                    "version": 4,
                                     "atof": {
                                         "enabled": True,
                                         "sinks": [
@@ -248,7 +248,7 @@ def test_relay_observes_graph_and_model_backed_node(tmp_path, monkeypatch):
             == "test-model"
         )
         assert telemetry.plugin_config["version"] == 1
-        assert telemetry.plugin_config["components"][0]["config"]["version"] == 3
+        assert telemetry.plugin_config["components"][0]["config"]["version"] == 4
         return telemetry.artifacts()
 
     artifacts = asyncio.run(run("invocation-1"))
@@ -294,7 +294,7 @@ def test_relay_rejects_observability_config_version_2(tmp_path):
 
     with pytest.raises(
         ValueError,
-        match="unsupported NeMo Relay observability config version 2; expected version 3",
+        match="unsupported NeMo Relay observability config version 2; expected version 4",
     ):
         _load_plugin_config(
             _context(config_path),

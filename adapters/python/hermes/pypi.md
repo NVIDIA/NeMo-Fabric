@@ -34,7 +34,7 @@ provides. None of these expressions installs Hermes Agent:
 
 Released Hermes Agent v2026.9.24 requires Relay 0.8.x. Ordinary runs remain
 supported in a separate environment. Relay telemetry and streaming require a
-Hermes release with Relay 0.9 support; NeMo Fabric tests the merged upstream
+Hermes release that supports Relay 0.9 or 0.10; NeMo Fabric tests the merged upstream
 revision until such a release is available. Use the `relay` and `full` extras
 only with a compatible Hermes checkout. The adapter fails at startup if Relay
 telemetry is enabled with an incompatible Hermes or Relay installation.
