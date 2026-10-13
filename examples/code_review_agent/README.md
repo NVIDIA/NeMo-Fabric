@@ -85,7 +85,7 @@ changing the rest of the configuration:
   --plan
 ```
 
-Use `--skill-path <PATH?` to replace the default with another skill. Repeat the
+Use `--skill-path <PATH>` to replace the default with another skill. Repeat the
 option to add multiple directories. Relative paths resolve from
 `examples/code_review_agent`; `--skill-path` and `--no-skills` cannot be
 combined.

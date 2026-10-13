@@ -28,7 +28,7 @@ Builds and test output are kept under `.tmp/`.
 Set `UV_PROJECT_ENVIRONMENT` to an installed NeMo Fabric environment if it is
 not at `.tmp/host-stack-tests`. The environment needs NeMo Fabric and the
 native extension. The SDK/provider examples use the Rust OpenShell provider
-binary downloaded by the launcher and do not require the OpenShell Python SDK.
+binary built by the launcher and do not require the OpenShell Python SDK.
 The raw/direct [Code Review command-line example](../code_review_agent/README.md#rawdirect-openshell-code-review)
 uses the OpenShell Python SDK; install the version matching the pinned gateway
 only when using that example:
