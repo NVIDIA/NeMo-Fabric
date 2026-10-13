@@ -295,17 +295,19 @@ async def test_failed_native_result_retains_error_and_null_output(
 
 
 async def test_non_active_returned_runtime_is_owned_for_stop(
-    host, host_request, mock_runtime
+    host, host_request, mock_runtime, mock_fabric, runtime_factory
 ):
     mock_runtime.status = RuntimeStatus.FAILED
+    next_runtime = runtime_factory("runtime-2")
+    mock_fabric.start_runtime.side_effect = [mock_runtime, next_runtime]
     response = await host.handle(host_request("start"))
     assert response["error"]["code"] == "start_failed"
     assert host.runtimes["runtime-1"].runtime is mock_runtime
-    assert (await host.handle(host_request("start")))["error"][
-        "code"
-    ] == "start_uncertain"
     assert (await host.handle(host_request("stop")))["status"] == "succeeded"
     mock_runtime.stop.assert_awaited_once_with()
+    next_response = await host.handle(host_request("start"))
+    assert next_response["status"] == "succeeded"
+    assert next_response["result"]["runtime_id"] == "runtime-2"
 
 
 async def test_invoke_and_stop_are_serialized(host, host_request, mock_runtime):

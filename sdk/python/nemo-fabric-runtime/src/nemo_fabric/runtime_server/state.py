@@ -115,6 +115,8 @@ class RuntimeServer:
                         raise ProtocolError("runtime_id_conflict", "start")
                     owned = OwnedRuntime(runtime, request["agent"], "unknown")
                     self.runtimes[runtime.runtime_id] = owned
+                    # The runtime is addressable; stop can clean it up.
+                    self.start_uncertain = False
                     if runtime.status != RuntimeStatus.ACTIVE:
                         raise ProtocolError("start_failed", "start")
                     owned.state = "running"
