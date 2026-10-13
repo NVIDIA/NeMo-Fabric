@@ -311,8 +311,15 @@ async fn runtime_command<F: GatewayFactory>(
             json!({"status": "rejected", "error": {"code": error.code, "stage": error.stage, "effects": error.effects}}),
         );
     }
-    if executed
-        .stdout
+    decode_sdk_command_response(&operation, executed.exit_code, &executed.stdout)
+}
+
+fn decode_sdk_command_response(
+    operation: &str,
+    exit_code: i32,
+    stdout: &[u8],
+) -> Result<Value, ProviderError> {
+    if stdout
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .count()
@@ -320,21 +327,97 @@ async fn runtime_command<F: GatewayFactory>(
     {
         return Err(ProviderError::contract(
             "invalid_response",
-            "task command output was not one SDK JSON value",
+            "task command output was not one SDK response envelope",
         ));
     }
-    let value: Value = serde_json::from_slice(&executed.stdout).map_err(|_| {
+    let response: Value = serde_json::from_slice(stdout).map_err(|_| {
         ProviderError::contract("invalid_response", "task command did not return SDK JSON")
     })?;
-    let succeeded =
-        operation != "invoke" || value.get("status").and_then(Value::as_str) == Some("succeeded");
-    if (executed.exit_code == 0) != succeeded || (operation == "stop" && !value.is_null()) {
+    let Some(response) = response.as_object() else {
         return Err(ProviderError::contract(
             "invalid_response",
-            "task command exit and SDK result disagree",
+            "task command response was not an SDK envelope",
+        ));
+    };
+    if response.len() != 5
+        || response.get("operation").and_then(Value::as_str) != Some(operation)
+        || !matches!(
+            response.get("status").and_then(Value::as_str),
+            Some("succeeded" | "failed" | "unsupported")
+        )
+        || !response
+            .get("changed")
+            .is_some_and(|value| value.is_null() || value.is_boolean())
+        || !response
+            .get("result")
+            .is_some_and(|value| value.is_null() || value.is_object())
+        || !response.contains_key("error")
+        || !response.contains_key("operation")
+        || !response.contains_key("status")
+        || !response.contains_key("changed")
+        || !response.contains_key("result")
+    {
+        return Err(ProviderError::contract(
+            "invalid_response",
+            "task command returned an invalid SDK response envelope",
         ));
     }
-    Ok(json!({"status": "returned", "value": value}))
+
+    let status = response["status"].as_str().unwrap_or_default();
+    let result = &response["result"];
+    let error = &response["error"];
+    if status == "succeeded" {
+        if exit_code != 0
+            || !error.is_null()
+            || (operation == "stop" && !result.is_null())
+            || (operation != "stop" && !result.is_object())
+        {
+            return Err(ProviderError::contract(
+                "invalid_response",
+                "task command exit code and successful SDK result disagree",
+            ));
+        }
+        return Ok(json!({"status": "returned", "value": result}));
+    }
+
+    let Some(error) = error.as_object() else {
+        return Err(ProviderError::contract(
+            "invalid_response",
+            "failed SDK command omitted its diagnostic",
+        ));
+    };
+    let code = error
+        .get("code")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let stage = error
+        .get("stage")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let effects = error
+        .get("effects")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if exit_code == 0
+        || error.len() != 4
+        || !error.contains_key("message")
+        || error.get("message").and_then(Value::as_str).is_none()
+        || !valid_diagnostic_code(code)
+        || !matches!(
+            stage,
+            "request" | "validation" | "start" | "invoke" | "stop" | "transport"
+        )
+        || !matches!(effects, "none" | "applied" | "unknown")
+    {
+        return Err(ProviderError::contract(
+            "invalid_response",
+            "failed SDK command diagnostic was invalid",
+        ));
+    }
+    Ok(json!({
+        "status": "rejected",
+        "error": {"code": code, "stage": stage, "effects": effects}
+    }))
 }
 
 fn valid_diagnostic_code(code: &str) -> bool {
@@ -1988,6 +2071,100 @@ mod tests {
     }
 
     #[test]
+    fn runtime_command_unwraps_successful_sdk_envelopes() {
+        let handle = json!({"runtime_id": "runtime-1", "agent_name": "echo"});
+        let start = json!({
+            "operation": "start",
+            "status": "succeeded",
+            "changed": true,
+            "result": handle,
+            "error": null
+        });
+        let decoded = decode_sdk_command_response("start", 0, start.to_string().as_bytes())
+            .expect("start envelope");
+        assert_eq!(decoded, json!({"status": "returned", "value": handle}));
+
+        let invoke_result = json!({"status": "failed", "output": null});
+        let invoke = json!({
+            "operation": "invoke",
+            "status": "succeeded",
+            "changed": null,
+            "result": invoke_result,
+            "error": null
+        });
+        let decoded = decode_sdk_command_response("invoke", 0, invoke.to_string().as_bytes())
+            .expect("invoke envelope");
+        assert_eq!(
+            decoded,
+            json!({"status": "returned", "value": invoke_result})
+        );
+
+        let stop = json!({
+            "operation": "stop",
+            "status": "succeeded",
+            "changed": true,
+            "result": null,
+            "error": null
+        });
+        let decoded = decode_sdk_command_response("stop", 0, stop.to_string().as_bytes())
+            .expect("stop envelope");
+        assert_eq!(decoded, json!({"status": "returned", "value": null}));
+    }
+
+    #[test]
+    fn runtime_command_preserves_known_sdk_rejections() {
+        let rejected = json!({
+            "operation": "start",
+            "status": "failed",
+            "changed": false,
+            "result": null,
+            "error": {
+                "code": "validation_failed",
+                "stage": "validation",
+                "message": "configuration rejected",
+                "effects": "none"
+            }
+        });
+        let decoded = decode_sdk_command_response("start", 1, rejected.to_string().as_bytes())
+            .expect("rejection envelope");
+        assert_eq!(
+            decoded,
+            json!({
+                "status": "rejected",
+                "error": {
+                    "code": "validation_failed",
+                    "stage": "validation",
+                    "effects": "none"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn runtime_command_rejects_malformed_sdk_envelopes() {
+        let raw_handle = json!({"runtime_id": "runtime-1"});
+        assert_eq!(
+            decode_sdk_command_response("start", 0, raw_handle.to_string().as_bytes())
+                .expect_err("raw handle is not a command response")
+                .code(),
+            "invalid_response"
+        );
+        let bad_exit = json!({
+            "operation": "start",
+            "status": "succeeded",
+            "changed": true,
+            "result": {"runtime_id": "runtime-1"},
+            "error": null
+        });
+        assert_eq!(
+            decode_sdk_command_response("start", 1, bad_exit.to_string().as_bytes())
+                .expect_err("successful envelope with failed exit")
+                .code(),
+            "invalid_response"
+        );
+    }
+
+    #[test]
     fn settings_accept_task_discovery_paths_for_host_projection() {
         OpenShellSettings::from_map(Map::from_iter([
             (
@@ -2576,16 +2753,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sdk_failed_result_is_a_returned_value_even_with_exit_one() {
+    async fn sdk_failed_result_is_returned_inside_a_successful_command_envelope() {
         let calls = Arc::new(Mutex::new(Vec::new()));
-        let value = json!({"runtime_id": "runtime-task", "request_id": "request-host", "status": "failed", "output": null, "artifacts": {"artifacts": []}});
+        let result = json!({"runtime_id": "runtime-task", "request_id": "request-host", "status": "failed", "output": null, "artifacts": {"artifacts": []}});
+        let envelope = json!({
+            "operation": "invoke",
+            "status": "succeeded",
+            "changed": null,
+            "result": result,
+            "error": null
+        });
         let factory = MockFactory {
             calls: Arc::clone(&calls),
             ready_id: "sandbox-id-1",
             deletion: None,
             execution: Some((
-                1,
-                serde_json::to_vec(&value).expect("SDK JSON"),
+                0,
+                serde_json::to_vec(&envelope).expect("SDK JSON"),
                 b"PRIVATE ignored stderr".to_vec(),
             )),
         };
@@ -2597,7 +2781,7 @@ mod tests {
         let output = runtime_command(environment_handle_fixture(), command, 30, &factory)
             .await
             .expect("failed SDK return");
-        assert_eq!(output, json!({"status": "returned", "value": value}));
+        assert_eq!(output, json!({"status": "returned", "value": result}));
         assert!(
             calls
                 .lock()
