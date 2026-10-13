@@ -231,7 +231,10 @@ bash examples/openshell/run-demo.sh \
 ```
 
 The example runs two ordered email assessments on one SDK runtime and writes
-normalized results under `.tmp/langgraph-custom-agent/`. Set
+normalized reports under `.tmp/langgraph-custom-agent/`; collected runtime
+artifacts are written on the host under its `artifacts/` subdirectory. The agent
+uses `/sandbox/langgraph/workspace` and `/sandbox/langgraph/artifacts` inside the
+sandbox. Set
 `OPENSHELL_EXAMPLE_MODE=caller_owned` or `fabric_owned` to run one ownership
 mode. Set `OPENSHELL_LANGGRAPH_RELAY=true` to collect correlated Relay ATOF and
 ATIF artifacts, or `OPENSHELL_LANGGRAPH_MCP=true` to enable the local URL
