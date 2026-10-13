@@ -55,6 +55,11 @@ Use a registered OpenShell gateway and match the CLI, gateway, and runtime compo
 
 Environment configuration uses `provider="openshell"` and `control_location="in_env_control"`. The gateway connection selects a named workspace or explicitly uses OpenShell's default workspace. Workspace and artifact roots are absolute POSIX paths inside the sandbox; `runtime.artifacts` remains the host collection destination. Select an immutable image digest or local Docker image ID. Task images contain the SDK, `fabric-agent-ctl`, the selected adapter, and the agent/harness.
 
+When `settings.providers` is configured, prepare and attach wait for each
+provider's receipt-bound readiness before returning. The bounded wait prevents
+SDK runtime commands from racing OpenShell's asynchronous credential and policy
+installation.
+
 When `settings.sandbox_name` is omitted, the OpenShell provider derives a stable 19-character name from the Fabric environment ID, within OpenShell's sandbox-name limit. This lets it reconcile a create request whose response times out.
 
 With an existing Fabric-ready configuration, use the normal SDK lifecycle:
