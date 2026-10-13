@@ -33,12 +33,15 @@ for relay in (False, True):
             policy_file="/opt/fabric/examples/langgraph_custom_agent/openshell-sdk-policy.yaml",
             sandbox_name="langgraph-build-check",
             sandbox_id="sandbox-build-check",
+            results_file="/tmp/langgraph-build-check/results.json",
             model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
             base_url="https://integrate.api.nvidia.com/v1",
             relay=relay,
             mcp=mcp,
         )
         config = build_config(args)
+        assert Path(config.runtime.artifacts) == Path("/tmp/langgraph-build-check/artifacts")
+        assert Path(config.environment.artifacts) == Path("/sandbox/langgraph/artifacts")
         config.environment.provider = "local"
         plan = Fabric().plan(config, base_dir=Path("/sandbox/langgraph"))
         descriptor = plan.get("adapter_descriptor", {}).get("descriptor", {})

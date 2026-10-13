@@ -65,10 +65,13 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
             "task_discovery_paths": [TASK_ADAPTER_ROOT],
         },
     )
-    config.runtime.artifacts = TASK_ARTIFACTS
+    # `runtime.artifacts` is collected by the host SDK. Keep it on the host;
+    # `TASK_ARTIFACTS` is the separate path visible inside the sandbox.
+    host_artifacts = Path(args.results_file).resolve().parent / "artifacts"
+    config.runtime.artifacts = host_artifacts
     if args.relay:
         config = with_relay(config)
-        config.runtime.artifacts = TASK_ARTIFACTS
+        config.runtime.artifacts = host_artifacts
         config.relay.output_dir = f"{TASK_ARTIFACTS}/relay"
         observability = config.relay.observability
         if observability is not None:
