@@ -1373,6 +1373,14 @@ struct OpenShellSettings {
 impl OpenShellSettings {
     fn from_map(map: Map<String, Value>) -> Result<Self, ProviderError> {
         let mut map = map;
+        if let Some(paths) = map.remove("task_discovery_paths") {
+            serde_json::from_value::<Vec<String>>(paths).map_err(|_error| {
+                ProviderError::contract(
+                    "invalid_settings",
+                    "settings.task_discovery_paths must be a list of strings",
+                )
+            })?;
+        }
         let policy = map
             .remove("policy_yaml")
             .map(|value| {
@@ -1977,6 +1985,33 @@ mod tests {
             ("command".to_string(), json!(["fabric-agent-ctl", "serve"])),
         ]))
         .expect("immutable local image id");
+    }
+
+    #[test]
+    fn settings_accept_task_discovery_paths_for_host_projection() {
+        OpenShellSettings::from_map(Map::from_iter([
+            (
+                "image".to_string(),
+                json!(format!("sha256:{}", "a".repeat(64))),
+            ),
+            ("command".to_string(), json!(["fabric-agent-ctl", "serve"])),
+            (
+                "task_discovery_paths".to_string(),
+                json!(["/opt/fabric/agents/echo"]),
+            ),
+        ]))
+        .expect("host-only task discovery paths are not OpenShell SDK settings");
+
+        let error = OpenShellSettings::from_map(Map::from_iter([
+            (
+                "image".to_string(),
+                json!(format!("sha256:{}", "a".repeat(64))),
+            ),
+            ("command".to_string(), json!(["fabric-agent-ctl", "serve"])),
+            ("task_discovery_paths".to_string(), json!("/opt/echo")),
+        ]))
+        .expect_err("task discovery paths must be a list");
+        assert_eq!(error.code(), "invalid_settings");
     }
 
     #[test]
