@@ -130,6 +130,125 @@ def test_cache_semantics_and_unknown_values(
 
 
 @pytest.mark.parametrize(
+    ("detailed_usage", "expected_input", "expected_output", "expected_cache"),
+    [
+        (
+            {
+                "input_tokens": 20,
+                "cached_input_tokens": 5,
+                "cache_write_input_tokens": 3,
+                "input_tokens_include_cache": False,
+                "output_tokens": 5,
+                "reasoning_tokens": 4,
+                "output_tokens_include_reasoning": False,
+            },
+            28,
+            9,
+            5,
+        ),
+        (
+            {
+                "input_tokens": 20,
+                "cached_input_tokens": 5,
+                "cache_write_input_tokens": 3,
+                "input_tokens_include_cache": True,
+                "output_tokens": 5,
+                "reasoning_tokens": 4,
+                "output_tokens_include_reasoning": True,
+            },
+            20,
+            5,
+            5,
+        ),
+        (
+            {
+                "input_tokens": 20,
+                "cached_input_tokens": 5,
+                "input_tokens_include_cache": False,
+                "output_tokens": 5,
+                "reasoning_tokens": 4,
+                "output_tokens_include_reasoning": False,
+            },
+            None,
+            9,
+            5,
+        ),
+        (
+            {
+                "input_tokens": 20,
+                "cached_input_tokens": 5,
+                "cache_write_input_tokens": 3,
+                "input_tokens_include_cache": False,
+                "output_tokens": 5,
+                "output_tokens_include_reasoning": False,
+            },
+            28,
+            None,
+            5,
+        ),
+        (
+            {
+                "input_tokens": 20,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 5,
+                "reasoning_tokens": 0,
+            },
+            20,
+            5,
+            0,
+        ),
+        pytest.param(
+            {"cache_write_input_tokens": 3},
+            None,
+            999,
+            None,
+            id="cache-write-only-selects-detailed-input",
+        ),
+        pytest.param(
+            {"reasoning_tokens": 4},
+            999,
+            None,
+            999,
+            id="reasoning-only-selects-detailed-output",
+        ),
+        ({"models": []}, 999, 999, 999),
+    ],
+)
+def test_detailed_usage_is_authoritative_per_dimension(
+    result_path,
+    detailed_usage,
+    expected_input,
+    expected_output,
+    expected_cache,
+):
+    from harbor.models.agent.context import AgentContext
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+    )
+
+    document = json.loads(result_path.read_text())
+    document["usage"] = {
+        "input_tokens": 999,
+        "cached_input_tokens": 999,
+        "input_tokens_include_cache": True,
+        "output_tokens": 999,
+        "metadata": {"nemo_fabric.detailed_token_usage.v1": detailed_usage},
+    }
+    result_path.write_text(json.dumps(document))
+    context = AgentContext()
+
+    populate_context_from_result(context, result_path)
+
+    assert context.n_input_tokens == expected_input
+    assert context.n_output_tokens == expected_output
+    assert context.n_cache_tokens == expected_cache
+    assert context.metadata["fabric"]["usage"]["metadata"] == {
+        "nemo_fabric.detailed_token_usage.v1": detailed_usage
+    }
+
+
+@pytest.mark.parametrize(
     ("usage", "expected"),
     [
         ({"metadata": {"estimated_cost_usd": 9}}, (12, 3, 4, 0.25)),

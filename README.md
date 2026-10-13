@@ -65,6 +65,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 - [Installation](docs/getting-started/install.mdx): Install the runtime, adapters, harness dependencies, and telemetry components, and choose a deployment scenario.
 - [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.
 - [Host admission](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host): Validate requested capabilities and reject host/task descriptor drift before execution.
+- [NeMo Fabric runtime server](sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md): Control one SDK runtime inside one sandbox through `fabric-agent-ctl` and one private local socket. Unconfirmed cleanup retains runtime ownership and blocks replacement starts.
 - [Documentation overview](docs/about-nemo-fabric/overview.mdx): Understand the execution model and choose an interface.
 - [Adapter reference](adapters/README.md): Compare adapter configuration, runtime, and observability support.
 - [Contribution guide](CONTRIBUTING.md): Build, test, and contribute to the project.
@@ -72,7 +73,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 ## Roadmap
 
 - **Expand the harness ecosystem:** Add high-priority first- and third-party harnesses through the normalized lifecycle and capability contracts.
-- **Sandbox-native execution:** Run NeMo Fabric in secure environments through providers such as [NVIDIA OpenShell](https://docs.nvidia.com/openshell/about/overview).
+- **Broaden sandbox-native execution:** Add support for additional secure-environment providers beyond [NVIDIA OpenShell](https://docs.nvidia.com/openshell/about/overview).
 - **Deepen NVIDIA ecosystem integrations:** Make NeMo Fabric a standard execution boundary for agent configuration, evaluation, rollouts, artifacts, and telemetry.
 - **Enhance session lifecycle management:** Add explicit cold-start, resume, and fork operations with stable session identifiers and capability-aware errors.
 - **Compose subagents:** Configure supported subagents through validated, portable NeMo Fabric configuration.

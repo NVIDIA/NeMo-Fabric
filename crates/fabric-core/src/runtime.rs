@@ -3673,7 +3673,38 @@ mod tests {
     },
     "usage": {
       "type": "object",
-      "properties": {"provider": {"type": "string"}},
+      "properties": {
+        "provider": {"type": "string"},
+        "nemo_fabric.detailed_token_usage.v1": {
+          "type": "object",
+          "properties": {
+            "input_tokens": {"type": "integer", "minimum": 0},
+            "cached_input_tokens": {"type": "integer", "minimum": 0},
+            "cache_write_input_tokens": {"type": "integer", "minimum": 0},
+            "input_tokens_include_cache": {"type": "boolean"},
+            "output_tokens": {"type": "integer", "minimum": 0},
+            "reasoning_tokens": {"type": "integer", "minimum": 0},
+            "output_tokens_include_reasoning": {"type": "boolean"},
+            "total_tokens": {"type": "integer", "minimum": 0},
+            "peak_request_input_tokens": {"type": "integer", "minimum": 0},
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "model": {"type": "string", "minLength": 1},
+                  "provider": {"type": "string", "minLength": 1},
+                  "input_tokens": {"type": "integer", "minimum": 0},
+                  "reasoning_tokens": {"type": "integer", "minimum": 0}
+                },
+                "required": ["model"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
       "additionalProperties": false
     },
     "artifact": {
@@ -3884,6 +3915,39 @@ for line in sys.stdin:
                     "extensions": {"source": "fake-host"},
                 }],
                 "extensions": {"trace_id": "trace-1"},
+            }
+        elif MODE == "detailed_usage_result":
+            result = {
+                "status": "succeeded",
+                "output": output,
+                "usage": {
+                    "input_tokens": 3,
+                    "cached_input_tokens": 1,
+                    "input_tokens_include_cache": True,
+                    "output_tokens": 5,
+                    "total_tokens": 8,
+                    "cost_usd": 0.25,
+                    "extensions": {
+                        "provider": "fake",
+                        "nemo_fabric.detailed_token_usage.v1": {
+                            "input_tokens": 20,
+                            "cached_input_tokens": 5,
+                            "cache_write_input_tokens": 3,
+                            "input_tokens_include_cache": False,
+                            "output_tokens": 5,
+                            "reasoning_tokens": 4,
+                            "output_tokens_include_reasoning": False,
+                            "total_tokens": 37,
+                            "peak_request_input_tokens": 18,
+                            "models": [{
+                                "model": "test-model",
+                                "provider": "fake",
+                                "input_tokens": 20,
+                                "reasoning_tokens": 4,
+                            }],
+                        },
+                    },
+                },
             }
         else:
             result = {"status": "succeeded", "output": output}
@@ -4982,6 +5046,51 @@ for line in sys.stdin:
             Some(&serde_json::json!({"trace_id": "trace-1"}))
         );
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_preserves_detailed_usage_in_metadata() {
+        let (root, plan) = local_host_plan("detailed_usage_result");
+
+        let result = run_plan(&plan, RunRequest::text("usage")).expect("normalized result");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        let usage = result.usage.expect("run usage");
+        assert_eq!(
+            usage,
+            RunUsage {
+                input_tokens: Some(3),
+                cached_input_tokens: Some(1),
+                input_tokens_include_cache: Some(true),
+                output_tokens: Some(5),
+                total_tokens: Some(8),
+                cost_usd: Some(0.25),
+                metadata: BTreeMap::from([
+                    ("provider".to_string(), serde_json::json!("fake")),
+                    (
+                        "nemo_fabric.detailed_token_usage.v1".to_string(),
+                        serde_json::json!({
+                            "input_tokens": 20,
+                            "cached_input_tokens": 5,
+                            "cache_write_input_tokens": 3,
+                            "input_tokens_include_cache": false,
+                            "output_tokens": 5,
+                            "reasoning_tokens": 4,
+                            "output_tokens_include_reasoning": false,
+                            "total_tokens": 37,
+                            "peak_request_input_tokens": 18,
+                            "models": [{
+                                "model": "test-model",
+                                "provider": "fake",
+                                "input_tokens": 20,
+                                "reasoning_tokens": 4
+                            }]
+                        }),
+                    ),
+                ]),
+            }
+        );
         let _ = fs::remove_dir_all(root);
     }
 

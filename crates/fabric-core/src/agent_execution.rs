@@ -436,4 +436,35 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn v1alpha2_usage_keeps_detailed_fields_in_extensions() {
+        let error = serde_json::from_value::<AgentUsage>(serde_json::json!({
+            "cache_write_input_tokens": 3
+        }))
+        .expect_err("the closed v1alpha2 usage root rejects new fields");
+        assert!(
+            error
+                .to_string()
+                .contains("unknown field `cache_write_input_tokens`")
+        );
+
+        let usage = serde_json::from_value::<AgentUsage>(serde_json::json!({
+            "extensions": {
+                "nemo_fabric.detailed_token_usage.v1": {
+                    "cache_write_input_tokens": 3,
+                    "reasoning_tokens": 4
+                }
+            }
+        }))
+        .expect("v1alpha2 usage extensions accept detailed accounting");
+
+        assert_eq!(
+            usage.extensions["nemo_fabric.detailed_token_usage.v1"],
+            serde_json::json!({
+                "cache_write_input_tokens": 3,
+                "reasoning_tokens": 4
+            })
+        );
+    }
 }

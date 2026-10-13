@@ -1774,6 +1774,7 @@ class RunUsage(FabricMapping):
     Missing counters and cost are unknown, not zero. ``cached_input_tokens``
     records cache usage; ``input_tokens_include_cache`` declares whether input
     already includes that count. An absent flag means the semantics are unknown.
+    Descriptor-declared detailed usage is preserved in ``metadata``.
     """
 
     input_tokens: int | None

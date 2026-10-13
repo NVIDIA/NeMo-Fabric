@@ -1,0 +1,97 @@
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+ARG PYTHON_IMAGE=python:3.13.15-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285
+ARG NODE_IMAGE=node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+ARG OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw@sha256:cc596b846506a5f4cfcee111394a2725f375f01cca2ebb492a161fd1b747f101
+ARG RUST_IMAGE=rust@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e
+ARG UV_IMAGE=ghcr.io/astral-sh/uv@sha256:3d868e555f8f1dbc324afa005066cd11e1053fc4743b9808ca8025283e65efa5
+FROM ${RUST_IMAGE} AS rust
+FROM ${UV_IMAGE} AS uv
+FROM ${NODE_IMAGE} AS node
+FROM ${OPENCLAW_IMAGE} AS openclaw
+FROM ${PYTHON_IMAGE} AS base
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 iproute2 nftables ca-certificates git ripgrep \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1000 node && useradd --uid 1000 --gid node --create-home node \
+    && python3 -m venv --without-pip /opt/fabric \
+    && install -d -m 0700 -o 1000 -g 1000 /sandbox
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=openclaw /app /app
+RUN ln -s /app/openclaw.mjs /usr/local/bin/openclaw
+
+FROM base AS wheels
+USER root
+COPY --from=rust /usr/local/cargo /usr/local/cargo
+COPY --from=rust /usr/local/rustup /usr/local/rustup
+COPY --from=uv /uv /usr/local/bin/uv
+ENV CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup PATH=/usr/local/cargo/bin:$PATH CARGO_BUILD_JOBS=4
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src/fabric
+COPY Cargo.toml Cargo.lock pyproject.toml LICENSE ./
+COPY crates/ crates/
+COPY sdk/python/ sdk/python/
+COPY adapter-contract/python/ adapter-contract/python/
+COPY adapters/python/ adapters/python/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/fabric/target \
+    uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels --config-setting build-args=--locked sdk/python/nemo-fabric-runtime \
+    && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapter-contract/python \
+    && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/common \
+    && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/openclaw \
+    && uv pip install --python /opt/fabric/bin/python --find-links /wheels /wheels/*.whl
+
+FROM base
+USER root
+COPY --from=wheels /opt/fabric /opt/fabric
+COPY --chown=node:node examples/code_review_agent/ /sandbox/code-review/
+RUN install -d -m 0700 -o 1000 -g 1000 /sandbox/tmp /sandbox/workspace /sandbox/artifacts /sandbox/.cache
+ARG FABRIC_SOURCE_SHA256=unrecorded
+LABEL org.nvidia.nemo-fabric.runtime-server.interface="2" \
+      org.nvidia.nemo-fabric.runtime-server.runtime-limit="1" \
+      org.nvidia.nemo-fabric.source-sha256="$FABRIC_SOURCE_SHA256" \
+      io.nemoclaw.fabric.bridge='{"interface_version":2,"operations":["start","invoke","stop","serve"]}' \
+      io.nemoclaw.fabric.catalog=""
+RUN rm -f /usr/local/bin/fabric-agent \
+    && ln -sf /opt/fabric/bin/fabric-agent-ctl /usr/local/bin/fabric-agent-ctl
+# OpenShell denies setpriv's capability activation. Use the adapter's existing
+# launch path without that optional utility; OpenShell owns sandbox descendants.
+RUN rm -f /usr/bin/setpriv /bin/setpriv
+RUN /opt/fabric/bin/python - <<'PY'
+import json
+from importlib.metadata import version
+from pathlib import Path
+from nemo_fabric import Fabric, FabricConfig
+
+config = FabricConfig.model_validate({
+    "metadata": {"name": "code-review-agent"},
+    "harness": {"adapter_id": "nvidia.fabric.openclaw"},
+    "models": {"default": {
+        "provider": "openai",
+        "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+    }},
+})
+plan = Fabric().plan(config, base_dir=Path("/sandbox"))
+metadata = {
+    "schema_version": 1,
+    "fabric_version": version("nemo-fabric-runtime"),
+    "interface_version": 2,
+    "operations": ["start", "invoke", "stop", "serve"],
+    "runtime_limit": 1,
+    "adapters": [plan.get("adapter_descriptor")],
+}
+Path("/opt/fabric/runtime-server.json").write_text(json.dumps(metadata, indent=2) + "\n")
+PY
+ENV PATH=/opt/fabric/bin:/usr/local/bin:/usr/bin:/bin \
+    ADAPTER_PYTHON=/opt/fabric/bin/python \
+    FABRIC_HOST_SOCKET=/sandbox/fabric.sock \
+    HOME=/sandbox TMPDIR=/sandbox/tmp XDG_CACHE_HOME=/sandbox/.cache \
+    PYTHONDONTWRITEBYTECODE=1
+HEALTHCHECK NONE
+USER node

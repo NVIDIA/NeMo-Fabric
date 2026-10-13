@@ -46,6 +46,8 @@ print one JSON document containing `atof_records` and the separate terminal
 `result`. Relay retains redirect-decision marks in configured ATOF artifacts, while
 Pi's startup `model_redirect` marks are not included in `atof_records`.
 
+The [OpenShell Code Review example](code_review_agent/README.md#openshell-code-review) gives an agent the sample `calculator.py` repository inside a real OpenShell sandbox. Separate SDK exec calls start one runtime, perform two review turns, and stop the runtime. The demonstration records prompts, normalized results, command timings, and a readable transcript. Its image contains OpenClaw and the current NeMo Fabric SDK; direct SDK consumers retain multiple-runtime support.
+
 ## LangGraph Custom Agent
 
 [`langgraph_custom_agent`](langgraph_custom_agent/README.md) demonstrates how
