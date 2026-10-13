@@ -63,6 +63,10 @@ in a separate directory:
 Start with the model-backed example. You can then vary its model settings, add
 a stdio MCP tool, or enable NeMo Relay telemetry.
 
+The [OpenShell SDK path](langgraph_custom_agent/README.md#run-the-custom-agent-in-openshell)
+packages this same custom agent in a sandbox image while the host consumer
+keeps the normal SDK lifecycle.
+
 ## Harbor
 
 [`harbor`](harbor/README.md) demonstrates how to evaluate NeMo Fabric agents with
