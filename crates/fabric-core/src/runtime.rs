@@ -33,6 +33,9 @@ use crate::config::{
 use crate::environment::resolve_environment_provider;
 use crate::error::{FabricError, Result};
 
+mod openshell;
+use openshell::OpenShellRuntimeAdapter;
+
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
@@ -263,8 +266,21 @@ pub struct ArtifactRef {
 /// Reference to telemetry emitted by Relay or another configured telemetry path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TelemetryRef {
-    /// Whether Relay was enabled for this run.
+    /// Whether Relay was enabled for this run; retained for native compatibility.
+    #[serde(default)]
     pub relay_enabled: bool,
+    /// Provider in the public SDK reference representation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// Reference category in the public SDK representation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Location of the persisted telemetry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    /// Provider trace identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
     /// Telemetry metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, Value>,
@@ -925,6 +941,9 @@ pub fn attach_environment(
 ///
 /// Caller-owned resources detach without deletion; local files remain in place.
 pub fn release_environment(environment: &EnvironmentHandle) -> Result<()> {
+    if environment.provider == "openshell" {
+        return openshell::release(environment);
+    }
     crate::environment::release_environment(environment).map(|_| ())
 }
 
@@ -1156,6 +1175,9 @@ pub fn invoke_runtime(
     validate_adapter_compatibility(plan)?;
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
+        if runtime.environment.provider == "openshell" {
+            return OpenShellRuntimeAdapter.invoke(plan, runtime, request);
+        }
         return LocalHostAdapter.invoke(plan, runtime, request);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
@@ -1185,6 +1207,9 @@ pub fn invoke_openai_stream(
     }
     validate_openai_stream_transport(&transport)?;
     if uses_local_host(plan) {
+        if runtime.environment.provider == "openshell" {
+            return OpenShellRuntimeAdapter.invoke_openai_stream(plan, runtime, request, transport);
+        }
         return LocalHostAdapter.invoke_openai_stream(plan, runtime, request, transport);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
@@ -1238,7 +1263,11 @@ fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
 pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
-        let events = LocalHostAdapter.stop(runtime)?;
+        let events = if runtime.environment.provider == "openshell" {
+            OpenShellRuntimeAdapter.stop(runtime)?
+        } else {
+            LocalHostAdapter.stop(runtime)?
+        };
         if let Some(service_id) = runtime.service_id.as_ref()
             && let Some(record) = local_services().get(service_id).cloned()
         {
@@ -1274,6 +1303,9 @@ fn start_runtime_in_validated(
         });
     }
     if uses_local_host(plan) {
+        if environment.provider == "openshell" {
+            return OpenShellRuntimeAdapter.start(plan, environment.clone());
+        }
         return LocalHostAdapter.start(plan, environment.clone());
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
@@ -3788,6 +3820,10 @@ fn telemetry_ref(
     }
     Some(TelemetryRef {
         relay_enabled: telemetry.relay_enabled,
+        provider: None,
+        kind: None,
+        uri: None,
+        trace_id: None,
         metadata,
     })
 }

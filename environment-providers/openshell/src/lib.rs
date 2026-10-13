@@ -24,7 +24,7 @@ use serde_json::{Map, Value, json};
 use thiserror::Error;
 
 const PROTOCOL_VERSION: &str = "fabric.environment-provider.v1alpha1";
-const MAX_REQUEST_BYTES: usize = 256 * 1024;
+const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_EXEC_OUTPUT_BYTES: usize = 3 * 1024 * 1024;
 const DEFAULT_READY_TIMEOUT_SECONDS: u64 = 60;
 const DEFAULT_DELETE_TIMEOUT_SECONDS: u64 = 30;
@@ -187,6 +187,14 @@ where
     F: GatewayFactory,
 {
     match operation {
+        ProviderOperation::RuntimeCommand {
+            environment,
+            command,
+            timeout_seconds,
+        } => runtime_command(environment, command, timeout_seconds, factory).await,
+        ProviderOperation::CollectArtifacts { environment, paths } => {
+            collect_artifacts(environment, paths, factory).await
+        }
         ProviderOperation::Prepare {
             environment_id,
             environment,
@@ -222,6 +230,237 @@ where
             release_environment(environment, factory).await
         }
     }
+}
+
+async fn runtime_command<F: GatewayFactory>(
+    environment: EnvironmentHandle,
+    command: TaskCommand,
+    timeout_seconds: u64,
+    factory: &F,
+) -> Result<Value, ProviderError> {
+    if !(1..=320).contains(&timeout_seconds) {
+        return Err(ProviderError::contract(
+            "invalid_runtime_command",
+            "runtime command timeout is unsupported",
+        ));
+    }
+    let (operation, arguments, payload) = command.arguments()?;
+    let binding = SandboxBinding::from_environment(&environment)?;
+    let client = factory.connect(&binding.connection).await?;
+    binding.verify(
+        &client
+            .get(binding.connection.workspace.as_deref(), &binding.name)
+            .await?,
+    )?;
+    let stdin = payload
+        .map(|value| serde_json::to_vec(&value))
+        .transpose()
+        .map_err(|_| {
+            ProviderError::contract(
+                "invalid_runtime_command",
+                "SDK command payload could not be encoded",
+            )
+        })?;
+    if stdin.as_ref().is_some_and(|value| value.len() > 512 * 1024) {
+        return Err(ProviderError::contract(
+            "request_too_large",
+            "SDK command payload exceeds its limit",
+        ));
+    }
+    let executed = client
+        .exec(
+            binding.connection.workspace.as_deref(),
+            &binding.name,
+            arguments,
+            ExecRequest {
+                workdir: None,
+                environment: HashMap::new(),
+                timeout: Duration::from_secs(timeout_seconds),
+                stdin,
+            },
+        )
+        .await?;
+    if executed.stdout.len().saturating_add(executed.stderr.len()) > 4 * 1024 * 1024 {
+        return Err(ProviderError::contract(
+            "response_too_large",
+            "task command output exceeded its limit; effects are unknown",
+        ));
+    }
+    if executed.stdout.is_empty() {
+        let diagnostic: TaskDiagnosticEnvelope =
+            serde_json::from_slice(&executed.stderr).map_err(|_| {
+                ProviderError::contract("invalid_response", "task command outcome is unknown")
+            })?;
+        let error = diagnostic.error;
+        if executed.exit_code == 0
+            || diagnostic.operation != operation
+            || !matches!(diagnostic.status.as_str(), "failed" | "unsupported")
+            || !matches!(error.effects.as_str(), "none" | "applied" | "unknown")
+            || !matches!(
+                error.stage.as_str(),
+                "request" | "validation" | "start" | "invoke" | "stop" | "transport"
+            )
+            || !valid_diagnostic_code(&error.code)
+        {
+            return Err(ProviderError::contract(
+                "invalid_response",
+                "task command diagnostic was invalid; effects are unknown",
+            ));
+        }
+        return Ok(
+            json!({"status": "rejected", "error": {"code": error.code, "stage": error.stage, "effects": error.effects}}),
+        );
+    }
+    if executed
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .count()
+        != 1
+    {
+        return Err(ProviderError::contract(
+            "invalid_response",
+            "task command output was not one SDK JSON value",
+        ));
+    }
+    let value: Value = serde_json::from_slice(&executed.stdout).map_err(|_| {
+        ProviderError::contract("invalid_response", "task command did not return SDK JSON")
+    })?;
+    let succeeded =
+        operation != "invoke" || value.get("status").and_then(Value::as_str) == Some("succeeded");
+    if (executed.exit_code == 0) != succeeded || (operation == "stop" && !value.is_null()) {
+        return Err(ProviderError::contract(
+            "invalid_response",
+            "task command exit and SDK result disagree",
+        ));
+    }
+    Ok(json!({"status": "returned", "value": value}))
+}
+
+fn valid_diagnostic_code(code: &str) -> bool {
+    matches!(
+        code,
+        "platform_unsupported"
+            | "cleanup_unconfirmed"
+            | "invalid_request"
+            | "interface_unsupported"
+            | "wrong_agent"
+            | "validation_failed"
+            | "validation_unavailable"
+            | "start_failed"
+            | "start_uncertain"
+            | "runtime_id_conflict"
+            | "stop_failed"
+            | "invoke_failed"
+            | "host_stopping"
+            | "runtime_unavailable"
+            | "runtime_exists"
+            | "streaming_unsupported"
+            | "host_unavailable"
+            | "invalid_response"
+            | "request_too_large"
+            | "response_too_large"
+            | "invalid_input"
+    )
+}
+
+async fn collect_artifacts<F: GatewayFactory>(
+    environment: EnvironmentHandle,
+    paths: Vec<String>,
+    factory: &F,
+) -> Result<Value, ProviderError> {
+    if paths.len() > 16
+        || paths.iter().any(|path| {
+            path.is_empty()
+                || path.contains('\\')
+                || path.contains('\0')
+                || path
+                    .split('/')
+                    .any(|part| part.is_empty() || part == "." || part == "..")
+        })
+    {
+        return Err(ProviderError::contract(
+            "invalid_artifact_path",
+            "declared artifact paths are invalid",
+        ));
+    }
+    let root = environment
+        .artifacts
+        .clone()
+        .unwrap_or_else(|| "/sandbox/artifacts".to_string());
+    let interpreter = environment
+        .env
+        .get("ADAPTER_PYTHON")
+        .cloned()
+        .unwrap_or_else(|| "/opt/fabric/bin/python".to_string());
+    let binding = SandboxBinding::from_environment(&environment)?;
+    let client = factory.connect(&binding.connection).await?;
+    binding.verify(
+        &client
+            .get(binding.connection.workspace.as_deref(), &binding.name)
+            .await?,
+    )?;
+    let stdin = serde_json::to_vec(&json!({"root": root, "paths": paths})).map_err(|_| {
+        ProviderError::contract(
+            "invalid_artifact_path",
+            "artifact request could not be encoded",
+        )
+    })?;
+    let executed = client
+        .exec(
+            binding.connection.workspace.as_deref(),
+            &binding.name,
+            vec![
+                interpreter,
+                "-c".to_string(),
+                include_str!("read_artifacts.py").to_string(),
+            ],
+            ExecRequest {
+                workdir: None,
+                environment: HashMap::new(),
+                timeout: Duration::from_secs(30),
+                stdin: Some(stdin),
+            },
+        )
+        .await?;
+    if executed.exit_code != 0
+        || executed.stdout.len().saturating_add(executed.stderr.len()) > 3 * 1024 * 1024
+    {
+        return Err(ProviderError::contract(
+            "artifact_read_failed",
+            "declared artifacts could not be read as bounded regular files",
+        ));
+    }
+    let response: ArtifactResponse = serde_json::from_slice(&executed.stdout).map_err(|_| {
+        ProviderError::contract(
+            "artifact_read_failed",
+            "artifact reader returned an invalid response",
+        )
+    })?;
+    if response.files.len() != paths.len()
+        || response
+            .files
+            .iter()
+            .zip(paths)
+            .any(|(file, path)| file.path != path || file.content.len() > 256 * 1024)
+        || response
+            .files
+            .iter()
+            .map(|file| file.content.len())
+            .sum::<usize>()
+            > 512 * 1024
+    {
+        return Err(ProviderError::contract(
+            "artifact_read_failed",
+            "artifact reader failed correlation or size checks",
+        ));
+    }
+    serde_json::to_value(response.files).map_err(|_| {
+        ProviderError::contract(
+            "artifact_read_failed",
+            "artifact output could not be encoded",
+        )
+    })
 }
 
 async fn prepare_environment<F>(
@@ -772,6 +1011,15 @@ struct ProviderRequest {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 enum ProviderOperation {
+    RuntimeCommand {
+        environment: EnvironmentHandle,
+        command: TaskCommand,
+        timeout_seconds: u64,
+    },
+    CollectArtifacts {
+        environment: EnvironmentHandle,
+        paths: Vec<String>,
+    },
     Prepare {
         environment_id: String,
         environment: EnvironmentPlan,
@@ -799,6 +1047,89 @@ enum ProviderOperation {
     Release {
         environment: EnvironmentHandle,
     },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+enum TaskCommand {
+    Start {
+        agent: String,
+        config: Value,
+    },
+    Invoke {
+        agent: String,
+        runtime_id: String,
+        request: Value,
+    },
+    Stop {
+        agent: String,
+        runtime_id: String,
+    },
+}
+impl TaskCommand {
+    fn arguments(self) -> Result<(&'static str, Vec<String>, Option<Value>), ProviderError> {
+        let mut arguments = vec!["fabric-agent-ctl".to_string()];
+        let (operation, agent, runtime_id, payload) = match self {
+            Self::Start { agent, config } => ("start", agent, None, Some(config)),
+            Self::Invoke {
+                agent,
+                runtime_id,
+                request,
+            } => ("invoke", agent, Some(runtime_id), Some(request)),
+            Self::Stop { agent, runtime_id } => ("stop", agent, Some(runtime_id), None),
+        };
+        if agent.trim().is_empty()
+            || agent.contains('\0')
+            || runtime_id
+                .as_ref()
+                .is_some_and(|value| value.trim().is_empty() || value.contains('\0'))
+            || payload.as_ref().is_some_and(|value| !value.is_object())
+        {
+            return Err(ProviderError::contract(
+                "invalid_runtime_command",
+                "command routing or SDK payload is invalid",
+            ));
+        }
+        arguments.extend([operation.to_string(), "--agent".to_string(), agent]);
+        if let Some(runtime_id) = runtime_id {
+            arguments.extend(["--runtime-id".to_string(), runtime_id]);
+        }
+        if payload.is_some() {
+            arguments.extend([
+                if operation == "start" {
+                    "--config"
+                } else {
+                    "--request"
+                }
+                .to_string(),
+                "-".to_string(),
+            ]);
+        }
+        Ok((operation, arguments, payload))
+    }
+}
+#[derive(Deserialize)]
+struct TaskDiagnosticEnvelope {
+    operation: String,
+    status: String,
+    error: TaskDiagnostic,
+}
+#[derive(Deserialize)]
+struct TaskDiagnostic {
+    code: String,
+    stage: String,
+    effects: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArtifactResponse {
+    files: Vec<CollectedArtifact>,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CollectedArtifact {
+    path: String,
+    content: Vec<u8>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -858,6 +1189,8 @@ struct EnvironmentHandle {
     artifacts: Option<String>,
     #[serde(default)]
     connection: Map<String, Value>,
+    #[serde(default)]
+    env: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1804,6 +2137,7 @@ mod tests {
             calls: Arc::clone(&calls),
             ready_id: "sandbox-id-1",
             deletion: None,
+            execution: None,
         };
         let environment = EnvironmentPlan {
             provider: "openshell".to_string(),
@@ -1858,6 +2192,7 @@ mod tests {
             calls: Arc::clone(&calls),
             ready_id: "sandbox-id-1",
             deletion: None,
+            execution: None,
         };
         let mut environment = environment_plan_fixture();
         environment.ownership = "caller_owned".to_string();
@@ -1893,6 +2228,7 @@ mod tests {
             calls: Arc::clone(&calls),
             ready_id: "different-sandbox-id",
             deletion: None,
+            execution: None,
         };
         let mut environment = environment_plan_fixture();
         environment.ownership = "caller_owned".to_string();
@@ -1922,6 +2258,7 @@ mod tests {
             calls: Arc::clone(&calls),
             ready_id: "sandbox-id-1",
             deletion: None,
+            execution: None,
         };
         let environment = environment_handle_fixture();
 
@@ -1971,6 +2308,7 @@ mod tests {
             calls: Arc::clone(&calls),
             ready_id: "sandbox-id-1",
             deletion: None,
+            execution: None,
         };
         let mut environment = environment_handle_fixture();
         environment.ownership = "caller_owned".to_string();
@@ -1990,6 +2328,7 @@ mod tests {
             calls: Arc::clone(&calls),
             ready_id: "replaced-sandbox-id",
             deletion: None,
+            execution: None,
         };
         let environment = EnvironmentPlan {
             provider: "openshell".to_string(),
@@ -2061,6 +2400,7 @@ mod tests {
             calls: Arc::clone(&calls),
             ready_id: "sandbox-id-1",
             deletion: None,
+            execution: None,
         };
         let mut environment = environment_plan_fixture();
         environment.ownership = "caller_owned".to_string();
@@ -2105,6 +2445,7 @@ mod tests {
                         Some("sandbox-id-1".to_string())
                     },
                 }),
+                execution: None,
             };
             let result = release_environment(environment_handle_fixture(), &factory).await;
             match outcome {
@@ -2143,6 +2484,7 @@ mod tests {
                 outcome: DeletionOutcome::Accepted,
                 sandbox_id: Some("replacement".to_string()),
             }),
+            execution: None,
         };
         let error = release_environment(environment_handle_fixture(), &factory)
             .await
@@ -2164,6 +2506,7 @@ mod tests {
             calls: Arc::clone(&calls),
             ready_id: "replacement",
             deletion: None,
+            execution: None,
         };
         let error = release_environment(environment_handle_fixture(), &factory)
             .await
@@ -2197,6 +2540,157 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn sdk_failed_result_is_a_returned_value_even_with_exit_one() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let value = json!({"runtime_id": "runtime-task", "request_id": "request-host", "status": "failed", "output": null, "artifacts": {"artifacts": []}});
+        let factory = MockFactory {
+            calls: Arc::clone(&calls),
+            ready_id: "sandbox-id-1",
+            deletion: None,
+            execution: Some((
+                1,
+                serde_json::to_vec(&value).expect("SDK JSON"),
+                b"PRIVATE ignored stderr".to_vec(),
+            )),
+        };
+        let command = TaskCommand::Invoke {
+            agent: "echo".to_string(),
+            runtime_id: "runtime-task".to_string(),
+            request: json!({"request_id": "request-host", "input": [true, null], "context": {"turn": 2}}),
+        };
+        let output = runtime_command(environment_handle_fixture(), command, 30, &factory)
+            .await
+            .expect("failed SDK return");
+        assert_eq!(output, json!({"status": "returned", "value": value}));
+        assert!(
+            calls
+                .lock()
+                .expect("calls")
+                .iter()
+                .any(|call| call.contains(
+                    "fabric-agent-ctl invoke --agent echo --runtime-id runtime-task --request -"
+                ))
+        );
+    }
+
+    #[tokio::test]
+    async fn task_rejection_keeps_unknown_effects_and_excludes_diagnostic_values() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let diagnostic = json!({"operation": "start", "status": "failed", "error": {"code": "start_failed", "stage": "start", "effects": "unknown", "message": "PRIVATE"}});
+        let factory = MockFactory {
+            calls,
+            ready_id: "sandbox-id-1",
+            deletion: None,
+            execution: Some((
+                1,
+                Vec::new(),
+                serde_json::to_vec(&diagnostic).expect("diagnostic JSON"),
+            )),
+        };
+        let output = runtime_command(
+            environment_handle_fixture(),
+            TaskCommand::Start {
+                agent: "echo".to_string(),
+                config: json!({}),
+            },
+            30,
+            &factory,
+        )
+        .await
+        .expect("observed task rejection");
+        assert_eq!(
+            output,
+            json!({"status": "rejected", "error": {"code": "start_failed", "stage": "start", "effects": "unknown"}})
+        );
+        assert!(!output.to_string().contains("PRIVATE"));
+    }
+
+    #[tokio::test]
+    async fn unknown_start_diagnostic_is_preserved_by_the_provider() {
+        let diagnostic = json!({"operation": "start", "status": "failed", "error": {"code": "start_uncertain", "stage": "start", "effects": "unknown", "message": "PRIVATE"}});
+        let factory = MockFactory {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            ready_id: "sandbox-id-1",
+            deletion: None,
+            execution: Some((
+                1,
+                Vec::new(),
+                serde_json::to_vec(&diagnostic).expect("diagnostic JSON"),
+            )),
+        };
+
+        let output = runtime_command(
+            environment_handle_fixture(),
+            TaskCommand::Start {
+                agent: "echo".to_string(),
+                config: json!({}),
+            },
+            30,
+            &factory,
+        )
+        .await
+        .expect("observed task rejection");
+
+        assert_eq!(
+            output,
+            json!({"status": "rejected", "error": {"code": "start_uncertain", "stage": "start", "effects": "unknown"}})
+        );
+        assert!(!output.to_string().contains("PRIVATE"));
+    }
+
+    #[test]
+    fn invocation_arguments_preserve_the_full_sdk_request() {
+        let request = json!({"request_id": "caller-1", "input": ["review", null], "relay_session_root": "8da8e329-a5c3-49d3-8004-6f31e6833736", "context": {"turn": 2}, "overrides": {"max_iterations": 3}});
+        let (_, arguments, payload) = TaskCommand::Invoke {
+            agent: "echo".to_string(),
+            runtime_id: "runtime-task".to_string(),
+            request: request.clone(),
+        }
+        .arguments()
+        .expect("SDK invocation");
+        assert_eq!(payload, Some(request));
+        assert_eq!(
+            arguments,
+            [
+                "fabric-agent-ctl",
+                "invoke",
+                "--agent",
+                "echo",
+                "--runtime-id",
+                "runtime-task",
+                "--request",
+                "-"
+            ]
+        );
+    }
+
+    #[test]
+    fn core_invocation_golden_contract_decodes_without_payload_changes() {
+        let expected: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/openshell_echo/invoke-command.json"
+        ))
+        .expect("golden contract");
+        let command: TaskCommand =
+            serde_json::from_value(expected.clone()).expect("core command contract");
+        let (operation, arguments, payload) = command.arguments().expect("SDK CLI routing");
+        assert_eq!(operation, "invoke");
+        assert_eq!(payload, Some(expected["request"].clone()));
+        assert_eq!(
+            arguments,
+            [
+                "fabric-agent-ctl",
+                "invoke",
+                "--agent",
+                "echo",
+                "--runtime-id",
+                "runtime-task",
+                "--request",
+                "-"
+            ]
+        );
+    }
+
     struct NeverConnect;
 
     #[async_trait]
@@ -2213,6 +2707,7 @@ mod tests {
         calls: Arc<Mutex<Vec<String>>>,
         ready_id: &'static str,
         deletion: Option<DeletionResult>,
+        execution: Option<(i32, Vec<u8>, Vec<u8>)>,
     }
 
     #[async_trait]
@@ -2229,6 +2724,7 @@ mod tests {
                 calls: Arc::clone(&self.calls),
                 ready_id: self.ready_id,
                 deletion: self.deletion.clone(),
+                execution: self.execution.clone(),
             }))
         }
     }
@@ -2237,6 +2733,7 @@ mod tests {
         calls: Arc<Mutex<Vec<String>>>,
         ready_id: &'static str,
         deletion: Option<DeletionResult>,
+        execution: Option<(i32, Vec<u8>, Vec<u8>)>,
     }
 
     #[async_trait]
@@ -2310,6 +2807,13 @@ mod tests {
                 command.join(" "),
                 request.timeout.as_secs()
             ));
+            if let Some((exit_code, stdout, stderr)) = &self.execution {
+                return Ok(ExecResponse {
+                    exit_code: *exit_code,
+                    stdout: stdout.clone(),
+                    stderr: stderr.clone(),
+                });
+            }
             let stdout = b"ok".to_vec();
             Ok(ExecResponse {
                 exit_code: 0,
@@ -2380,6 +2884,7 @@ mod tests {
             environment_id: "environment-1".to_string(),
             provider: "openshell".to_string(),
             ownership: "fabric_owned".to_string(),
+            env: HashMap::new(),
             workspace: Some("/sandbox".to_string()),
             artifacts: Some("/sandbox/artifacts".to_string()),
             connection: Map::from_iter([

@@ -12,6 +12,7 @@ mod environment;
 pub mod error;
 pub mod runtime;
 pub mod schema;
+mod task_command;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
 pub use agent_execution::{

@@ -32,12 +32,13 @@ use crate::error::{FabricError, Result};
 use crate::runtime::{
     EnvironmentHandle, EnvironmentReference, absolute_path, new_id, resolve_path,
 };
+use crate::task_command::{TaskCommand, TaskCommandResponse};
 
 const OPEN_SHELL_PROVIDER_ID: &str = "openshell";
 const OPEN_SHELL_PROVIDER_COMMAND: &str = "fabric-environment-openshell";
 const OPEN_SHELL_PROVIDER_COMMAND_ENV: &str = "NEMO_FABRIC_OPEN_SHELL_PROVIDER";
 const PROVIDER_PROTOCOL_VERSION: &str = "fabric.environment-provider.v1alpha1";
-const MAX_PROVIDER_REQUEST_BYTES: usize = 256 * 1024;
+const MAX_PROVIDER_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_PROVIDER_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const DEFAULT_PROVIDER_OPERATION_TIMEOUT_SECONDS: u64 = 30;
 const PROVIDER_RESPONSE_GRACE_SECONDS: u64 = 15;
@@ -263,6 +264,34 @@ pub(crate) fn release_environment(
             provider: provider.to_string(),
         }),
     }
+}
+
+/// Execute a buffered SDK command through the selected task provider.
+pub(crate) fn command_runtime(
+    environment: &EnvironmentHandle,
+    command: &TaskCommand,
+    timeout_seconds: u64,
+) -> Result<TaskCommandResponse> {
+    if environment.provider != OPEN_SHELL_PROVIDER_ID {
+        return Err(FabricError::UnsupportedEnvironmentProvider {
+            provider: environment.provider.clone(),
+            adapter_kind: crate::config::AdapterKind::Process,
+        });
+    }
+    OPEN_SHELL_ENVIRONMENT_PROVIDER.request(ProviderOperation::RuntimeCommand {
+        environment,
+        command,
+        timeout_seconds,
+    })
+}
+
+/// Read only declared files beneath the task artifact root.
+pub(crate) fn collect_artifacts(
+    environment: &EnvironmentHandle,
+    paths: &[String],
+) -> Result<Vec<CollectedArtifact>> {
+    OPEN_SHELL_ENVIRONMENT_PROVIDER
+        .request(ProviderOperation::CollectArtifacts { environment, paths })
 }
 
 fn validate_open_shell_profile(
@@ -641,6 +670,15 @@ enum ProviderOperation<'a> {
         environment: &'a EnvironmentPlan,
         reference: &'a EnvironmentReference,
     },
+    RuntimeCommand {
+        environment: &'a EnvironmentHandle,
+        command: &'a TaskCommand,
+        timeout_seconds: u64,
+    },
+    CollectArtifacts {
+        environment: &'a EnvironmentHandle,
+        paths: &'a [String],
+    },
     Release {
         environment: &'a EnvironmentHandle,
     },
@@ -651,6 +689,8 @@ impl ProviderOperation<'_> {
         match self {
             Self::Prepare { .. } => "prepare",
             Self::Attach { .. } => "attach",
+            Self::RuntimeCommand { .. } => "runtime_command",
+            Self::CollectArtifacts { .. } => "collect_artifacts",
             Self::Release { .. } => "release",
         }
     }
@@ -667,6 +707,10 @@ impl ProviderOperation<'_> {
                     .saturating_add(6 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS)
             }
             Self::Attach { .. } => 3 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS,
+            Self::RuntimeCommand {
+                timeout_seconds, ..
+            } => *timeout_seconds,
+            Self::CollectArtifacts { .. } => 30,
             Self::Release { environment } => connection_seconds(
                 &environment.connection,
                 "delete_timeout_seconds",
@@ -820,4 +864,11 @@ print(json.dumps({'protocol_version': 'PRIVATE response', 'request_id': request[
         assert!(!error.to_string().contains("PRIVATE"));
         fs::remove_dir_all(directory).expect("remove fixture");
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CollectedArtifact {
+    pub(crate) path: String,
+    pub(crate) content: Vec<u8>,
 }
