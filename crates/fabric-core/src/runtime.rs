@@ -920,9 +920,8 @@ pub fn attach_environment(
 /// Detach a local environment without deleting caller-owned files.
 pub fn release_environment(environment: &EnvironmentHandle) -> Result<()> {
     if environment.provider != "local" {
-        return Err(FabricError::UnsupportedEnvironmentProvider {
+        return Err(FabricError::UnsupportedEnvironmentRelease {
             provider: environment.provider.clone(),
-            adapter_kind: AdapterKind::Process,
         });
     }
     Ok(())
@@ -5734,6 +5733,22 @@ for line in sys.stdin:
         stop_runtime(&plan, &runtime).expect("stop runtime");
         release_environment(&environment).expect("release environment");
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn environment_release_reports_unsupported_provider_without_adapter_kind() {
+        let (root, plan) = local_host_plan("success");
+        let mut environment = prepare_environment(&plan).expect("prepare local environment");
+        environment.provider = "openshell".to_string();
+
+        let error = release_environment(&environment).expect_err("release is unsupported");
+
+        assert!(matches!(
+            error,
+            FabricError::UnsupportedEnvironmentRelease { ref provider } if provider == "openshell"
+        ));
+        assert!(error.to_string().contains("environment release"));
         let _ = fs::remove_dir_all(root);
     }
 

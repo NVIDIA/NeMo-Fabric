@@ -277,6 +277,12 @@ pub enum FabricError {
         /// Adapter kind.
         adapter_kind: AdapterKind,
     },
+    /// An environment provider does not implement release.
+    #[error("environment provider `{provider}` is not implemented for environment release")]
+    UnsupportedEnvironmentRelease {
+        /// Environment provider.
+        provider: String,
+    },
     /// A non-local runtime was started without an explicitly prepared environment handle.
     #[error(
         "environment provider `{provider}` requires an explicit EnvironmentHandle; call prepare_environment() and then start_runtime_in()"

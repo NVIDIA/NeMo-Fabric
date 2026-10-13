@@ -1709,7 +1709,10 @@ class EnvironmentHandle(FabricMapping):
             value = data.get(field)
             if value is not None:
                 if data["provider"] == "local":
-                    data[field] = Path(value)
+                    if isinstance(value, Path):
+                        data[field] = value
+                    else:
+                        data[field] = Path(_required_text(value, field))
                 else:
                     # Task paths are strings; never reinterpret them using host OS rules.
                     data[field] = _required_text(value, field)

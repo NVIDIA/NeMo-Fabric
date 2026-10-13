@@ -90,6 +90,35 @@ def test_remote_paths_do_not_use_host_path_conversion(monkeypatch, remote_handle
     assert handle.to_mapping()["connection"]["sandbox_id"] == "immutable-1"
 
 
+@pytest.mark.parametrize("path", [[], 42, {"path": "workspace"}])
+def test_local_environment_handle_rejects_non_text_paths(path):
+    with pytest.raises(FabricConfigError):
+        EnvironmentHandle.from_mapping(
+            {
+                "environment_id": "environment-1",
+                "provider": "local",
+                "control_location": "external_control",
+                "ownership": "caller_owned",
+                "workspace": path,
+            }
+        )
+
+
+def test_local_environment_handle_preserves_path_values():
+    workspace = Path("/tmp/workspace")
+    handle = EnvironmentHandle.from_mapping(
+        {
+            "environment_id": "environment-1",
+            "provider": "local",
+            "control_location": "external_control",
+            "ownership": "caller_owned",
+            "workspace": workspace,
+        }
+    )
+    assert handle.workspace == workspace
+    assert isinstance(handle.workspace, Path)
+
+
 @pytest.mark.parametrize(
     "changes",
     [
