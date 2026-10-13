@@ -34,6 +34,7 @@ const MAX_PROVIDER_REQUEST_BYTES: usize = 256 * 1024;
 const MAX_PROVIDER_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const DEFAULT_PROVIDER_OPERATION_TIMEOUT_SECONDS: u64 = 30;
 const PROVIDER_RESPONSE_GRACE_SECONDS: u64 = 15;
+const PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS: u64 = 30;
 
 /// Internal environment preparation contract.
 ///
@@ -648,13 +649,20 @@ impl ProviderOperation<'_> {
         let operation_seconds = match self {
             Self::Prepare { environment, .. } => {
                 setting_seconds(&environment.settings, "ready_timeout_seconds", 60)
+                    .saturating_add(setting_seconds(
+                        &environment.settings,
+                        "delete_timeout_seconds",
+                        30,
+                    ))
+                    .saturating_add(6 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS)
             }
-            Self::Attach { .. } => DEFAULT_PROVIDER_OPERATION_TIMEOUT_SECONDS,
+            Self::Attach { .. } => 3 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS,
             Self::Release { environment } => connection_seconds(
                 &environment.connection,
                 "delete_timeout_seconds",
                 DEFAULT_PROVIDER_OPERATION_TIMEOUT_SECONDS,
-            ),
+            )
+            .saturating_add(3 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
         };
         Duration::from_secs(operation_seconds.saturating_add(PROVIDER_RESPONSE_GRACE_SECONDS))
     }
@@ -718,6 +726,30 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn prepare_response_timeout_covers_cleanup_after_readiness() {
+        let environment = EnvironmentPlan {
+            provider: OPEN_SHELL_PROVIDER_ID.to_string(),
+            control_location: ControlLocation::InEnvControl,
+            ownership: EnvironmentOwnership::FabricOwned,
+            workspace: None,
+            artifacts: None,
+            env: BTreeMap::new(),
+            connection: serde_json::Map::new(),
+            metadata: serde_json::Map::new(),
+            settings: serde_json::Map::from_iter([
+                ("ready_timeout_seconds".to_string(), serde_json::json!(60)),
+                ("delete_timeout_seconds".to_string(), serde_json::json!(30)),
+            ]),
+        };
+        let operation = ProviderOperation::Prepare {
+            environment_id: "environment-test",
+            environment: &environment,
+        };
+
+        assert_eq!(operation.response_timeout(), Duration::from_secs(285));
+    }
 
     fn provider_script(body: &str) -> (PathBuf, OsString) {
         let directory = std::env::temp_dir().join(new_id("fabric-provider-test"));

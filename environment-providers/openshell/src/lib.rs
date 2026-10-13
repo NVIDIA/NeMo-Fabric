@@ -4,6 +4,7 @@
 //! Experimental `OpenShell` environment provider for NVIDIA `NeMo` Fabric.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::io::{BufRead, Write};
 use std::time::Duration;
 
@@ -23,6 +24,7 @@ const MAX_EXEC_OUTPUT_BYTES: usize = 3 * 1024 * 1024;
 const DEFAULT_READY_TIMEOUT_SECONDS: u64 = 60;
 const DEFAULT_DELETE_TIMEOUT_SECONDS: u64 = 30;
 const DEFAULT_EXEC_TIMEOUT_SECONDS: u64 = 30;
+const GATEWAY_CALL_TIMEOUT_SECONDS: u64 = 30;
 const MAX_OPERATION_TIMEOUT_SECONDS: u64 = 600;
 
 /// Provider process failure.
@@ -229,8 +231,18 @@ where
     let connection = OpenShellConnection::from_map(&environment.connection)?;
     let settings = OpenShellSettings::from_map(environment.settings)?;
     let policy_attached = settings.policy.is_some();
-    let client = factory.connect(&connection).await?;
-    let health = client.health().await?;
+    let client = bounded_gateway_call(
+        "connect",
+        Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS),
+        factory.connect(&connection),
+    )
+    .await?;
+    let health = bounded_gateway_call(
+        "health",
+        Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS),
+        client.health(),
+    )
+    .await?;
     if health.status != GatewayStatus::Healthy {
         return Err(ProviderError::contract(
             "gateway_unhealthy",
@@ -238,11 +250,17 @@ where
         ));
     }
 
-    let sandbox = client
-        .create(
+    let sandbox_name = settings
+        .sandbox_name
+        .clone()
+        .unwrap_or_else(|| format!("nemo-fabric-{environment_id}"));
+    let sandbox = match bounded_gateway_call(
+        "create",
+        Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS),
+        client.create(
             connection.workspace.as_deref(),
             SandboxCreate {
-                name: settings.sandbox_name.clone(),
+                name: Some(sandbox_name.clone()),
                 image: settings.image.clone(),
                 labels: HashMap::from([(
                     "nemo-fabric.environment-id".to_string(),
@@ -253,15 +271,51 @@ where
                 command: settings.command,
                 policy: settings.policy,
             },
-        )
-        .await?;
-    let ready = match client
-        .wait_ready(
+        ),
+    )
+    .await
+    {
+        Ok(sandbox) => sandbox,
+        Err(error) => {
+            let current = bounded_gateway_call(
+                "get",
+                Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS),
+                client.get(connection.workspace.as_deref(), &sandbox_name),
+            )
+            .await;
+            match current {
+                Ok(current)
+                    if current
+                        .labels
+                        .get("nemo-fabric.environment-id")
+                        .is_some_and(|value| value == environment_id) =>
+                {
+                    cleanup_created_sandbox(
+                        client.as_ref(),
+                        connection.workspace.as_deref(),
+                        &current.name,
+                        &current.id,
+                        settings.delete_timeout_seconds,
+                    )
+                    .await?;
+                    return Err(error);
+                }
+                Ok(_) => return Err(error),
+                Err(lookup_error) if lookup_error.code() == "not_found" => return Err(error),
+                Err(_) => return Err(unconfirmed_cleanup_error(&sandbox_name, "unknown")),
+            }
+        }
+    };
+    let ready = match bounded_gateway_call(
+        "wait_ready",
+        Duration::from_secs(settings.ready_timeout_seconds),
+        client.wait_ready(
             connection.workspace.as_deref(),
             &sandbox.name,
             Duration::from_secs(settings.ready_timeout_seconds),
-        )
-        .await
+        ),
+    )
+    .await
     {
         Ok(ready) => ready,
         Err(error) => {
@@ -272,7 +326,7 @@ where
                 &sandbox.id,
                 settings.delete_timeout_seconds,
             )
-            .await;
+            .await?;
             return Err(error);
         }
     };
@@ -287,7 +341,7 @@ where
             &sandbox.id,
             settings.delete_timeout_seconds,
         )
-        .await;
+        .await?;
         return Err(ProviderError::contract(
             "sandbox_identity_changed",
             "OpenShell returned a different sandbox id while waiting for readiness",
@@ -340,17 +394,22 @@ where
     let resource = OpenShellResourceReference::from_map(reference.resource)?;
     let connection = OpenShellConnection::from_map(&environment.connection)?;
     let settings = OpenShellSettings::from_map(environment.settings)?;
-    let client = factory.connect(&connection).await?;
-    let health = client.health().await?;
+    let call_timeout = Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS);
+    let client =
+        bounded_gateway_call("connect", call_timeout, factory.connect(&connection)).await?;
+    let health = bounded_gateway_call("health", call_timeout, client.health()).await?;
     if health.status != GatewayStatus::Healthy {
         return Err(ProviderError::contract(
             "gateway_unhealthy",
             format!("OpenShell gateway reported {:?}", health.status),
         ));
     }
-    let sandbox = client
-        .get(connection.workspace.as_deref(), &resource.sandbox_name)
-        .await?;
+    let sandbox = bounded_gateway_call(
+        "get",
+        call_timeout,
+        client.get(connection.workspace.as_deref(), &resource.sandbox_name),
+    )
+    .await?;
     if sandbox.id != resource.sandbox_id
         || sandbox.workspace != connection.workspace.as_deref().unwrap_or("default")
     {
@@ -420,30 +479,58 @@ async fn cleanup_created_sandbox(
     name: &str,
     sandbox_id: &str,
     timeout_seconds: u64,
-) {
-    let Ok(current) = client.get(workspace, name).await else {
-        return;
-    };
+) -> Result<(), ProviderError> {
+    let timeout = Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS);
+    let current = bounded_gateway_call("get", timeout, client.get(workspace, name))
+        .await
+        .map_err(|_| unconfirmed_cleanup_error(name, sandbox_id))?;
     if current.id != sandbox_id {
-        return;
+        return Err(unconfirmed_cleanup_error(name, sandbox_id));
     }
-    let Ok(deletion) = client.delete(workspace, name).await else {
-        return;
-    };
+    let deletion = bounded_gateway_call("delete", timeout, client.delete(workspace, name))
+        .await
+        .map_err(|_| unconfirmed_cleanup_error(name, sandbox_id))?;
     if matches!(
         deletion.outcome,
         DeletionOutcome::Accepted | DeletionOutcome::Completed
     ) && deletion.sandbox_id.as_deref() == Some(sandbox_id)
     {
-        let _ = client
-            .wait_deleted(
+        bounded_gateway_call(
+            "wait_deleted",
+            Duration::from_secs(timeout_seconds),
+            client.wait_deleted(
                 workspace,
                 name,
                 Duration::from_secs(timeout_seconds),
                 Some(sandbox_id),
-            )
-            .await;
+            ),
+        )
+        .await
+        .map_err(|_| unconfirmed_cleanup_error(name, sandbox_id))?;
+    } else {
+        return Err(unconfirmed_cleanup_error(name, sandbox_id));
     }
+    Ok(())
+}
+
+fn unconfirmed_cleanup_error(name: &str, sandbox_id: &str) -> ProviderError {
+    ProviderError::contract(
+        "cleanup_unconfirmed",
+        format!("cleanup was not confirmed for sandbox `{name}` (id `{sandbox_id}`)"),
+    )
+}
+
+async fn bounded_gateway_call<T>(
+    operation: &str,
+    timeout: Duration,
+    call: impl Future<Output = Result<T, ProviderError>>,
+) -> Result<T, ProviderError> {
+    tokio::time::timeout(timeout, call).await.map_err(|_| {
+        ProviderError::contract(
+            "gateway_timeout",
+            format!("OpenShell {operation} call exceeded its time limit"),
+        )
+    })?
 }
 
 async fn inspect_environment<F>(
@@ -454,10 +541,19 @@ where
     F: GatewayFactory,
 {
     let binding = SandboxBinding::from_environment(&environment)?;
-    let client = factory.connect(&binding.connection).await?;
-    let sandbox = client
-        .get(binding.connection.workspace.as_deref(), &binding.name)
-        .await?;
+    let call_timeout = Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS);
+    let client = bounded_gateway_call(
+        "connect",
+        call_timeout,
+        factory.connect(&binding.connection),
+    )
+    .await?;
+    let sandbox = bounded_gateway_call(
+        "get",
+        call_timeout,
+        client.get(binding.connection.workspace.as_deref(), &binding.name),
+    )
+    .await?;
     binding.verify(&sandbox)?;
     Ok(json!({
         "sandbox_id": sandbox.id,
@@ -498,13 +594,24 @@ where
             "exec timeout must be between 1 and 600 seconds",
         ));
     }
-    let client = factory.connect(&binding.connection).await?;
-    let sandbox = client
-        .get(binding.connection.workspace.as_deref(), &binding.name)
-        .await?;
+    let call_timeout = Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS);
+    let client = bounded_gateway_call(
+        "connect",
+        call_timeout,
+        factory.connect(&binding.connection),
+    )
+    .await?;
+    let sandbox = bounded_gateway_call(
+        "get",
+        call_timeout,
+        client.get(binding.connection.workspace.as_deref(), &binding.name),
+    )
+    .await?;
     binding.verify(&sandbox)?;
-    let result = client
-        .exec(
+    let result = bounded_gateway_call(
+        "exec",
+        Duration::from_secs(timeout),
+        client.exec(
             binding.connection.workspace.as_deref(),
             &binding.name,
             command,
@@ -514,8 +621,9 @@ where
                 timeout: Duration::from_secs(timeout),
                 stdin,
             },
-        )
-        .await?;
+        ),
+    )
+    .await?;
     if result.stdout.len().saturating_add(result.stderr.len()) > MAX_EXEC_OUTPUT_BYTES {
         return Err(ProviderError::contract(
             "exec_output_too_large",
@@ -540,10 +648,19 @@ where
         return Ok(json!({"released": false, "detached": true}));
     }
     let binding = SandboxBinding::from_environment(&environment)?;
-    let client = factory.connect(&binding.connection).await?;
-    match client
-        .get(binding.connection.workspace.as_deref(), &binding.name)
-        .await
+    let call_timeout = Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS);
+    let client = bounded_gateway_call(
+        "connect",
+        call_timeout,
+        factory.connect(&binding.connection),
+    )
+    .await?;
+    match bounded_gateway_call(
+        "get",
+        call_timeout,
+        client.get(binding.connection.workspace.as_deref(), &binding.name),
+    )
+    .await
     {
         Ok(sandbox) => binding.verify(&sandbox)?,
         Err(error) if error.code() == "not_found" => {
@@ -551,9 +668,12 @@ where
         }
         Err(error) => return Err(error),
     }
-    let deletion = client
-        .delete(binding.connection.workspace.as_deref(), &binding.name)
-        .await?;
+    let deletion = bounded_gateway_call(
+        "delete",
+        call_timeout,
+        client.delete(binding.connection.workspace.as_deref(), &binding.name),
+    )
+    .await?;
     match deletion.outcome {
         DeletionOutcome::AlreadyAbsent => return Ok(json!({"released": false, "detached": false})),
         DeletionOutcome::Accepted | DeletionOutcome::Completed => {
@@ -571,19 +691,21 @@ where
             ));
         }
     }
-    client
-        .wait_deleted(
+    let delete_timeout = binding
+        .connection
+        .delete_timeout_seconds
+        .unwrap_or(DEFAULT_DELETE_TIMEOUT_SECONDS);
+    bounded_gateway_call(
+        "wait_deleted",
+        Duration::from_secs(delete_timeout),
+        client.wait_deleted(
             binding.connection.workspace.as_deref(),
             &binding.name,
-            Duration::from_secs(
-                binding
-                    .connection
-                    .delete_timeout_seconds
-                    .unwrap_or(DEFAULT_DELETE_TIMEOUT_SECONDS),
-            ),
+            Duration::from_secs(delete_timeout),
             Some(&binding.id),
-        )
-        .await?;
+        ),
+    )
+    .await?;
     Ok(json!({"released": true, "detached": false}))
 }
 
@@ -1096,6 +1218,7 @@ struct SandboxSnapshot {
     id: String,
     name: String,
     workspace: String,
+    labels: HashMap<String, String>,
     phase: ProviderSandboxPhase,
     resource_version: u64,
     exit_code: Option<i32>,
@@ -1406,6 +1529,7 @@ fn sandbox_snapshot(sandbox: SandboxRef) -> SandboxSnapshot {
         id: sandbox.id,
         name: sandbox.name,
         workspace: sandbox.workspace,
+        labels: HashMap::new(),
         phase: match sandbox.phase {
             SandboxPhase::Provisioning => ProviderSandboxPhase::Provisioning,
             SandboxPhase::Ready => ProviderSandboxPhase::Ready,
@@ -1441,6 +1565,7 @@ fn raw_sandbox_snapshot(sandbox: proto::Sandbox) -> SandboxSnapshot {
         id: metadata.id,
         name: metadata.name,
         workspace: metadata.workspace,
+        labels: metadata.labels,
         phase: match phase {
             proto::SandboxPhase::Provisioning => ProviderSandboxPhase::Provisioning,
             proto::SandboxPhase::Ready => ProviderSandboxPhase::Ready,
@@ -1477,6 +1602,20 @@ fn grpc_error_code(code: tonic::Code) -> &'static str {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+
+    #[tokio::test]
+    async fn bounded_gateway_call_reports_timeouts_without_sdk_details() {
+        let error = bounded_gateway_call(
+            "create",
+            Duration::ZERO,
+            std::future::pending::<Result<(), ProviderError>>(),
+        )
+        .await
+        .expect_err("zero deadline must time out");
+
+        assert_eq!(error.code(), "gateway_timeout");
+        assert!(error.to_string().contains("create"));
+    }
 
     #[test]
     fn settings_require_a_digest_pinned_image() {
@@ -1541,8 +1680,7 @@ mod tests {
         .expect_err("literal token field must fail closed");
 
         assert_eq!(error.code(), "invalid_connection");
-        assert_eq!(error.code(), "invalid_connection");
-        assert!(!error.to_string().contains("literal-token"));
+        assert!(!error.to_string().contains("literal-secret"));
     }
 
     #[test]
@@ -1872,7 +2010,9 @@ mod tests {
             .await
             .expect_err("identity replacement must fail");
 
-        assert_eq!(error.code(), "sandbox_identity_changed");
+        assert_eq!(error.code(), "cleanup_unconfirmed");
+        assert!(error.to_string().contains("sandbox-id-1"));
+        assert!(error.to_string().contains("fabric-sandbox-1"));
         assert!(
             !calls
                 .lock()
@@ -1880,6 +2020,33 @@ mod tests {
                 .iter()
                 .any(|call| call.starts_with("delete:") || call.starts_with("wait_deleted:"))
         );
+    }
+
+    #[tokio::test]
+    async fn failed_prepare_cleanup_reports_the_sandbox_identity() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let client = MockGateway {
+            calls,
+            ready_id: "sandbox-id-1",
+            deletion: Some(DeletionResult {
+                outcome: DeletionOutcome::Unspecified,
+                sandbox_id: Some("sandbox-id-1".to_string()),
+            }),
+        };
+
+        let error = cleanup_created_sandbox(
+            &client,
+            Some("fabric-demo"),
+            "fabric-sandbox-1",
+            "sandbox-id-1",
+            30,
+        )
+        .await
+        .expect_err("unrecognized deletion must be reported");
+
+        assert_eq!(error.code(), "cleanup_unconfirmed");
+        assert!(error.to_string().contains("fabric-sandbox-1"));
+        assert!(error.to_string().contains("sandbox-id-1"));
     }
 
     #[tokio::test]
@@ -2226,6 +2393,7 @@ mod tests {
             id: "sandbox-id-1".to_string(),
             name: "fabric-sandbox-1".to_string(),
             workspace: "fabric-demo".to_string(),
+            labels: HashMap::new(),
             phase,
             resource_version: 1,
             exit_code: None,

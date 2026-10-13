@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # OpenShell Environment Provider
 
-This optional host process connects NVIDIA NeMo Fabric to OpenShell through its Rust SDK. The application uses the normal Fabric SDK; OpenShell owns sandbox isolation, network policy, and deletion. The agent and its adapter run inside the task image.
+This optional host process connects NVIDIA NeMo Fabric to OpenShell through its Rust SDK. The application uses the normal NeMo Fabric SDK; OpenShell owns sandbox isolation, network policy, and deletion. The agent and its adapter run inside the task image.
 
 Build from the repository root:
 
@@ -18,6 +18,8 @@ Use a registered OpenShell gateway and match the CLI, gateway, and runtime compo
 
 Environment configuration uses `provider="openshell"` and `control_location="in_env_control"`. The gateway connection selects a named workspace or explicitly uses OpenShell's default workspace. Workspace and artifact roots are absolute POSIX paths inside the sandbox; `runtime.artifacts` remains the host collection destination. Select an immutable image digest or local Docker image ID. Task images contain the SDK, `fabric-agent-ctl`, the selected adapter, and the agent/harness.
 
+When `settings.sandbox_name` is omitted, the provider derives a stable name from the Fabric environment ID so it can reconcile a create request whose response times out.
+
 The two ownership paths have separate responsibilities:
 
 | Operation | Resource ownership | Release behavior |
@@ -29,4 +31,4 @@ Attachment verifies readiness, image, startup command, and any declared policy. 
 
 Gateway credentials use environment-variable references, such as `connection.token_env` and `connection.ca_cert_env`. Tokens require verified HTTPS. Literal credential fields are rejected. Routine provider and transport errors exclude raw SDK exceptions and process stderr. Provider timeout settings accept 1–600 seconds. Calls are bounded and are not automatically replayed after a lost response. Cancelling preparation releases a confirmed resource; an unconfirmed cleanup error includes its sandbox identity for recovery.
 
-The provider communicates privately over JSON and stdio. This interface is internal to Fabric. The public task command schemas are described in the [command bridge guide](../../sdk/python/nemo-fabric-runtime/src/nemo_fabric/host/README.md).
+The provider communicates privately over JSON and stdio. This interface is internal to NeMo Fabric. The public task command schemas are described in the [command bridge guide](../../sdk/python/nemo-fabric-runtime/src/nemo_fabric/host/README.md).
