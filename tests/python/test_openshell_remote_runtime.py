@@ -147,9 +147,14 @@ async def test_real_task_sdk_retains_state_and_collects_declared_artifacts(
             {"provider": "openshell", "resource": {"sandbox_name": "echo"}}
         ),
     )
-    with pytest.raises(FabricRuntimeError):
-        await fabric.start_runtime_in(remote_config, rebound)
-    await fabric.release_environment(rebound)
+    restarted = await fabric.start_runtime_in(remote_config, rebound)
+    try:
+        result = await restarted.invoke(input="after-reattach")
+        assert result.status == "succeeded"
+        assert result.output == {"first_input": "after-reattach", "turn": 1}
+    finally:
+        await restarted.stop()
+        await fabric.release_environment(rebound)
 
 
 @pytest.mark.parametrize("partial", [None, {"partial": "review"}])

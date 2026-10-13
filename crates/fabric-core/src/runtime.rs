@@ -1296,6 +1296,15 @@ fn start_runtime_in_validated(
     plan: &RunPlan,
     environment: &EnvironmentHandle,
 ) -> Result<RuntimeHandle> {
+    if environment.provider == "openshell" {
+        if uses_local_host(plan) {
+            return OpenShellRuntimeAdapter.start(plan, environment.clone());
+        }
+        return Err(FabricError::UnsupportedRuntimeAdapter {
+            harness: harness(plan),
+            adapter_kind: adapter_kind(plan),
+        });
+    }
     if environment.provider != "local" {
         return Err(FabricError::UnsupportedEnvironmentProvider {
             provider: environment.provider.clone(),
@@ -1303,9 +1312,6 @@ fn start_runtime_in_validated(
         });
     }
     if uses_local_host(plan) {
-        if environment.provider == "openshell" {
-            return OpenShellRuntimeAdapter.start(plan, environment.clone());
-        }
         return LocalHostAdapter.start(plan, environment.clone());
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
@@ -5822,8 +5828,8 @@ for line in sys.stdin:
         plan.environment_plan
             .as_mut()
             .expect("resolved environment plan")
-            .provider = "openshell".to_string();
-        environment.provider = "openshell".to_string();
+            .provider = "docker".to_string();
+        environment.provider = "docker".to_string();
 
         let error = start_runtime_in(&plan, &environment)
             .expect_err("non-local environment must use its provider runtime");
@@ -5833,7 +5839,7 @@ for line in sys.stdin:
             FabricError::UnsupportedEnvironmentProvider {
                 provider,
                 adapter_kind: AdapterKind::Python,
-            } if provider == "openshell"
+            } if provider == "docker"
         ));
         let _ = fs::remove_dir_all(root);
     }
