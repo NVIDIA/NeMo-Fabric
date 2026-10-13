@@ -1150,6 +1150,14 @@
           },
           "type": "object"
         },
+        "env_names": {
+          "description": "Names of environment variables visible to the harness and its tools,\nwith values read from the NeMo Fabric process environment.\n\nOnly the names are serialized into the run plan. NeMo Fabric reads each\nvalue when it starts or invokes the adapter and fails if one is unset.",
+          "items": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
         "metadata": {
           "additionalProperties": true,
           "description": "Consumer-provided environment metadata.",
@@ -1222,6 +1230,13 @@
           },
           "description": "Environment variables visible to the harness and its tools.",
           "type": "object"
+        },
+        "env_names": {
+          "description": "Names of environment variables whose values NeMo Fabric reads from its\nprocess environment when it starts or invokes the adapter.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "metadata": {
           "additionalProperties": true,

@@ -47,6 +47,7 @@ fn build_config() -> FabricConfig {
             workspace: Some(PathBuf::from("repo")),
             artifacts: None,
             env: {{ENVIRONMENT_ENV}},
+            env_names: Vec::new(),
             connection: Map::new(),
             metadata: Map::new(),
             settings: Map::new(),

@@ -1095,6 +1095,14 @@ pub struct EnvironmentConfig {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[schemars(schema_with = "environment_variables_schema")]
     pub env: BTreeMap<String, String>,
+    /// Names of environment variables visible to the harness and its tools,
+    /// with values read from the NeMo Fabric process environment.
+    ///
+    /// Only the names are serialized into the run plan. NeMo Fabric reads each
+    /// value when it starts or invokes the adapter and fails if one is unset.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(inner(regex(pattern = r"^[A-Za-z_][A-Za-z0-9_]*$")))]
+    pub env_names: Vec<String>,
     /// Provider connection metadata, such as server URL, credential reference, or namespace.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub connection: serde_json::Map<String, Value>,
@@ -1953,6 +1961,22 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
         for name in environment.env.keys() {
             if name.trim().is_empty() {
                 return invalid_config("environment.env", "variable names must not be empty");
+            }
+        }
+        for name in &environment.env_names {
+            if !name.starts_with(|first: char| first == '_' || first.is_ascii_alphabetic())
+                || !name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
+            {
+                return invalid_config(
+                    "environment.env_names",
+                    "entries must be environment variable names",
+                );
+            }
+            if environment.env.contains_key(name) {
+                return invalid_config(
+                    "environment.env_names",
+                    format!("`{name}` is also set in environment.env"),
+                );
             }
         }
     }
@@ -3597,6 +3621,7 @@ fn resolve_environment_plan(config: &FabricConfig, base_dir: &Path) -> Option<En
             .or(config.runtime.artifacts.as_ref())
             .map(|artifacts| resolve_path(base_dir, artifacts)),
         env: environment.env.clone(),
+        env_names: environment.env_names.clone(),
         connection: environment.connection.clone(),
         metadata: environment.metadata.clone(),
         settings: environment.settings.clone(),
@@ -4001,6 +4026,10 @@ pub struct EnvironmentPlan {
     /// Environment variables visible to the harness and its tools.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// Names of environment variables whose values NeMo Fabric reads from its
+    /// process environment when it starts or invokes the adapter.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_names: Vec<String>,
     /// Provider connection metadata.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub connection: serde_json::Map<String, Value>,
@@ -5482,6 +5511,27 @@ mod tests {
         assert!(plan.capability_plan.routes.iter().any(|route| {
             route.name == "tools.enabled" && route.target == CapabilityTarget::HarnessNative
         }));
+    }
+
+    #[test]
+    fn environment_env_names_reject_invalid_and_duplicate_names() {
+        for (name, expected) in [
+            ("NOT-A-NAME", "entries must be environment variable names"),
+            ("1PASSWORD", "entries must be environment variable names"),
+            ("VISIBLE", "`VISIBLE` is also set in environment.env"),
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            let environment = config.environment.as_mut().expect("environment");
+            environment.env = BTreeMap::from([("VISIBLE".to_string(), "yes".to_string())]);
+            environment.env_names = vec![name.to_string()];
+
+            let error = validate_config(&config).expect_err("invalid env_names");
+            assert!(matches!(
+                &error,
+                FabricError::InvalidConfig { field, reason }
+                    if field == "environment.env_names" && reason == expected
+            ));
+        }
     }
 
     #[test]

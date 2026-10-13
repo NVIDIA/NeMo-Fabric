@@ -296,6 +296,7 @@ fn config(
             workspace: None,
             artifacts: None,
             env: BTreeMap::new(),
+            env_names: Vec::new(),
             connection: Map::new(),
             metadata: Map::new(),
             settings: Map::new(),

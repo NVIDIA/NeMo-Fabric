@@ -147,7 +147,7 @@ and additive extension maps because their support does not vary by adapter:
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
 | `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; iteration limit | Yes | No | No | Yes; per invocation | No | No | No | No | Yes; maps to build-agent steps | No |
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `environment.workspace`, `.artifacts`, `.env`, `.env_names` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
 | `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
 | `tools.definitions` | No | No | No | No | No | No | No | No | No | No | Yes; trusted local module factories | No | No | No |
 | `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No | No | Yes | Yes; terminal and file editor | Yes; Cline built-in names | No | Yes | `tools.blocked`: Yes; `tools.enabled`: No | Yes; native Kilo tool names | No |

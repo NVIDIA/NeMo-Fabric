@@ -236,6 +236,14 @@ class EnvironmentConfig(FabricBaseModel):
         ),
         json_schema_extra={"propertyNames": {"pattern": r"\S"}},
     )
+    env_names: list[Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]] = Field(
+        default_factory=list,
+        description=(
+            "Names of environment variables visible to the harness and its tools, "
+            "with values read from the NeMo Fabric process environment. Only the "
+            "names are serialized into configuration and run plans."
+        ),
+    )
     settings: dict[str, Any] = Field(
         default_factory=dict,
         description="Provider-specific configuration interpreted by the environment provider.",
@@ -263,6 +271,15 @@ class EnvironmentConfig(FabricBaseModel):
         if any(not name.strip() for name in value):
             raise ValueError("environment.env variable names must not be empty")
         return value
+
+    @model_validator(mode="after")
+    def _reject_env_names_set_in_env(self) -> Self:
+        for name in self.env_names:
+            if name in self.env:
+                raise ValueError(
+                    f"environment.env_names entry `{name}` is also set in environment.env"
+                )
+        return self
 
 
 class ModelConfig(FabricBaseModel):

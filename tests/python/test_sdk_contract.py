@@ -1471,6 +1471,14 @@ def test_environment_model_defines_extension_field_ownership():
     assert properties["env"]["propertyNames"]["pattern"] == r"\S"
 
 
+def test_environment_env_names_reject_invalid_and_duplicate_names():
+    EnvironmentConfig(env={"VISIBLE": "yes"}, env_names=["DOCKER_HOST"])
+    with pytest.raises(ValidationError, match="should match pattern"):
+        EnvironmentConfig(env_names=["NOT-A-NAME"])
+    with pytest.raises(ValidationError, match="also set in environment.env"):
+        EnvironmentConfig(env={"VISIBLE": "yes"}, env_names=["VISIBLE"])
+
+
 def test_inspection_models_are_typed_read_only_mappings():
     plan = RunPlan.from_mapping(
         {

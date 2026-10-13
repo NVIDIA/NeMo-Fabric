@@ -141,8 +141,9 @@ between `Runtime.invoke(...)` calls. Start a new runtime to change them.
 `Fabric.run(...)` starts the same runtime, invokes it once, and stops it.
 
 The adapter filters the inherited environment. It retains portable OS and
-Codex state variables, the selected model's `api_key_env`, and explicit
-`environment.env` values while clearing unrelated parent-process secrets.
+Codex state variables, the selected model's `api_key_env`, explicit
+`environment.env` values, and variables named by `environment.env_names`
+while clearing unrelated parent-process secrets.
 
 ## Relay Integration
 

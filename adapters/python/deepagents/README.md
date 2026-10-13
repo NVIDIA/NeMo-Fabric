@@ -188,8 +188,8 @@ tools = ToolsConfig(enabled=["execute"])
 
 `LocalShellBackend` keeps `inherit_env=False`, so commands do not inherit
 ambient adapter-host variables such as `HOME`. Values explicitly configured in
-`environment.env` are passed to shell commands and are available to
-agent-generated commands. If `environment.env` does not set `PATH`, the shell
+`environment.env` or named by `environment.env_names` are passed to shell commands
+and are available to agent-generated commands. If neither sets `PATH`, the shell
 provides only its fallback path; configure required variables explicitly and
 use absolute executable paths when needed. The `execute` tool remains subject
 to `tools.enabled` and `tools.blocked`, like all other Deep Agents built-ins.

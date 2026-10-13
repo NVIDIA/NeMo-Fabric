@@ -2846,7 +2846,7 @@ fn adapter_lifecycle_start(
             invocation,
             artifacts,
             relay_config,
-        ),
+        )?,
         capability_plan: plan.capability_plan.clone(),
         telemetry_plan: plan.telemetry_plan.clone(),
         service,
@@ -2874,7 +2874,7 @@ fn adapter_invocation(
             invocation,
             artifacts,
             relay_config,
-        ),
+        )?,
         request,
     })
 }
@@ -2939,16 +2939,37 @@ fn adapter_runtime_context(
     invocation: &InvocationHandle,
     artifacts: &ArtifactManifest,
     relay_config: Option<&RelayRuntimeConfig>,
-) -> RuntimeContext {
-    RuntimeContext {
+) -> Result<RuntimeContext> {
+    // Named values reach only the adapter-facing context, which is redacted
+    // before it is persisted; the plan and runtime handle never hold them.
+    let mut environment = runtime.environment.clone();
+    for name in plan
+        .environment_plan
+        .iter()
+        .flat_map(|environment| &environment.env_names)
+    {
+        let value = std::env::var(name).map_err(|error| FabricError::InvalidConfig {
+            field: "environment.env_names".to_string(),
+            reason: match error {
+                std::env::VarError::NotPresent => {
+                    format!("environment variable `{name}` is not set")
+                }
+                std::env::VarError::NotUnicode(_) => {
+                    format!("environment variable `{name}` is not valid Unicode")
+                }
+            },
+        })?;
+        environment.env.insert(name.clone(), value);
+    }
+    Ok(RuntimeContext {
         runtime_id: runtime.runtime_id.clone(),
         invocation_id: invocation.invocation_id.clone(),
         request_id: invocation.request_id.clone(),
-        environment: runtime.environment.clone(),
+        environment,
         artifacts: artifacts.clone(),
         telemetry: runtime_telemetry_context(plan, relay_config),
         deadline_millis: None,
-    }
+    })
 }
 
 /// Converts Fabric's invocation timeout to the adapter's wall-clock deadline,
@@ -3881,6 +3902,7 @@ for line in sys.stdin:
             "invocation_id": invocation["runtime_context"]["invocation_id"],
             "request_id": invocation["runtime_context"]["request_id"],
             "normalized_env": os.environ.get("FABRIC_NORMALIZED_ENV"),
+            "context_env": invocation["runtime_context"]["environment"].get("env", {}),
             "deadline_millis": invocation["runtime_context"].get("deadline_millis"),
         }
         if MODE in {"adapter_reported_failure", "blank_error_code"}:
@@ -4198,6 +4220,68 @@ for line in sys.stdin:
         assert_eq!(first_stop[0].metadata["already_stopped"], false);
         assert_eq!(second_stop[0].metadata["already_stopped"], true);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn local_host_plan_with_env_name(name: &str) -> (PathBuf, RunPlan) {
+        let (root, plan) = local_host_plan("success");
+        let mut config = plan.config;
+        config.environment.as_mut().expect("environment").env_names = vec![name.to_string()];
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(&root))
+            .expect("resolve local-host plan with env_names");
+        (root, plan)
+    }
+
+    #[test]
+    fn env_names_values_reach_only_the_adapter_runtime_context() {
+        let (root, plan) = local_host_plan_with_env_name("PATH");
+        let value = std::env::var("PATH").expect("test process PATH");
+
+        let runtime = start_runtime(&plan).expect("start local host");
+        let result =
+            invoke_runtime(&plan, &runtime, RunRequest::text("named")).expect("invocation");
+        stop_runtime(&plan, &runtime).expect("stop");
+
+        assert_eq!(
+            result.output["context_env"]["PATH"],
+            serde_json::json!(value)
+        );
+        assert_eq!(
+            result.output["context_env"]["FABRIC_NORMALIZED_ENV"],
+            serde_json::json!("visible")
+        );
+        let persisted_invocation: Value = serde_json::from_str(
+            &fs::read_to_string(
+                result.metadata["fabric_invocation"]
+                    .as_str()
+                    .expect("invocation path"),
+            )
+            .expect("read persisted invocation"),
+        )
+        .expect("parse persisted invocation");
+        assert_eq!(
+            persisted_invocation["runtime_context"]["environment"]["env"]["PATH"],
+            serde_json::json!("[REDACTED]")
+        );
+        let plan_json = serde_json::to_string(&plan).expect("serialize plan");
+        assert!(!plan_json.contains(&value));
+        assert!(!runtime.environment.env.contains_key("PATH"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn env_names_fail_runtime_start_when_a_variable_is_unset() {
+        let (root, plan) = local_host_plan_with_env_name("NEMO_FABRIC_TEST_UNSET_VARIABLE");
+
+        let error = start_runtime(&plan).expect_err("unset variable must fail");
+
+        assert!(matches!(
+            &error,
+            FabricError::InvalidConfig { field, reason }
+                if field == "environment.env_names"
+                    && reason == "environment variable `NEMO_FABRIC_TEST_UNSET_VARIABLE` is not set"
+        ));
         let _ = fs::remove_dir_all(root);
     }
 
