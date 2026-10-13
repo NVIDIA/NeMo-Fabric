@@ -89,6 +89,12 @@ def test_code_review_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
             assert config.harness.adapter_id == f"nvidia.fabric.{args.harness}"
             assert config.environment.provider == "openshell"
             assert config.environment.settings["providers"] == ["hosted"]
+            if harness == "hermes":
+                assert config.environment.settings["task_discovery_paths"] == [
+                    consumer.HERMES_TASK_DISCOVERY_PATH
+                ]
+            else:
+                assert "task_discovery_paths" not in config.environment.settings
             assert config.models["default"].api_key_env == "OPENAI_API_KEY"
             assert config.skills.paths == ["/sandbox/code-review/skills/code-review"]
             return FakeRuntime()
@@ -145,6 +151,13 @@ def test_hermes_config_enables_code_review_tools_and_optional_relay(relay, tmp_p
     config = consumer.build_config(args)
 
     assert config.harness.adapter_id == "nvidia.fabric.hermes"
+    assert config.discovery.local_paths == [
+        Path(consumer.__file__).resolve().parents[2]
+        / "adapters/python/hermes/hermes.fabric-adapter.json"
+    ]
+    assert config.environment.settings["task_discovery_paths"] == [
+        consumer.HERMES_TASK_DISCOVERY_PATH
+    ]
     assert config.tools.enabled == ["terminal", "read_file", "search_files"]
     assert config.models["default"].api_key_env == "OPENAI_API_KEY"
     assert config.runtime.artifacts == tmp_path / "artifacts"

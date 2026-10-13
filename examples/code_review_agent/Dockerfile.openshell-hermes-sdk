@@ -66,6 +66,11 @@ for relay in (False, True):
     assert config.models["default"].api_key_env == "OPENAI_API_KEY"
     assert config.runtime.artifacts == Path("/tmp/code-review/artifacts")
     assert config.environment.artifacts == "/sandbox/artifacts"
+    task_adapter = (
+        Path(config.environment.settings["task_discovery_paths"][0])
+        / "hermes.fabric-adapter.json"
+    )
+    assert task_adapter.is_file(), task_adapter
     assert (config.relay is not None) is relay
     config.environment.provider = "local"
     plan = Fabric().plan(config, base_dir=Path("/sandbox/code-review"))
