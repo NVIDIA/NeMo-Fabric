@@ -42,7 +42,7 @@ DEFAULT_PROMPTS = (
 )
 TASK_ROOT = "/sandbox/code-review"
 TASK_ARTIFACT_ROOT = "/sandbox/artifacts"
-HERMES_TASK_DISCOVERY_PATH = "/src/fabric/adapters/python/hermes"
+HERMES_TASK_DISCOVERY_PATH = "/opt/fabric/adapters/python/hermes"
 
 
 def build_config(args: argparse.Namespace) -> FabricConfig:
@@ -58,9 +58,9 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
             / "adapters/python/hermes/hermes.fabric-adapter.json"
         )
         if not hermes_descriptor.is_file():
-            # The task image retains the source tree used to build the adapter wheel.
+            # The task image includes this descriptor in the runtime's readable area.
             hermes_descriptor = (
-                Path("/src/fabric/adapters/python/hermes/hermes.fabric-adapter.json")
+                Path("/opt/fabric/adapters/python/hermes/hermes.fabric-adapter.json")
             )
         config.discovery = DiscoveryConfig(local_paths=[hermes_descriptor])
         task_discovery_paths = [HERMES_TASK_DISCOVERY_PATH]

@@ -17,7 +17,7 @@ import stat
 import sys
 
 FILE_LIMIT = 256 * 1024
-TOTAL_LIMIT = 512 * 1024
+TOTAL_LIMIT = 700 * 1024
 COUNT_LIMIT = 16
 
 

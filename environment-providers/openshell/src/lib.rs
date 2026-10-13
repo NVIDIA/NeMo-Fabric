@@ -32,6 +32,9 @@ const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_EXEC_OUTPUT_BYTES: usize = 3 * 1024 * 1024;
 const DEFAULT_READY_TIMEOUT_SECONDS: u64 = 60;
 const DEFAULT_DELETE_TIMEOUT_SECONDS: u64 = 30;
+// Decimal JSON byte arrays use at most four characters per byte. Keep this
+// below the 3 MiB command-response limit while allowing two-turn Relay output.
+const MAX_TOTAL_ARTIFACT_BYTES: usize = 700 * 1024;
 const DEFAULT_EXEC_TIMEOUT_SECONDS: u64 = 30;
 const GATEWAY_CALL_TIMEOUT_SECONDS: u64 = 30;
 const MAX_OPERATION_TIMEOUT_SECONDS: u64 = 600;
@@ -566,7 +569,7 @@ async fn collect_artifacts<F: GatewayFactory>(
             .iter()
             .map(|file| file.content.len())
             .sum::<usize>()
-            > 512 * 1024
+            > MAX_TOTAL_ARTIFACT_BYTES
     {
         return Err(ProviderError::contract(
             "artifact_read_failed",

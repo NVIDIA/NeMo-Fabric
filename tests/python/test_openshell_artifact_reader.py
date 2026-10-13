@@ -112,3 +112,16 @@ def test_export_rejects_limits_without_partial_file_results(tmp_path, case):
     assert code == 1
     assert result == {"error": "artifact_read_failed"}
     assert stderr == ""
+
+
+def test_export_accepts_two_turn_relay_artifacts_within_aggregate_limit(tmp_path):
+    sizes = (237_157, 227_987, 168_277)
+    paths = [f"relay-{index}" for index in range(len(sizes))]
+    for path, size in zip(paths, sizes, strict=True):
+        (tmp_path / path).write_bytes(b"x" * size)
+
+    code, result, stderr = read(tmp_path, paths)
+
+    assert code == 0
+    assert stderr == ""
+    assert [len(file["content"]) for file in result["files"]] == list(sizes)
