@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""One runtime lifecycle per sandbox, using the existing public SDK."""
+"""Manage independently addressed SDK runtimes in one sandbox."""
 
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -32,10 +32,11 @@ class OwnedRuntime:
     runtime: Runtime
     agent: str
     state: str = "running"
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
 
 class RuntimeServer:
-    """Serialize commands for one owned runtime. A stopped sandbox cannot be reused."""
+    """Route commands to independently managed runtimes owned by this server."""
 
     def __init__(
         self, *, directory: Path = Path("/sandbox"), fabric: Fabric | None = None
@@ -44,10 +45,13 @@ class RuntimeServer:
         self.fabric = fabric if fabric is not None else Fabric()
         self.runtimes: dict[str, OwnedRuntime] = {}
         self.shutting_down = False
-        # Sticky after a successful start or an uncertain SDK start. Ordinary SDK
-        # stop cannot establish descendant cleanup, so the sandbox stays owned.
-        self.lifecycle_used = False
-        self._lock = asyncio.Lock()
+        # Sticky after any successful or uncertain start. The transport uses this
+        # to retain its sandbox ownership marker after runtimes are stopped.
+        self.has_used_runtime = False
+        # An uncertain SDK start may have created an unaddressable runtime. Do not
+        # issue another start until the enclosing sandbox is replaced.
+        self.start_uncertain = False
+        self._start_lock = asyncio.Lock()
 
     def _owned(self, request: dict[str, Any]) -> OwnedRuntime:
         owned = self.runtimes.get(request["runtime_id"])
@@ -78,44 +82,59 @@ class RuntimeServer:
                 raise ProtocolError()
             if self.shutting_down:
                 raise ProtocolError("host_stopping")
-            if operation == "start" and self.lifecycle_used:
-                raise ProtocolError("runtime_exists", "start")
-            async with self._lock:
-                if self.shutting_down:
-                    raise ProtocolError("host_stopping")
-                if operation == "start":
-                    if self.lifecycle_used:
-                        raise ProtocolError("runtime_exists", "start")
+
+            if operation == "start":
+                async with self._start_lock:
+                    if self.shutting_down:
+                        raise ProtocolError("host_stopping")
+                    if self.start_uncertain:
+                        raise ProtocolError("start_uncertain", "start")
                     stage = "validation"
                     config = FabricConfig.model_validate(request["config"])
+                    previously_used = self.has_used_runtime
+                    # Keep the sandbox marker if this request is cancelled while
+                    # native start is running. A known validation rejection has
+                    # no effects and restores the prior marker state.
+                    self.has_used_runtime = True
+                    self.start_uncertain = True
                     changed, effects, stage = None, "unknown", "start"
-                    # Set ownership before awaiting native work, including when
-                    # the requesting connection closes or start is cancelled.
-                    self.lifecycle_used = True
                     try:
                         runtime = await self.fabric.start_runtime(
                             config, base_dir=self.directory
                         )
                     except FabricConfigError:
-                        self.lifecycle_used = False
+                        self.has_used_runtime = previously_used
+                        self.start_uncertain = False
                         changed, effects = False, "none"
                         raise
-                    self.runtimes[runtime.runtime_id] = OwnedRuntime(
-                        runtime, request["agent"], "unknown"
-                    )
+
+                    if runtime.runtime_id in self.runtimes:
+                        # A duplicate SDK identity cannot be safely routed to
+                        # one of two runtime objects; keep the start outcome
+                        # uncertain and retain sandbox ownership.
+                        raise ProtocolError("runtime_id_conflict", "start")
+                    owned = OwnedRuntime(runtime, request["agent"], "unknown")
+                    self.runtimes[runtime.runtime_id] = owned
                     if runtime.status != RuntimeStatus.ACTIVE:
                         raise ProtocolError("start_failed", "start")
-                    self.runtimes[runtime.runtime_id].state = "running"
-                    return envelope(
+                    owned.state = "running"
+                    response = envelope(
                         operation, runtime.handle.to_mapping(), changed=True
                     )
-                owned = self._owned(request)
+                    self.start_uncertain = False
+                    return response
+
+            owned = self._owned(request)
+            async with owned.lock:
+                if self.shutting_down:
+                    raise ProtocolError("host_stopping")
                 if operation == "stop":
                     if owned.state == "stopped":
                         return envelope(operation, result)
                     changed, effects, stage = None, "unknown", "stop"
                     await self._stop(owned)
                     return envelope(operation, result, changed=True)
+
                 stage = "invoke"
                 if (
                     owned.state != "running"
@@ -150,11 +169,16 @@ class RuntimeServer:
             )
 
     async def shutdown(self) -> None:
-        """Stop an idle runtime. The enclosing sandbox owns descendant cleanup."""
+        """Stop idle runtimes. The enclosing sandbox owns descendant cleanup."""
         self.shutting_down = True
-        if self._lock.locked():
+        if (
+            self._start_lock.locked()
+            or self.start_uncertain
+            or any(owned.lock.locked() for owned in self.runtimes.values())
+        ):
             raise ProtocolError("cleanup_unconfirmed", "stop")
-        async with self._lock:
-            for owned in self.runtimes.values():
-                if owned.state != "stopped":
-                    await self._stop(owned)
+        async with self._start_lock:
+            for owned in tuple(self.runtimes.values()):
+                async with owned.lock:
+                    if owned.state != "stopped":
+                        await self._stop(owned)

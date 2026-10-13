@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""One sandbox lifecycle and direct delegation to the existing SDK."""
+"""Multiple sandbox runtimes and direct delegation to the existing SDK."""
 
 import asyncio
 
 import pytest
-from nemo_fabric import FabricConfigError, RuntimeStatus
+from nemo_fabric import FabricConfigError, RunRequest, RuntimeStatus
 from nemo_fabric.runtime_server.protocol import ProtocolError
 
 
@@ -44,45 +44,106 @@ async def test_extra_start_fields_have_no_effects(
     assert rejected["error"]["code"] == "invalid_request"
     assert rejected["error"]["effects"] == "none"
     assert rejected["changed"] is False
-    assert not host.lifecycle_used
+    assert not host.has_used_runtime
     mock_fabric.start_runtime.assert_not_awaited()
 
 
-@pytest.mark.parametrize("agent", ["researcher", "writer"])
-async def test_second_start_preserves_ownership(
-    host, host_request, mock_fabric, config, agent
+async def test_multiple_runtime_ids_are_independently_routed(
+    host, host_request, mock_fabric, mock_runtime, runtime_factory
 ):
+    second = runtime_factory("runtime-2")
+    third = runtime_factory("runtime-3")
+    mock_fabric.start_runtime.side_effect = [mock_runtime, second, third]
+
+    first_started = await host.handle(host_request("start"))
+    second_started = await host.handle(host_request("start"))
+    assert first_started["status"] == second_started["status"] == "succeeded"
+    assert set(host.runtimes) == {"runtime-1", "runtime-2"}
+
+    for runtime in (mock_runtime, second):
+        invoked = await host.handle(
+            host_request("invoke", runtime_id=runtime.runtime_id, input={})
+        )
+        assert invoked["status"] == "succeeded"
+        assert invoked["result"]["runtime_id"] == runtime.runtime_id
+
+    stopped = await host.handle(host_request("stop", runtime_id="runtime-1"))
+    assert stopped["status"] == "succeeded"
+    assert (
+        await host.handle(host_request("invoke", runtime_id="runtime-2", input={}))
+    )["status"] == "succeeded"
+
+    third_started = await host.handle(host_request("start"))
+    assert third_started["status"] == "succeeded"
+    assert third_started["result"]["runtime_id"] == "runtime-3"
+    assert mock_fabric.start_runtime.await_count == 3
+    mock_runtime.stop.assert_awaited_once_with()
+    second.stop.assert_not_awaited()
+
+
+async def test_invocation_on_one_runtime_does_not_block_another(
+    host, host_request, mock_fabric, mock_runtime, runtime_factory
+):
+    second = runtime_factory("runtime-2")
+    mock_fabric.start_runtime.side_effect = [mock_runtime, second]
     await host.handle(host_request("start"))
-    request_config = {**config, "metadata": {"name": agent}}
-    response = await host.handle(
-        host_request("start", agent=agent, config=request_config)
-    )
-    assert response["error"]["code"] == "runtime_exists"
-    assert response["error"]["effects"] == "none"
-    mock_fabric.start_runtime.assert_awaited_once()
-    assert list(host.runtimes) == ["runtime-1"]
+    await host.handle(host_request("start"))
 
-
-async def test_competing_starts_call_sdk_once(
-    host, host_request, mock_fabric, mock_runtime
-):
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def start(*args, **kwargs):
+    async def slow_invoke(**kwargs):
         entered.set()
         await release.wait()
-        return mock_runtime
+        return mock_runtime.invoke.return_value
+
+    mock_runtime.invoke.side_effect = slow_invoke
+    first_invocation = asyncio.create_task(
+        host.handle(host_request("invoke", runtime_id="runtime-1", input={}))
+    )
+    await entered.wait()
+    try:
+        second_invocation = await asyncio.wait_for(
+            host.handle(host_request("invoke", runtime_id="runtime-2", input={})),
+            0.5,
+        )
+        assert second_invocation["status"] == "succeeded"
+        stopped = await asyncio.wait_for(
+            host.handle(host_request("stop", runtime_id="runtime-2")), 0.5
+        )
+        assert stopped["status"] == "succeeded"
+        mock_runtime.stop.assert_not_awaited()
+    finally:
+        release.set()
+    assert (await first_invocation)["status"] == "succeeded"
+
+
+async def test_competing_starts_are_serialized_and_both_succeed(
+    host, host_request, mock_fabric, mock_runtime, runtime_factory
+):
+    entered, release = asyncio.Event(), asyncio.Event()
+    second_runtime = runtime_factory("runtime-2")
+    calls = 0
+
+    async def start(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        runtime = mock_runtime if calls == 1 else second_runtime
+        if calls == 1:
+            entered.set()
+            await release.wait()
+        return runtime
 
     mock_fabric.start_runtime.side_effect = start
     first = asyncio.create_task(host.handle(host_request("start")))
     await entered.wait()
-    try:
-        second = await asyncio.wait_for(host.handle(host_request("start")), 0.5)
-        assert second["error"]["code"] == "runtime_exists"
-    finally:
-        release.set()
-        assert (await first)["status"] == "succeeded"
-    mock_fabric.start_runtime.assert_awaited_once()
+    second = asyncio.create_task(host.handle(host_request("start")))
+    await asyncio.sleep(0)
+    assert not second.done()
+    release.set()
+    assert (await first)["status"] == "succeeded"
+    assert (await second)["status"] == "succeeded"
+    assert mock_fabric.start_runtime.await_count == 2
+    assert set(host.runtimes) == {"runtime-1", "runtime-2"}
 
 
 async def test_invalid_configuration_does_not_consume_lifecycle(
@@ -95,7 +156,7 @@ async def test_invalid_configuration_does_not_consume_lifecycle(
     )
     assert response["error"]["code"] == "validation_failed"
     assert response["error"]["effects"] == "none"
-    assert not host.lifecycle_used
+    assert not host.has_used_runtime
     mock_fabric.start_runtime.assert_not_awaited()
 
 
@@ -111,7 +172,7 @@ async def test_sdk_preflight_rejection_does_not_consume_lifecycle(
         else "validation_failed"
     )
     assert response["error"]["effects"] == "none"
-    assert not host.lifecycle_used
+    assert not host.has_used_runtime
     assert "PRIVATE" not in str(response)
 
 
@@ -126,7 +187,7 @@ async def test_uncertain_start_consumes_lifecycle_without_replay(
     assert "PRIVATE" not in str(response)
     assert (await host.handle(host_request("start")))["error"][
         "code"
-    ] == "runtime_exists"
+    ] == "start_uncertain"
     mock_fabric.start_runtime.assert_awaited_once()
 
 
@@ -148,8 +209,8 @@ async def test_stop_keeps_data_and_is_idempotent(host, host_request, mock_runtim
     ] == "runtime_unavailable"
 
 
-async def test_failed_stop_keeps_ownership_and_rejects_replacement(
-    host, host_request, mock_runtime, mock_fabric
+async def test_failed_stop_keeps_ownership_and_allows_distinct_runtime(
+    host, host_request, mock_runtime, mock_fabric, runtime_factory
 ):
     await host.handle(host_request("start"))
     mock_runtime.stop.side_effect = RuntimeError("PRIVATE")
@@ -160,10 +221,10 @@ async def test_failed_stop_keeps_ownership_and_rejects_replacement(
     assert "PRIVATE" not in str(response)
     assert host.runtimes["runtime-1"].runtime is mock_runtime
     assert host.runtimes["runtime-1"].state == "unknown"
-    assert (await host.handle(host_request("start")))["error"][
-        "code"
-    ] == "runtime_exists"
-    mock_fabric.start_runtime.assert_awaited_once()
+    replacement = runtime_factory("runtime-2")
+    mock_fabric.start_runtime.return_value = replacement
+    assert (await host.handle(host_request("start")))["status"] == "succeeded"
+    assert mock_fabric.start_runtime.await_count == 2
 
 
 async def test_invoke_preserves_normalized_result_without_replay(
@@ -177,6 +238,20 @@ async def test_invoke_preserves_normalized_result_without_replay(
         response["result"] == mock_runtime.invoke.return_value.to_mapping.return_value
     )
     mock_runtime.invoke.assert_awaited_once_with(input={"prompt": "review"})
+
+
+async def test_full_request_is_forwarded_to_the_sdk(host, host_request, mock_runtime):
+    await host.handle(host_request("start"))
+    request = RunRequest(
+        input={"prompt": "review"},
+        request_id="caller-request",
+        relay_session_root="00000000-0000-4000-8000-000000000042",
+        context={"review_tag": "cedar-4827"},
+        overrides={"agent": {"max_turns": 4}},
+    )
+    response = await host.handle(host_request("invoke", request=request.to_mapping()))
+    assert response["status"] == "succeeded"
+    mock_runtime.invoke.assert_awaited_once_with(request=request)
 
 
 @pytest.mark.parametrize(
@@ -228,7 +303,7 @@ async def test_non_active_returned_runtime_is_owned_for_stop(
     assert host.runtimes["runtime-1"].runtime is mock_runtime
     assert (await host.handle(host_request("start")))["error"][
         "code"
-    ] == "runtime_exists"
+    ] == "start_uncertain"
     assert (await host.handle(host_request("stop")))["status"] == "succeeded"
     mock_runtime.stop.assert_awaited_once_with()
 
@@ -291,4 +366,4 @@ async def test_failed_shutdown_rejects_work(host, host_request, mock_runtime):
     assert (await host.handle(host_request("invoke", input={})))["error"][
         "code"
     ] == "host_stopping"
-    assert host.lifecycle_used
+    assert host.has_used_runtime

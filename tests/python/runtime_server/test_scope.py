@@ -11,16 +11,19 @@ def test_serve_remains_the_server_bootstrap():
     }
 
 
-async def test_stop_ends_the_sandbox_lifecycle(
-    host, host_request, mock_fabric, mock_runtime
+async def test_stopping_a_runtime_allows_another_start(
+    host, host_request, mock_fabric, mock_runtime, runtime_factory
 ):
+    replacement = runtime_factory("runtime-2")
+    mock_fabric.start_runtime.side_effect = [mock_runtime, replacement]
     assert (await host.handle(host_request("start")))["status"] == "succeeded"
     assert (await host.handle(host_request("invoke", input={"message": "review"})))[
         "status"
     ] == "succeeded"
     assert (await host.handle(host_request("stop")))["status"] == "succeeded"
-    rejected = await host.handle(host_request("start"))
-    assert rejected["status"] == "failed"
-    assert rejected["error"]["effects"] == "none"
-    assert mock_fabric.start_runtime.await_count == 1
+    started = await host.handle(host_request("start"))
+    assert started["status"] == "succeeded"
+    assert started["result"]["runtime_id"] == "runtime-2"
+    assert mock_fabric.start_runtime.await_count == 2
     mock_runtime.stop.assert_awaited_once_with()
+    replacement.stop.assert_not_awaited()
