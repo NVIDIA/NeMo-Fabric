@@ -330,6 +330,47 @@ def test_code_review_workload_configures_hosted_provider_before_sandbox(launcher
     assert "test-key-must-not-appear-in-command-arguments" not in json.dumps(operations)
 
 
+@pytest.mark.parametrize("relay_enabled", [False, True])
+def test_hermes_code_review_workload_selects_harness_and_optional_relay(
+    launcher, relay_enabled
+):
+    _, root, _ = launcher
+    completed = _run(
+        launcher,
+        ROOT / "examples/code_review_agent/demo-openshell-hermes-sdk.sh",
+        {
+            "OPENSHELL_EXAMPLE_MODE": "caller_owned",
+            "OPENSHELL_CODE_REVIEW_RELAY": str(relay_enabled).lower(),
+            "OPENAI_API_KEY": "test-key-must-not-appear-in-command-arguments",
+            "OPENSHELL_MODEL_PROVIDER_PROFILE": "/tmp/local-model-profile.yaml",
+            "OPENSHELL_CODE_REVIEW_BASE_URL": "http://10.0.0.10:8000/v1",
+            "OPENSHELL_CODE_REVIEW_MODEL": "nvidia/nemotron-3-ultra-550b-a55b",
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    operations = _operations(root)
+    call = next(operation for operation in operations if operation["command"] == "uv")
+    assert "examples.code_review_agent.openshell_sdk_consumer" in call["args"]
+    assert call["args"][call["args"].index("--harness") + 1] == "hermes"
+    assert ("--relay" in call["args"]) is relay_enabled
+    assert call["args"][call["args"].index("--base-url") + 1] == (
+        "http://10.0.0.10:8000/v1"
+    )
+    assert call["args"][call["args"].index("--model") + 1] == (
+        "nvidia/nemotron-3-ultra-550b-a55b"
+    )
+    profile_call = next(
+        operation
+        for operation in operations
+        if operation["command"] == "openshell" and "profile" in operation["args"]
+    )
+    assert profile_call["args"][profile_call["args"].index("--file") + 1] == (
+        "/tmp/local-model-profile.yaml"
+    )
+    assert "test-key-must-not-appear-in-command-arguments" not in json.dumps(operations)
+
+
 @pytest.mark.parametrize(
     "environment,message",
     [({"MOCK_OS": "Darwin"}, "requires Linux"),
