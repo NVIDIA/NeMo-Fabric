@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -22,9 +23,15 @@ from nemo_fabric import (
     Fabric,
     FabricConfig,
     RunRequest,
+    ToolsConfig,
 )
 
-from examples.code_review_agent.config import openclaw_config
+from examples.code_review_agent.config import (
+    CODE_REVIEW_INSTRUCTION,
+    hermes_config,
+    openclaw_config,
+    with_relay,
+)
 
 
 DEFAULT_PROMPTS = (
@@ -36,9 +43,20 @@ TASK_ROOT = "/sandbox/code-review"
 
 
 def build_config(args: argparse.Namespace) -> FabricConfig:
-    """Build the standard OpenClaw config with OpenShell environment settings."""
+    """Build a harness config with OpenShell environment settings."""
 
-    config = openclaw_config()
+    harness = getattr(args, "harness", "openclaw")
+    relay_enabled = getattr(args, "relay", False)
+    if harness == "hermes":
+        config = hermes_config()
+        config.instructions.system.content = CODE_REVIEW_INSTRUCTION
+        config.tools = ToolsConfig(enabled=["terminal", "read_file", "search_files"])
+    else:
+        config = openclaw_config()
+    if relay_enabled:
+        if harness != "hermes":
+            raise ValueError("Relay is supported for the Hermes harness only")
+        config = with_relay(config)
     config.metadata.name = "openshell-code-review"
     model = config.models["default"]
     model.provider = "openai"
@@ -47,15 +65,23 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
     model.api_key_env = "OPENAI_API_KEY"
     model.max_tokens = 1024
     config.skills.paths = [f"{TASK_ROOT}/skills/code-review"]
-    config.runtime.artifacts = str(
-        Path(args.results_file).resolve().parent / "artifacts"
-    )
+    config.runtime.artifacts = f"{TASK_ROOT}/artifacts"
+    if config.relay is not None:
+        config.relay.output_dir = f"{TASK_ROOT}/artifacts/relay"
+        observability = config.relay.observability
+        if observability is not None:
+            if observability.atif is not None:
+                observability.atif.output_directory = f"{TASK_ROOT}/artifacts/relay"
+            if observability.atof is not None:
+                for sink in observability.atof.sinks or []:
+                    if sink.type == "file":
+                        sink.output_directory = f"{TASK_ROOT}/artifacts/relay"
     config.environment = EnvironmentConfig(
         provider="openshell",
         ownership=args.ownership,
         control_location="in_env_control",
         workspace=f"{TASK_ROOT}/repos/my-service",
-        artifacts=f"{TASK_ROOT}/artifacts/code-review",
+        artifacts=f"{TASK_ROOT}/artifacts",
         connection={"gateway": args.gateway, "workspace": args.workspace},
         settings={
             "image": args.image,
@@ -121,7 +147,13 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
             report["status"] = "succeeded"
     except Exception as error:
         # Keep process output out of reports; SDK exceptions may include command data.
-        report["error"] = {"code": type(error).__name__}
+        if os.environ.get("OPENSHELL_CODE_REVIEW_DEBUG_ERRORS") == "true":
+            print(f"Code-review SDK failure: {error}", file=sys.stderr)
+        failure = {"code": getattr(error, "code", None) or type(error).__name__}
+        stage = getattr(error, "stage", None)
+        if isinstance(stage, str):
+            failure["stage"] = stage
+        report["error"] = failure
     finally:
         try:
             if runtime is not None:
@@ -176,11 +208,19 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--results-file", required=True)
     parser.add_argument("--sandbox-name", required=True)
     parser.add_argument("--sandbox-id")
+    parser.add_argument("--harness", choices=("openclaw", "hermes"), default="openclaw")
+    parser.add_argument("--relay", action="store_true")
     parser.add_argument(
-        "--model", default="nvidia/nemotron-3.5-lightning-30b-a3b"
+        "--model",
+        default=os.environ.get(
+            "OPENSHELL_CODE_REVIEW_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b"
+        ),
     )
     parser.add_argument(
-        "--base-url", default="https://integrate.api.nvidia.com/v1"
+        "--base-url",
+        default=os.environ.get(
+            "OPENSHELL_CODE_REVIEW_BASE_URL", "https://integrate.api.nvidia.com/v1"
+        ),
     )
     parser.add_argument("--input", dest="inputs", action="append")
     return parser
@@ -190,11 +230,13 @@ def main() -> None:
     args = _parser().parse_args()
     if args.ownership == "caller_owned" and not args.sandbox_id:
         raise SystemExit("--sandbox-id is required for caller_owned mode")
+    if args.relay and args.harness != "hermes":
+        raise SystemExit("--relay requires --harness hermes")
     args.inputs = args.inputs or list(DEFAULT_PROMPTS)
     if len(args.inputs) != 2:
         raise SystemExit("--input must be supplied exactly twice")
-    if not os.environ.get("NVIDIA_API_KEY"):
-        raise SystemExit("NVIDIA_API_KEY is required to configure the hosted provider")
+    if not (os.environ.get("OPENAI_API_KEY") or os.environ.get("NVIDIA_API_KEY")):
+        raise SystemExit("OPENAI_API_KEY or NVIDIA_API_KEY is required for the model provider")
     report = asyncio.run(run_demo(args))
     if report["status"] != "succeeded":
         raise SystemExit(1)

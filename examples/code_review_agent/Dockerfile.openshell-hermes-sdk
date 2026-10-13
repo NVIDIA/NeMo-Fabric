@@ -1,0 +1,74 @@
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+FROM fabric-openshell-sdk:source
+
+ARG HERMES_COMMIT=a62979dc3601c9eae455bff5b35ba8f9bed0df30
+
+USER root
+RUN install -d /opt/fabric/examples/code_review_agent /src/hermes-agent
+WORKDIR /src/fabric
+RUN git clone --filter=blob:none --no-checkout https://github.com/NousResearch/hermes-agent.git /src/hermes-agent \
+    && git -C /src/hermes-agent fetch --depth=1 origin "${HERMES_COMMIT}" \
+    && git -C /src/hermes-agent checkout --detach FETCH_HEAD
+COPY examples/__init__.py /opt/fabric/examples/__init__.py
+COPY examples/code_review_agent/__init__.py \
+    examples/code_review_agent/config.py \
+    examples/code_review_agent/openshell_sdk_consumer.py \
+    /opt/fabric/examples/code_review_agent/
+COPY adapters/python/hermes/ adapters/python/hermes/
+COPY --chown=sandbox:sandbox examples/code_review_agent/ /sandbox/code-review/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/hermes \
+    && uv pip install --python /opt/fabric/bin/python --no-deps /wheels/*.whl \
+    && uv pip install --python /opt/fabric/bin/python \
+        'nemo-relay>=0.10,<0.11' 'tomli-w>=1.2,<2' \
+    && uv pip install --python /opt/fabric/bin/python \
+        --config-settings-package hermes-agent:editable_mode=compat \
+        --editable '/src/hermes-agent[mcp]'
+RUN install -d -m 0700 -o 1000 -g 1000 /sandbox/tmp /sandbox/workspace \
+    /sandbox/artifacts /sandbox/.cache
+RUN PYTHONPATH=/opt/fabric /opt/fabric/bin/python - <<'PY'
+from pathlib import Path
+from types import SimpleNamespace
+
+from nemo_fabric import Fabric
+from examples.code_review_agent.openshell_sdk_consumer import build_config
+
+for relay in (False, True):
+    args = SimpleNamespace(
+        ownership="fabric_owned",
+        gateway="http://127.0.0.1:18080",
+        workspace="default",
+        image="fabric-code-review-hermes:build-check",
+        policy_file="/sandbox/code-review/openshell-sdk-policy.yaml",
+        results_file="/tmp/code-review/report.json",
+        sandbox_name="review-build-check",
+        sandbox_id=None,
+        harness="hermes",
+        relay=relay,
+        model="nvidia/nemotron-3.5-lightning-30b-a3b",
+        base_url="https://integrate.api.nvidia.com/v1",
+    )
+    config = build_config(args)
+    assert config.harness.adapter_id == "nvidia.fabric.hermes"
+    assert config.environment.provider == "openshell"
+    assert config.models["default"].api_key_env == "OPENAI_API_KEY"
+    assert config.runtime.artifacts == "/sandbox/code-review/artifacts"
+    assert (config.relay is not None) is relay
+    config.environment.provider = "local"
+    plan = Fabric().plan(config, base_dir=Path("/sandbox/code-review"))
+    descriptor = plan.get("adapter_descriptor", {}).get("descriptor", {})
+    assert descriptor.get("adapter_id") == "nvidia.fabric.hermes"
+PY
+ENV PATH=/opt/fabric/bin:/usr/local/bin:/usr/bin:/bin \
+    PYTHONPATH=/opt/fabric \
+    HOME=/home/sandbox \
+    ADAPTER_PYTHON=/opt/fabric/bin/python \
+    FABRIC_HOST_SOCKET=/sandbox/fabric.sock \
+    TMPDIR=/sandbox/tmp \
+    XDG_CACHE_HOME=/sandbox/.cache \
+    PYTHONDONTWRITEBYTECODE=1
+WORKDIR /sandbox
+USER sandbox:sandbox
