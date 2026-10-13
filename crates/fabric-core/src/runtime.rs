@@ -143,9 +143,9 @@ pub struct RunResult {
     /// Artifacts produced or collected by this run.
     #[serde(default)]
     pub artifacts: ArtifactManifest,
-    /// Telemetry reference when available.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub telemetry: Option<TelemetryRef>,
+    /// Ordered telemetry references when available.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub telemetry: Vec<TelemetryRef>,
     /// NeMo Fabric lifecycle/progress events emitted during the run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<FabricEvent>,
@@ -2113,7 +2113,9 @@ fn run_local_host_invocation_with_timeout(
         error,
         usage: agent_result.usage.as_ref().map(run_usage),
         artifacts,
-        telemetry: telemetry_ref(plan, relay_config.as_ref()),
+        telemetry: telemetry_ref(plan, relay_config.as_ref())
+            .into_iter()
+            .collect(),
         events,
         metadata,
     })
@@ -4274,6 +4276,50 @@ for line in sys.stdin:
 
         assert_eq!(telemetry.metadata["native_config"], native_config);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sdk_run_result_preserves_ordered_telemetry_references() {
+        let result = RunResult {
+            agent_name: "agent".to_string(),
+            harness: "harness".to_string(),
+            adapter_kind: AdapterKind::Python,
+            adapter_id: None,
+            runtime_id: "runtime-1".to_string(),
+            invocation_id: "invocation-1".to_string(),
+            request_id: "request-1".to_string(),
+            status: RunStatus::Succeeded,
+            output: Value::Null,
+            error: None,
+            usage: None,
+            artifacts: ArtifactManifest::default(),
+            telemetry: vec![
+                TelemetryRef {
+                    relay_enabled: true,
+                    provider: Some("relay".to_string()),
+                    kind: Some("trace".to_string()),
+                    uri: Some("artifacts/trace".to_string()),
+                    trace_id: Some("trace-1".to_string()),
+                    metadata: BTreeMap::new(),
+                },
+                TelemetryRef {
+                    relay_enabled: false,
+                    provider: Some("native".to_string()),
+                    kind: Some("metrics".to_string()),
+                    uri: Some("artifacts/metrics".to_string()),
+                    trace_id: None,
+                    metadata: BTreeMap::new(),
+                },
+            ],
+            events: Vec::new(),
+            metadata: BTreeMap::new(),
+        };
+
+        let encoded = serde_json::to_value(&result).expect("serialize SDK run result");
+        assert!(encoded["telemetry"].is_array());
+        let decoded: RunResult =
+            serde_json::from_value(encoded).expect("deserialize SDK run result");
+        assert_eq!(decoded.telemetry, result.telemetry);
     }
 
     fn stopped_agents() -> Vec<String> {
