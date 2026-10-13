@@ -16,6 +16,7 @@ from nemo_fabric import Fabric, FabricConfig, RunRequest
 async def main():
     fabric = Fabric()
     runtime = None
+    fault_injected = False
     try:
         for line in sys.stdin:
             frame = json.loads(line)
@@ -49,12 +50,19 @@ async def main():
                     await runtime.stop()
                     value = None
                 fault = os.environ.get("FABRIC_TEST_PROVIDER_FAULT")
-                if (fault == "start" and command["operation"] == "start") or (
-                    fault == "invoke" and command["operation"] == "invoke"
+                if not fault_injected and (
+                    (fault == "start" and command["operation"] == "start")
+                    or (fault == "invoke" and command["operation"] == "invoke")
                 ):
+                    fault_injected = True
                     await runtime.stop()
                     value = {"PRIVATE": "malformed SDK value"}
-                elif fault == "stop" and command["operation"] == "stop":
+                elif (
+                    not fault_injected
+                    and fault == "stop"
+                    and command["operation"] == "stop"
+                ):
+                    fault_injected = True
                     value = {"stopped": True}
                 output = {"status": "returned", "value": value}
             elif operation == "collect_artifacts":

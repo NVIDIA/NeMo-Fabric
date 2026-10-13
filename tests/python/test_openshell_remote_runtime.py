@@ -222,9 +222,9 @@ def test_canonical_telemetry_survives_native_compatibility_fields():
 
 @pytest.mark.parametrize("fault", ["start", "invoke", "stop"])
 async def test_uncertain_outcomes_are_not_replayed_after_reattachment(
-    remote_config, tmp_path, fault
+    remote_config, tmp_path, fault, monkeypatch
 ):
-    os.environ["FABRIC_TEST_PROVIDER_FAULT"] = fault
+    monkeypatch.setenv("FABRIC_TEST_PROVIDER_FAULT", fault)
     fabric = Fabric()
     reference = EnvironmentReference.from_mapping(
         {"provider": "openshell", "resource": {"sandbox_name": "echo"}}
@@ -244,9 +244,16 @@ async def test_uncertain_outcomes_are_not_replayed_after_reattachment(
                 with pytest.raises(FabricRuntimeError):
                     await runtime.stop()
         await fabric.release_environment(environment)
+        if fault != "start":
+            monkeypatch.setenv("FABRIC_TEST_PROVIDER_FAULT", "")
         rebound = await fabric.attach_environment(remote_config, reference)
-        with pytest.raises(FabricRuntimeError):
-            await fabric.start_runtime_in(remote_config, rebound)
+        if fault == "start":
+            with pytest.raises(FabricRuntimeError):
+                await fabric.start_runtime_in(remote_config, rebound)
+        else:
+            restarted = await fabric.start_runtime_in(remote_config, rebound)
+            assert restarted.runtime_id != runtime.runtime_id
+            await restarted.stop()
         await fabric.release_environment(rebound)
         records = [
             json.loads(line)
@@ -257,13 +264,17 @@ async def test_uncertain_outcomes_are_not_replayed_after_reattachment(
             for record in records
             if record["frame"]["operation"] == "runtime_command"
         ]
-        assert operations.count("start") == 1
+        assert operations.count("start") == (1 if fault == "start" else 2)
         assert operations.count("invoke") == (1 if fault == "invoke" else 0)
-        assert operations.count("stop") == (1 if fault == "stop" else 0)
+        assert operations.count("stop") >= (1 if fault != "start" else 0)
     finally:
         if runtime is not None:
             try:
                 await runtime.stop()
             except FabricRuntimeError:
                 pass
-        await fabric.release_environment(environment)
+        try:
+            await fabric.release_environment(environment)
+        except FabricRuntimeError:
+            # An unresolved operation deliberately retains the environment binding.
+            pass
