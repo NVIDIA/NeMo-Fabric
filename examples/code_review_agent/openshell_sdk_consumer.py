@@ -40,6 +40,7 @@ DEFAULT_PROMPTS = (
     "suggest the smallest correction.",
 )
 TASK_ROOT = "/sandbox/code-review"
+TASK_ARTIFACT_ROOT = "/sandbox/artifacts"
 
 
 def build_config(args: argparse.Namespace) -> FabricConfig:
@@ -65,23 +66,13 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
     model.api_key_env = "OPENAI_API_KEY"
     model.max_tokens = 1024
     config.skills.paths = [f"{TASK_ROOT}/skills/code-review"]
-    config.runtime.artifacts = f"{TASK_ROOT}/artifacts"
-    if config.relay is not None:
-        config.relay.output_dir = f"{TASK_ROOT}/artifacts/relay"
-        observability = config.relay.observability
-        if observability is not None:
-            if observability.atif is not None:
-                observability.atif.output_directory = f"{TASK_ROOT}/artifacts/relay"
-            if observability.atof is not None:
-                for sink in observability.atof.sinks or []:
-                    if sink.type == "file":
-                        sink.output_directory = f"{TASK_ROOT}/artifacts/relay"
+    config.runtime.artifacts = Path(args.results_file).resolve().parent / "artifacts"
     config.environment = EnvironmentConfig(
         provider="openshell",
         ownership=args.ownership,
         control_location="in_env_control",
         workspace=f"{TASK_ROOT}/repos/my-service",
-        artifacts=f"{TASK_ROOT}/artifacts",
+        artifacts=TASK_ARTIFACT_ROOT,
         connection={"gateway": args.gateway, "workspace": args.workspace},
         settings={
             "image": args.image,

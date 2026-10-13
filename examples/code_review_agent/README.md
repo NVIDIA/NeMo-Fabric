@@ -224,6 +224,9 @@ and collect its ATIF/ATOF artifacts. The image uses Python 3.14 and Relay 0.10;
 the host still uses the same SDK/provider consumer and hosted NVIDIA credential
 setup. Hermes without Relay is the default. This route keeps all OpenShell
 lifecycle code on the host and does not use the raw OpenShell Python client.
+The launcher writes its report to the selected results directory and collects
+runtime artifacts into that directory's `artifacts/` subdirectory; `/sandbox/artifacts`
+is the separate task-side root inside OpenShell.
 
 For a different OpenAI-compatible endpoint, set
 `OPENSHELL_CODE_REVIEW_BASE_URL` and `OPENSHELL_CODE_REVIEW_MODEL`. Set
