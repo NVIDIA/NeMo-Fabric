@@ -399,7 +399,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                     "",
                 ));
             }
-            if let Some(telemetry) = &mut result.telemetry {
+            for telemetry in &mut result.telemetry {
                 telemetry.relay_enabled = telemetry
                     .metadata
                     .get("relay_enabled")
@@ -631,7 +631,7 @@ fn collect_result_artifacts(
         );
         artifact.path = root.join(path);
     }
-    if let Some(telemetry) = &mut result.telemetry {
+    for telemetry in &mut result.telemetry {
         if telemetry.provider.as_deref() == Some("relay")
             && telemetry
                 .uri

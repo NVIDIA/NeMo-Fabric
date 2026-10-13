@@ -395,15 +395,11 @@
       "description": "Runtime status."
     },
     "telemetry": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/TelemetryRef"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Telemetry reference when available."
+      "description": "Ordered telemetry references when available.",
+      "items": {
+        "$ref": "#/$defs/TelemetryRef"
+      },
+      "type": "array"
     },
     "usage": {
       "anyOf": [
