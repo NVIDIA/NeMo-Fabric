@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from nemo_fabric import (
+    DiscoveryConfig,
     EnvironmentConfig,
     EnvironmentReference,
     Fabric,
@@ -41,6 +42,7 @@ DEFAULT_PROMPTS = (
 )
 TASK_ROOT = "/sandbox/code-review"
 TASK_ARTIFACT_ROOT = "/sandbox/artifacts"
+HERMES_TASK_DISCOVERY_PATH = "/src/fabric/adapters/python/hermes"
 
 
 def build_config(args: argparse.Namespace) -> FabricConfig:
@@ -48,8 +50,20 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
 
     harness = getattr(args, "harness", "openclaw")
     relay_enabled = getattr(args, "relay", False)
+    task_discovery_paths = None
     if harness == "hermes":
         config = hermes_config()
+        hermes_descriptor = (
+            Path(__file__).resolve().parents[2]
+            / "adapters/python/hermes/hermes.fabric-adapter.json"
+        )
+        if not hermes_descriptor.is_file():
+            # The task image retains the source tree used to build the adapter wheel.
+            hermes_descriptor = (
+                Path("/src/fabric/adapters/python/hermes/hermes.fabric-adapter.json")
+            )
+        config.discovery = DiscoveryConfig(local_paths=[hermes_descriptor])
+        task_discovery_paths = [HERMES_TASK_DISCOVERY_PATH]
         config.instructions.system.content = CODE_REVIEW_INSTRUCTION
         config.tools = ToolsConfig(enabled=["terminal", "read_file", "search_files"])
     else:
@@ -80,6 +94,11 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
             "policy_yaml": Path(args.policy_file).read_text(encoding="utf-8"),
             "providers": ["hosted"],
             "sandbox_name": args.sandbox_name,
+            **(
+                {"task_discovery_paths": task_discovery_paths}
+                if task_discovery_paths is not None
+                else {}
+            ),
         },
     )
     if args.ownership == "caller_owned":
