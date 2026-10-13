@@ -19,8 +19,6 @@ configure_workload_gateway() {
   fi
   local endpoint="http://127.0.0.1:${GATEWAY_PORT}"
   "${OPENSHELL_CLI}" --gateway-endpoint "${endpoint}" \
-    settings set --global --key providers_v2_enabled --value true
-  "${OPENSHELL_CLI}" --gateway-endpoint "${endpoint}" \
     provider profile import --file "${WORKLOAD_ROOT}/openshell-provider.yaml"
   OPENAI_API_KEY="${NVIDIA_API_KEY}" "${OPENSHELL_CLI}" \
     --gateway-endpoint "${endpoint}" provider create --name hosted \

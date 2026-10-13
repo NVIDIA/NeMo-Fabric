@@ -23,7 +23,7 @@ WORKDIR /src/fabric
 COPY adapters/python/openclaw/ adapters/python/openclaw/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/openclaw \
-    && uv pip install --python /opt/fabric/bin/python --no-deps /wheels/*.whl
+    && uv pip install --python /opt/fabric/bin/python /wheels/*.whl
 COPY --chown=sandbox:sandbox examples/code_review_agent/ /sandbox/code-review/
 RUN install -d -m 0700 -o 1000 -g 1000 /sandbox/tmp /sandbox/workspace \
     /sandbox/artifacts /sandbox/.cache

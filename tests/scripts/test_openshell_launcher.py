@@ -245,10 +245,11 @@ def test_code_review_workload_configures_hosted_provider_before_sandbox(launcher
         if operation["command"] == "openshell"
         and any(value in operation["args"] for value in ("settings", "provider"))
     ]
-    assert [call["args"][call["args"].index("provider") + 1] for call in provider_calls[1:]] == [
+    assert [call["args"][call["args"].index("provider") + 1] for call in provider_calls] == [
         "profile",
         "create",
     ]
+    assert all("providers_v2_enabled" not in call["args"] for call in provider_calls)
     create = next(
         operation
         for operation in operations
