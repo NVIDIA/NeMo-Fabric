@@ -114,6 +114,7 @@ async def serve(
     owned_marker = None
     unused_lifecycle = False
     shutdown_completed = False
+    connections_closing = False
     tasks: set[asyncio.Task] = set()
     writers: set[asyncio.StreamWriter] = set()
     loop = asyncio.get_running_loop()
@@ -139,7 +140,9 @@ async def serve(
         tasks.add(task)
         writers.add(writer)
         try:
-            if host.shutting_down:
+            # A late accepted callback must not keep final connection cleanup open.
+            # During runtime shutdown, requests still receive host_stopping below.
+            if connections_closing:
                 return
             try:
                 async with asyncio.timeout(READ_SECONDS):
@@ -201,6 +204,7 @@ async def serve(
                 # a native worker and the watchdog terminates the server.
                 print(str(error), file=sys.stderr, flush=True)
                 raise
+            connections_closing = True
             for writer in tuple(writers):
                 writer.close()
             await server.wait_closed()
@@ -211,6 +215,7 @@ async def serve(
     finally:
         if owned_socket is not None:
             host.shutting_down = True
+            connections_closing = True
             server.close()
             for writer in tuple(writers):
                 writer.close()
@@ -233,9 +238,17 @@ async def serve(
         if unused_lifecycle:
             try:
                 current = marker.lstat()
-                if (current.st_dev, current.st_ino) == (
+                # Inode numbers can be reused after the owned marker is unlinked.
+                if (
+                    current.st_dev,
+                    current.st_ino,
+                    current.st_ctime_ns,
+                    current.st_size,
+                ) == (
                     owned_marker.st_dev,
                     owned_marker.st_ino,
+                    owned_marker.st_ctime_ns,
+                    owned_marker.st_size,
                 ):
                     marker.unlink()
             except FileNotFoundError:

@@ -189,9 +189,9 @@ Install Node.js and OpenClaw, then install the [OpenClaw adapter](../../adapters
 
 ### OpenShell Code Review
 
-The [OpenShell consumer](openshell.py) is a version of this small Code Review demonstration application. It gives OpenClaw the sample repository containing `calculator.py`, runs two review turns in a real OpenShell sandbox, and records the results. The consumer runs outside the sandbox and uses OpenShell's Python SDK. Inside the sandbox, `fabric-agent-ctl serve` owns one Fabric runtime and its OpenClaw adapter/harness. Start, both review invocations, and stop use separate exec calls.
+The [OpenShell consumer](openshell.py) is a version of this small Code Review demonstration application. It gives OpenClaw the sample repository containing `calculator.py`, runs two review turns in a real OpenShell sandbox, and records the results. The consumer runs outside the sandbox and uses OpenShell's Python SDK. Inside the sandbox, `fabric-agent-ctl serve` owns one NeMo Fabric runtime and its OpenClaw adapter/harness. Start, both review invocations, and stop use separate exec calls.
 
-Prerequisites are Docker with Linux containers, the OpenShell CLI, and a registered OpenShell gateway. Match the OpenShell CLI and Python SDK to the gateway version; this example was tested with `0.1.2`. Build from the Fabric repository root so the image contains the current native extension, server, adapter, code-review skill, and sample repository. The Dockerfile uses public, digest-pinned Python, Node, OpenClaw, Rust, and uv images:
+Prerequisites are Docker with Linux containers, the OpenShell CLI, and a registered OpenShell gateway. Match the OpenShell CLI and Python SDK to the gateway version; this example was tested with `0.1.2`. Build from the NeMo Fabric repository root so the image contains the current native extension, server, adapter, code-review skill, and sample repository. The Dockerfile uses public, digest-pinned Python, Node, OpenClaw, Rust, and uv images:
 
 ```sh
 docker build -f examples/code_review_agent/Dockerfile.openshell \

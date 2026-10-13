@@ -5,9 +5,11 @@
 
 import asyncio
 import json
+import os
 import stat
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import sys
 
@@ -209,6 +211,72 @@ async def test_cleanup_removes_only_owned_socket(host, socket_path):
         await asyncio.wait_for(task, 2)
     assert socket_path.read_text() == "replacement"
     assert marker.read_text() == "caller replacement marker"
+
+
+@pytest.mark.parametrize("changed_field", ["st_ctime_ns", "st_size"])
+async def test_cleanup_preserves_replacement_marker_when_inode_is_reused(
+    host, socket_path, monkeypatch, changed_field
+):
+    stop, ready = asyncio.Event(), asyncio.Event()
+    task = asyncio.create_task(
+        transport.serve(
+            host, socket_path=socket_path, stop_event=stop, ready_event=ready
+        )
+    )
+    marker = socket_path.with_suffix(".unclean")
+    try:
+        await asyncio.wait_for(ready.wait(), 1)
+        original = marker.lstat()
+        marker.unlink()
+        marker.write_text("caller replacement marker")
+        # Model a filesystem reusing the old inode for the caller's new file.
+        replacement = MagicMock(spec=os.stat_result)
+        for field in ("st_dev", "st_ino", "st_ctime_ns", "st_size"):
+            setattr(replacement, field, getattr(original, field))
+        setattr(replacement, changed_field, getattr(original, changed_field) + 1)
+        original_lstat = Path.lstat
+
+        def lstat(path, *args, **kwargs):
+            if path == marker:
+                return replacement
+            return original_lstat(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "lstat", lstat)
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, 2)
+    assert marker.read_text() == "caller replacement marker"
+
+
+@pytest.mark.parametrize("operation", ["start", "invoke", "stop"])
+async def test_connections_accepted_during_shutdown_receive_no_effects_response(
+    host, host_request, mock_fabric, mock_runtime, socket_path, operation
+):
+    stop, ready = asyncio.Event(), asyncio.Event()
+    task = asyncio.create_task(
+        transport.serve(
+            host, socket_path=socket_path, stop_event=stop, ready_event=ready
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), 1)
+        # Exercise the transport while shutdown is flagged and the socket is open.
+        host.shutting_down = True
+        request = host_request(operation)
+        if operation == "invoke":
+            request["input"] = {"prompt": "hello"}
+        response = await transport.client(request, socket_path=socket_path)
+        assert response["operation"] == operation
+        assert response["status"] == "failed"
+        assert response["error"]["code"] == "host_stopping"
+        assert response["changed"] is False
+        assert response["error"]["effects"] == "none"
+        mock_fabric.start_runtime.assert_not_awaited()
+        mock_runtime.invoke.assert_not_awaited()
+        mock_runtime.stop.assert_not_awaited()
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, 2)
 
 
 async def test_server_refuses_restart_when_previous_cleanup_is_unconfirmed(
