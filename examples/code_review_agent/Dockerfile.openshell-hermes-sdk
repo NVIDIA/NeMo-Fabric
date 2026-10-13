@@ -7,7 +7,8 @@ FROM fabric-openshell-sdk:source
 ARG HERMES_COMMIT=a62979dc3601c9eae455bff5b35ba8f9bed0df30
 
 USER root
-RUN install -d /opt/fabric/examples/code_review_agent /src/hermes-agent
+RUN install -d /opt/fabric/examples/code_review_agent \
+    /opt/fabric/adapters/python/hermes /src/hermes-agent
 WORKDIR /src/fabric
 RUN git clone --filter=blob:none --no-checkout https://github.com/NousResearch/hermes-agent.git /src/hermes-agent \
     && git -C /src/hermes-agent fetch --depth=1 origin "${HERMES_COMMIT}" \
@@ -18,6 +19,8 @@ COPY examples/code_review_agent/__init__.py \
     examples/code_review_agent/openshell_sdk_consumer.py \
     /opt/fabric/examples/code_review_agent/
 COPY adapters/python/hermes/ adapters/python/hermes/
+COPY adapters/python/hermes/hermes.fabric-adapter.json \
+    /opt/fabric/adapters/python/hermes/hermes.fabric-adapter.json
 COPY --chown=sandbox:sandbox examples/code_review_agent/ /sandbox/code-review/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/hermes \
