@@ -22,8 +22,11 @@ Builds and test output are kept under `.tmp/`.
 
 Set `UV_PROJECT_ENVIRONMENT` to an installed NeMo Fabric environment if it is
 not at `.tmp/host-stack-tests`. The environment needs NeMo Fabric and the
-OpenShell Python SDK version matching the pinned gateway (currently `0.1.2`).
-Install that SDK in the selected environment when it is not already present:
+native extension. The SDK/provider examples use the Rust OpenShell provider
+binary downloaded by the launcher and do not require the OpenShell Python SDK.
+The raw/direct [Code Review command-line example](../code_review_agent/README.md#rawdirect-openshell-code-review)
+uses the OpenShell Python SDK; install the version matching the pinned gateway
+only when using that example:
 
 ```bash
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$PWD/.tmp/host-stack-tests}"
@@ -40,7 +43,10 @@ supported ownership modes, image staging, and consumer invocation. It can set
 `SERVER_ENV_ARGS` for the long-lived `fabric-agent-ctl serve` process; use this
 when an adapter is installed in a separate Python environment. The shared
 launcher builds the images, starts the gateway, creates the requested sandbox,
-passes its handle to the consumer, and cleans up resources it created.
+passes its handle to the consumer, and cleans up resources it created. A workload
+may define `configure_workload_gateway` to configure gateway-side providers
+before a sandbox starts; it may set `MODEL_ENV_ARGS` for sandbox creation options
+such as a registered provider profile.
 
 `OPENSHELL_EXAMPLE_MODE` accepts `caller_owned`, `fabric_owned`, or `both`.
 Caller-owned mode creates a sandbox before invoking the SDK consumer and

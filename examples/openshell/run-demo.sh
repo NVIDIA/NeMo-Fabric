@@ -232,6 +232,10 @@ until { true >/dev/tcp/127.0.0.1/"${GATEWAY_PORT}"; } 2>/dev/null; do
   sleep 1
 done
 
+if declare -F configure_workload_gateway >/dev/null; then
+  configure_workload_gateway
+fi
+
 run_consumer() {
   VIRTUAL_ENV="${DEMO_PYTHON_ENV}" UV_PROJECT_ENVIRONMENT="${DEMO_PYTHON_ENV}" \
     PATH="${DEMO_PYTHON_ENV}/bin:${PATH}" PYTHONPATH="${FABRIC_ROOT}" \

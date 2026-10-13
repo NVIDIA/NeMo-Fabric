@@ -16,12 +16,10 @@ OpenShell gateway, and runs both ownership modes by default. No model endpoint
 or inference key is needed.
 
 From the repository root, use a host Python environment that has the NeMo
-Fabric SDK, its native extension, and the OpenShell SDK version matching the
-launcher’s pinned OpenShell release. Then run:
+Fabric SDK and its native extension. Then run:
 
 ```bash
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$PWD/.venv}"
-uv pip install --python "$UV_PROJECT_ENVIRONMENT/bin/python" openshell==0.1.2
 bash examples/openshell/run-demo.sh examples/openshell_sdk/demo.sh \
   --input '{"message":"hello from the host SDK"}'
 ```

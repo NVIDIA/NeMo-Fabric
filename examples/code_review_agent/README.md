@@ -187,9 +187,37 @@ collects Relay ATOF records; it is not native model-response streaming.
 
 Install Node.js and OpenClaw, then install the [OpenClaw adapter](../../adapters/python/openclaw/README.md). This variant uses the `NVIDIA_API_KEY` configured for the default demo and retains the default code-review skill. OpenClaw does not currently support Relay telemetry.
 
-### OpenShell Code Review
+### OpenShell through the NeMo Fabric SDK
 
-The [OpenShell consumer](openshell.py) is a version of this small Code Review demonstration application. It gives OpenClaw the sample repository containing `calculator.py`, runs two review turns in a real OpenShell sandbox, and records the results. The consumer runs outside the sandbox and uses OpenShell's Python SDK. Inside the sandbox, `fabric-agent-ctl serve` owns one NeMo Fabric runtime and its OpenClaw adapter/harness. Start, both review invocations, and stop use separate exec calls.
+`openshell_sdk_consumer.py` is the end-to-end integration example: the host
+uses the normal SDK to attach or prepare an environment, start and invoke the
+OpenClaw runtime, then stop and release it. The packaged agent has no OpenShell
+client or lifecycle code. The shared launcher builds the task image, starts a
+local gateway, configures the NVIDIA credential provider, and exercises both
+caller-owned and Fabric-owned lifecycles.
+
+Set `NVIDIA_API_KEY`, then run from the repository root on Linux with Docker,
+Rust/Cargo, `uv`, and the dependencies listed in
+[`examples/openshell/README.md`](../openshell/README.md):
+
+```bash
+bash examples/openshell/run-demo.sh \
+  examples/code_review_agent/demo-openshell-sdk.sh
+```
+
+Set `OPENSHELL_EXAMPLE_MODE=caller_owned` or `fabric_owned` to run one mode.
+The launcher writes normalized results under `.tmp/code-review/`. This path
+uses `Fabric.attach_environment` or `Fabric.prepare_environment` and
+`Fabric.start_runtime_in`; it does not send raw runtime control commands.
+
+### Raw/direct OpenShell Code Review
+
+The [direct OpenShell consumer](openshell.py) demonstrates the lower-level
+control path for the same sample task. It runs two review turns in a real
+OpenShell sandbox; the host uses OpenShell's Python SDK to invoke
+`fabric-agent-ctl` directly, while `fabric-agent-ctl serve` runs inside the
+sandbox. This example bypasses NeMo Fabric's environment provider and
+host-side lifecycle SDK. The SDK example above demonstrates that full path.
 
 Prerequisites are Docker with Linux containers, the OpenShell CLI, and a registered OpenShell gateway. Match the OpenShell CLI and Python SDK to the gateway version; this example was tested with `0.1.2`. Build from the NeMo Fabric repository root so the image contains the current native extension, server, adapter, code-review skill, and sample repository. The Dockerfile uses public, digest-pinned Python, Node, OpenClaw, Rust, and uv images:
 

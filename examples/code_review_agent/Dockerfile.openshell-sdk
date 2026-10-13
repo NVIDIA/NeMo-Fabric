@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+ARG NODE_IMAGE=node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+ARG OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw@sha256:cc596b846506a5f4cfcee111394a2725f375f01cca2ebb492a161fd1b747f101
+FROM ${NODE_IMAGE} AS node
+FROM ${OPENCLAW_IMAGE} AS openclaw
+FROM fabric-openshell-sdk:source
+
+USER root
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=openclaw /app /app
+RUN ln -s /app/openclaw.mjs /usr/local/bin/openclaw
+RUN install -d /opt/fabric/examples/code_review_agent
+COPY examples/__init__.py /opt/fabric/examples/__init__.py
+COPY examples/code_review_agent/__init__.py \
+    examples/code_review_agent/config.py \
+    examples/code_review_agent/openshell_sdk_consumer.py \
+    /opt/fabric/examples/code_review_agent/
+
+WORKDIR /src/fabric
+COPY adapters/python/openclaw/ adapters/python/openclaw/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/openclaw \
+    && uv pip install --python /opt/fabric/bin/python --no-deps /wheels/*.whl
+COPY --chown=sandbox:sandbox examples/code_review_agent/ /sandbox/code-review/
+RUN install -d -m 0700 -o 1000 -g 1000 /sandbox/tmp /sandbox/workspace \
+    /sandbox/artifacts /sandbox/.cache
+RUN PYTHONPATH=/opt/fabric /opt/fabric/bin/python - <<'PY'
+from pathlib import Path
+from types import SimpleNamespace
+
+from nemo_fabric import Fabric
+from examples.code_review_agent.openshell_sdk_consumer import build_config
+
+args = SimpleNamespace(
+    ownership="fabric_owned",
+    gateway="http://127.0.0.1:18080",
+    workspace="default",
+    image="fabric-code-review-sdk:build-check",
+    policy_file="/sandbox/code-review/openshell-sdk-policy.yaml",
+    results_file="/tmp/code-review/report.json",
+    sandbox_name="review-build-check",
+    sandbox_id=None,
+    model="nvidia/nemotron-3.5-lightning-30b-a3b",
+    base_url="https://integrate.api.nvidia.com/v1",
+)
+config = build_config(args)
+config.environment.provider = "local"
+plan = Fabric().plan(config, base_dir=Path("/sandbox/code-review"))
+assert plan.get("adapter_descriptor", {}).get("descriptor", {}).get("adapter_id") == "nvidia.fabric.openclaw"
+PY
+ENV PATH=/opt/fabric/bin:/usr/local/bin:/usr/bin:/bin \
+    PYTHONPATH=/opt/fabric \
+    HOME=/home/sandbox \
+    ADAPTER_PYTHON=/opt/fabric/bin/python \
+    FABRIC_HOST_SOCKET=/sandbox/fabric.sock \
+    TMPDIR=/sandbox/tmp \
+    XDG_CACHE_HOME=/sandbox/.cache \
+    PYTHONDONTWRITEBYTECODE=1
+WORKDIR /sandbox
+USER sandbox:sandbox
