@@ -1611,6 +1611,130 @@ class FabricEvent(FabricMapping):
         return data
 
 
+class EnvironmentReference(FabricMapping):
+    """Provider-specific identity for an existing execution environment.
+
+    Pass this reference to ``Fabric.attach_environment()``. The provider verifies
+    the resource before returning a durable ``EnvironmentHandle`` and never gains
+    deletion authority over the caller-owned resource.
+
+    Attributes:
+        provider: Stable environment-provider identifier.
+        resource: Provider-specific resource identity.
+    """
+
+    provider: str
+    resource: Mapping[str, Any]
+    _fields = frozenset({"provider", "resource"})
+    _json_fields = frozenset({"resource"})
+    _omit_if_empty = frozenset({"resource"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        unknown = set(data).difference(cls._fields)
+        if unknown:
+            raise FabricConfigError(
+                "EnvironmentReference contains unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
+        data["provider"] = _required_text(data.get("provider"), "provider")
+        data["resource"] = _mapping(data.get("resource", {}), "resource")
+        return data
+
+
+class EnvironmentHandle(FabricMapping):
+    """Durable identity and provider binding for a prepared or attached environment.
+
+    Environment handles are independent of runtime sessions. Runtime and reuse
+    limits are provider-specific. Release the environment separately after
+    stopping its runtime and collecting results.
+
+    Attributes:
+        environment_id: Unique identifier for the prepared environment.
+        provider: Stable environment-provider identifier.
+        control_location: Whether Fabric control runs outside or inside the environment.
+        workspace: Optional workspace visible to the harness runtime.
+        artifacts: Optional artifact root visible to the harness runtime.
+        env: Environment variables visible to the harness and its tools.
+        ownership: Whether the caller or Fabric owns the environment resource.
+        connection: Provider connection metadata.
+        metadata: Provider-specific metadata.
+    """
+
+    environment_id: str
+    provider: str
+    control_location: str
+    workspace: str | Path | None
+    artifacts: str | Path | None
+    env: Mapping[str, str]
+    ownership: str
+    connection: Mapping[str, Any]
+    metadata: Mapping[str, Any]
+    _fields = frozenset(
+        {
+            "environment_id",
+            "provider",
+            "control_location",
+            "workspace",
+            "artifacts",
+            "env",
+            "ownership",
+            "connection",
+            "metadata",
+        }
+    )
+    _json_fields = frozenset({"env", "connection", "metadata"})
+    _omit_if_empty = frozenset({"env", "connection", "metadata"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        unknown = set(data).difference(cls._fields)
+        if unknown:
+            raise FabricConfigError(
+                "EnvironmentHandle contains unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
+        for field in (
+            "environment_id",
+            "provider",
+            "control_location",
+            "ownership",
+        ):
+            data[field] = _required_text(data.get(field), field.replace("_", " "))
+        if data["control_location"] not in ("external_control", "in_env_control"):
+            raise FabricConfigError("invalid environment control_location")
+        if data["ownership"] not in ("caller_owned", "fabric_owned"):
+            raise FabricConfigError("invalid environment ownership")
+        for field in ("workspace", "artifacts"):
+            value = data.get(field)
+            if value is not None:
+                if data["provider"] == "local":
+                    data[field] = Path(value)
+                else:
+                    # Task paths are strings; never reinterpret them using host OS rules.
+                    data[field] = _required_text(value, field)
+                    if data["provider"] == "openshell" and (
+                        not value.startswith("/")
+                        or "\\" in value
+                        or "\0" in value
+                        or ".." in value.split("/")
+                    ):
+                        raise FabricConfigError(
+                            f"{field} must be an absolute POSIX task path"
+                        )
+            else:
+                data[field] = None
+        environment = _mapping(data.get("env", {}), "environment variables")
+        for key, value in environment.items():
+            _required_text(key, "environment variable name")
+            if not isinstance(value, str):
+                raise FabricConfigError("environment variable values must be strings")
+        data["env"] = environment
+        data["connection"] = _mapping(data.get("connection", {}), "connection")
+        data["metadata"] = _mapping(data.get("metadata", {}), "environment metadata")
+        return data
+
+
 class RuntimeHandle(FabricMapping):
     """Opaque identity and binding for one started runtime.
 
