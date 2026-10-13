@@ -29,9 +29,7 @@ import tomllib
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-SDK_ROOT = (
-    ROOT_DIR / "sdk" / "python" / "nemo-fabric-runtime" / "src" / "nemo_fabric"
-)
+SDK_ROOT = ROOT_DIR / "sdk" / "python" / "nemo-fabric-runtime" / "src" / "nemo_fabric"
 PYPROJECT = ROOT_DIR / "sdk" / "python" / "nemo-fabric-runtime" / "pyproject.toml"
 ALLOWED = set(sys.stdlib_module_names) | {
     "nemo_fabric",
@@ -48,7 +46,7 @@ EXPECTED_DEPENDENCIES = [
     "pydantic>=2.12,<3",
     "typing-extensions>=4.12",
 ]
-# Consumer/harness packages that must never leak into a plain ``import nemo_fabric``.
+# Consumer, harness, and control-host modules excluded from a plain SDK import.
 CONSUMER_SPECIFIC = [
     "harbor",
     "hermes",
@@ -57,6 +55,9 @@ CONSUMER_SPECIFIC = [
     "nemo_fabric_collector",
     "nemo_fabric_adapters",
     "nemo_fabric_test_adapters",
+    "openshell",
+    "nemoclaw",
+    "nemo_fabric.host",
 ]
 
 
@@ -120,8 +121,10 @@ def importing_the_sdk_pulls_in_no_consumer_package() -> None:
         "import importlib, sys\n"
         "importlib.import_module('nemo_fabric')\n"
         f"forbidden = {CONSUMER_SPECIFIC!r}\n"
-        "roots = {name.split('.')[0] for name in sys.modules}\n"
-        "print(','.join(sorted(roots & set(forbidden))))\n"
+        "leaked = {name for name in sys.modules if any(\n"
+        "    name == prefix or name.startswith(prefix + '.') for prefix in forbidden\n"
+        ")}\n"
+        "print(','.join(sorted(leaked)))\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", probe],
