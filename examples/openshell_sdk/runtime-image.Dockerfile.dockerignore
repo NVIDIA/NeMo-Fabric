@@ -1,0 +1,6 @@
+**
+!examples/
+!examples/openshell_sdk/
+!examples/openshell_sdk/adapter/
+!examples/openshell_sdk/adapter/echo_adapter.py
+!examples/openshell_sdk/adapter/echo.fabric-adapter.json

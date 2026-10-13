@@ -28,13 +28,17 @@ async def main():
             operation = frame["operation"]
             if operation in ("prepare", "attach"):
                 environment = frame["environment"]
+                connection = environment["connection"]
                 output = {
                     "workspace": environment["workspace"],
                     "artifacts": environment["artifacts"],
                     "connection": {
-                        **environment["connection"],
-                        "sandbox_id": environment["connection"]["sandbox_id"],
-                        "sandbox_name": "echo",
+                        **connection,
+                        "sandbox_id": connection.get("sandbox_id", "fixture-created-id"),
+                        "sandbox_name": connection.get(
+                            "sandbox_name",
+                            environment["settings"].get("sandbox_name", "echo"),
+                        ),
                     },
                 }
             elif operation == "runtime_command":
@@ -87,7 +91,11 @@ async def main():
                 )
                 output = json.loads(result.stdout)["files"]
             elif operation == "release":
-                output = {"released": False, "detached": True}
+                output = (
+                    {"released": True, "detached": False}
+                    if frame["environment"]["ownership"] == "fabric_owned"
+                    else {"released": False, "detached": True}
+                )
             else:
                 raise ValueError("unsupported fixture operation")
             with Path(os.environ["FABRIC_TEST_PROVIDER_LOG"]).open("a") as stream:
