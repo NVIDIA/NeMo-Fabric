@@ -147,13 +147,13 @@ def test_hermes_config_enables_code_review_tools_and_optional_relay(relay, tmp_p
     assert config.harness.adapter_id == "nvidia.fabric.hermes"
     assert config.tools.enabled == ["terminal", "read_file", "search_files"]
     assert config.models["default"].api_key_env == "OPENAI_API_KEY"
-    assert config.runtime.artifacts == "/sandbox/code-review/artifacts"
-    assert config.environment.artifacts == "/sandbox/code-review/artifacts"
+    assert config.runtime.artifacts == tmp_path / "artifacts"
+    assert config.environment.artifacts == "/sandbox/artifacts"
     assert (config.relay is not None) is relay
     if relay:
-        assert config.relay.output_dir == "/sandbox/code-review/artifacts/relay"
+        assert config.relay.output_dir == "./artifacts/relay"
         assert config.relay.observability.atif.output_directory == (
-            "/sandbox/code-review/artifacts/relay"
+            "./artifacts/relay"
         )
 
 

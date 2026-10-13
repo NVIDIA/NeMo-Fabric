@@ -24,9 +24,18 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install --python /opt/fabric/bin/python --no-deps /wheels/*.whl \
     && uv pip install --python /opt/fabric/bin/python \
         'nemo-relay>=0.10,<0.11' 'tomli-w>=1.2,<2' \
+    && mv /src/hermes-agent /opt/fabric/hermes-agent \
     && uv pip install --python /opt/fabric/bin/python \
         --config-settings-package hermes-agent:editable_mode=compat \
-        --editable '/src/hermes-agent[mcp]'
+        --editable '/opt/fabric/hermes-agent[mcp]'
+RUN /opt/fabric/bin/python - <<'PY'
+from pathlib import Path
+
+import hermes_cli
+
+module_path = Path(hermes_cli.__file__).resolve()
+assert module_path.is_relative_to(Path("/opt/fabric/hermes-agent")), module_path
+PY
 RUN install -d -m 0700 -o 1000 -g 1000 /sandbox/tmp /sandbox/workspace \
     /sandbox/artifacts /sandbox/.cache
 RUN PYTHONPATH=/opt/fabric /opt/fabric/bin/python - <<'PY'
@@ -55,7 +64,8 @@ for relay in (False, True):
     assert config.harness.adapter_id == "nvidia.fabric.hermes"
     assert config.environment.provider == "openshell"
     assert config.models["default"].api_key_env == "OPENAI_API_KEY"
-    assert config.runtime.artifacts == "/sandbox/code-review/artifacts"
+    assert config.runtime.artifacts == Path("/tmp/code-review/artifacts")
+    assert config.environment.artifacts == "/sandbox/artifacts"
     assert (config.relay is not None) is relay
     config.environment.provider = "local"
     plan = Fabric().plan(config, base_dir=Path("/sandbox/code-review"))
