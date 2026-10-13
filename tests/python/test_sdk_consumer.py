@@ -72,7 +72,7 @@ def test_existing_sdk_lifecycle_works_without_openshell_or_control_host(
 import asyncio
 import sys
 
-for module in ("openshell", "nemoclaw", "nemo_fabric.host"):
+for module in ("openshell", "nemoclaw", "nemo_fabric.runtime_server"):
     sys.modules[module] = None
 
 from nemo_fabric import Fabric, FabricConfig, RuntimeStatus
@@ -106,7 +106,7 @@ async def main():
             assert result.output["received"] == "second runtime remains usable"
 
     assert second.status is RuntimeStatus.STOPPED
-    assert sys.modules["nemo_fabric.host"] is None
+    assert sys.modules["nemo_fabric.runtime_server"] is None
 
 asyncio.run(main())
 """

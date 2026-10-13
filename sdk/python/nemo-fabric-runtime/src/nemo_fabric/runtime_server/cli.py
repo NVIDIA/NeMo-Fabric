@@ -15,8 +15,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from nemo_fabric.host import transport
-from nemo_fabric.host.protocol import (
+from nemo_fabric.runtime_server import transport
+from nemo_fabric.runtime_server.protocol import (
     CONFIG_OPERATIONS,
     INTERFACE_VERSION,
     OPERATIONS,
@@ -24,15 +24,16 @@ from nemo_fabric.host.protocol import (
     REQUEST_LIMIT,
     SOCKET_PATH,
     ProtocolError,
+    decode_json,
     decode_object,
     encode_request,
     encode_response,
     envelope,
 )
-from nemo_fabric.host.state import RuntimeHost
+from nemo_fabric.runtime_server.state import RuntimeServer
 
 
-def read_input(path: str) -> dict[str, Any]:
+def read_input(path: str) -> Any:
     try:
         if path == "-":
             if sys.stdin is None or sys.stdin.isatty():
@@ -66,7 +67,7 @@ def read_input(path: str) -> dict[str, Any]:
                 encoded = stream.read(REQUEST_LIMIT + 1)
         if len(encoded) > REQUEST_LIMIT:
             raise ValueError("input exceeds limit")
-        return decode_object(encoded)
+        return decode_json(encoded)
     except (OSError, ValueError, RecursionError) as error:
         raise ProtocolError("invalid_input") from error
 
@@ -86,6 +87,7 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
             "--runtime-id",
             "--config",
             "--input",
+            "--request",
         ):
             if index + 1 == len(arguments) or arguments[index + 1].startswith("--"):
                 raise ProtocolError()
@@ -100,9 +102,12 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         required.add("--runtime-id")
     if operation in CONFIG_OPERATIONS:
         required.add("--config")
-    if operation == "invoke":
-        required.add("--input")
     allowed = required.copy()
+    if operation == "invoke":
+        payload_flags = flags.keys() & {"--input", "--request"}
+        if len(payload_flags) != 1:
+            raise ProtocolError()
+        allowed.update(payload_flags)
     if not required <= flags.keys() or not flags.keys() <= allowed:
         raise ProtocolError()
     request = {
@@ -118,7 +123,8 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
     if operation in CONFIG_OPERATIONS:
         request["config"] = read_input(flags["--config"])
     if operation == "invoke":
-        request["input"] = read_input(flags["--input"])
+        flag = next(iter(payload_flags))
+        request[flag[2:]] = read_input(flags[flag])
     encode_request(request)
     return request
 
@@ -133,7 +139,7 @@ def main(arguments: list[str] | None = None) -> int:
         socket_path = Path(os.environ.get("FABRIC_HOST_SOCKET", SOCKET_PATH))
         if operation == "serve":
             os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
-            host = RuntimeHost(directory=socket_path.parent)
+            host = RuntimeServer(directory=socket_path.parent)
             asyncio.run(transport.serve(host, socket_path=socket_path))
             return 0
         response = asyncio.run(transport.client(request, socket_path=socket_path))

@@ -29,7 +29,7 @@ dependencies = [
 dynamic = ["version"]
 
 [project.scripts]
-fabric-agent-ctl = "nemo_fabric.host.cli:main"
+fabric-agent-ctl = "nemo_fabric.runtime_server.cli:main"
 
 [project.optional-dependencies]
 streaming = [

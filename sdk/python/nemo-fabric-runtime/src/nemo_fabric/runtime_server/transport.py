@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from nemo_fabric.host.protocol import (
+from nemo_fabric.runtime_server.protocol import (
     CALL_SECONDS,
     LIFECYCLE_OPERATIONS,
     READ_SECONDS,
@@ -29,7 +29,7 @@ from nemo_fabric.host.protocol import (
     envelope,
     validate_response,
 )
-from nemo_fabric.host.state import RuntimeHost
+from nemo_fabric.runtime_server.state import RuntimeServer
 
 if sys.platform != "win32":
     import fcntl
@@ -97,7 +97,7 @@ async def client(
 
 
 async def serve(
-    host: RuntimeHost,
+    host: RuntimeServer,
     *,
     socket_path: Path = Path(SOCKET_PATH),
     stop_event: asyncio.Event | None = None,

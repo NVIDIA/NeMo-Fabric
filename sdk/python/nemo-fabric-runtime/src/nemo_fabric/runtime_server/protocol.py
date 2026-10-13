@@ -6,6 +6,8 @@
 import json
 from typing import Any
 
+from nemo_fabric import FabricConfigError, RunResult, RuntimeHandle
+
 INTERFACE_VERSION = 2
 REQUEST_LIMIT = 512 * 1024
 RESPONSE_LIMIT = 4 * 1024 * 1024
@@ -36,7 +38,7 @@ MESSAGES = {
     "invalid_response": "The host response is missing, invalid, or truncated.",
     "request_too_large": "The request exceeds the transport limit.",
     "response_too_large": "The response exceeds the transport limit; the outcome is unknown.",
-    "invalid_input": "Input must contain one bounded UTF-8 JSON object.",
+    "invalid_input": "Input must contain one bounded UTF-8 JSON value.",
 }
 
 
@@ -101,7 +103,10 @@ def validate_request(request: Any) -> str:
     if operation == "start":
         required.add("config")
     if operation == "invoke":
-        required.add("input")
+        payload_fields = request.keys() & {"input", "request"}
+        if len(payload_fields) != 1:
+            raise ProtocolError()
+        required.update(payload_fields)
     if not required <= request.keys() or not request.keys() <= required:
         raise ProtocolError()
     for field in ("agent", "runtime_id"):
@@ -118,15 +123,16 @@ def validate_request(request: Any) -> str:
         metadata = config.get("metadata")
         if not isinstance(metadata, dict) or metadata.get("name") != request["agent"]:
             raise ProtocolError("wrong_agent")
-    if operation == "invoke":
-        if not isinstance(request["input"], dict):
-            raise ProtocolError()
-        if request["input"].get("stream") or request["input"].get("streaming"):
-            raise ProtocolError("streaming_unsupported", "invoke", unsupported=True)
+    if (
+        operation == "invoke"
+        and "request" in request
+        and not isinstance(request["request"], dict)
+    ):
+        raise ProtocolError()
     return operation
 
 
-def decode_object(encoded: bytes) -> dict[str, Any]:
+def decode_json(encoded: bytes) -> Any:
     def reject_constant(value: str) -> None:
         raise ValueError("non-finite JSON number")
 
@@ -138,11 +144,15 @@ def decode_object(encoded: bytes) -> dict[str, Any]:
             result[key] = value
         return result
 
-    value = json.loads(
+    return json.loads(
         encoded.decode("utf-8"),
         parse_constant=reject_constant,
         object_pairs_hook=unique_object,
     )
+
+
+def decode_object(encoded: bytes) -> dict[str, Any]:
+    value = decode_json(encoded)
     if not isinstance(value, dict):
         raise ValueError("expected one JSON object")
     return value
@@ -219,22 +229,19 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
         error["message"] = MESSAGES[error["code"]]
         return
     result = response["result"]
-    if not isinstance(result, dict):
-        raise invalid
-    if operation == "invoke":
-        native = result.get("fabric_result")
-        if (
-            not isinstance(result.get("runtime_id"), str)
-            or not result["runtime_id"]
-            or not isinstance(native, dict)
-            or native.get("status") != "succeeded"
-            or response["changed"] is not None
-        ):
+    try:
+        if operation == "invoke":
+            RunResult.from_mapping(result)
+            if response["changed"] is not None:
+                raise invalid
+        elif operation == "start":
+            RuntimeHandle.from_mapping(result)
+            if type(response["changed"]) is not bool:
+                raise invalid
+        elif operation == "stop":
+            if result is not None or type(response["changed"]) is not bool:
+                raise invalid
+        else:
             raise invalid
-        return
-    if operation not in ("start", "stop") or set(result) != {"runtime_id"}:
-        raise invalid
-    if not isinstance(result["runtime_id"], str) or not result["runtime_id"]:
-        raise invalid
-    if type(response["changed"]) is not bool:
-        raise invalid
+    except (FabricConfigError, TypeError, ValueError, KeyError) as error:
+        raise invalid from error

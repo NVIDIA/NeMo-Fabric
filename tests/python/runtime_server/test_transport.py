@@ -7,7 +7,6 @@ import asyncio
 import json
 import os
 import stat
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -20,14 +19,7 @@ if sys.platform == "win32":
         "The Unix command bridge requires a Unix platform", allow_module_level=True
     )
 
-from nemo_fabric.host import protocol, transport
-
-
-@pytest.fixture(name="socket_path")
-def socket_path_fixture():
-    # macOS Unix socket paths have a short platform limit.
-    with tempfile.TemporaryDirectory(prefix="fh-", dir="/tmp") as directory:
-        yield Path(directory) / "fabric.sock"
+from nemo_fabric.runtime_server import protocol, transport
 
 
 async def test_unreachable_host_does_not_claim_state_or_effects(

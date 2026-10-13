@@ -17,7 +17,7 @@ def import_module(name, *args, **kwargs):
         raise ModuleNotFoundError("Windows does not provide fcntl")
     return original(name, *args, **kwargs)
 builtins.__import__ = import_module
-from nemo_fabric.host import cli
+from nemo_fabric.runtime_server import cli
 assert cli.main(["serve"]) == 1
 raise SystemExit(cli.main(["stop", "--agent", "review", "--runtime-id", "runtime-1"]))
 """

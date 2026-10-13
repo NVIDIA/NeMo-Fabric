@@ -25,13 +25,12 @@ def client_fixture():
         result = {"runtime_id": "runtime-1"}
         if operation == "invoke":
             result = {
+                "status": "succeeded",
                 "runtime_id": "runtime-1",
-                "fabric_result": {
-                    "status": "succeeded",
-                    "runtime_id": "runtime-1",
-                    "output": {"response": "calculator.py: answer() returns 41."},
-                },
+                "output": {"response": "calculator.py: answer() returns 41."},
             }
+        elif operation == "stop":
+            result = None
         response = {
             "operation": operation,
             "status": "succeeded",
@@ -440,14 +439,14 @@ def test_failed_review_preserves_normalized_error_partial_output_and_artifacts(
     def failed_review(sandbox, command, **kwargs):
         if command[:2] == ["fabric-agent-ctl", "invoke"]:
             return MagicMock(
-                exit_code=1,
+                exit_code=0,
                 stdout=json.dumps(
                     {
                         "operation": "invoke",
-                        "status": "failed",
+                        "status": "succeeded",
                         "changed": None,
-                        "result": {"runtime_id": "runtime-1", "fabric_result": failed},
-                        "error": {"code": "invoke_failed", "effects": "unknown"},
+                        "result": failed,
+                        "error": None,
                     }
                 )
                 + "\n",
@@ -490,14 +489,14 @@ def test_cli_records_failed_review_with_null_or_non_text_output(
     def failed_review(sandbox, command, **kwargs):
         if command[:2] == ["fabric-agent-ctl", "invoke"]:
             return MagicMock(
-                exit_code=1,
+                exit_code=0,
                 stdout=json.dumps(
                     {
                         "operation": "invoke",
-                        "status": "failed",
+                        "status": "succeeded",
                         "changed": None,
-                        "result": {"runtime_id": "runtime-1", "fabric_result": failed},
-                        "error": {"code": "invoke_failed", "effects": "unknown"},
+                        "result": failed,
+                        "error": None,
                     }
                 )
                 + "\n",
@@ -536,7 +535,7 @@ def test_cli_records_failed_review_with_null_or_non_text_output(
     assert report == json.loads(capsys.readouterr().out)
     assert report["reviews"] == [failed]
     assert report["stop"]["status"] == "succeeded"
-    assert report["error"]["code"] == "invoke_failed"
+    assert report["error"] == failed["error"]
     assert [call["operation"] for call in report["commands"]].count("invoke") == 1
     assert "No text response was returned." in transcript
     assert "model_unavailable" in transcript

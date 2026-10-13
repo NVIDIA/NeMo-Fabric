@@ -11,8 +11,15 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
-from nemo_fabric import Fabric, FabricConfig, FabricConfigError, Runtime, RuntimeStatus
-from nemo_fabric.host.protocol import (
+from nemo_fabric import (
+    Fabric,
+    FabricConfig,
+    FabricConfigError,
+    RunRequest,
+    Runtime,
+    RuntimeStatus,
+)
+from nemo_fabric.runtime_server.protocol import (
     OPERATIONS,
     ProtocolError,
     envelope,
@@ -27,7 +34,7 @@ class OwnedRuntime:
     state: str = "running"
 
 
-class RuntimeHost:
+class RuntimeServer:
     """Serialize commands for one owned runtime. A stopped sandbox cannot be reused."""
 
     def __init__(
@@ -100,10 +107,9 @@ class RuntimeHost:
                         raise ProtocolError("start_failed", "start")
                     self.runtimes[runtime.runtime_id].state = "running"
                     return envelope(
-                        operation, {"runtime_id": runtime.runtime_id}, changed=True
+                        operation, runtime.handle.to_mapping(), changed=True
                     )
                 owned = self._owned(request)
-                result = {"runtime_id": request["runtime_id"]}
                 if operation == "stop":
                     if owned.state == "stopped":
                         return envelope(operation, result)
@@ -116,13 +122,16 @@ class RuntimeHost:
                     or owned.runtime.status != RuntimeStatus.ACTIVE
                 ):
                     raise ProtocolError("runtime_unavailable", stage)
-                changed, effects = None, "unknown"
-                native = (
-                    await owned.runtime.invoke(input=request["input"])
-                ).to_mapping()
-                result = {"runtime_id": request["runtime_id"], "fabric_result": native}
-                if native.get("status") != "succeeded":
-                    raise ProtocolError("invoke_failed", stage)
+                stage = "validation"
+                if "request" in request:
+                    invoke_arguments = {
+                        "request": RunRequest.model_validate(request["request"])
+                    }
+                else:
+                    RunRequest(input=request["input"])
+                    invoke_arguments = {"input": request["input"]}
+                changed, effects, stage = None, "unknown", "invoke"
+                result = (await owned.runtime.invoke(**invoke_arguments)).to_mapping()
                 return envelope(operation, result, changed=None)
         except Exception as error:
             if not isinstance(error, ProtocolError):

@@ -93,9 +93,7 @@ async def test_command_process_lifecycle_and_signal_cleanup(
                 stdin=b'{"message":"hello"}',
             )
             assert invoked["status"] == "succeeded", invoked
-            assert invoked["result"]["fabric_result"]["output"]["received"] == {
-                "message": "hello"
-            }
+            assert invoked["result"]["output"]["received"] == {"message": "hello"}
             stopped = await call(
                 "stop",
                 "--agent",

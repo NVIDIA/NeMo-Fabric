@@ -110,7 +110,11 @@ class OpenShellCodeReview:
                 or (executed.exit_code == 0) != (response["status"] == "succeeded")
                 or (
                     response["status"] == "succeeded"
-                    and not isinstance(response.get("result"), dict)
+                    and (
+                        response.get("result") is not None
+                        if operation == "stop"
+                        else not isinstance(response.get("result"), dict)
+                    )
                 )
                 or (
                     response["status"] != "succeeded"
@@ -227,7 +231,7 @@ class OpenShellCodeReview:
                     "-",
                     value={"message": prompt},
                 )
-                result = (response.get("result") or {}).get("fabric_result")
+                result = response.get("result")
                 if response["status"] != "succeeded":
                     if (
                         isinstance(result, dict)
@@ -239,11 +243,16 @@ class OpenShellCodeReview:
                 if (
                     not isinstance(result, dict)
                     or result.get("runtime_id") != runtime_id
-                    or result.get("status") != "succeeded"
                 ):
                     report["error"] = _failure("invoke", "invalid_response")["error"]
                     break
                 report["reviews"].append(result)
+                if result.get("status") != "succeeded":
+                    report["error"] = (
+                        result.get("error")
+                        or _failure("invoke", "invoke_failed")["error"]
+                    )
+                    break
         finally:
             report["stop"] = self._command(
                 "stop",

@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# NVIDIA NeMo Fabric Host And Command Bridge
+# NVIDIA NeMo Fabric Runtime Server And Command Bridge
 
 `fabric-agent-ctl` is installed with `nemo-fabric-runtime`. One foreground `serve` process owns one runtime lifecycle inside one sandbox. Short-lived commands connect through a private Unix socket and call the existing public SDK. The caller owns image selection, credentials, mounts, network policy, retained storage, and sandbox deletion.
 
@@ -14,6 +14,7 @@ SPDX-License-Identifier: Apache-2.0
 | `serve` | Start the foreground runtime server; no agent selection |
 | `start --agent NAME --config FILE` | `Fabric.start_runtime(config, base_dir=...)` |
 | `invoke --agent NAME --runtime-id ID --input FILE` | `Runtime.invoke(input=...)` |
+| `invoke --agent NAME --runtime-id ID --request FILE` | `Runtime.invoke(request=RunRequest(...))` |
 | `stop --agent NAME --runtime-id ID` | `Runtime.stop()` |
 
 Run the server under the sandbox supervisor:
@@ -30,7 +31,9 @@ fabric-agent-ctl invoke --agent researcher --runtime-id RUNTIME_ID --input /sand
 fabric-agent-ctl stop --agent researcher --runtime-id RUNTIME_ID
 ```
 
-Replace `RUNTIME_ID` with the identity returned by start. Start and stop return `result: {"runtime_id": "..."}`; invocation returns that identity and the normalized SDK result as `fabric_result`. Multiple invocations retain the same runtime and conversation. Targeted commands require both the returned runtime ID and exact agent name. Repeated successful stop is a no-op. Serve starts a process and is never forwarded over the socket.
+The response envelope separates command diagnostics from the public SDK payload in `result`: start returns `RuntimeHandle.to_mapping()`, invoke returns `RunResult.to_mapping()` directly, and stop returns JSON `null` for the SDK's `None` return. There is no `fabric_result` wrapper. Replace `RUNTIME_ID` with `result.runtime_id` from start. Multiple invocations retain the same runtime and conversation. Targeted commands require both the returned runtime ID and exact agent name. Repeated successful stop is a no-op. Serve starts a process and is never forwarded over the socket.
+
+Use `--request FILE` to forward a complete public `RunRequest`, including `request_id`, `relay_session_root`, `context`, `overrides`, and supported extensions. For example, a request file can contain `{"input": "Review calculator.py", "request_id": "review-1", "context": {"review_tag": "cedar-4827"}}`. `--input FILE` is a mutually exclusive convenience for any JSON-compatible SDK input: an object, array, string, number, boolean, or null. Null follows the SDK's normalization to an empty input string. Agent input fields named `stream` or `streaming` remain ordinary input data; this command calls `Runtime.invoke()`, never a streaming method.
 
 There are no health commands, generation tokens, fingerprints, state snapshots, or additional SDK lifecycle APIs. Caller-side preflight uses existing `Fabric.plan()` and `Fabric.doctor()`. `Fabric.start_runtime()` validates configuration against installed descriptors before native runtime startup. A configuration rejection before startup does not consume the sandbox lifecycle.
 
@@ -54,11 +57,11 @@ Ordinary SDK stop does not establish that all harness descendants exited. A succ
 
 ## Transport And Failure Behavior
 
-Completed commands except serve write exactly one newline-terminated JSON response to stdout. Logs use stderr. Success exits 0; failure or unsupported behavior exits 1. Requests are bounded to 512 KiB and responses to 4 MiB, including framing. Calls have a 320-second transport deadline; incomplete input has a ten-second deadline. The caller also bounds OpenShell execution and startup polling.
+Completed commands except serve write exactly one newline-terminated JSON response to stdout. Logs use stderr. A completed SDK call exits 0; command or transport failure or unsupported behavior exits 1. A completed invoke can return a failed `RunResult` with partial or null output and artifacts, just as the SDK does. Inspect `result.status` and `result.error` for the invocation outcome; command diagnostics remain in the envelope's separate `error` field. Requests are bounded to 512 KiB and responses to 4 MiB, including framing. Calls have a 320-second transport deadline; incomplete input has a ten-second deadline. The caller also bounds OpenShell execution and startup polling.
 
 A timeout or missing, malformed, truncated, or oversized response leaves dispatched effects unknown. Errors use fixed diagnostics with `effects: none`, `applied`, or `unknown`. Routine errors exclude prompts, configuration values, and raw exceptions. Invocation results preserve normalized SDK results, including failed results with null output, and may contain user data. Calls are never replayed after an uncertain outcome.
 
-`--config -` and `--input -` explicitly select stdin. Otherwise commands read staged regular files containing exactly one bounded UTF-8 JSON object. Unknown or duplicate flags, duplicate JSON keys, streaming input, and oversized input are rejected.
+`--config -`, `--request -`, and `--input -` explicitly select stdin. Otherwise commands read staged regular files containing exactly one bounded UTF-8 JSON value. Configuration and complete requests must be objects matching `FabricConfig` and `RunRequest`; convenience input follows the SDK's JSON input semantics. Unknown or duplicate flags, duplicate JSON keys, and oversized input are rejected.
 
 ## Ownership And Shutdown
 
@@ -72,6 +75,6 @@ The bridge requires Unix sockets and `fcntl`; Windows imports remain safe and co
 
 ## Local Qualification And Migration
 
-Follow the [OpenShell Code Review instructions](../../../../../../examples/code_review_agent/README.md#openshell-code-review) to build the image and create a sandbox. The image contains the current SDK, host, adapter, and harness, and advertises `fabric-agent-ctl`, interface version 2, and `start/invoke/stop/serve`. Rebuild older images and create fresh sandboxes after this scope change.
+Follow the [OpenShell Code Review instructions](../../../../../../examples/code_review_agent/README.md#openshell-code-review) to build the image and create a sandbox. The image contains the current SDK, runtime server, adapter, and harness, and advertises `fabric-agent-ctl`, interface version 2, and `start/invoke/stop/serve`. The server implementation is `nemo_fabric.runtime_server.state.RuntimeServer`. Rebuild older images and create fresh sandboxes after changes to this unreleased command interface.
 
 The example starts the server, waits for its socket, starts one runtime, invokes twice, and stops through separate exec calls. The older NemoClaw client using `validate/prepare/configure` requires migration. Version 1 requests fail explicitly. Direct SDK lifecycle and streaming APIs retain their existing behavior.

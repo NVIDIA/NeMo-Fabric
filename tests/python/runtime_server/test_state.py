@@ -7,7 +7,7 @@ import asyncio
 
 import pytest
 from nemo_fabric import FabricConfigError, RuntimeStatus
-from nemo_fabric.host.protocol import ProtocolError
+from nemo_fabric.runtime_server.protocol import ProtocolError
 
 
 @pytest.mark.parametrize(
@@ -22,10 +22,12 @@ async def test_non_runtime_commands_cannot_mutate_runtime(
     mock_fabric.start_runtime.assert_not_awaited()
 
 
-async def test_start_delegates_to_existing_sdk(host, host_request, mock_fabric, config):
+async def test_start_delegates_to_existing_sdk(
+    host, host_request, mock_fabric, config, mock_runtime
+):
     response = await host.handle(host_request("start"))
     assert response["status"] == "succeeded"
-    assert response["result"] == {"runtime_id": "runtime-1"}
+    assert response["result"] == mock_runtime.handle.to_mapping()
     args, kwargs = mock_fabric.start_runtime.call_args
     assert args[0].to_mapping()["metadata"]["name"] == config["metadata"]["name"]
     assert kwargs == {"base_dir": host.directory}
@@ -135,7 +137,7 @@ async def test_stop_keeps_data_and_is_idempotent(host, host_request, mock_runtim
     response = await host.handle(host_request("stop"))
     assert response["status"] == "succeeded"
     assert response["changed"] is True
-    assert response["result"] == {"runtime_id": "runtime-1"}
+    assert response["result"] is None
     repeated = await host.handle(host_request("stop"))
     assert repeated["status"] == "succeeded"
     assert repeated["changed"] is False
@@ -172,8 +174,7 @@ async def test_invoke_preserves_normalized_result_without_replay(
     assert response["status"] == "succeeded"
     assert response["changed"] is None
     assert (
-        response["result"]["fabric_result"]
-        == mock_runtime.invoke.return_value.to_mapping.return_value
+        response["result"] == mock_runtime.invoke.return_value.to_mapping.return_value
     )
     mock_runtime.invoke.assert_awaited_once_with(input={"prompt": "review"})
 
@@ -183,8 +184,8 @@ async def test_invoke_preserves_normalized_result_without_replay(
     [
         {"runtime_id": "other"},
         {"agent": "other"},
-        {"input": []},
-        {"input": {"stream": True}},
+        {"input": float("nan")},
+        {"request": []},
     ],
 )
 async def test_invalid_invoke_cannot_reach_sdk(
@@ -212,8 +213,9 @@ async def test_failed_native_result_retains_error_and_null_output(
     native = {"status": "failed", "output": None, "error": {"code": "timeout"}}
     mock_runtime.invoke.return_value.to_mapping.return_value = native
     response = await host.handle(host_request("invoke", input={}))
-    assert response["error"]["code"] == "invoke_failed"
-    assert response["result"]["fabric_result"] == native
+    assert response["error"] is None
+    assert response["status"] == "succeeded"
+    assert response["result"] == native
     mock_runtime.invoke.assert_awaited_once()
 
 

@@ -57,7 +57,7 @@ CONSUMER_SPECIFIC = [
     "nemo_fabric_test_adapters",
     "openshell",
     "nemoclaw",
-    "nemo_fabric.host",
+    "nemo_fabric.runtime_server",
 ]
 
 

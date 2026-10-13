@@ -16,7 +16,7 @@ if sys.platform == "win32":
         "The Unix command bridge requires a Unix platform", allow_module_level=True
     )
 
-from nemo_fabric.host import cli, protocol
+from nemo_fabric.runtime_server import cli, protocol
 
 
 @pytest.mark.parametrize(
@@ -161,12 +161,12 @@ def test_removed_fingerprint_flag_is_rejected_before_sending_command(
 
 
 @pytest.mark.parametrize(
-    "content", [b"[]", b"{}{}", b'{"x":NaN}', b'{"x":1,"x":2}', b"\xff", b"null", b"{"]
+    "content", [b"{}{}", b'{"x":NaN}', b'{"x":1,"x":2}', b"\xff", b"{"]
 )
 def test_invalid_json_files_are_rejected_before_commands(tmp_path, content):
     path = tmp_path / "input.json"
     path.write_bytes(content)
-    with pytest.raises(protocol.ProtocolError, match="bounded UTF-8 JSON object"):
+    with pytest.raises(protocol.ProtocolError, match="bounded UTF-8 JSON value"):
         cli.parse_command(
             [
                 "invoke",
