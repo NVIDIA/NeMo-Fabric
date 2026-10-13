@@ -8,6 +8,7 @@ pub mod agent_config;
 pub mod agent_execution;
 pub mod config;
 pub mod doctor;
+mod environment;
 pub mod error;
 pub mod runtime;
 pub mod schema;

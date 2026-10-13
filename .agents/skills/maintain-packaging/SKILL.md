@@ -17,6 +17,16 @@ before editing.
 Use this skill when a change affects how NeMo Fabric is built, packaged, named, or
 consumed outside the source tree.
 
+## OpenShell Build Context
+
+The optional host provider lives in `environment-providers/openshell` and links
+the OpenShell Rust SDK at a pinned release commit. Build it with
+`just build-openshell-provider`. Keep gateway, CLI, and runtime versions aligned
+with the qualified release. Task Docker build contexts must include every Cargo
+workspace member, including this provider, even when building only the native
+Python SDK. Keep the Dockerfile COPY statements and its whitelist dockerignore
+in parity. The task uses `fabric-agent-ctl` from the Python SDK.
+
 ## Audit Areas
 
 - Rust `Cargo.toml` package names and workspace metadata

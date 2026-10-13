@@ -283,6 +283,18 @@ pub enum FabricError {
         /// Environment provider.
         provider: String,
     },
+    /// An environment provider process could not complete an operation.
+    #[error("environment provider `{provider}` failed during `{operation}` ({code}): {message}")]
+    EnvironmentProviderOperation {
+        /// Environment provider.
+        provider: String,
+        /// Lifecycle operation.
+        operation: String,
+        /// Stable provider or host error code.
+        code: String,
+        /// Human-readable message that excludes credentials and raw diagnostics.
+        message: String,
+    },
     /// A non-local runtime was started without an explicitly prepared environment handle.
     #[error(
         "environment provider `{provider}` requires an explicit EnvironmentHandle; call prepare_environment() and then start_runtime_in()"

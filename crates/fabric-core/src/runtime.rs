@@ -30,6 +30,7 @@ use crate::config::{
     validate_agent_run_result_extensions, validate_config, validate_harness_settings,
     validate_tool_definitions, validate_workflow,
 };
+use crate::environment::resolve_environment_provider;
 use crate::error::{FabricError, Result};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -889,14 +890,14 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
 /// [`FabricError::UnsupportedEnvironmentProvider`] until their provider block
 /// is added.
 pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
-    let provider = planned_environment_provider(plan);
-    if provider != "local" {
-        return Err(FabricError::UnsupportedEnvironmentProvider {
-            provider: provider.to_string(),
+    let provider_id = planned_environment_provider(plan);
+    let provider = resolve_environment_provider(provider_id).ok_or_else(|| {
+        FabricError::UnsupportedEnvironmentProvider {
+            provider: provider_id.to_string(),
             adapter_kind: adapter_kind(plan),
-        });
-    }
-    prepare_local_environment(plan)
+        }
+    })?;
+    provider.prepare(plan)
 }
 
 /// Verify and attach to an existing caller-owned environment.
@@ -911,88 +912,20 @@ pub fn attach_environment(
             reason: "reference provider must match the configured environment".to_string(),
         });
     }
-    Err(FabricError::UnsupportedEnvironmentProvider {
-        provider: provider.to_string(),
-        adapter_kind: adapter_kind(plan),
-    })
+    let provider = resolve_environment_provider(provider).ok_or_else(|| {
+        FabricError::UnsupportedEnvironmentProvider {
+            provider: reference.provider.clone(),
+            adapter_kind: adapter_kind(plan),
+        }
+    })?;
+    provider.attach(plan, reference)
 }
 
-/// Detach a local environment without deleting caller-owned files.
+/// Release or detach an environment through its provider.
+///
+/// Caller-owned resources detach without deletion; local files remain in place.
 pub fn release_environment(environment: &EnvironmentHandle) -> Result<()> {
-    if environment.provider != "local" {
-        return Err(FabricError::UnsupportedEnvironmentRelease {
-            provider: environment.provider.clone(),
-        });
-    }
-    Ok(())
-}
-
-fn prepare_local_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
-    let mut metadata = BTreeMap::new();
-    let mut connection = BTreeMap::new();
-    let (
-        provider,
-        control_location,
-        ownership,
-        workspace,
-        artifacts,
-        environment_env,
-        connection_settings,
-        environment_metadata,
-        settings,
-    ) = if let Some(environment) = &plan.environment_plan {
-        (
-            environment.provider.clone(),
-            environment.control_location,
-            environment.ownership,
-            environment.workspace.clone(),
-            environment.artifacts.clone(),
-            environment.env.clone(),
-            environment.connection.clone(),
-            environment.metadata.clone(),
-            environment.settings.clone(),
-        )
-    } else {
-        (
-            "local".to_string(),
-            ControlLocation::ExternalControl,
-            EnvironmentOwnership::CallerOwned,
-            Some(plan.base_dir.clone()),
-            plan.config
-                .runtime
-                .artifacts
-                .as_ref()
-                .map(|artifacts| resolve_path(&plan.base_dir, artifacts)),
-            BTreeMap::new(),
-            serde_json::Map::new(),
-            serde_json::Map::new(),
-            serde_json::Map::new(),
-        )
-    };
-    let workspace = match workspace {
-        Some(path) => Some(absolute_path(path)?),
-        None => None,
-    };
-    for (key, value) in connection_settings {
-        connection.insert(key, value);
-    }
-    for (key, value) in settings {
-        metadata.insert(key, value);
-    }
-    for (key, value) in environment_metadata {
-        metadata.insert(key, value);
-    }
-    Ok(EnvironmentHandle {
-        environment_id: new_id("environment"),
-        provider,
-        control_location,
-        workspace,
-        artifacts,
-        env: environment_env,
-        ownership,
-        connection,
-        metadata,
-    })
+    crate::environment::release_environment(environment).map(|_| ())
 }
 
 /// Start a runtime in an explicitly prepared environment.
@@ -3278,7 +3211,7 @@ fn runtime_telemetry_context(
     })
 }
 
-fn resolve_path(root: &Path, path: &Path) -> PathBuf {
+pub(crate) fn resolve_path(root: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() {
         return path.to_path_buf();
     }
@@ -3419,7 +3352,7 @@ fn fallback_interpreter(
     }
 }
 
-fn absolute_path(path: PathBuf) -> Result<PathBuf> {
+pub(crate) fn absolute_path(path: PathBuf) -> Result<PathBuf> {
     if path.is_absolute() {
         return Ok(path);
     }
@@ -3873,7 +3806,7 @@ fn event_with_metadata(
     }
 }
 
-fn new_id(prefix: &str) -> String {
+pub(crate) fn new_id(prefix: &str) -> String {
     // The atomic counter only differentiates ids within one Fabric process.
     // Include the process id so independently running Fabric processes cannot
     // collide when they generate ids in the same millisecond.
@@ -5810,13 +5743,14 @@ for line in sys.stdin:
     fn environment_release_reports_unsupported_provider_without_adapter_kind() {
         let (root, plan) = local_host_plan("success");
         let mut environment = prepare_environment(&plan).expect("prepare local environment");
-        environment.provider = "openshell".to_string();
+        environment.provider = "unregistered".to_string();
 
         let error = release_environment(&environment).expect_err("release is unsupported");
 
         assert!(matches!(
             error,
-            FabricError::UnsupportedEnvironmentRelease { ref provider } if provider == "openshell"
+            FabricError::UnsupportedEnvironmentRelease { ref provider }
+                if provider == "unregistered"
         ));
         assert!(error.to_string().contains("environment release"));
         let _ = fs::remove_dir_all(root);
