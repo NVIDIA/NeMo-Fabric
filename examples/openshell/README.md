@@ -7,7 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 
 This directory contains the shared demo launcher, a reusable task-image
 Dockerfile, and setup guidance. The runnable agents live in the
-[echo](../openshell_echo/README.md) and [Code Review](../code_review_agent/README.md)
+[echo](../openshell_echo/README.md), [Code Review](../code_review_agent/README.md),
+and [custom LangGraph](../langgraph_custom_agent/README.md#run-the-custom-agent-in-openshell)
 examples.
 
 In each SDK demo, a consumer runs on the host and uses the NeMo Fabric SDK with

@@ -432,6 +432,53 @@ def test_hermes_missing_credential_stops_before_provider_creation(launcher):
     )
 
 
+@pytest.mark.parametrize("relay,mcp", [(False, False), (True, True)])
+def test_langgraph_openshell_workload_uses_sdk_consumer_and_host_provider(
+    launcher, relay, mcp
+):
+    _, root, _ = launcher
+    secret = "test-model-key-must-not-appear-in-command-arguments"
+    completed = _run(
+        launcher,
+        ROOT / "examples/langgraph_custom_agent/demo-openshell-sdk.sh",
+        {
+            "OPENSHELL_EXAMPLE_MODE": "caller_owned",
+            "OPENSHELL_LANGGRAPH_RELAY": str(relay).lower(),
+            "OPENSHELL_LANGGRAPH_MCP": str(mcp).lower(),
+            "OPENAI_API_KEY": secret,
+            "OPENSHELL_MODEL_PROVIDER_PROFILE": "/tmp/langgraph-model-profile.yaml",
+            "OPENSHELL_LANGGRAPH_BASE_URL": "https://models.example.test/v1",
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    operations = _operations(root)
+    call = next(operation for operation in operations if operation["command"] == "uv")
+    assert "examples.langgraph_custom_agent.consumer.openshell" in call["args"]
+    assert ("--relay" in call["args"]) is relay
+    assert ("--mcp" in call["args"]) is mcp
+    assert call["args"][call["args"].index("--base-url") + 1] == (
+        "https://models.example.test/v1"
+    )
+    profile_call = next(
+        operation
+        for operation in operations
+        if operation["command"] == "openshell" and "profile" in operation["args"]
+    )
+    assert profile_call["args"][profile_call["args"].index("--file") + 1] == (
+        "/tmp/langgraph-model-profile.yaml"
+    )
+    provider_call = next(
+        operation
+        for operation in operations
+        if operation["command"] == "openshell"
+        and "provider" in operation["args"]
+        and operation["args"][operation["args"].index("provider") + 1] == "create"
+    )
+    assert "nvidia-langgraph" in provider_call["args"]
+    assert secret not in json.dumps(operations)
+
+
 @pytest.mark.parametrize(
     "environment,message",
     [({"MOCK_OS": "Darwin"}, "requires Linux"),
