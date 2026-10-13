@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 import traceback
 from collections.abc import Awaitable
 from collections.abc import Callable
@@ -25,6 +26,17 @@ from typing import TextIO
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import RuntimeContext
+
+
+def invocation_deadline(context: RuntimeContext) -> float:
+    """Return Fabric's invocation deadline on the running loop's monotonic clock.
+
+    Convert once per invocation. Hosts that omit the deadline enforce their own timeout.
+    """
+    if context.deadline_millis is None:
+        return float("inf")
+    remaining = max(0.0, context.deadline_millis / 1000 - time.time())
+    return asyncio.get_running_loop().time() + remaining
 
 
 class AdapterRuntime(Protocol):

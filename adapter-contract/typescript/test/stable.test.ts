@@ -88,6 +88,7 @@ const serviceAccountAuthentication: McpAuthenticationConfig = {
 const tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethod = "none";
 
 const context: RuntimeContext = {
+  deadline_millis: 1800000000000,
   artifacts: { artifacts: [], root: null },
   environment: {
     control_location: "external_control",

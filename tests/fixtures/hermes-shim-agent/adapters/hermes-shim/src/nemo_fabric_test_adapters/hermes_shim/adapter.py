@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
+import sys
 from collections.abc import Awaitable
 from collections.abc import Callable
 from collections.abc import Mapping
@@ -43,6 +45,32 @@ class ShimRuntime:
                 "hermes_runtime_not_started",
                 "shim runtime is not started",
             )
+        pid_file = request.context.get("child_pid_file")
+        if pid_file is not None:
+            # Start a direct child in its own session (POSIX) and a grandchild
+            # whose launcher has already exited.
+            sleeper = [sys.executable, "-c", "import time; time.sleep(60)"]
+            quiet = {
+                "stdin": subprocess.DEVNULL,
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+            }
+            child = subprocess.Popen(sleeper, start_new_session=True, **quiet)
+            launcher = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import subprocess, sys; print(subprocess.Popen(sys.argv[1:],"
+                    " stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,"
+                    " stderr=subprocess.DEVNULL).pid)",
+                    *sleeper,
+                ],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            Path(pid_file).write_text(f"{child.pid} {launcher.stdout.strip()}")
         delay = request.context.get("delay_seconds")
         if delay is not None:
             await asyncio.sleep(delay)

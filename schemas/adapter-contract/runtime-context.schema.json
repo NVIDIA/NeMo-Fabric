@@ -189,6 +189,15 @@
       "$ref": "#/$defs/ArtifactManifest",
       "description": "Artifact manifest visible to the adapter at invocation start."
     },
+    "deadline_millis": {
+      "description": "Unix time in milliseconds by which the adapter should return its result.\nPresent on every invocation, shortly before Fabric's own invocation timeout.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "environment": {
       "$ref": "#/$defs/EnvironmentHandle",
       "description": "Prepared execution environment."

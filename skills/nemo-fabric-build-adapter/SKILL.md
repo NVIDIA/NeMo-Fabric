@@ -120,8 +120,8 @@ adapter boundary:
   target constructs.
 - Resolve workflow entry points and construction settings during `start` in
   the task environment.
-- Read identity, environment, artifacts, and telemetry from `RuntimeContext`,
-  not from workflow settings.
+- Read identity, environment, artifacts, telemetry, and the invocation
+  deadline (`deadline_millis`) from `RuntimeContext`, not from workflow settings.
 
 Reject unsupported values with stable, safe error codes. Do not log complete
 configs, environment values, headers, credentials, or arbitrary user input.
