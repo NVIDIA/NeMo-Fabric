@@ -258,6 +258,10 @@ if ! kill -0 "${GATEWAY_PID}" 2>/dev/null; then
   exit 1
 fi
 
+if declare -F configure_workload_gateway >/dev/null; then
+  configure_workload_gateway
+fi
+
 run_consumer() {
   OPENSHELL_FABRIC_SANDBOX_STATE_FILE="${FABRIC_SANDBOX_STATE_FILE}" \
     VIRTUAL_ENV="${DEMO_PYTHON_ENV}" UV_PROJECT_ENVIRONMENT="${DEMO_PYTHON_ENV}" \

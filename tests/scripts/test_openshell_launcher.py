@@ -62,6 +62,10 @@ elif name == "openshell-gateway":
             connection, _ = server.accept()
             connection.close()
 elif name == "openshell":
+    if "sandbox" not in args:
+        if not any(token in args for token in ("settings", "provider")):
+            raise RuntimeError("unexpected OpenShell setup command")
+        sys.exit(0)
     state = root / "sandbox-state.json"
     operation = args[args.index("sandbox") + 1]
     sandbox_name = args[args.index(operation) + 1] if operation != "create" else args[args.index("--name") + 1]
@@ -283,6 +287,38 @@ run_workload_consumer() {
         if operation["command"] == "openshell" and "delete" in operation["args"]
     ]
     assert bool(deleted_calls) is deleted
+
+
+def test_code_review_workload_configures_hosted_provider_before_sandbox(launcher):
+    _, root, _ = launcher
+    completed = _run(
+        launcher,
+        ROOT / "examples/code_review_agent/demo-openshell-sdk.sh",
+        {
+            "OPENSHELL_EXAMPLE_MODE": "caller_owned",
+            "NVIDIA_API_KEY": "test-key-must-not-appear-in-command-arguments",
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    operations = _operations(root)
+    provider_calls = [
+        operation
+        for operation in operations
+        if operation["command"] == "openshell"
+        and any(value in operation["args"] for value in ("settings", "provider"))
+    ]
+    assert [call["args"][call["args"].index("provider") + 1] for call in provider_calls[1:]] == [
+        "profile",
+        "create",
+    ]
+    create = next(
+        operation
+        for operation in operations
+        if operation["command"] == "openshell" and "sandbox" in operation["args"]
+    )
+    assert "hosted" in create["args"]
+    assert "test-key-must-not-appear-in-command-arguments" not in json.dumps(operations)
 
 
 @pytest.mark.parametrize(
