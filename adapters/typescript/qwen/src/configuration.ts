@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { AgentConfig, AgentMcpServerConfig, AgentModelConfig } from "nemo-fabric-adapter-contract";
-import { LifecycleError } from "nemo-fabric-adapters-common";
+import { LifecycleError, insecureHttpModelHosts, modelEndpointAllowed } from "nemo-fabric-adapters-common";
 import { realpath, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -26,16 +26,6 @@ export interface QwenMcpServer {
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const ENV_REFERENCE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/gu;
-
-function endpoint(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" ||
-      (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(url.hostname)));
-  } catch {
-    return false;
-  }
-}
 
 function loopbackHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
@@ -136,10 +126,10 @@ export function selectMcpServers(
   return selected;
 }
 
-function validateModel(model: AgentModelConfig): QwenModel {
+function validateModel(model: AgentModelConfig, insecureHosts: readonly string[]): QwenModel {
   if (model.provider !== "openai" || typeof model.model !== "string" || model.model.trim().length === 0 ||
       typeof model.api_key_env !== "string" || !ENV_NAME.test(model.api_key_env) ||
-      (model.base_url != null && (typeof model.base_url !== "string" || !endpoint(model.base_url))) ||
+    (model.base_url != null && (typeof model.base_url !== "string" || !modelEndpointAllowed(model.base_url, insecureHosts))) ||
       (model.temperature != null && (typeof model.temperature !== "number" || !Number.isFinite(model.temperature))) ||
       (model.top_p != null && (typeof model.top_p !== "number" || !Number.isFinite(model.top_p) || model.top_p < 0 || model.top_p > 1))) {
     throw new LifecycleError("qwen_invalid_model", "Qwen model configuration does not match the adapter schema");
@@ -165,7 +155,7 @@ export function selectModel(config: AgentConfig): QwenModel {
       "Qwen requires one model or a default model role",
     );
   }
-  return validateModel(selected);
+  return validateModel(selected, insecureHttpModelHosts(config.harness?.settings, "qwen_invalid_settings"));
 }
 
 export function selectSystemPrompt(config: AgentConfig): string | { type: "preset"; preset: "qwen_code"; append: string } | undefined {
@@ -189,10 +179,11 @@ export type QwenPermissionMode = "default" | "plan" | "auto-edit" | "auto" | "yo
 export function selectPermissionMode(config: AgentConfig): QwenPermissionMode {
   const settings = config.harness?.settings ?? {};
   const mode = settings.permission_mode ?? "default";
-  if (Object.keys(settings).some((name) => name !== "permission_mode") ||
+  if (Object.keys(settings).some((name) => name !== "permission_mode" && name !== "insecure_http_model_hosts") ||
       !["default", "plan", "auto-edit", "auto", "yolo"].includes(String(mode))) {
     throw new LifecycleError("qwen_invalid_settings", "Qwen harness settings do not match its descriptor schema");
   }
+  insecureHttpModelHosts(settings, "qwen_invalid_settings");
   return mode as QwenPermissionMode;
 }
 

@@ -32,7 +32,7 @@ package-specific tag pushes:
 | Ecosystem | Published Surface |
 |---|---|
 | crates.io | `nemo-fabric-core`, `nemo-fabric-cli` |
-| npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-pi`, `nemo-fabric-adapters-opencode`, `nemo-fabric-adapters-qwen` |
+| npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-droid`, `nemo-fabric-adapters-pi`, `nemo-fabric-adapters-opencode`, `nemo-fabric-adapters-qwen` |
 | GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-collector`, `nemo-fabric-adapter-catalog`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, `nemo-fabric-adapters-hermes`, and `nemo-fabric-adapters-nooa` wheel artifacts |
 | Fern | The documentation site |
 
@@ -53,10 +53,10 @@ NeMo Fabric versions are anchored on the workspace SemVer in the repository root
   dependency pins and must stay aligned with the same release version. The
   root `pyproject.toml` is a private development coordinator and remains at
   `0.0.0`.
-- The TypeScript contract, Common adapter support package, Pi adapter, private
-  adapter workspace, exact internal dependency pins, and their lockfiles all
-  use the canonical NeMo Fabric release version. The package version is independent
-  of the `fabric.adapter/v1alpha2` wire contract version.
+- The TypeScript contract, Common adapter support package, bundled TypeScript
+  adapters, private adapter workspace, exact internal dependency pins, and their
+  lockfiles all use the canonical NeMo Fabric release version. The package
+  version is independent of the `fabric.adapter/v1alpha2` wire contract version.
 - The `nemo-fabric-runtime` Python package version is derived at packaging time.
   `sdk/python/nemo-fabric-runtime/pyproject.toml` stays
   `dynamic = ["version"]` in the repository, and Maturin derives the version
@@ -271,6 +271,7 @@ bootstraps:
 
 - `nemo-fabric-adapter-contract`
 - `nemo-fabric-adapters-common`
+- `nemo-fabric-adapters-droid`
 - `nemo-fabric-adapters-pi`
 
 The first supported versions must be published by the trusted GitHub Actions
@@ -290,6 +291,7 @@ Before the first supported TypeScript package release:
    for package in \
      nemo-fabric-adapter-contract \
      nemo-fabric-adapters-common \
+     nemo-fabric-adapters-droid \
      nemo-fabric-adapters-pi; do
      npm owner add <second-nvidia-maintainer> "$package"
    done
@@ -315,10 +317,11 @@ Before the first supported TypeScript package release:
    |---|---|
    | `nemo-fabric-adapter-contract` | `publish_typescript.yml` |
    | `nemo-fabric-adapters-common` | `publish_typescript.yml` |
+   | `nemo-fabric-adapters-droid` | `publish_typescript.yml` |
    | `nemo-fabric-adapters-pi` | `publish_typescript.yml` |
 
 4. Cut the canonical release tag. The publishing workflow uses that tag to
-   publish the contract, Common adapter, and Pi adapter packages in dependency
+   publish the contract and bundled TypeScript adapter packages in dependency
    order, then verifies them in that order.
 5. Approve the `npmjs` environment when prompted. The workflows test, pack, and
    publish through OIDC; do not manually pre-publish a supported version. On a
@@ -429,11 +432,11 @@ git push upstream "refs/tags/${RELEASE_TAG}"
 
 ## Publish the TypeScript Adapter Packages
 
-Pushing the canonical beta, RC, or stable tag publishes the TypeScript contract,
-Common, Pi, OpenCode, and Qwen Code packages in dependency order. The workflow
-submits all five packages before it starts deployment verification, then verifies them in
-the same order. Do not create package-specific npm tags. The nightly workflow
-runs the TypeScript tests against alpha tags without publishing to npm.
+Pushing the canonical beta, RC, or stable tag publishes the TypeScript contract
+and bundled TypeScript adapter packages in dependency order. The workflow
+submits every package before it starts deployment verification, then verifies
+them in the same order. Do not create package-specific npm tags. The nightly
+workflow runs the TypeScript tests against alpha tags without publishing to npm.
 
 
 ## What CI Does on a Canonical Tag Push
@@ -458,8 +461,8 @@ The release pipeline then:
 3. Publishes `nemo-fabric-core` and `nemo-fabric-cli` to crates.io through
    trusted publishing for stable, beta, and RC tags. Alpha tags are not
    published to crates.io.
-4. Publishes the contract, Common, Pi, OpenCode, and Qwen Code packages to npm from the canonical
-   tag in dependency order, then verifies the deployment in that order. Stable
+4. Publishes the contract and bundled TypeScript adapter packages to npm from
+   the canonical tag in dependency order, then verifies the deployment in that order. Stable
    releases use the `latest` dist-tag and beta and RC releases use `next`.
    Alpha tags validate the packages without publishing them.
 5. Publishes Fern documentation versions for stable, beta, and RC tags. Alpha
@@ -528,6 +531,7 @@ After the release is live, verify:
      for package in \
        nemo-fabric-adapter-contract \
        nemo-fabric-adapters-common \
+       nemo-fabric-adapters-droid \
        nemo-fabric-adapters-pi \
        nemo-fabric-adapters-opencode \
        nemo-fabric-adapters-qwen; do
@@ -543,6 +547,7 @@ After the release is live, verify:
        --registry="$npmjs_registry" \
        "nemo-fabric-adapter-contract@<release-version>" \
        "nemo-fabric-adapters-common@<release-version>" \
+       "nemo-fabric-adapters-droid@<release-version>" \
        "nemo-fabric-adapters-pi@<release-version>" \
        "nemo-fabric-adapters-opencode@<release-version>" \
        "nemo-fabric-adapters-qwen@<release-version>"

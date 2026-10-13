@@ -33,6 +33,7 @@ dependencies = [
 # NOOA 0.0.10 needs relay_compat.py with Relay 0.9 and 0.10. Remove the shim when
 # updating these pins to a compatible NOOA release (issue #347).
 harness = [
+  "fsspec>=2026.6.0",
   "nooa>=0.0.10,<0.0.11",
   "nooa-cli>=0.0.10,<0.0.11",
   "nooa-bench>=0.0.10,<0.0.11",
@@ -41,6 +42,7 @@ relay = [
   "nemo-relay>=0.9,<0.11",
 ]
 full = [
+  "fsspec>=2026.6.0",
   "nooa>=0.0.10,<0.0.11",
   "nooa-cli>=0.0.10,<0.0.11",
   "nooa-bench>=0.0.10,<0.0.11",

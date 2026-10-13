@@ -100,6 +100,7 @@ langgraph-example = [
   "langchain-mcp-adapters>=0.1,<0.3.0",
   "langchain-openai>=0.3,<2.0",
   "langgraph>=1.2,<2.0",
+  "langgraph-sdk>=0.4.4",
   "mcp>=1.28.1,<2.0",
 ]
 

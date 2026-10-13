@@ -23,6 +23,7 @@ ADAPTERS_DIRECTORY = Path("adapters/typescript")
 CONTRACT_PACKAGE = "nemo-fabric-adapter-contract"
 COMMON_PACKAGE = "nemo-fabric-adapters-common"
 CLINE_PACKAGE = "nemo-fabric-adapters-cline"
+DROID_PACKAGE = "nemo-fabric-adapters-droid"
 PI_PACKAGE = "nemo-fabric-adapters-pi"
 OPENCODE_PACKAGE = "nemo-fabric-adapters-opencode"
 QWEN_PACKAGE = "nemo-fabric-adapters-qwen"
@@ -76,6 +77,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     adapters_lock_path = root / ADAPTERS_DIRECTORY / "package-lock.json"
     common_package_path = root / ADAPTERS_DIRECTORY / "common" / "package.json"
     cline_package_path = root / ADAPTERS_DIRECTORY / "cline" / "package.json"
+    droid_package_path = root / ADAPTERS_DIRECTORY / "droid" / "package.json"
     pi_package_path = root / ADAPTERS_DIRECTORY / "pi" / "package.json"
     opencode_package_path = root / ADAPTERS_DIRECTORY / "opencode" / "package.json"
     qwen_package_path = root / ADAPTERS_DIRECTORY / "qwen" / "package.json"
@@ -87,6 +89,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     adapters_lock = _read_json_object(adapters_lock_path)
     common_package = _read_json_object(common_package_path)
     cline_package = _read_json_object(cline_package_path)
+    droid_package = _read_json_object(droid_package_path)
     pi_package = _read_json_object(pi_package_path)
     opencode_package = _read_json_object(opencode_package_path)
     qwen_package = _read_json_object(qwen_package_path)
@@ -115,6 +118,10 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     adapters_lock_cline = _require_object(
         adapters_lock_packages.get("cline"),
         f"{CLINE_PACKAGE} metadata in {adapters_lock_path}",
+    )
+    adapters_lock_droid = _require_object(
+        adapters_lock_packages.get("droid"),
+        f"{DROID_PACKAGE} metadata in {adapters_lock_path}",
     )
     adapters_lock_pi = _require_object(
         adapters_lock_packages.get("pi"),
@@ -161,6 +168,10 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     _require_named_package(
         adapters_lock_cline, CLINE_PACKAGE, f"cline entry of {adapters_lock_path}"
     )
+    _require_named_package(droid_package, DROID_PACKAGE, str(droid_package_path))
+    _require_named_package(
+        adapters_lock_droid, DROID_PACKAGE, f"droid entry of {adapters_lock_path}"
+    )
     _require_named_package(pi_package, PI_PACKAGE, str(pi_package_path))
     _require_named_package(
         adapters_lock_pi, PI_PACKAGE, f"pi entry of {adapters_lock_path}"
@@ -191,6 +202,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
             (adapters_lock_path, adapters_lock),
             (common_package_path, common_package),
             (cline_package_path, cline_package),
+            (droid_package_path, droid_package),
             (pi_package_path, pi_package),
             (opencode_package_path, opencode_package),
             (qwen_package_path, qwen_package),
@@ -210,6 +222,8 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         adapters_lock_common,
         cline_package,
         adapters_lock_cline,
+        droid_package,
+        adapters_lock_droid,
         pi_package,
         adapters_lock_pi,
         opencode_package,
@@ -226,6 +240,8 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         (adapters_lock_common, f"common entry of {adapters_lock_path}"),
         (cline_package, str(cline_package_path)),
         (adapters_lock_cline, f"cline entry of {adapters_lock_path}"),
+        (droid_package, str(droid_package_path)),
+        (adapters_lock_droid, f"droid entry of {adapters_lock_path}"),
         (pi_package, str(pi_package_path)),
         (adapters_lock_pi, f"pi entry of {adapters_lock_path}"),
         (opencode_package, str(opencode_package_path)),
@@ -239,6 +255,8 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     for package, description in (
         (cline_package, str(cline_package_path)),
         (adapters_lock_cline, f"cline entry of {adapters_lock_path}"),
+        (droid_package, str(droid_package_path)),
+        (adapters_lock_droid, f"droid entry of {adapters_lock_path}"),
         (pi_package, str(pi_package_path)),
         (adapters_lock_pi, f"pi entry of {adapters_lock_path}"),
         (opencode_package, str(opencode_package_path)),
@@ -257,6 +275,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         adapters_lock_path: adapters_lock,
         common_package_path: common_package,
         cline_package_path: cline_package,
+        droid_package_path: droid_package,
         pi_package_path: pi_package,
         opencode_package_path: opencode_package,
         qwen_package_path: qwen_package,

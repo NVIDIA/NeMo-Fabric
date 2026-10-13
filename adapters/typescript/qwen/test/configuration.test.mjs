@@ -71,3 +71,24 @@ test("maps normalized stdio and streamable HTTP MCP servers", () => {
     legacy: { transport: "sse", url: "https://mcp.example.test/sse" },
   } } }, {}, {}), (error) => error.code === "qwen_mcp_transport_unsupported");
 });
+
+test("explicit HTTP model hosts support Docker and Kubernetes gateways", () => {
+  const hosts = ["host.docker.internal", "release-nhx-api", "gateway.ns.svc.cluster.local", "10.86.19.10"];
+  for (const url of ["http://host.docker.internal:8080/apis/inference-gateway/", "http://release-nhx-api:9090/custom/v1", "http://gateway.ns.svc.cluster.local:8080/v1", "http://10.86.19.10:8000/v1"]) {
+    const config = { models: { default: { provider: "openai", model: "test-model", api_key_env: "KEY", base_url: url } } };
+    assert.throws(() => selectModel(config), (error) => error.code === "qwen_invalid_model");
+    config.harness = { settings: { insecure_http_model_hosts: hosts } };
+    assert.equal(selectModel(config).baseUrl, url);
+    config.models.default.base_url = "http://other-gateway:8080/v1";
+    assert.throws(() => selectModel(config), (error) => error.code === "qwen_invalid_model");
+    config.harness.settings.insecure_http_model_hosts = ["*.internal"];
+    assert.throws(() => selectModel(config), (error) => error.code === "qwen_invalid_settings");
+  }
+});
+
+test("HTTP host settings compose with Qwen permissions without relaxing MCP trust", () => {
+  const config = { harness: { settings: { permission_mode: "plan", insecure_http_model_hosts: ["gateway"] } } };
+  assert.equal(selectPermissionMode(config), "plan");
+  config.mcp = { servers: { gateway: { transport: "streamable-http", url: "http://gateway/mcp" } } };
+  assert.throws(() => selectMcpServers(config, {}, {}), (error) => error.code === "qwen_mcp_invalid_server");
+});

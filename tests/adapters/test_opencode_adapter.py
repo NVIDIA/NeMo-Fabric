@@ -121,6 +121,28 @@ def test_opencode_descriptor_declares_the_minimum_supported_surface():
                 }
             ],
         },
+        "settings_schema": {
+            "type": "object",
+            "properties": {
+                "insecure_http_model_hosts": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "maxLength": 253,
+                        "pattern": (
+                            r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+                            r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?$"
+                        ),
+                    },
+                    "uniqueItems": True,
+                    "description": (
+                        "Explicitly trusted HTTP model endpoint hostnames, "
+                        "without schemes, ports, paths, or wildcards."
+                    ),
+                }
+            },
+            "additionalProperties": False,
+        },
         "capabilities": {
             "streaming": False,
             "cancellation": False,

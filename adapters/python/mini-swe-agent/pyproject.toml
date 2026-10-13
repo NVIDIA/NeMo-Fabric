@@ -31,12 +31,14 @@ dependencies = [
 
 [project.optional-dependencies]
 harness = [
+  "fsspec>=2026.6.0",
   "mini-swe-agent>=2.0,<3",
 ]
 relay = [
   "nemo-relay>=0.9,<0.11",
 ]
 full = [
+  "fsspec>=2026.6.0",
   "mini-swe-agent>=2.0,<3",
   "nemo-relay>=0.9,<0.11",
 ]

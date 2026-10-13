@@ -187,6 +187,62 @@ collects Relay ATOF records; it is not native model-response streaming.
 
 Install Node.js and OpenClaw, then install the [OpenClaw adapter](../../adapters/python/openclaw/README.md). This variant uses the `NVIDIA_API_KEY` configured for the default demo and retains the default code-review skill. OpenClaw does not currently support Relay telemetry.
 
+### OpenShell Code Review
+
+The [OpenShell consumer](openshell.py) is a version of this small Code Review demonstration application. It gives OpenClaw the sample repository containing `calculator.py`, runs two review turns in a real OpenShell sandbox, and records the results. The consumer runs outside the sandbox and uses OpenShell's Python SDK. Inside the sandbox, `fabric-agent-ctl serve` owns one NeMo Fabric runtime and its OpenClaw adapter/harness. Start, both review invocations, and stop use separate exec calls.
+
+Prerequisites are Docker with Linux containers, the OpenShell CLI, and a registered OpenShell gateway. Match the OpenShell CLI and Python SDK to the gateway version; this example was tested with `0.1.2`. Build from the NeMo Fabric repository root so the image contains the current native extension, server, adapter, code-review skill, and sample repository. The Dockerfile uses public, digest-pinned Python, Node, OpenClaw, Rust, and uv images:
+
+```sh
+docker build -f examples/code_review_agent/Dockerfile.openshell \
+  -t fabric-code-review:initial-scope .
+uv pip install --python .venv/bin/python openshell==0.1.2
+```
+
+The image records its installed descriptor inventory in `/opt/fabric/runtime-server.json`. It advertises interface version 2 and a single-runtime limit. The older NemoClaw v1 client uses a different bridge protocol and needs migration before it can manage this server directly.
+
+The current CLI exposes `serve`, `start`, `invoke`, and `stop`. The example waits for the socket, then starts, invokes, and stops using the returned runtime ID. Each sandbox supports one runtime lifecycle; create a fresh sandbox for each demonstration. Rebuild the image and create a new sandbox after updating the CLI; an existing sandbox keeps its original image and command protocol.
+
+Select a registered test gateway using `OPENSHELL_GATEWAY` and set `OPENSHELL_WORKSPACE` to the test workspace. The real `OPENAI_API_KEY` belongs in the environment of the workstation shell running `openshell provider create`, outside the sandbox. OpenShell stores that credential at the gateway and supplies a shadow credential to processes inside the sandbox.
+
+Enable [provider policy composition](https://docs.nvidia.com/openshell/latest/sandboxes/manage-providers) on the selected gateway before creating the sandbox. The example's policy has no standalone network rules; the attached provider profile supplies the NVIDIA egress rule. Import that profile, then create the `hosted` provider:
+
+```sh
+openshell settings set --global --key providers_v2_enabled --value true
+openshell provider profile import --file examples/code_review_agent/openshell-provider.yaml
+openshell provider create --name hosted --type nvidia-code-review --credential OPENAI_API_KEY
+openshell sandbox create --name code-review --from fabric-code-review:initial-scope \
+  --provider hosted --policy examples/code_review_agent/openshell-policy.yaml \
+  --env ADAPTER_PYTHON=/opt/fabric/bin/python --env TMPDIR=/sandbox/tmp \
+  --no-tty --detach -- sleep infinity
+```
+
+The provider profile allows the example's Node/Python binaries to reach NVIDIA inference. The policy grants write access to sandbox storage. OpenShell does not forward every image environment variable to exec calls, so the sandbox creation command explicitly selects the adapter interpreter and temporary directory. If the provider name or model endpoint changes, update the provider profile and policy to match. The example never creates or deletes a caller-owned sandbox.
+
+Run the two-turn review using the registered gateway:
+
+```sh
+.venv/bin/python -m examples.code_review_agent.openshell \
+  --workspace "$OPENSHELL_WORKSPACE" --sandbox code-review \
+  --output-dir ".tmp/code-review-$(date -u +%Y%m%dT%H%M%SZ)" \
+  --input "The contract is that answer() returns 42. Review calculator.py and remember review tag cedar-4827." \
+  --input "Recall the review tag from our previous turn, summarize the finding, and suggest the smallest correction."
+```
+
+For a local plaintext gateway, add `--gateway 127.0.0.1:PORT`. `--model`, `--base-url`, and `--api-key-env` override the model connection. The command prints one JSON report containing the prompts, runtime ID, normalized review results, command timings and exit codes, stop result, and any structured error. `--output-dir` writes that report to `report.json` and a readable review transcript to `transcript.md`, including failed runs. The output directory must be new; existing results are preserved. The records omit raw stderr and exception details. The command does not retry an invocation after an uncertain outcome; it attempts stop for a confirmed runtime even when an invocation fails. A missing start response leaves runtime ownership unknown and requires sandbox cleanup.
+
+After stop, the runtime server and socket remain reachable and caller-owned files remain. The sandbox has used its runtime lifecycle; another start is rejected. Ordinary SDK stop does not prove that harness descendants exited, so `fabric.unclean` remains through server shutdown. Delete the sandbox through OpenShell after collecting evidence and create a fresh sandbox for another demonstration. The image excludes the optional Linux `setpriv` wrapper because OpenShell blocks capability activation. Qualify conversation continuity with a fresh tag on the first invocation and recall the tag on the second without including the tag again. Preserve the normalized review and stop results, independently read a retained file, and verify replacement start is rejected.
+
+After saving the report and transcript on your workstation, delete only the example sandbox. OpenShell's supervisor then cleans up the sandbox processes. The gateway, provider, and saved results remain available:
+
+```sh
+openshell sandbox delete code-review --workspace "$OPENSHELL_WORKSPACE"
+```
+
+To run the example again, repeat the sandbox creation command above and choose a new `--output-dir`.
+
+If an invocation times out or cleanup fails, the same one-lifecycle restriction prevents overlap with a surviving harness. The enclosing sandbox supervisor handles descendant cleanup. Successful SDK stop alone is not evidence that harness children exited.
+
 ### OpenHands (`openhands`)
 
 On Python 3.12 or later, install the tested OpenHands SDK and tools, then install
@@ -255,6 +311,35 @@ include it in the replacement instruction or provide absolute paths in user
 input.
 
 The initial Cline adapter does not support Relay telemetry or streaming.
+
+### Factory Droid (`droid`)
+
+Install Node.js 22.19 or newer and follow the
+[Factory Droid adapter installation instructions](../../adapters/typescript/droid/README.md).
+The source workspace pins `@factory/droid-sdk@0.9.1`; install the caller-owned
+`droid@0.233.0` CLI separately and set `FACTORY_API_KEY`.
+
+This variant selects Factory's `auto` model, appends the code-review
+instruction to Droid's native system prompt, restricts built-in tools to
+`Read`, `Grep`, and `Glob`, and loads the default code-review skill.
+
+Inspect its plan with:
+
+```bash
+.venv/bin/python -m examples.code_review_agent --variant droid --plan
+```
+
+Run the review with:
+
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --variant droid \
+  --input "Review calculator.py for correctness risks." \
+  --show-output
+```
+
+The initial Factory Droid adapter does not support Relay telemetry or NeMo Fabric
+streaming.
 
 ### Kilo Code (`kilo`)
 

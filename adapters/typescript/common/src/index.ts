@@ -13,3 +13,5 @@ export {
   type AdapterStartInput,
   type LifecycleHostOptions,
 } from "./lifecycle.js";
+
+export { insecureHttpModelHosts, modelEndpointAllowed } from "./model-endpoint.js";

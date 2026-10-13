@@ -3409,7 +3409,7 @@ Apache License
    limitations under the License.
 ```
 
-## fsspec (2026.4.0)
+## fsspec (2026.6.0)
 
 ### Licenses
 License: `BSD-3-Clause`
@@ -5578,7 +5578,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## langgraph-sdk (0.4.2)
+## langgraph-sdk (0.4.5)
 
 ### Licenses
 License: `MIT`

@@ -4,7 +4,7 @@
 // Translate only the model configuration declared by the OpenCode descriptor.
 
 import type { AgentConfig, AgentModelConfig } from "nemo-fabric-adapter-contract";
-import { LifecycleError } from "nemo-fabric-adapters-common";
+import { LifecycleError, insecureHttpModelHosts, modelEndpointAllowed } from "nemo-fabric-adapters-common";
 
 export interface OpenCodeModel {
   provider: string;
@@ -18,19 +18,6 @@ export interface OpenCodeModel {
 }
 
 const ENVIRONMENT_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
-
-function loopbackHostname(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "::1" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
-}
-
-function validEndpoint(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || (url.protocol === "http:" && loopbackHostname(url.hostname));
-  } catch {
-    return false;
-  }
-}
 
 function sampling(model: AgentModelConfig, baseUrl: string | undefined): OpenCodeModel["sampling"] {
   if (model.max_tokens !== undefined && model.max_tokens !== null) {
@@ -69,7 +56,7 @@ function sampling(model: AgentModelConfig, baseUrl: string | undefined): OpenCod
   };
 }
 
-function validModel(model: AgentModelConfig): OpenCodeModel {
+function validModel(model: AgentModelConfig, insecureHosts: readonly string[]): OpenCodeModel {
   if (
     typeof model.provider !== "string" ||
     model.provider.length === 0 ||
@@ -83,7 +70,7 @@ function validModel(model: AgentModelConfig): OpenCodeModel {
   if (
     model.base_url !== undefined &&
     model.base_url !== null &&
-    (typeof model.base_url !== "string" || !validEndpoint(model.base_url))
+    (typeof model.base_url !== "string" || !modelEndpointAllowed(model.base_url, insecureHosts))
   ) {
     throw new LifecycleError("opencode_invalid_model", "OpenCode model configuration does not match the adapter schema");
   }
@@ -110,7 +97,7 @@ export function selectModel(config: AgentConfig): OpenCodeModel {
       "Configure a default model role when the OpenCode adapter receives multiple models",
     );
   }
-  return validModel(selected);
+  return validModel(selected, insecureHttpModelHosts(config.harness?.settings, "opencode_invalid_settings"));
 }
 
 export function selectSystemInstruction(config: AgentConfig): string | undefined {

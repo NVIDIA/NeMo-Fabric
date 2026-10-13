@@ -1,10 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { isIP } from "node:net";
-
 import type { AgentConfig, AgentModelConfig } from "nemo-fabric-adapter-contract";
-import { LifecycleError } from "nemo-fabric-adapters-common";
+import { LifecycleError, insecureHttpModelHosts, modelEndpointAllowed } from "nemo-fabric-adapters-common";
 
 export interface KiloModel {
   provider: string;
@@ -17,28 +15,7 @@ export interface KiloModel {
 
 const ENVIRONMENT_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
-function loopbackHostname(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "::1" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
-}
-
-function privateIpv4Hostname(hostname: string): boolean {
-  if (isIP(hostname) !== 4) return false;
-  const [first = 0, second = 0] = hostname.split(".").map(Number);
-  return first === 10 || (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168);
-}
-
-function validEndpoint(value: string, allowInsecureHttp: boolean): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || (url.protocol === "http:" &&
-      (loopbackHostname(url.hostname) || (allowInsecureHttp && privateIpv4Hostname(url.hostname))));
-  } catch {
-    return false;
-  }
-}
-
-function validateModel(model: AgentModelConfig, allowInsecureHttp: boolean): KiloModel {
+function validateModel(model: AgentModelConfig, allowInsecureHttp: boolean, insecureHosts: readonly string[]): KiloModel {
   if (model.max_tokens != null) {
     throw new LifecycleError("kilo_max_tokens_unsupported", "Kilo Code does not support models.max_tokens through this adapter");
   }
@@ -52,7 +29,7 @@ function validateModel(model: AgentModelConfig, allowInsecureHttp: boolean): Kil
   ) {
     throw new LifecycleError("kilo_invalid_model", "Kilo Code model configuration does not match the adapter schema");
   }
-  if (model.base_url != null && (typeof model.base_url !== "string" || !validEndpoint(model.base_url, allowInsecureHttp))) {
+  if (model.base_url != null && (typeof model.base_url !== "string" || !modelEndpointAllowed(model.base_url, insecureHosts, allowInsecureHttp))) {
     throw new LifecycleError("kilo_invalid_model", "Kilo Code model configuration does not match the adapter schema");
   }
   if (model.temperature != null && (typeof model.temperature !== "number" || !Number.isFinite(model.temperature))) {
@@ -81,7 +58,7 @@ export function selectModel(config: AgentConfig): KiloModel {
   if (selected === undefined) {
     throw new LifecycleError("kilo_model_ambiguous", "Configure a default model role when the Kilo Code adapter receives multiple models");
   }
-  return validateModel(selected, allowInsecureHttp);
+  return validateModel(selected, allowInsecureHttp, insecureHttpModelHosts(config.harness?.settings, "kilo_invalid_settings"));
 }
 
 export function selectSystemInstruction(config: AgentConfig): string | undefined {

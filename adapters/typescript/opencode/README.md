@@ -41,8 +41,20 @@ The adapter supports the following configuration:
 ### Model Endpoints
 
 `models.<role>.base_url` must point to an OpenAI-compatible Chat Completions
-endpoint, not an OpenCode server. Remote endpoints require HTTPS. HTTP is
-allowed only for loopback development endpoints.
+endpoint, not an OpenCode server.
+
+HTTPS is required by default, except for loopback HTTP. For a trusted Docker or Kubernetes gateway, set `harness.settings.insecure_http_model_hosts` to the exact hostnames that can receive HTTP model requests. Entries contain only hostnames or IPv4 addresses, without schemes, ports, paths, or wildcards. Matching ignores case and a trailing DNS dot, and permits any port or path on the listed host. The adapter does not resolve DNS to infer trust. Allowlisted HTTP endpoints receive model credentials and prompt content over an unencrypted connection. This setting applies only to model endpoints; MCP endpoint restrictions are unchanged.
+
+For example, allow the gateway hosts used by your deployment:
+
+```yaml
+harness:
+  settings:
+    insecure_http_model_hosts:
+      - host.docker.internal
+      - release-nhx-api
+      - gateway.namespace.svc.cluster.local
+```
 
 `temperature` and `top_p` are supported only with `base_url`. The adapter removes
 OpenCode's `prompt_cache_key` extension for compatibility with providers that

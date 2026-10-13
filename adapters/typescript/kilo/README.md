@@ -44,11 +44,22 @@ The adapter supports the following normalized configuration:
 
 When `base_url` is set, it must identify an OpenAI-compatible model-provider
 endpoint. It is not the address of the Kilo Code server. Without `base_url`,
-the configured provider and model must be supported by Kilo Code. HTTPS is
-required except for loopback HTTP. For a trusted private IPv4 HTTP endpoint,
-explicitly set `harness.settings.allow_insecure_http_model_endpoint` to `true`.
-Public IP addresses, hostnames, and link-local addresses remain blocked. The
-model credential and prompt content are then sent over an unencrypted connection.
+the configured provider and model must be supported by Kilo Code.
+
+HTTPS is required by default, except for loopback HTTP. For a trusted Docker or Kubernetes gateway, set `harness.settings.insecure_http_model_hosts` to the exact hostnames that can receive HTTP model requests. Entries contain only hostnames or IPv4 addresses, without schemes, ports, paths, or wildcards. Matching ignores case and a trailing DNS dot, and permits any port or path on the listed host. The adapter does not resolve DNS to infer trust. Allowlisted HTTP endpoints receive model credentials and prompt content over an unencrypted connection. This setting applies only to model endpoints; MCP endpoint restrictions are unchanged.
+
+For example, allow the gateway hosts used by your deployment:
+
+```yaml
+harness:
+  settings:
+    insecure_http_model_hosts:
+      - host.docker.internal
+      - release-nhx-api
+      - gateway.namespace.svc.cluster.local
+```
+
+The existing `harness.settings.allow_insecure_http_model_endpoint: true` option permits literal IPv4 addresses in `10/8`, `172.16/12`, and `192.168/16`. It does not permit hostnames or other IP ranges unless they are explicitly listed in `insecure_http_model_hosts`. Both settings can be used together.
 
 ### MCP Configuration
 

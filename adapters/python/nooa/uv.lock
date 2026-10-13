@@ -682,12 +682,14 @@ dependencies = [
 
 [package.optional-dependencies]
 full = [
+    { name = "fsspec" },
     { name = "nemo-relay" },
     { name = "nooa" },
     { name = "nooa-bench" },
     { name = "nooa-cli" },
 ]
 harness = [
+    { name = "fsspec" },
     { name = "nooa" },
     { name = "nooa-bench" },
     { name = "nooa-cli" },
@@ -698,6 +700,8 @@ relay = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fsspec", marker = "extra == 'full'", specifier = ">=2026.6.0" },
+    { name = "fsspec", marker = "extra == 'harness'", specifier = ">=2026.6.0" },
     { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
     { name = "nemo-relay", marker = "extra == 'full'", specifier = ">=0.9,<0.11" },

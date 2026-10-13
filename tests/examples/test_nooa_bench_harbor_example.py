@@ -164,6 +164,7 @@ def test_harbor_example_uses_published_nooa_packages():
         )
     )["project"]
     assert set(adapter_project["optional-dependencies"]["harness"]) == {
+        "fsspec>=2026.6.0",
         "nooa>=0.0.10,<0.0.11",
         "nooa-cli>=0.0.10,<0.0.11",
         "nooa-bench>=0.0.10,<0.0.11",

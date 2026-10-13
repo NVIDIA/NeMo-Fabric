@@ -288,6 +288,7 @@ clean:
         adapters/typescript/node_modules \
         adapters/typescript/common/dist \
         adapters/typescript/cline/dist \
+        adapters/typescript/droid/dist \
         adapters/typescript/pi/dist \
         adapters/typescript/opencode/dist \
         adapters/typescript/qwen/dist \
@@ -299,6 +300,7 @@ clean:
         adapter-contract/typescript/*.tgz \
         adapters/typescript/common/*.tgz \
         adapters/typescript/cline/*.tgz \
+        adapters/typescript/droid/*.tgz \
         adapters/typescript/pi/*.tgz \
         adapters/typescript/opencode/*.tgz \
         adapters/typescript/qwen/*.tgz \
@@ -354,6 +356,10 @@ install-typescript-pi: install-typescript-contract
 # Install the Cline adapter workspace without the caller-managed SDK harness.
 install-typescript-cline: install-typescript-contract
     npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-cline --include-workspace-root --ignore-scripts
+
+# Install the Droid adapter and its pinned SDK harness for source development.
+install-typescript-droid: install-typescript-contract
+    npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-droid --include-workspace-root --ignore-scripts
 
 # Install the OpenCode adapter and its pinned SDK harness for source development.
 install-typescript-opencode: install-typescript-contract
