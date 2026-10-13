@@ -1100,6 +1100,8 @@ pub struct EnvironmentConfig {
     ///
     /// Only the names are serialized into the run plan. NeMo Fabric reads each
     /// value when it starts or invokes the adapter and fails if one is unset.
+    /// Values must remain unchanged while a runtime or service is active;
+    /// restart the runtime and any associated service to use changed values.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(inner(regex(pattern = r"^[A-Za-z_][A-Za-z0-9_]*$")))]
     pub env_names: Vec<String>,
@@ -4028,6 +4030,7 @@ pub struct EnvironmentPlan {
     pub env: BTreeMap<String, String>,
     /// Names of environment variables whose values NeMo Fabric reads from its
     /// process environment when it starts or invokes the adapter.
+    /// Changed values require restarting the runtime and any associated service.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub env_names: Vec<String>,
     /// Provider connection metadata.

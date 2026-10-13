@@ -326,7 +326,7 @@ A `.env` file stores names and values, such as `GITHUB_TOKEN=example-token`. Nei
 
 With Harbor, the NeMo Fabric process runs inside the task environment. `env_names` reads that process's variables; listing a name does not copy its value from the Harbor host into the task. Harbor owns delivery through its managed execution environment. The existing Harbor bridge uses a separate `environment_env_names` payload field and resolves those names into `environment.env` inside the task runner. That bridge behavior is unchanged by `env_names`. Refer to [Harbor Environment Forwarding](../integrations/consumer/harbor.mdx#environment-forwarding) for the two-stage flow.
 
-NeMo Fabric reads named values at adapter start and on each invocation. Some adapters retain the harness or shell environment created at startup, so a refreshed invocation context does not guarantee that an existing harness uses the new value. Restart those runtimes after changing a forwarded value.
+NeMo Fabric reads named values at adapter start and checks them before each invocation. Persistent harnesses and shell backends can retain their startup environment, so NeMo Fabric rejects an invocation if a named value has changed instead of sending a context that disagrees with that environment. The error identifies the variable without exposing its value. Restart the runtime and any associated service after changing a forwarded value. Connecting a new runtime to a service also fails if the named values differ from the service's startup values.
 
 ### Configure MCP Authentication And Headers
 

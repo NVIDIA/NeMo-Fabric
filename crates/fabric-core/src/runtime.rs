@@ -822,6 +822,8 @@ struct LocalAdapterHost {
     stderr_offset: usize,
     artifacts: ArtifactManifest,
     relay_config: Option<RelayRuntimeConfig>,
+    // Adapter startup values stay in memory, never in a serialized handle or plan.
+    environment_env: BTreeMap<String, String>,
 }
 
 struct LocalServiceRecord {
@@ -974,6 +976,9 @@ pub fn start_runtime_with_service(
             service_id: service.service_id.clone(),
         });
     }
+    let mut current_env = record.host.environment_env.clone();
+    resolve_named_environment(plan, &mut current_env)?;
+    validate_named_environment(plan, &record.host.environment_env, &current_env)?;
     let environment = prepare_environment(plan)?;
     let runtime = start_local_runtime(
         plan,
@@ -1063,8 +1068,9 @@ fn start_service(
         relay_config.as_ref(),
         Some(service_context),
     )?;
+    let environment_env = start.runtime_context.environment.env.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
-    let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config)?;
+    let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)?;
     let output = match exchange_lifecycle_message(
         &mut host,
         &service_id,
@@ -1612,8 +1618,9 @@ fn start_local_runtime(
         relay_config.as_ref(),
         service_context,
     )?;
+    let environment_env = start.runtime_context.environment.env.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
-    let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config)?;
+    let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)?;
     if let Err(error) = exchange_lifecycle_message(
         &mut host,
         &runtime.runtime_id,
@@ -1759,6 +1766,11 @@ fn run_local_host_invocation_with_timeout(
             &request,
             &artifacts,
             relay_config.as_ref(),
+        )?;
+        validate_named_environment(
+            plan,
+            &host_guard.environment_env,
+            &adapter_invocation.runtime_context.environment.env,
         )?;
         adapter_invocation.runtime_context.deadline_millis =
             adapter_deadline_millis(invoke_timeout);
@@ -2170,6 +2182,7 @@ fn spawn_local_host(
     runtime: &RuntimeHandle,
     artifacts: ArtifactManifest,
     relay_config: Option<RelayRuntimeConfig>,
+    environment_env: BTreeMap<String, String>,
 ) -> Result<LocalAdapterHost> {
     let runtime_dir = local_host_directory(&runtime.runtime_id);
     std::fs::create_dir_all(&runtime_dir).map_err(|source| FabricError::Write {
@@ -2189,6 +2202,7 @@ fn spawn_local_host(
         }
     };
     command
+        .envs(&environment_env)
         .env("FABRIC_RUNTIME_ID", &runtime.runtime_id)
         .env("FABRIC_HOME", &runtime_dir)
         .envs(relay_env(&relay_config))
@@ -2295,6 +2309,7 @@ fn spawn_local_host(
         stderr_offset: 0,
         artifacts,
         relay_config,
+        environment_env,
     })
 }
 
@@ -2933,6 +2948,28 @@ fn openai_stream_sink(
     }
 }
 
+fn validate_named_environment(
+    plan: &RunPlan,
+    startup: &BTreeMap<String, String>,
+    current: &BTreeMap<String, String>,
+) -> Result<()> {
+    for name in plan
+        .environment_plan
+        .iter()
+        .flat_map(|environment| &environment.env_names)
+    {
+        if startup.get(name) != current.get(name) {
+            return Err(FabricError::InvalidConfig {
+                field: "environment.env_names".to_string(),
+                reason: format!(
+                    "environment variable `{name}` changed after adapter start; restart the runtime and any associated service to use its new value"
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn adapter_runtime_context(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
@@ -2940,9 +2977,22 @@ fn adapter_runtime_context(
     artifacts: &ArtifactManifest,
     relay_config: Option<&RelayRuntimeConfig>,
 ) -> Result<RuntimeContext> {
-    // Named values reach only the adapter-facing context, which is redacted
-    // before it is persisted; the plan and runtime handle never hold them.
+    // Named values stay out of the plan and runtime handle. The adapter-facing
+    // context is redacted before it is persisted.
     let mut environment = runtime.environment.clone();
+    resolve_named_environment(plan, &mut environment.env)?;
+    Ok(RuntimeContext {
+        runtime_id: runtime.runtime_id.clone(),
+        invocation_id: invocation.invocation_id.clone(),
+        request_id: invocation.request_id.clone(),
+        environment,
+        artifacts: artifacts.clone(),
+        telemetry: runtime_telemetry_context(plan, relay_config),
+        deadline_millis: None,
+    })
+}
+
+fn resolve_named_environment(plan: &RunPlan, env: &mut BTreeMap<String, String>) -> Result<()> {
     for name in plan
         .environment_plan
         .iter()
@@ -2959,17 +3009,9 @@ fn adapter_runtime_context(
                 }
             },
         })?;
-        environment.env.insert(name.clone(), value);
+        env.insert(name.clone(), value);
     }
-    Ok(RuntimeContext {
-        runtime_id: runtime.runtime_id.clone(),
-        invocation_id: invocation.invocation_id.clone(),
-        request_id: invocation.request_id.clone(),
-        environment,
-        artifacts: artifacts.clone(),
-        telemetry: runtime_telemetry_context(plan, relay_config),
-        deadline_millis: None,
-    })
+    Ok(())
 }
 
 /// Converts Fabric's invocation timeout to the adapter's wall-clock deadline,
@@ -4282,6 +4324,47 @@ for line in sys.stdin:
                 if field == "environment.env_names"
                     && reason == "environment variable `NEMO_FABRIC_TEST_UNSET_VARIABLE` is not set"
         ));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn env_names_reject_runtime_connection_to_a_service_with_different_values() {
+        let (root, plan) = local_host_plan_with_env_name("PATH");
+        let service = prepare_service(&plan).expect("prepare service");
+        let record = local_services()
+            .get(&service.service_id)
+            .cloned()
+            .expect("service record");
+        // Simulate a service started with a previous value without mutating
+        // the process environment while other Rust tests are running.
+        let original = record
+            .lock()
+            .expect("service lock")
+            .host
+            .environment_env
+            .insert("PATH".to_string(), "previous-service-value".to_string())
+            .expect("startup PATH");
+
+        let error = start_runtime_with_service(&plan, &service)
+            .expect_err("changed service environment must fail");
+        assert!(matches!(
+            &error,
+            FabricError::InvalidConfig { field, reason }
+                if field == "environment.env_names"
+                    && reason.contains("environment variable `PATH` changed")
+                    && reason.contains("restart the runtime and any associated service")
+        ));
+        assert!(!error.to_string().contains("previous-service-value"));
+
+        record
+            .lock()
+            .expect("service lock")
+            .host
+            .environment_env
+            .insert("PATH".to_string(), original);
+        let runtime = start_runtime_with_service(&plan, &service).expect("unchanged environment");
+        stop_runtime(&plan, &runtime).expect("stop runtime");
+        release_service(&plan, &service).expect("release service");
         let _ = fs::remove_dir_all(root);
     }
 

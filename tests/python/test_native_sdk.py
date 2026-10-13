@@ -32,6 +32,58 @@ async def test_native_sdk(hermes_shim_agent_dir: Path):
     await smoke(Fabric(), hermes_shim_agent_dir)
 
 
+@pytest.mark.parametrize("new_value", ["rotated-secret", None])
+async def test_named_environment_changes_require_runtime_restart(
+    hermes_shim_agent_dir, new_value
+):
+    name = "NEMO_FABRIC_TEST_NAMED_TOKEN"
+    os.environ[name] = "startup-secret"
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "named-environment-probe"},
+            "harness": {
+                "adapter_id": "test.fabric.hermes_shim",
+                "resolution": "preinstalled",
+            },
+            "discovery": {"local_paths": ["adapters"]},
+            "runtime": {"artifacts": "./artifacts"},
+            "environment": {"env_names": [name]},
+        }
+    )
+    client = Fabric()
+    runtime = await client.start_runtime(config, base_dir=hermes_shim_agent_dir)
+    try:
+        first = await runtime.invoke(input="before rotation")
+        assert first.status == "succeeded"
+        invocation_path = Path(first.metadata["fabric_invocation"])
+        invocation = json.loads(invocation_path.read_text())
+        assert invocation["runtime_context"]["environment"]["env"][name] == "[REDACTED]"
+        if new_value is None:
+            del os.environ[name]
+            expected = "is not set"
+        else:
+            os.environ[name] = new_value
+            expected = "changed after adapter start; restart the runtime"
+        with pytest.raises(FabricRuntimeError, match=expected) as caught:
+            await runtime.invoke(input="after rotation")
+        assert caught.value.stage == "invoke"
+        assert runtime.status is RuntimeStatus.FAILED
+        assert name in str(caught.value)
+        assert "startup-secret" not in str(caught.value)
+        assert "rotated-secret" not in str(caught.value)
+    finally:
+        await runtime.stop()
+
+    if new_value is not None:
+        restarted = await client.start_runtime(config, base_dir=hermes_shim_agent_dir)
+        try:
+            result = await restarted.invoke(input="after restart")
+            assert result.status == "succeeded"
+        finally:
+            await restarted.stop()
+
+
 def _process_running(pid: int) -> bool:
     if sys.platform == "win32":
         tasks = subprocess.run(

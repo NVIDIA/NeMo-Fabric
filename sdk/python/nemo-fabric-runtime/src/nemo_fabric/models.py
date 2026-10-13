@@ -241,7 +241,9 @@ class EnvironmentConfig(FabricBaseModel):
         description=(
             "Names of environment variables visible to the harness and its tools, "
             "with values read from the NeMo Fabric process environment. Only the "
-            "names are serialized into configuration and run plans."
+            "names are serialized into configuration and run plans. Values must "
+            "remain unchanged while a runtime or service is active; restart the "
+            "runtime and any associated service to use changed values."
         ),
     )
     settings: dict[str, Any] = Field(

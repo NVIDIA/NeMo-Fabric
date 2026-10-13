@@ -45,7 +45,7 @@ Values are serialized into the run plan and can appear wherever configs or plans
 
 Names of environment variables visible to the harness and its tools, with values read from the NeMo Fabric process environment.
 
-Only the names are serialized into the run plan. NeMo Fabric reads each value when it starts or invokes the adapter and fails if one is unset.
+Only the names are serialized into the run plan. NeMo Fabric reads each value when it starts or invokes the adapter and fails if one is unset. Values must remain unchanged while a runtime or service is active; restart the runtime and any associated service to use changed values.
 
 ### `connection: Map<String, Value>`
 
