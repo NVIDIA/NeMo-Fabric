@@ -336,9 +336,11 @@ def test_cli_records_success_and_failure_without_raw_diagnostics(
         "command_outcome_unknown" if invocation_fails else "calculator.py"
     ) in transcript
     assert "PRIVATE_DIAGNOSTIC" not in json.dumps(recorded) + transcript
-    assert stat.S_IMODE(output_dir.stat().st_mode) == 0o700
-    for name in ("report.json", "transcript.md"):
-        assert stat.S_IMODE((output_dir / name).stat().st_mode) == 0o600
+    # Windows does not implement Unix permission modes through chmod/stat.
+    if sys.platform != "win32":
+        assert stat.S_IMODE(output_dir.stat().st_mode) == 0o700
+        for name in ("report.json", "transcript.md"):
+            assert stat.S_IMODE((output_dir / name).stat().st_mode) == 0o600
 
 
 def test_cli_refuses_to_overwrite_recorded_results_before_sandbox_work(
