@@ -233,10 +233,9 @@ The current CLI exposes `serve`, `start`, `invoke`, and `stop`. The example wait
 
 Select a registered test gateway using `OPENSHELL_GATEWAY` and set `OPENSHELL_WORKSPACE` to the test workspace. The real `OPENAI_API_KEY` belongs in the environment of the workstation shell running `openshell provider create`, outside the sandbox. OpenShell stores that credential at the gateway and supplies a shadow credential to processes inside the sandbox.
 
-Enable [provider policy composition](https://docs.nvidia.com/openshell/latest/sandboxes/manage-providers) on the selected gateway before creating the sandbox. The example's policy has no standalone network rules; the attached provider profile supplies the NVIDIA egress rule. Import that profile, then create the `hosted` provider:
+The example's policy has no standalone network rules; the attached provider profile supplies the NVIDIA egress rule. Import that profile, then create the `hosted` provider:
 
 ```sh
-openshell settings set --global --key providers_v2_enabled --value true
 openshell provider profile import --file examples/code_review_agent/openshell-provider.yaml
 openshell provider create --name hosted --type nvidia-code-review --credential OPENAI_API_KEY
 openshell sandbox create --name code-review --from fabric-code-review:initial-scope \
