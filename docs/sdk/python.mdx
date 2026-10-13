@@ -292,6 +292,42 @@ capability_config.enable_relay(
 )
 ```
 
+### Set Environment Values Or Forward Them By Name
+
+Use `environment.env` to set literal values. Use `environment.env_names` to forward variables that are already available to the NeMo Fabric process.
+
+| Field | What You Supply | What NeMo Fabric Saves In The Config And Run Plan |
+| --- | --- | --- |
+| `env` | A name and its literal value, such as `LOG_LEVEL: debug` | The name and value |
+| `env_names` | A name, such as `GITHUB_TOKEN` | Only the name |
+
+For example, set `GITHUB_TOKEN` in the shell that launches your application:
+
+```bash
+export GITHUB_TOKEN="example-token"
+```
+
+Then extend the configuration with a literal log level and the token's name:
+
+```python
+from nemo_fabric import EnvironmentConfig
+
+config.environment = EnvironmentConfig(
+    env={"LOG_LEVEL": "debug"},
+    env_names=["GITHUB_TOKEN"],
+)
+```
+
+NeMo Fabric looks up `GITHUB_TOKEN` in its own process environment and passes the actual value, `example-token`, to the adapter in `RuntimeContext.environment.env`. The adapter receives the value, not a name that it must look up. The configuration and run plan contain only the name; NeMo Fabric redacts environment values in the saved adapter invocation. Execution fails if a listed variable is unset. A name cannot appear in both `env` and `env_names`.
+
+`environment.env` does not expand `$GITHUB_TOKEN` or `${GITHUB_TOKEN}`. For example, `env={"GITHUB_TOKEN": "$GITHUB_TOKEN"}` passes the literal text `$GITHUB_TOKEN`. Use `env_names=["GITHUB_TOKEN"]` to request lookup. If your application instead reads the token and places its value in `env`, that value becomes part of the saved configuration and run plan.
+
+A `.env` file stores names and values, such as `GITHUB_TOKEN=example-token`. Neither `env` nor `env_names` loads that file. Your launcher or application must load it into the process environment before NeMo Fabric starts the adapter. The same forwarding mechanism works with variables supplied by a shell, CI secrets, or a container.
+
+With Harbor, the NeMo Fabric process runs inside the task environment. `env_names` reads that process's variables; listing a name does not copy its value from the Harbor host into the task. Harbor owns delivery through its managed execution environment. The existing Harbor bridge uses a separate `environment_env_names` payload field and resolves those names into `environment.env` inside the task runner. That bridge behavior is unchanged by `env_names`. Refer to [Harbor Environment Forwarding](../integrations/consumer/harbor.mdx#environment-forwarding) for the two-stage flow.
+
+NeMo Fabric reads named values at adapter start and on each invocation. Some adapters retain the harness or shell environment created at startup, so a refreshed invocation context does not guarantee that an existing harness uses the new value. Restart those runtimes after changing a forwarded value.
+
 ### Configure MCP Authentication And Headers
 
 MCP authentication and custom-header support vary by adapter:

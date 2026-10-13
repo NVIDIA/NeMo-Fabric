@@ -119,6 +119,12 @@ routing. `harness_native` assigns a capability to the selected adapter,
 execute it. Scalar fields are validated separately against
 `adapter_descriptor.config.accepts`.
 
+### Environment Values And Names
+
+`environment.env` sets literal values and saves those values in the configuration and run plan. `environment.env_names` lists existing variables to forward from the NeMo Fabric process environment and saves only their names. NeMo Fabric looks up the values and supplies them to the adapter through `RuntimeContext.environment.env`.
+
+For example, use `env={"LOG_LEVEL": "debug"}` for a literal setting and `env_names=["GITHUB_TOKEN"]` to forward a token already available to the NeMo Fabric process. `environment.env` does not expand `$GITHUB_TOKEN` or `${GITHUB_TOKEN}`, and neither field loads a `.env` file. Refer to [Set Environment Values Or Forward Them By Name](../docs/sdk/python.mdx#set-environment-values-or-forward-them-by-name) for examples and runtime refresh behavior.
+
 ### Complete FabricConfig Support
 
 `Core` means NeMo Fabric owns the behavior and applies it uniformly before or around
