@@ -14,6 +14,9 @@ use std::io::{BufRead, Write};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use openshell_sdk::provider_readiness::{
+    ProviderWaitOutcome, provider_status, provider_wait_deadline, wait_for_provider_status_until,
+};
 use openshell_sdk::raw::proto;
 use openshell_sdk::{
     AuthConfig, ClientConfig, DeleteOptions, DeletionOutcome, DeletionResult, ExecOptions,
@@ -626,7 +629,7 @@ where
                     environment_id.to_string(),
                 )]),
                 environment: environment.env,
-                providers: settings.providers,
+                providers: settings.providers.clone(),
                 command: settings.command,
                 policy: settings.policy,
             },
@@ -689,6 +692,30 @@ where
             return Err(error);
         }
     };
+    for provider in &settings.providers {
+        if let Err(error) = bounded_gateway_call(
+            "provider_ready",
+            Duration::from_secs(settings.ready_timeout_seconds),
+            client.wait_provider_ready(
+                connection.workspace.as_deref(),
+                &sandbox.name,
+                provider,
+                Duration::from_secs(settings.ready_timeout_seconds),
+            ),
+        )
+        .await
+        {
+            cleanup_created_sandbox(
+                client.as_ref(),
+                connection.workspace.as_deref(),
+                &sandbox.name,
+                &sandbox.id,
+                settings.delete_timeout_seconds,
+            )
+            .await?;
+            return Err(error);
+        }
+    }
     if ready.id != sandbox.id
         || ready.workspace != connection.workspace.as_deref().unwrap_or("default")
         || sandbox.workspace != connection.workspace.as_deref().unwrap_or("default")
@@ -802,6 +829,19 @@ where
             "sandbox_policy_mismatch",
             "OpenShell sandbox policy does not match settings.policy_yaml",
         ));
+    }
+    for provider in &settings.providers {
+        bounded_gateway_call(
+            "provider_ready",
+            Duration::from_secs(settings.ready_timeout_seconds),
+            client.wait_provider_ready(
+                connection.workspace.as_deref(),
+                &sandbox.name,
+                provider,
+                Duration::from_secs(settings.ready_timeout_seconds),
+            ),
+        )
+        .await?;
     }
 
     let mut provider_connection = connection.to_safe_map();
@@ -1757,6 +1797,13 @@ trait Gateway: Send + Sync {
         name: &str,
         timeout: Duration,
     ) -> Result<SandboxSnapshot, ProviderError>;
+    async fn wait_provider_ready(
+        &self,
+        workspace: Option<&str>,
+        sandbox: &str,
+        provider: &str,
+        timeout: Duration,
+    ) -> Result<(), ProviderError>;
     async fn exec(
         &self,
         workspace: Option<&str>,
@@ -1897,6 +1944,68 @@ impl Gateway for SdkGateway {
         }
         .map_err(map_sdk_error)?;
         Ok(sandbox_snapshot(sandbox))
+    }
+
+    async fn wait_provider_ready(
+        &self,
+        workspace: Option<&str>,
+        sandbox: &str,
+        provider: &str,
+        timeout: Duration,
+    ) -> Result<(), ProviderError> {
+        let deadline = provider_wait_deadline(timeout).map_err(|_| {
+            ProviderError::contract(
+                "provider_readiness_invalid",
+                "OpenShell provider readiness timeout is invalid",
+            )
+        })?;
+        let mut grpc = self.client.raw_grpc();
+        let status = tokio::time::timeout_at(
+            deadline,
+            provider_status(
+                &mut grpc,
+                proto::GetSandboxProviderStatusRequest {
+                    sandbox: sandbox.to_string(),
+                    provider: provider.to_string(),
+                    receipt_id: String::new(),
+                    workspace_scope: Some(proto::workspace_selector(
+                        workspace.unwrap_or("default").to_string(),
+                    )),
+                },
+            ),
+        )
+        .await
+        .map_err(|_| {
+            ProviderError::contract(
+                "provider_readiness_timeout",
+                "OpenShell provider readiness check timed out",
+            )
+        })?
+        .map_err(|_| {
+            ProviderError::contract(
+                "provider_readiness_failed",
+                "OpenShell provider readiness check failed",
+            )
+        })?;
+        let result = wait_for_provider_status_until(&mut grpc, &status, deadline)
+            .await
+            .map_err(|_| {
+                ProviderError::contract(
+                    "provider_readiness_failed",
+                    "OpenShell provider readiness wait failed",
+                )
+            })?;
+        match result.outcome {
+            ProviderWaitOutcome::Complete => Ok(()),
+            ProviderWaitOutcome::TimedOut => Err(ProviderError::contract(
+                "provider_readiness_timeout",
+                "OpenShell did not finish applying the provider before the timeout",
+            )),
+            ProviderWaitOutcome::Terminal => Err(ProviderError::contract(
+                "provider_readiness_failed",
+                "OpenShell could not apply the configured provider",
+            )),
+        }
     }
 
     async fn exec(
@@ -2418,6 +2527,7 @@ mod tests {
                     "policy_yaml".to_string(),
                     json!("version: 1\nfilesystem_policy:\n  include_workdir: true\n"),
                 ),
+                ("providers".to_string(), json!(["hosted"])),
             ]),
         };
 
@@ -2439,6 +2549,7 @@ mod tests {
                 "health",
                 "create:fabric-demo:environment-1",
                 "wait_ready:fabric-demo:fabric-sandbox-1",
+                "wait_provider_ready:fabric-demo:fabric-sandbox-1:hosted",
             ]
         );
     }
@@ -2454,6 +2565,9 @@ mod tests {
         };
         let mut environment = environment_plan_fixture();
         environment.ownership = "caller_owned".to_string();
+        environment
+            .settings
+            .insert("providers".to_string(), json!(["hosted"]));
         let reference = EnvironmentReference {
             provider: "openshell".to_string(),
             resource: Map::from_iter([
@@ -2475,7 +2589,12 @@ mod tests {
         );
         assert_eq!(
             *calls.lock().expect("calls"),
-            ["connect", "health", "get:fabric-demo:fabric-sandbox-1",]
+            [
+                "connect",
+                "health",
+                "get:fabric-demo:fabric-sandbox-1",
+                "wait_provider_ready:fabric-demo:fabric-sandbox-1:hosted",
+            ]
         );
     }
 
@@ -3067,6 +3186,20 @@ mod tests {
             sandbox.id = self.ready_id.to_string();
             sandbox.workspace = workspace.unwrap_or("default").to_string();
             Ok(sandbox)
+        }
+
+        async fn wait_provider_ready(
+            &self,
+            workspace: Option<&str>,
+            sandbox: &str,
+            provider: &str,
+            _timeout: Duration,
+        ) -> Result<(), ProviderError> {
+            self.calls.lock().expect("calls").push(format!(
+                "wait_provider_ready:{}:{sandbox}:{provider}",
+                workspace.unwrap_or("default")
+            ));
+            Ok(())
         }
 
         async fn exec(
