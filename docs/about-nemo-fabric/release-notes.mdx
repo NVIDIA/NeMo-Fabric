@@ -32,7 +32,9 @@ For release artifacts and the complete change history, refer to [GitHub Releases
 ## Upgrade Notes
 
 <Warning>
+
 NeMo Fabric 0.5 writes and accepts **Relay observability configuration version 4** and rejects version 3. Set `relay.components[].config.version` or `RelayObservabilityConfig.version` to `4`. The outer plugin configuration remains `version = 1`; existing typed OpenTelemetry endpoints keep their shape. Omitting the observability version selects version 4.
+
 </Warning>
 
 Relay-enabled integrations support NeMo Relay `>=0.9,<0.11`. The release lockfiles resolve the Python package and CLI to 0.10.0. Match the Pi extension to the installed Relay CLI release. Hermes Relay integration uses the pinned upstream Relay 0.10-compatible source revision in its separate Python 3.14 environment; Hermes Agent is installed separately from the adapter.
@@ -65,7 +67,7 @@ The [Harbor integration](../integrations/consumer/harbor.mdx) supports Harbor 0.
 
 ### Telemetry, Usage, And Environment Controls
 
-Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent invocations under one Relay session while preserving a separate ATIF trajectory per invocation. Adapter-owned Relay root scopes carry standardized NeMo Fabric correlation IDs.
+Set `RunRequest.relay_session_root` to the same Relay-accepted UUID string on each invocation to group Deep Agents and mini-SWE-agent turns under one Relay session while preserving a separate ATIF trajectory per invocation. Invalid UUIDs fall back to per-request roots instead of grouping turns. Adapter-owned Relay root scopes carry standardized NeMo Fabric correlation IDs.
 
 Usage includes optional cached-input counts and explicit cache-inclusion semantics. Adapters can also supply cache-write, reasoning, peak-request, and per-model details through `nemo_fabric.detailed_token_usage.v1`. Missing counters remain unknown, and inclusive input counts must not be counted twice. Refer to [Run Results](../sdk/python.mdx#unified-run-results).
 
@@ -83,5 +85,5 @@ The release requires `langgraph-sdk>=0.4.4` and `fsspec>=2026.6.0` at the affect
 - Cancellation, live updates, and cold resume are not exposed as supported adapter lifecycle operations. Shared service handles remain process-local.
 - The sandbox command bridge supports one runtime lifecycle per sandbox, including after stop. Replace the sandbox to start another lifecycle. It requires Unix sockets and does not expose SDK streaming; direct SDK consumers retain their existing multi-runtime and streaming capabilities.
 - Factory Droid, OpenHands, Kilo Code, Cline, OpenCode, and Qwen Code do not support Relay telemetry or native NeMo Fabric streaming. Consult each adapter guide for other limits.
-- Harbor trace export requires a Harbor build containing [PR #3528](https://github.com/harbor-framework/harbor/pull/3528) or a release including that fix. Recorded trajectory artifacts remain available independently of Harbor's exporter.
+- Harbor trace export requires a Harbor build containing [PR #3596](https://github.com/harbor-framework/harbor/pull/3596) or a release including that fix. Recorded trajectory artifacts remain available independently of Harbor's exporter.
 - The [Remote Agent adapter](../integrations/harness/remote-agent.mdx) does not normalize the remote service's MCP, skills, tool policy, or subagents. Relay streaming requires a separately instrumented remote service and a collector reachable by that service and NeMo Fabric.
