@@ -25,89 +25,63 @@ tag-specific notes.
 
 ## Current Release
 
-NVIDIA NeMo Fabric 0.4 adds adapters for Cline, OpenClaw, OpenCode, and Qwen
-Code. It also adds a shared-service lifecycle for adapters that support it,
-extends Pi observability with NeMo Relay telemetry and streaming, and supports
-normalized model sampling and token-limit settings.
+NVIDIA NeMo Fabric 0.5 adds adapters for Factory Droid, OpenHands, and Kilo Code, host-side capability inspection, a metadata-only adapter catalog, and a sandbox command bridge. It extends Harbor integration, updates Pi to its 1.0 SDK with native MCP support, and supports NeMo Relay 0.10 with observability configuration version 4.
 
-For release artifacts and the complete change history, refer to
-[GitHub Releases](https://github.com/NVIDIA/NeMo-Fabric/releases).
+For release artifacts and the complete change history, refer to [GitHub Releases](https://github.com/NVIDIA/NeMo-Fabric/releases).
 
 ## Upgrade Notes
 
 <Warning>
-Relay-enabled integrations in NeMo Fabric 0.4 require NeMo Relay `>=0.9,<0.10`.
-Upgrade separately installed Relay Python packages and `nemo-relay` CLI
-installations before using Relay with 0.4 adapters. The published Hermes Agent
-v2026.9.24 release requires Relay 0.8, so Hermes Relay telemetry and streaming
-currently require the compatible, merged Hermes Relay 0.9 revision in a
-separate Python 3.14 environment. Ordinary Hermes Agent invocations do not
-require that development checkout.
+NeMo Fabric 0.5 writes and accepts **Relay observability configuration version 4** and rejects version 3. Set `relay.components[].config.version` or `RelayObservabilityConfig.version` to `4`. The outer plugin configuration remains `version = 1`; existing typed OpenTelemetry endpoints keep their shape. Omitting the observability version selects version 4.
 </Warning>
 
-The public Rust `ModelConfig` and `AgentModelConfig` structs now include
-optional `top_p` and `max_tokens` fields, and `RuntimeHandle` includes an
-optional `service_id`. Applications that construct these structs with explicit
-Rust struct literals must add the new fields or use a constructor or default
-that supplies them. Existing serialized configurations can omit the new fields.
+Relay-enabled integrations support NeMo Relay `>=0.9,<0.11`. The release lockfiles resolve the Python package and CLI to 0.10.0. Match the Pi extension to the installed Relay CLI release. Hermes Relay integration uses the pinned upstream Relay 0.10-compatible source revision in its separate Python 3.14 environment; Hermes Agent is installed separately from the adapter.
+
+Relay 0.10 enables automatic OTLP export when OTLP endpoint environment variables are set. Automatic traces use the `gen_ai` projection, which includes prompt and response content. Review existing endpoint and header variables before upgrading. Refer to [Install NeMo Relay](../getting-started/install.mdx#install-nemo-relay) for the configuration migration and the linked Relay migration guide for other 0.10 changes.
+
+Rust callers using explicit struct literals must account for new fields, including `RunRequest.relay_session_root`, `AgentRunRequest.relay_session_root`, `EnvironmentConfig.env_names`, `EnvironmentPlan.env_names`, `RuntimeContext.deadline_millis`, and the cache-accounting fields on `AgentUsage` and `RunUsage`. Use supported constructors or defaults where available. Python and serialized configurations can omit optional fields. Use matching runtime and adapter-contract versions when sending new request fields.
+
+The sandbox command bridge uses interface version 2 with `serve`, `start`, `invoke`, and `stop`. Clients using the earlier prototype `validate/prepare/configure` interface must migrate and rebuild their sandbox images. Direct SDK lifecycle and streaming APIs retain their existing behavior.
 
 ## Release Highlights
 
-### More Harness Integrations
+### Three New Harness Integrations
 
-- [Cline](../integrations/harness/cline.mdx) runs a local Cline SDK session
-  across ordered invocations and maps supported model, tool, skill, and MCP
-  configuration.
-- [OpenClaw](../integrations/harness/openclaw.mdx) can run a Gateway for one
-  runtime or connect multiple runtimes to a shared Gateway.
-- [OpenCode](../integrations/harness/opencode.mdx) runs an embedded OpenCode
-  host and persistent session. The adapter can return a patch artifact for
-  files changed during an invocation.
-- [Qwen Code](../integrations/harness/qwen.mdx) runs the Qwen Code SDK and its
-  bundled CLI in an isolated child process, reusing one session across ordered
-  invocations.
+- [Factory Droid](../integrations/harness/droid.mdx) runs a persistent Droid SDK session with tool policy, skills, and supported MCP servers. Install the caller-owned Droid CLI and SDK separately.
+- [OpenHands](../integrations/harness/openhands.mdx) keeps one SDK conversation per runtime and maps model settings, instructions, tools, skills, MCP servers, and turn limits. Its default summarizing condenser handles long histories; use `harness.settings.condenser = "none"` to disable it. Install the compatible OpenHands SDK and tools separately.
+- [Kilo Code](../integrations/harness/kilo.mdx) runs an isolated `kilo serve` child process and reuses one session across ordered invocations, with supported model settings, tool policy, skills, and MCP servers. Its CLI and SDK are consumer-managed dependencies.
 
-### Shared Adapter Services
+The [Pi adapter](../integrations/harness/pi.mdx) moves to Pi 1.0 and adds normalized stdio and streamable HTTP MCP configuration, custom headers, and per-server tool filters. It also resolves gateway-served models without requiring them to exist in Pi's built-in catalog.
 
-The [Python SDK](../sdk/python.mdx#shared-services) now exposes
-`Fabric.prepare_service()` for a NeMo Fabric-managed service and
-`Fabric.attach_service()` for a service managed by another system. Multiple
-runtimes can use one service while keeping separate runtime IDs and harness
-sessions. OpenClaw supports both service paths. Service handles are local to
-the creating process and cannot be used for cold resume.
+### Host Inspection And Sandbox Execution
 
-### Relay and Model Configuration
+The dependency-free `nemo-fabric-adapter-catalog` package provides bundled adapter and target descriptor snapshots without importing harness SDKs. The [host inspection API](../sdk/python.mdx#inspect-metadata-on-a-separate-host), `inspect_adapter()`, derives declared capability profiles and validates requested configuration. Pass `expected_descriptor_sha256` to task-side execution to reject descriptor drift before startup. Catalog metadata does not register executable adapters or prove that an artifact was produced.
 
-The [Pi adapter](../integrations/harness/pi.mdx) now emits Relay telemetry and
-supports live ATOF records through `Runtime.invoke_stream()`. Pi streaming
-uses the embedded collector; its Relay 0.9 extension and CLI must be installed
-separately. Pi model telemetry also depends on a supported model API and a
-matching Relay gateway upstream.
+The [sandbox command bridge](../sdk/python.mdx#sandbox-command-bridge), `fabric-agent-ctl`, controls one SDK runtime through a private Unix socket. The repository's OpenShell code-review example demonstrates multiple invocations through separate sandbox exec calls. Callers retain responsibility for sandbox provisioning and descendant cleanup.
 
-The normalized model configuration now accepts `models.<role>.top_p` and
-`models.<role>.max_tokens`. Adapters use these fields when their descriptors
-declare support; unsupported settings fail during planning. See the
-[Python SDK guide](../sdk/python.mdx) and the selected adapter guide for the
-exact mapping and limits.
+### Harbor Evaluation Reliability
 
-The [Deep Agents adapter](../integrations/harness/deepagents.mdx) also adds an
-opt-in local shell backend for supervised demonstrations. This backend runs
-commands with the adapter host user's permissions and provides no process
-isolation.
+The [Harbor integration](../integrations/consumer/harbor.mdx) supports Harbor 0.23, derives skills, MCP, and ATIF admission from the selected adapter metadata, and checks the task descriptor before execution. It preserves invocation usage, outcomes, and deadlines, expands requested skill collections, keeps credential values out of retained transport specifications, and collects finalized Relay trajectory artifacts. Calculator examples cover Pi and Codex alongside the existing harness workflows.
+
+### Telemetry, Usage, And Environment Controls
+
+Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent invocations under one Relay session while preserving a separate ATIF trajectory per invocation. Adapter-owned Relay root scopes carry standardized NeMo Fabric correlation IDs.
+
+Usage includes optional cached-input counts and explicit cache-inclusion semantics. Adapters can also supply cache-write, reasoning, peak-request, and per-model details through `nemo_fabric.detailed_token_usage.v1`. Missing counters remain unknown, and inclusive input counts must not be counted twice. Refer to [Run Results](../sdk/python.mdx#unified-run-results).
+
+Use [environment forwarding by name](../sdk/python.mdx#set-environment-values-or-forward-them-by-name), `environment.env_names`, to supply existing process variables to adapters while retaining only their names in core configurations and run plans. Unset names or changed values on an active runtime fail explicitly. Harbor still owns delivery into the task environment.
+
+Claude and Codex now honor configured invocation timeouts, and Claude child processes receive Relay logging variables. Harnesses supporting `insecure_http_model_hosts` can explicitly trust HTTP model-provider hosts; HTTPS remains the default for remote model endpoints, and MCP restrictions are unchanged.
+
+### Dependency Security Updates
+
+The release requires `langgraph-sdk>=0.4.4` and `fsspec>=2026.6.0` at the affected dependency-owning surfaces, excluding versions affected by CVE-2026-104873 and CVE-2026-104851. TypeScript dependency updates also address audit findings.
 
 ## Current Limitations
 
-The current release has the following limitations:
-
-- Provider-backed third-party adapter registries are not included.
-- An automated adapter conformance suite is not included.
-- Cancellation, live updates, and cold resume are not exposed as supported
-  adapter lifecycle operations. Shared service handles cannot be persisted
-  across processes.
-- The [Remote Agent adapter](../integrations/harness/remote-agent.mdx) does not
-  normalize the remote service's MCP, skills, tool policy, or subagents. Relay
-  streaming requires a separately instrumented remote service and a collector
-  reachable by that service and NeMo Fabric.
-- The new Cline, OpenCode, and Qwen Code adapters do not support Relay
-  telemetry or native streaming. Consult each adapter guide for other
-  capability limits.
+- Provider-backed third-party adapter registries and an automated adapter conformance suite are not included. The adapter catalog supplies metadata snapshots, not executable discovery.
+- Cancellation, live updates, and cold resume are not exposed as supported adapter lifecycle operations. Shared service handles remain process-local.
+- The sandbox command bridge supports one runtime lifecycle per sandbox, including after stop. Replace the sandbox to start another lifecycle. It requires Unix sockets and does not expose SDK streaming; direct SDK consumers retain their existing multi-runtime and streaming capabilities.
+- Factory Droid, OpenHands, Kilo Code, Cline, OpenCode, and Qwen Code do not support Relay telemetry or native NeMo Fabric streaming. Consult each adapter guide for other limits.
+- Harbor trace export requires a Harbor build containing [PR #3528](https://github.com/harbor-framework/harbor/pull/3528) or a release including that fix. Recorded trajectory artifacts remain available independently of Harbor's exporter.
+- The [Remote Agent adapter](../integrations/harness/remote-agent.mdx) does not normalize the remote service's MCP, skills, tool policy, or subagents. Relay streaming requires a separately instrumented remote service and a collector reachable by that service and NeMo Fabric.
