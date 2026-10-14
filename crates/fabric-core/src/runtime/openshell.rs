@@ -586,12 +586,21 @@ fn collect_result_artifacts(
         }
         Ok(value.to_string())
     };
-    let paths = result
-        .artifacts
-        .artifacts
-        .iter()
-        .map(|artifact| relative(&artifact.path))
-        .collect::<Result<Vec<_>>>()?;
+    let mut declared = Vec::with_capacity(result.artifacts.artifacts.len());
+    let mut paths = Vec::with_capacity(result.artifacts.artifacts.len());
+    for artifact in std::mem::take(&mut result.artifacts.artifacts) {
+        let path = relative(&artifact.path)?;
+        if is_internal_sdk_artifact(&path) {
+            continue;
+        }
+        paths.push(path);
+        declared.push(artifact);
+    }
+    result.artifacts.artifacts = declared;
+    if paths.is_empty() {
+        result.artifacts.root = None;
+        return Ok(());
+    }
     let root = plan
         .config
         .runtime
@@ -668,6 +677,12 @@ fn collect_result_artifacts(
     }
     result.artifacts.root = Some(root);
     Ok(())
+}
+
+fn is_internal_sdk_artifact(path: &str) -> bool {
+    path == ".fabric"
+        || path.starts_with(".fabric/")
+        || matches!(path, "workspace.patch" | "workspace-status.txt")
 }
 
 #[cfg(unix)]
@@ -856,6 +871,16 @@ mod tests {
         set_state(&key, "runtime-one", State::Active);
         set_state(&key, "runtime-two", State::Active);
         BINDINGS.lock().expect("bindings").remove(&key);
+    }
+
+    #[test]
+    fn internal_sdk_artifacts_are_not_exported_as_declared_files() {
+        assert!(is_internal_sdk_artifact(".fabric/stdout.txt"));
+        assert!(is_internal_sdk_artifact(".fabric/relay-config.json"));
+        assert!(is_internal_sdk_artifact("workspace.patch"));
+        assert!(is_internal_sdk_artifact("workspace-status.txt"));
+        assert!(!is_internal_sdk_artifact("echo.json"));
+        assert!(!is_internal_sdk_artifact("reports/review.json"));
     }
 
     #[test]
