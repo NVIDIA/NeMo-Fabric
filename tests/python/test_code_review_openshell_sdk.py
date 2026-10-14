@@ -169,3 +169,4 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
 
 def test_code_review_type_annotations_resolve():
     get_type_hints(openshell.OpenShellCodeReview._command)
+    get_type_hints(consumer.run_demo)
