@@ -734,20 +734,22 @@ mod tests {
 
     #[test]
     fn prepare_response_timeout_covers_cleanup_after_readiness() {
-        let environment = EnvironmentPlan {
-            provider: OPEN_SHELL_PROVIDER_ID.to_string(),
-            control_location: ControlLocation::InEnvControl,
-            ownership: EnvironmentOwnership::FabricOwned,
-            workspace: None,
-            artifacts: None,
-            env: BTreeMap::new(),
-            connection: serde_json::Map::new(),
-            metadata: serde_json::Map::new(),
-            settings: serde_json::Map::from_iter([
-                ("ready_timeout_seconds".to_string(), serde_json::json!(60)),
-                ("delete_timeout_seconds".to_string(), serde_json::json!(30)),
-            ]),
-        };
+        let environment: EnvironmentPlan = serde_json::from_value(serde_json::json!({
+            "provider": OPEN_SHELL_PROVIDER_ID,
+            "control_location": ControlLocation::InEnvControl,
+            "ownership": EnvironmentOwnership::FabricOwned,
+            "workspace": null,
+            "artifacts": null,
+            "env": {},
+            "env_names": [],
+            "connection": {},
+            "metadata": {},
+            "settings": {
+                "ready_timeout_seconds": 60,
+                "delete_timeout_seconds": 30
+            }
+        }))
+        .expect("environment fixture");
         let operation = ProviderOperation::Prepare {
             environment_id: "environment-test",
             environment: &environment,
