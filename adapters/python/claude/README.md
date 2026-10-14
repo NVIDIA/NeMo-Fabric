@@ -9,7 +9,7 @@ The `nvidia.fabric.claude` adapter uses the official Claude Agent SDK for
 Python behind NeMo Fabric's normalized invocation contract. The SDK is an
 implementation detail; consumers select the Claude harness by adapter ID.
 
-The `harness` extra pins `claude-agent-sdk==0.2.120`; use the same version for an
+The `harness` extra pins `claude-agent-sdk==0.2.165`; use the same version for an
 environment-managed SDK. The SDK supplies a compatible Claude Code runtime.
 
 ## Install
