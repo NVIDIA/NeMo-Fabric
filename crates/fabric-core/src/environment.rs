@@ -9,7 +9,9 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+#[cfg(unix)]
+use std::process::ChildStdin;
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{LazyLock, Mutex};
 use std::thread;
@@ -449,6 +451,7 @@ where
 struct ProviderProcess {
     command: OsString,
     child: Child,
+    #[cfg(unix)]
     stdin: ChildStdin,
     responses: Receiver<std::io::Result<Vec<u8>>>,
     responses_thread: Option<thread::JoinHandle<()>>,
@@ -469,6 +472,7 @@ impl ProviderProcess {
                 code: "provider_unavailable".to_string(),
                 message: format!("could not start `{}`: {error}", command.to_string_lossy()),
             })?;
+        #[cfg(unix)]
         let stdin =
             child
                 .stdin
@@ -536,6 +540,7 @@ impl ProviderProcess {
         Ok(Self {
             command,
             child,
+            #[cfg(unix)]
             stdin,
             responses,
             responses_thread: Some(responses_thread),
