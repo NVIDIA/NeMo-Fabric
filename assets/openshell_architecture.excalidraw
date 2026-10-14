@@ -1,7 +1,7 @@
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "https://excalidraw.com",
+  "source": "https://app.excalidraw.com",
   "elements": [
     {
       "id": "title",
@@ -38,7 +38,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "a0"
+      "index": "a0",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "host",
@@ -66,7 +69,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "a1"
+      "index": "a1",
+      "created": null
     },
     {
       "id": "host-title",
@@ -103,7 +107,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "a2"
+      "index": "a2",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "app",
@@ -131,7 +138,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "a3"
+      "index": "a3",
+      "created": null
     },
     {
       "id": "app-title",
@@ -168,7 +176,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "a4"
+      "index": "a4",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "child",
@@ -196,7 +207,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "a5"
+      "index": "a5",
+      "created": null
     },
     {
       "id": "child-title",
@@ -233,7 +245,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "a6"
+      "index": "a6",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "consumer",
@@ -272,7 +287,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "a7"
+      "index": "a7",
+      "created": null
     },
     {
       "id": "consumer-label",
@@ -309,7 +325,10 @@
       "containerId": "consumer",
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "a8"
+      "index": "a8",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "sdk",
@@ -352,7 +371,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "a9"
+      "index": "a9",
+      "created": null
     },
     {
       "id": "sdk-label",
@@ -389,7 +409,10 @@
       "containerId": "sdk",
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aA"
+      "index": "aA",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "provider",
@@ -432,7 +455,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "aB"
+      "index": "aB",
+      "created": null
     },
     {
       "id": "provider-label",
@@ -469,7 +493,10 @@
       "containerId": "provider",
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aC"
+      "index": "aC",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "provider-life",
@@ -506,7 +533,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aD"
+      "index": "aD",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "gateway",
@@ -549,7 +579,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "aE"
+      "index": "aE",
+      "created": null
     },
     {
       "id": "gateway-label",
@@ -586,7 +617,10 @@
       "containerId": "gateway",
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aF"
+      "index": "aF",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "sandbox",
@@ -614,7 +648,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "aG"
+      "index": "aG",
+      "created": null
     },
     {
       "id": "sandbox-title",
@@ -651,7 +686,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aH"
+      "index": "aH",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "ctl",
@@ -694,7 +732,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "aI"
+      "index": "aI",
+      "created": null
     },
     {
       "id": "ctl-label",
@@ -731,7 +770,10 @@
       "containerId": "ctl",
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aJ"
+      "index": "aJ",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "server",
@@ -774,7 +816,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "aK"
+      "index": "aK",
+      "created": null
     },
     {
       "id": "server-label",
@@ -811,7 +854,10 @@
       "containerId": "server",
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aL"
+      "index": "aL",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "adapter",
@@ -854,7 +900,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "aM"
+      "index": "aM",
+      "created": null
     },
     {
       "id": "adapter-label",
@@ -891,7 +938,10 @@
       "containerId": "adapter",
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aN"
+      "index": "aN",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "agent",
@@ -934,7 +984,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "aO"
+      "index": "aO",
+      "created": null
     },
     {
       "id": "agent-label",
@@ -971,7 +1022,10 @@
       "containerId": "agent",
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aP"
+      "index": "aP",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "files",
@@ -1010,7 +1064,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "aQ"
+      "index": "aQ",
+      "created": null
     },
     {
       "id": "files-label",
@@ -1047,7 +1102,10 @@
       "containerId": "files",
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aR"
+      "index": "aR",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "consumer-sdk",
@@ -1089,17 +1147,24 @@
       "endArrowhead": "arrow",
       "startBinding": {
         "elementId": "consumer",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0.5001,
+          1
+        ]
       },
       "endBinding": {
         "elementId": "sdk",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0.5001,
+          0
+        ]
       },
       "elbowed": false,
       "index": "aS",
-      "lastCommittedPoint": null
+      "lastCommittedPoint": null,
+      "created": null
     },
     {
       "id": "sdk-provider",
@@ -1141,17 +1206,24 @@
       "endArrowhead": "arrow",
       "startBinding": {
         "elementId": "sdk",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          1,
+          0.5001
+        ]
       },
       "endBinding": {
         "elementId": "provider",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0,
+          0.5001
+        ]
       },
       "elbowed": false,
       "index": "aT",
-      "lastCommittedPoint": null
+      "lastCommittedPoint": null,
+      "created": null
     },
     {
       "id": "ipc-label",
@@ -1188,7 +1260,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aU"
+      "index": "aU",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "provider-gateway",
@@ -1234,17 +1309,24 @@
       "endArrowhead": "arrow",
       "startBinding": {
         "elementId": "provider",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0.5001,
+          1
+        ]
       },
       "endBinding": {
         "elementId": "gateway",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          1,
+          0.5001
+        ]
       },
       "elbowed": false,
       "index": "aV",
-      "lastCommittedPoint": null
+      "lastCommittedPoint": null,
+      "created": null
     },
     {
       "id": "openshell-api",
@@ -1281,7 +1363,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aW"
+      "index": "aW",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "gateway-ctl",
@@ -1339,17 +1424,24 @@
       "endArrowhead": "arrow",
       "startBinding": {
         "elementId": "gateway",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0.5001,
+          1
+        ]
       },
       "endBinding": {
         "elementId": "ctl",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0.5001,
+          0
+        ]
       },
       "elbowed": false,
       "index": "aX",
-      "lastCommittedPoint": null
+      "lastCommittedPoint": null,
+      "created": null
     },
     {
       "id": "exec-label",
@@ -1370,15 +1462,15 @@
       "frameId": null,
       "roundness": null,
       "seed": 1035,
-      "version": 2,
-      "versionNonce": 1291552770,
+      "version": 13,
+      "versionNonce": 1978526323,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1791767774371,
+      "updated": 1792000328007,
       "link": null,
       "locked": false,
-      "text": "Exec: run runtime ctl",
-      "originalText": "Exec: run runtime ctl",
+      "text": "Exec: run fabric-runtime-ctl",
+      "originalText": "Exec: run fabric-runtime-ctl",
       "fontSize": 17,
       "fontFamily": 2,
       "textAlign": "left",
@@ -1386,7 +1478,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aY"
+      "index": "aY",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "ctl-server",
@@ -1428,17 +1523,24 @@
       "endArrowhead": "arrow",
       "startBinding": {
         "elementId": "ctl",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          1,
+          0.5001
+        ]
       },
       "endBinding": {
         "elementId": "server",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0,
+          0.5001
+        ]
       },
       "elbowed": false,
       "index": "aZ",
-      "lastCommittedPoint": null
+      "lastCommittedPoint": null,
+      "created": null
     },
     {
       "id": "socket-label",
@@ -1475,7 +1577,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aa"
+      "index": "aa",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "server-adapter",
@@ -1517,17 +1622,24 @@
       "endArrowhead": "arrow",
       "startBinding": {
         "elementId": "server",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0.5001,
+          1
+        ]
       },
       "endBinding": {
         "elementId": "adapter",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0.5001,
+          0
+        ]
       },
       "elbowed": false,
       "index": "ab",
-      "lastCommittedPoint": null
+      "lastCommittedPoint": null,
+      "created": null
     },
     {
       "id": "adapter-ipc",
@@ -1564,7 +1676,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "ac"
+      "index": "ac",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "adapter-agent",
@@ -1606,17 +1721,24 @@
       "endArrowhead": "arrow",
       "startBinding": {
         "elementId": "adapter",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0,
+          0.5001
+        ]
       },
       "endBinding": {
         "elementId": "agent",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          1,
+          0.5001
+        ]
       },
       "elbowed": false,
       "index": "ad",
-      "lastCommittedPoint": null
+      "lastCommittedPoint": null,
+      "created": null
     },
     {
       "id": "harness-label",
@@ -1653,7 +1775,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "ae"
+      "index": "ae",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "agent-files",
@@ -1695,17 +1820,24 @@
       "endArrowhead": "arrow",
       "startBinding": {
         "elementId": "agent",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0.5001,
+          1
+        ]
       },
       "endBinding": {
         "elementId": "files",
-        "focus": 0,
-        "gap": 2
+        "mode": "orbit",
+        "fixedPoint": [
+          0.20894840477670248,
+          0.20894840477670257
+        ]
       },
       "elbowed": false,
       "index": "af",
-      "lastCommittedPoint": null
+      "lastCommittedPoint": null,
+      "created": null
     },
     {
       "id": "file-label",
@@ -1742,7 +1874,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "ag"
+      "index": "ag",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "socket-path",
@@ -1779,7 +1914,10 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "ah"
+      "index": "ah",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "legend-chip",
@@ -1809,7 +1947,8 @@
       "updated": 1791767774371,
       "link": null,
       "locked": false,
-      "index": "ai"
+      "index": "ai",
+      "created": null
     },
     {
       "id": "legend-chip-label",
@@ -1846,7 +1985,10 @@
       "containerId": "legend-chip",
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "aj"
+      "index": "aj",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "legend",
@@ -1883,14 +2025,18 @@
       "containerId": null,
       "autoResize": false,
       "lineHeight": 1.25,
-      "index": "ak"
+      "index": "ak",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     }
   ],
   "appState": {
+    "gridSize": 20,
+    "gridStep": 5,
+    "gridModeEnabled": false,
     "viewBackgroundColor": "#ffffff",
-    "exportBackground": true,
-    "exportEmbedScene": true,
-    "gridSize": null
+    "lockedMultiSelections": {}
   },
   "files": {}
 }

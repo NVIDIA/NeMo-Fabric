@@ -7,6 +7,19 @@ SPDX-License-Identifier: Apache-2.0
 
 This optional host process connects NVIDIA NeMo Fabric to OpenShell through its Rust SDK. The application uses the normal NeMo Fabric SDK; OpenShell owns sandbox isolation, network policy, and deletion. The agent and its adapter run inside the task image.
 
+## Architecture
+
+The diagrams show the host and sandbox responsibilities, followed by how an SDK
+`invoke` call travels through the provider to the runtime in the sandbox.
+
+![Fabric agent execution in OpenShell](../../assets/openshell_architecture.png)
+
+[Edit the architecture diagram](../../assets/openshell_architecture.excalidraw).
+
+![SDK invocation flow](../../assets/openshell_invocation.png)
+
+[Edit the invocation diagram](../../assets/openshell_invocation.excalidraw).
+
 Build from the repository root:
 
 ```sh
