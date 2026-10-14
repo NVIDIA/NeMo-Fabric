@@ -69,6 +69,7 @@ async def test_multiple_runtime_ids_are_independently_routed(
 
     stopped = await host.handle(host_request("stop", runtime_id="runtime-1"))
     assert stopped["status"] == "succeeded"
+    assert host.runtimes["runtime-1"].runtime is None
     assert (
         await host.handle(host_request("invoke", runtime_id="runtime-2", input={}))
     )["status"] == "succeeded"
@@ -305,6 +306,7 @@ async def test_non_active_returned_runtime_is_owned_for_stop(
     assert host.runtimes["runtime-1"].runtime is mock_runtime
     assert (await host.handle(host_request("stop")))["status"] == "succeeded"
     mock_runtime.stop.assert_awaited_once_with()
+    assert host.runtimes["runtime-1"].runtime is None
     next_response = await host.handle(host_request("start"))
     assert next_response["status"] == "succeeded"
     assert next_response["result"]["runtime_id"] == "runtime-2"
@@ -363,9 +365,52 @@ async def test_busy_shutdown_defers_to_sandbox_supervisor(
 async def test_failed_shutdown_rejects_work(host, host_request, mock_runtime):
     await host.handle(host_request("start"))
     mock_runtime.stop.side_effect = RuntimeError("PRIVATE")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ProtocolError) as caught:
         await host.shutdown()
+    assert caught.value.code == "cleanup_unconfirmed"
     assert (await host.handle(host_request("invoke", input={})))["error"][
         "code"
     ] == "host_stopping"
     assert host.has_used_runtime
+
+
+async def test_shutdown_attempts_all_runtimes_after_a_stop_failure(
+    host, host_request, mock_fabric, mock_runtime, runtime_factory
+):
+    second = runtime_factory("runtime-2")
+    mock_fabric.start_runtime.side_effect = [mock_runtime, second]
+    await host.handle(host_request("start"))
+    await host.handle(host_request("start"))
+    mock_runtime.stop.side_effect = RuntimeError("PRIVATE")
+
+    with pytest.raises(ProtocolError) as caught:
+        await host.shutdown()
+
+    assert caught.value.code == "cleanup_unconfirmed"
+    mock_runtime.stop.assert_awaited_once_with()
+    second.stop.assert_awaited_once_with()
+    assert host.runtimes["runtime-1"].state == "unknown"
+    assert host.runtimes["runtime-1"].runtime is mock_runtime
+    assert host.runtimes["runtime-2"].state == "stopped"
+    assert host.runtimes["runtime-2"].runtime is None
+
+
+async def test_stopped_runtime_records_are_bounded(
+    host, host_request, mock_fabric, runtime_factory
+):
+    for index in range(130):
+        runtime = runtime_factory(f"runtime-{index}")
+        mock_fabric.start_runtime.return_value = runtime
+        started = await host.handle(host_request("start"))
+        runtime_id = started["result"]["runtime_id"]
+        stopped = await host.handle(
+            host_request("stop", runtime_id=runtime_id)
+        )
+        assert stopped["status"] == "succeeded"
+
+    assert len(host.runtimes) == 128
+    assert "runtime-0" not in host.runtimes
+    assert "runtime-129" in host.runtimes
+    assert (
+        await host.handle(host_request("stop", runtime_id="runtime-129"))
+    )["status"] == "succeeded"

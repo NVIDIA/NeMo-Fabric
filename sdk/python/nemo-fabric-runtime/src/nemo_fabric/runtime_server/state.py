@@ -26,10 +26,12 @@ from nemo_fabric.runtime_server.protocol import (
     validate_request,
 )
 
+MAX_STOPPED_RUNTIME_RECORDS = 128
+
 
 @dataclass
 class OwnedRuntime:
-    runtime: Runtime
+    runtime: Runtime | None
     agent: str
     state: str = "running"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
@@ -63,8 +65,22 @@ class RuntimeServer:
 
     async def _stop(self, owned: OwnedRuntime) -> None:
         owned.state = "unknown"
-        await owned.runtime.stop()
+        runtime = owned.runtime
+        if runtime is not None:
+            await runtime.stop()
+        owned.runtime = None
         owned.state = "stopped"
+        runtime_id = runtime.runtime_id if runtime is not None else None
+        if runtime_id is not None:
+            self.runtimes.pop(runtime_id, None)
+            self.runtimes[runtime_id] = owned
+        stopped_ids = [
+            runtime_id
+            for runtime_id, record in self.runtimes.items()
+            if record.state == "stopped"
+        ]
+        for runtime_id in stopped_ids[:-MAX_STOPPED_RUNTIME_RECORDS]:
+            self.runtimes.pop(runtime_id, None)
 
     async def handle(self, request: Any) -> dict[str, Any]:
         operation = (
@@ -140,6 +156,7 @@ class RuntimeServer:
                 stage = "invoke"
                 if (
                     owned.state != "running"
+                    or owned.runtime is None
                     or owned.runtime.status != RuntimeStatus.ACTIVE
                 ):
                     raise ProtocolError("runtime_unavailable", stage)
@@ -179,8 +196,14 @@ class RuntimeServer:
             or any(owned.lock.locked() for owned in self.runtimes.values())
         ):
             raise ProtocolError("cleanup_unconfirmed", "stop")
+        cleanup_failures: list[Exception] = []
         async with self._start_lock:
             for owned in tuple(self.runtimes.values()):
                 async with owned.lock:
                     if owned.state != "stopped":
-                        await self._stop(owned)
+                        try:
+                            await self._stop(owned)
+                        except Exception as error:
+                            cleanup_failures.append(error)
+        if cleanup_failures:
+            raise ProtocolError("cleanup_unconfirmed", "stop")
