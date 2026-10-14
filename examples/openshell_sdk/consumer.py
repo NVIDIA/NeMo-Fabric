@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,23 @@ def _json_input(value: str) -> Any:
         return json.loads(value)
     except json.JSONDecodeError:
         return value
+
+
+def _record_fabric_owned_sandbox(args: argparse.Namespace, environment: Any) -> None:
+    if args.ownership != "fabric_owned":
+        return
+    state_file = os.environ.get("OPENSHELL_FABRIC_SANDBOX_STATE_FILE")
+    sandbox_id = environment.connection.get("sandbox_id")
+    if not state_file or not isinstance(sandbox_id, str) or not sandbox_id:
+        raise RuntimeError("prepared environment did not expose its sandbox identity")
+    path = Path(state_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(
+        json.dumps({"name": args.sandbox_name, "id": sandbox_id}) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
 
 
 def _config(
@@ -117,6 +135,7 @@ async def run_demo(
             environment = await fabric.attach_environment(config, reference)
         else:
             environment = await fabric.prepare_environment(config)
+            _record_fabric_owned_sandbox(args, environment)
 
         runtime = await fabric.start_runtime_in(config, environment)
         first = await runtime.invoke(

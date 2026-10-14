@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Run a NeMo Fabric Agent in OpenShell
+# Run NVIDIA NeMo Fabric Agents in OpenShell
 
 These examples use OpenShell as the sandbox and policy boundary while keeping
 the normal NeMo Fabric SDK lifecycle in the consumer. The agent and its adapter
@@ -44,13 +44,17 @@ passes its handle to the consumer, and cleans up resources it created.
 
 `OPENSHELL_EXAMPLE_MODE` accepts `caller_owned`, `fabric_owned`, or `both`.
 Caller-owned mode creates a sandbox before invoking the SDK consumer and
-confirms it remains after detach. Fabric-owned mode lets the provider create
+confirms it remains after detach. NeMo Fabric-owned mode lets the provider create
 the sandbox through `prepare_environment` and confirms
 `release_environment` removes it. A workload can support either or both modes.
+After `prepare_environment()` succeeds in `fabric_owned` mode, the consumer
+writes the returned sandbox name and ID to the path in
+`OPENSHELL_FABRIC_SANDBOX_STATE_FILE`. If the consumer then fails, the launcher
+deletes the sandbox only when its current ID still matches that recorded ID.
 
 ## Agent readiness
 
-A Fabric-ready agent needs a registered adapter and a runtime image that
+A NeMo Fabric-ready agent needs a registered adapter and a runtime image that
 contains the adapter, its harness and dependencies, the task, and the
 `fabric-agent-ctl` runtime server. Keep sandbox lifecycle and model access in
 the consumer/provider configuration. The agent itself should not need

@@ -8,8 +8,8 @@ set -euo pipefail
 
 OPEN_SHELL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FABRIC_ROOT="$(cd "${OPEN_SHELL_ROOT}/../.." && pwd)"
-OPEN_SHELL_VERSION="${OPEN_SHELL_VERSION:-v0.1.2}"
-OPEN_SHELL_IMAGE_VERSION="${OPEN_SHELL_VERSION#v}"
+OPENSHELL_VERSION="${OPENSHELL_VERSION:-v0.1.2}"
+OPEN_SHELL_IMAGE_VERSION="${OPENSHELL_VERSION#v}"
 GATEWAY_PORT="${OPENSHELL_EXAMPLE_PORT:-18080}"
 GATEWAY_START_TIMEOUT="${OPENSHELL_EXAMPLE_GATEWAY_START_TIMEOUT:-120}"
 EXAMPLE_MODE="${OPENSHELL_EXAMPLE_MODE:-both}"
@@ -43,7 +43,7 @@ mkdir -p "${RESULT_DIR}" "${FABRIC_ROOT}/.tmp"
 RESULT_DIR="$(cd "${RESULT_DIR}" && pwd)"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-${FABRIC_ROOT}/.tmp/uv-cache}"
 GATEWAY_STATE_DIR="$(mktemp -d "${FABRIC_ROOT}/.tmp/openshell-demo.XXXXXX")"
-OPEN_SHELL_CACHE_DIR="${FABRIC_ROOT}/.tmp/openshell-releases/${OPEN_SHELL_VERSION}"
+OPEN_SHELL_CACHE_DIR="${FABRIC_ROOT}/.tmp/openshell-releases/${OPENSHELL_VERSION}"
 OPEN_SHELL_BIN_DIR="${OPEN_SHELL_CACHE_DIR}/bin"
 HOST_ARCH="$(uname -m)"
 case "${HOST_ARCH}" in
@@ -63,6 +63,8 @@ OPENSHELL_GATEWAY="${OPEN_SHELL_BIN_DIR}/openshell-gateway"
 WORKLOAD_SLUG="${WORKLOAD_NAME:0:3}"
 SANDBOX_NAME="fab-${WORKLOAD_SLUG}-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:8])')"
 FABRIC_SANDBOX_NAME="fab-${WORKLOAD_SLUG}-o-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:8])')"
+FABRIC_SANDBOX_STATE_FILE="${RESULT_DIR}/fabric-owned-sandbox.json"
+rm -f -- "${FABRIC_SANDBOX_STATE_FILE}"
 RUNTIME_IMAGE=""
 GATEWAY_PID=""
 EVIDENCE_PID=""
@@ -92,7 +94,7 @@ done
 download_asset() {
   local asset="$1"
   local sums="$2"
-  local release_url="https://github.com/NVIDIA/OpenShell/releases/download/${OPEN_SHELL_VERSION}"
+  local release_url="https://github.com/NVIDIA/OpenShell/releases/download/${OPENSHELL_VERSION}"
   mkdir -p "${OPEN_SHELL_CACHE_DIR}" "${OPEN_SHELL_BIN_DIR}"
   if [[ ! -s "${OPEN_SHELL_CACHE_DIR}/${sums}" ]]; then
     curl --fail --location --retry 3 --show-error --silent \
@@ -142,6 +144,23 @@ cleanup() {
           --workspace default sandbox delete "${SANDBOX_NAME}" >/dev/null 2>&1; then
         echo "ERROR: could not delete caller-owned sandbox ${SANDBOX_NAME}" >&2
         status=1
+      fi
+    fi
+  fi
+  if [[ "${status}" -ne 0 && -s "${FABRIC_SANDBOX_STATE_FILE}" && -x "${OPENSHELL_CLI}" && -n "${GATEWAY_PID}" ]]; then
+    local recorded_name recorded_id current_id current_json
+    read -r recorded_name recorded_id < <(python3 -c 'import json,sys; state=json.load(open(sys.argv[1])); print(state.get("name", ""), state.get("id", ""))' "${FABRIC_SANDBOX_STATE_FILE}")
+    if [[ -n "${recorded_name}" && -n "${recorded_id}" ]] && \
+      current_json="$(${OPENSHELL_CLI} --gateway-endpoint "http://127.0.0.1:${GATEWAY_PORT}" --workspace default sandbox get "${recorded_name}" --output json 2>/dev/null)"; then
+      current_id="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("id", ""))' <<<"${current_json}")"
+      if [[ "${current_id}" == "${recorded_id}" ]]; then
+        if ! "${OPENSHELL_CLI}" --gateway-endpoint "http://127.0.0.1:${GATEWAY_PORT}" \
+          --workspace default sandbox delete "${recorded_name}" >/dev/null 2>&1; then
+          echo "ERROR: could not clean up failed Fabric-owned sandbox ${recorded_name} (${recorded_id})" >&2
+          status=1
+        fi
+      else
+        echo "Skipped cleanup of ${recorded_name}: current sandbox ID does not match recorded ID ${recorded_id}." >&2
       fi
     fi
   fi
@@ -233,7 +252,8 @@ until { true >/dev/tcp/127.0.0.1/"${GATEWAY_PORT}"; } 2>/dev/null; do
 done
 
 run_consumer() {
-  VIRTUAL_ENV="${DEMO_PYTHON_ENV}" UV_PROJECT_ENVIRONMENT="${DEMO_PYTHON_ENV}" \
+  OPENSHELL_FABRIC_SANDBOX_STATE_FILE="${FABRIC_SANDBOX_STATE_FILE}" \
+    VIRTUAL_ENV="${DEMO_PYTHON_ENV}" UV_PROJECT_ENVIRONMENT="${DEMO_PYTHON_ENV}" \
     PATH="${DEMO_PYTHON_ENV}/bin:${PATH}" PYTHONPATH="${FABRIC_ROOT}" \
     NEMO_FABRIC_OPEN_SHELL_PROVIDER="${PROVIDER_BINARY}" \
     run_workload_consumer "$@"

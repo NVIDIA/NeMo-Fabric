@@ -59,14 +59,15 @@ elif name == "openshell":
     if operation == "create":
         if len(sandbox_name) > 19:
             raise RuntimeError("OpenShell sandbox name exceeds 19 characters")
-        state.write_text(json.dumps({"name": sandbox_name, "id": "mock-resource-id"}))
+        state.write_text(json.dumps({"name": sandbox_name,
+                                     "id": os.environ.get("MOCK_SANDBOX_ID", "mock-resource-id")}))
     elif operation == "delete":
         if state.exists() and json.loads(state.read_text())["name"] == sandbox_name:
             state.unlink()
     elif operation == "get":
         if not state.exists() or json.loads(state.read_text())["name"] != sandbox_name:
             sys.exit(1)
-        print('{"id":"mock-resource-id"}')
+        print(json.dumps({"id": os.environ.get("MOCK_SANDBOX_ID", "mock-resource-id")}))
 elif name == "curl":
     raise RuntimeError("tests must use cached release assets")
 elif name == "uv":
@@ -220,6 +221,47 @@ def test_consumer_failure_cleans_up_caller_owned_sandbox(launcher):
     assert completed.returncode == 9
     assert not (root / "sandbox-state.json").exists()
     assert any(operation["command"] == "openshell" and "delete" in operation["args"] for operation in _operations(root))
+
+
+@pytest.mark.parametrize("current_id,deleted", [("owned-id", True), ("replacement-id", False)])
+def test_fabric_owned_failure_cleanup_requires_the_recorded_sandbox_id(
+    launcher, current_id, deleted
+):
+    _, root, _ = launcher
+    workload = root / "fabric-owned-workload.sh"
+    workload.write_text(
+        """WORKLOAD_NAME=fabric-owned-workload
+SUPPORTED_MODES=(fabric_owned)
+stage_workload_image() { :; }
+run_workload_consumer() {
+  local mode="$1"
+  shift
+  local sandbox_name="$2"
+  printf '{"name":"%s","id":"%s"}\\n' "$sandbox_name" "owned-id" > "$OPENSHELL_FABRIC_SANDBOX_STATE_FILE"
+  printf '{"name":"%s","id":"%s"}\\n' "$sandbox_name" "$MOCK_SANDBOX_ID" > "$MOCK_ROOT/sandbox-state.json"
+  uv run --no-sync consumer "$mode" "$@"
+}
+"""
+    )
+
+    completed = _run(
+        launcher,
+        workload,
+        {
+            "OPENSHELL_EXAMPLE_MODE": "fabric_owned",
+            "MOCK_CONSUMER_EXIT": "9",
+            "MOCK_SANDBOX_ID": current_id,
+        },
+    )
+
+    assert completed.returncode == 9
+    assert (root / "sandbox-state.json").exists() is (not deleted)
+    deleted_calls = [
+        operation
+        for operation in _operations(root)
+        if operation["command"] == "openshell" and "delete" in operation["args"]
+    ]
+    assert bool(deleted_calls) is deleted
 
 
 @pytest.mark.parametrize(

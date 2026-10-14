@@ -5,8 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 # SDK Echo in OpenShell
 
-This is the smallest end-to-end example of running a Fabric-ready agent in
-OpenShell through the normal NeMo Fabric SDK. The consumer calls the SDK to
+This is the smallest end-to-end example of running an NVIDIA NeMo Fabric-ready
+agent in OpenShell through the normal NeMo Fabric SDK. The consumer calls the SDK to
 attach or prepare an environment, start and invoke a runtime, then stop and
 release it. The echo adapter has no OpenShell client or sandbox lifecycle code.
 
@@ -28,7 +28,7 @@ bash examples/openshell/run-demo.sh examples/openshell_sdk/demo.sh \
 
 To run one lifecycle mode, set `OPENSHELL_EXAMPLE_MODE=caller_owned` or
 `OPENSHELL_EXAMPLE_MODE=fabric_owned`. The shared launcher checks that the
-caller-owned sandbox remains after SDK detach and that the Fabric-owned
+caller-owned sandbox remains after SDK detach and that the NeMo Fabric-owned
 sandbox is deleted after SDK release.
 
 The consumer writes the two normalized results to
