@@ -8,7 +8,8 @@ SPDX-License-Identifier: Apache-2.0 */}
 The `nvidia.fabric.claude` adapter uses the Claude Agent SDK and its bundled
 Claude Code runtime. NeMo Fabric preserves Claude's native credential precedence and
 forwards only supported operating-system, configuration, and authentication
-variables plus values explicitly configured in `environment.env`.
+variables plus values explicitly configured in `environment.env` or named by
+`environment.env_names`.
 
 The adapter package's `harness` and `full` extras pin
 `claude-agent-sdk==0.2.120`. Use the same version for an environment-managed
@@ -171,7 +172,7 @@ gateway is scoped to that single invocation. Claude still resolves its credentia
 through the selected mode, and NeMo Fabric does not write authentication values
 to Relay configuration or artifacts.
 
-NeMo Fabric supports the external NeMo Relay CLI in the `>=0.9,<0.10` range.
+NeMo Fabric supports the external NeMo Relay CLI in the `>=0.9,<0.11` range.
 NeMo Fabric's `relay` extra installs only the Relay Python library and does not
 install the CLI. NeMo Fabric owns sidecar supervision, Claude configuration,
 and upstream selection. Relay owns the gateway transport and semantic

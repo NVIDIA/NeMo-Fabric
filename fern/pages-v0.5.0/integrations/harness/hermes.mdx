@@ -32,15 +32,16 @@ NeMo Fabric, install only the bare adapter in the Hermes Agent environment:
 python -m pip install nemo-fabric-adapters-hermes
 ```
 
-The adapter package provides `relay` and `full` extras for Relay 0.9. Use them
-only with a Hermes Agent checkout that supports Relay 0.9; the published release
+The adapter package provides `relay` and `full` extras for Relay
+(`nemo-relay>=0.9,<0.11`). Use them only with a Hermes Agent checkout that
+supports Relay 0.9 or 0.10; the published release
 requires a conflicting Relay version. Neither extra installs Hermes Agent. If
 Relay telemetry is enabled with an incompatible Hermes or Relay installation,
 the adapter fails at startup with a compatibility error.
 
 For Relay telemetry or streaming in local NeMo Fabric development, run the
 following command from the repository root. The recipe checks out the merged,
-unreleased Hermes Relay 0.9 revision and creates an isolated Python 3.14
+unreleased Hermes Relay 0.10 revision and creates an isolated Python 3.14
 environment with the adapter's `relay` extra. Update it to a compatible release
 when one is available:
 
@@ -112,6 +113,10 @@ Each NeMo Fabric runtime creates one Hermes Agent `AIAgent` and one `SessionDB`.
 Ordered invocations reuse those objects and the conversation history until the
 runtime stops. The adapter finalizes and flushes Relay subscriber output after
 each invocation so ATOF and ATIF artifacts are complete when it returns.
+
+With a live Relay runtime, Hermes emits `compaction` when a tracked compaction
+rewrites history or provider state. It emits `compaction.attempt` when the
+attempt is blocked, skipped, fails, or aborts without a rewrite.
 
 For the complete configuration and lifecycle reference, refer to the
 [Hermes Agent adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.5.0/adapters/python/hermes).

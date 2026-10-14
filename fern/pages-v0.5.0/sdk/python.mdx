@@ -201,6 +201,12 @@ objects.
 NeMo Fabric provides the runtime contract. Applications own scheduling, queues,
 retries, worker scaling, and the number of runtimes to run.
 
+### Sandbox Command Bridge
+
+`fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, and `stop` commands call the existing `Fabric.start_runtime()`, `Runtime.invoke()`, and `Runtime.stop()` methods. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
+
+Each sandbox supports one runtime lifecycle. Further starts are rejected after successful or uncertain startup, including after stop. Ordinary SDK stop does not confirm descendant cleanup, so the runtime server retains `fabric.unclean` until the caller replaces the sandbox. Direct SDK consumers retain multiple-runtime support. See the [runtime server command guide](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.5.0/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md).
+
 ## Configure Agents In Code
 
 ### Normalized Configuration Compatibility
@@ -234,7 +240,7 @@ Relay subfields:
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core |
 | `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; maps to Hermes iterations | Yes |
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core |
-| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core |
+| `environment.workspace`, `.artifacts`, `.env`, `.env_names` | Core | Core | Core | Core | Core |
 | `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
 | `tools.definitions` | No | No | No | No | No |
 | `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No |
@@ -291,6 +297,42 @@ capability_config.enable_relay(
     output_dir="./artifacts/relay",
 )
 ```
+
+### Set Environment Values Or Forward Them By Name
+
+Use `environment.env` to set literal values. Use `environment.env_names` to forward variables that are already available to the NeMo Fabric process.
+
+| Field | What You Supply | What NeMo Fabric Saves In The Config And Run Plan |
+| --- | --- | --- |
+| `env` | A name and its literal value, such as `LOG_LEVEL: debug` | The name and value |
+| `env_names` | A name, such as `GITHUB_TOKEN` | Only the name |
+
+For example, set `GITHUB_TOKEN` in the shell that launches your application:
+
+```bash
+export GITHUB_TOKEN="example-token"
+```
+
+Then extend the configuration with a literal log level and the token's name:
+
+```python
+from nemo_fabric import EnvironmentConfig
+
+config.environment = EnvironmentConfig(
+    env={"LOG_LEVEL": "debug"},
+    env_names=["GITHUB_TOKEN"],
+)
+```
+
+NeMo Fabric looks up `GITHUB_TOKEN` in its own process environment and passes the actual value, `example-token`, to the adapter in `RuntimeContext.environment.env`. The adapter receives the value, not a name that it must look up. The configuration and run plan contain only the name; NeMo Fabric redacts environment values in the saved adapter invocation. Execution fails if a listed variable is unset. A name cannot appear in both `env` and `env_names`.
+
+`environment.env` does not expand `$GITHUB_TOKEN` or `${GITHUB_TOKEN}`. For example, `env={"GITHUB_TOKEN": "$GITHUB_TOKEN"}` passes the literal text `$GITHUB_TOKEN`. Use `env_names=["GITHUB_TOKEN"]` to request lookup. If your application instead reads the token and places its value in `env`, that value becomes part of the saved configuration and run plan.
+
+A `.env` file stores names and values, such as `GITHUB_TOKEN=example-token`. Neither `env` nor `env_names` loads that file. Your launcher or application must load it into the process environment before NeMo Fabric starts the adapter. The same forwarding mechanism works with variables supplied by a shell, CI secrets, or a container.
+
+With Harbor, the NeMo Fabric process runs inside the task environment. `env_names` reads that process's variables; listing a name does not copy its value from the Harbor host into the task. Harbor owns delivery through its managed execution environment. The existing Harbor bridge uses a separate `environment_env_names` payload field and resolves those names into `environment.env` inside the task runner. That bridge behavior is unchanged by `env_names`. Refer to [Harbor Environment Forwarding](../integrations/consumer/harbor.mdx#environment-forwarding) for the two-stage flow.
+
+NeMo Fabric reads named values at adapter start and checks them before each invocation. Persistent harnesses and shell backends can retain their startup environment, so NeMo Fabric rejects an invocation if a named value has changed instead of sending a context that disagrees with that environment. The error identifies the variable without exposing its value. Restart the runtime and any associated service after changing a forwarded value. Connecting a new runtime to a service also fails if the named values differ from the service's startup values.
 
 ### Configure MCP Authentication And Headers
 
@@ -805,10 +847,11 @@ Streaming has the following v0.1 constraints:
   when it is deployed beyond a trusted local boundary.
 
 Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and
-require a release in the `>=0.9,<0.10` range. Their adapter `harness` and
+require a release in the `>=0.9,<0.11` range. Their adapter `harness` and
 `full` extras install the supported CLI. Deep Agents uses its in-process NeMo
 Relay integration. Hermes Agent uses its in-process Relay integration when
-installed from the merged Relay 0.9 Hermes revision in a separate Python 3.14 environment.
+installed from the merged Relay 0.10 Hermes revision in a separate Python 3.14
+environment.
 Remote Agent services own their Relay installation and publish to the same
 configured `nemo-fabric-stream` collector
 base URL. The local adapter does not install or start Relay for the service.
@@ -892,7 +935,7 @@ if result.usage is not None:
     print(result.usage.get("cost_usd"))
 ```
 
-Each counter is optional: missing values are unknown, not zero. `cached_input_tokens` reports cached prompt tokens. `input_tokens_include_cache` is `True` when those tokens are already included in `input_tokens`, `False` when they are excluded, and absent when the adapter cannot establish the semantics. Consumers must not add cached tokens to an inclusive input count. `cost_usd` contains reported cost only; keep estimates separately in provider metadata rather than presenting them as measured charges.
+Each counter is optional: missing values are unknown, not zero. `cached_input_tokens` reports cached prompt tokens. `input_tokens_include_cache` is `True` when those tokens are already included in `input_tokens`, `False` when they are excluded, and absent when the adapter cannot establish the semantics. Consumers must not add cached tokens to an inclusive input count. Adapters can report cache-write, reasoning, peak request, and per-model detail through the descriptor-declared `usage.extensions["nemo_fabric.detailed_token_usage.v1"]` object. NeMo Fabric preserves that object at `RunUsage.metadata["nemo_fabric.detailed_token_usage.v1"]`. Consumers treat detailed input and output independently: any detailed accounting field for a dimension makes that dimension authoritative, with no fallback to its top-level counters. The views can diverge, and an inclusive total remains unknown when the selected detailed counters do not provide enough information to calculate it. `cost_usd` contains reported cost only; keep estimates separately in provider metadata rather than presenting them as measured charges.
 
 If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial
@@ -988,6 +1031,17 @@ annotations. NeMo Fabric preserves these values in the resolved configuration
 but does not copy them into `RunResult.metadata`. Use `request_id` and
 `RunRequest.context` for per-invocation correlation. `RunResult.metadata`
 contains adapter-specific result details.
+
+To group several invocations into one NeMo Relay session, set
+`RunRequest.relay_session_root` to the same UUID string on each
+invocation. Deep Agents and mini-SWE-agent, which own an in-process Relay Agent
+scope, use it as the propagated Relay root. A UUID `request_id` stays the
+parent; otherwise the session root is also the parent. ATIF exports one
+trajectory per invocation under one `session_id`. An unusable value falls back
+to the per-request root without an error, and the invocation still succeeds. A
+context key named `session_id` does not group traces.
+
+For example, invoke each turn with `RunRequest(input=message, relay_session_root=conversation_uuid)`. Core forwards the typed field as `AgentRunRequest.relay_session_root`. Context keys do not control Relay grouping. Omitting the field preserves per-request behavior. Use matching runtime and adapter-contract versions when sending this field.
 
 Adapter settings are not portable by default. The exact descriptor selected
 during planning owns their JSON Schema. Planning and doctor reject settings

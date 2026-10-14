@@ -66,6 +66,8 @@ navigation:
       path: ../pages-v0.5.0/integrations/harness/codex.mdx
     - page: Cline
       path: ../pages-v0.5.0/integrations/harness/cline.mdx
+    - page: Factory Droid
+      path: ../pages-v0.5.0/integrations/harness/droid.mdx
     - page: Hermes Agent
       path: ../pages-v0.5.0/integrations/harness/hermes.mdx
     - page: LangChain Deep Agents

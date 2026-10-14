@@ -595,6 +595,7 @@ The model defines the following fields:
 | `workspace` | `str \| Path \| None` | No | `None` | — | Workspace path visible to the harness. |
 | `artifacts` | `str \| Path \| None` | No | `None` | — | Environment-specific artifact path. |
 | `env` | `dict[str, str]` | No | `dict()` | — | Environment variables visible to the harness and its tools. Values are serialized into configuration and run plans; prefer api_key_env-style environment-variable-name indirection for credentials. |
+| `env_names` | `list[Annotated[str, Field(pattern='^[A-Za-z_][A-Za-z0-9_]*$')]]` | No | `list()` | — | Names of environment variables visible to the harness and its tools, with values read from the NeMo Fabric process environment. Only the names are serialized into configuration and run plans. Values must remain unchanged while a runtime or service is active; restart the runtime and any associated service to use changed values. |
 | `settings` | `dict[str, Any]` | No | `dict()` | — | Provider-specific configuration interpreted by the environment provider. |
 | `metadata` | `dict[str, Any]` | No | `dict()` | — | Consumer-owned environment metadata passed through without NeMo Fabric semantics. |
 | `connection` | `dict[str, Any]` | No | `dict()` | — | Connection data for an existing environment, such as URL, namespace, or credential reference. |
@@ -1780,7 +1781,7 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `version` | `Literal[3]` | No | `3` | — | — |
+| `version` | `Literal[4]` | No | `4` | — | — |
 | `atof` | `RelayAtofConfig \| dict[str, Any] \| None` | No | `None` | — | — |
 | `atif` | `RelayAtifConfig \| dict[str, Any] \| None` | No | `None` | — | — |
 | `opentelemetry` | `RelayOpenTelemetryConfig \| None` | No | `None` | — | — |
@@ -2550,6 +2551,7 @@ The model defines the following fields:
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
 | `input` | `Any` | No | `''` | — | — |
+| `relay_session_root` | `str \| None` | No | `None` | — | UUID propagation root shared across conversation turns; unusable values fall back to the request ID. |
 | `request_id` | `str` | No | `<generated>` | `MinLen(min_length=1)` | — |
 | `context` | `dict[str, Any]` | No | `dict()` | — | — |
 | `overrides` | `dict[str, Any] \| None` | No | `None` | — | — |

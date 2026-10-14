@@ -89,8 +89,20 @@ The adapter supports the following normalized configuration:
 ### Model Endpoints
 
 The adapter requires `models.<role>.provider: openai`. When `base_url` is set,
-it must identify an OpenAI-compatible Chat Completions endpoint. Remote
-endpoints require HTTPS, with HTTP allowed for loopback development servers.
+it must identify an OpenAI-compatible Chat Completions endpoint.
+
+HTTPS is required by default, except for loopback HTTP. For a trusted Docker or Kubernetes gateway, set `harness.settings.insecure_http_model_hosts` to the exact hostnames that can receive HTTP model requests. Entries contain only hostnames or IPv4 addresses, without schemes, ports, paths, or wildcards. Matching ignores case and a trailing DNS dot, and permits any port or path on the listed host. The adapter does not resolve DNS to infer trust. Allowlisted HTTP endpoints receive model credentials and prompt content over an unencrypted connection. This setting applies only to model endpoints; MCP endpoint restrictions are unchanged.
+
+For example, allow the gateway hosts used by your deployment:
+
+```yaml
+harness:
+  settings:
+    insecure_http_model_hosts:
+      - host.docker.internal
+      - release-nhx-api
+      - gateway.namespace.svc.cluster.local
+```
 
 The adapter reads the variable named by `api_key_env` from NeMo Fabric
 `environment.env` first and then the parent process environment. It does not

@@ -65,7 +65,7 @@ return AgentRunResult(
 | `status` | Required | Reports `succeeded`, `failed`, or `cancelled`. |
 | `output` | Required | Carries the primary JSON-compatible output and can be `null`. |
 | `error` | Required for `failed` | Carries a stable code, safe message, retry guidance, and declared extensions. |
-| `usage` | Optional | Carries invocation-local input, cached-input, output, and total token counts plus reported cost when known. |
+| `usage` | Optional | Carries invocation-local input, cached-input, output, and total token counts plus reported cost when known. Descriptor-declared usage extensions can carry additional detail. |
 | `artifacts` | Optional | Carries target-produced artifact references relative to the runtime artifact root. |
 | `extensions` | Optional | Carries adapter-owned result data validated by the descriptor. |
 
@@ -76,6 +76,10 @@ does not contain a non-null error. Status is explicit and is not inferred from
 arbitrary output fields.
 
 Report only observed invocation usage. For cumulative target counters, compute the difference between successive observations; do not sum cumulative snapshots or substitute the last model response for an entire invocation. Missing and reset counters remain unknown. `cached_input_tokens` records cached prompt tokens; `input_tokens_include_cache` declares whether they are included in `input_tokens` (`True`), excluded (`False`), or unknown (absent). Keep estimates separate from `cost_usd`, and retain available usage on unsuccessful terminal results.
+
+`fabric.adapter/v1alpha2` usage is a closed object. Do not add cache-write, reasoning, peak request, or per-model fields at its root. Put that detail in `usage.extensions["nemo_fabric.detailed_token_usage.v1"]` and declare the extension with `extension_schemas.usage` in the adapter descriptor. The detailed object repeats the normalized input, cached-input, output, and total token fields and can add `cache_write_input_tokens`, `reasoning_tokens`, `output_tokens_include_reasoning`, `peak_request_input_tokens`, and `models`. Within this object, `input_tokens_include_cache` applies to both cached reads and cache writes. Normalize `input_tokens` first if the provider includes only one component. Each model entry uses the same counters and requires a non-blank `model`; include `provider` when known.
+
+NeMo Fabric preserves the extension at `RunResult.usage.metadata["nemo_fabric.detailed_token_usage.v1"]`. Consumers treat the detailed object as authoritative independently for each token dimension. Any of `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, or `input_tokens_include_cache` selects the detailed input counters. Any of `output_tokens`, `reasoning_tokens`, or `output_tokens_include_reasoning` selects the detailed output counters. Consumers do not fall back to the top-level counters for a selected dimension, so the detailed and top-level views can diverge. If the selected counters do not contain enough information to determine an inclusive total, that total remains unknown even when the top-level view contains a value.
 
 **Success Check**: `invoke` returns one typed `AgentRunResult` whose explicit
 status matches the presence or absence of an error.

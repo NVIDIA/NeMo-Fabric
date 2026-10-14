@@ -130,12 +130,22 @@ value:
 | `environment` | Supplies the resolved workspace, artifact root, environment values, ownership, and provider context. |
 | `artifacts` | Lists artifacts visible when the operation begins. |
 | `telemetry` | Supplies invocation telemetry context, including generated Relay configuration when enabled. |
+| `deadline_millis` | Gives the Unix time in milliseconds by which an invocation should return. NeMo Fabric's own invocation timeout fires shortly after and kills the host with its descendant processes; the gap is shorter for very short timeouts. Keep cleanup after the deadline brief, or the invocation fails with `host_timeout` instead of returning the adapter's result. |
 
 Use the canonical
 [`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.5.0/schemas/adapter-contract/runtime-context.schema.json)
 for the exact shape. Runtime identity belongs in `RuntimeContext`, not in
 `AgentConfig.workflow`. Per-invocation task input belongs in the request, not in
 workflow settings.
+
+For in-process Relay telemetry, the optional typed
+`AgentRunRequest.relay_session_root` carries the caller's conversation UUID.
+Pass it directly to `relay_request_context(context.request_id,
+request.relay_session_root)` when opening the invocation Agent scope. A usable
+root groups trajectories from separate invocations under one Relay session.
+Context keys do not control propagation. Omit the field to retain per-request
+behavior. Runtime and adapter-contract versions must support the field when
+it is supplied.
 
 **Success Check**: The adapter reads correlation and environment context from
 `RuntimeContext` and treats every ID as opaque.
