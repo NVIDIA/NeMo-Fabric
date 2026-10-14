@@ -246,12 +246,20 @@ async fn runtime_command<F: GatewayFactory>(
     }
     let (operation, arguments, payload) = command.arguments()?;
     let binding = SandboxBinding::from_environment(&environment)?;
-    let client = factory.connect(&binding.connection).await?;
-    binding.verify(
-        &client
-            .get(binding.connection.workspace.as_deref(), &binding.name)
-            .await?,
-    )?;
+    let call_timeout = Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS);
+    let client = bounded_gateway_call(
+        "connect",
+        call_timeout,
+        factory.connect(&binding.connection),
+    )
+    .await?;
+    let sandbox = bounded_gateway_call(
+        "get",
+        call_timeout,
+        client.get(binding.connection.workspace.as_deref(), &binding.name),
+    )
+    .await?;
+    binding.verify(&sandbox)?;
     let stdin = payload
         .map(|value| serde_json::to_vec(&value))
         .transpose()
@@ -267,8 +275,10 @@ async fn runtime_command<F: GatewayFactory>(
             "SDK command payload exceeds its limit",
         ));
     }
-    let executed = client
-        .exec(
+    let executed = bounded_gateway_call(
+        "exec",
+        Duration::from_secs(timeout_seconds),
+        client.exec(
             binding.connection.workspace.as_deref(),
             &binding.name,
             arguments,
@@ -278,8 +288,9 @@ async fn runtime_command<F: GatewayFactory>(
                 timeout: Duration::from_secs(timeout_seconds),
                 stdin,
             },
-        )
-        .await?;
+        ),
+    )
+    .await?;
     if executed.stdout.len().saturating_add(executed.stderr.len()) > 4 * 1024 * 1024 {
         return Err(ProviderError::contract(
             "response_too_large",
@@ -477,20 +488,30 @@ async fn collect_artifacts<F: GatewayFactory>(
         .cloned()
         .unwrap_or_else(|| "/opt/fabric/bin/python".to_string());
     let binding = SandboxBinding::from_environment(&environment)?;
-    let client = factory.connect(&binding.connection).await?;
-    binding.verify(
-        &client
-            .get(binding.connection.workspace.as_deref(), &binding.name)
-            .await?,
-    )?;
+    let call_timeout = Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS);
+    let client = bounded_gateway_call(
+        "connect",
+        call_timeout,
+        factory.connect(&binding.connection),
+    )
+    .await?;
+    let sandbox = bounded_gateway_call(
+        "get",
+        call_timeout,
+        client.get(binding.connection.workspace.as_deref(), &binding.name),
+    )
+    .await?;
+    binding.verify(&sandbox)?;
     let stdin = serde_json::to_vec(&json!({"root": root, "paths": paths})).map_err(|_| {
         ProviderError::contract(
             "invalid_artifact_path",
             "artifact request could not be encoded",
         )
     })?;
-    let executed = client
-        .exec(
+    let executed = bounded_gateway_call(
+        "exec",
+        Duration::from_secs(30),
+        client.exec(
             binding.connection.workspace.as_deref(),
             &binding.name,
             vec![
@@ -504,8 +525,9 @@ async fn collect_artifacts<F: GatewayFactory>(
                 timeout: Duration::from_secs(30),
                 stdin: Some(stdin),
             },
-        )
-        .await?;
+        ),
+    )
+    .await?;
     if executed.exit_code != 0
         || executed.stdout.len().saturating_add(executed.stderr.len()) > 3 * 1024 * 1024
     {
@@ -2588,6 +2610,7 @@ mod tests {
                 outcome: DeletionOutcome::Unspecified,
                 sandbox_id: Some("sandbox-id-1".to_string()),
             }),
+            execution: None,
         };
 
         let error = cleanup_created_sandbox(
