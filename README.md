@@ -72,8 +72,11 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 
 ## Roadmap
 
-- **Expand the harness ecosystem:** Add high-priority first- and third-party harnesses through the normalized lifecycle and capability contracts.
-- **Broaden sandbox-native execution:** Add support for additional secure-environment providers beyond [NVIDIA OpenShell](https://docs.nvidia.com/openshell/about/overview).
-- **Deepen NVIDIA ecosystem integrations:** Make NeMo Fabric a standard execution boundary for agent configuration, evaluation, rollouts, artifacts, and telemetry.
-- **Enhance session lifecycle management:** Add explicit cold-start, resume, and fork operations with stable session identifiers and capability-aware errors.
-- **Compose subagents:** Configure supported subagents through validated, portable NeMo Fabric configuration.
+Planned areas of development include:
+
+- **Harness coverage:** Expand supported harnesses and adapter capabilities.
+- **Configuration explainability:** Explain native configuration, mappings, precedence, and unsupported fields; redact secrets without launching harnesses or modifying workspaces.
+- **ACP integration:** Support negotiated sessions, streaming, cancellation, permissions, and capability-dependent resume through Agent Client Protocol.
+- **Sandbox execution:** Support additional sandbox providers, configurable access boundaries, provider-supported sudo, and judge-code isolation.
+- **Environment bootstate:** Capture files, configuration, dependencies, and supported image snapshots for restoration and branching evaluations.
+- **System statistics:** Correlate CPU, memory, elapsed time, available GPU usage, and available token/cost metrics with Fabric execution IDs; identify unavailable measurements.
