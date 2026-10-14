@@ -44,9 +44,12 @@ async def main():
             elif operation == "runtime_command":
                 command = frame["command"]
                 if command["operation"] == "start":
+                    task_root = os.environ.get("FABRIC_TEST_TASK_ROOT")
+                    if task_root is None:
+                        task_root = str(Path(frame["environment"]["workspace"]).parent)
                     runtime = await fabric.start_runtime(
                         FabricConfig.model_validate(command["config"]),
-                        base_dir=Path(os.environ["FABRIC_TEST_TASK_ROOT"]),
+                        base_dir=Path(task_root),
                     )
                     value = runtime.handle.to_mapping()
                 elif command["operation"] == "invoke":
@@ -80,7 +83,10 @@ async def main():
                     [sys.executable, reader],
                     input=json.dumps(
                         {
-                            "root": os.environ["FABRIC_TEST_TASK_ARTIFACTS_ROOT"],
+                            "root": os.environ.get(
+                                "FABRIC_TEST_TASK_ARTIFACTS_ROOT",
+                                frame["environment"]["artifacts"],
+                            ),
                             "paths": frame["paths"],
                         }
                     ),
