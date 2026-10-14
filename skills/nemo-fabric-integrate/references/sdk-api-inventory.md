@@ -43,11 +43,12 @@ The profile is configuration-dependent for telemetry and excludes workflow
 targets and attached services. It is not observed execution provenance.
 
 OpenShell environments use `start_runtime_in` with a prepared or attached
-handle. They support buffered invocation and one bridge runtime lifecycle per
-sandbox. The task SDK owns the runtime ID and normalized result. Declared files
-become host paths under the configured artifact destination; a failed SDK result
-still carries its output, error, and artifacts. Lost responses are not replayed.
-See the [OpenShell provider guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/environment-providers/openshell/README.md).
+handle. They support buffered invocation and multiple independent bridge
+runtime IDs per sandbox. Invocations for different runtime IDs can proceed
+independently. The task SDK owns each runtime ID and normalized result. Declared
+files become host paths under the configured artifact destination; a failed SDK
+result still carries its output, error, and artifacts. Lost responses are not
+replayed. See the [OpenShell provider guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/environment-providers/openshell/README.md).
 
 ## Runtime Methods
 

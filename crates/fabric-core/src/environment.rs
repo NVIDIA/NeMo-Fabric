@@ -8,7 +8,7 @@
 //! environment operations, and returns verified environment handles. Agent
 //! lifecycle and task SDK execution live outside this module.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 #[cfg(unix)]
 use std::io::Write;
@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::process::ChildStdin;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 #[cfg(unix)]
@@ -64,6 +64,8 @@ static LOCAL_ENVIRONMENT_PROVIDER: LocalEnvironmentProvider = LocalEnvironmentPr
 static OPEN_SHELL_ENVIRONMENT_PROVIDER: OpenShellEnvironmentProvider = OpenShellEnvironmentProvider;
 static OPEN_SHELL_PROVIDER_PROCESS: LazyLock<Mutex<Option<ProviderProcess>>> =
     LazyLock::new(|| Mutex::new(None));
+static OPEN_SHELL_RUNTIME_PROCESSES: LazyLock<Mutex<HashMap<String, Arc<Mutex<ProviderProcess>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Resolve a built-in environment provider by its stable configuration id.
 pub(crate) fn resolve_environment_provider(
@@ -337,6 +339,9 @@ fn request_provider_process<T>(command: OsString, operation: ProviderOperation<'
 where
     T: for<'de> Deserialize<'de>,
 {
+    if matches!(&operation, ProviderOperation::RuntimeCommand { .. }) {
+        return request_runtime_provider_process(command, operation);
+    }
     let operation_name = operation.name();
     let response_timeout = operation.response_timeout();
     let request_id = new_id("environment-provider-request");
@@ -480,6 +485,271 @@ where
             provider_error(operation_name, &error.code, error.message)
         }
     }
+}
+
+fn request_runtime_provider_process<T>(
+    command: OsString,
+    operation: ProviderOperation<'_>,
+) -> Result<T>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let ProviderOperation::RuntimeCommand {
+        environment,
+        command: task_command,
+        ..
+    } = &operation
+    else {
+        unreachable!("runtime provider path requires a runtime command")
+    };
+    let operation_name = operation.name();
+    let request_id = new_id("environment-provider-request");
+    let environment_key = environment_resource_key(environment)?;
+    let (identity, is_start, is_stop) = match task_command {
+        TaskCommand::Start { .. } => (request_id.clone(), true, false),
+        TaskCommand::Invoke { runtime_id, .. } => (runtime_id.clone(), false, false),
+        TaskCommand::Stop { runtime_id, .. } => (runtime_id.clone(), false, true),
+    };
+    let process_key = serde_json::json!([environment_key, identity]).to_string();
+    let response_timeout = operation.response_timeout();
+    let request = ProviderRequest {
+        protocol_version: PROVIDER_PROTOCOL_VERSION,
+        request_id: &request_id,
+        operation,
+    };
+    let mut encoded = serde_json::to_vec(&request).map_err(FabricError::SerializeJson)?;
+    if encoded.len() > MAX_PROVIDER_REQUEST_BYTES {
+        return provider_error(
+            operation_name,
+            "request_too_large",
+            format!(
+                "request is {} bytes; the limit is {MAX_PROVIDER_REQUEST_BYTES}",
+                encoded.len()
+            ),
+        );
+    }
+    encoded.push(b'\n');
+
+    let process = runtime_provider_process(&process_key, &command, operation_name)?;
+    let output = {
+        let mut process_guard = process.lock().unwrap_or_else(|error| error.into_inner());
+        let output = (|| -> Result<Vec<u8>> {
+            if process_guard.has_exited(operation_name)? {
+                return Err(provider_failure(
+                    operation_name,
+                    "provider_exited",
+                    "runtime provider process exited before the command".to_string(),
+                ));
+            }
+            process_guard
+                .write_request(&encoded, Duration::from_secs(10))
+                .map_err(|_| {
+                    provider_failure(
+                        operation_name,
+                        "provider_protocol_error",
+                        "could not write the bounded provider request".to_string(),
+                    )
+                })?;
+            match process_guard.responses.recv_timeout(response_timeout) {
+                Ok(Ok(output)) => Ok(output),
+                Ok(Err(_)) => Err(provider_failure(
+                    operation_name,
+                    "provider_protocol_error",
+                    "could not read provider response".to_string(),
+                )),
+                Err(RecvTimeoutError::Timeout) => Err(provider_failure(
+                    operation_name,
+                    "provider_protocol_error",
+                    "provider response deadline expired".to_string(),
+                )),
+                Err(RecvTimeoutError::Disconnected) => Err(provider_failure(
+                    operation_name,
+                    "provider_exited",
+                    "provider closed its response stream".to_string(),
+                )),
+            }
+        })();
+        if output.is_err() {
+            process_guard.shutdown();
+        }
+        output
+    };
+    let output = match output {
+        Ok(output) => output,
+        Err(error) => {
+            remove_runtime_provider_process(&process_key, &process);
+            return Err(error);
+        }
+    };
+    if output.len() > MAX_PROVIDER_RESPONSE_BYTES
+        || output.is_empty()
+        || output.last() != Some(&b'\n')
+    {
+        retire_runtime_provider_process(&process_key, &process);
+        return provider_error(
+            operation_name,
+            "response_too_large",
+            "provider response was incomplete or exceeded its size limit".to_string(),
+        );
+    }
+    let response: ProviderResponse = match serde_json::from_slice(&output) {
+        Ok(response) => response,
+        Err(_) => {
+            retire_runtime_provider_process(&process_key, &process);
+            return provider_error(
+                operation_name,
+                "provider_protocol_error",
+                "provider returned invalid JSON".to_string(),
+            );
+        }
+    };
+    if response.protocol_version != PROVIDER_PROTOCOL_VERSION || response.request_id != request_id {
+        retire_runtime_provider_process(&process_key, &process);
+        return provider_error(
+            operation_name,
+            "provider_correlation_mismatch",
+            "provider response did not match the request".to_string(),
+        );
+    }
+    let output = match response.outcome {
+        ProviderOutcome::Succeeded { output } => output,
+        ProviderOutcome::Failed { error } => {
+            return provider_error(operation_name, &error.code, error.message);
+        }
+    };
+    let runtime_id = if is_start && output["status"] == "returned" {
+        output["value"]["runtime_id"].as_str().map(str::to_owned)
+    } else {
+        None
+    };
+    let stop_succeeded = is_stop && output["status"] == "returned" && output["value"].is_null();
+    let result = serde_json::from_value(output.clone()).map_err(|_| {
+        FabricError::EnvironmentProviderOperation {
+            provider: OPEN_SHELL_PROVIDER_ID.to_string(),
+            operation: operation_name.to_string(),
+            code: "provider_protocol_error".to_string(),
+            message: "provider output did not match the operation contract".to_string(),
+        }
+    })?;
+    if let Some(runtime_id) = runtime_id {
+        let next_key = serde_json::json!([environment_key, runtime_id]).to_string();
+        let mut processes = OPEN_SHELL_RUNTIME_PROCESSES
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if next_key != process_key {
+            if processes.contains_key(&next_key) {
+                drop(processes);
+                retire_runtime_provider_process(&process_key, &process);
+                return provider_error(
+                    operation_name,
+                    "runtime_identity_conflict",
+                    "task SDK returned a runtime ID that is already active".to_string(),
+                );
+            }
+            if processes
+                .get(&process_key)
+                .is_some_and(|current| Arc::ptr_eq(current, &process))
+            {
+                processes.remove(&process_key);
+                processes.insert(next_key, Arc::clone(&process));
+            }
+        }
+    } else if stop_succeeded {
+        retire_runtime_provider_process(&process_key, &process);
+    }
+    Ok(result)
+}
+
+fn runtime_provider_process(
+    process_key: &str,
+    command: &OsString,
+    operation: &str,
+) -> Result<Arc<Mutex<ProviderProcess>>> {
+    loop {
+        let existing = OPEN_SHELL_RUNTIME_PROCESSES
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(process_key)
+            .cloned();
+        if let Some(process) = existing {
+            let same_command = process
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .command
+                == *command;
+            if same_command {
+                return Ok(process);
+            }
+            retire_runtime_provider_process(process_key, &process);
+            continue;
+        }
+
+        let candidate = Arc::new(Mutex::new(ProviderProcess::spawn(
+            command.clone(),
+            operation,
+        )?));
+        let selected = {
+            let mut processes = OPEN_SHELL_RUNTIME_PROCESSES
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            Arc::clone(
+                processes
+                    .entry(process_key.to_string())
+                    .or_insert_with(|| Arc::clone(&candidate)),
+            )
+        };
+        if Arc::ptr_eq(&candidate, &selected) {
+            return Ok(candidate);
+        }
+        candidate
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .shutdown();
+    }
+}
+
+fn remove_runtime_provider_process(process_key: &str, process: &Arc<Mutex<ProviderProcess>>) {
+    let mut processes = OPEN_SHELL_RUNTIME_PROCESSES
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if processes
+        .get(process_key)
+        .is_some_and(|current| Arc::ptr_eq(current, process))
+    {
+        processes.remove(process_key);
+    }
+}
+
+fn retire_runtime_provider_process(process_key: &str, process: &Arc<Mutex<ProviderProcess>>) {
+    remove_runtime_provider_process(process_key, process);
+    process
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .shutdown();
+}
+
+fn environment_resource_key(environment: &EnvironmentHandle) -> Result<String> {
+    let text = |name: &str| {
+        environment
+            .connection
+            .get(name)
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+    };
+    let gateway = text("gateway").ok_or_else(|| FabricError::InvalidConfig {
+        field: "environment.connection.gateway".to_string(),
+        reason: "a verified OpenShell binding is required".to_string(),
+    })?;
+    let sandbox_id = text("sandbox_id").ok_or_else(|| FabricError::InvalidConfig {
+        field: "environment.connection.sandbox_id".to_string(),
+        reason: "a verified OpenShell binding is required".to_string(),
+    })?;
+    Ok(serde_json::json!([
+        gateway.trim_end_matches('/'),
+        text("workspace").unwrap_or("default"),
+        sandbox_id
+    ])
+    .to_string())
 }
 
 struct ProviderProcess {
@@ -642,12 +912,16 @@ impl ProviderProcess {
 }
 
 fn provider_error<T>(operation: &str, code: &str, message: String) -> Result<T> {
-    Err(FabricError::EnvironmentProviderOperation {
+    Err(provider_failure(operation, code, message))
+}
+
+fn provider_failure(operation: &str, code: &str, message: String) -> FabricError {
+    FabricError::EnvironmentProviderOperation {
         provider: OPEN_SHELL_PROVIDER_ID.to_string(),
         operation: operation.to_string(),
         code: code.to_string(),
         message,
-    })
+    }
 }
 
 #[derive(Serialize)]
@@ -709,8 +983,8 @@ impl ProviderOperation<'_> {
             Self::Attach { .. } => 3 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS,
             Self::RuntimeCommand {
                 timeout_seconds, ..
-            } => *timeout_seconds,
-            Self::CollectArtifacts { .. } => 30,
+            } => timeout_seconds.saturating_add(2 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
+            Self::CollectArtifacts { .. } => 30 + 2 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS,
             Self::Release { environment } => connection_seconds(
                 &environment.connection,
                 "delete_timeout_seconds",
@@ -807,6 +1081,38 @@ mod tests {
         assert_eq!(operation.response_timeout(), Duration::from_secs(285));
     }
 
+    #[test]
+    fn runtime_operation_deadlines_cover_gateway_setup_and_execution() {
+        let environment = EnvironmentHandle {
+            environment_id: "environment-test".to_string(),
+            provider: "openshell".to_string(),
+            control_location: ControlLocation::InEnvControl,
+            ownership: EnvironmentOwnership::CallerOwned,
+            workspace: Some(PathBuf::from("/sandbox/workspace")),
+            artifacts: Some(PathBuf::from("/sandbox/artifacts")),
+            env: BTreeMap::new(),
+            metadata: BTreeMap::new(),
+            connection: BTreeMap::new(),
+        };
+        let command = TaskCommand::Stop {
+            agent: "echo".to_string(),
+            runtime_id: "runtime-task".to_string(),
+        };
+        let runtime = ProviderOperation::RuntimeCommand {
+            environment: &environment,
+            command: &command,
+            timeout_seconds: 315,
+        };
+        assert_eq!(runtime.response_timeout(), Duration::from_secs(390));
+
+        let paths = Vec::new();
+        let artifacts = ProviderOperation::CollectArtifacts {
+            environment: &environment,
+            paths: &paths,
+        };
+        assert_eq!(artifacts.response_timeout(), Duration::from_secs(105));
+    }
+
     fn provider_script(body: &str) -> (PathBuf, OsString) {
         let directory = std::env::temp_dir().join(new_id("fabric-provider-test"));
         fs::create_dir_all(&directory).expect("create test directory");
@@ -827,6 +1133,28 @@ mod tests {
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(1));
         process.shutdown();
+        fs::remove_dir_all(directory).expect("remove fixture");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_provider_workers_are_scoped_to_runtime_ids() {
+        let (directory, command) = provider_script("import time\ntime.sleep(30)");
+        let prefix = new_id("runtime-worker-test");
+        let first_key = format!("{prefix}:sandbox:runtime-one");
+        let second_key = format!("{prefix}:sandbox:runtime-two");
+        let first = runtime_provider_process(&first_key, &command, "runtime_command")
+            .expect("start first runtime worker");
+        let first_again = runtime_provider_process(&first_key, &command, "runtime_command")
+            .expect("reuse first runtime worker");
+        let second = runtime_provider_process(&second_key, &command, "runtime_command")
+            .expect("start second runtime worker");
+
+        assert!(Arc::ptr_eq(&first, &first_again));
+        assert!(!Arc::ptr_eq(&first, &second));
+
+        retire_runtime_provider_process(&first_key, &first);
+        retire_runtime_provider_process(&second_key, &second);
         fs::remove_dir_all(directory).expect("remove fixture");
     }
 
