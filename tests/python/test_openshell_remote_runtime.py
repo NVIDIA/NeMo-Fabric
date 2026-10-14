@@ -325,12 +325,14 @@ async def test_uncertain_outcomes_are_not_replayed_after_reattachment(
     )
     environment = await fabric.attach_environment(remote_config, reference)
     runtime = None
+    runtime_id = None
     try:
         if fault == "start":
             with pytest.raises(FabricRuntimeError):
                 await fabric.start_runtime_in(remote_config, environment)
         else:
             runtime = await fabric.start_runtime_in(remote_config, environment)
+            runtime_id = runtime.runtime_id
             if fault == "invoke":
                 with pytest.raises(FabricRuntimeError):
                     await runtime.invoke(input="apply once")
@@ -350,7 +352,7 @@ async def test_uncertain_outcomes_are_not_replayed_after_reattachment(
                 await fabric.start_runtime_in(remote_config, rebound)
         else:
             restarted = await fabric.start_runtime_in(remote_config, rebound)
-            assert restarted.runtime_id != runtime.runtime_id
+            assert restarted.runtime_id != runtime_id
             await restarted.stop()
         await fabric.release_environment(rebound)
         records = [

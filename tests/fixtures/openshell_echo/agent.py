@@ -3,6 +3,7 @@
 
 """Minimal Fabric-ready adapter; it has no OpenShell dependency."""
 
+import asyncio
 import hashlib
 import json
 from pathlib import Path
