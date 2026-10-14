@@ -151,7 +151,7 @@ from that workspace or the host home directory.
 At runtime, OpenCode receives only required operating-system variables,
 explicit NeMo Fabric `environment.env` values, variables named by
 `environment.env_names`, and the selected model credential. Other variables
-inherited by the Fabric process are not exposed to OpenCode.
+inherited by the NeMo Fabric process are not exposed to OpenCode.
 
 The adapter is non-interactive. It denies OpenCode's direct `read` permission
 for `.env` files (except `.env.example`), access outside the workspace, or
