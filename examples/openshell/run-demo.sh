@@ -68,7 +68,6 @@ rm -f -- "${FABRIC_SANDBOX_STATE_FILE}"
 RUNTIME_IMAGE=""
 GATEWAY_PID=""
 EVIDENCE_PID=""
-CALLER_SANDBOX_CREATED=""
 CALLER_SANDBOX_ATTEMPTED=""
 
 for dependency in cargo curl docker openssl python3 tar uv; do
@@ -265,7 +264,6 @@ if [[ "${EXAMPLE_MODE}" == caller_owned || "${EXAMPLE_MODE}" == both ]]; then
     --workspace default sandbox create --name "${SANDBOX_NAME}" --from "${RUNTIME_IMAGE}" \
     --policy "${POLICY_FILE}" "${MODEL_ENV_ARGS[@]}" "${SERVER_ENV_ARGS[@]}" \
     --detach --no-tty -- fabric-agent-ctl serve
-  CALLER_SANDBOX_CREATED=1
   SANDBOX_JSON="$("${OPENSHELL_CLI}" --gateway-endpoint "http://127.0.0.1:${GATEWAY_PORT}" \
     --workspace default sandbox get "${SANDBOX_NAME}" --output json)"
   SANDBOX_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"${SANDBOX_JSON}")"
