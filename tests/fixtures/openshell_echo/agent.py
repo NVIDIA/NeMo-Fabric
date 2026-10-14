@@ -3,6 +3,7 @@
 
 """Minimal Fabric-ready adapter; it has no OpenShell dependency."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -27,8 +28,25 @@ class EchoRuntime:
     async def invoke(self, request, context):
         if context.runtime_id != self.context.runtime_id:
             raise ValueError("invocation must match the active runtime")
+        barrier_path = request.context.get("parallel_barrier")
+        both_runtimes_entered = None
+        if barrier_path:
+            barrier = Path(barrier_path)
+            barrier.parent.mkdir(parents=True, exist_ok=True)
+            runtime_key = hashlib.sha256(context.runtime_id.encode()).hexdigest()
+            barrier.with_name(f"{barrier.name}.{runtime_key}.ready").touch()
+            deadline = asyncio.get_running_loop().time() + 10
+            while len(list(barrier.parent.glob(f"{barrier.name}.*.ready"))) < 2:
+                if asyncio.get_running_loop().time() >= deadline:
+                    break
+                await asyncio.sleep(0.05)
+            both_runtimes_entered = (
+                len(list(barrier.parent.glob(f"{barrier.name}.*.ready"))) >= 2
+            )
         self.inputs.append(request.input)
         output = {"first_input": self.inputs[0], "turn": len(self.inputs)}
+        if both_runtimes_entered is not None:
+            output["both_runtimes_entered"] = both_runtimes_entered
         artifacts = []
         if len(self.inputs) == 2:
             path = Path(context.artifacts.root) / "echo.json"
@@ -41,6 +59,18 @@ class EchoRuntime:
                     media_type="application/json",
                 )
             ]
+        if request.context.get("large_internal_artifact"):
+            internal = Path(context.artifacts.root) / ".fabric" / "stdout.txt"
+            internal.parent.mkdir(parents=True, exist_ok=True)
+            internal.write_bytes(b"x" * (256 * 1024 + 1))
+            artifacts.append(
+                AgentArtifact(
+                    name="internal-sdk-output",
+                    kind="receipt",
+                    path=".fabric/stdout.txt",
+                    media_type="text/plain",
+                )
+            )
         if request.context.get("fail"):
             return AgentRunResult(
                 status=AgentRunStatus.FAILED,

@@ -3,8 +3,8 @@
 
 """Normal host SDK controls a separate, real task SDK through provider stdio."""
 
+import asyncio
 import json
-import os
 from pathlib import Path
 import shutil
 import sys
@@ -30,7 +30,7 @@ FIXTURE = Path(__file__).resolve().parents[1] / "fixtures/openshell_echo"
 
 
 @pytest.fixture(name="remote_config")
-def remote_config_fixture(tmp_path):
+def remote_config_fixture(tmp_path, monkeypatch):
     task = tmp_path / "task"
     task.mkdir()
     shutil.copy(FIXTURE / "agent.py", task / "echo_adapter.py")
@@ -48,12 +48,15 @@ def remote_config_fixture(tmp_path):
         f"#!{sys.executable}\n" + (FIXTURE / "sdk_provider.py").read_text()
     )
     provider.chmod(0o700)
-    os.environ["NEMO_FABRIC_OPEN_SHELL_PROVIDER"] = str(provider)
-    os.environ["FABRIC_TEST_ARTIFACT_READER"] = str(
-        Path(__file__).resolve().parents[2]
-        / "environment-providers/openshell/src/read_artifacts.py"
+    monkeypatch.setenv("NEMO_FABRIC_OPEN_SHELL_PROVIDER", str(provider))
+    monkeypatch.setenv(
+        "FABRIC_TEST_ARTIFACT_READER",
+        str(
+            Path(__file__).resolve().parents[2]
+            / "environment-providers/openshell/src/read_artifacts.py"
+        ),
     )
-    os.environ["FABRIC_TEST_PROVIDER_LOG"] = str(tmp_path / "provider.jsonl")
+    monkeypatch.setenv("FABRIC_TEST_PROVIDER_LOG", str(tmp_path / "provider.jsonl"))
     return FabricConfig(
         metadata=MetadataConfig(name="echo"),
         harness=HarnessConfig(
@@ -193,6 +196,97 @@ async def test_failed_task_result_preserves_output_error_and_artifacts(
         await fabric.release_environment(environment)
 
 
+async def test_internal_sdk_files_are_excluded_from_declared_artifact_collection(
+    remote_config,
+):
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {"provider": "openshell", "resource": {"sandbox_name": "echo"}}
+        ),
+    )
+    runtime = await fabric.start_runtime_in(remote_config, environment)
+    try:
+        await runtime.invoke(input="first")
+        result = await runtime.invoke(
+            request=RunRequest(
+                input="second",
+                request_id="internal-output",
+                context={"large_internal_artifact": True},
+            )
+        )
+        assert result.status == "succeeded"
+        assert [artifact.name for artifact in result.artifacts.artifacts] == ["echo"]
+        assert result.artifacts.artifacts[0].path.is_file()
+    finally:
+        await runtime.stop()
+        await fabric.release_environment(environment)
+
+
+async def test_runtime_workers_invoke_concurrently_and_stop_independently(
+    remote_config, tmp_path
+):
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {"provider": "openshell", "resource": {"sandbox_name": "echo"}}
+        ),
+    )
+    first = await fabric.start_runtime_in(remote_config, environment)
+    second = await fabric.start_runtime_in(remote_config, environment)
+    third = None
+    first_stopped = False
+    barrier = str(tmp_path / "parallel-invoke")
+    try:
+        first_result, second_result = await asyncio.gather(
+            first.invoke(
+                request=RunRequest(
+                    input="first",
+                    request_id="parallel-first",
+                    context={"parallel_barrier": barrier},
+                )
+            ),
+            second.invoke(
+                request=RunRequest(
+                    input="second",
+                    request_id="parallel-second",
+                    context={"parallel_barrier": barrier},
+                )
+            ),
+        )
+        assert first_result.output["both_runtimes_entered"] is True
+        assert second_result.output["both_runtimes_entered"] is True
+        assert first_result.runtime_id == first.runtime_id
+        assert second_result.runtime_id == second.runtime_id
+
+        await first.stop()
+        first_stopped = True
+        after_stop = await second.invoke(input="still active")
+        assert after_stop.status == "succeeded"
+        third = await fabric.start_runtime_in(remote_config, environment)
+        assert third.runtime_id not in {first.runtime_id, second.runtime_id}
+        await third.stop()
+        third = None
+    finally:
+        if third is not None:
+            try:
+                await third.stop()
+            except FabricRuntimeError:
+                pass
+        if not first_stopped:
+            try:
+                await first.stop()
+            except FabricRuntimeError:
+                pass
+        try:
+            await second.stop()
+        except FabricRuntimeError:
+            pass
+        await fabric.release_environment(environment)
+
+
 def test_canonical_telemetry_survives_native_compatibility_fields():
     from nemo_fabric import TelemetryRef
 
@@ -243,6 +337,10 @@ async def test_uncertain_outcomes_are_not_replayed_after_reattachment(
             else:
                 with pytest.raises(FabricRuntimeError):
                     await runtime.stop()
+        if fault == "stop":
+            # The stop may have taken effect despite its malformed response; do
+            # not retry it from test cleanup.
+            runtime = None
         await fabric.release_environment(environment)
         if fault != "start":
             monkeypatch.setenv("FABRIC_TEST_PROVIDER_FAULT", "")
@@ -266,7 +364,11 @@ async def test_uncertain_outcomes_are_not_replayed_after_reattachment(
         ]
         assert operations.count("start") == (1 if fault == "start" else 2)
         assert operations.count("invoke") == (1 if fault == "invoke" else 0)
-        assert operations.count("stop") >= (1 if fault != "start" else 0)
+        assert operations.count("stop") == {
+            "start": 0,
+            "invoke": 1,
+            "stop": 2,
+        }[fault]
     finally:
         if runtime is not None:
             try:
