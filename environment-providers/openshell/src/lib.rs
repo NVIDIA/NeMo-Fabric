@@ -322,7 +322,7 @@ async fn runtime_command<F: GatewayFactory>(
             json!({"status": "rejected", "error": {"code": error.code, "stage": error.stage, "effects": error.effects}}),
         );
     }
-    decode_sdk_command_response(&operation, executed.exit_code, &executed.stdout)
+    decode_sdk_command_response(operation, executed.exit_code, &executed.stdout)
 }
 
 fn decode_sdk_command_response(

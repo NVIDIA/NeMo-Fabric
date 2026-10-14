@@ -266,27 +266,26 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
             config,
         };
         let response = command_runtime(&environment, &command, 105);
-        if let Ok(TaskCommandResponse::Rejected { error }) = &response {
-            if error.effects == "none"
-                && !matches!(
-                    error.code.as_str(),
-                    "runtime_exists" | "cleanup_unconfirmed"
-                )
-            {
-                BINDINGS
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .entry(key.clone())
-                    .or_default()
-                    .remove(START_KEY);
-                return Err(lifecycle_error(
-                    AdapterLifecycleOperation::Start,
-                    "unconfirmed",
-                    error.code.clone(),
-                    "task rejected configuration before runtime startup",
-                    "",
-                ));
-            }
+        if let Ok(TaskCommandResponse::Rejected { error }) = &response
+            && error.effects == "none"
+            && !matches!(
+                error.code.as_str(),
+                "runtime_exists" | "cleanup_unconfirmed"
+            )
+        {
+            BINDINGS
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .entry(key.clone())
+                .or_default()
+                .remove(START_KEY);
+            return Err(lifecycle_error(
+                AdapterLifecycleOperation::Start,
+                "unconfirmed",
+                error.code.clone(),
+                "task rejected configuration before runtime startup",
+                "",
+            ));
         }
         set_start_state(&key, State::Unknown);
         let value = command_value(response?, AdapterLifecycleOperation::Start, "unconfirmed")?;
@@ -415,14 +414,13 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
             .unwrap_or_else(|error| error.into_inner())
             .get_mut(&key)
             .and_then(|bindings| bindings.get_mut(&runtime.runtime_id))
+            && binding.state == State::Invoking
         {
-            if binding.state == State::Invoking {
-                binding.state = if confirmed {
-                    State::Active
-                } else {
-                    State::Unknown
-                };
-            }
+            binding.state = if confirmed {
+                State::Active
+            } else {
+                State::Unknown
+            };
         }
         result
     }
@@ -664,13 +662,12 @@ fn collect_result_artifacts(
                         break;
                     }
                 }
-                if common.starts_with(&root) {
-                    if let Some(uri) = telemetry.uri.replace(common.to_string_lossy().into_owned())
-                    {
-                        telemetry
-                            .metadata
-                            .insert("openshell.task_uri".to_string(), Value::String(uri));
-                    }
+                if common.starts_with(&root)
+                    && let Some(uri) = telemetry.uri.replace(common.to_string_lossy().into_owned())
+                {
+                    telemetry
+                        .metadata
+                        .insert("openshell.task_uri".to_string(), Value::String(uri));
                 }
             }
         }
