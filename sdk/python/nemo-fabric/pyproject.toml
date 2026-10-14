@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric"
-version = "0.5.0"
+version = "0.6.0"
 description = "Python SDK distribution for NeMo Fabric"
 authors = [
   { name = "NVIDIA Corporation" },
@@ -25,7 +25,7 @@ license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
 dependencies = [
-  "nemo-fabric-runtime == 0.5.0",
+  "nemo-fabric-runtime == 0.6.0",
 ]
 
 [project.urls]
@@ -56,49 +56,49 @@ nemo-fabric-adapters-remote-agent = { path = "../../../adapters/python/remote-ag
 [project.optional-dependencies]
 
 claude = [
-  "nemo-fabric-adapters-claude[harness] == 0.5.0",
+  "nemo-fabric-adapters-claude[harness] == 0.6.0",
 ]
 
 codex = [
-  "nemo-fabric-adapters-codex[harness] == 0.5.0",
+  "nemo-fabric-adapters-codex[harness] == 0.6.0",
 ]
 
 streaming = [
-  "nemo-fabric-runtime[streaming] == 0.5.0",
+  "nemo-fabric-runtime[streaming] == 0.6.0",
 ]
 
 deepagents = [
-  "nemo-fabric-adapters-deepagents[harness] == 0.5.0",
+  "nemo-fabric-adapters-deepagents[harness] == 0.6.0",
 ]
 
 mini-swe-agent = [
-  "nemo-fabric-adapters-mini-swe-agent[harness] == 0.5.0",
+  "nemo-fabric-adapters-mini-swe-agent[harness] == 0.6.0",
 ]
 
 openhands = [
-  "nemo-fabric-adapters-openhands == 0.5.0",
+  "nemo-fabric-adapters-openhands == 0.6.0",
 ]
 
 nooa = [
-  "nemo-fabric-adapters-nooa[harness] == 0.5.0; python_version >= '3.12' and python_version < '3.14'",
+  "nemo-fabric-adapters-nooa[harness] == 0.6.0; python_version >= '3.12' and python_version < '3.14'",
 ]
 
 remote-agent = [
-  "nemo-fabric-adapters-remote-agent[harness] == 0.5.0",
+  "nemo-fabric-adapters-remote-agent[harness] == 0.6.0",
 ]
 
 openclaw = [
-  "nemo-fabric-adapters-openclaw == 0.5.0",
+  "nemo-fabric-adapters-openclaw == 0.6.0",
 ]
 
 harbor = [
-  "nemo-fabric-adapter-catalog == 0.5.0",
+  "nemo-fabric-adapter-catalog == 0.6.0",
   "harbor>=0.23,<0.24; python_version >= '3.12'",
   "pyyaml>=6.0",
 ]
 
 hermes-agent = [
-  "nemo-fabric-adapters-hermes == 0.5.0; python_version < '3.15'",
+  "nemo-fabric-adapters-hermes == 0.6.0; python_version < '3.15'",
 ]
 
 relay = [

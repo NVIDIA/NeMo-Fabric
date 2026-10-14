@@ -154,7 +154,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-claude",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "2c6481c56db6ec54b55aa125afe3ded7b8e6649ec78d1744347fd04d6f1866f1",
       "source": "adapters/python/claude/claude.fabric-adapter.json"
@@ -294,7 +294,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-cline",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "4c695e93660eafc004482c1b1e5ac951c33dad22bdb3752791f184e02735e684",
       "source": "adapters/typescript/cline/cline.fabric-adapter.json"
@@ -488,7 +488,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-codex",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "f66fb66d3a366977619bc9e88a4d926e0b71bbc28ac965b9a416bf2559106ce5",
       "source": "adapters/python/codex/codex.fabric-adapter.json"
@@ -618,7 +618,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-droid",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "6d1b3e67bf4d7b803c292057a27aa6c1c272f1160118cf0bb349ee273b067f14",
       "source": "adapters/typescript/droid/droid.fabric-adapter.json"
@@ -739,7 +739,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-hermes",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "e482a89dda834dc5bfdbcb7f6041ad5e457a73918d74d8a8215f0171b8947465",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
@@ -839,7 +839,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-kilo",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "608aeacfa0cfa5ff7ccd28e3f66cadd53f82780bc882b8577e7e8687dfd3dd07",
       "source": "adapters/typescript/kilo/kilo.fabric-adapter.json"
@@ -1122,7 +1122,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-deepagents",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "819b1f9747af83011c98d5889c56dac9a735008b25e93bbc94c1cfde3050a44e",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
@@ -1228,7 +1228,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-mini-swe-agent",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "40ee9364117fd6d4d1fe4e9a822ecd7b9022a5f0f8053d8b550d065e3726df37",
       "source": "adapters/python/mini-swe-agent/mini-swe-agent.fabric-adapter.json"
@@ -1325,7 +1325,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-nooa",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "80f632e09ea3279e7283a58790e53516d693162bc7742f2e932b8e7453373042",
       "source": "adapters/python/nooa/nooa.fabric-adapter.json"
@@ -1417,7 +1417,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-nooa",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "87e09e21e71d7b7bb081c357f1cbc2278a9b467ba76cc4db77d230713d126b20",
       "source": "adapters/python/nooa/nooa-bench.fabric-adapter.json"
@@ -1604,7 +1604,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-openclaw",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "5ab8b29595214e214214b051b60bc314dc65f07add60a73283f434a62e3f7402",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
@@ -1733,7 +1733,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-opencode",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "86175ea45671c92601bf1a132fc0fe91f3de82f19ce8bf4249e9993125c32641",
       "source": "adapters/typescript/opencode/opencode.fabric-adapter.json"
@@ -1837,7 +1837,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-openhands",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "062ef09ba5e82dfdf0b4374632a8b39b7ff975160b0c6f62e68d2f4ac6f0b59e",
       "source": "adapters/python/openhands/openhands.fabric-adapter.json"
@@ -2059,7 +2059,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-pi",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "3cb85c7a0e52e49827e889631da96ca7936c7260d52aac8b52835484a0cafad9",
       "source": "adapters/typescript/pi/pi.fabric-adapter.json"
@@ -2169,7 +2169,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-qwen",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "ffd6ed76db07ac79e04edc6cdc183729b1e569cb67015503b93aea50f951b3d2",
       "source": "adapters/typescript/qwen/qwen.fabric-adapter.json"
@@ -2306,13 +2306,13 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-remote-agent",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "39870c056b7aa15b8706b6cabf9190029f6c9165c5c9ce4b427f5f18bd7ba70a",
       "source": "adapters/python/remote-agent/remote-agent.fabric-adapter.json"
     }
   },
-  "catalog_version": "0.5.0",
+  "catalog_version": "0.6.0",
   "format_version": 1,
   "targets": {
     "nvidia.nooa.arc-solver": {
@@ -2358,7 +2358,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-nooa",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "34a8447cc5a91495e049984171994ec4ee7a48a021ccbdfeba225643190016ba",
       "source": "adapters/python/nooa/targets/arc-solver.fabric-target.json"
@@ -2385,7 +2385,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-nooa",
-        "version": "0.5.0"
+        "version": "0.6.0"
       },
       "sha256": "a38a20a44fcaaa38cae13face8bce8231b33b22d73b8641692b1a7814a958c9e",
       "source": "adapters/python/nooa/targets/coding-agent.fabric-target.json"
