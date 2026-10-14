@@ -34,7 +34,8 @@ args = sys.argv[1:]
 root = pathlib.Path(os.environ["MOCK_ROOT"])
 with (root / "operations.jsonl").open("a") as stream:
     stream.write(json.dumps({"command": name, "args": args,
-                             "provider": os.environ.get("NEMO_FABRIC_OPEN_SHELL_PROVIDER")}) + "\n")
+                             "provider": os.environ.get("NEMO_FABRIC_OPEN_SHELL_PROVIDER"),
+                             "openai_key_present": "OPENAI_API_KEY" in os.environ}) + "\n")
 if name == "uname":
     print(os.environ.get("MOCK_OS", "Linux") if args == ["-s"] else "x86_64")
 elif name == "cargo":
@@ -306,13 +307,20 @@ def test_code_review_workload_configures_hosted_provider_before_sandbox(launcher
         operation
         for operation in operations
         if operation["command"] == "openshell"
-        and any(value in operation["args"] for value in ("settings", "provider"))
+        and "provider" in operation["args"]
+        and operation["args"][operation["args"].index("provider") + 1]
+        in ("profile", "create")
     ]
-    assert [call["args"][call["args"].index("provider") + 1] for call in provider_calls] == [
-        "profile",
-        "create",
-    ]
-    assert all("providers_v2_enabled" not in call["args"] for call in provider_calls)
+    profile, provider = provider_calls
+    profile_args = profile["args"]
+    assert profile_args[profile_args.index("provider") + 1 :][:2] == ["profile", "import"]
+    assert Path(profile_args[profile_args.index("--file") + 1]).name == "openshell-provider.yaml"
+    provider_args = provider["args"]
+    assert provider_args[provider_args.index("provider") + 1] == "create"
+    assert provider_args[provider_args.index("--name") + 1] == "hosted"
+    assert provider_args[provider_args.index("--type") + 1] == "nvidia-code-review"
+    assert provider_args[provider_args.index("--credential") + 1] == "OPENAI_API_KEY"
+    assert provider["openai_key_present"]
     create = next(
         operation
         for operation in operations

@@ -7,10 +7,11 @@ import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import get_type_hints
 
 import pytest
 
-from examples.code_review_agent import openshell_sdk_consumer as consumer
+from examples.code_review_agent import openshell, openshell_sdk_consumer as consumer
 
 
 @pytest.mark.parametrize("ownership", ["caller_owned", "fabric_owned"])
@@ -35,6 +36,9 @@ def test_code_review_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
     )
     events = []
     requests = []
+    state_file = tmp_path / "fabric-owned-sandbox.json"
+    monkeypatch.setenv("OPENSHELL_FABRIC_SANDBOX_STATE_FILE", str(state_file))
+    environment = SimpleNamespace(connection={"sandbox_id": "fabric-sandbox-id"})
 
     class FakeRuntime:
         runtime_id = "runtime-review"
@@ -61,15 +65,15 @@ def test_code_review_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
             events.append("attach")
             assert reference.provider == "openshell"
             assert reference.resource["sandbox_id"] == "caller-sandbox-id"
-            return "environment"
+            return environment
 
         async def prepare_environment(self, config):
             events.append("prepare")
-            return "environment"
+            return environment
 
         async def start_runtime_in(self, config, environment):
             events.append("start")
-            assert environment == "environment"
+            assert environment.connection["sandbox_id"] == "fabric-sandbox-id"
             assert config.harness.adapter_id == "nvidia.fabric.openclaw"
             assert config.environment.provider == "openshell"
             assert config.environment.settings["providers"] == ["hosted"]
@@ -98,6 +102,13 @@ def test_code_review_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
         ("code-review-turn-2", {"turn": 2}),
     ]
     assert json.loads(results.read_text(encoding="utf-8")) == report
+    if ownership == "fabric_owned":
+        assert json.loads(state_file.read_text(encoding="utf-8")) == {
+            "name": args.sandbox_name,
+            "id": "fabric-sandbox-id",
+        }
+    else:
+        assert not state_file.exists()
 
 
 def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path, monkeypatch):
@@ -117,6 +128,9 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
         inputs=["Review", "Follow up"],
     )
     events = []
+    state_file = tmp_path / "fabric-owned-sandbox.json"
+    monkeypatch.setenv("OPENSHELL_FABRIC_SANDBOX_STATE_FILE", str(state_file))
+    environment = SimpleNamespace(connection={"sandbox_id": "fabric-sandbox-id"})
 
     class FakeRuntime:
         runtime_id = "runtime-review"
@@ -133,7 +147,7 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
 
     class FakeFabric:
         async def prepare_environment(self, config):
-            return "environment"
+            return environment
 
         async def start_runtime_in(self, config, environment):
             return FakeRuntime()
@@ -147,3 +161,11 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
     assert report["status"] == "failed"
     assert events == ["stop", "release"]
     assert json.loads(Path(args.results_file).read_text(encoding="utf-8"))["status"] == "failed"
+    assert json.loads(state_file.read_text(encoding="utf-8")) == {
+        "name": args.sandbox_name,
+        "id": "fabric-sandbox-id",
+    }
+
+
+def test_code_review_type_annotations_resolve():
+    get_type_hints(openshell.OpenShellCodeReview._command)
