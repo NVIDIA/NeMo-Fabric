@@ -56,7 +56,7 @@ def sdk_example_environment(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("ownership", ["caller_owned", "fabric_owned"])
 async def test_sdk_example_runs_task_agent_and_collects_receipt(
-    ownership, sdk_example_environment, tmp_path
+    ownership, sdk_example_environment, tmp_path, monkeypatch
 ):
     task, workspace, task_artifacts, provider_log = sdk_example_environment
     sandbox_name = f"sdk-{ownership}"
@@ -70,6 +70,8 @@ async def test_sdk_example_runs_task_agent_and_collects_receipt(
         sandbox_name=sandbox_name,
         sandbox_id="caller-sandbox-id" if ownership == "caller_owned" else None,
     )
+    sandbox_state = tmp_path / f"{ownership}-sandbox.json"
+    monkeypatch.setenv("OPENSHELL_FABRIC_SANDBOX_STATE_FILE", str(sandbox_state))
 
     summary = await run_demo(
         args,
@@ -111,3 +113,8 @@ async def test_sdk_example_runs_task_agent_and_collects_receipt(
     assert runtime_commands[-1]["frame"]["command"]["operation"] == "stop"
     assert records[-1]["frame"]["operation"] == "release"
     assert records[-1]["frame"]["environment"]["ownership"] == ownership
+    if ownership == "fabric_owned":
+        assert json.loads(sandbox_state.read_text()) == {
+            "name": sandbox_name,
+            "id": "fixture-created-id",
+        }
