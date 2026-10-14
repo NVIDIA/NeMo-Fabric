@@ -75,6 +75,30 @@ fn task_root(path: Option<&Path>, field: &str, default: Option<&str>) -> Result<
     }
     Ok(PathBuf::from(value))
 }
+fn task_environment_config(
+    workspace: PathBuf,
+    artifacts: PathBuf,
+    env: &BTreeMap<String, String>,
+    env_names: Option<Value>,
+) -> Result<EnvironmentConfig> {
+    // Build through serde so additive SDK fields survive without coupling the
+    // host provider to a fixed EnvironmentConfig field list.
+    let mut value = serde_json::json!({
+        "provider": "local",
+        "control_location": ControlLocation::ExternalControl,
+        "ownership": EnvironmentOwnership::CallerOwned,
+        "workspace": workspace,
+        "artifacts": artifacts,
+        "env": env,
+        "connection": {},
+        "settings": {},
+        "metadata": {},
+    });
+    if let Some(env_names) = env_names {
+        value["env_names"] = env_names;
+    }
+    serde_json::from_value(value).map_err(|_| invalid_environment("task_config"))
+}
 fn task_config(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<crate::FabricConfig> {
     let mut config = plan.config.clone();
     let workspace = task_root(environment.workspace.as_deref(), "workspace", None)?;
@@ -84,18 +108,20 @@ fn task_config(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<crate:
         Some("/sandbox/artifacts"),
     )?;
     let timeout = invoke_seconds(plan)?;
-    config.environment = Some(EnvironmentConfig {
-        provider: "local".to_string(),
-        control_location: ControlLocation::ExternalControl,
-        ownership: EnvironmentOwnership::CallerOwned,
-        workspace: Some(workspace),
-        artifacts: Some(artifacts.clone()),
-        env: environment.env.clone(),
-        connection: Map::new(),
-        settings: Map::new(),
-        metadata: Map::new(),
-        extensions: BTreeMap::new(),
-    });
+    let env_names = plan
+        .config
+        .environment
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|_| invalid_environment("config.environment"))?
+        .and_then(|environment| environment.get("env_names").cloned());
+    config.environment = Some(task_environment_config(
+        workspace,
+        artifacts.clone(),
+        &environment.env,
+        env_names,
+    )?);
     config.runtime.artifacts = Some(artifacts.clone());
     config.runtime.timeout_seconds = Some(timeout as f64);
     if let Some(harness) = &mut config.harness {
@@ -878,6 +904,20 @@ mod tests {
         assert!(is_internal_sdk_artifact("workspace-status.txt"));
         assert!(!is_internal_sdk_artifact("echo.json"));
         assert!(!is_internal_sdk_artifact("reports/review.json"));
+    }
+
+    #[test]
+    fn task_environment_projection_preserves_named_environment_variables() {
+        let projected = task_environment_config(
+            PathBuf::from("/sandbox/workspace"),
+            PathBuf::from("/sandbox/artifacts"),
+            &BTreeMap::new(),
+            Some(serde_json::json!(["MODEL_API_KEY"])),
+        )
+        .expect("task environment config");
+        let value = serde_json::to_value(projected).expect("serialized task environment");
+        assert_eq!(value["env_names"], serde_json::json!(["MODEL_API_KEY"]));
+        assert!(value.get("connection").is_none());
     }
 
     #[test]
