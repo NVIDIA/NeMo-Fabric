@@ -125,8 +125,9 @@ the prompt and reports `kilo_prompt_timeout`.
 
 The adapter disables project Kilo Code configuration and uses temporary Kilo
 and XDG directories. The child process receives required operating-system
-variables, explicit NeMo Fabric `environment.env` values, and the selected model
-credential. Other parent variables are not forwarded.
+variables, explicit NeMo Fabric `environment.env` values, variables named by
+`environment.env_names`, and the selected model credential. Other parent
+variables are not forwarded.
 
 The adapter is non-interactive. It denies follow-up questions, access outside
 the workspace, doom-loop continuation, and direct reads of `.env` files. These
