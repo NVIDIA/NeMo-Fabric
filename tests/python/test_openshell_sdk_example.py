@@ -50,15 +50,17 @@ def sdk_example_environment(tmp_path, monkeypatch):
         "FABRIC_TEST_ARTIFACT_READER",
         str(ROOT / "environment-providers/openshell/src/read_artifacts.py"),
     )
+    monkeypatch.setenv("FABRIC_TEST_TASK_ROOT", str(task))
+    monkeypatch.setenv("FABRIC_TEST_TASK_ARTIFACTS_ROOT", str(artifacts))
     monkeypatch.setenv("FABRIC_TEST_PROVIDER_LOG", str(provider_log))
-    return task, workspace, artifacts, provider_log
+    return task, provider_log
 
 
 @pytest.mark.parametrize("ownership", ["caller_owned", "fabric_owned"])
 async def test_sdk_example_runs_task_agent_and_collects_receipt(
     ownership, sdk_example_environment, tmp_path, monkeypatch
 ):
-    task, workspace, task_artifacts, provider_log = sdk_example_environment
+    task, provider_log = sdk_example_environment
     sandbox_name = f"sdk-{ownership}"
     args = SimpleNamespace(
         ownership=ownership,
@@ -75,8 +77,8 @@ async def test_sdk_example_runs_task_agent_and_collects_receipt(
 
     summary = await run_demo(
         args,
-        task_workspace=str(workspace),
-        task_artifacts=str(task_artifacts),
+        task_workspace="/sandbox/workspace",
+        task_artifacts="/sandbox/artifacts",
         task_discovery_path=str(task),
     )
 

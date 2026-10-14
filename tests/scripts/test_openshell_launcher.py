@@ -18,6 +18,11 @@ import pytest
 
 ROOT = Path(__file__).parents[2]
 
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="The OpenShell example launcher is a Bash/Linux script.",
+)
+
 MOCK_COMMAND = r"""
 import json, os, pathlib, socket, sys
 name = pathlib.Path(sys.argv[0]).name
