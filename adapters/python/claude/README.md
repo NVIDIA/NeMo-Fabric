@@ -139,9 +139,8 @@ writes, so the adapter also returns the
 `cached_input_tokens`, `cache_write_input_tokens`, and
 `output_tokens_include_reasoning: true`. It sets
 `input_tokens_include_cache: false` only when Claude Code reports input, cache
-reads, and cache writes, and it adds one `models` entry per model only when
-every model reports all four counters. The descriptor declares the extension
-under `extension_schemas.usage`.
+reads, and cache writes. The descriptor declares the extension under
+`extension_schemas.usage`.
 
 ## Relay Observability
 

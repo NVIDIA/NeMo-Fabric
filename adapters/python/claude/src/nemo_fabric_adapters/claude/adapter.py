@@ -823,6 +823,52 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
     return _failure("claude_failed", "Claude invocation failed")
 
 
+_DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
+# Claude Code's result usage keys and the detailed usage counters they fill.
+# Anthropic's input_tokens excludes cache reads and cache writes, and its
+# output_tokens includes thinking, which Anthropic bills as output.
+_DETAILED_TOKEN_COUNTERS = {
+    "input_tokens": "input_tokens",
+    "cache_read_input_tokens": "cached_input_tokens",
+    "cache_creation_input_tokens": "cache_write_input_tokens",
+    "output_tokens": "output_tokens",
+}
+
+
+def _token_counter(value: Any) -> int | None:
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= (1 << 64) - 1
+    ):
+        return value
+    return None
+
+
+def _detailed_token_usage(usage: dict[str, Any]) -> dict[str, int | bool]:
+    """Return Claude Code's counters plus the inclusion flags Anthropic fixes.
+
+    ``input_tokens_include_cache`` is set only when input and both cache parts
+    are known, so a consumer never reads a partial input total as complete.
+    ``output_tokens_include_reasoning`` keeps the inclusive output total equal
+    to ``output_tokens``; without it, consumers that select the detailed output
+    counters, such as Harbor accounting, would read output as unknown.
+    """
+    counters: dict[str, int | bool] = {
+        counter: value
+        for key, counter in _DETAILED_TOKEN_COUNTERS.items()
+        if (value := _token_counter(usage.get(key))) is not None
+    }
+    if all(
+        name in counters
+        for name in ("input_tokens", "cached_input_tokens", "cache_write_input_tokens")
+    ):
+        counters["input_tokens_include_cache"] = False
+    if "output_tokens" in counters:
+        counters["output_tokens_include_reasoning"] = True
+    return counters
+
+
 def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
@@ -854,7 +900,7 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
         cost = None
         if "cost_usd" in normalized:
             normalized["cost_usd"] = None
-    detailed = _detailed_token_usage(usage, normalized.get("model_usage"))
+    detailed = _detailed_token_usage(usage)
     extensions = {_DETAILED_TOKEN_USAGE_KEY: detailed} if detailed else {}
     agent_usage = (
         AgentUsage(**tokens, cost_usd=cost, extensions=extensions)
@@ -867,79 +913,6 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
         error=error,
         usage=agent_usage,
     )
-
-
-_DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
-# Claude Code's result usage keys and the detailed usage counters they fill.
-# Anthropic's input_tokens excludes cache reads and cache writes, and its
-# output_tokens includes thinking, which Anthropic bills as output.
-_RESULT_USAGE_COUNTERS = {
-    "input_tokens": "input_tokens",
-    "cache_read_input_tokens": "cached_input_tokens",
-    "cache_creation_input_tokens": "cache_write_input_tokens",
-    "output_tokens": "output_tokens",
-}
-# Claude Code's per-model usage keys, with the same meaning.
-_MODEL_USAGE_COUNTERS = {
-    "inputTokens": "input_tokens",
-    "cacheReadInputTokens": "cached_input_tokens",
-    "cacheCreationInputTokens": "cache_write_input_tokens",
-    "outputTokens": "output_tokens",
-}
-
-
-def _token_counter(value: Any) -> int | None:
-    if (
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and 0 <= value <= (1 << 64) - 1
-    ):
-        return value
-    return None
-
-
-def _token_counters(raw: dict[str, Any], keys: dict[str, str]) -> dict[str, int | bool]:
-    """Return the reported counters with the flags their meaning fixes.
-
-    ``input_tokens_include_cache`` is stated only when input and both cache
-    parts are known, so a consumer can always compute the inclusive total.
-    """
-    counters: dict[str, int | bool] = {
-        counter: value
-        for key, counter in keys.items()
-        if (value := _token_counter(raw.get(key))) is not None
-    }
-    if all(
-        name in counters
-        for name in ("input_tokens", "cached_input_tokens", "cache_write_input_tokens")
-    ):
-        counters["input_tokens_include_cache"] = False
-    if "output_tokens" in counters:
-        counters["output_tokens_include_reasoning"] = True
-    return counters
-
-
-def _detailed_token_usage(usage: dict[str, Any], model_usage: Any) -> dict[str, Any]:
-    """Build the detailed usage block, with one entry per model only when
-    Claude Code reported all four counters for every model."""
-    detailed: dict[str, Any] = _token_counters(usage, _RESULT_USAGE_COUNTERS)
-    if not detailed or not isinstance(model_usage, dict) or not model_usage:
-        return detailed
-    models = []
-    for name, entry in model_usage.items():
-        counters = (
-            _token_counters(entry, _MODEL_USAGE_COUNTERS)
-            if isinstance(entry, dict)
-            else {}
-        )
-        complete = all(
-            counter in counters for counter in _MODEL_USAGE_COUNTERS.values()
-        )
-        if not isinstance(name, str) or not name.strip() or not complete:
-            return detailed
-        models.append({"model": name, **counters})
-    detailed["models"] = models
-    return detailed
 
 
 def child_environment(

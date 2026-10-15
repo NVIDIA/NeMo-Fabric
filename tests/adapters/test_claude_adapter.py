@@ -1030,19 +1030,14 @@ def test_agent_run_result_with_cache_counters_reports_detailed_token_usage():
                 "cache_creation_input_tokens": 400,
                 "output_tokens": 90,
             },
+            # Claude Code's model_usage is process-cumulative, so it is not
+            # reported as invocation usage.
             "model_usage": {
                 "claude-sonnet-4-5": {
                     "inputTokens": 10,
                     "outputTokens": 80,
                     "cacheReadInputTokens": 3000,
                     "cacheCreationInputTokens": 400,
-                    "costUSD": 0.01,
-                },
-                "claude-haiku-4-5": {
-                    "inputTokens": 2,
-                    "outputTokens": 10,
-                    "cacheReadInputTokens": 0,
-                    "cacheCreationInputTokens": 0,
                 },
             },
         }
@@ -1051,35 +1046,14 @@ def test_agent_run_result_with_cache_counters_reports_detailed_token_usage():
     assert result.usage is not None
     assert result.usage.input_tokens == 12
     assert result.usage.cached_input_tokens is None
-    flags = {
-        "input_tokens_include_cache": False,
-        "output_tokens_include_reasoning": True,
-    }
     assert result.usage.extensions == {
         DETAILED_TOKEN_USAGE_KEY: {
             "input_tokens": 12,
             "cached_input_tokens": 3000,
             "cache_write_input_tokens": 400,
+            "input_tokens_include_cache": False,
             "output_tokens": 90,
-            **flags,
-            "models": [
-                {
-                    "model": "claude-sonnet-4-5",
-                    "input_tokens": 10,
-                    "cached_input_tokens": 3000,
-                    "cache_write_input_tokens": 400,
-                    "output_tokens": 80,
-                    **flags,
-                },
-                {
-                    "model": "claude-haiku-4-5",
-                    "input_tokens": 2,
-                    "cached_input_tokens": 0,
-                    "cache_write_input_tokens": 0,
-                    "output_tokens": 10,
-                    **flags,
-                },
-            ],
+            "output_tokens_include_reasoning": True,
         }
     }
 
@@ -1098,14 +1072,6 @@ def test_agent_run_result_detailed_token_usage_matches_descriptor_schema():
                 "cache_read_input_tokens": 2,
                 "cache_creation_input_tokens": 3,
                 "output_tokens": 4,
-            },
-            "model_usage": {
-                "claude-sonnet-4-5": {
-                    "inputTokens": 1,
-                    "outputTokens": 4,
-                    "cacheReadInputTokens": 2,
-                    "cacheCreationInputTokens": 3,
-                }
             },
         }
     )
@@ -1135,27 +1101,6 @@ def test_agent_run_result_without_cache_write_count_leaves_cache_inclusion_unkno
         "output_tokens": 1,
         "output_tokens_include_reasoning": True,
     }
-
-
-def test_agent_run_result_with_incomplete_model_usage_omits_every_model():
-    result = adapter._agent_run_result(
-        {
-            "response": "done",
-            "usage": {"input_tokens": 5, "output_tokens": 1},
-            "model_usage": {
-                "claude-sonnet-4-5": {
-                    "inputTokens": 4,
-                    "outputTokens": 1,
-                    "cacheReadInputTokens": 0,
-                    "cacheCreationInputTokens": 0,
-                },
-                "claude-haiku-4-5": {"inputTokens": 1},
-            },
-        }
-    )
-
-    assert result.usage is not None
-    assert "models" not in result.usage.extensions[DETAILED_TOKEN_USAGE_KEY]
 
 
 def test_agent_run_result_without_usage_reports_no_detailed_token_usage():
