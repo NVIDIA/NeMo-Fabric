@@ -1701,18 +1701,6 @@ def test_sdk_errors_are_structured_without_raw_provider_data(error, code):
     assert "raw " not in serialized
 
 
-def test_oversized_message_failure_names_buffer_setting():
-    error = CLIJSONDecodeError(
-        "JSON message exceeded maximum buffer size of 1048576 bytes",
-        ValueError("Buffer size 1048577 exceeds limit 1048576"),
-    )
-
-    output = adapter.sdk_failure(error)
-
-    assert output["error"]["code"] == "claude_invalid_json"
-    assert "max_buffer_size" in output["error"]["message"]
-
-
 def test_error_result_is_normalized_as_failure(claude_payload):
     result = ResultMessage(
         subtype="error_max_turns",

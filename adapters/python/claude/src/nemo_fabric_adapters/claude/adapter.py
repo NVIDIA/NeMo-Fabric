@@ -817,11 +817,7 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
             exit_code=error.exit_code,
         )
     if isinstance(error, CLIJSONDecodeError):
-        # The SDK also raises this when one message exceeds max_buffer_size.
-        return _failure(
-            "claude_invalid_json",
-            "Claude Code returned invalid JSON or a message larger than max_buffer_size",
-        )
+        return _failure("claude_invalid_json", "Claude Code returned invalid JSON")
     if isinstance(error, MessageParseError):
         return _failure("claude_message_parse_failed", "Claude message parsing failed")
     return _failure("claude_failed", "Claude invocation failed")
