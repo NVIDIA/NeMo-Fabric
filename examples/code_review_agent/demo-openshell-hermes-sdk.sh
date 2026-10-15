@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# Configure the Hermes code-review workload for the shared OpenShell launcher.
+# These hooks set up model access and run the normal host SDK consumer.
 WORKLOAD_NAME=code-review-hermes
 SUPPORTED_MODES=(caller_owned fabric_owned)
 IMAGE_DOCKERFILE="${WORKLOAD_ROOT}/Dockerfile.openshell-hermes-sdk"

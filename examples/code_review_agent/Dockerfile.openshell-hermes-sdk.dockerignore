@@ -1,3 +1,4 @@
+# Keep the Hermes image build context to its adapter and review workload.
 **
 !Cargo.toml
 !Cargo.lock
