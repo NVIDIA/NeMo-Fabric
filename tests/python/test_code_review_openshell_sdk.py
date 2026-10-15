@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Verify the OpenClaw code-review consumer's SDK and OpenShell wiring.
+"""Verify the code-review consumer's SDK and OpenShell wiring.
 
 The tests cover both sandbox ownership modes, request context, and artifact
 handling without starting a gateway or model endpoint.
@@ -158,7 +158,9 @@ def test_hermes_config_enables_code_review_tools_and_optional_relay(relay, tmp_p
     assert config.environment.settings["task_discovery_paths"] == [
         consumer.HERMES_TASK_DISCOVERY_PATH
     ]
-    assert config.tools.enabled == ["terminal", "read_file", "search_files"]
+    assert config.tools.enabled == ["terminal"]
+    assert config.runtime.max_turns == 6
+    assert "Use the terminal tool to read workspace files" in config.instructions.system.content
     assert config.models["default"].api_key_env == "OPENAI_API_KEY"
     assert config.runtime.artifacts == tmp_path / "artifacts"
     assert config.environment.artifacts == "/sandbox/artifacts"
@@ -170,7 +172,16 @@ def test_hermes_config_enables_code_review_tools_and_optional_relay(relay, tmp_p
         )
 
 
-def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("harness", "invoke_status", "output", "expected_error"),
+    [
+        ("openclaw", "failed", None, "invoke_failed"),
+        ("hermes", "succeeded", {"completed": False}, "hermes_incomplete"),
+    ],
+)
+def test_failed_or_incomplete_invocation_still_cleans_up(
+    tmp_path, monkeypatch, harness, invoke_status, output, expected_error
+):
     policy = tmp_path / "policy.yaml"
     policy.write_text("version: 1\n", encoding="utf-8")
     args = SimpleNamespace(
@@ -182,7 +193,7 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
         results_file=str(tmp_path / "report.json"),
         sandbox_name="review-failure",
         sandbox_id=None,
-        harness="openclaw",
+        harness=harness,
         relay=False,
         model="nvidia/test-model",
         base_url="https://integrate.api.nvidia.com/v1",
@@ -198,9 +209,9 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
 
         async def invoke(self, *, request):
             return SimpleNamespace(
-                status="failed",
+                status=invoke_status,
                 request_id=request.request_id,
-                to_mapping=lambda: {"status": "failed"},
+                to_mapping=lambda: {"status": invoke_status, "output": output},
             )
 
         async def stop(self):
@@ -220,6 +231,7 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
     report = asyncio.run(consumer.run_demo(args))
 
     assert report["status"] == "failed"
+    assert report["error"]["code"] == expected_error
     assert events == ["stop", "release"]
     assert json.loads(Path(args.results_file).read_text(encoding="utf-8"))["status"] == "failed"
     assert json.loads(state_file.read_text(encoding="utf-8")) == {

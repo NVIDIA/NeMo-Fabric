@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run the OpenClaw code-review agent through the normal host SDK.
+"""Run a code-review harness through the normal host SDK.
 
 Configure an OpenShell sandbox, start the task-side Fabric runtime, invoke the
 agent across review turns, and collect the report on the host.
@@ -64,8 +64,11 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
             )
         config.discovery = DiscoveryConfig(local_paths=[hermes_descriptor])
         task_discovery_paths = [HERMES_TASK_DISCOVERY_PATH]
-        config.instructions.system.content = CODE_REVIEW_INSTRUCTION
-        config.tools = ToolsConfig(enabled=["terminal", "read_file", "search_files"])
+        config.instructions.system.content = (
+            f"{CODE_REVIEW_INSTRUCTION} Use the terminal tool to read workspace files."
+        )
+        config.tools = ToolsConfig(enabled=["terminal"])
+        config.runtime.max_turns = 6
     else:
         config = openclaw_config()
     if relay_enabled:
@@ -146,10 +149,22 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
                     context={"turn": index},
                 )
             )
-            report["reviews"].append(result.to_mapping())
+            review = result.to_mapping()
+            report["reviews"].append(review)
             if result.status != "succeeded":
                 report["error"] = {
                     "code": "invoke_failed",
+                    "request_id": result.request_id,
+                }
+                break
+            output = review.get("output")
+            if (
+                args.harness == "hermes"
+                and isinstance(output, dict)
+                and output.get("completed") is False
+            ):
+                report["error"] = {
+                    "code": "hermes_incomplete",
                     "request_id": result.request_id,
                 }
                 break

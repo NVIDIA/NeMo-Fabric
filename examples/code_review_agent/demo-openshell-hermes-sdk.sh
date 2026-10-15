@@ -15,10 +15,17 @@ MODEL_ENV_ARGS=(--provider hosted)
 stage_workload_image() { :; }
 
 configure_workload_gateway() {
-  local model_api_key="${OPENAI_API_KEY:-${NVIDIA_API_KEY:-}}"
   local provider_profile="${OPENSHELL_MODEL_PROVIDER_PROFILE:-${WORKLOAD_ROOT}/openshell-provider.yaml}"
+  local model_api_key required_key
+  if [[ -n "${OPENSHELL_MODEL_PROVIDER_PROFILE:-}" ]]; then
+    model_api_key="${OPENAI_API_KEY:-}"
+    required_key=OPENAI_API_KEY
+  else
+    model_api_key="${NVIDIA_API_KEY:-}"
+    required_key=NVIDIA_API_KEY
+  fi
   if [[ -z "${model_api_key}" ]]; then
-    echo "ERROR: OPENAI_API_KEY or NVIDIA_API_KEY is required to configure the model provider" >&2
+    echo "ERROR: ${required_key} is required to configure the model provider" >&2
     return 2
   fi
   local endpoint="http://127.0.0.1:${GATEWAY_PORT}"
