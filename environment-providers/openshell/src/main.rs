@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Fabric's optional OpenShell environment-provider process.
+//! CLI entry point for the optional OpenShell environment provider.
+//!
+//! Accepts only `serve --stdio` and delegates the private provider protocol
+//! loop to the library; the host Fabric SDK starts this process on demand.
 
 use std::process::ExitCode;
 

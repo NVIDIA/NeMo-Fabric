@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Internal execution-environment provider boundary.
+//! Host-side execution-environment lifecycle and provider process boundary.
+//!
+//! Prepares, attaches, and releases local or OpenShell environments. For
+//! OpenShell, it starts the optional provider child over JSON/stdio, forwards
+//! environment operations, and returns verified environment handles. Agent
+//! lifecycle and task SDK execution live outside this module.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;

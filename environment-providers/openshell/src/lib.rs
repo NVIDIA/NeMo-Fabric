@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Experimental `OpenShell` environment provider for NVIDIA `NeMo` Fabric.
+//! OpenShell environment-provider process used by host Fabric core.
+//!
+//! Serves private JSON/stdio requests to create, attach, inspect, execute in,
+//! and release sandboxes through the OpenShell gateway. It verifies sandbox
+//! identity and policy before operations and exposes bounded sandbox exec;
+//! agent runtime state is outside this provider.
 
 use std::collections::HashMap;
 use std::future::Future;
