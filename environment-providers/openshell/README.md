@@ -93,10 +93,12 @@ MCP command paths in the agent configuration must refer to task-visible files.
 Declared artifacts are copied to
 `runtime.artifacts/<runtime_id>/<invocation_id>/` on the host. Each reference
 becomes a readable host path; earlier invocation files remain intact. Collection
-accepts up to 16 regular files, 256 KiB per file, and 512 KiB total. Files are read
-through directory descriptors with symlink and traversal checks; directories and
-special files are rejected. Collection never truncates files or copies the
-workspace. Relay file references retain their correlation metadata.
+accepts up to 16 regular files, 1 MiB per file, and 2 MiB total when their
+losslessly compressed transfer fits 256 KiB per file and 700 KiB total. The
+host verifies and expands the original bytes before writing them. Files are
+read through directory descriptors with symlink and traversal checks;
+directories and special files are rejected. Collection never truncates files
+or copies the workspace. Relay file references retain their correlation metadata.
 
 OpenShell bridge invocations return a buffered result. Set the task deadline
 with `runtime.timeout_seconds` (default 240 seconds; maximum 300 seconds).

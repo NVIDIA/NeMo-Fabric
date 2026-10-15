@@ -39,7 +39,9 @@ const OPEN_SHELL_PROVIDER_COMMAND: &str = "fabric-environment-openshell";
 const OPEN_SHELL_PROVIDER_COMMAND_ENV: &str = "NEMO_FABRIC_OPEN_SHELL_PROVIDER";
 const PROVIDER_PROTOCOL_VERSION: &str = "fabric.environment-provider.v1alpha1";
 const MAX_PROVIDER_REQUEST_BYTES: usize = 1024 * 1024;
-const MAX_PROVIDER_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+// Artifact collection can return 2 MiB of bytes as decimal JSON arrays, which
+// expand to at most about 8 MiB before the provider protocol envelope.
+const MAX_PROVIDER_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_PROVIDER_OPERATION_TIMEOUT_SECONDS: u64 = 30;
 const PROVIDER_RESPONSE_GRACE_SECONDS: u64 = 15;
 const PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS: u64 = 30;
