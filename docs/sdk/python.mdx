@@ -698,7 +698,7 @@ print(snapshot.process_count, snapshot.cpu_time_seconds)
 | `observed_at` | When NeMo Fabric read the values, as an RFC 3339 UTC timestamp. |
 | `resident_memory_bytes` | Sum of the resident set sizes of the live processes. Pages shared between processes count once per process. |
 | `process_count` | Live processes, including the adapter host. Exited processes that are not yet reaped are not counted. |
-| `cpu_time_seconds` | CPU time used since the adapter host started, including descendants that have exited and been waited for. It can drop when a descendant leaves the tree. |
+| `cpu_time_seconds` | CPU time used since the adapter host started, including exited descendants (on macOS, only once they are waited for). It can drop when a descendant leaves the tree. |
 
 The scope is fixed: the local adapter host process that NeMo Fabric started for
 the runtime, plus its descendants. For a runtime started on a shared service,

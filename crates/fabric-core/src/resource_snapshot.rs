@@ -49,9 +49,9 @@ pub struct RuntimeResourceSnapshot {
     /// that are not yet reaped are not counted.
     pub process_count: u64,
     /// CPU time consumed by the tree since the adapter host started, in seconds,
-    /// including descendants that have exited and been waited for. It can drop
-    /// when a descendant leaves the tree, and on macOS while an exited
-    /// descendant is not yet waited for.
+    /// including exited descendants (on macOS, only once they are waited for).
+    /// It can drop when a descendant leaves the tree, and on macOS while an
+    /// exited descendant is not yet waited for.
     #[schemars(range(min = 0.0))]
     pub cpu_time_seconds: f64,
 }

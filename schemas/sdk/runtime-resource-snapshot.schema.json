@@ -3,7 +3,7 @@
   "description": "Timestamped resource usage of one runtime's local adapter host process tree.\n\nMemory, process count, and CPU time cover the adapter host process and its\nlive descendants. For a runtime started on a service, the shared service\nprocess is not included. Values Fabric cannot read are returned as an error,\nnever as zero.",
   "properties": {
     "cpu_time_seconds": {
-      "description": "CPU time consumed by the tree since the adapter host started, in seconds,\nincluding descendants that have exited and been waited for. It can drop\nwhen a descendant leaves the tree, and on macOS while an exited\ndescendant is not yet waited for.",
+      "description": "CPU time consumed by the tree since the adapter host started, in seconds,\nincluding exited descendants (on macOS, only once they are waited for).\nIt can drop when a descendant leaves the tree, and on macOS while an\nexited descendant is not yet waited for.",
       "format": "double",
       "minimum": 0.0,
       "type": "number"

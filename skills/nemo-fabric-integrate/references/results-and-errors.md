@@ -50,12 +50,13 @@ Treat missing counters and cost as unknown, not zero. `cached_input_tokens` repo
 ## Runtime Resource Snapshots
 
 `await runtime.resource_snapshot()` returns a `RuntimeResourceSnapshot` with
-`runtime_id`, `started_at` and `observed_at` (RFC 3339 UTC), `resident_memory_bytes`,
-`process_count`, and `cpu_time_seconds`. It covers the local adapter host process
-and its descendants (not a shared service process), and it does not wait for
-an active invocation. CPU time is cumulative since the host started, so
-subtract an earlier snapshot to estimate one invocation; it can drop when a
-descendant leaves the tree, so treat a negative difference as unknown. Values that cannot be read raise an error, never read as zero.
+`runtime_id`, `started_at` and `observed_at` (RFC 3339 UTC),
+`resident_memory_bytes`, `process_count`, and `cpu_time_seconds`. It covers the
+local adapter host process and its descendants (not a shared service process),
+and it does not wait for an active invocation. CPU time is cumulative since the
+host started, so subtract an earlier snapshot to estimate one invocation; it
+can drop when a descendant leaves the tree, so treat a negative difference as
+unknown. Values that cannot be read raise an error, never read as zero.
 Snapshots observe only; enforce limits in the operating system or execution
 environment.
 

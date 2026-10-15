@@ -1259,7 +1259,7 @@ Memory, process count, and CPU time cover the adapter host process and its live 
  - <b>`observed_at`</b>:  When Fabric read these values, as RFC 3339 UTC.
  - <b>`resident_memory_bytes`</b>:  Sum of the live processes' resident set sizes.  Pages shared between processes count once per process.
  - <b>`process_count`</b>:  Live processes in the tree, including the adapter host.
- - <b>`cpu_time_seconds`</b>:  CPU time used since the adapter host started,  including descendants that have exited and been waited for. It  can drop when a descendant leaves the tree.
+ - <b>`cpu_time_seconds`</b>:  CPU time used since the adapter host started,  including exited descendants (on macOS, only once they are  waited for). It can drop when a descendant leaves the tree.
 
 
 ### Fields
