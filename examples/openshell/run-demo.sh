@@ -18,6 +18,10 @@ if [[ $# -lt 1 || ! -f "$1" ]]; then
   echo "Usage: bash examples/openshell/run-demo.sh <workload/demo.sh> [consumer-options]" >&2
   exit 2
 fi
+if (true >/dev/tcp/127.0.0.1/"${GATEWAY_PORT}") 2>/dev/null; then
+  echo "ERROR: 127.0.0.1:${GATEWAY_PORT} is already in use; set OPENSHELL_EXAMPLE_PORT to a free port" >&2
+  exit 2
+fi
 WORKLOAD_ROOT="$(cd "$(dirname "$1")" && pwd)"
 WORKLOAD_FILE="${WORKLOAD_ROOT}/$(basename "$1")"
 shift
@@ -249,6 +253,10 @@ until { true >/dev/tcp/127.0.0.1/"${GATEWAY_PORT}"; } 2>/dev/null; do
   fi
   sleep 1
 done
+if ! kill -0 "${GATEWAY_PID}" 2>/dev/null; then
+  echo "ERROR: OpenShell gateway exited during startup" >&2
+  exit 1
+fi
 
 run_consumer() {
   OPENSHELL_FABRIC_SANDBOX_STATE_FILE="${FABRIC_SANDBOX_STATE_FILE}" \

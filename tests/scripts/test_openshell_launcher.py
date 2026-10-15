@@ -232,6 +232,18 @@ def test_consumer_failure_cleans_up_caller_owned_sandbox(launcher):
     assert any(operation["command"] == "openshell" and "delete" in operation["args"] for operation in _operations(root))
 
 
+def test_occupied_gateway_port_stops_before_building(launcher):
+    _, root, env = launcher
+    with socket.socket() as occupied:
+        occupied.bind(("127.0.0.1", int(env["OPENSHELL_EXAMPLE_PORT"])))
+        occupied.listen()
+        completed = _run(launcher, ROOT / "examples/openshell_echo/demo.sh", {})
+
+    assert completed.returncode == 2
+    assert "already in use; set OPENSHELL_EXAMPLE_PORT" in completed.stderr
+    assert not any(operation["command"] in {"cargo", "docker", "openshell", "uv"} for operation in _operations(root))
+
+
 @pytest.mark.parametrize("current_id,deleted", [("owned-id", True), ("replacement-id", False)])
 def test_fabric_owned_failure_cleanup_requires_the_recorded_sandbox_id(
     launcher, current_id, deleted
