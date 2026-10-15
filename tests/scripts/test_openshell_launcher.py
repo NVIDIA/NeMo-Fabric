@@ -294,7 +294,7 @@ def test_code_review_workload_configures_hosted_provider_before_sandbox(launcher
     _, root, _ = launcher
     completed = _run(
         launcher,
-        ROOT / "examples/code_review_agent/demo-openshell-sdk.sh",
+        ROOT / "examples/code_review_agent/demo-openshell-openclaw-sdk.sh",
         {
             "OPENSHELL_EXAMPLE_MODE": "caller_owned",
             "NVIDIA_API_KEY": "test-key-must-not-appear-in-command-arguments",

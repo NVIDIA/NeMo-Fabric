@@ -202,7 +202,7 @@ Rust/Cargo, `uv`, and the dependencies listed in
 
 ```bash
 bash examples/openshell/run-demo.sh \
-  examples/code_review_agent/demo-openshell-sdk.sh
+  examples/code_review_agent/demo-openshell-openclaw-sdk.sh
 ```
 
 Set `OPENSHELL_EXAMPLE_MODE=caller_owned` or `fabric_owned` to run one mode.
