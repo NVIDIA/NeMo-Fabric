@@ -35,7 +35,11 @@ root = pathlib.Path(os.environ["MOCK_ROOT"])
 with (root / "operations.jsonl").open("a") as stream:
     stream.write(json.dumps({"command": name, "args": args,
                              "provider": os.environ.get("NEMO_FABRIC_OPEN_SHELL_PROVIDER"),
-                             "openai_key_present": "OPENAI_API_KEY" in os.environ}) + "\n")
+                             "openai_key_present": "OPENAI_API_KEY" in os.environ,
+                             "model_key_matches_expected":
+                                 os.environ.get("OPENAI_API_KEY") ==
+                                 os.environ.get("MOCK_EXPECTED_MODEL_API_KEY")
+                                 if "MOCK_EXPECTED_MODEL_API_KEY" in os.environ else None}) + "\n")
 if name == "uname":
     print(os.environ.get("MOCK_OS", "Linux") if args == ["-s"] else "x86_64")
 elif name == "cargo":
@@ -342,6 +346,7 @@ def test_hermes_code_review_workload_selects_harness_and_optional_relay(
             "OPENSHELL_EXAMPLE_MODE": "caller_owned",
             "OPENSHELL_CODE_REVIEW_RELAY": str(relay_enabled).lower(),
             "OPENAI_API_KEY": "test-key-must-not-appear-in-command-arguments",
+            "MOCK_EXPECTED_MODEL_API_KEY": "test-key-must-not-appear-in-command-arguments",
             "OPENSHELL_MODEL_PROVIDER_PROFILE": "/tmp/local-model-profile.yaml",
             "OPENSHELL_CODE_REVIEW_BASE_URL": "http://10.0.0.10:8000/v1",
             "OPENSHELL_CODE_REVIEW_MODEL": "nvidia/nemotron-3-ultra-550b-a55b",
@@ -368,7 +373,37 @@ def test_hermes_code_review_workload_selects_harness_and_optional_relay(
     assert profile_call["args"][profile_call["args"].index("--file") + 1] == (
         "/tmp/local-model-profile.yaml"
     )
+    provider_call = next(
+        operation
+        for operation in operations
+        if operation["command"] == "openshell" and "create" in operation["args"]
+        and "provider" in operation["args"]
+    )
+    assert provider_call["model_key_matches_expected"]
     assert "test-key-must-not-appear-in-command-arguments" not in json.dumps(operations)
+
+
+def test_hermes_default_profile_uses_nvidia_key_when_both_keys_exist(launcher):
+    _, root, _ = launcher
+    completed = _run(
+        launcher,
+        ROOT / "examples/code_review_agent/demo-openshell-hermes-sdk.sh",
+        {
+            "OPENSHELL_EXAMPLE_MODE": "caller_owned",
+            "NVIDIA_API_KEY": "expected-nvidia-key",
+            "OPENAI_API_KEY": "different-openai-key",
+            "MOCK_EXPECTED_MODEL_API_KEY": "expected-nvidia-key",
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    provider_call = next(
+        operation
+        for operation in _operations(root)
+        if operation["command"] == "openshell" and "create" in operation["args"]
+        and "provider" in operation["args"]
+    )
+    assert provider_call["model_key_matches_expected"]
 
 
 @pytest.mark.parametrize(
