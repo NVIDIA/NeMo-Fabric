@@ -6,18 +6,21 @@
 The provider runs this one-shot script with the task interpreter, passing an
 absolute artifact root and relative file paths as JSON on stdin. It reads only
 regular files beneath that root without following symlinks, with limits of 16
-files, 256 KiB per file, and 512 KiB total. It returns paths and bytes as JSON;
-the host copies those bytes to its artifact destination. The persistent task
-runtime server is not involved.
+files, 1 MiB per file, and 2 MiB total. It compresses each file for the bounded
+JSON transfer; the host verifies and expands the bytes before copying them to
+the artifact destination. The persistent task runtime server is not involved.
 """
 
 import json
 import os
 import stat
 import sys
+import zlib
 
-FILE_LIMIT = 256 * 1024
-TOTAL_LIMIT = 700 * 1024
+FILE_LIMIT = 1024 * 1024
+TOTAL_LIMIT = 2 * 1024 * 1024
+TRANSFER_FILE_LIMIT = 256 * 1024
+TRANSFER_TOTAL_LIMIT = 700 * 1024
 COUNT_LIMIT = 16
 
 
@@ -46,6 +49,7 @@ def collect(request):
             root_descriptor = child
         files = []
         total = 0
+        transferred = 0
         for path in paths:
             if not isinstance(path, str) or not path or "\\" in path or "\0" in path:
                 raise ValueError("invalid path")
@@ -77,7 +81,13 @@ def collect(request):
                     total += len(content)
                     if total > TOTAL_LIMIT:
                         raise ValueError("total exceeded limit")
-                    files.append({"path": path, "content": list(content)})
+                    compressed = zlib.compress(content)
+                    transferred += len(compressed)
+                    if len(compressed) > TRANSFER_FILE_LIMIT or transferred > TRANSFER_TOTAL_LIMIT:
+                        raise ValueError("compressed transfer exceeded limit")
+                    files.append(
+                        {"path": path, "content": list(compressed), "uncompressed_size": len(content)}
+                    )
             finally:
                 os.close(parent)
         return files
