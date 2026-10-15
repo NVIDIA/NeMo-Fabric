@@ -5,13 +5,30 @@
 // to a PiSessionHandle and normalized results while keeping SDK construction
 // behind a factory for focused lifecycle testing.
 
-import type { AgentRunRequest, AgentRunResult, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
+import type {
+  AgentRunRequest,
+  AgentRunResult,
+  AgentUsage,
+  JsonObject,
+  RuntimeContext,
+} from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import { collectRelayArtifacts, type RelayArtifact } from "./relay-config.js";
 import type { PiRelayRuntime } from "./relay.js";
 
 export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | string;
+
+/**
+ * Token counts Pi billed during one prompt. Pi's `input` excludes cache reads
+ * and writes.
+ */
+export interface PiTokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
 
 export interface PiPromptOutcome {
   accepted: boolean;
@@ -21,6 +38,8 @@ export interface PiPromptOutcome {
   stopReason?: PiStopReason;
   errorMessage?: string;
   shutdownRequested?: boolean;
+  /** Absent when any billed call of the prompt carried no complete usage. */
+  usage?: PiTokenUsage;
 }
 
 export interface PiSessionHandle {
@@ -42,14 +61,31 @@ function failed(code: string, message: string): AgentRunResult {
   };
 }
 
+/** The invocation's usage, with input counting its cache reads and writes. */
+function agentUsage(usage: PiTokenUsage | undefined): AgentUsage | undefined {
+  if (usage === undefined) {
+    return undefined;
+  }
+  const input = usage.input + usage.cacheRead + usage.cacheWrite;
+  return {
+    input_tokens: input,
+    cached_input_tokens: usage.cacheRead,
+    input_tokens_include_cache: true,
+    output_tokens: usage.output,
+    total_tokens: input + usage.output,
+  };
+}
+
 async function withRelayOutput(
   result: AgentRunResult,
   relay: PiRelayRuntime | undefined,
   turnStarted: boolean,
   turnCount: number,
+  usage?: AgentUsage,
 ): Promise<AgentRunResult> {
   const annotated = {
     ...result,
+    ...(usage === undefined ? {} : { usage }),
     extensions: { ...result.extensions, pi_turn_count: turnCount, pi_turn_started: turnStarted },
   };
   if (relay === undefined) {
@@ -113,6 +149,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
 
     const relay = this.session.relay;
     const outcome = await this.session.prompt(request.input);
+    const usage = agentUsage(outcome.usage);
     if (
       !Number.isInteger(outcome.turnCount) ||
       outcome.turnCount < this.turnCount ||
@@ -127,6 +164,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         relay,
         outcome.turnStarted,
         outcome.turnCount,
+        usage,
       );
     }
     if (outcome.shutdownRequested || outcome.stopReason === "aborted") {
@@ -148,6 +186,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         relay,
         outcome.turnStarted,
         outcome.turnCount,
+        usage,
       );
     }
     if (outcome.stopReason === "error") {
@@ -156,6 +195,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         relay,
         outcome.turnStarted,
         outcome.turnCount,
+        usage,
       );
     }
     if (outcome.text === undefined || outcome.text.length === 0) {
@@ -164,6 +204,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         relay,
         outcome.turnStarted,
         outcome.turnCount,
+        usage,
       );
     }
     return withRelayOutput(
@@ -171,6 +212,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
       relay,
       outcome.turnStarted,
       outcome.turnCount,
+      usage,
     );
   }
 

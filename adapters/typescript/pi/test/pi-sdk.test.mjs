@@ -9,6 +9,8 @@ import test from "node:test";
 import { createServer } from "node:http";
 
 import {
+  addEventUsage,
+  addUsage,
   buildCatalogModel,
   modelAwareCompactionReserveTokens,
   PiSdkSessionFactory,
@@ -1439,4 +1441,38 @@ test("accepts a well-formed extensions.cost", async () => {
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+test("sums each assistant message's usage and drops an incomplete one", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const first = addUsage(zero, { input: 10, output: 2, cacheRead: 5, cacheWrite: 1, totalTokens: 18 });
+  const second = addUsage(first, { input: 3, output: 4, cacheRead: 0, cacheWrite: 0, reasoning: 2 });
+
+  assert.deepEqual(second, { input: 13, output: 6, cacheRead: 5, cacheWrite: 1 });
+  assert.equal(addUsage(second, { input: 1, output: 1 }), undefined);
+  assert.equal(addUsage(undefined, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }), undefined);
+});
+
+test("counts the tokens Pi bills outside assistant messages", () => {
+  const usage = (tokens) => ({ input: tokens, output: 1, cacheRead: 0, cacheWrite: 0 });
+  const events = [
+    { type: "message_end", message: { role: "assistant", usage: usage(10) } },
+    { type: "compaction_end", aborted: false, result: { summary: "s", usage: usage(100) } },
+    { type: "message_end", message: { role: "toolResult", usage: usage(20) } },
+    { type: "message_end", message: { role: "toolResult" } },
+    { type: "entry_appended", entry: { type: "usage", usage: usage(5) } },
+    { type: "entry_appended", entry: { type: "custom" } },
+    { type: "turn_start" },
+  ];
+
+  const total = events.reduce(addEventUsage, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+
+  assert.deepEqual(total, { input: 135, output: 4, cacheRead: 0, cacheWrite: 0 });
+});
+
+test("a compaction without a usage report leaves the prompt's tokens unknown", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+  assert.equal(addEventUsage(zero, { type: "compaction_end", aborted: false, result: { summary: "s" } }), undefined);
+  assert.equal(addEventUsage(zero, { type: "compaction_end", aborted: true }), undefined);
 });

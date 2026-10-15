@@ -557,3 +557,29 @@ test("retries Relay cleanup when gateway shutdown fails", async () => {
   assert.equal(sessionStopAttempts, 2);
   assert.equal(relayStopAttempts, 2);
 });
+
+test("reports the invocation's tokens with cache reads and writes inside the input", async () => {
+  const usage = { input: 100, output: 40, cacheRead: 300, cacheWrite: 20 };
+  const runtime = new PiAdapterRuntime({
+    async create() {
+      return {
+        async prompt() {
+          return { accepted: true, turnStarted: true, turnCount: 1, text: "ok", stopReason: "stop", usage };
+        },
+        async stop() {},
+      };
+    },
+  });
+
+  await runtime.start(startInput());
+  const result = await runtime.invoke({ input: "one" }, context);
+  await runtime.stop();
+
+  assert.deepEqual(result.usage, {
+    input_tokens: 420,
+    cached_input_tokens: 300,
+    input_tokens_include_cache: true,
+    output_tokens: 40,
+    total_tokens: 460,
+  });
+});

@@ -28,7 +28,7 @@ import {
   type PiRelayControllerFactory,
   type PiRelayRuntime,
 } from "./relay.js";
-import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runtime.js";
+import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle, PiTokenUsage } from "./runtime.js";
 
 // ProviderConfigInput isn't re-exported from pi's public entrypoint; derive it from
 // registerProvider's param type (ModelRuntime's constructor is private, so no InstanceType).
@@ -67,6 +67,70 @@ interface PiToolFactoryContext {
   name: string;
   settings: JsonObject;
   workspace: string;
+}
+
+/**
+ * Add one billed call's usage to a prompt's running total. A call without a
+ * complete usage report makes the whole total unknown.
+ */
+export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTokenUsage | undefined {
+  if (total === undefined || typeof usage !== "object" || usage === null) {
+    return undefined;
+  }
+  const counts = usage as Record<string, unknown>;
+  const count = (name: keyof PiTokenUsage): number | undefined => {
+    const value = counts[name];
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  };
+  const input = count("input");
+  const output = count("output");
+  const cacheRead = count("cacheRead");
+  const cacheWrite = count("cacheWrite");
+  if (input === undefined || output === undefined || cacheRead === undefined || cacheWrite === undefined) {
+    return undefined;
+  }
+  return {
+    input: total.input + input,
+    output: total.output + output,
+    cacheRead: total.cacheRead + cacheRead,
+    cacheWrite: total.cacheWrite + cacheWrite,
+  };
+}
+
+/**
+ * Add the tokens one session event billed to a prompt's running total, as
+ * Pi's own usage totals count them: an assistant message, a tool result that
+ * reports usage, a finished compaction's summary call, and a usage entry such
+ * as a cache warm-up. A compaction that was aborted or finished without a
+ * usage report makes the total unknown, because its summary call may have
+ * been billed.
+ */
+export function addEventUsage(total: PiTokenUsage | undefined, event: unknown): PiTokenUsage | undefined {
+  const fields = (typeof event === "object" && event !== null ? event : {}) as {
+    type?: unknown;
+    message?: { role?: unknown; usage?: unknown };
+    aborted?: unknown;
+    result?: { usage?: unknown };
+    entry?: { type?: unknown; usage?: unknown };
+  };
+  switch (fields.type) {
+    case "message_end":
+      if (fields.message?.role === "assistant") {
+        return addUsage(total, fields.message.usage);
+      }
+      if (fields.message?.role === "toolResult" && fields.message.usage !== undefined) {
+        return addUsage(total, fields.message.usage);
+      }
+      return total;
+    case "compaction_end":
+      return fields.aborted === false && fields.result !== undefined
+        ? addUsage(total, fields.result.usage)
+        : undefined;
+    case "entry_appended":
+      return fields.entry?.type === "usage" ? addUsage(total, fields.entry.usage) : total;
+    default:
+      return total;
+  }
 }
 
 export function withCustomBaseUrl<T extends { api: string; baseUrl: string; compat?: object }>(
@@ -892,6 +956,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
     let finalAssistant:
       | { role: "assistant"; content: unknown; stopReason: string; errorMessage?: string }
       | undefined;
+    let usage: PiTokenUsage | undefined = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     const unsubscribe = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         turnStarted = true;
@@ -899,6 +964,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
       if (event.type === "message_end" && event.message.role === "assistant") {
         finalAssistant = event.message;
       }
+      usage = addEventUsage(usage, event);
     });
     try {
       await this.session.prompt(text, {
@@ -919,6 +985,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
       stopReason: finalAssistant?.stopReason,
       errorMessage: finalAssistant?.errorMessage,
       shutdownRequested: this.state.shutdownRequested,
+      usage: finalAssistant === undefined ? undefined : usage,
     };
   }
 
