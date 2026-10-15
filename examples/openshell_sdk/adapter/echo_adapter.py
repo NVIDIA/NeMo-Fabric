@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Small Fabric adapter used by the turnkey OpenShell example."""
+"""Run a stateful echo agent through Fabric's ordinary adapter lifecycle.
+
+The adapter keeps input history and declares a receipt on the second turn.
+It contains no OpenShell integration; the environment provider supplies that.
+"""
 
 import json
 from pathlib import Path

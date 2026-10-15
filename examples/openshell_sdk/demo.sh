@@ -2,7 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Workload hooks for the reusable examples/openshell/run-demo.sh launcher.
+# Configure the echo workload for the reusable OpenShell launcher. The launcher
+# builds the image and gateway, then these hooks run the host SDK consumer.
 WORKLOAD_NAME=openshell-sdk
 SUPPORTED_MODES=(caller_owned fabric_owned)
 IMAGE_DOCKERFILE="${WORKLOAD_ROOT}/runtime-image.Dockerfile"

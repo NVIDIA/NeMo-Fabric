@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run the SDK-only OpenShell example from the consumer/host process."""
+"""Drive the echo agent in OpenShell through the normal host SDK.
+
+Build a Fabric config for a caller-owned or Fabric-owned sandbox, start the
+task runtime, invoke it twice, and collect the declared artifact on the host.
+"""
 
 from __future__ import annotations
 

@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# Add the Fabric-ready echo adapter to the reusable OpenShell task image.
 FROM fabric-openshell-sdk:source
 USER root
 RUN install -d -o sandbox -g sandbox /opt/fabric/agents/echo

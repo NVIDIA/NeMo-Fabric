@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""The normal SDK example exercises the task SDK through the provider bridge."""
+"""Verify the echo example's host SDK configuration and lifecycle.
+
+The tests exercise the public consumer path and its OpenShell provider wiring
+without requiring a live gateway or inference endpoint.
+"""
 
 import json
 from pathlib import Path

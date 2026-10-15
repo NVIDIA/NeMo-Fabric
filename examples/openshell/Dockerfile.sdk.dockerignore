@@ -1,3 +1,4 @@
+# Limit the reusable task-image build context to Fabric packages and examples.
 **
 !Cargo.toml
 !Cargo.lock

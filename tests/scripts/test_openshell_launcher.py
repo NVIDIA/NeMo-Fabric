@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Exercise the shared OpenShell launcher without Docker or network access."""
+"""Verify the shared OpenShell demo launcher's local orchestration.
+
+The tests check command construction and ownership cleanup without starting
+Docker, the OpenShell gateway, or a model endpoint.
+"""
 
 import hashlib
 import io
