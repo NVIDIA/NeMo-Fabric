@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# Extend the reusable OpenShell task image with Hermes, its Fabric adapter,
+# and the code-review workload for an agent loop inside the sandbox.
 FROM fabric-openshell-sdk:source
 
 ARG HERMES_COMMIT=a62979dc3601c9eae455bff5b35ba8f9bed0df30
