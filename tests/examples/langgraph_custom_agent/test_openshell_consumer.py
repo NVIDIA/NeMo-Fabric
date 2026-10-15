@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for the normal SDK OpenShell path of the custom LangGraph agent."""
+"""Verify the custom LangGraph consumer's normal SDK and OpenShell path.
+
+The tests cover ownership, task-visible configuration, and optional Relay and
+MCP wiring without a live gateway or model endpoint.
+"""
 
 import asyncio
 import json
