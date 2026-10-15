@@ -70,6 +70,49 @@
     "additionalProperties": false
   },
   "extension_schemas": {
+    "usage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "nemo_fabric.detailed_token_usage.v1": {
+          "type": "object",
+          "properties": {
+            "input_tokens": {"type": "integer", "minimum": 0},
+            "cached_input_tokens": {"type": "integer", "minimum": 0},
+            "cache_write_input_tokens": {"type": "integer", "minimum": 0},
+            "input_tokens_include_cache": {"type": "boolean"},
+            "output_tokens": {"type": "integer", "minimum": 0},
+            "reasoning_tokens": {"type": "integer", "minimum": 0},
+            "output_tokens_include_reasoning": {"type": "boolean"},
+            "total_tokens": {"type": "integer", "minimum": 0},
+            "peak_request_input_tokens": {"type": "integer", "minimum": 0},
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "model": {"type": "string", "pattern": "\\S"},
+                  "provider": {"type": "string", "minLength": 1},
+                  "input_tokens": {"type": "integer", "minimum": 0},
+                  "cached_input_tokens": {"type": "integer", "minimum": 0},
+                  "cache_write_input_tokens": {"type": "integer", "minimum": 0},
+                  "input_tokens_include_cache": {"type": "boolean"},
+                  "output_tokens": {"type": "integer", "minimum": 0},
+                  "reasoning_tokens": {"type": "integer", "minimum": 0},
+                  "output_tokens_include_reasoning": {"type": "boolean"},
+                  "total_tokens": {"type": "integer", "minimum": 0},
+                  "peak_request_input_tokens": {"type": "integer", "minimum": 0}
+                },
+                "required": ["model"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "run_error": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",

@@ -130,6 +130,19 @@ explicitly configured `environment.env` values, and variables named by
 `environment.env_names`. Raw Claude stderr is consumed
 by the SDK and is not persisted as a NeMo Fabric artifact.
 
+## Token Usage
+
+The result's `usage` carries Claude Code's `input_tokens`, `output_tokens`, and
+reported `cost_usd`. Claude Code's `input_tokens` excludes cache reads and cache
+writes, so the adapter also returns the
+`nemo_fabric.detailed_token_usage.v1` usage extension with
+`cached_input_tokens`, `cache_write_input_tokens`, and
+`output_tokens_include_reasoning: true`. It sets
+`input_tokens_include_cache: false` only when Claude Code reports input, cache
+reads, and cache writes, and it adds one `models` entry per model only when
+every model reports all four counters. The descriptor declares the extension
+under `extension_schemas.usage`.
+
 ## Relay Observability
 
 Relay requires a NeMo Relay CLI in the `>=0.9,<0.11` range on `PATH`. The

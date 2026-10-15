@@ -16,6 +16,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+import jsonschema
 import pytest
 from claude_agent_sdk import AssistantMessage
 from claude_agent_sdk import ClaudeAgentOptions
@@ -48,6 +49,19 @@ ANTHROPIC_AUTH_ENV_NAMES = {
     "ANTHROPIC_PROFILE",
     "ANTHROPIC_SERVICE_ACCOUNT_ID",
     "ANTHROPIC_WORKSPACE_ID",
+}
+
+DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
+DETAILED_TOKEN_COUNTER_SCHEMAS = {
+    "input_tokens": {"type": "integer", "minimum": 0},
+    "cached_input_tokens": {"type": "integer", "minimum": 0},
+    "cache_write_input_tokens": {"type": "integer", "minimum": 0},
+    "input_tokens_include_cache": {"type": "boolean"},
+    "output_tokens": {"type": "integer", "minimum": 0},
+    "reasoning_tokens": {"type": "integer", "minimum": 0},
+    "output_tokens_include_reasoning": {"type": "boolean"},
+    "total_tokens": {"type": "integer", "minimum": 0},
+    "peak_request_input_tokens": {"type": "integer", "minimum": 0},
 }
 
 
@@ -221,6 +235,33 @@ def test_claude_descriptor_is_narrow_and_versioned():
             "additionalProperties": False,
         },
         "extension_schemas": {
+            "usage": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "nemo_fabric.detailed_token_usage.v1": {
+                        "type": "object",
+                        "properties": {
+                            **DETAILED_TOKEN_COUNTER_SCHEMAS,
+                            "models": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "model": {"type": "string", "pattern": "\\S"},
+                                        "provider": {"type": "string", "minLength": 1},
+                                        **DETAILED_TOKEN_COUNTER_SCHEMAS,
+                                    },
+                                    "required": ["model"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                        },
+                        "additionalProperties": False,
+                    }
+                },
+                "additionalProperties": False,
+            },
             "run_error": {
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
@@ -231,7 +272,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
                     "timeout_seconds": {"type": "number", "minimum": 0},
                 },
                 "additionalProperties": False,
-            }
+            },
         },
         "config": {
             "accepts": [
@@ -977,6 +1018,152 @@ def test_agent_run_result_discards_tokens_larger_than_uint64():
     )
 
     assert result.usage is None
+
+
+def test_agent_run_result_with_cache_counters_reports_detailed_token_usage():
+    result = adapter._agent_run_result(
+        {
+            "response": "done",
+            "usage": {
+                "input_tokens": 12,
+                "cache_read_input_tokens": 3000,
+                "cache_creation_input_tokens": 400,
+                "output_tokens": 90,
+            },
+            "model_usage": {
+                "claude-sonnet-4-5": {
+                    "inputTokens": 10,
+                    "outputTokens": 80,
+                    "cacheReadInputTokens": 3000,
+                    "cacheCreationInputTokens": 400,
+                    "costUSD": 0.01,
+                },
+                "claude-haiku-4-5": {
+                    "inputTokens": 2,
+                    "outputTokens": 10,
+                    "cacheReadInputTokens": 0,
+                    "cacheCreationInputTokens": 0,
+                },
+            },
+        }
+    )
+
+    assert result.usage is not None
+    assert result.usage.input_tokens == 12
+    assert result.usage.cached_input_tokens is None
+    flags = {
+        "input_tokens_include_cache": False,
+        "output_tokens_include_reasoning": True,
+    }
+    assert result.usage.extensions == {
+        DETAILED_TOKEN_USAGE_KEY: {
+            "input_tokens": 12,
+            "cached_input_tokens": 3000,
+            "cache_write_input_tokens": 400,
+            "output_tokens": 90,
+            **flags,
+            "models": [
+                {
+                    "model": "claude-sonnet-4-5",
+                    "input_tokens": 10,
+                    "cached_input_tokens": 3000,
+                    "cache_write_input_tokens": 400,
+                    "output_tokens": 80,
+                    **flags,
+                },
+                {
+                    "model": "claude-haiku-4-5",
+                    "input_tokens": 2,
+                    "cached_input_tokens": 0,
+                    "cache_write_input_tokens": 0,
+                    "output_tokens": 10,
+                    **flags,
+                },
+            ],
+        }
+    }
+
+
+def test_agent_run_result_detailed_token_usage_matches_descriptor_schema():
+    descriptor = json.loads(
+        (
+            ROOT / "adapters" / "python" / "claude" / "claude.fabric-adapter.json"
+        ).read_text(encoding="utf-8")
+    )
+    result = adapter._agent_run_result(
+        {
+            "response": "done",
+            "usage": {
+                "input_tokens": 1,
+                "cache_read_input_tokens": 2,
+                "cache_creation_input_tokens": 3,
+                "output_tokens": 4,
+            },
+            "model_usage": {
+                "claude-sonnet-4-5": {
+                    "inputTokens": 1,
+                    "outputTokens": 4,
+                    "cacheReadInputTokens": 2,
+                    "cacheCreationInputTokens": 3,
+                }
+            },
+        }
+    )
+
+    assert result.usage is not None
+    jsonschema.validate(
+        result.usage.extensions, descriptor["extension_schemas"]["usage"]
+    )
+
+
+def test_agent_run_result_without_cache_write_count_leaves_cache_inclusion_unknown():
+    result = adapter._agent_run_result(
+        {
+            "response": "done",
+            "usage": {
+                "input_tokens": 5,
+                "cache_read_input_tokens": 7,
+                "output_tokens": 1,
+            },
+        }
+    )
+
+    assert result.usage is not None
+    assert result.usage.extensions[DETAILED_TOKEN_USAGE_KEY] == {
+        "input_tokens": 5,
+        "cached_input_tokens": 7,
+        "output_tokens": 1,
+        "output_tokens_include_reasoning": True,
+    }
+
+
+def test_agent_run_result_with_incomplete_model_usage_omits_every_model():
+    result = adapter._agent_run_result(
+        {
+            "response": "done",
+            "usage": {"input_tokens": 5, "output_tokens": 1},
+            "model_usage": {
+                "claude-sonnet-4-5": {
+                    "inputTokens": 4,
+                    "outputTokens": 1,
+                    "cacheReadInputTokens": 0,
+                    "cacheCreationInputTokens": 0,
+                },
+                "claude-haiku-4-5": {"inputTokens": 1},
+            },
+        }
+    )
+
+    assert result.usage is not None
+    assert "models" not in result.usage.extensions[DETAILED_TOKEN_USAGE_KEY]
+
+
+def test_agent_run_result_without_usage_reports_no_detailed_token_usage():
+    result = adapter._agent_run_result({"response": "done", "cost_usd": 0.5})
+
+    assert result.usage is not None
+    assert result.usage.cost_usd == 0.5
+    assert result.usage.extensions == {}
 
 
 async def test_claude_runtime_reuses_one_connected_sdk_client(
