@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Explicit environment lifecycle remains separate from runtime shutdown."""
+"""Verify explicit environment preparation, attachment, and release.
+
+These SDK tests check that prepared environments can host multiple runtimes,
+that release is separate from runtime stop, and that lifecycle calls require
+typed environment handles before native dispatch.
+"""
 
 from pathlib import Path, WindowsPath
 from unittest.mock import MagicMock
