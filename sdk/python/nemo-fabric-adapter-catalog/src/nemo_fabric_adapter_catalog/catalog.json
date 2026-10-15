@@ -107,7 +107,7 @@
               "type": "number"
             },
             "max_buffer_size": {
-              "description": "Maximum size in bytes of one JSON message from Claude Code. Omit to use the Claude Agent SDK default.",
+              "description": "Size limit the Claude Agent SDK applies to one JSON message from Claude Code. Omit to use the SDK default.",
               "minimum": 1,
               "type": "integer"
             },
@@ -161,7 +161,7 @@
         "name": "nemo-fabric-adapters-claude",
         "version": "0.6.0"
       },
-      "sha256": "fef5348cb1932c81bd6820b2fd8a4175a69b453fa6c2fedbfcb8f0cd271f76e7",
+      "sha256": "f74534781fc0be118810ef80146cef286be7db9031cc5035063757300bdb8828",
       "source": "adapters/python/claude/claude.fabric-adapter.json"
     },
     "nvidia.fabric.cline": {

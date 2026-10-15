@@ -84,7 +84,7 @@ preserves the `claude_code` preset and adds the configured content after it.
 Planning rejects unknown keys, invalid types, and invalid values before the
 Claude runtime starts. When `permission_mode` is `dontAsk`, tools listed in
 `tools.enabled` are pre-approved so headless runs can invoke them.
-`max_buffer_size` sets the Claude Agent SDK's limit, in bytes, on one JSON
+`max_buffer_size` sets the size limit the Claude Agent SDK applies to one JSON
 message from Claude Code, such as a large tool result. A message over the limit
 fails the invocation instead of being truncated.
 

@@ -200,8 +200,8 @@ def test_claude_descriptor_is_narrow_and_versioned():
                     "type": "integer",
                     "minimum": 1,
                     "description": (
-                        "Maximum size in bytes of one JSON message from Claude "
-                        "Code. Omit to use the Claude Agent SDK default."
+                        "Size limit the Claude Agent SDK applies to one JSON "
+                        "message from Claude Code. Omit to use the SDK default."
                     ),
                 },
                 "permission_mode": {

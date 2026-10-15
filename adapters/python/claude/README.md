@@ -113,7 +113,7 @@ Only Claude-specific controls belong in `harness.settings`:
 | `max_buffer_size` | Integer greater than or equal to `1` | No | Claude Agent SDK default |
 | `setting_sources` | Array containing `user`, `project`, or `local` | No | `[]` |
 
-`max_buffer_size` sets the Claude Agent SDK's limit, in bytes, on one JSON
+`max_buffer_size` sets the size limit the Claude Agent SDK applies to one JSON
 message from Claude Code, such as a large tool result. A message over the limit
 fails the invocation instead of being truncated.
 
