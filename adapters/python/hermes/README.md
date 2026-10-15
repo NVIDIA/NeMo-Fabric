@@ -112,6 +112,19 @@ a child under `runtimes/<runtime_id>`, so invocations in one NeMo Fabric runtime
 share state without sharing config or the session database with another
 runtime.
 
+## Token Usage
+
+Hermes counts tokens per session, and the adapter keeps one session per
+runtime, so each result's `usage` is the change since the previous
+invocation: `input_tokens` with cache reads and cache writes included,
+`cached_input_tokens`, `output_tokens`, and `total_tokens`. A counter that
+Hermes does not report, or that went down because its session counters were
+reset, is left out for that invocation. After an invocation that raised, was
+cancelled, or timed out, or whose result held no counters, the adapter has no
+baseline. The next invocation then reports no token counters rather than a
+carried-over or whole-session total, and the one after it reports its own
+change again.
+
 ## Execution Model
 
 Each NeMo Fabric runtime starts one local adapter host, constructs one Hermes Agent

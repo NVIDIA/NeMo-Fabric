@@ -1371,12 +1371,20 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
             "completed": True,
             "failed": False,
             "messages": first_messages,
+            "input_tokens": 100,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 50,
+            "output_tokens": 20,
         },
         {
             "response": "second response",
             "completed": True,
             "failed": False,
             "messages": second_messages,
+            "input_tokens": 130,
+            "cache_read_tokens": 50,
+            "cache_write_tokens": 50,
+            "output_tokens": 35,
         },
     ]
     mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
@@ -1506,6 +1514,14 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     assert first.output["response"] == "first response"
     assert second.output["response"] == "second response"
     assert "session_id" not in second.output
+    # Hermes reports session totals; each invocation reports its own change,
+    # with input counting its cache reads and writes.
+    assert first.usage is not None and second.usage is not None
+    assert (first.usage.input_tokens, first.usage.cached_input_tokens) == (150, 0)
+    assert first.usage.output_tokens == 20
+    assert (second.usage.input_tokens, second.usage.cached_input_tokens) == (80, 50)
+    assert second.usage.input_tokens_include_cache is True
+    assert (second.usage.output_tokens, second.usage.total_tokens) == (15, 95)
     assert Path(second.output["hermes_home"]) == (
         tmp_path
         / "artifacts"
@@ -1514,6 +1530,94 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         / "runtimes"
         / "runtime-fabric-123"
     )
+
+
+async def test_hermes_invoke_after_failed_or_counterless_turn_reports_no_usage(
+    started_hermes_runtime,
+):
+    runtime, mock_turn = started_hermes_runtime
+
+    def turn(**counters: int) -> tuple[dict[str, object], str]:
+        return (
+            {"final_response": "done", "completed": True, "messages": [], **counters},
+            "",
+        )
+
+    def totals(tokens: int) -> dict[str, int]:
+        return {
+            "input_tokens": tokens,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "output_tokens": tokens,
+        }
+
+    mock_turn.side_effect = [
+        turn(**totals(100)),
+        turn(),
+        turn(**totals(300)),
+        RuntimeError("turn failed"),
+        turn(**totals(700)),
+        turn(**totals(800)),
+    ]
+    invocation = _invocation(
+        {
+            "runtime_context": _runtime_context(
+                runtime_id="runtime-incomplete"
+            ).to_mapping(),
+            "request": {"input": "next"},
+        }
+    )
+
+    first = await runtime.invoke(*invocation)
+    counterless = await runtime.invoke(*invocation)
+    after_counterless = await runtime.invoke(*invocation)
+    with pytest.raises(RuntimeError):
+        await runtime.invoke(*invocation)
+    after_failure = await runtime.invoke(*invocation)
+    recovered = await runtime.invoke(*invocation)
+
+    assert first.usage is not None
+    assert (first.usage.input_tokens, first.usage.output_tokens) == (100, 100)
+    # No baseline: never the session total or a carried-over change.
+    assert counterless.usage is None
+    assert after_counterless.usage is None
+    assert after_failure.usage is None
+    assert recovered.usage is not None
+    assert (recovered.usage.input_tokens, recovered.usage.output_tokens) == (100, 100)
+
+
+def test_invocation_usage_with_lower_or_missing_counters_leaves_them_unknown():
+    usage, totals = adapter._invocation_usage(
+        {
+            "input_tokens": 10,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "output_tokens": 4,
+        },
+        {
+            "input_tokens": 50,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "output_tokens": 1,
+        },
+    )
+    missing, _ = adapter._invocation_usage({"completed": True}, {})
+    no_baseline, _ = adapter._invocation_usage(
+        {
+            "input_tokens": 10,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "output_tokens": 4,
+        },
+        {},
+    )
+
+    assert usage is not None
+    assert usage.input_tokens is None
+    assert usage.output_tokens == 3
+    assert totals["input_tokens"] == 10
+    assert missing is None
+    assert no_baseline is None
 
 
 @pytest.mark.parametrize(

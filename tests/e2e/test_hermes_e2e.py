@@ -113,6 +113,30 @@ async def test_hermes_persistent_host_with_relay(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
+async def test_hermes_persistent_host_reports_usage_for_each_invocation(
+    code_review_agent_dir: Path,
+    api_server: str,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = hermes_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as runtime:
+        first = await runtime.invoke(input="first")
+        second = await runtime.invoke(input="second")
+
+    # The mock endpoint bills 0 tokens per call, so each invocation's change
+    # since the previous one is a measured 0, not unknown.
+    for turn in (first, second):
+        assert turn["status"] == "succeeded", turn.to_mapping()
+        assert turn.usage is not None, turn.to_mapping()
+        assert turn.usage.input_tokens == 0, turn.to_mapping()
+        assert turn.usage.output_tokens == 0, turn.to_mapping()
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
 async def test_env_secrets_in_headers(
     code_review_agent_dir: Path,
     api_server: str,
