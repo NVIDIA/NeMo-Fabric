@@ -75,6 +75,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`types.RunUsage`](./nemo_fabric.types.md#class-runusage): Normalized invocation-local usage reported by an adapter target.
 - [`types.RuntimeCapabilities`](./nemo_fabric.types.md#class-runtimecapabilities): Operations declared by the resolved runtime and adapter.
 - [`types.RuntimeHandle`](./nemo_fabric.types.md#class-runtimehandle): Opaque identity and binding for one started runtime.
+- [`types.RuntimeResourceSnapshot`](./nemo_fabric.types.md#class-runtimeresourcesnapshot): Timestamped resource usage of one runtime's local adapter host process tree.
 - [`types.ServiceHandle`](./nemo_fabric.types.md#class-servicehandle): Opaque identity and binding for one prepared or attached service.
 - [`types.ServiceReference`](./nemo_fabric.types.md#class-servicereference): Reference to an already-running caller-owned service.
 - [`types.TelemetryRef`](./nemo_fabric.types.md#class-telemetryref): Reference to external or persisted telemetry for a run.
@@ -84,6 +85,8 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`errors.FabricNativeUnavailableError`](./nemo_fabric.errors.md#class-fabricnativeunavailableerror): SDK call requires the PyO3 extension, but it is not installed or importable.
 - [`errors.FabricRuntimeError`](./nemo_fabric.errors.md#class-fabricruntimeerror): Failure while starting, invoking, stopping, or otherwise driving a runtime.
 - [`errors.FabricStateError`](./nemo_fabric.errors.md#class-fabricstateerror): Operation rejected because a local runtime is in the wrong state.
+- [`errors.ResourceObservationUnavailableError`](./nemo_fabric.errors.md#class-resourceobservationunavailableerror): Runtime resources cannot be read now.
+- [`errors.ResourceObservationUnsupportedError`](./nemo_fabric.errors.md#class-resourceobservationunsupportederror): The runtime's environment provider or operating system has no resource reader.
 
 ## Functions
 

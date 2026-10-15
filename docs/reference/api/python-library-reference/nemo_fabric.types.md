@@ -1244,6 +1244,89 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `RuntimeResourceSnapshot`
+
+Timestamped resource usage of one runtime's local adapter host process tree.
+
+Memory, process count, and CPU time cover the adapter host process and its live descendants, not a shared service process. Values that cannot be read raise an error instead of reading as zero.
+
+
+
+**Attributes:**
+
+ - <b>`runtime_id`</b>:  Runtime this snapshot describes.
+ - <b>`started_at`</b>:  When Fabric started the adapter host, as RFC 3339 UTC.
+ - <b>`observed_at`</b>:  When Fabric read these values, as RFC 3339 UTC.
+ - <b>`resident_memory_bytes`</b>:  Sum of the live processes' resident set sizes.  Pages shared between processes count once per process.
+ - <b>`process_count`</b>:  Live processes in the tree, including the adapter host.
+ - <b>`cpu_time_seconds`</b>:  CPU time used since the adapter host started,  including descendants that have exited and been waited for. It  can drop when a descendant leaves the tree.
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `runtime_id` | `str` |
+| `started_at` | `str` |
+| `observed_at` | `str` |
+| `resident_memory_bytes` | `int` |
+| `process_count` | `int` |
+| `cpu_time_seconds` | `float` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
 ## <kbd>class</kbd> `RunResult`
 
 Normalized terminal result from one NeMo Fabric invocation.
@@ -1265,6 +1348,7 @@ The model is both attribute-accessible and mapping-compatible. A harness failure
  - <b>`output`</b>:  Object-shaped adapter output as ``RunOutput``; non-object values  are preserved as-is.
  - <b>`error`</b>:  Structured failure, or ``None`` on success.
  - <b>`usage`</b>:  Normalized invocation usage, or ``None`` when unavailable.
+ - <b>`resource_snapshot`</b>:  Runtime resource snapshot read once after the  adapter returned this result, or ``None`` when the runtime's  resources could not be observed.
  - <b>`artifacts`</b>:  Normalized artifact manifest.
  - <b>`telemetry`</b>:  Ordered telemetry references.
  - <b>`events`</b>:  Ordered lifecycle and invocation events.
@@ -1289,6 +1373,7 @@ The mapping exposes the following typed fields:
 | `output` | `RunOutput \| JSONValue` |
 | `error` | `ErrorInfo \| None` |
 | `usage` | `RunUsage \| None` |
+| `resource_snapshot` | `RuntimeResourceSnapshot \| None` |
 | `artifacts` | `ArtifactManifest` |
 | `telemetry` | `Sequence[TelemetryRef]` |
 | `events` | `Sequence[FabricEvent]` |

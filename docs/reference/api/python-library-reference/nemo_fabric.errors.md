@@ -275,6 +275,88 @@ Initialize a structured NeMo Fabric exception.
 
 
 
+---
+
+## <kbd>class</kbd> `ResourceObservationUnavailableError`
+
+Runtime resources cannot be read now.
+
+The runtime stopped, is stopping, its adapter host process exited, or the process table cannot be read.
+
+
+### Inheritance
+
+Direct base: `FabricRuntimeError`.
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
+```
+
+Initialize a structured NeMo Fabric exception.
+
+
+
+**Args:**
+
+ - <b>`message`</b>:  Human-readable failure description.
+ - <b>`stage`</b>:  Optional lifecycle stage that failed.
+ - <b>`code`</b>:  Optional stable machine-readable error code.
+ - <b>`retryable`</b>:  Whether callers may safely retry unchanged input.
+ - <b>`details`</b>:  Optional structured diagnostic context. The exception  stores a deep copy.
+
+
+
+
+
+---
+
+## <kbd>class</kbd> `ResourceObservationUnsupportedError`
+
+The runtime's environment provider or operating system has no resource reader.
+
+
+### Inheritance
+
+Direct base: `FabricRuntimeError`.
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
+```
+
+Initialize a structured NeMo Fabric exception.
+
+
+
+**Args:**
+
+ - <b>`message`</b>:  Human-readable failure description.
+ - <b>`stage`</b>:  Optional lifecycle stage that failed.
+ - <b>`code`</b>:  Optional stable machine-readable error code.
+ - <b>`retryable`</b>:  Whether callers may safely retry unchanged input.
+ - <b>`details`</b>:  Optional structured diagnostic context. The exception  stores a deep copy.
+
+
+
+
+
 
 
 ---

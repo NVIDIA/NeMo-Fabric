@@ -12,6 +12,8 @@ from nemo_fabric.errors import FabricError
 from nemo_fabric.errors import FabricNativeUnavailableError
 from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric.errors import FabricStateError
+from nemo_fabric.errors import ResourceObservationUnavailableError
+from nemo_fabric.errors import ResourceObservationUnsupportedError
 from nemo_fabric.models import EnvironmentConfig
 from nemo_fabric.models import DiscoveryConfig
 from nemo_fabric.models import FabricBaseModel
@@ -63,6 +65,7 @@ from nemo_fabric.types import RunResult
 from nemo_fabric.types import RunUsage
 from nemo_fabric.types import RuntimeCapabilities
 from nemo_fabric.types import RuntimeHandle
+from nemo_fabric.types import RuntimeResourceSnapshot
 from nemo_fabric.types import ServiceHandle
 from nemo_fabric.types import ServiceReference
 from nemo_fabric.types import TelemetryRef
@@ -109,6 +112,8 @@ __all__ = [
     "FabricNativeUnavailableError",
     "FabricRuntimeError",
     "FabricStateError",
+    "ResourceObservationUnavailableError",
+    "ResourceObservationUnsupportedError",
     "RunOutput",
     "RunPlan",
     "RunRequest",
@@ -116,6 +121,7 @@ __all__ = [
     "RunUsage",
     "RuntimeCapabilities",
     "RuntimeHandle",
+    "RuntimeResourceSnapshot",
     "RuntimeConfig",
     "Runtime",
     "RuntimeStatus",
