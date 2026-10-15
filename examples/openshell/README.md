@@ -5,12 +5,16 @@ SPDX-License-Identifier: Apache-2.0
 
 # Run NVIDIA NeMo Fabric Agents in OpenShell
 
-These examples use OpenShell as the sandbox and policy boundary while keeping
-the normal NeMo Fabric SDK lifecycle in the consumer. The agent and its adapter
-run inside the sandbox with `fabric-agent-ctl serve`; the consumer calls the
-provider through the SDK. Start with the [minimal SDK echo example](../openshell_echo/README.md)
-to see the complete host-to-sandbox path, then explore the [Code Review](../code_review_agent/README.md)
-example.
+This directory contains the shared demo launcher, a reusable task-image
+Dockerfile, and setup guidance. The runnable agents live in the
+[echo](../openshell_echo/README.md) and [Code Review](../code_review_agent/README.md)
+examples.
+
+In each SDK demo, a consumer runs on the host and uses the NeMo Fabric SDK with
+its OpenShell environment provider to create or attach to a sandbox and control
+the runtime. The agent loop and adapter run inside the sandbox, where
+`fabric-agent-ctl serve` accepts runtime commands. OpenShell enforces sandbox
+isolation and policy. Start with the echo example to trace the complete path.
 
 ## Requirements
 
