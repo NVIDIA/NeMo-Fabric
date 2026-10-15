@@ -618,16 +618,16 @@ def _invocation_usage(
     Hermes keeps one session across a runtime's invocations, so each counter is
     the change since ``previous_totals``. A counter that is missing from the
     result or from ``previous_totals`` (no baseline: the previous invocation
-    failed or its result held no counters), or that went down (the session
-    counters were reset), is unknown for this invocation. The usage therefore
-    never holds a whole-session total or another invocation's tokens.
+    failed or its result held no counters), or that went down, is unknown for
+    this invocation. The usage therefore never holds a whole-session total or
+    another invocation's tokens.
     """
     totals = {
         key: value
         for key in _SESSION_TOKEN_KEYS
         if isinstance((value := result.get(key)), int)
         and not isinstance(value, bool)
-        and value >= 0
+        and 0 <= value <= (1 << 64) - 1
     }
     change = {
         key: value - previous_totals[key]

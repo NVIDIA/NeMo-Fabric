@@ -1712,6 +1712,10 @@ async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch
                 "completed": True,
                 "failed": False,
                 "messages": [],
+                "input_tokens": calls * 100,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": calls * 10,
             },
             "",
         )
@@ -1748,6 +1752,8 @@ async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch
     result = await runtime.invoke(*_invocation(invocation))
 
     assert result.output["response"] == "turn-2"
+    # The cancelled turn left no baseline, so its tokens never reach this result.
+    assert result.usage is None
     await runtime.stop()
 
 
