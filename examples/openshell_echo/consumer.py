@@ -86,7 +86,7 @@ def _config(
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     return FabricConfig(
         metadata=MetadataConfig(
-            name="openshell-sdk-echo",
+            name="openshell-echo",
             description="Stateful example agent run through the OpenShell provider.",
         ),
         harness=HarnessConfig(

@@ -6,7 +6,7 @@
 FROM fabric-openshell-sdk:source
 USER root
 RUN install -d -o sandbox -g sandbox /opt/fabric/agents/echo
-COPY --chown=sandbox:sandbox examples/openshell_sdk/adapter/echo_adapter.py /opt/fabric/agents/echo/echo_adapter.py
-COPY --chown=sandbox:sandbox examples/openshell_sdk/adapter/echo.fabric-adapter.json /opt/fabric/agents/echo/echo.fabric-adapter.json
+COPY --chown=sandbox:sandbox examples/openshell_echo/adapter/echo_adapter.py /opt/fabric/agents/echo/echo_adapter.py
+COPY --chown=sandbox:sandbox examples/openshell_echo/adapter/echo.fabric-adapter.json /opt/fabric/agents/echo/echo.fabric-adapter.json
 USER sandbox:sandbox
 WORKDIR /sandbox/workspace

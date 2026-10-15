@@ -1,7 +1,0 @@
-# Send only the echo adapter and descriptor to the workload-image build.
-**
-!examples/
-!examples/openshell_sdk/
-!examples/openshell_sdk/adapter/
-!examples/openshell_sdk/adapter/echo_adapter.py
-!examples/openshell_sdk/adapter/echo.fabric-adapter.json

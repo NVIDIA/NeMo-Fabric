@@ -15,12 +15,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from examples.openshell_sdk.consumer import run_demo
+from examples.openshell_echo.consumer import run_demo
 
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests/fixtures/openshell_echo"
-EXAMPLE_ADAPTER = ROOT / "examples/openshell_sdk/adapter"
+EXAMPLE_ADAPTER = ROOT / "examples/openshell_echo/adapter"
 
 
 @pytest.fixture
@@ -74,7 +74,7 @@ async def test_sdk_example_runs_task_agent_and_collects_receipt(
         ownership=ownership,
         gateway="https://fixture.invalid",
         image="sha256:" + "a" * 64,
-        policy_file=str(ROOT / "examples/openshell_sdk/policy.yaml"),
+        policy_file=str(ROOT / "examples/openshell_echo/policy.yaml"),
         results_file=str(tmp_path / ownership / "results.json"),
         input='{"message":"hello from the consumer"}',
         sandbox_name=sandbox_name,

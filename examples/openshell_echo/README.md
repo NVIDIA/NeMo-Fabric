@@ -22,7 +22,7 @@ launcher’s pinned OpenShell release. Then run:
 ```bash
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$PWD/.venv}"
 uv pip install --python "$UV_PROJECT_ENVIRONMENT/bin/python" openshell==0.1.2
-bash examples/openshell/run-demo.sh examples/openshell_sdk/demo.sh \
+bash examples/openshell/run-demo.sh examples/openshell_echo/demo.sh \
   --input '{"message":"hello from the host SDK"}'
 ```
 
@@ -32,6 +32,6 @@ caller-owned sandbox remains after SDK detach and that the NeMo Fabric-owned
 sandbox is deleted after SDK release.
 
 The consumer writes the two normalized results to
-`.tmp/openshell-sdk/{caller_owned,fabric_owned}-results.json`. The second
+`.tmp/openshell-echo/{caller_owned,fabric_owned}-results.json`. The second
 invocation returns a declared receipt; the provider collects it into the
 host-side artifact directory.

@@ -197,7 +197,7 @@ def test_sdk_example_hook_passes_normal_sdk_lifecycle_options(launcher, mode):
     _, root, _ = launcher
     completed = _run(
         launcher,
-        ROOT / "examples/openshell_sdk/demo.sh",
+        ROOT / "examples/openshell_echo/demo.sh",
         {"OPENSHELL_EXAMPLE_MODE": mode},
     )
 
@@ -208,7 +208,7 @@ def test_sdk_example_hook_passes_normal_sdk_lifecycle_options(launcher, mode):
         "--no-sync",
         "python",
         "-m",
-        "examples.openshell_sdk.consumer",
+        "examples.openshell_echo.consumer",
     ]
     assert "--ownership" in call["args"]
     assert call["args"][call["args"].index("--ownership") + 1] == mode
@@ -223,7 +223,7 @@ def test_consumer_failure_cleans_up_caller_owned_sandbox(launcher):
     _, root, _ = launcher
     completed = _run(
         launcher,
-        ROOT / "examples/openshell_sdk/demo.sh",
+        ROOT / "examples/openshell_echo/demo.sh",
         {"OPENSHELL_EXAMPLE_MODE": "caller_owned", "MOCK_CONSUMER_EXIT": "9"},
     )
 

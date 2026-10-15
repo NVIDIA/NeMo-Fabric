@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 These examples use OpenShell as the sandbox and policy boundary while keeping
 the normal NeMo Fabric SDK lifecycle in the consumer. The agent and its adapter
 run inside the sandbox with `fabric-agent-ctl serve`; the consumer calls the
-provider through the SDK. Start with the [minimal SDK echo example](../openshell_sdk/README.md)
+provider through the SDK. Start with the [minimal SDK echo example](../openshell_echo/README.md)
 to see the complete host-to-sandbox path, then explore the [Code Review](../code_review_agent/README.md)
 example.
 
