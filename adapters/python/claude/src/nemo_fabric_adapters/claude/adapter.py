@@ -698,6 +698,7 @@ def build_options(
             permission_mode=permission_mode,
             max_turns=max_turns,
             max_budget_usd=max_budget,
+            max_buffer_size=settings.get("max_buffer_size"),
             setting_sources=sources,
             cli_path=_resolve_path(base_dir, cli_path) if cli_path else None,
             mcp_servers=mcp.config_path if mcp is not None else {},
@@ -816,7 +817,11 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
             exit_code=error.exit_code,
         )
     if isinstance(error, CLIJSONDecodeError):
-        return _failure("claude_invalid_json", "Claude Code returned invalid JSON")
+        # The SDK also raises this when one message exceeds max_buffer_size.
+        return _failure(
+            "claude_invalid_json",
+            "Claude Code returned invalid JSON or a message larger than max_buffer_size",
+        )
     if isinstance(error, MessageParseError):
         return _failure("claude_message_parse_failed", "Claude message parsing failed")
     return _failure("claude_failed", "Claude invocation failed")

@@ -78,6 +78,9 @@ preserves the `claude_code` preset and adds the configured content after it.
 - `permission_mode`: `default`, `acceptEdits`, `bypassPermissions`, `plan`,
   `dontAsk`, or `auto`
 - `max_budget_usd`: a number greater than `0`
+- `max_buffer_size`: an integer greater than or equal to `1`, the maximum size
+  in bytes of one JSON message from Claude Code; the Claude Agent SDK default
+  is 1 MiB, and a larger message fails with `claude_invalid_json`
 - `setting_sources`: an array containing `user`, `project`, or `local`
 
 Planning rejects unknown keys, invalid types, and invalid values before the

@@ -63,6 +63,7 @@ _config = partial(
             {
                 "setting_sources": ["user", "project", "local"],
                 "max_budget_usd": 1.5,
+                "max_buffer_size": 33554432,
                 "permission_mode": "dontAsk",
             },
             id="claude",
@@ -339,6 +340,24 @@ def test_openclaw_rejects_relay(tmp_path: Path):
             {"max_budget_usd": True},
             "harness.settings.max_budget_usd",
             id="claude-budget-boolean",
+        ),
+        pytest.param(
+            "nvidia.fabric.claude",
+            {"max_buffer_size": 1.5},
+            "harness.settings.max_buffer_size",
+            id="claude-buffer-size-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.claude",
+            {"max_buffer_size": 0},
+            "harness.settings.max_buffer_size",
+            id="claude-buffer-size-range",
+        ),
+        pytest.param(
+            "nvidia.fabric.claude",
+            {"max_buffer_size": True},
+            "harness.settings.max_buffer_size",
+            id="claude-buffer-size-boolean",
         ),
         pytest.param(
             "nvidia.fabric.claude",
