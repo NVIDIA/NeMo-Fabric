@@ -20,6 +20,20 @@ The diagrams show the host and sandbox responsibilities, followed by how an SDK
 
 [Edit the invocation diagram](../../assets/openshell_invocation.excalidraw).
 
+The SDK starts the host-side provider when the first OpenShell operation runs.
+Fabric launches `fabric-environment-openshell serve --stdio` as a child process,
+using `NEMO_FABRIC_OPEN_SHELL_PROVIDER` when set or finding the binary on `PATH`.
+It exchanges JSON with that process through standard input and output. Fabric
+reuses a provider process for environment operations and keeps runtime command
+processes separate by runtime ID.
+
+For a Fabric-owned sandbox, the provider passes `settings.command` to OpenShell
+when creating it; for a caller-owned sandbox, it verifies the existing startup
+command. The examples use `fabric-agent-ctl serve` as that long-running sandbox
+command. The provider then uses OpenShell exec calls to run short-lived
+`fabric-agent-ctl start`, `invoke`, and `stop` commands against the task runtime
+server.
+
 Build from the repository root:
 
 ```sh
