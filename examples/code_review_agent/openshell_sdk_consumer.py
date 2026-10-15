@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run the code-review agent through the normal SDK and OpenShell provider."""
+"""Run the OpenClaw code-review agent through the normal host SDK.
+
+Configure an OpenShell sandbox, start the task-side Fabric runtime, invoke the
+agent across review turns, and collect the report on the host.
+"""
 
 from __future__ import annotations
 

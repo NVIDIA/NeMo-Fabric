@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""The Code Review OpenShell example uses the public SDK lifecycle."""
+"""Verify the OpenClaw code-review consumer's SDK and OpenShell wiring.
+
+The tests cover both sandbox ownership modes, request context, and artifact
+handling without starting a gateway or model endpoint.
+"""
 
 import asyncio
 import json
