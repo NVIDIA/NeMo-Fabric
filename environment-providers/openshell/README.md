@@ -9,16 +9,11 @@ This optional host process connects NVIDIA NeMo Fabric to OpenShell through its 
 
 ## Architecture
 
-The diagrams show the host and sandbox responsibilities, followed by how an SDK
-`invoke` call travels through the provider to the runtime in the sandbox.
+The diagram shows where Fabric processes run on the host and in the sandbox.
 
 ![Fabric agent execution in OpenShell](../../assets/openshell_architecture.png)
 
 [Edit the architecture diagram](../../assets/openshell_architecture.excalidraw).
-
-![SDK invocation flow](../../assets/openshell_invocation.png)
-
-[Edit the invocation diagram](../../assets/openshell_invocation.excalidraw).
 
 The SDK starts the host-side provider when the first OpenShell operation runs.
 Fabric launches `fabric-environment-openshell serve --stdio` as a child process,
@@ -30,9 +25,23 @@ processes separate by runtime ID.
 For a Fabric-owned sandbox, the provider passes `settings.command` to OpenShell
 when creating it; for a caller-owned sandbox, it verifies the existing startup
 command. The examples use `fabric-agent-ctl serve` as that long-running sandbox
-command. The provider then uses OpenShell exec calls to run short-lived
-`fabric-agent-ctl start`, `invoke`, and `stop` commands against the task runtime
-server.
+command.
+
+## Invocation Flow
+
+This diagram follows one SDK `invoke` call into the sandbox and back.
+
+![SDK invocation flow](../../assets/openshell_invocation.png)
+
+[Edit the invocation diagram](../../assets/openshell_invocation.excalidraw).
+
+The host provider checks the sandbox identity, then asks OpenShell to run a
+short-lived `fabric-agent-ctl invoke` command there. The command sends the full
+`RunRequest` over a Unix socket to the persistent task runtime server. That
+server selects the runtime ID and returns a `RunResult` through the same path.
+Start and stop use the same command route.
+
+## Use the Provider
 
 Build from the repository root:
 
