@@ -1,7 +1,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""One-shot, bounded reader executed with the task interpreter; no runtime server."""
+"""Read declared artifact files from an OpenShell sandbox after invocation.
+
+The provider runs this one-shot script with the task interpreter, passing an
+absolute artifact root and relative file paths as JSON on stdin. It reads only
+regular files beneath that root without following symlinks, with limits of 16
+files, 256 KiB per file, and 512 KiB total. It returns paths and bytes as JSON;
+the host copies those bytes to its artifact destination. The persistent task
+runtime server is not involved.
+"""
 
 import json
 import os

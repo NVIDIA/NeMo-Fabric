@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Normal host SDK controls a separate, real task SDK through provider stdio."""
+"""Exercise host-to-task runtime control through the public SDK.
+
+A model-free stdio provider stands in for OpenShell while a separate task SDK
+runs the fixture adapter. The tests cover lifecycle, runtime identity, request
+forwarding, artifacts, and uncertain command results.
+"""
 
 import asyncio
 import json

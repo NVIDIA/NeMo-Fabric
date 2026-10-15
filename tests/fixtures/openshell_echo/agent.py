@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Minimal Fabric-ready adapter; it has no OpenShell dependency."""
+"""Provide a model-free, stateful adapter for the remote-runtime tests.
+
+The adapter uses the ordinary Fabric lifecycle and has no OpenShell dependency.
+It echoes inputs, writes a declared artifact, and exposes controlled failure
+and concurrency cases for the host-to-task path.
+"""
 
 import asyncio
 import hashlib

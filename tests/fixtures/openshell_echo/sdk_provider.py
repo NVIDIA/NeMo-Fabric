@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Model-free stdio provider fixture backed by the real task-local SDK."""
+"""Emulate the OpenShell provider protocol without a gateway or model.
+
+The fixture receives host provider requests over stdio, executes lifecycle
+operations with a separate real task SDK, and returns provider responses. It
+also invokes the artifact reader and can inject malformed command results.
+"""
 
 import asyncio
 import json

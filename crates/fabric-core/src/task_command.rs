@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Private command routing; application values remain public SDK mappings.
+//! Private command contract between the host runtime and environment provider.
+//!
+//! `TaskCommand` names the task-side start, invoke, and stop operations while
+//! carrying the full public SDK config or request as JSON. The provider returns
+//! either the SDK value or a normalized diagnostic through `TaskCommandResponse`.
+//! Command execution and task-runtime state live outside this module.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

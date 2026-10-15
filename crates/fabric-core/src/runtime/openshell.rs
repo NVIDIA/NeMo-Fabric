@@ -1,7 +1,14 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host runtime binding to the task-local public SDK.
+//! Host-side runtime coordinator for agents running in OpenShell sandboxes.
+//!
+//! Implements Fabric's runtime start, invoke, and stop operations by projecting
+//! the host configuration into a task-local configuration and sending commands
+//! through the OpenShell environment provider. It validates task SDK responses,
+//! tracks runtime bindings and uncertain operations, and collects declared
+//! artifacts. The environment provider handles gateway and sandbox operations;
+//! the task runtime server and harness adapter execute inside the sandbox.
 
 use super::*;
 use crate::config::{DiscoveryConfig, EnvironmentConfig, ResolutionStrategy};

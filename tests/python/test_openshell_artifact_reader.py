@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Exercise the actual one-shot reader used by the provider."""
+"""Verify the sandbox artifact reader's bytes, bounds, and path isolation.
+
+These tests execute the same one-shot script that the OpenShell provider sends
+to the sandbox, including symlink, special-file, and traversal rejection.
+"""
 
 import json
 import os
