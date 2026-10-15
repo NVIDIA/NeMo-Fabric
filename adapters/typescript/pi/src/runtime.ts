@@ -20,8 +20,8 @@ import type { PiRelayRuntime } from "./relay.js";
 export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | string;
 
 /**
- * Token counts Pi billed during one prompt. Pi's `input` excludes cache reads
- * and writes.
+ * Token counts Pi recorded during one prompt. Pi's `input` excludes cache
+ * reads and writes.
  */
 export interface PiTokenUsage {
   input: number;
@@ -38,7 +38,7 @@ export interface PiPromptOutcome {
   stopReason?: PiStopReason;
   errorMessage?: string;
   shutdownRequested?: boolean;
-  /** Absent when any billed call of the prompt carried no complete usage. */
+  /** Absent when any call of the prompt carried no complete usage. */
   usage?: PiTokenUsage;
 }
 

@@ -214,13 +214,14 @@ independent of native OpenAI streaming, so the adapter descriptor's
 
 ## Token Usage
 
-Each result's `usage` sums the tokens Pi bills during the invocation, counted
+Each result's `usage` sums the tokens Pi records during the invocation, counted
 the way Pi's own usage totals count them: assistant messages, tool results that
 report usage, finished compaction summaries, and usage entries such as cache
 warm-ups. It holds `input_tokens` with cache reads and cache writes included,
-`cached_input_tokens`, `output_tokens`, and `total_tokens`. When one of those
-calls carries no complete usage, or a compaction was aborted or reported no
-usage, the result has no `usage`. Pi computes its cost figures from the model
+`cached_input_tokens`, `output_tokens`, and `total_tokens`. The result has no
+`usage` when Pi produced no assistant message, when one of those calls carries
+no complete usage, when an assistant message was aborted, or when a compaction
+was aborted or reported no usage. Pi computes its cost figures from the model
 catalog's rates, so the adapter does not report them as `cost_usd`.
 
 ## Custom Tool Modules

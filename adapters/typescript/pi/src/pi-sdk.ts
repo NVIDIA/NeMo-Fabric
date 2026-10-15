@@ -70,8 +70,8 @@ interface PiToolFactoryContext {
 }
 
 /**
- * Add one billed call's usage to a prompt's running total. A call without a
- * complete usage report makes the whole total unknown.
+ * Add one call's usage to a prompt's running total. A call without a complete
+ * usage report makes the whole total unknown.
  */
 export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTokenUsage | undefined {
   if (total === undefined || typeof usage !== "object" || usage === null) {
@@ -98,17 +98,17 @@ export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTok
 }
 
 /**
- * Add the tokens one session event billed to a prompt's running total, as
+ * Add the tokens one session event recorded to a prompt's running total, as
  * Pi's own usage totals count them: an assistant message, a tool result that
  * reports usage, a finished compaction's summary call, and a usage entry such
- * as a cache warm-up. A compaction that was aborted or finished without a
- * usage report makes the total unknown, because its summary call may have
- * been billed.
+ * as a cache warm-up. An aborted assistant message, or a compaction that was
+ * aborted or finished without a usage report, makes the total unknown: Pi
+ * keeps no usage for a call it stopped, which may still have been billed.
  */
 export function addEventUsage(total: PiTokenUsage | undefined, event: unknown): PiTokenUsage | undefined {
   const fields = (typeof event === "object" && event !== null ? event : {}) as {
     type?: unknown;
-    message?: { role?: unknown; usage?: unknown };
+    message?: { role?: unknown; stopReason?: unknown; usage?: unknown };
     aborted?: unknown;
     result?: { usage?: unknown };
     entry?: { type?: unknown; usage?: unknown };
@@ -116,7 +116,7 @@ export function addEventUsage(total: PiTokenUsage | undefined, event: unknown): 
   switch (fields.type) {
     case "message_end":
       if (fields.message?.role === "assistant") {
-        return addUsage(total, fields.message.usage);
+        return fields.message.stopReason === "aborted" ? undefined : addUsage(total, fields.message.usage);
       }
       if (fields.message?.role === "toolResult" && fields.message.usage !== undefined) {
         return addUsage(total, fields.message.usage);

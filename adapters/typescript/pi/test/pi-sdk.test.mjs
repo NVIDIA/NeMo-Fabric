@@ -1476,3 +1476,13 @@ test("a compaction without a usage report leaves the prompt's tokens unknown", (
   assert.equal(addEventUsage(zero, { type: "compaction_end", aborted: false, result: { summary: "s" } }), undefined);
   assert.equal(addEventUsage(zero, { type: "compaction_end", aborted: true }), undefined);
 });
+
+test("an aborted assistant message leaves the prompt's tokens unknown", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+  assert.equal(
+    addEventUsage(zero, { type: "message_end", message: { role: "assistant", stopReason: "aborted", usage } }),
+    undefined,
+  );
+});
