@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run the custom LangGraph agent through the NeMo Fabric SDK and OpenShell."""
+"""Run the custom LangGraph agent in OpenShell through the host Fabric SDK.
+
+Build task-visible configuration for the sandbox, invoke the agent through
+the task-side runtime, and collect its results on the host. Relay and MCP
+options reuse the same agent implementation.
+"""
 
 from __future__ import annotations
 

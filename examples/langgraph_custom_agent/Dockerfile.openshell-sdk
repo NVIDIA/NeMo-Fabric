@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# Extend the reusable OpenShell task image with the custom LangGraph agent,
+# its dependencies, and the Fabric adapter that runs inside the sandbox.
 FROM fabric-openshell-sdk:source
 
 USER root
