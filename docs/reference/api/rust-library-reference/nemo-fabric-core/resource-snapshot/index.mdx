@@ -1,0 +1,21 @@
+---
+title: "Module resource_snapshot"
+sidebar-title: "resource_snapshot"
+slug: "/reference/api/rust-library-reference/nemo-fabric-core/resource_snapshot"
+description: "Resource snapshots of a runtime's local adapter host and its descendants."
+position: 133
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+Resource snapshots of a runtime's local adapter host and its descendants.
+
+A snapshot reads the process tree rooted at the adapter host process that NeMo Fabric started for a runtime. Each read visits a parent before its children. CPU time adds every process's own CPU time and the CPU time of the children it has already waited for, so work done by finished descendants still counts. A child reaped between the read of its parent and its own read is missed by that one snapshot and is never counted twice. CPU time can drop between snapshots when a descendant is reparented out of the tree, and on macOS while an exited descendant is not yet waited for, because macOS cannot list an unreaped process.
+
+Linux reads `/proc/<pid>/stat` and macOS reads `proc_pid_rusage`. Neither reads command lines, environment variables, or open files.
+
+## Structs
+
+- [RuntimeResourceSnapshot](struct-runtimeresourcesnapshot.mdx): Timestamped resource usage of one runtime's local adapter host process tree.

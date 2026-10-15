@@ -1,0 +1,16 @@
+---
+title: "Function runtime_resource_snapshot"
+sidebar-title: "runtime_resource_snapshot"
+description: "Read a timestamped resource snapshot of a started runtime."
+position: 38
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn runtime_resource_snapshot(\n    plan: &amp;<a href=\"../config/struct-runplan.mdx\">RunPlan</a>,\n    runtime: &amp;<a href=\"struct-runtimehandle.mdx\">RuntimeHandle</a>,\n) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"../resource-snapshot/struct-runtimeresourcesnapshot.mdx\">RuntimeResourceSnapshot</a>&gt;"}} /></pre>
+
+Read a timestamped resource snapshot of a started runtime.
+
+The snapshot covers the runtime's local adapter host process and its live descendants. It does not wait for a running invocation. It returns [`FabricError::ResourceObservationUnavailable`](../error/enum-fabricerror.mdx#variant.ResourceObservationUnavailable) when the runtime stopped, is stopping, its host exited, or the process table cannot be read, and [`FabricError::ResourceObservationUnsupported`](../error/enum-fabricerror.mdx#variant.ResourceObservationUnsupported) when the environment provider or operating system has no resource reader.

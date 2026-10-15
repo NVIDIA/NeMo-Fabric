@@ -277,6 +277,24 @@ pub enum FabricError {
         /// Adapter kind.
         adapter_kind: AdapterKind,
     },
+    /// A runtime's resources cannot be read now: the runtime stopped, is
+    /// stopping, its adapter host process exited, or the process table cannot
+    /// be read.
+    #[error("resource observation is unavailable for runtime `{runtime_id}`: {reason}")]
+    ResourceObservationUnavailable {
+        /// Runtime handle id.
+        runtime_id: String,
+        /// Why the runtime cannot be observed.
+        reason: String,
+    },
+    /// The runtime's environment provider or operating system has no resource reader.
+    #[error("resource observation is unsupported for runtime `{runtime_id}`: {reason}")]
+    ResourceObservationUnsupported {
+        /// Runtime handle id.
+        runtime_id: String,
+        /// What has no resource reader.
+        reason: String,
+    },
     /// Process adapter settings were invalid.
     #[error("invalid process adapter settings for {path}: {source}")]
     InvalidProcessSettings {
