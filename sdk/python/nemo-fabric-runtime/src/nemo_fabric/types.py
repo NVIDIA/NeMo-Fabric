@@ -1843,8 +1843,8 @@ class RuntimeResourceSnapshot(FabricMapping):
 
     Attributes:
         runtime_id: Runtime this snapshot describes.
-        started_at: When Fabric started the adapter host, as RFC 3339 UTC.
-        observed_at: When Fabric read these values, as RFC 3339 UTC.
+        started_at: When NeMo Fabric started the adapter host, as RFC 3339 UTC.
+        observed_at: When NeMo Fabric read these values, as RFC 3339 UTC.
         resident_memory_bytes: Sum of the live processes' resident set sizes.
             Pages shared between processes count once per process.
         process_count: Live processes in the tree, including the adapter host.

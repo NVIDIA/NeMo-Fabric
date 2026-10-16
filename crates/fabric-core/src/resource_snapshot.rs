@@ -39,16 +39,16 @@ const NANOS_PER_SECOND: f64 = 1_000_000_000.0;
 ///
 /// Memory, process count, and CPU time cover the adapter host process and its
 /// live descendants. For a runtime started on a service, the shared service
-/// process is not included. Values Fabric cannot read are returned as an error,
-/// never as zero.
+/// process is not included. Values NeMo Fabric cannot read are returned as an
+/// error, never as zero.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeResourceSnapshot {
     /// Runtime this snapshot describes.
     pub runtime_id: String,
-    /// When Fabric started the runtime's adapter host, as an RFC 3339 UTC timestamp.
+    /// When NeMo Fabric started the runtime's adapter host, as an RFC 3339 UTC timestamp.
     #[schemars(extend("format" = "date-time"))]
     pub started_at: String,
-    /// When Fabric read these values, as an RFC 3339 UTC timestamp.
+    /// When NeMo Fabric read these values, as an RFC 3339 UTC timestamp.
     #[schemars(extend("format" = "date-time"))]
     pub observed_at: String,
     /// Sum of the resident set sizes of the live processes, in bytes. Pages
@@ -75,7 +75,7 @@ pub(crate) struct LocalHostProcess {
 }
 
 impl LocalHostProcess {
-    /// Record the host `pid`, started by Fabric at `started_at`.
+    /// Record the host `pid`, started by NeMo Fabric at `started_at`.
     pub(crate) fn new(pid: u32, started_at: SystemTime) -> Self {
         Self {
             pid,
