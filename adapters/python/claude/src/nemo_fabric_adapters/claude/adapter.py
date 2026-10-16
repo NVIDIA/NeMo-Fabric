@@ -635,6 +635,9 @@ def build_options(
 ) -> ClaudeAgentOptions:
     settings = _settings(config)
     model = _selected_model_config(config)
+    effort = settings.get("effort")
+    if effort is not None and effort not in ("low", "medium", "high", "xhigh", "max"):
+        raise AdapterConfigError("claude_invalid_configuration", "effort is invalid")
     permission_mode = settings.get("permission_mode")
     if permission_mode is not None and permission_mode not in PERMISSION_MODES:
         raise AdapterConfigError(
@@ -700,6 +703,7 @@ def build_options(
             max_turns=max_turns,
             max_budget_usd=max_budget,
             max_buffer_size=settings.get("max_buffer_size"),
+            effort=effort,
             setting_sources=sources,
             cli_path=_resolve_path(base_dir, cli_path) if cli_path else None,
             mcp_servers=mcp.config_path if mcp is not None else {},

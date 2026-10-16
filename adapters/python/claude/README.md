@@ -109,6 +109,7 @@ Only Claude-specific controls belong in `harness.settings`:
 | Setting | Type | Required | Static default |
 | --- | --- | --- | --- |
 | `permission_mode` | One of `default`, `acceptEdits`, `bypassPermissions`, `plan`, `dontAsk`, or `auto` | No | No default |
+| `effort` | One of `low`, `medium`, `high`, `xhigh`, or `max` | No | Harness default |
 | `max_budget_usd` | Number greater than `0` | No | No default |
 | `max_buffer_size` | Integer greater than or equal to `1` | No | Claude Agent SDK default |
 | `setting_sources` | Array containing `user`, `project`, or `local` | No | `[]` |

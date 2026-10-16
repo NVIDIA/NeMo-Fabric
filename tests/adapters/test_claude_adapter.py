@@ -192,6 +192,11 @@ def test_claude_descriptor_is_narrow_and_versioned():
                     "default": [],
                     "description": "Claude settings scopes to load.",
                 },
+                "effort": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high", "xhigh", "max"],
+                    "description": "Claude reasoning effort. Omit to preserve the harness default.",
+                },
                 "max_budget_usd": {
                     "type": "number",
                     "exclusiveMinimum": 0,
@@ -432,6 +437,37 @@ def test_build_options_appends_to_claude_preset_system_prompt(claude_payload):
         "preset": "claude_code",
         "append": "Review carefully.",
     }
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh", "max"])
+def test_build_options_passes_native_effort(claude_payload, effort):
+    claude_payload["config"]["harness"]["settings"]["effort"] = effort
+
+    assert build_options(claude_payload).effort == effort
+
+
+def test_build_options_keeps_harness_effort_default_when_omitted(claude_payload):
+    assert build_options(claude_payload).effort is None
+
+
+@pytest.mark.parametrize("effort", [True, 1, [], {}, "", "unknown", "ultra"])
+def test_build_options_rejects_effort_before_staging(
+    claude_payload, monkeypatch, effort
+):
+    claude_payload["config"]["harness"]["settings"]["effort"] = effort
+    stage_skills = MagicMock()
+    stage_mcp = MagicMock()
+    monkeypatch.setattr(adapter, "_stage_skill_plugin", stage_skills)
+    monkeypatch.setattr(adapter, "_stage_mcp_config", stage_mcp)
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="^effort is invalid$"
+    ) as caught:
+        build_options(claude_payload)
+
+    assert caught.value.code == "claude_invalid_configuration"
+    stage_skills.assert_not_called()
+    stage_mcp.assert_not_called()
 
 
 def test_build_options_keeps_sdk_buffer_default_when_omitted(claude_payload):

@@ -929,12 +929,12 @@ def _reasoning_effort(config: AgentConfig) -> ReasoningEffort | None:
     value = _optional_string(_settings(config), "reasoning_effort")
     if value is None:
         return None
-    try:
-        return ReasoningEffort(value)
-    except ValueError as error:
+    # The SDK accepts unknown strings; keep the descriptor's supported values finite.
+    if value not in ("none", "minimal", "low", "medium", "high", "xhigh", "max"):
         raise AdapterConfigError(
             "codex_invalid_configuration", "reasoning_effort is invalid"
-        ) from error
+        )
+    return ReasoningEffort(value)
 
 
 def _output_schema(config: AgentConfig) -> dict[str, Any] | None:
