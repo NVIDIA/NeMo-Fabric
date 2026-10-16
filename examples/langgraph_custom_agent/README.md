@@ -222,8 +222,8 @@ host-side consumer uses the normal NeMo Fabric SDK and OpenShell provider for
 both sandbox ownership modes.
 
 From the repository root, use a host Python environment with the NeMo Fabric
-SDK and OpenShell SDK `0.1.2`, Docker with Linux containers, Rust/Cargo, and
-`uv`. Set `NVIDIA_API_KEY`, then run:
+SDK and native extension, Docker with Linux containers, Rust/Cargo, and `uv`.
+Set `NVIDIA_API_KEY`, then run:
 
 ```bash
 bash examples/openshell/run-demo.sh \
