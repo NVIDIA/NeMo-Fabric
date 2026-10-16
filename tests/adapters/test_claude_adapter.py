@@ -16,6 +16,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+import jsonschema
 import pytest
 from claude_agent_sdk import AssistantMessage
 from claude_agent_sdk import ClaudeAgentOptions
@@ -49,6 +50,8 @@ ANTHROPIC_AUTH_ENV_NAMES = {
     "ANTHROPIC_SERVICE_ACCOUNT_ID",
     "ANTHROPIC_WORKSPACE_ID",
 }
+
+DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
 
 
 def lifecycle_invocation(
@@ -221,6 +224,28 @@ def test_claude_descriptor_is_narrow_and_versioned():
             "additionalProperties": False,
         },
         "extension_schemas": {
+            "usage": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "nemo_fabric.detailed_token_usage.v1": {
+                        "type": "object",
+                        "properties": {
+                            "input_tokens": {"type": "integer", "minimum": 0},
+                            "cached_input_tokens": {"type": "integer", "minimum": 0},
+                            "cache_write_input_tokens": {
+                                "type": "integer",
+                                "minimum": 0,
+                            },
+                            "input_tokens_include_cache": {"type": "boolean"},
+                            "output_tokens": {"type": "integer", "minimum": 0},
+                            "output_tokens_include_reasoning": {"type": "boolean"},
+                        },
+                        "additionalProperties": False,
+                    }
+                },
+                "additionalProperties": False,
+            },
             "run_error": {
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
@@ -231,7 +256,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
                     "timeout_seconds": {"type": "number", "minimum": 0},
                 },
                 "additionalProperties": False,
-            }
+            },
         },
         "config": {
             "accepts": [
@@ -977,6 +1002,196 @@ def test_agent_run_result_discards_tokens_larger_than_uint64():
     )
 
     assert result.usage is None
+
+
+def test_agent_run_result_with_cache_counters_reports_detailed_token_usage():
+    result = adapter._agent_run_result(
+        {
+            "response": "done",
+            "usage": {
+                "input_tokens": 12,
+                "cache_read_input_tokens": 3000,
+                "cache_creation_input_tokens": 400,
+                "output_tokens": 90,
+            },
+            # Claude Code's model_usage is process-cumulative, so it is not
+            # reported as invocation usage.
+            "model_usage": {
+                "claude-sonnet-4-5": {
+                    "inputTokens": 10,
+                    "outputTokens": 80,
+                    "cacheReadInputTokens": 3000,
+                    "cacheCreationInputTokens": 400,
+                },
+            },
+        }
+    )
+
+    assert result.usage is not None
+    assert result.usage.input_tokens == 12
+    assert result.usage.cached_input_tokens is None
+    assert result.usage.extensions == {
+        DETAILED_TOKEN_USAGE_KEY: {
+            "input_tokens": 12,
+            "cached_input_tokens": 3000,
+            "cache_write_input_tokens": 400,
+            "input_tokens_include_cache": False,
+            "output_tokens": 90,
+            "output_tokens_include_reasoning": True,
+        }
+    }
+
+
+def test_agent_run_result_detailed_token_usage_matches_descriptor_schema():
+    descriptor = json.loads(
+        (
+            ROOT / "adapters" / "python" / "claude" / "claude.fabric-adapter.json"
+        ).read_text(encoding="utf-8")
+    )
+    result = adapter._agent_run_result(
+        {
+            "response": "done",
+            "usage": {
+                "input_tokens": 1,
+                "cache_read_input_tokens": 2,
+                "cache_creation_input_tokens": 3,
+                "output_tokens": 4,
+            },
+        }
+    )
+
+    assert result.usage is not None
+    jsonschema.validate(
+        result.usage.extensions, descriptor["extension_schemas"]["usage"]
+    )
+
+
+DETAILED_OUTPUT_ONLY = {"output_tokens": 1, "output_tokens_include_reasoning": True}
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
+        pytest.param(
+            {
+                "input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "output_tokens": 0,
+            },
+            {
+                "input_tokens": 0,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0,
+                "input_tokens_include_cache": False,
+                "output_tokens": 0,
+                "output_tokens_include_reasoning": True,
+            },
+            id="explicit-zeros-are-reported",
+        ),
+        pytest.param(
+            {
+                "input_tokens": 5,
+                "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 2,
+            },
+            {
+                "input_tokens": 5,
+                "cached_input_tokens": 7,
+                "cache_write_input_tokens": 2,
+                "input_tokens_include_cache": False,
+            },
+            id="missing-output",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "output_tokens": 1},
+            DETAILED_OUTPUT_ONLY,
+            id="absent-cache-counters",
+        ),
+        pytest.param(
+            {
+                "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 2,
+                "output_tokens": 1,
+            },
+            DETAILED_OUTPUT_ONLY,
+            id="missing-input",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "cache_creation_input_tokens": 2, "output_tokens": 1},
+            DETAILED_OUTPUT_ONLY,
+            id="missing-cache-read",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "cache_read_input_tokens": 7, "output_tokens": 1},
+            DETAILED_OUTPUT_ONLY,
+            id="missing-cache-write",
+        ),
+        *(
+            pytest.param(
+                {
+                    "input_tokens": 5,
+                    "cache_read_input_tokens": invalid,
+                    "cache_creation_input_tokens": 2,
+                    "output_tokens": 1,
+                },
+                DETAILED_OUTPUT_ONLY,
+                id=f"invalid-cache-read-{label}",
+            )
+            for label, invalid in (
+                ("negative", -1),
+                ("bool", True),
+                ("float", 7.0),
+                ("string", "7"),
+                ("null", None),
+                ("above-uint64", 1 << 64),
+            )
+        ),
+    ],
+)
+def test_agent_run_result_reports_detailed_input_only_when_complete(usage, expected):
+    result = adapter._agent_run_result({"response": "done", "usage": usage})
+
+    assert result.usage is not None
+    assert result.usage.extensions == {DETAILED_TOKEN_USAGE_KEY: expected}
+
+
+def test_failed_agent_run_result_keeps_detailed_token_usage():
+    result_message = ResultMessage(
+        subtype="error_max_turns",
+        duration_ms=100,
+        duration_api_ms=80,
+        is_error=True,
+        num_turns=4,
+        session_id="claude-session",
+        usage={
+            "input_tokens": 12,
+            "cache_read_input_tokens": 3000,
+            "cache_creation_input_tokens": 400,
+            "output_tokens": 90,
+        },
+    )
+
+    result = adapter._agent_run_result(adapter.normalize_result([], result_message))
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.usage is not None
+    assert result.usage.extensions[DETAILED_TOKEN_USAGE_KEY] == {
+        "input_tokens": 12,
+        "cached_input_tokens": 3000,
+        "cache_write_input_tokens": 400,
+        "input_tokens_include_cache": False,
+        "output_tokens": 90,
+        "output_tokens_include_reasoning": True,
+    }
+
+
+def test_agent_run_result_without_usage_reports_no_detailed_token_usage():
+    result = adapter._agent_run_result({"response": "done", "cost_usd": 0.5})
+
+    assert result.usage is not None
+    assert result.usage.cost_usd == 0.5
+    assert result.usage.extensions == {}
 
 
 async def test_claude_runtime_reuses_one_connected_sdk_client(

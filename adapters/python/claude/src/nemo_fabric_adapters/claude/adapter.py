@@ -823,6 +823,53 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
     return _failure("claude_failed", "Claude invocation failed")
 
 
+_DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
+# Claude Code's result usage keys and the detailed input counters they fill.
+# Anthropic's input_tokens excludes cache reads and cache writes, and its
+# output_tokens includes thinking, which Anthropic bills as output.
+_DETAILED_INPUT_COUNTERS = {
+    "input_tokens": "input_tokens",
+    "cache_read_input_tokens": "cached_input_tokens",
+    "cache_creation_input_tokens": "cache_write_input_tokens",
+}
+
+
+def _token_counter(value: Any) -> int | None:
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= (1 << 64) - 1
+    ):
+        return value
+    return None
+
+
+def _detailed_token_usage(usage: dict[str, Any]) -> dict[str, int | bool]:
+    """Return Claude Code's counters plus the inclusion flags Anthropic fixes.
+
+    Any detailed input field makes consumers such as Harbor accounting read
+    input and cache from this object rather than the top-level counters or a
+    trajectory, so the input counters are reported only when input and both
+    cache parts are known. ``output_tokens_include_reasoning`` keeps the
+    inclusive output total equal to ``output_tokens``; without it, those
+    consumers would read output as unknown.
+    """
+    counters: dict[str, int | bool] = {}
+    inputs = {
+        counter: value
+        for key, counter in _DETAILED_INPUT_COUNTERS.items()
+        if (value := _token_counter(usage.get(key))) is not None
+    }
+    if len(inputs) == len(_DETAILED_INPUT_COUNTERS):
+        counters.update(inputs)
+        counters["input_tokens_include_cache"] = False
+    output_tokens = _token_counter(usage.get("output_tokens"))
+    if output_tokens is not None:
+        counters["output_tokens"] = output_tokens
+        counters["output_tokens_include_reasoning"] = True
+    return counters
+
+
 def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
@@ -842,9 +889,7 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
     tokens = {
         name: value
         for name in ("input_tokens", "output_tokens", "total_tokens")
-        if isinstance((value := usage.get(name)), int)
-        and not isinstance(value, bool)
-        and 0 <= value <= (1 << 64) - 1
+        if (value := _token_counter(usage.get(name))) is not None
     }
     cost = normalized.get("cost_usd")
     if (
@@ -856,8 +901,12 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
         cost = None
         if "cost_usd" in normalized:
             normalized["cost_usd"] = None
+    detailed = _detailed_token_usage(usage)
+    extensions = {_DETAILED_TOKEN_USAGE_KEY: detailed} if detailed else {}
     agent_usage = (
-        AgentUsage(**tokens, cost_usd=cost) if tokens or cost is not None else None
+        AgentUsage(**tokens, cost_usd=cost, extensions=extensions)
+        if tokens or cost is not None or detailed
+        else None
     )
     return AgentRunResult(
         status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
