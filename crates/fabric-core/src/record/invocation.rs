@@ -1161,7 +1161,6 @@ mod tests {
             diagnostics: String::new(),
         };
         first.finish(Err(error)).expect_err("error passes through");
-        std::thread::sleep(Duration::from_millis(60));
 
         let lines = read_lines(&first_path);
         let validator = record_line_validator();
@@ -1178,6 +1177,50 @@ mod tests {
         drop(second);
         let _ = std::fs::remove_dir_all(first_folder);
         let _ = std::fs::remove_dir_all(second_folder);
+    }
+
+    #[test]
+    fn a_sample_read_in_flight_when_the_record_ends_writes_nothing_after_the_end_line() {
+        use std::sync::Barrier;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let ticker = SampleTicker::new(Duration::from_millis(10));
+        let (entered, release) = (Arc::new(Barrier::new(2)), Arc::new(Barrier::new(2)));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let read: ReadResources = {
+            let (entered, release) = (Arc::clone(&entered), Arc::clone(&release));
+            Arc::new(move || {
+                // Call 0 is the start line's read; call 1 is the first sample
+                // read, which waits until the test has finished the record.
+                if calls.fetch_add(1, Ordering::SeqCst) == 1 {
+                    entered.wait();
+                    release.wait();
+                }
+                Ok(snapshot())
+            })
+        };
+        let (folder, recorder) = start_recorder("in-flight", &ticker, read);
+        // A second record on the same ticker, sampled after the first in
+        // each tick, shows when the blocked tick has finished.
+        let (sentinel_folder, sentinel) =
+            start_recorder("in-flight-sentinel", &ticker, Arc::new(|| Ok(snapshot())));
+        let path = folder.join(RECORD_FILE_NAME);
+        let sentinel_path = sentinel_folder.join(RECORD_FILE_NAME);
+
+        entered.wait();
+        let (_, _, invocation) = record_test_fixture();
+        recorder
+            .finish(Ok(succeeded_result(&invocation)))
+            .expect("result");
+        let sentinel_samples = samples(&sentinel_path).len();
+        release.wait();
+        wait_for_samples(&sentinel_path, sentinel_samples + 1);
+
+        let lines = read_lines(&path);
+        assert_eq!(lines.last().expect("end line")["kind"], "end", "{lines:?}");
+        assert!(samples(&path).is_empty(), "{lines:?}");
+        drop(sentinel);
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(sentinel_folder);
     }
 
     #[test]
