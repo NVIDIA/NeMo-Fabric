@@ -4053,6 +4053,12 @@ for line in sys.stdin:
         }
         if MODE == "cancelled":
             result = {"status": "cancelled", "output": output}
+        elif MODE == "cancelled_at_deadline":
+            result = {
+                "status": "cancelled",
+                "output": output,
+                "error": {"code": "timeout", "message": "deadline reached", "retryable": False},
+            }
         elif MODE == "adapter_deadline":
             result = {
                 "status": "failed",
@@ -5995,6 +6001,15 @@ for line in sys.stdin:
 
         assert_eq!(result.status, RunStatus::Cancelled);
         assert_eq!(end["status"], "cancelled");
+        assert!(end.get("stop").is_none(), "{end}");
+    }
+
+    #[test]
+    fn stop_cancelled_result_with_a_timeout_error_code_has_no_stop() {
+        let (result, end) = result_end_line("cancelled_at_deadline");
+
+        assert_eq!(result.status, RunStatus::Cancelled);
+        assert_eq!(end["error"]["code"], "timeout");
         assert!(end.get("stop").is_none(), "{end}");
     }
 

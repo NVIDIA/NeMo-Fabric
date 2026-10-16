@@ -1012,7 +1012,10 @@ Harbor's failure causes: `sandbox_failed`, `agent_exhausted_budget`, and
 2. `sandbox_failed`: the container's out-of-memory kill count rose during the
    invocation, and `runtime.record.exclusive_container` is `True`.
 3. `agent_exhausted_budget`: the invocation reached its time limit.
-4. A cancelled invocation that matched none of the above has no cause.
+4. A cancelled invocation that matched none of the above has no cause. A
+   `cancelled` result with error code `timeout` also has no cause: the
+   adapter's deadline code counts as a timeout only in a `failed` result or a
+   raised error.
 5. `unclassified`: the adapter host exited before it answered.
 6. `agent_failed`: the adapter returned a `failed` result.
 7. `unclassified`: anything else.
