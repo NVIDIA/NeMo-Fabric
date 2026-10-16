@@ -518,6 +518,8 @@ fn end_artifacts(manifest: &ArtifactManifest) -> Vec<EndArtifact> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc::{self, Receiver, Sender};
+
     use super::*;
     use crate::config::{FabricConfig, ResolveContext, resolve_run_plan_from_config};
     use crate::record::lines::{RecordLine, RecordSchema, RecordVersion};
@@ -1137,6 +1139,42 @@ mod tests {
         );
     }
 
+    /// How long a race test's handshake waits before it fails.
+    const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+    /// A read that blocks its first sample read. Call 0 is the start line's
+    /// read. Call 1 signals the returned receiver, then waits until the test
+    /// sends on the returned sender. Both waits time out, so a regression
+    /// fails the test instead of hanging it.
+    fn read_blocked_at_first_sample() -> (ReadResources, Receiver<()>, Sender<()>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let release_rx = Mutex::new(release_rx);
+        let calls = AtomicUsize::new(0);
+        let read: ReadResources = Arc::new(move || {
+            if calls.fetch_add(1, Ordering::SeqCst) == 1 {
+                entered_tx
+                    .send(())
+                    .expect("the test waits for the sample read");
+                release_rx
+                    .lock()
+                    .expect("release receiver lock")
+                    .recv_timeout(HANDSHAKE_TIMEOUT)
+                    .expect("the test never released the blocked sample read");
+            }
+            Ok(snapshot())
+        });
+        (read, entered_rx, release_tx)
+    }
+
+    /// Wait until the blocked sample read has started.
+    fn wait_until_entered(entered: &Receiver<()>) {
+        entered
+            .recv_timeout(HANDSHAKE_TIMEOUT)
+            .expect("the ticker never started the first sample read");
+    }
+
     #[test]
     fn two_records_share_one_ticker_and_samples_stop_at_the_end_line() {
         let ticker = SampleTicker::new(Duration::from_millis(20));
@@ -1181,23 +1219,9 @@ mod tests {
 
     #[test]
     fn a_sample_read_in_flight_when_the_record_ends_writes_nothing_after_the_end_line() {
-        use std::sync::Barrier;
-        use std::sync::atomic::{AtomicUsize, Ordering};
         let ticker = SampleTicker::new(Duration::from_millis(10));
-        let (entered, release) = (Arc::new(Barrier::new(2)), Arc::new(Barrier::new(2)));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let read: ReadResources = {
-            let (entered, release) = (Arc::clone(&entered), Arc::clone(&release));
-            Arc::new(move || {
-                // Call 0 is the start line's read; call 1 is the first sample
-                // read, which waits until the test has finished the record.
-                if calls.fetch_add(1, Ordering::SeqCst) == 1 {
-                    entered.wait();
-                    release.wait();
-                }
-                Ok(snapshot())
-            })
-        };
+        // The first sample read waits until the test has finished the record.
+        let (read, entered, release) = read_blocked_at_first_sample();
         let (folder, recorder) = start_recorder("in-flight", &ticker, read);
         // A second record on the same ticker, sampled after the first in
         // each tick, shows when the blocked tick has finished.
@@ -1206,13 +1230,15 @@ mod tests {
         let path = folder.join(RECORD_FILE_NAME);
         let sentinel_path = sentinel_folder.join(RECORD_FILE_NAME);
 
-        entered.wait();
+        wait_until_entered(&entered);
         let (_, _, invocation) = record_test_fixture();
         recorder
             .finish(Ok(succeeded_result(&invocation)))
             .expect("result");
         let sentinel_samples = samples(&sentinel_path).len();
-        release.wait();
+        release
+            .send(())
+            .expect("the blocked sample read waits for release");
         wait_for_samples(&sentinel_path, sentinel_samples + 1);
 
         let lines = read_lines(&path);
@@ -1225,23 +1251,9 @@ mod tests {
 
     #[test]
     fn a_sample_read_in_flight_when_the_exchange_ends_writes_nothing_to_the_open_record() {
-        use std::sync::Barrier;
-        use std::sync::atomic::{AtomicUsize, Ordering};
         let ticker = SampleTicker::new(Duration::from_millis(10));
-        let (entered, release) = (Arc::new(Barrier::new(2)), Arc::new(Barrier::new(2)));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let read: ReadResources = {
-            let (entered, release) = (Arc::clone(&entered), Arc::clone(&release));
-            Arc::new(move || {
-                // Call 0 is the start line's read; call 1 is the first sample
-                // read, which waits until the test has closed the window.
-                if calls.fetch_add(1, Ordering::SeqCst) == 1 {
-                    entered.wait();
-                    release.wait();
-                }
-                Ok(snapshot())
-            })
-        };
+        // The first sample read waits until the test has closed the window.
+        let (read, entered, release) = read_blocked_at_first_sample();
         let (folder, mut recorder) = start_recorder("window-closed", &ticker, read);
         // A second record on the same ticker, sampled after the first in
         // each tick, shows when the blocked tick has finished.
@@ -1253,12 +1265,14 @@ mod tests {
         let path = folder.join(RECORD_FILE_NAME);
         let sentinel_path = sentinel_folder.join(RECORD_FILE_NAME);
 
-        entered.wait();
+        wait_until_entered(&entered);
         // What core does when the exchange ends: drop the registration while
         // the record file stays open for the end line.
         drop(recorder.take_sampling());
         let sentinel_samples = samples(&sentinel_path).len();
-        release.wait();
+        release
+            .send(())
+            .expect("the blocked sample read waits for release");
         wait_for_samples(&sentinel_path, sentinel_samples + 1);
 
         let lines = read_lines(&path);
