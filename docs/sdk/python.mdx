@@ -1004,11 +1004,19 @@ not covered by this rule.
 Each line is written with one append, so a killed process keeps every line
 whose write returned. NeMo Fabric syncs the file once, after the end line. A
 record without an end line belongs to an invocation that is still running or
-that never finished; treat its outcome as unknown, not as failed. If a write
-fails, the record stops, the result gains a `record_write_failed` event, and
-the invocation continues unchanged. A record whose end line failed to write
-therefore has no end line, and that event says why. The file is created with
-mode `0600` on Linux and macOS, and never through a symbolic link.
+that never finished; treat its outcome as unknown, not as failed.
+
+Recording is synchronous and best-effort. If a write or the sync fails, the
+record stops. Record I/O errors do not replace the invocation result: a
+returned result keeps its status, output, error, and usage and gains a
+`record_write_failed` event, and a raised error stays the same error. A record
+whose end line failed to write therefore has no end line, and that event says
+why. NeMo Fabric creates the record and writes the start line before it sets
+the adapter's deadline, so slow storage delays the request without shortening
+that deadline. The end line and the sync run before the result returns, so
+slow storage delays the return too. Recording sets no time limit on either
+delay. The file is created with mode `0600` on Linux and macOS. Creation
+refuses an existing file or symbolic link at `run-record.jsonl`.
 
 The line format is published as `schemas/sdk/run-record-line.schema.json` at
 version `v1alpha1`, which may change until a reader for run records ships.

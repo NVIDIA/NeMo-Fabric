@@ -4,9 +4,10 @@
 //! One invocation's record: the start line before the request, the end line
 //! after the invocation.
 //!
-//! Recording never changes the run. A failed create, write or sync stops the
-//! record for that invocation and adds a `record_write_failed` event to the
-//! result; nothing here returns an error to the caller.
+//! Record I/O errors do not replace the invocation result. A failed create,
+//! write or sync stops the record for that invocation and adds a
+//! `record_write_failed` event to the result; nothing here returns a record
+//! error to the caller.
 
 use std::collections::BTreeMap;
 use std::io;
