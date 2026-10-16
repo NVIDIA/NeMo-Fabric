@@ -83,7 +83,6 @@ mod tests {
         let facts = StopFacts {
             fabric_failed: true,
             oom_rose: true,
-            host_exited: true,
             ..failed()
         };
 
@@ -91,10 +90,9 @@ mod tests {
     }
 
     #[test]
-    fn stop_cause_oom_rise_with_a_host_exit_reads_sandbox_failed() {
+    fn stop_cause_oom_rise_outranks_a_timeout() {
         let facts = StopFacts {
             oom_rose: true,
-            host_exited: true,
             timed_out: true,
             ..failed()
         };
