@@ -1255,8 +1255,8 @@ Memory, process count, and CPU time cover the adapter host process and its live 
 **Attributes:**
 
  - <b>`runtime_id`</b>:  Runtime this snapshot describes.
- - <b>`started_at`</b>:  When Fabric started the adapter host, as RFC 3339 UTC.
- - <b>`observed_at`</b>:  When Fabric read these values, as RFC 3339 UTC.
+ - <b>`started_at`</b>:  When NeMo Fabric started the adapter host, as RFC 3339 UTC.
+ - <b>`observed_at`</b>:  When NeMo Fabric read these values, as RFC 3339 UTC.
  - <b>`resident_memory_bytes`</b>:  Sum of the live processes' resident set sizes.  Pages shared between processes count once per process.
  - <b>`process_count`</b>:  Live processes in the tree, including the adapter host.
  - <b>`cpu_time_seconds`</b>:  CPU time used since the adapter host started,  including exited descendants. It can drop when a descendant  leaves the tree.

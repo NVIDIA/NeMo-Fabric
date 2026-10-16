@@ -14,7 +14,7 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 Timestamped resource usage of one runtime's local adapter host process tree.
 
-Memory, process count, and CPU time cover the adapter host process and its live descendants. For a runtime started on a service, the shared service process is not included. Values Fabric cannot read are returned as an error, never as zero.
+Memory, process count, and CPU time cover the adapter host process and its live descendants. For a runtime started on a service, the shared service process is not included. Values NeMo Fabric cannot read are returned as an error, never as zero.
 
 ## Fields
 
@@ -24,11 +24,11 @@ Runtime this snapshot describes.
 
 ### `started_at: String`
 
-When Fabric started the runtime's adapter host, as an RFC 3339 UTC timestamp.
+When NeMo Fabric started the runtime's adapter host, as an RFC 3339 UTC timestamp.
 
 ### `observed_at: String`
 
-When Fabric read these values, as an RFC 3339 UTC timestamp.
+When NeMo Fabric read these values, as an RFC 3339 UTC timestamp.
 
 ### `resident_memory_bytes: u64`
 
