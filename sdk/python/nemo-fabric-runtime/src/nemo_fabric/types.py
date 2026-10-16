@@ -1921,8 +1921,7 @@ class RunResult(FabricMapping):
         usage: Normalized invocation usage, or ``None`` when unavailable.
         resource_snapshot: Runtime resource snapshot read once after the
             adapter returned this result, or ``None`` when the runtime's
-            resources could not be observed. ``Runtime.resource_snapshot()``
-            raises the error that explains a ``None``.
+            resources could not be observed.
         artifacts: Normalized artifact manifest.
         telemetry: Ordered telemetry references.
         events: Ordered lifecycle and invocation events.

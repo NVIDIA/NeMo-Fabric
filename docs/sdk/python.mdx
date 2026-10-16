@@ -727,8 +727,7 @@ returning zeros or leaving a process out:
 
 Each `RunResult` from a local runtime also carries `resource_snapshot`, read
 once after the adapter returned the result. It is `None` when the read failed;
-a failed read never fails the invocation, and `Runtime.resource_snapshot()`
-raises the error that explains it. To estimate one invocation's CPU time,
+a failed read never fails the invocation. To estimate one invocation's CPU time,
 take a snapshot before it and subtract its `cpu_time_seconds` from the
 result's snapshot. CPU time can drop when a descendant is reparented out of the
 tree, so treat a difference as an estimate and a negative difference as

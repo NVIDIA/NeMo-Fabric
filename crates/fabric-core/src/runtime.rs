@@ -142,8 +142,7 @@ pub struct RunResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<RunUsage>,
     /// Resource snapshot of the runtime, read once after the adapter returned this
-    /// result. Absent when the runtime's resources could not be observed;
-    /// `runtime_resource_snapshot` returns the error that explains it.
+    /// result. Absent when the runtime's resources could not be observed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource_snapshot: Option<RuntimeResourceSnapshot>,
     /// Artifacts produced or collected by this run.
