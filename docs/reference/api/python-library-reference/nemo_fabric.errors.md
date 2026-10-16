@@ -281,7 +281,7 @@ Initialize a structured NeMo Fabric exception.
 
 Runtime resources cannot be read now.
 
-The runtime stopped, is stopping, its adapter host process exited, or the process table cannot be read.
+The runtime stopped, is stopping, its adapter host process exited, or a live process in its tree or the process table cannot be read.
 
 
 ### Inheritance

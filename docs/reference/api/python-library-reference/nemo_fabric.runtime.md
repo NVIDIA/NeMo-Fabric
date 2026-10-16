@@ -197,7 +197,7 @@ The snapshot covers the local adapter host process and its live descendants. It 
 
 **Raises:**
 
- - <b>`ResourceObservationUnavailableError`</b>:  If the runtime stopped, is  stopping, its adapter host process exited, or the process  table cannot be read.
+ - <b>`ResourceObservationUnavailableError`</b>:  If the runtime stopped, is  stopping, its adapter host process exited, or a live process  in its tree or the process table cannot be read.
  - <b>`ResourceObservationUnsupportedError`</b>:  If the runtime's environment  provider or operating system has no resource reader.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is missing.
  - <b>`FabricRuntimeError`</b>:  If the native snapshot call fails otherwise.
