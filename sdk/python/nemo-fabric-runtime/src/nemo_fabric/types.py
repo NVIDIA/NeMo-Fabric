@@ -372,11 +372,20 @@ class _RuntimeConfig(_ConfigMapping):
         artifacts: Optional artifact-root path.
         timeout_seconds: Optional invocation deadline in seconds.
         max_turns: Optional harness turn limit.
+        record: Optional run record settings, ``{"enabled": bool}`` with an
+            optional boolean ``exclusive_container``.
         extra_fields: Preserved extension fields not recognized by this SDK.
     """
 
     _fields = frozenset(
-        {"input_schema", "output_schema", "artifacts", "timeout_seconds", "max_turns"}
+        {
+            "input_schema",
+            "output_schema",
+            "artifacts",
+            "timeout_seconds",
+            "max_turns",
+            "record",
+        }
     )
 
     def __init__(
@@ -387,6 +396,7 @@ class _RuntimeConfig(_ConfigMapping):
         artifacts: str | Path | None = None,
         timeout_seconds: float | None = None,
         max_turns: int | None = None,
+        record: Mapping[str, Any] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
         values: dict[str, Any] = {}
@@ -419,6 +429,18 @@ class _RuntimeConfig(_ConfigMapping):
                     "runtime max_turns must be between 1 and 4294967295"
                 )
             values["max_turns"] = max_turns
+        if record is not None:
+            record = _mapping(record, "runtime record")
+            if (
+                "enabled" not in record
+                or not set(record) <= {"enabled", "exclusive_container"}
+                or not all(isinstance(value, bool) for value in record.values())
+            ):
+                raise FabricConfigError(
+                    "runtime record must be an object with a boolean enabled field "
+                    "and an optional boolean exclusive_container field"
+                )
+            values["record"] = dict(record)
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
@@ -432,6 +454,7 @@ class _RuntimeConfig(_ConfigMapping):
             artifacts=data.get("artifacts"),
             timeout_seconds=data.get("timeout_seconds"),
             max_turns=data.get("max_turns"),
+            record=data.get("record"),
             extra_fields={
                 key: item for key, item in data.items() if key not in cls._fields
             },

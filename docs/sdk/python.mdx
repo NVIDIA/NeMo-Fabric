@@ -237,7 +237,7 @@ Relay subfields:
 | `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM |
 | `instructions.system` | `replace`, `append` | `replace`; maps to Codex base instructions | `replace` | `replace` | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core |
-| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core |
+| `runtime.artifacts`, `.timeout_seconds`, `.record` | Core | Core | Core | Core | Core |
 | `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; maps to Hermes iterations | Yes |
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core |
 | `environment.workspace`, `.artifacts`, `.env`, `.env_names` | Core | Core | Core | Core | Core |
@@ -940,6 +940,153 @@ Each counter is optional: missing values are unknown, not zero. `cached_input_to
 If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial
 `RunResult`.
+
+## Run Records
+
+A run record is an append-only JSON Lines file that NeMo Fabric writes for each
+invocation, so a run that is killed still leaves its identity, start time, and
+timeout behind. Recording is off by default. Setting `runtime.artifacts` alone
+does not turn it on. Turn it on with `runtime.record`:
+
+```python
+from nemo_fabric import RecordConfig, RuntimeConfig
+
+runtime = RuntimeConfig(artifacts="runs", record=RecordConfig(enabled=True))
+```
+
+`enabled` is required inside `record`. The record needs an artifact root
+(`runtime.artifacts` or `environment.artifacts`), the `local` environment
+provider, and a `process` or `python` adapter. Planning fails with
+`runtime.record.enabled` when any of these is missing.
+
+Each invocation that NeMo Fabric tries to send to the adapter host writes
+`<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`, and the
+result lists it as the `record` artifact with kind `run_record`:
+
+```python
+record = next(a for a in result.artifacts.artifacts if a.kind == "run_record")
+```
+
+The file holds a start line and an end line. Every line carries `schema`
+(`nemo.fabric.run_record`), `version` (`v1alpha1`), `kind`, `runtime_id`,
+`invocation_id`, `request_id`, and `time`.
+
+- The `start` line is written before the request is sent. It holds the agent
+  name, harness, adapter ID, each configured model's provider and model name,
+  the NeMo Fabric version, and the timeout in milliseconds. From
+  `RunRequest.context`, it keeps the string or integer values of `task_id`,
+  `task_revision`, `attempt`, `step`, `harbor_session_id`, `harbor_context_id`,
+  and `harbor_trial_name`, cut to 256 characters. Every other context key
+  appears by name only as `{"recorded": false}`. `override_keys` lists the
+  top-level `RunRequest.overrides` key names, sorted, without their values.
+- The `end` line is written after the invocation returns or fails. It holds
+  `status`, `elapsed_ms`, the error's `code`, `stage`, and `retryable` flag,
+  the numeric `RunUsage` counters, and each result artifact's name, kind,
+  media type, and path relative to the artifact root. An error code outside
+  `^[a-z0-9_.:-]{1,128}$` is written as `unrecognized`. When NeMo Fabric
+  raises instead of returning a result, the end line reads `failed`. An
+  adapter host error keeps its code, such as `host_timeout`, `host_crashed`,
+  `host_io`, or `invalid_agent_run_result`. A result extension that the
+  adapter's descriptor does not declare also reads `invalid_agent_run_result`.
+  A failed write of `adapter-invocation.json` or a result artifact reads
+  `artifact_write_failed`, and any other error reads `fabric_error`.
+
+The end line describes the invocation. A one-shot `Fabric.run` stops the
+runtime after the invocation; when that stop fails, the result reads `failed`
+with stage `stop`, and the record still holds the invocation's own end line.
+
+The end line's `stop` says why the invocation stopped. It is absent on
+success. `stop.cause` comes from NeMo Fabric's own closed list. Three names are
+Harbor's failure causes: `sandbox_failed`, `agent_exhausted_budget`, and
+`unclassified`. A Harbor consumer of the record can map `fabric_failed` to
+`harbor_failed` and `agent_failed` to `unclassified`. The first rule that
+matches sets the cause:
+
+1. `fabric_failed`: NeMo Fabric or the adapter host raised an error that is
+   not a timeout or a host exit. Examples are an invalid adapter result and an
+   adapter that crashed inside the adapter host. The adapter contract returns
+   the agent's own failure as a `failed` result, never as a raised error. An
+   error from the exchange with the adapter host during an out-of-memory rise
+   in an exclusive container reads `sandbox_failed` instead, because a kill
+   can make the adapter raise; NeMo Fabric's own errors after a complete
+   response stay `fabric_failed`.
+2. `sandbox_failed`: the container's out-of-memory kill count rose during the
+   invocation, and `runtime.record.exclusive_container` is `True`.
+3. `agent_exhausted_budget`: the invocation reached its time limit.
+4. A cancelled invocation that matched none of the above has no cause. A
+   `cancelled` result with error code `timeout` also has no cause: the
+   adapter's deadline code counts as a timeout only in a `failed` result or a
+   raised error.
+5. `unclassified`: the adapter host exited before it answered.
+6. `agent_failed`: the adapter returned a `failed` result.
+7. `unclassified`: anything else.
+
+An adapter that sets its own error code for a harness crash or a setup error
+in a `failed` result, such as `claude_process_failed`, reads `agent_failed`.
+NeMo Fabric does not interpret adapter-specific codes.
+
+A timeout sets `stop.reason` to `timeout` and `stop.limit` to
+`{"type": "time", "value": <ms>, "usage": <ms>}`. `value` is the invoke
+timeout that applied: `runtime.timeout_seconds`, or 1 hour when it is unset.
+Two timeouts reach this rule:
+
+- NeMo Fabric's own timeout fired (error code `host_timeout`). `forced` is
+  `true`, and `usage` is the time until the timeout fired. `elapsed_ms` also
+  covers NeMo Fabric stopping the hung adapter host, so it is larger.
+  When NeMo Fabric terminates the host, `exit_signal` is the signal it sent
+  (9) on Linux and macOS, and on Windows `exit_code` is 1 with no signal. A
+  host that exits by itself during the 2-second grace period records its own
+  exit status instead, while `forced` stays `true`.
+- The adapter stopped at the deadline NeMo Fabric gave it and reported error
+  code `timeout`, in a `failed` result or as an error. `forced` is `false`.
+  That deadline is earlier than `value`: the timeout less 10 seconds, and at
+  least half of it.
+
+When the adapter host exited, `stop.exit_code` or `stop.exit_signal` holds its
+wait status.
+
+On Linux with cgroup v2, when NeMo Fabric runs at the root of its own
+container's cgroup, both lines record the container's `memory.events`
+`oom_kill` count as `container_oom_kills`. Otherwise the field reads
+`{"reason": "platform" | "cgroup_v1" | "no_owned_cgroup"}`. The end line's
+count is read when the adapter host answers, crashes, or reaches the timeout,
+before NeMo Fabric stops a hung host and before the next invocation on the
+runtime can start. After a crash, NeMo Fabric reads the count again once the
+host's exit is seen and keeps the larger value. The start line
+also records `exclusive_container`. Set `exclusive_container` in
+`runtime.record` to `True` only when nothing else runs in the container during
+an invocation, including other runtimes in the same process. Otherwise a kill
+can belong to another run, so the count is recorded but sets no cause:
+
+```python
+record = RecordConfig(enabled=True, exclusive_container=True)
+```
+
+`run-record.jsonl` never holds prompts, model output, error messages, tool
+payloads, adapter metadata, or context values outside the keys above. The same
+folder also holds `adapter-invocation.json` and `stdout.txt`, which NeMo Fabric
+writes for every invocation whether or not recording is on; those files are
+not covered by this rule.
+
+Each line is written with one append, so a killed process keeps every line
+whose write returned. NeMo Fabric syncs the file once, after the end line. A
+record without an end line belongs to an invocation that is still running or
+that never finished; treat its outcome as unknown, not as failed.
+
+Recording is synchronous and best-effort. If a write or the sync fails, the
+record stops. Record I/O errors do not replace the invocation result: a
+returned result keeps its status, output, error, and usage and gains a
+`record_write_failed` event, and a raised error stays the same error. A record
+whose end line failed to write therefore has no end line, and that event says
+why. NeMo Fabric creates the record and writes the start line before it sets
+the adapter's deadline, so slow storage delays the request without shortening
+that deadline. The end line and the sync run before the result returns, so
+slow storage delays the return too. Recording sets no time limit on either
+delay. The file is created with mode `0600` on Linux and macOS. Creation
+refuses an existing file or symbolic link at `run-record.jsonl`.
+
+The line format is published as `schemas/sdk/run-record-line.schema.json` at
+version `v1alpha1`, which may change until a reader for run records ships.
 
 ## Events
 
