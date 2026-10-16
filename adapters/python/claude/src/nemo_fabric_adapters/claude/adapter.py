@@ -1217,8 +1217,10 @@ class ClaudeRuntime:
         Every invocation of the runtime runs on one Claude Code process, whose
         ``total_cost_usd`` accumulates across invocations. The lifecycle host
         runs invocations one at a time, so the difference between successive
-        totals is this invocation's cost. A missing, decreasing, or reset total
-        leaves the cost unknown until the next total gives a new baseline.
+        totals is this invocation's cost. A missing, non-finite, or negative
+        total leaves this invocation and the next one unknown, because the next
+        total has no baseline. A decreasing total or a conversation reset leaves
+        this invocation unknown and makes its total the new baseline.
         """
 
         previous = self._cost_total
@@ -1227,6 +1229,7 @@ class ClaudeRuntime:
             not isinstance(total, (int, float))
             or isinstance(total, bool)
             or not math.isfinite(total)
+            or total < 0
         ):
             total = None
         self._cost_total = total

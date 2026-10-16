@@ -1102,6 +1102,14 @@ async def invocation_costs(
         pytest.param(
             [0.10, None, 0.40, 0.50], [0.10, None, None, 0.10], id="missing-total"
         ),
+        pytest.param(
+            [0.10, -0.20, 0.15, 0.25], [0.10, None, None, 0.10], id="negative-total"
+        ),
+        pytest.param(
+            [0.10, float("nan"), 0.40, 0.50],
+            [0.10, None, None, 0.10],
+            id="non-finite-total",
+        ),
     ],
 )
 async def test_claude_runtime_reports_cost_per_invocation(
