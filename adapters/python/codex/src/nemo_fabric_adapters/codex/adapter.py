@@ -927,8 +927,8 @@ def _reasoning_effort(config: AgentConfig) -> ReasoningEffort | None:
     value = _optional_string(_settings(config), "reasoning_effort")
     if value is None:
         return None
-    # The SDK accepts unknown strings; keep the descriptor's supported values finite.
-    if value not in ("none", "minimal", "low", "medium", "high", "xhigh", "max"):
+    # The SDK accepts unknown strings; only its declared members are supported.
+    if value not in tuple(ReasoningEffort):
         raise AdapterConfigError(
             "codex_invalid_configuration", "reasoning_effort is invalid"
         )

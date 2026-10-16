@@ -76,7 +76,7 @@ _config = partial(
                 "approval_mode": "deny_all",
                 "developer_instructions": "Review the implementation.",
                 "personality": "pragmatic",
-                "reasoning_effort": "max",
+                "reasoning_effort": "ultra",
                 "service_tier": "priority",
                 "output_schema": {
                     "type": "object",
@@ -422,7 +422,7 @@ def test_openclaw_rejects_relay(tmp_path: Path):
         ),
         pytest.param(
             "nvidia.fabric.codex",
-            {"reasoning_effort": "ultra"},
+            {"reasoning_effort": "unknown"},
             "harness.settings.reasoning_effort",
             id="codex-reasoning-effort-value",
         ),

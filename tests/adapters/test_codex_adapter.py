@@ -1847,7 +1847,8 @@ def test_relay_stop_failure_is_reported_by_runtime_stop(
 
 
 @pytest.mark.parametrize(
-    "effort", [None, "none", "minimal", "low", "medium", "high", "xhigh", "max"]
+    "effort",
+    [None, "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
 )
 def test_native_sdk_controls_and_telemetry_are_request_scoped(
     codex_payload, mock_codex, effort
@@ -1978,6 +1979,9 @@ def test_descriptor_has_no_codex_binary_requirement():
     )
 
     assert descriptor["adapter_id"] == "nvidia.fabric.codex"
+    assert descriptor["settings_schema"]["properties"]["reasoning_effort"]["enum"] == [
+        effort.value for effort in adapter.ReasoningEffort
+    ]
     assert descriptor["runner"] == {
         "module": "nemo_fabric_adapters.codex.adapter",
     }
@@ -2110,7 +2114,7 @@ def test_main_serves_persistent_runtime(monkeypatch):
     )
 
 
-@pytest.mark.parametrize("effort", [True, 1, [], {}, "", "unknown", "ultra"])
+@pytest.mark.parametrize("effort", [True, 1, [], {}, "", "unknown"])
 def test_native_reasoning_effort_rejected_before_startup(
     codex_payload, mock_codex, monkeypatch, effort
 ):

@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from typing import get_args
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
@@ -29,6 +30,7 @@ from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import SystemMessage
 from claude_agent_sdk import TextBlock
 from claude_agent_sdk._errors import MessageParseError
+from claude_agent_sdk.types import EffortLevel
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
@@ -143,6 +145,9 @@ def test_claude_descriptor_is_narrow_and_versioned():
     )
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
 
+    assert descriptor["settings_schema"]["properties"]["effort"]["enum"] == list(
+        get_args(EffortLevel)
+    )
     assert descriptor == {
         "contract_version": "fabric.adapter/v1alpha2",
         "adapter_id": "nvidia.fabric.claude",

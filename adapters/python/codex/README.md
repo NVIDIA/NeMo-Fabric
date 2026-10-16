@@ -117,10 +117,13 @@ Only Codex-specific controls belong in `harness.settings`:
 | `approval_mode` | One of `auto_review` or `deny_all` | No | `auto_review` |
 | `developer_instructions` | Nonempty string | No | No default |
 | `personality` | One of `none`, `friendly`, or `pragmatic` | No | No default |
-| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | No | No default |
+| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra` | No | No default |
 | `service_tier` | Nonempty string | No | No default |
 | `output_schema` | JSON Schema object for the final assistant message | No | No default |
 | `config_overrides` | Object that maps nonempty dotted Codex configuration keys to JSON-compatible values | No | `{}` |
+
+`ultra` uses Codex's model-specific effort selection. Codex resolves it to a
+supported provider effort; models without effort metadata fall back to `medium`.
 
 Planning validates these settings against the schema in the resolved Codex
 descriptor. Unknown keys, empty dotted-key segments, invalid types, and invalid
