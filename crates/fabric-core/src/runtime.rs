@@ -31,7 +31,7 @@ use crate::config::{
     validate_tool_definitions, validate_workflow,
 };
 use crate::error::{FabricError, Result};
-use crate::record::{CgroupReader, HostExit, InvocationRecorder, RecordStart};
+use crate::record::{CgroupReader, HostExit, InvocationRecorder, RecordStart, SampleTicker};
 use crate::resource_snapshot::{LocalHostProcess, RuntimeResourceSnapshot, snapshot_local_host};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -1876,6 +1876,11 @@ fn local_host_invocation_result(
                 fabric_home: &fabric_home,
                 timeout: invoke_timeout,
                 cgroup: CgroupReader::system(),
+                read_resources: {
+                    let runtime = runtime.clone();
+                    Arc::new(move || local_runtime_resource_snapshot(&runtime))
+                },
+                ticker: SampleTicker::global(),
             }));
         }
         adapter_invocation.runtime_context.deadline_millis =
@@ -1921,17 +1926,19 @@ fn local_host_invocation_result(
         let ended_at = Instant::now();
         // Read while the host lock is held and before a timed-out host is
         // stopped, so the end values count this invocation and no later one.
+        let end_snapshot = (exchange.is_ok() || recorder.is_some())
+            .then(|| local_runtime_resource_snapshot(runtime));
         let exchange_end = recorder
             .as_ref()
-            .map(|recorder| recorder.read_exchange_end(ended_at));
+            .zip(end_snapshot.as_ref())
+            .map(|(recorder, snapshot)| recorder.read_exchange_end(ended_at, snapshot));
         match exchange {
             Ok(output) => {
                 if let (Some(recorder), Some(end)) = (recorder.as_mut(), exchange_end) {
                     recorder.exchange_ended(end);
                 }
                 let stderr = take_local_host_stderr(&mut host_guard);
-                // Read while the host lock is held, so no later invocation is counted.
-                let resource_snapshot = local_runtime_resource_snapshot(runtime).ok();
+                let resource_snapshot = end_snapshot.and_then(Result::ok);
                 Ok((
                     output,
                     resource_snapshot,
@@ -1951,7 +1958,8 @@ fn local_host_invocation_result(
                 ) {
                     invalidate_timed_out_local_host(&runtime.runtime_id, &host, &mut host_guard);
                 }
-                // Only a record reads the exit status, so a run without one never waits.
+                // Only a record reads the exit status, so a run without one
+                // never waits. After a forced stop it is the signal core sent.
                 if let (Some(recorder), Some(end)) = (recorder.as_mut(), exchange_end) {
                     let crashed = matches!(
                         &error,
@@ -6290,5 +6298,50 @@ for line in sys.stdin:
         assert_eq!(stop["limit"]["type"], "time");
         assert_eq!(stop["limit"]["value"], 3_600_000);
         assert!(stop["limit"]["usage"].is_u64(), "{stop}");
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn record_start_and_end_lines_carry_the_runtime_snapshot() {
+        let (root, plan) = record_plan("success");
+
+        let result = run_plan(&plan, RunRequest::text("snapshot")).expect("run");
+        let (_, lines) = only_record(&root);
+
+        let (start, end) = (line_of_kind(&lines, "start"), line_of_kind(&lines, "end"));
+        assert_eq!(start["sample_interval_ms"], 10_000);
+        for line in [start, end] {
+            assert_eq!(line["resources"]["runtime_id"], result.runtime_id.as_str());
+            assert!(line["resources"]["process_count"].as_u64().expect("count") >= 1);
+        }
+        assert_eq!(
+            end["resources"],
+            serde_json::to_value(result.resource_snapshot.expect("result snapshot"))
+                .expect("snapshot JSON")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn record_end_line_of_a_timed_out_invocation_keeps_the_hung_host_snapshot() {
+        let (root, plan) = record_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("timeout raises");
+        let (_, lines) = only_record(&root);
+
+        let end = line_of_kind(&lines, "end");
+        assert_eq!(end["error"]["code"], "host_timeout");
+        assert_eq!(end["resources"]["runtime_id"], runtime.runtime_id.as_str());
+        assert!(end["resources"]["process_count"].as_u64().expect("count") >= 1);
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
     }
 }

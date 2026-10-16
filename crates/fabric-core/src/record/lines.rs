@@ -13,8 +13,12 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::Serialize;
 
+use crate::error::{FabricError, Result};
+use crate::resource_snapshot::RuntimeResourceSnapshot;
 use crate::runtime::{ErrorStage, RunStatus};
 
+/// Interval between sample lines while an invocation runs.
+pub(crate) const SAMPLE_INTERVAL_MS: u64 = 10_000;
 /// Longest value a line keeps from config or the request, in characters.
 /// Model role and context key names are kept whole, so map keys stay distinct.
 const MAX_VALUE_CHARS: usize = 256;
@@ -67,6 +71,9 @@ pub(crate) enum RecordVersion {
 pub(crate) enum LineBody {
     /// Written once, before core sends the request to the adapter host.
     Start(StartLine),
+    /// Written about every 10 s while the invocation runs, when the start
+    /// line has `sample_interval_ms`.
+    Sample(SampleLine),
     /// Written once, after the invocation returned a result or failed.
     End(EndLine),
 }
@@ -88,6 +95,12 @@ pub(crate) struct StartLine {
     pub fabric_version: String,
     /// Host invocation timeout that applied, in milliseconds.
     pub timeout_ms: u64,
+    /// Interval between sample lines, in milliseconds. Absent when this
+    /// process has no sample thread, so the record gets no sample lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sample_interval_ms: Option<u64>,
+    /// The runtime's process values when the invocation started.
+    pub resources: Resources,
     /// `RunRequest.context`. Allowlisted identity and Harbor link keys keep a
     /// string or integer value; every other key is listed by name only.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -152,11 +165,72 @@ pub(crate) struct EndLine {
     /// Result artifacts, with paths relative to the artifact root.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<EndArtifact>,
-    /// The container's cgroup v2 `oom_kill` count when the invocation ended.
+    /// The runtime's process values when the invocation ended, read under
+    /// the runtime's host lock right after the adapter host answered or the
+    /// timeout fired.
+    pub resources: Resources,
+    /// The container's cgroup v2 `oom_kill` count when the invocation ended,
+    /// read with `resources`.
     pub container_oom_kills: OomKills,
     /// Why the invocation stopped; absent when it holds nothing, as on success.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop: Option<Stop>,
+}
+
+/// Fields of a sample line.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub(crate) struct SampleLine {
+    /// Monotonic time since the start line, in milliseconds.
+    pub elapsed_ms: u64,
+    /// The runtime's process values now.
+    pub resources: Resources,
+}
+
+/// A runtime resource snapshot, or the error code that explains why none
+/// could be read.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub(crate) enum Resources {
+    /// The snapshot.
+    Snapshot(RuntimeResourceSnapshot),
+    /// No snapshot could be read.
+    Error {
+        /// Why no snapshot could be read.
+        error: ResourcesError,
+    },
+}
+
+impl Resources {
+    /// No snapshot, for a read that did not happen or did not finish.
+    pub(crate) const UNAVAILABLE: Self = Self::Error {
+        error: ResourcesError::ResourceObservationUnavailable,
+    };
+}
+
+impl From<&Result<RuntimeResourceSnapshot>> for Resources {
+    /// Keep the snapshot, or only the error's code: never its message.
+    fn from(read: &Result<RuntimeResourceSnapshot>) -> Self {
+        match read {
+            Ok(snapshot) => Self::Snapshot(snapshot.clone()),
+            Err(FabricError::ResourceObservationUnsupported { .. }) => Self::Error {
+                error: ResourcesError::ResourceObservationUnsupported,
+            },
+            Err(_) => Self::UNAVAILABLE,
+        }
+    }
+}
+
+/// Error codes for a snapshot that could not be read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ResourcesError {
+    /// The runtime stopped or is stopping, its adapter host exited, a live
+    /// process in its tree or the process table cannot be read, or the
+    /// process tree kept changing during the read.
+    ResourceObservationUnavailable,
+    /// The adapter kind, environment provider, or operating system has no
+    /// resource reader.
+    ResourceObservationUnsupported,
 }
 
 /// The cgroup v2 `memory.events` `oom_kill` count of the container Fabric

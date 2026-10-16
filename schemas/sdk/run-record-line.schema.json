@@ -86,7 +86,7 @@
         },
         "container_oom_kills": {
           "$ref": "#/$defs/OomKills",
-          "description": "The container's cgroup v2 `oom_kill` count when the invocation ended."
+          "description": "The container's cgroup v2 `oom_kill` count when the invocation ended,\nread with `resources`."
         },
         "elapsed_ms": {
           "description": "Monotonic time from the start line to the end line, in milliseconds.",
@@ -104,6 +104,10 @@
             }
           ],
           "description": "Error code, stage and retryable flag, without the message."
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources",
+          "description": "The runtime's process values when the invocation ended, read under\nthe runtime's host lock right after the adapter host answered or the\ntimeout fired."
         },
         "status": {
           "$ref": "#/$defs/RunStatus",
@@ -135,6 +139,7 @@
       "required": [
         "status",
         "elapsed_ms",
+        "resources",
         "container_oom_kills"
       ],
       "type": "object"
@@ -348,6 +353,43 @@
         }
       ]
     },
+    "Resources": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RuntimeResourceSnapshot",
+          "description": "The snapshot."
+        },
+        {
+          "description": "No snapshot could be read.",
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/ResourcesError",
+              "description": "Why no snapshot could be read."
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "A runtime resource snapshot, or the error code that explains why none\ncould be read."
+    },
+    "ResourcesError": {
+      "description": "Error codes for a snapshot that could not be read.",
+      "oneOf": [
+        {
+          "const": "resource_observation_unavailable",
+          "description": "The runtime stopped or is stopping, its adapter host exited, a live\nprocess in its tree or the process table cannot be read, or the\nprocess tree kept changing during the read.",
+          "type": "string"
+        },
+        {
+          "const": "resource_observation_unsupported",
+          "description": "The adapter kind, environment provider, or operating system has no\nresource reader.",
+          "type": "string"
+        }
+      ]
+    },
     "RunStatus": {
       "description": "Runtime completion status.",
       "oneOf": [
@@ -367,6 +409,72 @@
           "type": "string"
         }
       ]
+    },
+    "RuntimeResourceSnapshot": {
+      "description": "Timestamped resource usage of one runtime's local adapter host process tree.\n\nMemory, process count, and CPU time cover the adapter host process and its\nlive descendants. For a runtime started on a service, the shared service\nprocess is not included. Values Fabric cannot read are returned as an error,\nnever as zero.",
+      "properties": {
+        "cpu_time_seconds": {
+          "description": "CPU time consumed by the tree since the adapter host started, in seconds,\nincluding exited descendants. It can drop when a descendant leaves the\ntree.",
+          "format": "double",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "observed_at": {
+          "description": "When Fabric read these values, as an RFC 3339 UTC timestamp.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "process_count": {
+          "description": "Live processes in the tree, including the adapter host. Exited processes\nthat are not yet reaped are not counted.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resident_memory_bytes": {
+          "description": "Sum of the resident set sizes of the live processes, in bytes. Pages\nshared between processes count once per process.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runtime_id": {
+          "description": "Runtime this snapshot describes.",
+          "type": "string"
+        },
+        "started_at": {
+          "description": "When Fabric started the runtime's adapter host, as an RFC 3339 UTC timestamp.",
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime_id",
+        "started_at",
+        "observed_at",
+        "resident_memory_bytes",
+        "process_count",
+        "cpu_time_seconds"
+      ],
+      "type": "object"
+    },
+    "SampleLine": {
+      "description": "Fields of a sample line.",
+      "properties": {
+        "elapsed_ms": {
+          "description": "Monotonic time since the start line, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources",
+          "description": "The runtime's process values now."
+        }
+      },
+      "required": [
+        "elapsed_ms",
+        "resources"
+      ],
+      "type": "object"
     },
     "StartLine": {
       "description": "Fields of the start line.",
@@ -419,6 +527,19 @@
           },
           "type": "array"
         },
+        "resources": {
+          "$ref": "#/$defs/Resources",
+          "description": "The runtime's process values when the invocation started."
+        },
+        "sample_interval_ms": {
+          "description": "Interval between sample lines, in milliseconds. Absent when this\nprocess has no sample thread, so the record gets no sample lines.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "timeout_ms": {
           "description": "Host invocation timeout that applied, in milliseconds.",
           "format": "uint64",
@@ -431,6 +552,7 @@
         "harness",
         "fabric_version",
         "timeout_ms",
+        "resources",
         "exclusive_container",
         "container_oom_kills"
       ],
@@ -575,6 +697,20 @@
       "properties": {
         "kind": {
           "const": "start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "$ref": "#/$defs/SampleLine",
+      "description": "Written about every 10 s while the invocation runs, when the start\nline has `sample_interval_ms`.",
+      "properties": {
+        "kind": {
+          "const": "sample",
           "type": "string"
         }
       },

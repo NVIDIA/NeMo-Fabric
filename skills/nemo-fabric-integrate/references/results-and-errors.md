@@ -53,19 +53,26 @@ Set `RuntimeConfig(artifacts=..., record=RecordConfig(enabled=True))` to have
 NeMo Fabric write `run-record.jsonl` for each invocation under
 `<artifact root>/.fabric/<runtime_id>/<invocation_id>/`. Recording is off by
 default and needs an artifact root, the `local` environment provider, and a
-`process` or `python` adapter. The
-result lists the file as the artifact with kind `run_record`. The file has a
-`start` line, written before the request, and an `end` line with status,
-elapsed time, error code, numeric usage, artifact names, and `stop`, which
+`process` or `python` adapter. The result lists the file as the artifact with
+kind `run_record`. The file has a `start` line, written before the request, a
+`sample` line about every 10 seconds when the start line has
+`sample_interval_ms`, and an `end` line with status, elapsed time, error
+code, numeric usage, artifact names, and `stop`, which
 gives NeMo Fabric's failure cause (`fabric_failed`, `sandbox_failed`,
 `agent_exhausted_budget`, `unclassified`, or `agent_failed`), the time limit
 for a timeout, and the adapter host's exit status. Only a `failed` result
-reads `agent_failed`; an error NeMo Fabric raises never does. It holds no
-prompts, output, or error messages. A record without an end line has an
-unknown outcome; do not count it as failed. Recording is synchronous and
-best-effort: a failed record write adds a `record_write_failed` event and does
-not replace the result, and slow storage delays the invocation. The format is
-the `v1alpha1`
+reads `agent_failed`; an error NeMo Fabric raises never does. Each line
+stores the runtime's resource snapshot as `resources`. When both the start and
+end lines hold one, the invocation's CPU time is end minus start, leaving out
+descendants that left the process tree. It holds no prompts, output, or error
+messages. When the start line has `sample_interval_ms`, a record without an
+end line whose file changed within three sample intervals belongs to a running
+invocation, and one that has not changed for longer never finished, or its
+record stopped on a failed write (the result's `record_write_failed` event
+says which). Without `sample_interval_ms`, its outcome is unknown. Never count a record without an
+end line as failed. Recording is synchronous and best-effort: a failed record
+write adds a `record_write_failed` event and does not replace the result, and
+slow storage delays the invocation. The format is the `v1alpha1`
 [run record line schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/sdk/run-record-line.schema.json)
 and may change until a reader ships.
 

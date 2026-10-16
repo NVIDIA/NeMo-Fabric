@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! One invocation's record: the start line before the request, the end line
-//! after the invocation.
+//! One invocation's record: the start line before the request, sample lines
+//! from the process-wide ticker while it runs, and the end line after it.
 //!
 //! Record I/O errors do not replace the invocation result. A failed create,
 //! write or sync stops the record for that invocation and adds a
@@ -10,28 +10,30 @@
 //! error to the caller.
 
 use std::collections::BTreeMap;
-use std::io;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
 use super::cgroup::CgroupReader;
+use super::file::{RecordFile, lock};
 use super::lines::{
     ContextValue, EndArtifact, EndError, EndLine, EndUsage, LimitType, LineBody, ModelName,
-    NotRecorded, OomKills, RecordLine, RecordSchema, RecordVersion, StartLine, Stop, StopLimit,
-    StopReason, cut_text, recorded_code,
+    NotRecorded, OomKills, Resources, StartLine, Stop, StopLimit, StopReason, cut_text,
+    recorded_code,
 };
+use super::sampler::{ReadResources, Registration, SampleTicker};
 use super::stop::{StopFacts, stop_cause};
-use super::writer::{RECORD_FILE_NAME, RecordWriter};
+use super::writer::RECORD_FILE_NAME;
 use crate::config::RunPlan;
 use crate::error::{FabricError, Result};
+use crate::resource_snapshot::RuntimeResourceSnapshot;
 use crate::runtime::{
     ArtifactManifest, ArtifactRef, ErrorInfo, ErrorStage, HOST_CRASHED, HOST_TIMEOUT,
     INVALID_AGENT_RUN_RESULT, InvocationHandle, RunRequest, RunResult, RunStatus, RunUsage,
     RuntimeHandle, event_with_metadata, unique_artifact_name,
 };
-use crate::time::rfc3339_millis;
 
 /// Name of the result artifact that points at the record.
 const RECORD_ARTIFACT_NAME: &str = "record";
@@ -71,6 +73,10 @@ pub(crate) struct RecordStart<'a> {
     pub timeout: Duration,
     /// Reads the container's out-of-memory kill count.
     pub cgroup: CgroupReader,
+    /// Reads the runtime's resource snapshot.
+    pub read_resources: ReadResources,
+    /// Appends the sample lines.
+    pub ticker: Arc<SampleTicker>,
 }
 
 /// The adapter host's wait status, when it exited.
@@ -97,21 +103,17 @@ impl HostExit {
 }
 
 /// The record of one running invocation.
-#[derive(Debug)]
 pub(crate) struct InvocationRecorder {
-    runtime_id: String,
-    invocation_id: String,
-    request_id: String,
+    file: Arc<Mutex<RecordFile>>,
     path: PathBuf,
     started: Instant,
-    writer: Option<RecordWriter>,
     wrote_start: bool,
-    failure: Option<io::Error>,
     timeout: Duration,
     cgroup: CgroupReader,
     oom_kills_at_start: OomKills,
     exclusive_container: bool,
     exchange: Option<ExchangeEnd>,
+    sampling: Option<Registration>,
 }
 
 /// What core saw when the exchange with the adapter host ended. Core reads
@@ -122,6 +124,8 @@ pub(crate) struct ExchangeEnd {
     /// Time from the start line to the end of the exchange, before core's
     /// own cleanup.
     elapsed_ms: u64,
+    /// The runtime's resource snapshot at that moment.
+    resources: Resources,
     /// The container's out-of-memory kill count at that moment, or the
     /// larger count read after a crashed host's exit.
     oom_kills: OomKills,
@@ -143,42 +147,58 @@ impl ExchangeEnd {
 }
 
 impl InvocationRecorder {
-    /// Create the record and write its start line.
+    /// Create the record, write its start line, and register it with the
+    /// sample ticker.
     pub(crate) fn start(start: RecordStart<'_>) -> Self {
         let path = start.fabric_home.join(RECORD_FILE_NAME);
+        let started = Instant::now();
         let oom_kills_at_start = start.cgroup.oom_kills();
-        let mut recorder = Self {
-            runtime_id: start.invocation.runtime_id.clone(),
-            invocation_id: start.invocation.invocation_id.clone(),
-            request_id: start.invocation.request_id.clone(),
-            started: Instant::now(),
-            writer: None,
-            wrote_start: false,
-            failure: None,
+        let mut file = RecordFile::create(
+            &path,
+            start.invocation.runtime_id.clone(),
+            start.invocation.invocation_id.clone(),
+            start.invocation.request_id.clone(),
+        );
+        let sample_interval = start.ticker.start();
+        file.append(LineBody::Start(start_line(
+            &start,
+            sample_interval,
+            oom_kills_at_start,
+        )));
+        let wrote_start = file.failure.is_none();
+        let file = Arc::new(Mutex::new(file));
+        let sampling = (wrote_start && sample_interval.is_some()).then(|| {
+            start.ticker.register(
+                Arc::clone(&file),
+                started,
+                Arc::clone(&start.read_resources),
+            )
+        });
+        Self {
+            file,
             path,
+            started,
+            wrote_start,
             timeout: start.timeout,
             cgroup: start.cgroup.clone(),
             oom_kills_at_start,
             exclusive_container: exclusive_container(start.plan),
             exchange: None,
-        };
-        match RecordWriter::create(&recorder.path) {
-            Ok(writer) => {
-                recorder.writer = Some(writer);
-                recorder.append(LineBody::Start(start_line(&start, oom_kills_at_start)));
-                recorder.wrote_start = recorder.failure.is_none();
-            }
-            Err(error) => recorder.failure = Some(error),
+            sampling,
         }
-        recorder
     }
 
     /// The end values at `ended_at`, when the exchange with the host
-    /// returned: the container's out-of-memory kill count, read now. Core
-    /// calls this under the host lock.
-    pub(crate) fn read_exchange_end(&self, ended_at: Instant) -> ExchangeEnd {
+    /// returned: `snapshot` and the container's out-of-memory kill count,
+    /// read now. Core calls this under the host lock.
+    pub(crate) fn read_exchange_end(
+        &self,
+        ended_at: Instant,
+        snapshot: &Result<RuntimeResourceSnapshot>,
+    ) -> ExchangeEnd {
         ExchangeEnd {
             elapsed_ms: millis(ended_at.saturating_duration_since(self.started)),
+            resources: Resources::from(snapshot),
             oom_kills: self.cgroup.oom_kills(),
             failed: false,
             host_exit: None,
@@ -206,23 +226,29 @@ impl InvocationRecorder {
     /// gains the `record` artifact when the start line was written, and a
     /// `record_write_failed` event when any write or the sync failed.
     pub(crate) fn finish(mut self, outcome: Result<RunResult>) -> Result<RunResult> {
+        self.sampling = None;
         let elapsed_ms = millis(self.started.elapsed());
         // Core always records the exchange's end; reading here is a fallback.
-        let oom_kills = self
-            .exchange
-            .as_ref()
-            .map_or_else(|| self.cgroup.oom_kills(), |exchange| exchange.oom_kills);
-        let stop = self.stop(&outcome, elapsed_ms, oom_kills);
-        let end = match &outcome {
-            Ok(result) => result_end_line(result, elapsed_ms, oom_kills, stop),
-            Err(error) => error_end_line(error, elapsed_ms, oom_kills, stop),
+        let (resources, oom_kills) = match self.exchange.as_ref() {
+            Some(exchange) => (exchange.resources.clone(), exchange.oom_kills),
+            None => (Resources::UNAVAILABLE, self.cgroup.oom_kills()),
         };
-        self.append(LineBody::End(end));
-        if let Some(writer) = &self.writer
-            && let Err(error) = writer.sync()
-        {
-            self.failure = Some(error);
-        }
+        let stop = self.stop(&outcome, elapsed_ms, oom_kills);
+        let end = EndValues {
+            elapsed_ms,
+            resources,
+            oom_kills,
+            stop,
+        };
+        let end = match &outcome {
+            Ok(result) => result_end_line(result, end),
+            Err(error) => error_end_line(error, end),
+        };
+        let mut file = lock(&self.file);
+        file.append_end(LineBody::End(end));
+        let failure = file.failure.take();
+        let (runtime_id, invocation_id) = (file.runtime_id.clone(), file.invocation_id.clone());
+        drop(file);
         let mut result = outcome?;
         if self.wrote_start {
             let name = unique_artifact_name(&result.artifacts, RECORD_ARTIFACT_NAME);
@@ -234,19 +260,13 @@ impl InvocationRecorder {
                 metadata: BTreeMap::new(),
             });
         }
-        if let Some(error) = &self.failure {
+        if let Some(error) = failure {
             result.events.push(event_with_metadata(
                 RECORD_WRITE_FAILED,
                 format!("run record write failed; the record stops here: {error}"),
                 BTreeMap::from([
-                    (
-                        "runtime_id".to_string(),
-                        Value::from(self.runtime_id.as_str()),
-                    ),
-                    (
-                        "invocation_id".to_string(),
-                        Value::from(self.invocation_id.as_str()),
-                    ),
+                    ("runtime_id".to_string(), Value::from(runtime_id)),
+                    ("invocation_id".to_string(), Value::from(invocation_id)),
                 ]),
             ));
         }
@@ -326,29 +346,21 @@ impl InvocationRecorder {
         };
         (stop != Stop::default()).then_some(stop)
     }
-
-    /// Append one line. After the first failure the record stops.
-    fn append(&mut self, body: LineBody) {
-        let Some(writer) = self.writer.as_mut() else {
-            return;
-        };
-        let line = RecordLine {
-            schema: RecordSchema::RunRecord,
-            version: RecordVersion::V1Alpha1,
-            runtime_id: self.runtime_id.clone(),
-            invocation_id: self.invocation_id.clone(),
-            request_id: self.request_id.clone(),
-            time: rfc3339_millis(SystemTime::now()),
-            body,
-        };
-        if let Err(error) = writer.append(&line) {
-            self.failure = Some(error);
-            self.writer = None;
-        }
-    }
 }
 
-fn start_line(start: &RecordStart<'_>, container_oom_kills: OomKills) -> StartLine {
+/// The end line's values that do not come from the outcome.
+struct EndValues {
+    elapsed_ms: u64,
+    resources: Resources,
+    oom_kills: OomKills,
+    stop: Option<Stop>,
+}
+
+fn start_line(
+    start: &RecordStart<'_>,
+    sample_interval: Option<Duration>,
+    container_oom_kills: OomKills,
+) -> StartLine {
     StartLine {
         agent_name: cut_text(&start.runtime.agent_name),
         harness: cut_text(&start.runtime.harness),
@@ -370,6 +382,8 @@ fn start_line(start: &RecordStart<'_>, container_oom_kills: OomKills) -> StartLi
             .collect(),
         fabric_version: crate::version().to_string(),
         timeout_ms: millis(start.timeout),
+        sample_interval_ms: sample_interval.map(millis),
+        resources: Resources::from(&(start.read_resources)()),
         context: start
             .request
             .context
@@ -421,29 +435,20 @@ fn context_value(key: &str, value: &Value) -> ContextValue {
     }
 }
 
-fn result_end_line(
-    result: &RunResult,
-    elapsed_ms: u64,
-    container_oom_kills: OomKills,
-    stop: Option<Stop>,
-) -> EndLine {
+fn result_end_line(result: &RunResult, end: EndValues) -> EndLine {
     EndLine {
         status: result.status,
-        elapsed_ms,
+        elapsed_ms: end.elapsed_ms,
         error: result.error.as_ref().map(result_error),
         usage: result.usage.as_ref().map(end_usage),
         artifacts: end_artifacts(&result.artifacts),
-        container_oom_kills,
-        stop,
+        resources: end.resources,
+        container_oom_kills: end.oom_kills,
+        stop: end.stop,
     }
 }
 
-fn error_end_line(
-    error: &FabricError,
-    elapsed_ms: u64,
-    container_oom_kills: OomKills,
-    stop: Option<Stop>,
-) -> EndLine {
+fn error_end_line(error: &FabricError, end: EndValues) -> EndLine {
     let (code, stage) = match error {
         FabricError::AdapterLifecycleOperation { code, .. } => (code.as_str(), ErrorStage::Invoke),
         // After the record starts, only the check of the adapter's result
@@ -454,7 +459,7 @@ fn error_end_line(
     };
     EndLine {
         status: RunStatus::Failed,
-        elapsed_ms,
+        elapsed_ms: end.elapsed_ms,
         error: Some(EndError {
             code: recorded_code(code),
             stage,
@@ -462,8 +467,9 @@ fn error_end_line(
         }),
         usage: None,
         artifacts: Vec::new(),
-        container_oom_kills,
-        stop,
+        resources: end.resources,
+        container_oom_kills: end.oom_kills,
+        stop: end.stop,
     }
 }
 
@@ -507,7 +513,24 @@ fn end_artifacts(manifest: &ArtifactManifest) -> Vec<EndArtifact> {
 mod tests {
     use super::*;
     use crate::config::{FabricConfig, ResolveContext, resolve_run_plan_from_config};
+    use crate::record::lines::{RecordLine, RecordSchema, RecordVersion};
     use crate::record::test_hooks::{self, Fault};
+
+    fn snapshot() -> RuntimeResourceSnapshot {
+        RuntimeResourceSnapshot {
+            runtime_id: "rt".to_string(),
+            started_at: "2026-10-14T18:01:10.205Z".to_string(),
+            observed_at: "2026-10-14T18:01:11.205Z".to_string(),
+            resident_memory_bytes: 4096,
+            process_count: 2,
+            cpu_time_seconds: 0.5,
+        }
+    }
+
+    /// A ticker whose thread never ticks during a test.
+    fn idle_ticker() -> Arc<SampleTicker> {
+        SampleTicker::new(Duration::from_secs(3600))
+    }
 
     fn record_test_fixture() -> (RunPlan, RuntimeHandle, InvocationHandle) {
         let config: FabricConfig = serde_json::from_value(serde_json::json!({
@@ -559,6 +582,8 @@ mod tests {
             fabric_home: Path::new("/unused"),
             timeout: Duration::from_secs(5),
             cgroup: CgroupReader::system(),
+            read_resources: Arc::new(|| Ok(snapshot())),
+            ticker: idle_ticker(),
         };
 
         let line = serde_json::to_value(RecordLine {
@@ -568,7 +593,11 @@ mod tests {
             invocation_id: "inv".to_string(),
             request_id: "req".to_string(),
             time: "2026-10-14T18:01:10.205Z".to_string(),
-            body: LineBody::Start(start_line(&start, OomKills::Count(0))),
+            body: LineBody::Start(start_line(
+                &start,
+                Some(Duration::from_secs(10)),
+                OomKills::Count(0),
+            )),
         })
         .expect("start line");
 
@@ -594,6 +623,8 @@ mod tests {
             256
         );
         assert_eq!(line["timeout_ms"], 5_000);
+        assert_eq!(line["sample_interval_ms"], 10_000);
+        assert_eq!(line["resources"]["process_count"], 2);
         assert_eq!(
             line["models"],
             serde_json::json!({"default": {"provider": "nvidia", "model": "nemotron"}})
@@ -628,9 +659,11 @@ mod tests {
             fabric_home: Path::new("/unused"),
             timeout: Duration::from_secs(5),
             cgroup: CgroupReader::system(),
+            read_resources: Arc::new(|| Ok(snapshot())),
+            ticker: idle_ticker(),
         };
 
-        let line = start_line(&start, OomKills::Count(0));
+        let line = start_line(&start, None, OomKills::Count(0));
 
         assert_eq!(line.models.len(), 3);
         assert_eq!(line.context.len(), 2);
@@ -670,6 +703,8 @@ mod tests {
             fabric_home: &folder,
             timeout: Duration::from_secs(5),
             cgroup: CgroupReader::system(),
+            read_resources: Arc::new(|| Ok(snapshot())),
+            ticker: idle_ticker(),
         });
         let mut result = succeeded_result(&invocation);
         result.artifacts.artifacts.push(ArtifactRef {
@@ -707,6 +742,8 @@ mod tests {
             fabric_home: &folder,
             timeout: Duration::from_secs(5),
             cgroup: CgroupReader::system(),
+            read_resources: Arc::new(|| Ok(snapshot())),
+            ticker: idle_ticker(),
         });
         let result = succeeded_result(&invocation);
 
@@ -756,6 +793,8 @@ mod tests {
             fabric_home: &folder,
             timeout: Duration::from_secs(5),
             cgroup: CgroupReader::system(),
+            read_resources: Arc::new(|| Ok(snapshot())),
+            ticker: idle_ticker(),
         });
         let finished = recorder.finish(outcome);
         test_hooks::FAULT.with(|slot| slot.set(None));
@@ -896,6 +935,8 @@ mod tests {
             fabric_home: &folder,
             timeout: Duration::from_secs(5),
             cgroup: CgroupReader::with_root(&root),
+            read_resources: Arc::new(|| Ok(snapshot())),
+            ticker: idle_ticker(),
         });
         let count_the_kill =
             || std::fs::write(root.join("sys/fs/cgroup/memory.events"), memory_events(5));
@@ -903,7 +944,7 @@ mod tests {
             count_the_kill().expect("oom kill");
         }
         let mut end = recorder
-            .read_exchange_end(Instant::now())
+            .read_exchange_end(Instant::now(), &Ok(snapshot()))
             .with_host_exit(Some(HostExit {
                 exit_code: None,
                 exit_signal: Some(9),
@@ -1011,8 +1052,10 @@ mod tests {
             fabric_home: &folder,
             timeout: Duration::from_secs(5),
             cgroup: CgroupReader::with_root(&root),
+            read_resources: Arc::new(|| Ok(snapshot())),
+            ticker: idle_ticker(),
         });
-        recorder.exchange_ended(recorder.read_exchange_end(Instant::now()));
+        recorder.exchange_ended(recorder.read_exchange_end(Instant::now(), &Ok(snapshot())));
         // Core released the host lock, so a later invocation on the same
         // runtime can be killed before this result is finished.
         std::fs::write(root.join("sys/fs/cgroup/memory.events"), memory_events(5))
@@ -1028,5 +1071,170 @@ mod tests {
             serde_json::from_str(text.lines().last().expect("end line")).expect("json");
         assert_eq!(end["container_oom_kills"], 4, "{end}");
         assert_eq!(end["stop"], serde_json::json!({"cause": "agent_failed"}));
+    }
+
+    fn record_line_validator() -> jsonschema::Validator {
+        let schema = crate::schema::generate_schema(crate::schema::SchemaName::RunRecordLine)
+            .expect("record line schema");
+        jsonschema::validator_for(&schema).expect("valid schema")
+    }
+
+    /// Start a record in a fresh folder named `name`, sampled by `ticker`.
+    fn start_recorder(
+        name: &str,
+        ticker: &Arc<SampleTicker>,
+        read: ReadResources,
+    ) -> (PathBuf, InvocationRecorder) {
+        let (plan, runtime, invocation) = record_test_fixture();
+        let folder = temp_folder(name);
+        let request = RunRequest::text("input");
+        let recorder = InvocationRecorder::start(RecordStart {
+            plan: &plan,
+            runtime: &runtime,
+            invocation: &invocation,
+            request: &request,
+            fabric_home: &folder,
+            timeout: Duration::from_secs(5),
+            cgroup: CgroupReader::system(),
+            read_resources: read,
+            ticker: Arc::clone(ticker),
+        });
+        (folder, recorder)
+    }
+
+    fn read_lines(path: &Path) -> Vec<Value> {
+        std::fs::read_to_string(path)
+            .expect("record")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("json line"))
+            .collect()
+    }
+
+    fn samples(path: &Path) -> Vec<Value> {
+        read_lines(path)
+            .into_iter()
+            .filter(|line| line["kind"] == "sample")
+            .collect()
+    }
+
+    fn wait_for_samples(path: &Path, count: usize) {
+        // Wait for lines, not a fixed time, so a loaded runner cannot flake it.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while samples(path).len() < count && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            samples(path).len() >= count,
+            "fewer than {count} sample lines in {}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn two_records_share_one_ticker_and_samples_stop_at_the_end_line() {
+        let ticker = SampleTicker::new(Duration::from_millis(20));
+        let (first_folder, mut first) =
+            start_recorder("share-1", &ticker, Arc::new(|| Ok(snapshot())));
+        let (second_folder, second) =
+            start_recorder("share-2", &ticker, Arc::new(|| Ok(snapshot())));
+        let first_path = first_folder.join(RECORD_FILE_NAME);
+        let second_path = second_folder.join(RECORD_FILE_NAME);
+
+        wait_for_samples(&first_path, 2);
+        wait_for_samples(&second_path, 2);
+        let end = first
+            .read_exchange_end(Instant::now(), &Ok(snapshot()))
+            .with_host_exit(None);
+        first.exchange_ended(end);
+        let error = FabricError::AdapterLifecycleOperation {
+            operation: "invoke",
+            runtime_id: "rt".to_string(),
+            code: HOST_CRASHED.to_string(),
+            message: "host exited".to_string(),
+            diagnostics: String::new(),
+        };
+        first.finish(Err(error)).expect_err("error passes through");
+        std::thread::sleep(Duration::from_millis(60));
+
+        let lines = read_lines(&first_path);
+        let validator = record_line_validator();
+        for line in lines.iter().chain(&read_lines(&second_path)) {
+            assert!(validator.is_valid(line), "{line}");
+        }
+        assert_eq!(lines.last().expect("end")["kind"], "end");
+        assert_eq!(lines.last().expect("end")["resources"]["process_count"], 2);
+        let samples = samples(&first_path);
+        assert!(samples.len() >= 2, "{lines:?}");
+        assert!(samples[0]["elapsed_ms"].is_u64());
+        assert_eq!(samples[0]["resources"]["process_count"], 2);
+        assert_eq!(lines[0]["sample_interval_ms"], 20);
+        drop(second);
+        let _ = std::fs::remove_dir_all(first_folder);
+        let _ = std::fs::remove_dir_all(second_folder);
+    }
+
+    #[test]
+    fn sample_line_with_a_snapshot_error_keeps_only_the_error_code() {
+        let ticker = SampleTicker::new(Duration::from_millis(20));
+        let (folder, recorder) = start_recorder(
+            "snapshot-error",
+            &ticker,
+            Arc::new(|| {
+                Err(FabricError::ResourceObservationUnavailable {
+                    runtime_id: "rt".to_string(),
+                    reason: "adapter host process has exited".to_string(),
+                })
+            }),
+        );
+        let path = folder.join(RECORD_FILE_NAME);
+
+        wait_for_samples(&path, 1);
+        drop(recorder);
+
+        let lines = read_lines(&path);
+        let unavailable = serde_json::json!({"error": "resource_observation_unavailable"});
+        assert_eq!(samples(&path)[0]["resources"], unavailable);
+        assert_eq!(lines[0]["resources"], unavailable);
+        assert!(
+            !std::fs::read_to_string(&path)
+                .expect("record")
+                .contains("exited")
+        );
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_panicking_snapshot_read_still_writes_sample_lines_without_the_panic_text() {
+        let ticker = SampleTicker::new(Duration::from_millis(20));
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let reads = Arc::clone(&calls);
+        let (folder, recorder) = start_recorder(
+            "panicking-read",
+            &ticker,
+            Arc::new(move || {
+                // The start line's read succeeds; every sample read panics.
+                if reads.fetch_add(1, std::sync::atomic::Ordering::Relaxed) > 0 {
+                    panic!("snapshot reader bug");
+                }
+                Ok(snapshot())
+            }),
+        );
+        let path = folder.join(RECORD_FILE_NAME);
+
+        wait_for_samples(&path, 2);
+        drop(recorder);
+
+        let samples = samples(&path);
+        assert!(samples.len() >= 2, "{samples:?}");
+        assert_eq!(
+            samples[1]["resources"],
+            serde_json::json!({"error": "resource_observation_unavailable"})
+        );
+        assert!(
+            !std::fs::read_to_string(&path)
+                .expect("record")
+                .contains("reader bug")
+        );
+        let _ = std::fs::remove_dir_all(folder);
     }
 }

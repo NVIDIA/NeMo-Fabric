@@ -86,6 +86,7 @@ pub(crate) mod test_hooks {
         match body {
             LineBody::Start(_) => fail_if(Fault::StartAppend),
             LineBody::End(_) => fail_if(Fault::EndAppend),
+            LineBody::Sample(_) => Ok(()),
         }
     }
 
