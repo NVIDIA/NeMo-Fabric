@@ -526,7 +526,7 @@ def test_harbor_record_stays_off_without_fabric_record(tmp_path: Path):
     assert "record" not in agent._build_config().to_mapping()["runtime"]
 
 
-def test_harbor_record_with_malformed_trial_files_has_no_task_identity(tmp_path: Path):
+def test_harbor_record_ignores_trial_files_that_are_not_json_objects(tmp_path: Path):
     (tmp_path / "lock.json").write_text("not json", encoding="utf-8")
     (tmp_path / "config.json").write_text("[]", encoding="utf-8")
     agent = FabricAgent(
@@ -549,9 +549,9 @@ async def _run_contexts(trial_dir: Path, runs: int) -> list[dict[str, Any]]:
     for run in range(runs):
         await agent.run(f"step {run}", environment, AgentContext())  # type: ignore[arg-type]
     return [
-        json.loads(environment.files[path])["request"]["context"]
-        for path in environment.files
-        if path.startswith("/tmp/fabric-run-")
+        json.loads(environment.files[target])["request"]["context"]
+        for _, target in environment.uploads
+        if target.startswith("/tmp/fabric-run-")
     ]
 
 
@@ -561,7 +561,7 @@ async def test_harbor_record_numbers_each_step_of_a_multi_step_trial(tmp_path: P
 
     contexts = await _run_contexts(tmp_path, runs=2)
 
-    assert sorted(context["step"] for context in contexts) == [1, 2]
+    assert [context["step"] for context in contexts] == [1, 2]
 
 
 async def test_harbor_record_single_step_trial_records_no_step(tmp_path: Path):
