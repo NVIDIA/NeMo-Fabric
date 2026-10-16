@@ -46,9 +46,10 @@ const RECORDED_CONTEXT_KEYS: [&str; 7] = [
     "harbor_context_id",
     "harbor_trial_name",
 ];
-/// End-line error code for an artifact write that failed after the adapter returned.
+/// End-line error code for a failed Fabric file write: `adapter-invocation.json`
+/// before the request, or a result artifact after the adapter returned.
 const ARTIFACT_WRITE_FAILED: &str = "artifact_write_failed";
-/// End-line error code for any other Fabric error after the request was sent.
+/// End-line error code for any other Fabric error after the record started.
 const FABRIC_ERROR: &str = "fabric_error";
 
 /// What the start line needs from core's invocation path.

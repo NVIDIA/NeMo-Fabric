@@ -1752,8 +1752,9 @@ fn run_local_host_invocation_with_timeout(
 }
 
 /// Run one invocation on the local host. When the plan turns the run record
-/// on, `recorder` is set right before core sends the request to the host, so
-/// every invocation that core tried to send has a record.
+/// on, `recorder` is set before core sets the adapter deadline and writes
+/// `adapter-invocation.json`, so every invocation that core tried to send has
+/// a record.
 fn local_host_invocation_result(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
@@ -1802,6 +1803,18 @@ fn local_host_invocation_result(
             &host_guard.environment_env,
             &adapter_invocation.runtime_context.environment.env,
         )?;
+        // Record I/O runs before the adapter deadline is set, so slow record
+        // storage delays the request instead of shortening the adapter's budget.
+        if plan.config.runtime.record_enabled() && artifacts.root.is_some() {
+            *recorder = Some(InvocationRecorder::start(RecordStart {
+                plan,
+                runtime,
+                invocation: &invocation,
+                request: &request,
+                fabric_home: &fabric_home,
+                timeout: invoke_timeout,
+            }));
+        }
         adapter_invocation.runtime_context.deadline_millis =
             adapter_deadline_millis(invoke_timeout);
         let (lifecycle_request, adapter_payload) = match invocation_kind {
@@ -1836,16 +1849,6 @@ fn local_host_invocation_result(
             }
         };
         let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
-        if plan.config.runtime.record_enabled() && artifacts.root.is_some() {
-            *recorder = Some(InvocationRecorder::start(RecordStart {
-                plan,
-                runtime,
-                invocation: &invocation,
-                request: &request,
-                fabric_home: &fabric_home,
-                timeout: invoke_timeout,
-            }));
-        }
         match exchange_lifecycle_message(
             &mut host_guard,
             &runtime.runtime_id,
@@ -5723,6 +5726,32 @@ for line in sys.stdin:
             serde_json::json!({"code": "host_timeout", "stage": "invoke", "retryable": false})
         );
         let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_preparation_does_not_shorten_the_adapter_deadline() {
+        let (root, mut plan) = record_plan("success");
+        plan.config.runtime.timeout_seconds = Some(60.0);
+        let runtime = start_runtime(&plan).expect("start local host");
+        let delay = Duration::from_millis(500);
+        crate::record::test_hooks::CREATE_DELAY.with(|slot| slot.set(delay));
+
+        let before = now_millis();
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("slow record storage"));
+        let after = now_millis();
+        crate::record::test_hooks::CREATE_DELAY.with(|slot| slot.set(Duration::ZERO));
+
+        let result = result.expect("invoke");
+        let deadline = u128::from(result.output["deadline_millis"].as_u64().expect("deadline"));
+        // The adapter's 50-second budget starts after the record is created,
+        // so slow record storage does not eat into it.
+        assert!(
+            (before + delay.as_millis() + 50_000..=after + 50_000).contains(&deadline),
+            "deadline {deadline}, before {before}, after {after}"
+        );
+        assert_eq!(record_files(&root).len(), 1);
+        stop_runtime(&plan, &runtime).expect("stop local host");
         let _ = fs::remove_dir_all(root);
     }
 

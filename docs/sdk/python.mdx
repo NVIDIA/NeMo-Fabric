@@ -988,8 +988,8 @@ The file holds a start line and an end line. Every line carries `schema`
   adapter host error keeps its code, such as `host_timeout`, `host_crashed`,
   `host_io`, or `invalid_agent_run_result`. A result extension that the
   adapter's descriptor does not declare also reads `invalid_agent_run_result`.
-  A failed artifact write reads `artifact_write_failed`, and any other error
-  reads `fabric_error`.
+  A failed write of `adapter-invocation.json` or a result artifact reads
+  `artifact_write_failed`, and any other error reads `fabric_error`.
 
 The end line describes the invocation. A one-shot `Fabric.run` stops the
 runtime after the invocation; when that stop fails, the result reads `failed`
