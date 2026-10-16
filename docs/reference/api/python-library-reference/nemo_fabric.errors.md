@@ -321,7 +321,9 @@ Initialize a structured NeMo Fabric exception.
 
 ## <kbd>class</kbd> `ResourceObservationUnsupportedError`
 
-The runtime's environment provider or operating system has no resource reader.
+Runtime resources have no reader.
+
+The runtime's adapter kind, environment provider, or operating system has no resource reader.
 
 
 ### Inheritance

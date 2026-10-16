@@ -61,7 +61,7 @@ Normalized invocation usage when reported by the adapter target.
 
 ### `resource_snapshot: Option<RuntimeResourceSnapshot>`
 
-Resource snapshot of the runtime, read once after the adapter returned this result. Absent when the runtime's resources could not be observed.
+Resource snapshot of the runtime, read once after the adapter returned this result. Absent when the runtime's resources could not be observed; `runtime_resource_snapshot` returns the error that explains it.
 
 ### `artifacts: ArtifactManifest`
 

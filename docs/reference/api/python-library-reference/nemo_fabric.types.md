@@ -1259,7 +1259,7 @@ Memory, process count, and CPU time cover the adapter host process and its live 
  - <b>`observed_at`</b>:  When Fabric read these values, as RFC 3339 UTC.
  - <b>`resident_memory_bytes`</b>:  Sum of the live processes' resident set sizes.  Pages shared between processes count once per process.
  - <b>`process_count`</b>:  Live processes in the tree, including the adapter host.
- - <b>`cpu_time_seconds`</b>:  CPU time used since the adapter host started,  including exited descendants (on macOS, only once they are  waited for). It can drop when a descendant leaves the tree.
+ - <b>`cpu_time_seconds`</b>:  CPU time used since the adapter host started,  including exited descendants. It can drop when a descendant  leaves the tree.
 
 
 ### Fields
@@ -1348,7 +1348,7 @@ The model is both attribute-accessible and mapping-compatible. A harness failure
  - <b>`output`</b>:  Object-shaped adapter output as ``RunOutput``; non-object values  are preserved as-is.
  - <b>`error`</b>:  Structured failure, or ``None`` on success.
  - <b>`usage`</b>:  Normalized invocation usage, or ``None`` when unavailable.
- - <b>`resource_snapshot`</b>:  Runtime resource snapshot read once after the  adapter returned this result, or ``None`` when the runtime's  resources could not be observed.
+ - <b>`resource_snapshot`</b>:  Runtime resource snapshot read once after the  adapter returned this result, or ``None`` when the runtime's  resources could not be observed. ``Runtime.resource_snapshot()``  raises the error that explains a ``None``.
  - <b>`artifacts`</b>:  Normalized artifact manifest.
  - <b>`telemetry`</b>:  Ordered telemetry references.
  - <b>`events`</b>:  Ordered lifecycle and invocation events.

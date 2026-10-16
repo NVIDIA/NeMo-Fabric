@@ -86,7 +86,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`errors.FabricRuntimeError`](./nemo_fabric.errors.md#class-fabricruntimeerror): Failure while starting, invoking, stopping, or otherwise driving a runtime.
 - [`errors.FabricStateError`](./nemo_fabric.errors.md#class-fabricstateerror): Operation rejected because a local runtime is in the wrong state.
 - [`errors.ResourceObservationUnavailableError`](./nemo_fabric.errors.md#class-resourceobservationunavailableerror): Runtime resources cannot be read now.
-- [`errors.ResourceObservationUnsupportedError`](./nemo_fabric.errors.md#class-resourceobservationunsupportederror): The runtime's environment provider or operating system has no resource reader.
+- [`errors.ResourceObservationUnsupportedError`](./nemo_fabric.errors.md#class-resourceobservationunsupportederror): Runtime resources have no reader.
 
 ## Functions
 
