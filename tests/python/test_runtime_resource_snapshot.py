@@ -91,7 +91,7 @@ def _runtime_with_native(native_module: Any) -> Runtime:
     )
 
 
-def test_runtime_resource_snapshot_with_invalid_field_raises_config_error():
+def test_runtime_resource_snapshot_round_trips_and_rejects_invalid_fields():
     snapshot = RuntimeResourceSnapshot.from_mapping(_SNAPSHOT)
     assert snapshot.cpu_time_seconds == 1.25
     assert snapshot.to_mapping() == _SNAPSHOT
