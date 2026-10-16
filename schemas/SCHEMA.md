@@ -130,6 +130,8 @@ descriptor schema.
 - `sdk/run-record-line`: one line of the opt-in per-invocation run record,
   `run-record.jsonl`. The schema is `v1alpha1` and may change until a reader
   for run records ships.
+- `sdk/runtime-resource-snapshot`: timestamped memory, process count, and CPU
+  time of a runtime's local adapter host and its descendants.
 
 ### Deferred Core Objects
 

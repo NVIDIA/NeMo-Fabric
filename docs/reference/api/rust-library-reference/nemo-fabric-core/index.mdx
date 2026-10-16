@@ -93,6 +93,7 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use doctor::doctor_plan;`
 - `pub use error::FabricError;`
 - `pub use error::Result;`
+- `pub use resource_snapshot::RuntimeResourceSnapshot;`
 - `pub use runtime::AdapterInvocation;`
 - `pub use runtime::ArtifactManifest;`
 - `pub use runtime::ArtifactRef;`
@@ -130,6 +131,7 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use runtime::prepare_service;`
 - `pub use runtime::release_service;`
 - `pub use runtime::run_plan;`
+- `pub use runtime::runtime_resource_snapshot;`
 - `pub use runtime::start_runtime;`
 - `pub use runtime::start_runtime_with_service;`
 - `pub use runtime::stop_runtime;`
@@ -147,6 +149,7 @@ Core config and runtime contract for NeMo Fabric.
 - [config](config/index.mdx): NeMo Fabric config models and loading helpers.
 - [doctor](doctor/index.mdx): Plan diagnostics for NeMo Fabric.
 - [error](error/index.mdx): Error types for NeMo Fabric core.
+- [resource_snapshot](resource-snapshot/index.mdx): Resource snapshots of a runtime's local adapter host and its descendants.
 - [runtime](runtime/index.mdx): Runtime invocation helpers.
 - [schema](schema/index.mdx): JSON Schema generation for the public NeMo Fabric contract.
 

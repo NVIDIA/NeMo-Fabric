@@ -279,6 +279,52 @@
       },
       "type": "object"
     },
+    "RuntimeResourceSnapshot": {
+      "description": "Timestamped resource usage of one runtime's local adapter host process tree.\n\nMemory, process count, and CPU time cover the adapter host process and its\nlive descendants. For a runtime started on a service, the shared service\nprocess is not included. Values Fabric cannot read are returned as an error,\nnever as zero.",
+      "properties": {
+        "cpu_time_seconds": {
+          "description": "CPU time consumed by the tree since the adapter host started, in seconds,\nincluding exited descendants. It can drop when a descendant leaves the\ntree.",
+          "format": "double",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "observed_at": {
+          "description": "When Fabric read these values, as an RFC 3339 UTC timestamp.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "process_count": {
+          "description": "Live processes in the tree, including the adapter host. Exited processes\nthat are not yet reaped are not counted.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resident_memory_bytes": {
+          "description": "Sum of the resident set sizes of the live processes, in bytes. Pages\nshared between processes count once per process.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runtime_id": {
+          "description": "Runtime this snapshot describes.",
+          "type": "string"
+        },
+        "started_at": {
+          "description": "When Fabric started the runtime's adapter host, as an RFC 3339 UTC timestamp.",
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime_id",
+        "started_at",
+        "observed_at",
+        "resident_memory_bytes",
+        "process_count",
+        "cpu_time_seconds"
+      ],
+      "type": "object"
+    },
     "TelemetryRef": {
       "description": "Reference to telemetry emitted by Relay or another configured telemetry path.",
       "properties": {
@@ -359,6 +405,17 @@
     "request_id": {
       "description": "Request id.",
       "type": "string"
+    },
+    "resource_snapshot": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RuntimeResourceSnapshot"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Resource snapshot of the runtime, read once after the adapter returned this\nresult. Absent when the runtime's resources could not be observed."
     },
     "runtime_id": {
       "description": "Runtime handle id.",

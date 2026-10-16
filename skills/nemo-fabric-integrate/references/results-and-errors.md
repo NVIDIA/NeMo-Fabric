@@ -17,6 +17,7 @@ Every invocation that reaches the adapter boundary returns a normalized
 | `error` | Structured failure metadata when available. Branch on `status`, not on this field. |
 | `output` | Harness output normalized to the configured output schema. |
 | `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
+| `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. `None` when the read failed. |
 | `artifacts` | Output files, logs, patches, and other materialized references. |
 | `telemetry` | References to NVIDIA NeMo Relay or other telemetry streams from the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
@@ -68,6 +69,19 @@ the `v1alpha1`
 [run record line schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/sdk/run-record-line.schema.json)
 and may change until a reader ships.
 
+## Runtime Resource Snapshots
+
+`await runtime.resource_snapshot()` returns a `RuntimeResourceSnapshot` with
+`runtime_id`, `started_at` and `observed_at` (RFC 3339 UTC),
+`resident_memory_bytes`, `process_count`, and `cpu_time_seconds`. It covers the
+local adapter host process and its descendants (not a shared service process),
+and it does not wait for an active invocation. CPU time is cumulative since the
+host started, so subtract an earlier snapshot to estimate one invocation; it
+can drop when a descendant leaves the tree, so treat a negative difference as
+unknown. Values that cannot be read raise an error, never read as zero.
+Snapshots observe only; enforce limits in the operating system or execution
+environment.
+
 ## Correlation IDs
 
 `runtime_id` identifies the runtime lifecycle, `invocation_id` identifies one
@@ -91,6 +105,8 @@ Refer to the [errors reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/
 | `FabricRuntimeError` | Startup, invocation, or shutdown failed before a normalized result. |
 | `FabricStateError` | Invalid runtime state transition (invoking after stop, overlapping invocations). |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
+| `ResourceObservationUnavailableError` | A resource snapshot cannot be read because the runtime stopped, is stopping, its adapter host exited, a live process in its tree or the process table cannot be read, or the process tree kept changing during the read. Subclass of `FabricRuntimeError`. |
+| `ResourceObservationUnsupportedError` | The runtime's adapter kind, environment provider, or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
 
 ## Cleanup And Resilience
 

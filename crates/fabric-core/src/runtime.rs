@@ -32,6 +32,7 @@ use crate::config::{
 };
 use crate::error::{FabricError, Result};
 use crate::record::{CgroupReader, HostExit, InvocationRecorder, RecordStart};
+use crate::resource_snapshot::{LocalHostProcess, RuntimeResourceSnapshot, snapshot_local_host};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
@@ -80,6 +81,10 @@ const DEFAULT_PYTHON: &str = "python.exe";
 #[cfg(test)]
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static LOCAL_HOSTS: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalAdapterHost>>>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+// Adapter host processes by runtime id. A host's own mutex stays locked for a
+// whole invocation, so a resource snapshot reads the PID from here instead.
+static LOCAL_HOST_PROCESSES: LazyLock<Mutex<BTreeMap<String, LocalHostProcess>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 static LOCAL_SERVICES: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalServiceRecord>>>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
@@ -145,6 +150,10 @@ pub struct RunResult {
     /// Normalized invocation usage when reported by the adapter target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<RunUsage>,
+    /// Resource snapshot of the runtime, read once after the adapter returned this
+    /// result. Absent when the runtime's resources could not be observed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_snapshot: Option<RuntimeResourceSnapshot>,
     /// Artifacts produced or collected by this run.
     #[serde(default)]
     pub artifacts: ArtifactManifest,
@@ -1172,6 +1181,47 @@ pub fn invoke_runtime(
     })
 }
 
+/// Read a timestamped resource snapshot of a started runtime.
+///
+/// The snapshot covers the runtime's local adapter host process and its live
+/// descendants. It does not wait for a running invocation. It returns
+/// [`FabricError::ResourceObservationUnavailable`] when the runtime stopped, is
+/// stopping, its host exited, a live process in its tree or the process table
+/// cannot be read, or the process tree kept changing during the read, and
+/// [`FabricError::ResourceObservationUnsupported`] when the adapter kind,
+/// environment provider, or operating system has no resource reader.
+pub fn runtime_resource_snapshot(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+) -> Result<RuntimeResourceSnapshot> {
+    validate_runtime_handle(plan, runtime)?;
+    if !uses_local_host(plan) {
+        return Err(FabricError::ResourceObservationUnsupported {
+            runtime_id: runtime.runtime_id.clone(),
+            reason: format!(
+                "adapter kind `{}` has no resource reader",
+                adapter_kind_name(runtime.adapter_kind)
+            ),
+        });
+    }
+    local_runtime_resource_snapshot(runtime)
+}
+
+fn local_runtime_resource_snapshot(runtime: &RuntimeHandle) -> Result<RuntimeResourceSnapshot> {
+    if runtime.environment.provider != "local" {
+        return Err(FabricError::ResourceObservationUnsupported {
+            runtime_id: runtime.runtime_id.clone(),
+            reason: format!(
+                "environment provider `{}` has no resource reader",
+                runtime.environment.provider
+            ),
+        });
+    }
+    // Clone the entry so the map lock is released before the process tree is read.
+    let host = local_host_processes().get(&runtime.runtime_id).cloned();
+    snapshot_local_host(&runtime.runtime_id, host.as_ref())
+}
+
 /// Invoke a started harness runtime and pass through native OpenAI chat-completion chunks.
 pub fn invoke_openai_stream(
     plan: &RunPlan,
@@ -1532,6 +1582,7 @@ impl RuntimeAdapter for LocalHostAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+        local_host_processes().remove(&runtime.runtime_id);
         let Some(host) = local_hosts().remove(&runtime.runtime_id) else {
             return Ok(vec![local_host_stop_event(runtime, true, false)]);
         };
@@ -1629,6 +1680,7 @@ fn start_local_runtime(
     )?;
     let environment_env = start.runtime_context.environment.env.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
+    let started_at = SystemTime::now();
     let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)?;
     if let Err(error) = exchange_lifecycle_message(
         &mut host,
@@ -1640,6 +1692,10 @@ fn start_local_runtime(
         let _ = remove_local_host_files(&host);
         return Err(error);
     }
+    local_host_processes().insert(
+        runtime.runtime_id.clone(),
+        LocalHostProcess::new(host.child.id(), started_at),
+    );
     local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
     Ok(runtime)
 }
@@ -1874,8 +1930,11 @@ fn local_host_invocation_result(
                     recorder.exchange_ended(end);
                 }
                 let stderr = take_local_host_stderr(&mut host_guard);
+                // Read while the host lock is held, so no later invocation is counted.
+                let resource_snapshot = local_runtime_resource_snapshot(runtime).ok();
                 Ok((
                     output,
+                    resource_snapshot,
                     stderr,
                     host_guard.command.clone(),
                     host_guard.child.id(),
@@ -1912,6 +1971,7 @@ fn local_host_invocation_result(
     };
     let (
         adapter_output,
+        resource_snapshot,
         stderr,
         host_command,
         host_pid,
@@ -2063,6 +2123,7 @@ fn local_host_invocation_result(
         output,
         error,
         usage: agent_result.usage.as_ref().map(run_usage),
+        resource_snapshot,
         artifacts,
         telemetry: telemetry_ref(plan, relay_config.as_ref()),
         events,
@@ -2101,6 +2162,7 @@ fn invalidate_timed_out_local_host(
             .is_some_and(|host| Arc::ptr_eq(host, expected_host))
         {
             hosts.remove(runtime_id);
+            local_host_processes().remove(runtime_id);
         }
     }
 
@@ -2252,6 +2314,12 @@ fn service_release_event(service: &ServiceHandle, already_released: bool) -> Fab
 
 fn local_hosts() -> std::sync::MutexGuard<'static, BTreeMap<String, Arc<Mutex<LocalAdapterHost>>>> {
     LOCAL_HOSTS
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+fn local_host_processes() -> std::sync::MutexGuard<'static, BTreeMap<String, LocalHostProcess>> {
+    LOCAL_HOST_PROCESSES
         .lock()
         .unwrap_or_else(|error| error.into_inner())
 }
@@ -4040,6 +4108,10 @@ for line in sys.stdin:
                     "choices": [{"index": 0, "delta": {"content": "lo"}}],
                 },
             ])
+        if MODE == "busy":
+            # A descendant that burns 1.2 s of CPU, then exits and is waited for.
+            subprocess.run([sys.executable, "-c",
+                "import time\nwhile time.process_time() < 1.2:\n    pass"], check=True)
         output = {
             "host_pid": os.getpid(),
             "invocation_count": invocations,
@@ -4789,6 +4861,200 @@ for line in sys.stdin:
         assert_eq!(first.output["invocation_count"], 1);
         assert_eq!(second.output["invocation_count"], 2);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn assert_unavailable(result: &Result<RuntimeResourceSnapshot>, runtime_id: &str) {
+        match result {
+            Err(FabricError::ResourceObservationUnavailable {
+                runtime_id: actual, ..
+            }) => assert_eq!(actual, runtime_id),
+            other => panic!("expected ResourceObservationUnavailable, got {other:?}"),
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_of_active_runtime_reads_host_tree() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let snapshot = runtime_resource_snapshot(&plan, &runtime).expect("snapshot");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        assert_eq!(snapshot.runtime_id, runtime.runtime_id);
+        assert!(snapshot.process_count >= 1);
+        assert!(snapshot.resident_memory_bytes > 0);
+        assert!(snapshot.cpu_time_seconds >= 0.0);
+        assert!(snapshot.started_at.ends_with('Z'));
+        assert!(snapshot.started_at <= snapshot.observed_at);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_during_invocation_returns_before_invocation_ends() {
+        let (root, plan) = local_host_plan("busy");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let saw_descendant = thread::scope(|scope| {
+            let invocation =
+                scope.spawn(|| invoke_runtime(&plan, &runtime, RunRequest::text("work")));
+            let mut saw_descendant = false;
+            while !saw_descendant && !invocation.is_finished() {
+                let snapshot = runtime_resource_snapshot(&plan, &runtime).expect("live snapshot");
+                saw_descendant = snapshot.process_count >= 2 && !invocation.is_finished();
+                thread::sleep(Duration::from_millis(20));
+            }
+            invocation
+                .join()
+                .expect("invocation thread")
+                .expect("invoke local host");
+            saw_descendant
+        });
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        assert!(saw_descendant, "no snapshot saw the running descendant");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn invocation_result_carries_final_resource_snapshot_with_waited_descendant_cpu() {
+        let (root, plan) = local_host_plan("busy");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let result =
+            invoke_runtime(&plan, &runtime, RunRequest::text("work")).expect("invoke local host");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        let snapshot = result.resource_snapshot.expect("final resource snapshot");
+        assert_eq!(snapshot.runtime_id, result.runtime_id);
+        assert!(snapshot.process_count >= 1);
+        assert!(
+            snapshot.cpu_time_seconds >= 1.0,
+            "descendant CPU missing: {snapshot:?}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_resource_snapshot_after_stop_is_unavailable() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        let result = runtime_resource_snapshot(&plan, &runtime);
+
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
+            assert_unavailable(&result, &runtime.runtime_id);
+        } else {
+            assert!(matches!(
+                result,
+                Err(FabricError::ResourceObservationUnsupported { .. })
+            ));
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_after_host_exit_is_unavailable() {
+        let (root, plan) = local_host_plan("crash_after_start");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut result = runtime_resource_snapshot(&plan, &runtime);
+        while result.is_ok() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(50));
+            result = runtime_resource_snapshot(&plan, &runtime);
+        }
+        let _ = stop_runtime(&plan, &runtime);
+
+        assert_unavailable(&result, &runtime.runtime_id);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_during_concurrent_stop_is_snapshot_or_unavailable() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let results = thread::scope(|scope| {
+            let snapshots = scope.spawn(|| {
+                let mut results = Vec::new();
+                loop {
+                    let result = runtime_resource_snapshot(&plan, &runtime);
+                    let stopped = result.is_err();
+                    results.push(result);
+                    if stopped {
+                        return results;
+                    }
+                }
+            });
+            thread::sleep(Duration::from_millis(50));
+            stop_runtime(&plan, &runtime).expect("stop local host");
+            snapshots.join().expect("snapshot thread")
+        });
+
+        let (last, earlier) = results.split_last().expect("at least one snapshot");
+        assert!(earlier.iter().all(Result::is_ok));
+        assert_unavailable(last, &runtime.runtime_id);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_after_invocation_timeout_is_unavailable() {
+        let (root, plan) = local_host_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+        runtime_resource_snapshot(&plan, &runtime).expect("snapshot before the timeout");
+
+        run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("unresponsive host must time out");
+
+        assert_unavailable(
+            &runtime_resource_snapshot(&plan, &runtime),
+            &runtime.runtime_id,
+        );
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_resource_snapshot_of_non_local_environment_is_unsupported() {
+        let (root, plan) = local_host_plan("success");
+        let mut environment = prepare_environment(&plan).expect("prepare environment");
+        environment.provider = "remote".to_string();
+        let runtime_id = new_id("runtime");
+        let runtime = RuntimeHandle {
+            runtime_binding: runtime_binding(&runtime_id, None, &plan, &environment)
+                .expect("runtime binding"),
+            runtime_id,
+            agent_name: plan.agent_name.clone(),
+            harness: harness(&plan),
+            adapter_kind: adapter_kind(&plan),
+            adapter_id: adapter_id(&plan),
+            service_id: None,
+            environment,
+        };
+
+        let result = runtime_resource_snapshot(&plan, &runtime);
+
+        assert!(
+            matches!(
+                &result,
+                Err(FabricError::ResourceObservationUnsupported { runtime_id, reason })
+                    if *runtime_id == runtime.runtime_id && reason.contains("remote")
+            ),
+            "{result:?}"
+        );
         let _ = fs::remove_dir_all(root);
     }
 
