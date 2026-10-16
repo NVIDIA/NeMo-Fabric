@@ -1224,6 +1224,57 @@ mod tests {
     }
 
     #[test]
+    fn a_sample_read_in_flight_when_the_exchange_ends_writes_nothing_to_the_open_record() {
+        use std::sync::Barrier;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let ticker = SampleTicker::new(Duration::from_millis(10));
+        let (entered, release) = (Arc::new(Barrier::new(2)), Arc::new(Barrier::new(2)));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let read: ReadResources = {
+            let (entered, release) = (Arc::clone(&entered), Arc::clone(&release));
+            Arc::new(move || {
+                // Call 0 is the start line's read; call 1 is the first sample
+                // read, which waits until the test has closed the window.
+                if calls.fetch_add(1, Ordering::SeqCst) == 1 {
+                    entered.wait();
+                    release.wait();
+                }
+                Ok(snapshot())
+            })
+        };
+        let (folder, mut recorder) = start_recorder("window-closed", &ticker, read);
+        // A second record on the same ticker, sampled after the first in
+        // each tick, shows when the blocked tick has finished.
+        let (sentinel_folder, sentinel) = start_recorder(
+            "window-closed-sentinel",
+            &ticker,
+            Arc::new(|| Ok(snapshot())),
+        );
+        let path = folder.join(RECORD_FILE_NAME);
+        let sentinel_path = sentinel_folder.join(RECORD_FILE_NAME);
+
+        entered.wait();
+        // What core does when the exchange ends: drop the registration while
+        // the record file stays open for the end line.
+        drop(recorder.take_sampling());
+        let sentinel_samples = samples(&sentinel_path).len();
+        release.wait();
+        wait_for_samples(&sentinel_path, sentinel_samples + 1);
+
+        let lines = read_lines(&path);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0]["kind"], "start");
+        let (_, _, invocation) = record_test_fixture();
+        recorder
+            .finish(Ok(succeeded_result(&invocation)))
+            .expect("result");
+        assert!(samples(&path).is_empty(), "{:?}", read_lines(&path));
+        drop(sentinel);
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(sentinel_folder);
+    }
+
+    #[test]
     fn sample_line_with_a_snapshot_error_keeps_only_the_error_code() {
         let ticker = SampleTicker::new(Duration::from_millis(20));
         let (folder, recorder) = start_recorder(
