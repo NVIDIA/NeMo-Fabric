@@ -124,6 +124,7 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
             )
         else:
             environment = await fabric.prepare_environment(config)
+            _record_fabric_owned_sandbox(args, environment)
 
         runtime = await fabric.start_runtime_in(config, environment)
         report["runtime_id"] = runtime.runtime_id
@@ -178,6 +179,23 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
     result_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))
     return report
+
+
+def _record_fabric_owned_sandbox(args: argparse.Namespace, environment: Any) -> None:
+    """Persist the immutable ID so launcher cleanup cannot delete a replacement."""
+
+    state_file = os.environ.get("OPENSHELL_FABRIC_SANDBOX_STATE_FILE")
+    sandbox_id = environment.connection.get("sandbox_id")
+    if not state_file or not isinstance(sandbox_id, str) or not sandbox_id:
+        raise RuntimeError("prepared environment did not expose its sandbox identity")
+    path = Path(state_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(
+        json.dumps({"name": args.sandbox_name, "id": sandbox_id}) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
 
 
 def main() -> None:
