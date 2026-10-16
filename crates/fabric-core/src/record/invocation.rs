@@ -298,6 +298,7 @@ fn end_artifacts(manifest: &ArtifactManifest) -> Vec<EndArtifact> {
 mod tests {
     use super::*;
     use crate::config::{FabricConfig, ResolveContext, resolve_run_plan_from_config};
+    use crate::record::test_hooks::{self, Fault};
 
     fn record_test_fixture() -> (RunPlan, RuntimeHandle, InvocationHandle) {
         let config: FabricConfig = serde_json::from_value(serde_json::json!({
@@ -473,5 +474,147 @@ mod tests {
             "planted"
         );
         let _ = std::fs::remove_dir_all(folder);
+    }
+
+    fn failed_result_with_usage(invocation: &InvocationHandle) -> RunResult {
+        serde_json::from_value(serde_json::json!({
+            "agent_name": "a", "harness": "h", "adapter_kind": "python",
+            "runtime_id": invocation.runtime_id, "invocation_id": invocation.invocation_id,
+            "request_id": invocation.request_id, "status": "failed", "output": "partial",
+            "error": {
+                "stage": "invoke", "code": "adapter_failure",
+                "message": "adapter gave up", "retryable": true,
+            },
+            "usage": {"input_tokens": 3, "output_tokens": 5, "cost_usd": 0.25},
+        }))
+        .expect("result")
+    }
+
+    /// Start and finish one record with `fault` injected, and return the
+    /// finished outcome with the record file's lines.
+    fn finish_with_fault(
+        name: &str,
+        fault: Fault,
+        outcome: Result<RunResult>,
+    ) -> (Result<RunResult>, Vec<Value>) {
+        let (plan, runtime, invocation) = record_test_fixture();
+        let folder = temp_folder(name);
+        let request = RunRequest::text("input");
+        test_hooks::FAULT.with(|slot| slot.set(Some(fault)));
+        let recorder = InvocationRecorder::start(RecordStart {
+            plan: &plan,
+            runtime: &runtime,
+            invocation: &invocation,
+            request: &request,
+            fabric_home: &folder,
+            timeout: Duration::from_secs(5),
+        });
+        let finished = recorder.finish(outcome);
+        test_hooks::FAULT.with(|slot| slot.set(None));
+        let lines = std::fs::read_to_string(folder.join(RECORD_FILE_NAME))
+            .expect("read record")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("record line"))
+            .collect();
+        let _ = std::fs::remove_dir_all(folder);
+        (finished, lines)
+    }
+
+    /// `finished` equals `original` apart from the artifacts and events that
+    /// recording adds, and carries one `record_write_failed` event.
+    fn assert_result_kept_with_failure_event(finished: &RunResult, original: &RunResult) {
+        let mut without_record = finished.clone();
+        without_record.artifacts = original.artifacts.clone();
+        without_record.events = original.events.clone();
+        assert_eq!(&without_record, original);
+        let failures: Vec<_> = finished
+            .events
+            .iter()
+            .filter(|event| event.kind == RECORD_WRITE_FAILED)
+            .collect();
+        assert_eq!(failures.len(), 1, "{:?}", finished.events);
+        assert_eq!(
+            failures[0].metadata["runtime_id"],
+            original.runtime_id.as_str()
+        );
+        assert_eq!(
+            failures[0].metadata["invocation_id"],
+            original.invocation_id.as_str()
+        );
+    }
+
+    fn has_record_artifact(result: &RunResult) -> bool {
+        result
+            .artifacts
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.kind == RECORD_ARTIFACT_KIND)
+    }
+
+    #[test]
+    fn finish_after_a_failed_start_line_keeps_the_result_and_writes_nothing() {
+        let (_, _, invocation) = record_test_fixture();
+        let original = failed_result_with_usage(&invocation);
+
+        let (finished, lines) =
+            finish_with_fault("start-append", Fault::StartAppend, Ok(original.clone()));
+
+        let finished = finished.expect("result");
+        assert_result_kept_with_failure_event(&finished, &original);
+        assert!(!has_record_artifact(&finished));
+        assert!(lines.is_empty(), "{lines:?}");
+    }
+
+    #[test]
+    fn finish_after_a_failed_end_line_keeps_the_result_and_the_start_line() {
+        let (_, _, invocation) = record_test_fixture();
+        let original = failed_result_with_usage(&invocation);
+
+        let (finished, lines) =
+            finish_with_fault("end-append", Fault::EndAppend, Ok(original.clone()));
+
+        let finished = finished.expect("result");
+        assert_result_kept_with_failure_event(&finished, &original);
+        assert!(has_record_artifact(&finished));
+        let kinds: Vec<&Value> = lines.iter().map(|line| &line["kind"]).collect();
+        assert_eq!(kinds, ["start"]);
+    }
+
+    #[test]
+    fn finish_after_a_failed_sync_keeps_the_result_and_both_lines() {
+        let (_, _, invocation) = record_test_fixture();
+        let original = failed_result_with_usage(&invocation);
+
+        let (finished, lines) = finish_with_fault("sync", Fault::Sync, Ok(original.clone()));
+
+        let finished = finished.expect("result");
+        assert_result_kept_with_failure_event(&finished, &original);
+        assert!(has_record_artifact(&finished));
+        let kinds: Vec<&Value> = lines.iter().map(|line| &line["kind"]).collect();
+        assert_eq!(kinds, ["start", "end"]);
+        assert_eq!(lines[1]["usage"]["input_tokens"], 3);
+    }
+
+    #[test]
+    fn finish_returns_the_invocation_error_when_recording_also_fails() {
+        for fault in [Fault::StartAppend, Fault::EndAppend, Fault::Sync] {
+            let error = FabricError::AdapterLifecycleOperation {
+                operation: "invoke",
+                runtime_id: "rt".to_string(),
+                code: "host_timeout".to_string(),
+                message: "adapter host did not answer".to_string(),
+                diagnostics: String::new(),
+            };
+            let expected = error.to_string();
+
+            let (finished, _) = finish_with_fault("error", fault, Err(error));
+
+            let error = finished.expect_err("invocation error");
+            assert_eq!(error.to_string(), expected, "{fault:?}");
+            assert!(
+                matches!(&error, FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"),
+                "{fault:?}: {error}"
+            );
+        }
     }
 }

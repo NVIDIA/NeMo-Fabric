@@ -27,6 +27,8 @@ impl RecordWriter {
     /// Create the record at `path`. `create_new` refuses an existing file or
     /// symbolic link at `path`, and on Unix the file is mode 0600.
     pub(crate) fn create(path: &Path) -> io::Result<Self> {
+        #[cfg(test)]
+        std::thread::sleep(test_hooks::CREATE_DELAY.with(std::cell::Cell::get));
         let mut options = OpenOptions::new();
         options.append(true).create_new(true);
         #[cfg(unix)]
@@ -41,6 +43,8 @@ impl RecordWriter {
 
     /// Append `line` and its newline with one write.
     pub(crate) fn append(&mut self, line: &RecordLine) -> io::Result<()> {
+        #[cfg(test)]
+        test_hooks::fail_append(&line.body)?;
         let mut bytes = serde_json::to_vec(line).map_err(io::Error::other)?;
         bytes.push(b'\n');
         self.file.write_all(&bytes)
@@ -48,7 +52,48 @@ impl RecordWriter {
 
     /// Flush the file's data and metadata to stable storage.
     pub(crate) fn sync(&self) -> io::Result<()> {
+        #[cfg(test)]
+        test_hooks::fail_if(test_hooks::Fault::Sync)?;
         self.file.sync_all()
+    }
+}
+
+/// Per-thread hooks that make record I/O slow or fail in tests.
+#[cfg(test)]
+pub(crate) mod test_hooks {
+    use std::cell::Cell;
+    use std::io;
+    use std::time::Duration;
+
+    use super::super::lines::LineBody;
+
+    /// A record operation that a test makes fail.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum Fault {
+        StartAppend,
+        EndAppend,
+        Sync,
+    }
+
+    thread_local! {
+        /// Delay added before each record file is created on this thread.
+        pub(crate) static CREATE_DELAY: Cell<Duration> = const { Cell::new(Duration::ZERO) };
+        /// Operation that fails on this thread.
+        pub(crate) static FAULT: Cell<Option<Fault>> = const { Cell::new(None) };
+    }
+
+    pub(super) fn fail_append(body: &LineBody) -> io::Result<()> {
+        match body {
+            LineBody::Start(_) => fail_if(Fault::StartAppend),
+            LineBody::End(_) => fail_if(Fault::EndAppend),
+        }
+    }
+
+    pub(super) fn fail_if(fault: Fault) -> io::Result<()> {
+        if FAULT.with(Cell::get) == Some(fault) {
+            return Err(io::Error::other(format!("injected {fault:?} failure")));
+        }
+        Ok(())
     }
 }
 

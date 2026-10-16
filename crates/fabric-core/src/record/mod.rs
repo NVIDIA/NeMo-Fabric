@@ -17,3 +17,5 @@ mod writer;
 
 pub(crate) use invocation::{InvocationRecorder, RecordStart};
 pub(crate) use lines::RecordLine;
+#[cfg(test)]
+pub(crate) use writer::test_hooks;
