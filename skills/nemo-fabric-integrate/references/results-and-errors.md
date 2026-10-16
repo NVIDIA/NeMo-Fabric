@@ -46,6 +46,21 @@ if result.usage is not None:
 
 Treat missing counters and cost as unknown, not zero. `cached_input_tokens` reports cached prompt tokens; `input_tokens_include_cache` declares whether `input_tokens` includes them (`True`), excludes them (`False`), or has unknown semantics (absent). Do not add cache to an inclusive input count. Adapters can put cache-write, reasoning, peak request, and per-model detail in the descriptor-declared `usage.extensions["nemo_fabric.detailed_token_usage.v1"]` object. NeMo Fabric preserves that object at `result.usage["metadata"]["nemo_fabric.detailed_token_usage.v1"]`. Treat detailed input and output independently: any detailed accounting field for a dimension makes that dimension authoritative, with no fallback to its top-level counters. The views can diverge. Calculate an inclusive total only when the selected detailed counters provide enough information; otherwise leave the total unknown. Keep estimated costs separate in provider metadata; `cost_usd` is reported cost, not an estimate.
 
+## Run Records
+
+Set `RuntimeConfig(artifacts=..., record=RecordConfig(enabled=True))` to have
+NeMo Fabric write `run-record.jsonl` for each invocation under
+`<artifact root>/.fabric/<runtime_id>/<invocation_id>/`. Recording is off by
+default and needs an artifact root, the `local` environment provider, and a
+`process` or `python` adapter. The
+result lists the file as the artifact with kind `run_record`. The file has a
+`start` line, written before the request, and an `end` line with status,
+elapsed time, error code, numeric usage, and artifact names. It holds no
+prompts, output, or error messages. A record without an end line has an
+unknown outcome; do not count it as failed. The format is the `v1alpha1`
+[run record line schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/sdk/run-record-line.schema.json)
+and may change until a reader ships.
+
 ## Correlation IDs
 
 `runtime_id` identifies the runtime lifecycle, `invocation_id` identifies one

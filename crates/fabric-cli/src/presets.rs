@@ -287,6 +287,7 @@ fn config(
             artifacts: None,
             timeout_seconds: None,
             max_turns: None,
+            record: None,
             extensions: BTreeMap::new(),
         },
         environment: Some(EnvironmentConfig {

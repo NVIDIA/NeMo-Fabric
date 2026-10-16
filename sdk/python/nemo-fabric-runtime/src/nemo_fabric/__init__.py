@@ -24,6 +24,7 @@ from nemo_fabric.models import McpConfig
 from nemo_fabric.models import McpServerConfig
 from nemo_fabric.models import MetadataConfig
 from nemo_fabric.models import ModelConfig
+from nemo_fabric.models import RecordConfig
 from nemo_fabric.models import RelayAtifConfig
 from nemo_fabric.models import RelayAtofConfig
 from nemo_fabric.models import RelayAtofFileSinkConfig
@@ -94,6 +95,7 @@ __all__ = [
     "MetadataConfig",
     "ModelConfig",
     "OpenAIInvokeStream",
+    "RecordConfig",
     "RelayAtifConfig",
     "RelayAtofConfig",
     "RelayAtofFileSinkConfig",
