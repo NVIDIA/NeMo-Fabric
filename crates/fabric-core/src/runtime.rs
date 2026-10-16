@@ -1177,7 +1177,8 @@ pub fn invoke_runtime(
 /// The snapshot covers the runtime's local adapter host process and its live
 /// descendants. It does not wait for a running invocation. It returns
 /// [`FabricError::ResourceObservationUnavailable`] when the runtime stopped, is
-/// stopping, its host exited, or the process table cannot be read, and
+/// stopping, its host exited, or a live process in its tree or the process
+/// table cannot be read, and
 /// [`FabricError::ResourceObservationUnsupported`] when the environment provider
 /// or operating system has no resource reader.
 pub fn runtime_resource_snapshot(
@@ -4878,6 +4879,29 @@ for line in sys.stdin:
         let (last, earlier) = results.split_last().expect("at least one snapshot");
         assert!(earlier.iter().all(Result::is_ok));
         assert_unavailable(last, &runtime.runtime_id);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_after_invocation_timeout_is_unavailable() {
+        let (root, plan) = local_host_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+        runtime_resource_snapshot(&plan, &runtime).expect("snapshot before the timeout");
+
+        run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("unresponsive host must time out");
+
+        assert_unavailable(
+            &runtime_resource_snapshot(&plan, &runtime),
+            &runtime.runtime_id,
+        );
+        let _ = stop_runtime(&plan, &runtime);
         let _ = fs::remove_dir_all(root);
     }
 

@@ -83,7 +83,7 @@ Refer to the [errors reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/
 | `FabricRuntimeError` | Startup, invocation, or shutdown failed before a normalized result. |
 | `FabricStateError` | Invalid runtime state transition (invoking after stop, overlapping invocations). |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
-| `ResourceObservationUnavailableError` | A resource snapshot cannot be read because the runtime stopped, is stopping, its adapter host exited, or the process table cannot be read. Subclass of `FabricRuntimeError`. |
+| `ResourceObservationUnavailableError` | A resource snapshot cannot be read because the runtime stopped, is stopping, its adapter host exited, or a live process in its tree or the process table cannot be read. Subclass of `FabricRuntimeError`. |
 | `ResourceObservationUnsupportedError` | The runtime's environment provider or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
 
 ## Cleanup And Resilience

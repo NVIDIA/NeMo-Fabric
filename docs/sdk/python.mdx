@@ -705,16 +705,18 @@ the runtime, plus its descendants. For a runtime started on a shared service,
 the service process is not included. A descendant that starts a new session or
 process group still counts while its parent chain leads to the host. A process
 whose parent exited is reparented outside the tree and no longer counts. The
-snapshot reads `/proc` on Linux and `proc_pid_rusage` on macOS. It uses only
-process IDs, parent IDs, start times, CPU times, and resident sizes, never reads
-command lines or environment variables, and reports only the runtime's tree.
-Descendants that NeMo Fabric is not permitted to inspect are left out.
+snapshot reads `/proc` on Linux and `proc_pid_rusage` on macOS. To find the
+tree, it reads the parent ID and start time of every process on the machine.
+The snapshot exposes only the fields above, never command lines, environment
+variables, credentials, or processes outside the runtime's tree.
 
 When NeMo Fabric cannot read the values, it raises an error instead of
-returning zeros:
+returning zeros or leaving a process out:
 
 - `ResourceObservationUnavailableError` when the runtime stopped, is stopping,
-  its adapter host process exited, or the process table cannot be read.
+  its adapter host process exited, or a live process in its tree or the
+  process table cannot be read, for example a macOS descendant that runs as
+  another user.
 - `ResourceObservationUnsupportedError` when the runtime's environment provider
   or operating system has no resource reader. Windows raises this error.
 
@@ -1115,7 +1117,7 @@ All public SDK errors inherit from `FabricError`.
 | `FabricRuntimeError` | Runtime startup, invocation, or shutdown failed before a normalized result could be returned. |
 | `FabricStateError` | Invalid runtime state transition, such as invoking after stop or starting overlapping invocations. |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
-| `ResourceObservationUnavailableError` | `Runtime.resource_snapshot()` cannot read the runtime because it stopped, is stopping, its adapter host exited, or the process table cannot be read. Subclass of `FabricRuntimeError`. |
+| `ResourceObservationUnavailableError` | `Runtime.resource_snapshot()` cannot read the runtime because it stopped, is stopping, its adapter host exited, or a live process in its tree or the process table cannot be read. Subclass of `FabricRuntimeError`. |
 | `ResourceObservationUnsupportedError` | The runtime's environment provider or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
 
 Consumers own job-level retries and rollout-level failure policy.

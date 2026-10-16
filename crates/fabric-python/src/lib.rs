@@ -28,7 +28,7 @@ pyo3::create_exception!(
     _native,
     ResourceObservationUnavailableError,
     PyRuntimeError,
-    "Raised when a runtime stopped, is stopping, its adapter host exited, or the process table cannot be read."
+    "Raised when a runtime stopped, is stopping, its adapter host exited, or a live process in its tree or the process table cannot be read."
 );
 pyo3::create_exception!(
     _native,

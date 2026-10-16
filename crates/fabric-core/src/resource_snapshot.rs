@@ -13,8 +13,14 @@
 //! and on macOS while an exited descendant is not yet waited for, because
 //! macOS cannot list an unreaped process.
 //!
-//! Linux reads `/proc/<pid>/stat` and macOS reads `proc_pid_rusage`. Neither
-//! reads command lines, environment variables, or open files.
+//! A live process in the tree that cannot be read, or a process table that
+//! cannot be listed in full, makes the snapshot unavailable instead of
+//! leaving the process out.
+//!
+//! Linux reads `/proc/<pid>/stat` and macOS reads `proc_pid_rusage`. To find
+//! the tree, the readers also read other processes' parent IDs and start
+//! times. A snapshot exposes only its own fields: never command lines,
+//! environment variables, open files, or processes outside the tree.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -25,6 +31,18 @@ use crate::error::{FabricError, Result};
 
 const MILLIS_PER_DAY: i64 = 86_400_000;
 const NANOS_PER_SECOND: f64 = 1_000_000_000.0;
+
+/// Reasons a tree read returns when the snapshot is unavailable.
+#[cfg_attr(
+    not(any(target_os = "linux", target_os = "macos")),
+    allow(dead_code, reason = "only the Linux and macOS readers read a tree")
+)]
+mod reason {
+    pub(super) const HOST_EXITED: &str = "adapter host process has exited";
+    pub(super) const PROCESS_UNREADABLE: &str =
+        "a live process in the runtime's process tree cannot be read";
+    pub(super) const TABLE_UNREADABLE: &str = "the process table cannot be read in full";
+}
 
 /// Timestamped resource usage of one runtime's local adapter host process tree.
 ///
@@ -95,15 +113,14 @@ pub(crate) fn snapshot_local_host(
     }
     let host =
         host.ok_or_else(|| unavailable(runtime_id, "runtime is not active in this process"))?;
-    let read = host
-        .identity
-        .and_then(|identity| platform::read_tree(host.pid, identity))
-        .ok_or_else(|| {
-            unavailable(
-                runtime_id,
-                "adapter host process has exited or the process table cannot be read",
-            )
-        })?;
+    let identity = host.identity.ok_or_else(|| {
+        unavailable(
+            runtime_id,
+            "adapter host process could not be read when the runtime started",
+        )
+    })?;
+    let read = platform::read_tree(host.pid, identity)
+        .map_err(|reason| unavailable(runtime_id, reason))?;
     Ok(RuntimeResourceSnapshot {
         runtime_id: runtime_id.to_string(),
         started_at: host.started_at.clone(),
@@ -187,9 +204,18 @@ mod platform {
     use std::collections::{BTreeMap, VecDeque};
     use std::sync::OnceLock;
 
-    use super::TreeRead;
+    use super::{TreeRead, reason};
 
     pub(super) const SUPPORTED: bool = true;
+
+    /// Why one process could not be read.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(super) enum ReadError {
+        /// The process exited.
+        Gone,
+        /// The process exists but cannot be read, or its record cannot be parsed.
+        Unreadable,
+    }
 
     /// The fields of `/proc/<pid>/stat` a snapshot needs.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,12 +248,46 @@ mod platform {
         })
     }
 
-    fn read_stat(pid: u32) -> Option<Stat> {
-        parse_stat(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)
+    /// The `/proc` reads a tree read makes. Tests script them.
+    pub(super) trait Procfs {
+        /// Every PID in `/proc`.
+        fn pids(&self) -> Result<Vec<u32>, ReadError>;
+        fn stat(&self, pid: u32) -> Result<Stat, ReadError>;
+    }
+
+    struct Live;
+
+    impl Procfs for Live {
+        fn pids(&self) -> Result<Vec<u32>, ReadError> {
+            let mut pids = Vec::new();
+            for entry in std::fs::read_dir("/proc").map_err(read_error)? {
+                let name = entry.map_err(read_error)?.file_name();
+                if let Some(pid) = name.to_str().and_then(|name| name.parse().ok()) {
+                    pids.push(pid);
+                }
+            }
+            Ok(pids)
+        }
+
+        fn stat(&self, pid: u32) -> Result<Stat, ReadError> {
+            let text = std::fs::read_to_string(format!("/proc/{pid}/stat")).map_err(read_error)?;
+            parse_stat(&text).ok_or(ReadError::Unreadable)
+        }
+    }
+
+    /// `ENOENT` and `ESRCH` mean the process exited; anything else means it
+    /// cannot be read.
+    fn read_error(error: std::io::Error) -> ReadError {
+        if error.kind() == std::io::ErrorKind::NotFound || error.raw_os_error() == Some(libc::ESRCH)
+        {
+            ReadError::Gone
+        } else {
+            ReadError::Unreadable
+        }
     }
 
     pub(super) fn start_identity(pid: u32) -> Option<u64> {
-        read_stat(pid).map(|stat| stat.start)
+        Live.stat(pid).ok().map(|stat| stat.start)
     }
 
     fn sysconf(name: libc::c_int) -> u64 {
@@ -245,43 +305,54 @@ mod platform {
         *PAGE.get_or_init(|| sysconf(libc::_SC_PAGESIZE))
     }
 
-    /// Every process's children, each with its start time, or `None` when
-    /// `/proc` cannot be listed.
-    fn children_by_parent() -> Option<BTreeMap<u32, Vec<(u32, u64)>>> {
-        let mut children: BTreeMap<u32, Vec<(u32, u64)>> = BTreeMap::new();
-        for entry in std::fs::read_dir("/proc").ok()?.flatten() {
-            let Some(pid) = entry
-                .file_name()
-                .to_str()
-                .and_then(|name| name.parse().ok())
-            else {
-                continue;
-            };
-            if let Some(stat) = read_stat(pid) {
-                children
-                    .entry(stat.ppid)
-                    .or_default()
-                    .push((pid, stat.start));
-            }
-        }
-        Some(children)
+    pub(super) fn read_tree(root: u32, identity: u64) -> Result<TreeRead, &'static str> {
+        read_tree_with(&Live, root, identity, clock_ticks_per_second(), page_size())
     }
 
-    /// Read the tree under `root`, or `None` when the root has exited or its
-    /// PID now names a process with another start time than `identity`.
-    pub(super) fn read_tree(root: u32, identity: u64) -> Option<TreeRead> {
-        let children = children_by_parent()?;
+    /// Child PIDs and start times by parent PID.
+    type ChildrenByParent = BTreeMap<u32, Vec<(u32, u64)>>;
+
+    /// Every process's children, each with its start time. A process that
+    /// exited during the pass is left out; one that cannot be read leaves the
+    /// listing incomplete.
+    fn children_by_parent(procfs: &impl Procfs) -> Result<ChildrenByParent, &'static str> {
+        let pids = procfs.pids().map_err(|_| reason::TABLE_UNREADABLE)?;
+        let mut children = ChildrenByParent::new();
+        for pid in pids {
+            match procfs.stat(pid) {
+                Ok(stat) => children
+                    .entry(stat.ppid)
+                    .or_default()
+                    .push((pid, stat.start)),
+                Err(ReadError::Gone) => {}
+                Err(ReadError::Unreadable) => return Err(reason::TABLE_UNREADABLE),
+            }
+        }
+        Ok(children)
+    }
+
+    /// Read the tree under `root`. Fails when the root exited or its PID now
+    /// names a process with another start time than `identity`, or when a
+    /// live process in the tree cannot be read.
+    pub(super) fn read_tree_with(
+        procfs: &impl Procfs,
+        root: u32,
+        identity: u64,
+        ticks_per_second: u64,
+        page_size: u64,
+    ) -> Result<TreeRead, &'static str> {
+        let children = children_by_parent(procfs)?;
         let mut read = TreeRead::default();
         let mut cpu_ticks: u64 = 0;
         let mut rss_pages: u64 = 0;
         let mut pending = VecDeque::from([(root, identity)]);
         while let Some((pid, expected_start)) = pending.pop_front() {
-            let stat = read_stat(pid).filter(|stat| stat.start == expected_start);
-            if pid == root && stat.is_none_or(|stat| stat.zombie) {
-                return None;
-            }
-            let Some(stat) = stat else {
-                continue;
+            let stat = match procfs.stat(pid) {
+                Ok(stat) if stat.start == expected_start && !(pid == root && stat.zombie) => stat,
+                // An exited child, or one whose PID now names another process.
+                Ok(_) | Err(ReadError::Gone) if pid != root => continue,
+                Ok(_) | Err(ReadError::Gone) => return Err(reason::HOST_EXITED),
+                Err(ReadError::Unreadable) => return Err(reason::PROCESS_UNREADABLE),
             };
             cpu_ticks = cpu_ticks.saturating_add(stat.cpu_ticks);
             if !stat.zombie {
@@ -292,9 +363,9 @@ mod platform {
             let own = children.get(&pid).into_iter().flatten();
             pending.extend(own.filter(|(_, start)| *start >= stat.start).copied());
         }
-        read.cpu_nanos = ticks_to_nanos(cpu_ticks, clock_ticks_per_second());
-        read.resident_bytes = rss_pages.saturating_mul(page_size());
-        Some(read)
+        read.cpu_nanos = ticks_to_nanos(cpu_ticks, ticks_per_second);
+        read.resident_bytes = rss_pages.saturating_mul(page_size);
+        Ok(read)
     }
 
     pub(super) fn ticks_to_nanos(ticks: u64, ticks_per_second: u64) -> u64 {
@@ -312,7 +383,7 @@ mod platform {
     use std::collections::{BTreeMap, VecDeque};
     use std::sync::OnceLock;
 
-    use super::TreeRead;
+    use super::{TreeRead, reason};
 
     pub(super) const SUPPORTED: bool = true;
 
@@ -329,9 +400,22 @@ mod platform {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub(super) struct Parent {
         pub ppid: u32,
-        /// `pbi_start_tvsec` and `pbi_start_tvusec`.
-        pub started: (u64, u64),
+        /// `pbi_start_tvsec` and `pbi_start_tvusec`, or `None` for another
+        /// user's process, whose parent only the short record shows.
+        pub started: Option<(u64, u64)>,
     }
+
+    /// `struct proc_bsdshortinfo` from `<sys/proc_info.h>`, which the `libc`
+    /// crate version in use does not bind: PID, parent PID, then 56 bytes of
+    /// group, status, name, flags, and user and group IDs that the reader ignores.
+    #[repr(C)]
+    struct ProcBsdShortInfo {
+        pid: u32,
+        ppid: u32,
+        rest: [u32; 14],
+    }
+
+    const PROC_PIDT_SHORTBSDINFO: libc::c_int = 13;
 
     /// The `proc_pid_rusage` fields a snapshot needs, CPU times in Mach units.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -375,6 +459,8 @@ mod platform {
         }
 
         /// `PROC_PIDTBSDINFO` fails for a zombie, so a zombie reads as gone.
+        /// It is denied for another user's process, whose parent the short
+        /// record still shows.
         fn parent(&self, pid: u32) -> Result<Parent, ReadError> {
             let pid = libc::pid_t::try_from(pid).map_err(|_| ReadError::Gone)?;
             // SAFETY: proc_bsdinfo is plain data; zero is a valid initial value.
@@ -388,10 +474,13 @@ mod platform {
             if written == size {
                 return Ok(Parent {
                     ppid: info.pbi_ppid,
-                    started: (info.pbi_start_tvsec, info.pbi_start_tvusec),
+                    started: Some((info.pbi_start_tvsec, info.pbi_start_tvusec)),
                 });
             }
-            Err(last_read_error())
+            match last_read_error() {
+                ReadError::Denied => short_parent(pid),
+                gone => Err(gone),
+            }
         }
 
         fn usage(&self, pid: u32) -> Result<Usage, ReadError> {
@@ -420,6 +509,27 @@ mod platform {
                 exited: info.ri_proc_exit_abstime != 0,
             })
         }
+    }
+
+    fn short_parent(pid: libc::pid_t) -> Result<Parent, ReadError> {
+        let mut info = ProcBsdShortInfo {
+            pid: 0,
+            ppid: 0,
+            rest: [0; 14],
+        };
+        let size = libc::c_int::try_from(std::mem::size_of::<ProcBsdShortInfo>())
+            .map_err(|_| ReadError::Denied)?;
+        // SAFETY: `info` is writable and `size` bytes long, as PROC_PIDT_SHORTBSDINFO needs.
+        let written = unsafe {
+            libc::proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 0, (&raw mut info).cast(), size)
+        };
+        if written == size {
+            return Ok(Parent {
+                ppid: info.ppid,
+                started: None,
+            });
+        }
+        Err(last_read_error())
     }
 
     /// Classify the error of the libproc call that just failed.
@@ -466,39 +576,48 @@ mod platform {
         Live.usage(pid).ok().map(|usage| usage.start)
     }
 
-    pub(super) fn read_tree(root: u32, identity: u64) -> Option<TreeRead> {
-        read_tree_with(&Live, root, identity, timebase()?)
+    pub(super) fn read_tree(root: u32, identity: u64) -> Result<TreeRead, &'static str> {
+        let timebase = timebase().ok_or(reason::PROCESS_UNREADABLE)?;
+        read_tree_with(&Live, root, identity, timebase)
     }
 
     /// Every live process's children, each with its parent record. One
     /// `proc_listallpids` call and one `proc_pidinfo` per process:
     /// `proc_listchildpids` scans the whole process table on each call, which
-    /// costs too much for a wide tree.
-    fn children_by_parent(procs: &impl Libproc) -> Option<BTreeMap<u32, Vec<(u32, Parent)>>> {
+    /// costs too much for a wide tree. A process that exited during the pass
+    /// is left out; one that cannot be read leaves the listing incomplete.
+    fn children_by_parent(
+        procs: &impl Libproc,
+    ) -> Result<BTreeMap<u32, Vec<(u32, Parent)>>, &'static str> {
+        let pids = procs.pids().ok_or(reason::TABLE_UNREADABLE)?;
         let mut children: BTreeMap<u32, Vec<(u32, Parent)>> = BTreeMap::new();
-        for pid in procs.pids()? {
-            if let Ok(parent) = procs.parent(pid) {
-                children.entry(parent.ppid).or_default().push((pid, parent));
+        for pid in pids {
+            match procs.parent(pid) {
+                Ok(parent) => children.entry(parent.ppid).or_default().push((pid, parent)),
+                Err(ReadError::Gone) => {}
+                Err(ReadError::Denied) => return Err(reason::TABLE_UNREADABLE),
             }
         }
-        Some(children)
+        Ok(children)
     }
 
-    /// Read the tree under `root`, or `None` when the root has exited or its
-    /// PID now names a process with another start time than `identity`.
+    /// Read the tree under `root`. Fails when the root exited or its PID now
+    /// names a process with another start time than `identity`, or when a
+    /// live process in the tree cannot be read.
     pub(super) fn read_tree_with(
         procs: &impl Libproc,
         root: u32,
         identity: u64,
         timebase: (u64, u64),
-    ) -> Option<TreeRead> {
+    ) -> Result<TreeRead, &'static str> {
         let children = children_by_parent(procs)?;
         // Read after the listing: a root that is still the same live process
         // was alive during the whole listing, so its listed children are its own.
-        let root_usage = procs
-            .usage(root)
-            .ok()
-            .filter(|usage| usage.start == identity && !usage.exited)?;
+        let root_usage = match procs.usage(root) {
+            Ok(usage) if usage.start == identity && !usage.exited => usage,
+            Ok(_) | Err(ReadError::Gone) => return Err(reason::HOST_EXITED),
+            Err(ReadError::Denied) => return Err(reason::PROCESS_UNREADABLE),
+        };
         let mut read = TreeRead::default();
         let mut cpu_units: u64 = 0;
         let mut pending = VecDeque::from([(root, root_usage)]);
@@ -507,22 +626,40 @@ mod platform {
             read.resident_bytes = read.resident_bytes.saturating_add(usage.resident_bytes);
             read.process_count += 1;
             for &(child, listed) in children.get(&pid).into_iter().flatten() {
-                if let Some(usage) = listed_child_usage(procs, child, listed) {
+                if let Some(usage) = listed_child_usage(procs, child, listed)? {
                     pending.push_back((child, usage));
                 }
             }
         }
         read.cpu_nanos = mach_to_nanos(cpu_units, timebase);
-        Some(read)
+        Ok(read)
     }
 
     /// The usage of `child`, or `None` when it exited or its PID no longer
     /// names the listed process. A process that still has the listed parent
     /// and start time after the usage read was the listed one throughout, so
-    /// the usage is its own.
-    fn listed_child_usage(procs: &impl Libproc, child: u32, listed: Parent) -> Option<Usage> {
-        let usage = procs.usage(child).ok().filter(|usage| !usage.exited)?;
-        (procs.parent(child).ok()? == listed).then_some(usage)
+    /// the usage is its own. Fails when the child is live but cannot be read.
+    fn listed_child_usage(
+        procs: &impl Libproc,
+        child: u32,
+        listed: Parent,
+    ) -> Result<Option<Usage>, &'static str> {
+        if listed.started.is_none() {
+            return Err(reason::PROCESS_UNREADABLE);
+        }
+        let usage = match procs.usage(child) {
+            Ok(usage) if !usage.exited => usage,
+            Ok(_) | Err(ReadError::Gone) => return Ok(None),
+            Err(ReadError::Denied) => return Err(reason::PROCESS_UNREADABLE),
+        };
+        match procs.parent(child) {
+            Ok(now) if now == listed => Ok(Some(usage)),
+            Ok(now) if now.ppid == listed.ppid && now.started.is_none() => {
+                Err(reason::PROCESS_UNREADABLE)
+            }
+            Ok(_) | Err(ReadError::Gone) => Ok(None),
+            Err(ReadError::Denied) => Err(reason::PROCESS_UNREADABLE),
+        }
     }
 }
 
@@ -536,8 +673,8 @@ mod platform {
         None
     }
 
-    pub(super) fn read_tree(_root: u32, _identity: u64) -> Option<TreeRead> {
-        None
+    pub(super) fn read_tree(_root: u32, _identity: u64) -> Result<TreeRead, &'static str> {
+        Err("no process reader for this operating system")
     }
 }
 
@@ -699,7 +836,7 @@ mod tests {
     fn mac_parent(ppid: u32, started: u64) -> platform::Parent {
         platform::Parent {
             ppid,
-            started: (started, 0),
+            started: Some((started, 0)),
         }
     }
 
@@ -744,6 +881,259 @@ mod tests {
         assert_eq!(read.process_count, 2);
         assert_eq!(read.cpu_nanos, 10);
         assert_eq!(read.resident_bytes, 2000);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn mac_tree_with_child(
+        child_parents: Vec<std::result::Result<platform::Parent, platform::ReadError>>,
+        child_usage: std::result::Result<platform::Usage, platform::ReadError>,
+    ) -> std::result::Result<TreeRead, &'static str> {
+        let procs = ScriptedLibproc::default()
+            .process(10, vec![Ok(mac_parent(1, 100))], Ok(mac_usage(5, 7)))
+            .process(11, child_parents, child_usage);
+        platform::read_tree_with(&procs, 10, 5, (1, 1))
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_tree_read_with_unreadable_live_child_is_unavailable() {
+        let denied_usage = mac_tree_with_child(
+            vec![Ok(mac_parent(10, 200))],
+            Err(platform::ReadError::Denied),
+        );
+        let other_user = mac_tree_with_child(
+            vec![Ok(platform::Parent {
+                ppid: 10,
+                started: None,
+            })],
+            Ok(mac_usage(9, 3)),
+        );
+        let denied_recheck = mac_tree_with_child(
+            vec![Ok(mac_parent(10, 200)), Err(platform::ReadError::Denied)],
+            Ok(mac_usage(9, 3)),
+        );
+
+        assert_eq!(denied_usage.unwrap_err(), reason::PROCESS_UNREADABLE);
+        assert_eq!(other_user.unwrap_err(), reason::PROCESS_UNREADABLE);
+        assert_eq!(denied_recheck.unwrap_err(), reason::PROCESS_UNREADABLE);
+    }
+
+    /// The child is listed, then exits before its usage read or before the
+    /// identity check that follows it.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_tree_read_skips_child_reaped_between_reads() {
+        let before_usage = mac_tree_with_child(
+            vec![Ok(mac_parent(10, 200))],
+            Err(platform::ReadError::Gone),
+        )
+        .expect("tree read");
+        let before_check = mac_tree_with_child(
+            vec![Ok(mac_parent(10, 200)), Err(platform::ReadError::Gone)],
+            Ok(mac_usage(9, 3)),
+        )
+        .expect("tree read");
+        let exited = mac_tree_with_child(
+            vec![Ok(mac_parent(10, 200))],
+            Ok(platform::Usage {
+                exited: true,
+                ..mac_usage(9, 3)
+            }),
+        )
+        .expect("tree read");
+
+        for read in [before_usage, before_check, exited] {
+            assert_eq!(read.process_count, 1);
+            assert_eq!(read.cpu_nanos, 7);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_tree_read_with_incomplete_process_table_is_unavailable() {
+        let unlisted = ScriptedLibproc::default();
+        let unreadable_other = ScriptedLibproc::default()
+            .process(10, vec![Ok(mac_parent(1, 100))], Ok(mac_usage(5, 7)))
+            .process(
+                50,
+                vec![Err(platform::ReadError::Denied)],
+                Err(platform::ReadError::Denied),
+            );
+
+        assert_eq!(
+            platform::read_tree_with(&unlisted, 10, 5, (1, 1)).unwrap_err(),
+            reason::TABLE_UNREADABLE
+        );
+        assert_eq!(
+            platform::read_tree_with(&unreadable_other, 10, 5, (1, 1)).unwrap_err(),
+            reason::TABLE_UNREADABLE
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_tree_read_of_exited_or_unreadable_host_is_unavailable() {
+        let host = |usage| {
+            let procs = ScriptedLibproc::default().process(10, vec![Ok(mac_parent(1, 100))], usage);
+            platform::read_tree_with(&procs, 10, 5, (1, 1)).unwrap_err()
+        };
+
+        assert_eq!(host(Err(platform::ReadError::Gone)), reason::HOST_EXITED);
+        assert_eq!(host(Ok(mac_usage(6, 7))), reason::HOST_EXITED);
+        assert_eq!(
+            host(Ok(platform::Usage {
+                exited: true,
+                ..mac_usage(5, 7)
+            })),
+            reason::HOST_EXITED
+        );
+        assert_eq!(
+            host(Err(platform::ReadError::Denied)),
+            reason::PROCESS_UNREADABLE
+        );
+    }
+
+    /// Scripted `/proc` answers for the Linux tree walk.
+    #[cfg(target_os = "linux")]
+    #[derive(Default)]
+    struct ScriptedProcfs {
+        pids: Vec<u32>,
+        unlisted: bool,
+        /// Answers to `stat`, first the listing's, then the walk's.
+        stats: std::collections::BTreeMap<
+            u32,
+            std::cell::RefCell<Vec<std::result::Result<platform::Stat, platform::ReadError>>>,
+        >,
+    }
+
+    #[cfg(target_os = "linux")]
+    impl ScriptedProcfs {
+        fn process(
+            mut self,
+            pid: u32,
+            stats: Vec<std::result::Result<platform::Stat, platform::ReadError>>,
+        ) -> Self {
+            self.pids.push(pid);
+            self.stats.insert(pid, std::cell::RefCell::new(stats));
+            self
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    impl platform::Procfs for ScriptedProcfs {
+        fn pids(&self) -> std::result::Result<Vec<u32>, platform::ReadError> {
+            if self.unlisted {
+                return Err(platform::ReadError::Unreadable);
+            }
+            Ok(self.pids.clone())
+        }
+
+        fn stat(&self, pid: u32) -> std::result::Result<platform::Stat, platform::ReadError> {
+            let mut answers = self.stats.get(&pid).expect("scripted pid").borrow_mut();
+            if answers.len() > 1 {
+                answers.remove(0)
+            } else {
+                answers[0]
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn linux_stat(ppid: u32, start: u64, cpu_ticks: u64) -> platform::Stat {
+        platform::Stat {
+            zombie: false,
+            ppid,
+            cpu_ticks,
+            start,
+            rss_pages: 1,
+        }
+    }
+
+    /// The host is PID 10 started at tick 5; its child is PID 11.
+    #[cfg(target_os = "linux")]
+    fn linux_tree_with_child(
+        child: Vec<std::result::Result<platform::Stat, platform::ReadError>>,
+    ) -> std::result::Result<TreeRead, &'static str> {
+        let procfs = ScriptedProcfs::default()
+            .process(10, vec![Ok(linux_stat(1, 5, 7))])
+            .process(11, child);
+        platform::read_tree_with(&procfs, 10, 5, 1, 1)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_tree_read_with_unreadable_live_child_is_unavailable() {
+        let read = linux_tree_with_child(vec![
+            Ok(linux_stat(10, 9, 3)),
+            Err(platform::ReadError::Unreadable),
+        ]);
+
+        assert_eq!(read.unwrap_err(), reason::PROCESS_UNREADABLE);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_tree_read_skips_child_reaped_or_replaced_between_reads() {
+        let reaped = linux_tree_with_child(vec![
+            Ok(linux_stat(10, 9, 3)),
+            Err(platform::ReadError::Gone),
+        ])
+        .expect("tree read");
+        let replaced =
+            linux_tree_with_child(vec![Ok(linux_stat(10, 9, 3)), Ok(linux_stat(1, 12, 900))])
+                .expect("tree read");
+        let counted = linux_tree_with_child(vec![Ok(linux_stat(10, 9, 3))]).expect("tree read");
+
+        for read in [reaped, replaced] {
+            assert_eq!(read.process_count, 1);
+            assert_eq!(read.cpu_nanos, 7_000_000_000);
+        }
+        assert_eq!(counted.process_count, 2);
+        assert_eq!(counted.cpu_nanos, 10_000_000_000);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_tree_read_with_incomplete_process_table_is_unavailable() {
+        let unlisted = ScriptedProcfs {
+            unlisted: true,
+            ..ScriptedProcfs::default()
+        };
+        let unreadable_other = ScriptedProcfs::default()
+            .process(10, vec![Ok(linux_stat(1, 5, 7))])
+            .process(50, vec![Err(platform::ReadError::Unreadable)]);
+
+        assert_eq!(
+            platform::read_tree_with(&unlisted, 10, 5, 1, 1).unwrap_err(),
+            reason::TABLE_UNREADABLE
+        );
+        assert_eq!(
+            platform::read_tree_with(&unreadable_other, 10, 5, 1, 1).unwrap_err(),
+            reason::TABLE_UNREADABLE
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_tree_read_of_exited_or_unreadable_host_is_unavailable() {
+        let host = |walk| {
+            let procfs = ScriptedProcfs::default().process(10, vec![Ok(linux_stat(1, 5, 7)), walk]);
+            platform::read_tree_with(&procfs, 10, 5, 1, 1).unwrap_err()
+        };
+
+        assert_eq!(host(Err(platform::ReadError::Gone)), reason::HOST_EXITED);
+        assert_eq!(host(Ok(linux_stat(1, 6, 7))), reason::HOST_EXITED);
+        assert_eq!(
+            host(Ok(platform::Stat {
+                zombie: true,
+                ..linux_stat(1, 5, 7)
+            })),
+            reason::HOST_EXITED
+        );
+        assert_eq!(
+            host(Err(platform::ReadError::Unreadable)),
+            reason::PROCESS_UNREADABLE
+        );
     }
 
     #[cfg(target_os = "macos")]
