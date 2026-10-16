@@ -38,7 +38,7 @@ The adapter supports:
   in the configured Relay ATOF artifacts and are not included in per-invocation
   `invoke_stream()` records
 - Ordered plain-text invocations with a `{ "response": "..." }` terminal
-  output, Relay runtime details, and collected ATOF artifacts
+  output, Relay runtime details, and collected ATOF and OTLP artifacts
 
 Ambient Pi settings, context files, packages, extensions, skills, prompts,
 themes, model files, credentials, and session files are disabled. Explicitly

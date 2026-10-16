@@ -19,10 +19,9 @@ export interface RelayConfigPaths {
   pluginConfigPath: string;
 }
 
-export interface RelayArtifact {
-  kind: "atof" | "atif";
-  path: string;
-}
+export type RelayArtifact =
+  | { kind: "atof" | "atif"; path: string }
+  | { kind: "otlp"; path: string; format: "json_lines" | "proto" };
 
 export interface RelayAtifMatcher {
   directory: string;
@@ -125,8 +124,12 @@ export function validateRelayObservability(pluginConfig: RelayPluginConfig): voi
     if (endpoints !== undefined && !Array.isArray(endpoints)) {
       throw new Error("NeMo Relay opentelemetry.endpoints must be a list");
     }
-    if (enabled && (!Array.isArray(endpoints) || endpoints.length === 0)) {
-      throw new Error("enabled NeMo Relay OpenTelemetry requires at least one endpoint");
+    const fileSinks = opentelemetry.file_sinks;
+    if (fileSinks !== undefined && !Array.isArray(fileSinks)) {
+      throw new Error("NeMo Relay opentelemetry.file_sinks must be a list");
+    }
+    if (enabled && !endpoints?.length && !fileSinks?.length) {
+      throw new Error("enabled NeMo Relay OpenTelemetry requires at least one endpoint or file sink");
     }
     for (const [index, endpoint] of (endpoints ?? []).entries()) {
       if (!isRecord(endpoint)) {
@@ -188,6 +191,14 @@ function pythonStringRepr(value: string): string {
   return `${quote}${escaped}${quote}`;
 }
 
+function normalizeRelayOutputDirectory(config: Record<string, unknown>, base: string, runtimeId: string): string {
+  const configured = config.output_directory;
+  const root = typeof configured === "string" && configured.length > 0 ? configured : join("artifacts", "relay");
+  const outputDirectory = join(resolve(base, root), runtimeId);
+  config.output_directory = outputDirectory;
+  return outputDirectory;
+}
+
 export async function normalizeRelayOutputDirs(
   pluginConfig: RelayPluginConfig,
   input: AdapterStartInput,
@@ -212,18 +223,22 @@ export async function normalizeRelayOutputDirs(
         if (!isRecord(sink) || sink.type !== "file") {
           continue;
         }
-        const configured = sink.output_directory;
-        const root =
-          typeof configured === "string" && configured.length > 0
-            ? isAbsolute(configured)
-              ? configured
-              : resolve(base, configured)
-            : join(base, "artifacts", "relay");
-        const outputDirectory = join(root, runtimeId);
-        sink.output_directory = outputDirectory;
-        await mkdir(outputDirectory, { recursive: true });
+        await mkdir(normalizeRelayOutputDirectory(sink, base, runtimeId), { recursive: true });
         sink.filename ??= "events.atof.jsonl";
         sink.mode ??= "overwrite";
+      }
+    }
+
+    const opentelemetry = config.opentelemetry;
+    if (isRecord(opentelemetry) && Array.isArray(opentelemetry.file_sinks)) {
+      // Relay validates file sinks even in a disabled section and creates the directory
+      // when it opens a sink. A runtime may reopen Relay, so sinks append to keep its
+      // earlier spans.
+      for (const sink of opentelemetry.file_sinks) {
+        if (isRecord(sink)) {
+          normalizeRelayOutputDirectory(sink, base, runtimeId);
+          sink.mode ??= "append";
+        }
       }
     }
 
@@ -231,16 +246,7 @@ export async function normalizeRelayOutputDirs(
     if (!isRecord(atif) || atif.enabled !== true) {
       continue;
     }
-    const configured = atif.output_directory;
-    const root =
-      typeof configured === "string" && configured.length > 0
-        ? isAbsolute(configured)
-          ? configured
-          : resolve(base, configured)
-        : join(base, "artifacts", "relay");
-    const outputDirectory = join(root, runtimeId);
-    atif.output_directory = outputDirectory;
-    await mkdir(outputDirectory, { recursive: true });
+    await mkdir(normalizeRelayOutputDirectory(atif, base, runtimeId), { recursive: true });
     atif.filename_template ??= "trajectory-{session_id}.atif.json";
     atif.agent_name ??= input.agentName;
     atif.model_name ??= relayModelName(input);
@@ -562,6 +568,26 @@ export async function collectAtifArtifacts(
   return artifacts.sort((left, right) => left.path.localeCompare(right.path));
 }
 
+async function relaySinkFiles(
+  sink: Record<string, unknown>,
+  isDefaultName: (entry: string) => boolean,
+): Promise<string[]> {
+  const directory = await artifactDirectory(sink.output_directory);
+  if (directory === undefined) {
+    return [];
+  }
+  const filenames =
+    sink.filename === undefined ? (await directoryEntries(directory)).filter(isDefaultName) : [sink.filename];
+  const paths: string[] = [];
+  for (const filename of filenames) {
+    const path = await existingLocalFile(directory, filename);
+    if (path !== undefined) {
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
 export async function collectRelayArtifacts(
   pluginConfig: RelayPluginConfig,
   atifMatchers?: RelayAtifMatcher[],
@@ -582,19 +608,23 @@ export async function collectRelayArtifacts(
         if (!isRecord(sink) || sink.type !== "file") {
           continue;
         }
-        const directory = await artifactDirectory(sink.output_directory);
-        if (directory === undefined) {
+        for (const path of await relaySinkFiles(sink, (entry) => entry.endsWith(".jsonl"))) {
+          artifacts.push({ kind: "atof", path });
+        }
+      }
+    }
+    const opentelemetry = component.config.opentelemetry;
+    if (isRecord(opentelemetry) && opentelemetry.enabled === true && Array.isArray(opentelemetry.file_sinks)) {
+      for (const sink of opentelemetry.file_sinks) {
+        if (!isRecord(sink)) {
           continue;
         }
-        const filenames =
-          sink.filename === undefined
-            ? (await directoryEntries(directory)).filter((entry) => entry.endsWith(".jsonl"))
-            : [sink.filename];
-        for (const filename of filenames) {
-          const path = await existingLocalFile(directory, filename);
-          if (path !== undefined) {
-            artifacts.push({ kind: "atof", path });
-          }
+        // Relay's defaults: JSON lines in nemo-relay-otlp-<timestamp> files.
+        const format = sink.format === "proto" ? "proto" : "json_lines";
+        const extension = format === "proto" ? ".otlp.pb" : ".jsonl";
+        const isDefaultName = (entry: string) => entry.startsWith("nemo-relay-otlp-") && entry.endsWith(extension);
+        for (const path of await relaySinkFiles(sink, isDefaultName)) {
+          artifacts.push({ kind: "otlp", path, format });
         }
       }
     }

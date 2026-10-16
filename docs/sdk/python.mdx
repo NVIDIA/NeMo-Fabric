@@ -512,6 +512,24 @@ relay_config.enable_relay(
 )
 ```
 
+To write OpenTelemetry spans to local files, add NeMo Relay `file_sinks` (NeMo Relay 0.10 or later). An enabled `opentelemetry` section needs at least one endpoint or file sink:
+
+```python
+relay_config.enable_relay(
+    output_dir="./artifacts/relay",
+    observability={
+        "opentelemetry": {
+            "enabled": True,
+            "file_sinks": [
+                {"type": "openinference", "output_directory": "./artifacts/relay"}
+            ],
+        },
+    },
+)
+```
+
+As it does for ATOF and ATIF, NeMo Fabric places each runtime's files under `<output_directory>/<runtime_id>`, where `output_directory` defaults to `artifacts/relay`. OpenTelemetry file sinks append unless they set `mode`. The result reports each file as a Relay artifact of kind `otlp`, with media type `application/x-ndjson` for the default `json_lines` format or `application/x-protobuf` for `proto`. Relay writes spans in batches, so a file is complete after the runtime stops.
+
 `RelayAtifConfig.model_name` is an optional ATIF-only override. When you omit
 it, NeMo Fabric writes the selected `default` model, or the only configured
 model, into the Relay plugin configuration. If `config.models` is empty, the

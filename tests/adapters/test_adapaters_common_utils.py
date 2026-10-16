@@ -700,6 +700,17 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_v4_observability_con
                             ],
                         },
                         "atif": {"enabled": True},
+                        "opentelemetry": {
+                            "enabled": True,
+                            "file_sinks": [
+                                {
+                                    "type": "openinference",
+                                    "output_directory": "custom-relay",
+                                    "filename": "trace.otlp.jsonl",
+                                },
+                                {"type": "full", "mode": "overwrite"},
+                            ],
+                        },
                     }
                 }
             }
@@ -750,18 +761,55 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_v4_observability_con
     assert observability["atif"]["agent_name"] == "review-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
     assert Path(observability["atif"]["output_directory"]).is_dir()
+    named_sink, default_sink = observability["opentelemetry"]["file_sinks"]
+    assert [named_sink["mode"], default_sink["mode"]] == ["append", "overwrite"]
+    assert named_sink["output_directory"] == file_sink["output_directory"]
+    assert default_sink["output_directory"] == observability["atif"]["output_directory"]
 
     atof_file = Path(file_sink["output_directory"]) / "events.atof.jsonl"
     atif_file = (
         Path(observability["atif"]["output_directory"]) / "trajectory-current.atif.json"
     )
+    named_trace = Path(named_sink["output_directory"]) / "trace.otlp.jsonl"
     atof_file.write_text("{}", encoding="utf-8")
     atif_file.write_text("{}", encoding="utf-8")
+    named_trace.write_text("{}", encoding="utf-8")
 
     assert common_utils.collect_relay_artifacts(plugin_config) == [
         {"kind": "atof", "path": str(atof_file)},
+        {"kind": "otlp", "path": str(named_trace), "format": "json_lines"},
         {"kind": "atif", "path": str(atif_file)},
     ]
+
+
+@pytest.mark.parametrize(
+    ("encoding", "default_name"),
+    [("json_lines", "nemo-relay-otlp-1.jsonl"), ("proto", "nemo-relay-otlp-1.otlp.pb")],
+)
+def test_collect_relay_artifacts_matches_default_otlp_names_by_format(
+    tmp_path: Path, encoding: str, default_name: str
+):
+    for name in (
+        "events.atof.jsonl",
+        "nemo-relay-otlp-1.jsonl",
+        "nemo-relay-otlp-1.otlp.pb",
+    ):
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+    sink = {"type": "full", "output_directory": str(tmp_path), "format": encoding}
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {"opentelemetry": {"enabled": True, "file_sinks": [sink]}},
+            }
+        ]
+    }
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == [
+        {"kind": "otlp", "path": str(tmp_path / default_name), "format": encoding}
+    ]
+    plugin_config["components"][0]["config"]["opentelemetry"]["enabled"] = False
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
 
 
 def test_load_relay_plugin_config_preserves_core_authored_atif_model_name(
@@ -1243,6 +1291,40 @@ def test_relay_validates_all_v4_otlp_fields():
     assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_relay_validates_normalized_otlp_file_sinks(
+    nemo_relay, tmp_path: Path, enabled: bool
+):
+    if not hasattr(nemo_relay, "OpenTelemetryFileSinkConfig"):
+        pytest.skip("OpenTelemetry file sinks need nemo-relay 0.10 or later")
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": enabled,
+                "config": {
+                    "version": 4,
+                    "opentelemetry": {
+                        "enabled": enabled,
+                        "file_sinks": [{"type": "openinference"}],
+                    },
+                },
+            }
+        ],
+    }
+
+    common_utils.normalize_relay_output_dirs(
+        plugin_config,
+        {"base_dir": str(tmp_path), "runtime_context": {"runtime_id": "runtime"}},
+    )
+
+    assert (
+        nemo_relay.plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
+    )
+    assert not (tmp_path / "artifacts").exists()
+
+
 def test_relay_validates_unknown_atof_sink_type():
     from nemo_relay import plugin
 
@@ -1424,10 +1506,12 @@ def test_validate_relay_observability_reports_version_before_v4_shape():
     [
         ({"enabled": True}, False),
         ({"enabled": True, "endpoints": []}, False),
+        ({"enabled": True, "file_sinks": []}, False),
         ({"enabled": False, "endpoints": []}, True),
+        ({"enabled": True, "file_sinks": [{"type": "openinference"}]}, True),
     ],
 )
-def test_validate_relay_observability_requires_endpoint_when_enabled(
+def test_validate_relay_observability_requires_endpoint_or_file_sink_when_enabled(
     opentelemetry: dict[str, object],
     valid: bool,
 ):
@@ -1459,6 +1543,7 @@ def test_validate_relay_observability_requires_endpoint_when_enabled(
         ({"enabled": "true"}, r"opentelemetry\.enabled must be a boolean"),
         ({"endpoints": None}, r"opentelemetry\.endpoints must be a list"),
         ({"endpoints": "endpoint"}, r"opentelemetry\.endpoints must be a list"),
+        ({"file_sinks": None}, r"opentelemetry\.file_sinks must be a list"),
         (
             {"endpoints": [False]},
             r"endpoint must be an object for opentelemetry\.endpoints\[0\]",
