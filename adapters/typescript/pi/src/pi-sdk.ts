@@ -69,6 +69,8 @@ interface PiToolFactoryContext {
   workspace: string;
 }
 
+const NO_TOKENS: PiTokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
 /**
  * Add one call's usage to a prompt's running total. A call without a complete
  * usage report makes the whole total unknown.
@@ -98,12 +100,29 @@ export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTok
 }
 
 /**
+ * Add one model call's usage to a prompt's running total. Pi fills a call's
+ * usage with zeros before the response arrives and overwrites it only when the
+ * provider reports usage, so a call whose four counts are all zero carries no
+ * usage report and makes the total unknown. A model call always sends input
+ * tokens, so a provider that measured the call reports a nonzero count.
+ */
+function addModelCallUsage(total: PiTokenUsage | undefined, usage: unknown): PiTokenUsage | undefined {
+  const call = addUsage(NO_TOKENS, usage);
+  if (call === undefined || Object.values(call).every((count) => count === 0)) {
+    return undefined;
+  }
+  return addUsage(total, call);
+}
+
+/**
  * Add the tokens one session event recorded to a prompt's running total, as
  * Pi's own usage totals count them: an assistant message, a tool result that
  * reports usage, a finished compaction's summary call, and a usage entry such
- * as a cache warm-up. An aborted assistant message, or a compaction that was
- * aborted or finished without a usage report, makes the total unknown: Pi
- * keeps no usage for a call it stopped, which may still have been billed.
+ * as a cache warm-up. The total becomes unknown when a model call carries no
+ * usage report, when an assistant message or a compaction was aborted, or when
+ * a compaction summary call was retried: Pi keeps no usage for a call it
+ * stopped or a summary attempt that failed, and either may still have been
+ * billed.
  */
 export function addEventUsage(total: PiTokenUsage | undefined, event: unknown): PiTokenUsage | undefined {
   const fields = (typeof event === "object" && event !== null ? event : {}) as {
@@ -116,7 +135,7 @@ export function addEventUsage(total: PiTokenUsage | undefined, event: unknown): 
   switch (fields.type) {
     case "message_end":
       if (fields.message?.role === "assistant") {
-        return fields.message.stopReason === "aborted" ? undefined : addUsage(total, fields.message.usage);
+        return fields.message.stopReason === "aborted" ? undefined : addModelCallUsage(total, fields.message.usage);
       }
       if (fields.message?.role === "toolResult" && fields.message.usage !== undefined) {
         return addUsage(total, fields.message.usage);
@@ -124,10 +143,12 @@ export function addEventUsage(total: PiTokenUsage | undefined, event: unknown): 
       return total;
     case "compaction_end":
       return fields.aborted === false && fields.result !== undefined
-        ? addUsage(total, fields.result.usage)
+        ? addModelCallUsage(total, fields.result.usage)
         : undefined;
+    case "summarization_retry_scheduled":
+      return undefined;
     case "entry_appended":
-      return fields.entry?.type === "usage" ? addUsage(total, fields.entry.usage) : total;
+      return fields.entry?.type === "usage" ? addModelCallUsage(total, fields.entry.usage) : total;
     default:
       return total;
   }
@@ -956,7 +977,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
     let finalAssistant:
       | { role: "assistant"; content: unknown; stopReason: string; errorMessage?: string }
       | undefined;
-    let usage: PiTokenUsage | undefined = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    let usage: PiTokenUsage | undefined = NO_TOKENS;
     const unsubscribe = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         turnStarted = true;
