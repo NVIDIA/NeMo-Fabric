@@ -1849,8 +1849,8 @@ class RuntimeResourceSnapshot(FabricMapping):
             Pages shared between processes count once per process.
         process_count: Live processes in the tree, including the adapter host.
         cpu_time_seconds: CPU time used since the adapter host started,
-            including exited descendants (on macOS, only once they are
-            waited for). It can drop when a descendant leaves the tree.
+            including exited descendants. It can drop when a descendant
+            leaves the tree.
     """
 
     runtime_id: str

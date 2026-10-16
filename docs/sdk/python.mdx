@@ -698,20 +698,20 @@ print(snapshot.process_count, snapshot.cpu_time_seconds)
 | `observed_at` | When NeMo Fabric read the values, as an RFC 3339 UTC timestamp. |
 | `resident_memory_bytes` | Sum of the resident set sizes of the live processes. Pages shared between processes count once per process. |
 | `process_count` | Live processes, including the adapter host. Exited processes that are not yet reaped are not counted. |
-| `cpu_time_seconds` | CPU time used since the adapter host started, including exited descendants (on macOS, only once they are waited for). It can drop when a descendant leaves the tree. |
+| `cpu_time_seconds` | CPU time used since the adapter host started, including exited descendants. It can drop when a descendant leaves the tree. |
 
 The scope is fixed: the local adapter host process that NeMo Fabric started for
 the runtime, plus its descendants. For a runtime started on a shared service,
 the service process is not included. A descendant that starts a new session or
 process group still counts while its parent chain leads to the host. A process
 whose parent exited is reparented outside the tree and no longer counts. The
-snapshot reads `/proc` on Linux and `proc_pid_rusage` on macOS. On Linux it
-finds the tree from each process's `/proc/<pid>/task/<tid>/children` list, so it
-reads only the runtime's own processes. On macOS, and on a Linux kernel without
-those lists, it reads the parent ID of every process on the machine to find the
-tree, and macOS also reads each process's start time to detect a reused PID.
-The snapshot exposes only the fields above, never command lines, environment
-variables, credentials, or processes outside the runtime's tree.
+snapshot finds the tree from each process's list of children: Linux reads
+`/proc/<pid>/task/<tid>/children` and `/proc/<pid>/stat`, and macOS reads
+`proc_listchildpids` and `proc_pid_rusage`. Both read only the runtime's own
+processes. On a Linux kernel without those children lists, the snapshot reads
+the parent ID of every process on the machine to find the tree. The snapshot
+exposes only the fields above, never command lines, environment variables,
+credentials, or processes outside the runtime's tree.
 
 When NeMo Fabric cannot read the values, it raises an error instead of
 returning zeros or leaving a process out:
@@ -728,8 +728,8 @@ once after the adapter returned the result. It is `None` when the read failed;
 a failed read never fails the invocation. To estimate one invocation's CPU time,
 take a snapshot before it and subtract its `cpu_time_seconds` from the
 result's snapshot. CPU time can drop when a descendant is reparented out of the
-tree, and on macOS while an exited descendant is not yet waited for, so treat a
-difference as an estimate and a negative difference as unknown.
+tree, so treat a difference as an estimate and a negative difference as
+unknown.
 
 Snapshots observe resources only. They do not enforce limits, stop runtimes, or
 queue requests. Use the operating system or execution environment, such as
