@@ -38,7 +38,8 @@ Keep using Harbor's managed environment and redaction rules for credentials. Cor
 ## Trial Identity In Run Records
 
 Set `fabric_record=True` on `FabricAgent` to write a NeMo Fabric run record for
-each trial under the bridge's artifact root. It is off by default, and without
+each agent run in a trial (one per step on a multi-step trial) under the
+bridge's artifact root. It is off by default, and without
 it the bridge sends the same request as before. With it on, the bridge reads
 the trial's `lock.json` and `config.json`, which Harbor writes to the trial
 folder before the agent starts, and adds these keys to the request context:
@@ -53,9 +54,10 @@ folder before the agent starts, and adds these keys to the request context:
 The record's start line keeps them with `harbor_session_id` and
 `harbor_context_id`. NeMo Fabric forwards these keys to the adapter, as it
 forwards every request context key; no first-party adapter reads them. Harbor
-has no attempt number, so each trial is its own attempt. A missing or
-unreadable `lock.json` or `config.json` adds none of its keys, and the run goes
-on.
+runs each attempt as its own trial and gives the trial no attempt index, so the
+bridge sets no `attempt`. Group a task's attempts by `task_id` and
+`task_revision`. A missing or unreadable `lock.json` or `config.json` adds none
+of its keys, and the run goes on.
 
 On the host, each record is at
 `<trial>/agent/fabric-artifacts/<config name>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`,
@@ -65,4 +67,5 @@ agent folder's contents into `<trial>/steps/<step>/agent/` after each step, so
 each step's records are there.
 
 `fabric_record=True` needs a NeMo Fabric version with `runtime.record` in the
-trial environment. An older `fabric_package` rejects the config.
+trial environment. With the first-party adapters, an older `fabric_package`
+rejects the config.
