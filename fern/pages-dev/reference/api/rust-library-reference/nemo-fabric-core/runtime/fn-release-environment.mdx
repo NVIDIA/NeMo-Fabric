@@ -1,7 +1,7 @@
 ---
 title: "Function release_environment"
 sidebar-title: "release_environment"
-description: "Detach a local environment without deleting caller-owned files."
+description: "Release or detach an environment through its provider."
 position: 38
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -11,4 +11,6 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn release_environment(environment: &amp;<a href=\"struct-environmenthandle.mdx\">EnvironmentHandle</a>) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"https://doc.rust-lang.org/1.99.1/std/primitive.unit.html\">()</a>&gt;"}} /></pre>
 
-Detach a local environment without deleting caller-owned files.
+Release or detach an environment through its provider.
+
+Caller-owned resources detach without deletion; local files remain in place.
