@@ -565,6 +565,10 @@
         "enabled": {
           "description": "Whether to write a run record for each invocation. Requires an\nartifact root, the `local` environment provider, and a `process` or\n`python` adapter.",
           "type": "boolean"
+        },
+        "exclusive_container": {
+          "description": "Whether nothing else runs in the container during an invocation,\nincluding other runtimes in the same process, so a rise in the\ncontainer's out-of-memory kill count reads `sandbox_failed` in the\nrecord. Unset means false.",
+          "type": "boolean"
         }
       },
       "required": [

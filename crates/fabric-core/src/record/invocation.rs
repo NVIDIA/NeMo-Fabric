@@ -16,17 +16,20 @@ use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::Value;
 
+use super::cgroup::CgroupReader;
 use super::lines::{
-    ContextValue, EndArtifact, EndError, EndLine, EndUsage, LineBody, ModelName, NotRecorded,
-    RecordLine, RecordSchema, RecordVersion, StartLine, cut_text, recorded_code,
+    ContextValue, EndArtifact, EndError, EndLine, EndUsage, LimitType, LineBody, ModelName,
+    NotRecorded, OomKills, RecordLine, RecordSchema, RecordVersion, StartLine, Stop, StopLimit,
+    StopReason, cut_text, recorded_code,
 };
+use super::stop::{StopFacts, stop_cause};
 use super::writer::{RECORD_FILE_NAME, RecordWriter};
 use crate::config::RunPlan;
 use crate::error::{FabricError, Result};
 use crate::runtime::{
-    ArtifactManifest, ArtifactRef, ErrorInfo, ErrorStage, INVALID_AGENT_RUN_RESULT,
-    InvocationHandle, RunRequest, RunResult, RunStatus, RunUsage, RuntimeHandle,
-    event_with_metadata, unique_artifact_name,
+    ArtifactManifest, ArtifactRef, ErrorInfo, ErrorStage, HOST_CRASHED, HOST_TIMEOUT,
+    INVALID_AGENT_RUN_RESULT, InvocationHandle, RunRequest, RunResult, RunStatus, RunUsage,
+    RuntimeHandle, event_with_metadata, unique_artifact_name,
 };
 use crate::time::rfc3339_millis;
 
@@ -52,6 +55,9 @@ const RECORDED_CONTEXT_KEYS: [&str; 7] = [
 const ARTIFACT_WRITE_FAILED: &str = "artifact_write_failed";
 /// End-line error code for any other Fabric error after the record started.
 const FABRIC_ERROR: &str = "fabric_error";
+/// Error code an adapter reports when it stops at the deadline core gave it,
+/// whether in a failed result or as a lifecycle error.
+const ADAPTER_TIMEOUT_CODE: &str = "timeout";
 
 /// What the start line needs from core's invocation path.
 pub(crate) struct RecordStart<'a> {
@@ -63,6 +69,31 @@ pub(crate) struct RecordStart<'a> {
     pub fabric_home: &'a Path,
     /// The host timeout that applies to this invocation.
     pub timeout: Duration,
+    /// Reads the container's out-of-memory kill count.
+    pub cgroup: CgroupReader,
+}
+
+/// The adapter host's wait status, when it exited.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HostExit {
+    /// Exit code.
+    pub exit_code: Option<i32>,
+    /// Signal that ended the host (Unix only).
+    pub exit_signal: Option<i32>,
+}
+
+impl HostExit {
+    /// Read a wait status.
+    pub(crate) fn from_status(status: std::process::ExitStatus) -> Self {
+        #[cfg(unix)]
+        let exit_signal = std::os::unix::process::ExitStatusExt::signal(&status);
+        #[cfg(not(unix))]
+        let exit_signal = None;
+        Self {
+            exit_code: status.code(),
+            exit_signal,
+        }
+    }
 }
 
 /// The record of one running invocation.
@@ -76,12 +107,27 @@ pub(crate) struct InvocationRecorder {
     writer: Option<RecordWriter>,
     wrote_start: bool,
     failure: Option<io::Error>,
+    timeout: Duration,
+    cgroup: CgroupReader,
+    oom_kills_at_start: OomKills,
+    exclusive_container: bool,
+    failed_exchange: Option<FailedExchange>,
+}
+
+/// What core saw when the exchange with the adapter host failed.
+#[derive(Debug, Clone, Copy)]
+struct FailedExchange {
+    /// Time from the start line to the failure, before core's own cleanup.
+    elapsed_ms: u64,
+    /// The host's wait status, when it had exited.
+    host_exit: Option<HostExit>,
 }
 
 impl InvocationRecorder {
     /// Create the record and write its start line.
     pub(crate) fn start(start: RecordStart<'_>) -> Self {
         let path = start.fabric_home.join(RECORD_FILE_NAME);
+        let oom_kills_at_start = start.cgroup.oom_kills();
         let mut recorder = Self {
             runtime_id: start.invocation.runtime_id.clone(),
             invocation_id: start.invocation.invocation_id.clone(),
@@ -91,11 +137,16 @@ impl InvocationRecorder {
             wrote_start: false,
             failure: None,
             path,
+            timeout: start.timeout,
+            cgroup: start.cgroup.clone(),
+            oom_kills_at_start,
+            exclusive_container: exclusive_container(start.plan),
+            failed_exchange: None,
         };
         match RecordWriter::create(&recorder.path) {
             Ok(writer) => {
                 recorder.writer = Some(writer);
-                recorder.append(LineBody::Start(start_line(&start)));
+                recorder.append(LineBody::Start(start_line(&start, oom_kills_at_start)));
                 recorder.wrote_start = recorder.failure.is_none();
             }
             Err(error) => recorder.failure = Some(error),
@@ -103,14 +154,26 @@ impl InvocationRecorder {
         recorder
     }
 
+    /// Keep when the exchange with the adapter host failed and the host's
+    /// wait status, for the end line's `stop`. Core calls this before its
+    /// cleanup, such as stopping a timed-out host, so `failed_at` excludes it.
+    pub(crate) fn exchange_failed(&mut self, failed_at: Instant, host_exit: Option<HostExit>) {
+        self.failed_exchange = Some(FailedExchange {
+            elapsed_ms: millis(failed_at.saturating_duration_since(self.started)),
+            host_exit,
+        });
+    }
+
     /// Write and sync the end line for `outcome`, then return it. A result
     /// gains the `record` artifact when the start line was written, and a
     /// `record_write_failed` event when any write or the sync failed.
     pub(crate) fn finish(mut self, outcome: Result<RunResult>) -> Result<RunResult> {
-        let elapsed_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let elapsed_ms = millis(self.started.elapsed());
+        let oom_kills = self.cgroup.oom_kills();
+        let stop = self.stop(&outcome, elapsed_ms, oom_kills);
         let end = match &outcome {
-            Ok(result) => result_end_line(result, elapsed_ms),
-            Err(error) => error_end_line(error, elapsed_ms),
+            Ok(result) => result_end_line(result, elapsed_ms, oom_kills, stop),
+            Err(error) => error_end_line(error, elapsed_ms, oom_kills, stop),
         };
         self.append(LineBody::End(end));
         if let Some(writer) = &self.writer
@@ -148,6 +211,81 @@ impl InvocationRecorder {
         Ok(result)
     }
 
+    /// The end line's `stop`, or `None` when it holds nothing (a success).
+    fn stop(
+        &self,
+        outcome: &Result<RunResult>,
+        elapsed_ms: u64,
+        oom_kills_at_end: OomKills,
+    ) -> Option<Stop> {
+        let oom_rose = self.exclusive_container
+            && matches!(
+                (self.oom_kills_at_start, oom_kills_at_end),
+                (OomKills::Count(start), OomKills::Count(end)) if end > start
+            );
+        // `forced` is set exactly when a timeout stopped the invocation.
+        let (facts, forced) = match outcome {
+            Ok(result) => {
+                let failed = result.status == RunStatus::Failed;
+                let adapter_timeout = failed
+                    && result
+                        .error
+                        .as_ref()
+                        .is_some_and(|error| error.code == ADAPTER_TIMEOUT_CODE);
+                let facts = StopFacts {
+                    status: result.status,
+                    fabric_failed: false,
+                    oom_rose,
+                    timed_out: adapter_timeout,
+                    host_exited: false,
+                    agent_error: failed,
+                };
+                (facts, adapter_timeout.then_some(false))
+            }
+            // A raised error is never the agent's own failure: the adapter
+            // contract returns a target failure as a `failed` result. An
+            // out-of-memory rise outranks an error from the exchange itself,
+            // such as an adapter that raised after its harness was killed;
+            // core's own errors after a complete response keep rank 1.
+            Err(error) => {
+                let code = match error {
+                    FabricError::AdapterLifecycleOperation { code, .. } => Some(code.as_str()),
+                    _ => None,
+                };
+                let forced = code == Some(HOST_TIMEOUT);
+                let timed_out = forced || code == Some(ADAPTER_TIMEOUT_CODE);
+                let host_exited = code == Some(HOST_CRASHED);
+                let exchange_error = self.failed_exchange.is_some();
+                let facts = StopFacts {
+                    status: RunStatus::Failed,
+                    fabric_failed: !(timed_out || host_exited || (exchange_error && oom_rose)),
+                    oom_rose,
+                    timed_out,
+                    host_exited,
+                    agent_error: false,
+                };
+                (facts, timed_out.then_some(forced))
+            }
+        };
+        let usage = self
+            .failed_exchange
+            .map_or(elapsed_ms, |failed| failed.elapsed_ms);
+        let host_exit = self.failed_exchange.and_then(|failed| failed.host_exit);
+        let stop = Stop {
+            cause: stop_cause(facts),
+            reason: forced.map(|_| StopReason::Timeout),
+            forced,
+            limit: forced.map(|_| StopLimit {
+                limit_type: LimitType::Time,
+                value: millis(self.timeout),
+                usage,
+            }),
+            exit_code: host_exit.and_then(|exit| exit.exit_code),
+            exit_signal: host_exit.and_then(|exit| exit.exit_signal),
+        };
+        (stop != Stop::default()).then_some(stop)
+    }
+
     /// Append one line. After the first failure the record stops.
     fn append(&mut self, body: LineBody) {
         let Some(writer) = self.writer.as_mut() else {
@@ -169,7 +307,7 @@ impl InvocationRecorder {
     }
 }
 
-fn start_line(start: &RecordStart<'_>) -> StartLine {
+fn start_line(start: &RecordStart<'_>, container_oom_kills: OomKills) -> StartLine {
     StartLine {
         agent_name: cut_text(&start.runtime.agent_name),
         harness: cut_text(&start.runtime.harness),
@@ -190,7 +328,7 @@ fn start_line(start: &RecordStart<'_>) -> StartLine {
             })
             .collect(),
         fabric_version: crate::version().to_string(),
-        timeout_ms: u64::try_from(start.timeout.as_millis()).unwrap_or(u64::MAX),
+        timeout_ms: millis(start.timeout),
         context: start
             .request
             .context
@@ -198,7 +336,21 @@ fn start_line(start: &RecordStart<'_>) -> StartLine {
             .map(|(key, value)| (key.clone(), context_value(key, value)))
             .collect(),
         override_keys: override_keys(start.request.overrides.as_ref()),
+        exclusive_container: exclusive_container(start.plan),
+        container_oom_kills,
     }
+}
+
+fn exclusive_container(plan: &RunPlan) -> bool {
+    plan.config
+        .runtime
+        .record
+        .as_ref()
+        .is_some_and(|record| record.exclusive_container)
+}
+
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 /// The sorted top-level key names of `overrides`; empty unless it is an object.
@@ -228,17 +380,29 @@ fn context_value(key: &str, value: &Value) -> ContextValue {
     }
 }
 
-fn result_end_line(result: &RunResult, elapsed_ms: u64) -> EndLine {
+fn result_end_line(
+    result: &RunResult,
+    elapsed_ms: u64,
+    container_oom_kills: OomKills,
+    stop: Option<Stop>,
+) -> EndLine {
     EndLine {
         status: result.status,
         elapsed_ms,
         error: result.error.as_ref().map(result_error),
         usage: result.usage.as_ref().map(end_usage),
         artifacts: end_artifacts(&result.artifacts),
+        container_oom_kills,
+        stop,
     }
 }
 
-fn error_end_line(error: &FabricError, elapsed_ms: u64) -> EndLine {
+fn error_end_line(
+    error: &FabricError,
+    elapsed_ms: u64,
+    container_oom_kills: OomKills,
+    stop: Option<Stop>,
+) -> EndLine {
     let (code, stage) = match error {
         FabricError::AdapterLifecycleOperation { code, .. } => (code.as_str(), ErrorStage::Invoke),
         // After the record starts, only the check of the adapter's result
@@ -257,6 +421,8 @@ fn error_end_line(error: &FabricError, elapsed_ms: u64) -> EndLine {
         }),
         usage: None,
         artifacts: Vec::new(),
+        container_oom_kills,
+        stop,
     }
 }
 
@@ -351,6 +517,7 @@ mod tests {
             request: &request,
             fabric_home: Path::new("/unused"),
             timeout: Duration::from_secs(5),
+            cgroup: CgroupReader::system(),
         };
 
         let line = serde_json::to_value(RecordLine {
@@ -360,7 +527,7 @@ mod tests {
             invocation_id: "inv".to_string(),
             request_id: "req".to_string(),
             time: "2026-10-14T18:01:10.205Z".to_string(),
-            body: LineBody::Start(start_line(&start)),
+            body: LineBody::Start(start_line(&start, OomKills::Count(0))),
         })
         .expect("start line");
 
@@ -419,9 +586,10 @@ mod tests {
             request: &request,
             fabric_home: Path::new("/unused"),
             timeout: Duration::from_secs(5),
+            cgroup: CgroupReader::system(),
         };
 
-        let line = start_line(&start);
+        let line = start_line(&start, OomKills::Count(0));
 
         assert_eq!(line.models.len(), 3);
         assert_eq!(line.context.len(), 2);
@@ -460,6 +628,7 @@ mod tests {
             request: &request,
             fabric_home: &folder,
             timeout: Duration::from_secs(5),
+            cgroup: CgroupReader::system(),
         });
         let mut result = succeeded_result(&invocation);
         result.artifacts.artifacts.push(ArtifactRef {
@@ -496,6 +665,7 @@ mod tests {
             request: &request,
             fabric_home: &folder,
             timeout: Duration::from_secs(5),
+            cgroup: CgroupReader::system(),
         });
         let result = succeeded_result(&invocation);
 
@@ -544,6 +714,7 @@ mod tests {
             request: &request,
             fabric_home: &folder,
             timeout: Duration::from_secs(5),
+            cgroup: CgroupReader::system(),
         });
         let finished = recorder.finish(outcome);
         test_hooks::FAULT.with(|slot| slot.set(None));
@@ -652,5 +823,99 @@ mod tests {
                 "{fault:?}: {error}"
             );
         }
+    }
+
+    /// Run one invocation whose exchange with the host fails with `code` after
+    /// the host died of SIGKILL, while a fake cgroup's `oom_kill` count rises
+    /// from 4 to 5, and return its start and end lines.
+    fn oom_kill_record(name: &str, exclusive_container: bool, code: &str) -> (Value, Value) {
+        use crate::config::RecordConfig;
+        use crate::record::cgroup::tests::{fake_root, memory_events};
+        let (mut plan, runtime, invocation) = record_test_fixture();
+        plan.config.runtime.record = Some(RecordConfig {
+            enabled: true,
+            exclusive_container,
+        });
+        let root = fake_root(name, "0::/\n", Some(&memory_events(4)));
+        let folder = root.join("invocation");
+        std::fs::create_dir_all(&folder).expect("invocation folder");
+        let request = RunRequest::text("input");
+        let mut recorder = InvocationRecorder::start(RecordStart {
+            plan: &plan,
+            runtime: &runtime,
+            invocation: &invocation,
+            request: &request,
+            fabric_home: &folder,
+            timeout: Duration::from_secs(5),
+            cgroup: CgroupReader::with_root(&root),
+        });
+        std::fs::write(root.join("sys/fs/cgroup/memory.events"), memory_events(5))
+            .expect("oom kill");
+        recorder.exchange_failed(
+            Instant::now(),
+            Some(HostExit {
+                exit_code: None,
+                exit_signal: Some(9),
+            }),
+        );
+
+        let error = recorder
+            .finish(Err(FabricError::AdapterLifecycleOperation {
+                operation: "invoke",
+                runtime_id: "rt".to_string(),
+                code: code.to_string(),
+                message: "host exited".to_string(),
+                diagnostics: String::new(),
+            }))
+            .expect_err("error passes through");
+        assert!(error.to_string().contains(code));
+        let text = std::fs::read_to_string(folder.join(RECORD_FILE_NAME)).expect("record");
+        let lines: Vec<Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("json"))
+            .collect();
+        let _ = std::fs::remove_dir_all(root);
+        let start = lines.first().expect("start line").clone();
+        let end = lines.last().expect("end line").clone();
+        assert_eq!(
+            (&start["kind"], &end["kind"]),
+            (&"start".into(), &"end".into())
+        );
+        (start, end)
+    }
+
+    #[test]
+    fn oom_kill_rise_in_an_exclusive_container_reads_sandbox_failed() {
+        let (start, end) = oom_kill_record("exclusive", true, HOST_CRASHED);
+
+        assert_eq!(start["container_oom_kills"], 4);
+        assert_eq!(start["exclusive_container"], true);
+        assert_eq!(end["container_oom_kills"], 5);
+        assert_eq!(
+            end["stop"],
+            serde_json::json!({"cause": "sandbox_failed", "exit_signal": 9})
+        );
+    }
+
+    #[test]
+    fn oom_kill_rise_in_a_shared_container_sets_no_sandbox_cause() {
+        let (start, end) = oom_kill_record("shared", false, HOST_CRASHED);
+
+        assert_eq!(start["exclusive_container"], false);
+        assert_eq!(end["container_oom_kills"], 5);
+        assert_eq!(
+            end["stop"],
+            serde_json::json!({"cause": "unclassified", "exit_signal": 9})
+        );
+    }
+
+    #[test]
+    fn oom_kill_rise_outranks_an_adapter_error_from_the_exchange() {
+        let (_, end) = oom_kill_record("adapter-error", true, "lifecycle_adapter_invoke_failed");
+
+        assert_eq!(
+            end["stop"],
+            serde_json::json!({"cause": "sandbox_failed", "exit_signal": 9})
+        );
     }
 }

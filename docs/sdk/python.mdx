@@ -995,6 +995,62 @@ The end line describes the invocation. A one-shot `Fabric.run` stops the
 runtime after the invocation; when that stop fails, the result reads `failed`
 with stage `stop`, and the record still holds the invocation's own end line.
 
+The end line's `stop` says why the invocation stopped. It is absent on
+success. `stop.cause` comes from NeMo Fabric's own closed list. Three names are
+Harbor's failure causes: `sandbox_failed`, `agent_exhausted_budget`, and
+`unclassified`. A Harbor runner maps `fabric_failed` to `harbor_failed` and
+`agent_failed` to `unclassified`. The first rule that matches sets the cause:
+
+1. `fabric_failed`: NeMo Fabric or the adapter host raised an error that is
+   not a timeout or a host exit. Examples are an invalid adapter result and an
+   adapter that crashed inside the adapter host. The adapter contract returns
+   the agent's own failure as a `failed` result, never as a raised error. An
+   error from the exchange with the adapter host during an out-of-memory rise
+   in an exclusive container reads `sandbox_failed` instead, because a kill
+   can make the adapter raise; NeMo Fabric's own errors after a complete
+   response stay `fabric_failed`.
+2. `sandbox_failed`: the container's out-of-memory kill count rose during the
+   invocation, and `runtime.record.exclusive_container` is `True`.
+3. `agent_exhausted_budget`: the invocation reached its time limit.
+4. A cancelled invocation that matched none of the above has no cause.
+5. `unclassified`: the adapter host exited before it answered.
+6. `agent_failed`: the adapter returned a `failed` result.
+7. `unclassified`: anything else.
+
+An adapter that sets its own error code for a harness crash or a setup error
+in a `failed` result, such as `claude_process_failed`, reads `agent_failed`.
+NeMo Fabric does not interpret adapter-specific codes.
+
+A timeout sets `stop.reason` to `timeout` and `stop.limit` to
+`{"type": "time", "value": <ms>, "usage": <ms>}`. `value` is the invoke
+timeout that applied: `runtime.timeout_seconds`, or 1 hour when it is unset.
+Two timeouts reach this rule:
+
+- NeMo Fabric's own timeout fired (error code `host_timeout`). `forced` is
+  `true`, and `usage` is the time until the timeout fired. `elapsed_ms` also
+  covers NeMo Fabric stopping the hung adapter host, so it is larger.
+  `exit_signal` is then the signal NeMo Fabric sent, not a kernel kill.
+- The adapter stopped at the deadline NeMo Fabric gave it and reported error
+  code `timeout`, in a `failed` result or as an error. `forced` is `false`.
+  That deadline is earlier than `value`: the timeout less 10 seconds, and at
+  least half of it.
+
+When the adapter host exited, `stop.exit_code` or `stop.exit_signal` holds its
+wait status.
+
+On Linux with cgroup v2, when NeMo Fabric runs at the root of its own
+container's cgroup, both lines record the container's `memory.events`
+`oom_kill` count as `container_oom_kills`. Otherwise the field reads
+`{"reason": "platform" | "cgroup_v1" | "no_owned_cgroup"}`. The start line
+also records `exclusive_container`. Set `exclusive_container` in
+`runtime.record` to `True` only when nothing else runs in the container during
+an invocation, including other runtimes in the same process. Otherwise a kill
+can belong to another run, so the count is recorded but sets no cause:
+
+```python
+record = RecordConfig(enabled=True, exclusive_container=True)
+```
+
 `run-record.jsonl` never holds prompts, model output, error messages, tool
 payloads, adapter metadata, or context values outside the keys above. The same
 folder also holds `adapter-invocation.json` and `stdout.txt`, which NeMo Fabric

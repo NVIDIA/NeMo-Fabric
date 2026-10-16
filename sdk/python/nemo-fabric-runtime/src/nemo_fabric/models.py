@@ -200,6 +200,15 @@ class RecordConfig(FabricBaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: StrictBool
+    exclusive_container: StrictBool | None = Field(
+        default=None,
+        description=(
+            "Whether nothing else runs in the container during an invocation, "
+            "including other runtimes in the same process, so a rise in the "
+            "container's out-of-memory kill count reads sandbox_failed in the "
+            "record. Unset means false."
+        ),
+    )
 
 
 class RuntimeConfig(FabricBaseModel):

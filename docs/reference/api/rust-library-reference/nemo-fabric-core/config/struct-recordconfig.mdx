@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RecordConfig &#123;\n    pub enabled: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RecordConfig &#123;\n    pub enabled: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub exclusive_container: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n&#125;"}} /></pre>
 
 Per-invocation run record settings.
 
@@ -20,6 +20,10 @@ When enabled, core appends a start line and an end line for each local invocatio
 ### `enabled: bool`
 
 Whether to write a run record for each invocation. Requires an artifact root, the `local` environment provider, and a `process` or `python` adapter.
+
+### `exclusive_container: bool`
+
+Whether nothing else runs in the container during an invocation, including other runtimes in the same process, so a rise in the container's out-of-memory kill count reads `sandbox_failed` in the record. Unset means false.
 
 ## Trait Implementations
 

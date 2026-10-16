@@ -84,6 +84,10 @@
           },
           "type": "array"
         },
+        "container_oom_kills": {
+          "$ref": "#/$defs/OomKills",
+          "description": "The container's cgroup v2 `oom_kill` count when the invocation ended."
+        },
         "elapsed_ms": {
           "description": "Monotonic time from the start line to the end line, in milliseconds.",
           "format": "uint64",
@@ -105,6 +109,17 @@
           "$ref": "#/$defs/RunStatus",
           "description": "Final status. A Fabric lifecycle error, such as a host timeout, reads `failed`."
         },
+        "stop": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stop"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why the invocation stopped; absent when it holds nothing, as on success."
+        },
         "usage": {
           "anyOf": [
             {
@@ -119,7 +134,8 @@
       },
       "required": [
         "status",
-        "elapsed_ms"
+        "elapsed_ms",
+        "container_oom_kills"
       ],
       "type": "object"
     },
@@ -226,6 +242,16 @@
         }
       ]
     },
+    "LimitType": {
+      "description": "Kinds of limit.",
+      "oneOf": [
+        {
+          "const": "time",
+          "description": "Wall-clock time.",
+          "type": "string"
+        }
+      ]
+    },
     "ModelName": {
       "description": "One configured model.",
       "properties": {
@@ -257,6 +283,50 @@
         "recorded"
       ],
       "type": "object"
+    },
+    "OomKills": {
+      "anyOf": [
+        {
+          "description": "The count.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "description": "The count could not be read.",
+          "properties": {
+            "reason": {
+              "$ref": "#/$defs/OomKillsUnavailable",
+              "description": "Why the count could not be read."
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "The cgroup v2 `memory.events` `oom_kill` count of the container Fabric\nruns in, or why it could not be read."
+    },
+    "OomKillsUnavailable": {
+      "description": "Why the container's `oom_kill` count could not be read.",
+      "oneOf": [
+        {
+          "const": "platform",
+          "description": "The operating system has no cgroup v2 source.",
+          "type": "string"
+        },
+        {
+          "const": "cgroup_v1",
+          "description": "The host uses cgroup v1.",
+          "type": "string"
+        },
+        {
+          "const": "no_owned_cgroup",
+          "description": "Fabric does not run at the root of its own cgroup, or the cgroup files\ncannot be read.",
+          "type": "string"
+        }
+      ]
     },
     "RecordSchema": {
       "description": "The record's schema name.",
@@ -312,12 +382,20 @@
           "description": "Config name (`metadata.name`).",
           "type": "string"
         },
+        "container_oom_kills": {
+          "$ref": "#/$defs/OomKills",
+          "description": "The container's cgroup v2 `oom_kill` count when the invocation started."
+        },
         "context": {
           "additionalProperties": {
             "$ref": "#/$defs/ContextValue"
           },
           "description": "`RunRequest.context`. Allowlisted identity and Harbor link keys keep a\nstring or integer value; every other key is listed by name only.",
           "type": "object"
+        },
+        "exclusive_container": {
+          "description": "`runtime.record.exclusive_container`: whether a rise in\n`container_oom_kills` can set the `sandbox_failed` cause.",
+          "type": "boolean"
         },
         "fabric_version": {
           "description": "NeMo Fabric version that wrote the record.",
@@ -352,9 +430,140 @@
         "agent_name",
         "harness",
         "fabric_version",
-        "timeout_ms"
+        "timeout_ms",
+        "exclusive_container",
+        "container_oom_kills"
       ],
       "type": "object"
+    },
+    "Stop": {
+      "description": "Why an invocation stopped.",
+      "properties": {
+        "cause": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopCause"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Fabric's failure cause; absent on a cancel alone."
+        },
+        "exit_code": {
+          "description": "The adapter host's exit code, when it exited.",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "exit_signal": {
+          "description": "The signal that ended the adapter host, when one did.",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "forced": {
+          "description": "Whether Fabric force-stopped the adapter host. After a forced stop,\n`exit_signal` is the signal Fabric sent.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopLimit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The limit that ended the invocation."
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What stopped the invocation, when a limit did."
+        }
+      },
+      "type": "object"
+    },
+    "StopCause": {
+      "description": "Fabric's own closed list of failure causes.",
+      "oneOf": [
+        {
+          "const": "fabric_failed",
+          "description": "Core or the adapter host raised an error other than a timeout or a\nhost exit, such as an invalid adapter result or an adapter crash\ninside the host. An error from the exchange with the host during an\nout-of-memory rise in an exclusive container reads `SandboxFailed`.",
+          "type": "string"
+        },
+        {
+          "const": "sandbox_failed",
+          "description": "The container's `oom_kill` count rose and\n`runtime.record.exclusive_container` is set.",
+          "type": "string"
+        },
+        {
+          "const": "agent_exhausted_budget",
+          "description": "A limit ended the invocation, such as Fabric's timeout.",
+          "type": "string"
+        },
+        {
+          "const": "unclassified",
+          "description": "The adapter host exited, or nothing else matched.",
+          "type": "string"
+        },
+        {
+          "const": "agent_failed",
+          "description": "The adapter returned a failed result.",
+          "type": "string"
+        }
+      ]
+    },
+    "StopLimit": {
+      "description": "The limit that ended an invocation.",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/LimitType",
+          "description": "The kind of limit."
+        },
+        "usage": {
+          "description": "What the invocation used when it stopped, in the same unit. For a\nforced stop, the time until core's timeout fired.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "value": {
+          "description": "The configured limit, in milliseconds for `time`: the invoke timeout\nthat applied, `runtime.timeout_seconds` or 1 hour when it is unset.\nCore gives the adapter an earlier deadline, the timeout less\n10 seconds and at least half of it.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "value",
+        "usage"
+      ],
+      "type": "object"
+    },
+    "StopReason": {
+      "description": "What stopped an invocation.",
+      "oneOf": [
+        {
+          "const": "timeout",
+          "description": "The invocation reached its time limit.",
+          "type": "string"
+        }
+      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

@@ -31,10 +31,14 @@ use crate::config::{
     validate_tool_definitions, validate_workflow,
 };
 use crate::error::{FabricError, Result};
-use crate::record::{InvocationRecorder, RecordStart};
+use crate::record::{CgroupReader, HostExit, InvocationRecorder, RecordStart};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
+/// Lifecycle error code for an invocation that outlived core's timeout.
+pub(crate) const HOST_TIMEOUT: &str = "host_timeout";
+/// Lifecycle error code for an adapter host that exited or closed its pipes.
+pub(crate) const HOST_CRASHED: &str = "host_crashed";
 /// Lifecycle error code for an adapter result that core rejects.
 pub(crate) const INVALID_AGENT_RUN_RESULT: &str = "invalid_agent_run_result";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
@@ -47,6 +51,8 @@ const LOCAL_HOST_INVOKE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const LOCAL_HOST_ADAPTER_RESERVE: Duration = Duration::from_secs(10);
 const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(10);
 const LOCAL_HOST_EXIT_GRACE: Duration = Duration::from_secs(2);
+// How long a run record waits for a crashed host's exit status.
+const LOCAL_HOST_CRASH_WAIT: Duration = Duration::from_secs(1);
 const LOCAL_HOST_DIAGNOSTIC_LIMIT: usize = 16 * 1024;
 #[cfg(test)]
 pub(crate) const OPENAI_STREAM_HOST: &str = "127.0.0.1";
@@ -1546,7 +1552,7 @@ impl RuntimeAdapter for LocalHostAdapter {
         let host_crashed = matches!(
             &result,
             Err(FabricError::AdapterLifecycleOperation { code, .. })
-                if code == "host_crashed"
+                if code == HOST_CRASHED
         );
         if !host_crashed {
             result?;
@@ -1813,6 +1819,7 @@ fn local_host_invocation_result(
                 request: &request,
                 fabric_home: &fabric_home,
                 timeout: invoke_timeout,
+                cgroup: CgroupReader::system(),
             }));
         }
         adapter_invocation.runtime_context.deadline_millis =
@@ -1869,11 +1876,20 @@ fn local_host_invocation_result(
                 ))
             }
             Err(error) => {
+                let failed_at = Instant::now();
                 if matches!(
                     &error,
-                    FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"
+                    FabricError::AdapterLifecycleOperation { code, .. } if code == HOST_TIMEOUT
                 ) {
                     invalidate_timed_out_local_host(&runtime.runtime_id, &host, &mut host_guard);
+                }
+                // Only a record reads the exit status, so a run without one never waits.
+                if let Some(recorder) = recorder.as_mut() {
+                    let crashed = matches!(
+                        &error,
+                        FabricError::AdapterLifecycleOperation { code, .. } if code == HOST_CRASHED
+                    );
+                    recorder.exchange_failed(failed_at, local_host_exit(&mut host_guard, crashed));
                 }
                 Err(error)
             }
@@ -2039,6 +2055,25 @@ fn local_host_invocation_result(
     })
 }
 
+/// The host's wait status after a failed exchange, when it has exited. A
+/// crashed host gets up to [`LOCAL_HOST_CRASH_WAIT`] for its exit to become
+/// observable.
+fn local_host_exit(host: &mut LocalAdapterHost, crashed: bool) -> Option<HostExit> {
+    let deadline = Instant::now()
+        + if crashed {
+            LOCAL_HOST_CRASH_WAIT
+        } else {
+            Duration::ZERO
+        };
+    loop {
+        match host.child.try_wait() {
+            Ok(Some(status)) => return Some(HostExit::from_status(status)),
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+            Ok(None) | Err(_) => return None,
+        }
+    }
+}
+
 fn invalidate_timed_out_local_host(
     runtime_id: &str,
     expected_host: &Arc<Mutex<LocalAdapterHost>>,
@@ -2148,7 +2183,7 @@ fn stop_service_host(record: &mut LocalServiceRecord) -> Result<()> {
     let removal = remove_local_host_files(&record.host);
     let host_crashed = matches!(
         &result,
-        Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "host_crashed"
+        Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == HOST_CRASHED
     );
     if !host_crashed {
         result?;
@@ -2438,7 +2473,7 @@ fn exchange_lifecycle_message(
         return Err(lifecycle_error(
             operation,
             runtime_id,
-            "host_crashed",
+            HOST_CRASHED,
             format!(
                 "persistent local adapter host exited before {} ({status})",
                 operation.as_str()
@@ -2456,7 +2491,7 @@ fn exchange_lifecycle_message(
         let code = match (source.kind(), host.child.try_wait()) {
             // A closed lifecycle pipe is terminal even when the child exit
             // status is not observable yet.
-            (ErrorKind::BrokenPipe, _) | (_, Ok(Some(_))) => "host_crashed",
+            (ErrorKind::BrokenPipe, _) | (_, Ok(Some(_))) => HOST_CRASHED,
             _ => "host_io",
         };
         return Err(lifecycle_error(
@@ -2477,7 +2512,7 @@ fn exchange_lifecycle_message(
             return Err(lifecycle_error(
                 operation,
                 runtime_id,
-                "host_timeout",
+                HOST_TIMEOUT,
                 format!(
                     "persistent local adapter host did not complete {} within {} ms",
                     operation.as_str(),
@@ -2490,7 +2525,7 @@ fn exchange_lifecycle_message(
             return Err(lifecycle_error(
                 operation,
                 runtime_id,
-                "host_crashed",
+                HOST_CRASHED,
                 format!(
                     "persistent local adapter host exited while processing {}",
                     operation.as_str()
@@ -3951,6 +3986,17 @@ for line in sys.stdin:
         if MODE == "invoke_failure":
             response("invoke", error=failure("invoke", "fake_invoke", "invoke rejected"))
             continue
+        if MODE == "invoke_deadline_error":
+            response("invoke", error=failure("invoke", "timeout", "deadline reached"))
+            continue
+        if MODE == "exit_3":
+            sys.exit(3)
+        if MODE == "self_kill":
+            os.kill(os.getpid(), 9)
+        if MODE == "allocate_until_killed":
+            blocks = []
+            while True:
+                blocks.append(b"x" * (16 * 1024 * 1024))
         invocation = message["payload"]
         expected_fields = (
             {"runtime_context", "request", "stream"}
@@ -3990,7 +4036,15 @@ for line in sys.stdin:
             "context_env": invocation["runtime_context"]["environment"].get("env", {}),
             "deadline_millis": invocation["runtime_context"].get("deadline_millis"),
         }
-        if MODE in {"adapter_reported_failure", "blank_error_code", "free_text_error_code"}:
+        if MODE == "cancelled":
+            result = {"status": "cancelled", "output": output}
+        elif MODE == "adapter_deadline":
+            result = {
+                "status": "failed",
+                "output": output,
+                "error": {"code": "timeout", "message": "deadline reached", "retryable": False},
+            }
+        elif MODE in {"adapter_reported_failure", "blank_error_code", "free_text_error_code"}:
             codes = {
                 "blank_error_code": " \t",
                 "free_text_error_code": "Rate limit for key sk-live-123 exceeded",
@@ -5508,7 +5562,10 @@ for line in sys.stdin:
 
     fn record_plan(mode: &str) -> (PathBuf, RunPlan) {
         let (root, mut plan) = local_host_plan(mode);
-        plan.config.runtime.record = Some(crate::config::RecordConfig { enabled: true });
+        plan.config.runtime.record = Some(crate::config::RecordConfig {
+            enabled: true,
+            exclusive_container: false,
+        });
         (root, plan)
     }
 
@@ -5725,6 +5782,21 @@ for line in sys.stdin:
             end["error"],
             serde_json::json!({"code": "host_timeout", "stage": "invoke", "retryable": false})
         );
+        let stop = &end["stop"];
+        assert_eq!(stop["cause"], "agent_exhausted_budget");
+        assert_eq!(stop["reason"], "timeout");
+        assert_eq!(stop["forced"], true);
+        assert_eq!(stop["limit"]["value"], 100);
+        let usage = stop["limit"]["usage"].as_u64().expect("usage");
+        // Usage stops when the timeout fires; the end line's elapsed time also
+        // covers core's stop of the hung host.
+        assert!(usage >= 100, "{stop}");
+        assert!(
+            usage < end["elapsed_ms"].as_u64().expect("elapsed"),
+            "{end}"
+        );
+        #[cfg(unix)]
+        assert_eq!(stop["exit_signal"], 9, "{stop}");
         let _ = stop_runtime(&plan, &runtime);
         let _ = fs::remove_dir_all(root);
     }
@@ -5773,5 +5845,154 @@ for line in sys.stdin:
             ))));
         }
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn end_line_of(root: &Path) -> Value {
+        let (text, lines) = only_record(root);
+        let end = lines.last().expect("end line").clone();
+        assert_eq!(end["kind"], "end", "{text}");
+        end
+    }
+
+    fn failed_invocation_end_line(mode: &str) -> (FabricError, Value) {
+        let (root, plan) = record_plan(mode);
+        let runtime = start_runtime(&plan).expect("start local host");
+        let error = invoke_runtime(&plan, &runtime, RunRequest::text("fail"))
+            .expect_err("lifecycle error still raises");
+        let end = end_line_of(&root);
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+        (error, end)
+    }
+
+    fn result_end_line(mode: &str) -> (RunResult, Value) {
+        let (root, plan) = record_plan(mode);
+        let result = run_plan(&plan, RunRequest::text("run")).expect("result");
+        let end = end_line_of(&root);
+        let _ = fs::remove_dir_all(root);
+        (result, end)
+    }
+
+    #[test]
+    fn stop_succeeded_invocation_has_no_stop() {
+        let (result, end) = result_end_line("success");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        assert!(end.get("stop").is_none(), "{end}");
+        assert!(end.get("container_oom_kills").is_some(), "{end}");
+    }
+
+    #[test]
+    fn stop_host_exit_3_reads_unclassified_with_the_exit_code() {
+        let (error, end) = failed_invocation_end_line("exit_3");
+
+        assert!(error.to_string().contains("host_crashed"), "{error}");
+        assert_eq!(end["error"]["code"], "host_crashed");
+        assert_eq!(
+            end["stop"],
+            serde_json::json!({"cause": "unclassified", "exit_code": 3})
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_host_killed_by_a_signal_reads_unclassified_with_the_signal() {
+        let (_, end) = failed_invocation_end_line("self_kill");
+
+        assert_eq!(
+            end["stop"],
+            serde_json::json!({"cause": "unclassified", "exit_signal": 9})
+        );
+    }
+
+    #[test]
+    fn stop_invalid_adapter_result_reads_fabric_failed() {
+        let (error, end) = failed_invocation_end_line("blank_error_code");
+
+        assert!(
+            error.to_string().contains("invalid_agent_run_result"),
+            "{error}"
+        );
+        assert_eq!(end["stop"], serde_json::json!({"cause": "fabric_failed"}));
+    }
+
+    #[test]
+    fn stop_host_reported_invoke_failure_reads_fabric_failed() {
+        let (_, end) = failed_invocation_end_line("invoke_failure");
+
+        assert_eq!(end["error"]["code"], "fake_invoke");
+        assert_eq!(end["stop"], serde_json::json!({"cause": "fabric_failed"}));
+    }
+
+    #[test]
+    fn stop_adapter_deadline_reported_as_a_lifecycle_error_reads_an_unforced_time_limit() {
+        let (_, end) = failed_invocation_end_line("invoke_deadline_error");
+
+        assert_eq!(end["error"]["code"], "timeout");
+        let stop = &end["stop"];
+        assert_eq!(stop["cause"], "agent_exhausted_budget");
+        assert_eq!(stop["forced"], false);
+        assert_eq!(stop["limit"]["value"], 3_600_000);
+    }
+
+    /// The out-of-memory path end to end. It needs Linux with cgroup v2 and
+    /// a memory-limited container in which Fabric owns the root cgroup, so it
+    /// is ignored by default; the PR body gives the `docker run` command.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "needs a memory-limited cgroup v2 container"]
+    fn stop_oom_kill_in_an_exclusive_container_reads_sandbox_failed() {
+        let (root, mut plan) = record_plan("allocate_until_killed");
+        plan.config.runtime.record = Some(crate::config::RecordConfig {
+            enabled: true,
+            exclusive_container: true,
+        });
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        invoke_runtime(&plan, &runtime, RunRequest::text("allocate"))
+            .expect_err("the kernel kills the host");
+        let (_, lines) = only_record(&root);
+
+        let count = |kind| line_of_kind(&lines, kind)["container_oom_kills"].as_u64();
+        let (start, end) = (
+            count("start").expect("start count"),
+            count("end").expect("end count"),
+        );
+        assert!(end > start, "{lines:?}");
+        let stop = &line_of_kind(&lines, "end")["stop"];
+        assert_eq!(stop["cause"], "sandbox_failed", "{stop}");
+        assert_eq!(stop["exit_signal"], 9, "{stop}");
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn stop_failed_result_reads_agent_failed() {
+        let (result, end) = result_end_line("adapter_reported_failure");
+
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(end["stop"], serde_json::json!({"cause": "agent_failed"}));
+    }
+
+    #[test]
+    fn stop_cancelled_result_has_no_stop() {
+        let (result, end) = result_end_line("cancelled");
+
+        assert_eq!(result.status, RunStatus::Cancelled);
+        assert_eq!(end["status"], "cancelled");
+        assert!(end.get("stop").is_none(), "{end}");
+    }
+
+    #[test]
+    fn stop_adapter_deadline_reads_an_unforced_time_limit() {
+        let (_, end) = result_end_line("adapter_deadline");
+
+        let stop = &end["stop"];
+        assert_eq!(stop["cause"], "agent_exhausted_budget");
+        assert_eq!(stop["reason"], "timeout");
+        assert_eq!(stop["forced"], false);
+        assert_eq!(stop["limit"]["type"], "time");
+        assert_eq!(stop["limit"]["value"], 3_600_000);
+        assert!(stop["limit"]["usage"].is_u64(), "{stop}");
     }
 }

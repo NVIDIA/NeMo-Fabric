@@ -721,6 +721,24 @@ def test_runtime_record_round_trips_and_rejects_other_shapes():
             _FabricConfigSnapshot.from_mapping(raw)
 
 
+def test_runtime_record_exclusive_container_round_trips_and_rejects_non_boolean():
+    record = RecordConfig(enabled=True, exclusive_container=True)
+
+    assert record.to_mapping() == {"enabled": True, "exclusive_container": True}
+    assert RecordConfig(enabled=True).to_mapping() == {"enabled": True}
+    with pytest.raises(ValidationError):
+        RecordConfig(enabled=True, exclusive_container="yes")
+    raw = _plan()["config"]
+    raw["runtime"] = {"record": {"enabled": True, "exclusive_container": True}}
+    assert _FabricConfigSnapshot.from_mapping(raw).runtime.record == {
+        "enabled": True,
+        "exclusive_container": True,
+    }
+    raw["runtime"]["record"]["exclusive_container"] = "yes"
+    with pytest.raises(FabricConfigError, match="optional boolean exclusive_container"):
+        _FabricConfigSnapshot.from_mapping(raw)
+
+
 def test_max_turns_matches_rust_u32_range():
     maximum = (1 << 32) - 1
 

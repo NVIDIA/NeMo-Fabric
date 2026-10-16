@@ -96,6 +96,11 @@ pub(crate) struct StartLine {
     /// recorded.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub override_keys: Vec<String>,
+    /// `runtime.record.exclusive_container`: whether a rise in
+    /// `container_oom_kills` can set the `sandbox_failed` cause.
+    pub exclusive_container: bool,
+    /// The container's cgroup v2 `oom_kill` count when the invocation started.
+    pub container_oom_kills: OomKills,
 }
 
 /// One configured model.
@@ -147,6 +152,114 @@ pub(crate) struct EndLine {
     /// Result artifacts, with paths relative to the artifact root.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<EndArtifact>,
+    /// The container's cgroup v2 `oom_kill` count when the invocation ended.
+    pub container_oom_kills: OomKills,
+    /// Why the invocation stopped; absent when it holds nothing, as on success.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop: Option<Stop>,
+}
+
+/// The cgroup v2 `memory.events` `oom_kill` count of the container Fabric
+/// runs in, or why it could not be read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub(crate) enum OomKills {
+    /// The count.
+    Count(u64),
+    /// The count could not be read.
+    Unavailable {
+        /// Why the count could not be read.
+        reason: OomKillsUnavailable,
+    },
+}
+
+/// Why the container's `oom_kill` count could not be read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OomKillsUnavailable {
+    /// The operating system has no cgroup v2 source.
+    Platform,
+    /// The host uses cgroup v1.
+    CgroupV1,
+    /// Fabric does not run at the root of its own cgroup, or the cgroup files
+    /// cannot be read.
+    NoOwnedCgroup,
+}
+
+/// Why an invocation stopped.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, JsonSchema)]
+pub(crate) struct Stop {
+    /// Fabric's failure cause; absent on a cancel alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cause: Option<StopCause>,
+    /// What stopped the invocation, when a limit did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<StopReason>,
+    /// Whether Fabric force-stopped the adapter host. After a forced stop,
+    /// `exit_signal` is the signal Fabric sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forced: Option<bool>,
+    /// The limit that ended the invocation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<StopLimit>,
+    /// The adapter host's exit code, when it exited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// The signal that ended the adapter host, when one did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_signal: Option<i32>,
+}
+
+/// Fabric's own closed list of failure causes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StopCause {
+    /// Core or the adapter host raised an error other than a timeout or a
+    /// host exit, such as an invalid adapter result or an adapter crash
+    /// inside the host. An error from the exchange with the host during an
+    /// out-of-memory rise in an exclusive container reads `SandboxFailed`.
+    FabricFailed,
+    /// The container's `oom_kill` count rose and
+    /// `runtime.record.exclusive_container` is set.
+    SandboxFailed,
+    /// A limit ended the invocation, such as Fabric's timeout.
+    AgentExhaustedBudget,
+    /// The adapter host exited, or nothing else matched.
+    Unclassified,
+    /// The adapter returned a failed result.
+    AgentFailed,
+}
+
+/// What stopped an invocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StopReason {
+    /// The invocation reached its time limit.
+    Timeout,
+}
+
+/// The limit that ended an invocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+pub(crate) struct StopLimit {
+    /// The kind of limit.
+    #[serde(rename = "type")]
+    pub limit_type: LimitType,
+    /// The configured limit, in milliseconds for `time`: the invoke timeout
+    /// that applied, `runtime.timeout_seconds` or 1 hour when it is unset.
+    /// Core gives the adapter an earlier deadline, the timeout less
+    /// 10 seconds and at least half of it.
+    pub value: u64,
+    /// What the invocation used when it stopped, in the same unit. For a
+    /// forced stop, the time until core's timeout fired.
+    pub usage: u64,
+}
+
+/// Kinds of limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum LimitType {
+    /// Wall-clock time.
+    Time,
 }
 
 /// The end line's error.

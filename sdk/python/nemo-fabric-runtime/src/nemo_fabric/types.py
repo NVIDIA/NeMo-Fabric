@@ -372,7 +372,8 @@ class _RuntimeConfig(_ConfigMapping):
         artifacts: Optional artifact-root path.
         timeout_seconds: Optional invocation deadline in seconds.
         max_turns: Optional harness turn limit.
-        record: Optional run record settings, ``{"enabled": bool}``.
+        record: Optional run record settings, ``{"enabled": bool}`` with an
+            optional boolean ``exclusive_container``.
         extra_fields: Preserved extension fields not recognized by this SDK.
     """
 
@@ -430,11 +431,16 @@ class _RuntimeConfig(_ConfigMapping):
             values["max_turns"] = max_turns
         if record is not None:
             record = _mapping(record, "runtime record")
-            if set(record) != {"enabled"} or not isinstance(record["enabled"], bool):
+            if (
+                "enabled" not in record
+                or not set(record) <= {"enabled", "exclusive_container"}
+                or not all(isinstance(value, bool) for value in record.values())
+            ):
                 raise FabricConfigError(
-                    "runtime record must be an object with only a boolean enabled field"
+                    "runtime record must be an object with a boolean enabled field "
+                    "and an optional boolean exclusive_container field"
                 )
-            values["record"] = {"enabled": record["enabled"]}
+            values["record"] = dict(record)
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod

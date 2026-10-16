@@ -1083,6 +1083,12 @@ pub struct RecordConfig {
     /// artifact root, the `local` environment provider, and a `process` or
     /// `python` adapter.
     pub enabled: bool,
+    /// Whether nothing else runs in the container during an invocation,
+    /// including other runtimes in the same process, so a rise in the
+    /// container's out-of-memory kill count reads `sandbox_failed` in the
+    /// record. Unset means false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exclusive_container: bool,
 }
 
 fn default_input_schema() -> String {
@@ -7425,7 +7431,10 @@ mod tests {
     #[test]
     fn record_enabled_without_an_artifact_root_fails_validation() {
         let mut config = typed_config("nvidia.fabric.hermes");
-        config.runtime.record = Some(RecordConfig { enabled: true });
+        config.runtime.record = Some(RecordConfig {
+            enabled: true,
+            exclusive_container: false,
+        });
 
         assert_eq!(
             record_error(&config),
@@ -7445,7 +7454,10 @@ mod tests {
     fn record_enabled_with_a_non_local_provider_fails_validation() {
         let mut config = typed_config("nvidia.fabric.hermes");
         config.runtime.artifacts = Some(PathBuf::from("runs"));
-        config.runtime.record = Some(RecordConfig { enabled: true });
+        config.runtime.record = Some(RecordConfig {
+            enabled: true,
+            exclusive_container: false,
+        });
         config.environment.as_mut().expect("environment").provider = "docker".to_string();
 
         assert_eq!(
@@ -7463,7 +7475,10 @@ mod tests {
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         let mut config = typed_config("nvidia.fabric.claude");
         config.runtime.artifacts = Some(PathBuf::from("runs"));
-        config.runtime.record = Some(RecordConfig { enabled: true });
+        config.runtime.record = Some(RecordConfig {
+            enabled: true,
+            exclusive_container: false,
+        });
         assert!(validate_record_adapter(&config, Some(&descriptor)).is_ok());
 
         for kind in [AdapterKind::Http, AdapterKind::NativePlugin] {
@@ -7483,7 +7498,10 @@ mod tests {
     fn record_disabled_or_absent_needs_no_artifact_root() {
         let mut config = typed_config("nvidia.fabric.hermes");
         assert_eq!(record_error(&config), None);
-        config.runtime.record = Some(RecordConfig { enabled: false });
+        config.runtime.record = Some(RecordConfig {
+            enabled: false,
+            exclusive_container: false,
+        });
         assert_eq!(record_error(&config), None);
     }
 

@@ -55,7 +55,11 @@ default and needs an artifact root, the `local` environment provider, and a
 `process` or `python` adapter. The
 result lists the file as the artifact with kind `run_record`. The file has a
 `start` line, written before the request, and an `end` line with status,
-elapsed time, error code, numeric usage, and artifact names. It holds no
+elapsed time, error code, numeric usage, artifact names, and `stop`, which
+gives NeMo Fabric's failure cause (`fabric_failed`, `sandbox_failed`,
+`agent_exhausted_budget`, `unclassified`, or `agent_failed`), the time limit
+for a timeout, and the adapter host's exit status. Only a `failed` result
+reads `agent_failed`; an error NeMo Fabric raises never does. It holds no
 prompts, output, or error messages. A record without an end line has an
 unknown outcome; do not count it as failed. Recording is synchronous and
 best-effort: a failed record write adds a `record_write_failed` event and does
