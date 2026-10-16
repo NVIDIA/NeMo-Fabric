@@ -725,8 +725,11 @@ returning zeros or leaving a process out:
   environment provider, or operating system has no resource reader. The `http`
   and `native_plugin` adapter kinds and Windows raise this error.
 
-On Linux with `/proc` mounted `hidepid=invisible`, a descendant owned by
-another user is invisible and is not counted.
+On Linux with `/proc` mounted `hidepid=invisible` or `hidepid=ptraceable`, the
+snapshot is unavailable while `/proc` hides a descendant, such as one that runs
+as another user. On a kernel without children lists, every snapshot is
+unavailable under those mount options, because hidden processes are missing
+from the process table that the snapshot reads to find the tree.
 
 Each `RunResult` from a local runtime also carries `resource_snapshot`, read
 once after the adapter returned the result. It is `None` when the read failed;
