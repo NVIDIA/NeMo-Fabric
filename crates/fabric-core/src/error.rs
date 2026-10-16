@@ -278,8 +278,9 @@ pub enum FabricError {
         adapter_kind: AdapterKind,
     },
     /// A runtime's resources cannot be read now: the runtime stopped, is
-    /// stopping, its adapter host process exited, or a live process in its
-    /// tree or the process table cannot be read.
+    /// stopping, its adapter host process exited, a live process in its tree
+    /// or the process table cannot be read, or the process tree kept changing
+    /// during the read.
     #[error("resource observation is unavailable for runtime `{runtime_id}`: {reason}")]
     ResourceObservationUnavailable {
         /// Runtime handle id.

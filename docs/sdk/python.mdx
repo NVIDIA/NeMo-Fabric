@@ -717,13 +717,16 @@ When NeMo Fabric cannot read the values, it raises an error instead of
 returning zeros or leaving a process out:
 
 - `ResourceObservationUnavailableError` when the runtime stopped, is stopping,
-  its adapter host process exited, or a live process in its tree or the
-  process table cannot be read. For example, on macOS, the snapshot is
-  unavailable while a descendant runs as another user, including setuid
-  programs such as `ps`, `top`, and `sudo`.
+  its adapter host process exited, a live process in its tree or the process
+  table cannot be read, or the process tree kept changing during the read. For
+  example, on macOS, the snapshot is unavailable while a descendant runs as
+  another user, including setuid programs such as `ps`, `top`, and `sudo`.
 - `ResourceObservationUnsupportedError` when the runtime's adapter kind,
   environment provider, or operating system has no resource reader. The `http`
   and `native_plugin` adapter kinds and Windows raise this error.
+
+On Linux with `/proc` mounted `hidepid=invisible`, a descendant owned by
+another user is invisible and is not counted.
 
 Each `RunResult` from a local runtime also carries `resource_snapshot`, read
 once after the adapter returned the result. It is `None` when the read failed;
@@ -1122,7 +1125,7 @@ All public SDK errors inherit from `FabricError`.
 | `FabricRuntimeError` | Runtime startup, invocation, or shutdown failed before a normalized result could be returned. |
 | `FabricStateError` | Invalid runtime state transition, such as invoking after stop or starting overlapping invocations. |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
-| `ResourceObservationUnavailableError` | `Runtime.resource_snapshot()` cannot read the runtime because it stopped, is stopping, its adapter host exited, or a live process in its tree or the process table cannot be read. Subclass of `FabricRuntimeError`. |
+| `ResourceObservationUnavailableError` | `Runtime.resource_snapshot()` cannot read the runtime because it stopped, is stopping, its adapter host exited, a live process in its tree or the process table cannot be read, or the process tree kept changing during the read. Subclass of `FabricRuntimeError`. |
 | `ResourceObservationUnsupportedError` | The runtime's adapter kind, environment provider, or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
 
 Consumers own job-level retries and rollout-level failure policy.

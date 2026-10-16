@@ -84,8 +84,9 @@ class FabricNativeUnavailableError(FabricRuntimeError):
 class ResourceObservationUnavailableError(FabricRuntimeError):
     """Runtime resources cannot be read now.
 
-    The runtime stopped, is stopping, its adapter host process exited, or a
-    live process in its tree or the process table cannot be read.
+    The runtime stopped, is stopping, its adapter host process exited, a live
+    process in its tree or the process table cannot be read, or the process
+    tree kept changing during the read.
     """
 
 

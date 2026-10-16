@@ -1177,8 +1177,8 @@ pub fn invoke_runtime(
 /// The snapshot covers the runtime's local adapter host process and its live
 /// descendants. It does not wait for a running invocation. It returns
 /// [`FabricError::ResourceObservationUnavailable`] when the runtime stopped, is
-/// stopping, its host exited, or a live process in its tree or the process
-/// table cannot be read, and
+/// stopping, its host exited, a live process in its tree or the process table
+/// cannot be read, or the process tree kept changing during the read, and
 /// [`FabricError::ResourceObservationUnsupported`] when the adapter kind,
 /// environment provider, or operating system has no resource reader.
 pub fn runtime_resource_snapshot(

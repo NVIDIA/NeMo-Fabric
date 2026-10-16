@@ -20,7 +20,9 @@
 //!
 //! A live process in the tree that cannot be read, or a process table that
 //! the Linux fallback cannot read in full, makes the snapshot unavailable
-//! instead of leaving the process out.
+//! instead of leaving the process out. On Linux with `/proc` mounted
+//! `hidepid=invisible`, another user's descendant is invisible and is not
+//! counted.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
