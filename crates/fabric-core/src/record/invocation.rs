@@ -180,7 +180,7 @@ fn start_line(start: &RecordStart<'_>) -> StartLine {
             .iter()
             .map(|(role, model)| {
                 (
-                    cut_text(role),
+                    role.clone(),
                     ModelName {
                         provider: cut_text(&model.provider),
                         model: cut_text(&model.model),
@@ -194,7 +194,7 @@ fn start_line(start: &RecordStart<'_>) -> StartLine {
             .request
             .context
             .iter()
-            .map(|(key, value)| (cut_text(key), context_value(key, value)))
+            .map(|(key, value)| (key.clone(), context_value(key, value)))
             .collect(),
         override_keys: override_keys(start.request.overrides.as_ref()),
     }
@@ -394,6 +394,40 @@ mod tests {
             !text.contains("sk-123") && !text.contains("Bearer"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn start_line_keeps_long_role_and_context_key_names_apart() {
+        let (mut plan, runtime, invocation) = record_test_fixture();
+        let shared = "k".repeat(300);
+        let model = plan.config.models["default"].clone();
+        for suffix in ["a", "b"] {
+            plan.config
+                .models
+                .insert(format!("{shared}{suffix}"), model.clone());
+        }
+        let mut request = RunRequest::text("input");
+        request.context = BTreeMap::from([
+            (format!("{shared}a"), Value::from(1)),
+            (format!("{shared}b"), Value::from(2)),
+        ]);
+        let start = RecordStart {
+            plan: &plan,
+            runtime: &runtime,
+            invocation: &invocation,
+            request: &request,
+            fabric_home: Path::new("/unused"),
+            timeout: Duration::from_secs(5),
+        };
+
+        let line = start_line(&start);
+
+        assert_eq!(line.models.len(), 3);
+        assert_eq!(line.context.len(), 2);
+        for suffix in ["a", "b"] {
+            assert!(line.models.contains_key(&format!("{shared}{suffix}")));
+            assert!(line.context.contains_key(&format!("{shared}{suffix}")));
+        }
     }
 
     fn temp_folder(name: &str) -> PathBuf {

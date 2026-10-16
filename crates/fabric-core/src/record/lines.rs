@@ -15,7 +15,8 @@ use serde::Serialize;
 
 use crate::runtime::{ErrorStage, RunStatus};
 
-/// Longest string a line keeps from config or the request, in characters.
+/// Longest value a line keeps from config or the request, in characters.
+/// Model role and context key names are kept whole, so map keys stay distinct.
 const MAX_VALUE_CHARS: usize = 256;
 /// Longest adapter error code a line keeps.
 const MAX_CODE_CHARS: usize = 128;
