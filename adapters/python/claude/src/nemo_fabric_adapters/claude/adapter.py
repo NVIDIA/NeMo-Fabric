@@ -26,6 +26,7 @@ from claude_agent_sdk import ClaudeSDKError
 from claude_agent_sdk import CLIConnectionError
 from claude_agent_sdk import CLIJSONDecodeError
 from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import ConversationResetMessage
 from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
@@ -1013,6 +1014,7 @@ class ClaudeRuntime:
         self._fabric_runtime_id: str | None = None
         self._claude_session_id: str | None = None
         self._client: ClaudeSDKClient | None = None
+        self._cost_total: float | None = None
         self._relay: ClaudeRelaySettings | None = None
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_config_path: Path | None = None
@@ -1058,6 +1060,8 @@ class ClaudeRuntime:
         self._agent_config = agent_config
         self._fabric_runtime_id = fabric_runtime_id
         self._client = client
+        # A new Claude Code process starts its running cost total at zero.
+        self._cost_total = 0.0
 
     async def invoke(
         self,
@@ -1189,6 +1193,7 @@ class ClaudeRuntime:
     ) -> dict[str, Any]:
         try:
             output = normalize_result(messages, result)
+            output["cost_usd"] = self._invocation_cost(messages, result)
             if not output["failed"]:
                 invalid_session = _validate_result_session(
                     self._claude_session_id, result
@@ -1201,6 +1206,39 @@ class ClaudeRuntime:
         except ClaudeAdapterError as error:
             self._unusable = True
             return adapter_failure(error)
+
+    def _invocation_cost(
+        self,
+        messages: list[Message],
+        result: ResultMessage,
+    ) -> float | None:
+        """Convert Claude Code's running cost total into this invocation's cost.
+
+        Every invocation of the runtime runs on one Claude Code process, whose
+        ``total_cost_usd`` accumulates across invocations. The lifecycle host
+        runs invocations one at a time, so the difference between successive
+        totals is this invocation's cost. A missing, non-finite, or negative
+        total leaves this invocation and the next one unknown, because the next
+        total has no baseline. A decreasing total or a conversation reset leaves
+        this invocation unknown and makes its total the new baseline.
+        """
+
+        previous = self._cost_total
+        total = result.total_cost_usd
+        if (
+            not isinstance(total, (int, float))
+            or isinstance(total, bool)
+            or not math.isfinite(total)
+            or total < 0
+        ):
+            total = None
+        self._cost_total = total
+        reset = any(isinstance(message, ConversationResetMessage) for message in messages)
+        if total is None or previous is None or reset or total < previous:
+            return None
+        # Drop float subtraction noise such as 0.19999999999999998. A tenth of a
+        # nanodollar is far below the price of a single token.
+        return round(total - previous, 10)
 
     async def stop(self) -> None:
         client = self._client
