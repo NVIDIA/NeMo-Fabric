@@ -824,14 +824,13 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
 
 
 _DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
-# Claude Code's result usage keys and the detailed usage counters they fill.
+# Claude Code's result usage keys and the detailed input counters they fill.
 # Anthropic's input_tokens excludes cache reads and cache writes, and its
 # output_tokens includes thinking, which Anthropic bills as output.
-_DETAILED_TOKEN_COUNTERS = {
+_DETAILED_INPUT_COUNTERS = {
     "input_tokens": "input_tokens",
     "cache_read_input_tokens": "cached_input_tokens",
     "cache_creation_input_tokens": "cache_write_input_tokens",
-    "output_tokens": "output_tokens",
 }
 
 
@@ -848,23 +847,25 @@ def _token_counter(value: Any) -> int | None:
 def _detailed_token_usage(usage: dict[str, Any]) -> dict[str, int | bool]:
     """Return Claude Code's counters plus the inclusion flags Anthropic fixes.
 
-    ``input_tokens_include_cache`` is set only when input and both cache parts
-    are known, so a consumer never reads a partial input total as complete.
-    ``output_tokens_include_reasoning`` keeps the inclusive output total equal
-    to ``output_tokens``; without it, consumers that select the detailed output
-    counters, such as Harbor accounting, would read output as unknown.
+    Any detailed input field makes consumers such as Harbor accounting read
+    input and cache from this object rather than the top-level counters or a
+    trajectory, so the input counters are reported only when input and both
+    cache parts are known. ``output_tokens_include_reasoning`` keeps the
+    inclusive output total equal to ``output_tokens``; without it, those
+    consumers would read output as unknown.
     """
-    counters: dict[str, int | bool] = {
+    counters: dict[str, int | bool] = {}
+    inputs = {
         counter: value
-        for key, counter in _DETAILED_TOKEN_COUNTERS.items()
+        for key, counter in _DETAILED_INPUT_COUNTERS.items()
         if (value := _token_counter(usage.get(key))) is not None
     }
-    if all(
-        name in counters
-        for name in ("input_tokens", "cached_input_tokens", "cache_write_input_tokens")
-    ):
+    if len(inputs) == len(_DETAILED_INPUT_COUNTERS):
+        counters.update(inputs)
         counters["input_tokens_include_cache"] = False
-    if "output_tokens" in counters:
+    output_tokens = _token_counter(usage.get("output_tokens"))
+    if output_tokens is not None:
+        counters["output_tokens"] = output_tokens
         counters["output_tokens_include_reasoning"] = True
     return counters
 

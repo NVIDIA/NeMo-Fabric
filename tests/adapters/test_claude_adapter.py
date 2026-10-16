@@ -1082,23 +1082,122 @@ def test_agent_run_result_detailed_token_usage_matches_descriptor_schema():
     )
 
 
-def test_agent_run_result_without_cache_write_count_leaves_cache_inclusion_unknown():
-    result = adapter._agent_run_result(
-        {
-            "response": "done",
-            "usage": {
+DETAILED_OUTPUT_ONLY = {"output_tokens": 1, "output_tokens_include_reasoning": True}
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
+        pytest.param(
+            {
+                "input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "output_tokens": 0,
+            },
+            {
+                "input_tokens": 0,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0,
+                "input_tokens_include_cache": False,
+                "output_tokens": 0,
+                "output_tokens_include_reasoning": True,
+            },
+            id="explicit-zeros-are-reported",
+        ),
+        pytest.param(
+            {
                 "input_tokens": 5,
                 "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 2,
+            },
+            {
+                "input_tokens": 5,
+                "cached_input_tokens": 7,
+                "cache_write_input_tokens": 2,
+                "input_tokens_include_cache": False,
+            },
+            id="missing-output",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "output_tokens": 1},
+            DETAILED_OUTPUT_ONLY,
+            id="absent-cache-counters",
+        ),
+        pytest.param(
+            {
+                "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 2,
                 "output_tokens": 1,
             },
-        }
-    )
+            DETAILED_OUTPUT_ONLY,
+            id="missing-input",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "cache_creation_input_tokens": 2, "output_tokens": 1},
+            DETAILED_OUTPUT_ONLY,
+            id="missing-cache-read",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "cache_read_input_tokens": 7, "output_tokens": 1},
+            DETAILED_OUTPUT_ONLY,
+            id="missing-cache-write",
+        ),
+        *(
+            pytest.param(
+                {
+                    "input_tokens": 5,
+                    "cache_read_input_tokens": invalid,
+                    "cache_creation_input_tokens": 2,
+                    "output_tokens": 1,
+                },
+                DETAILED_OUTPUT_ONLY,
+                id=f"invalid-cache-read-{label}",
+            )
+            for label, invalid in (
+                ("negative", -1),
+                ("bool", True),
+                ("float", 7.0),
+                ("string", "7"),
+                ("null", None),
+                ("above-uint64", 1 << 64),
+            )
+        ),
+    ],
+)
+def test_agent_run_result_reports_detailed_input_only_when_complete(usage, expected):
+    result = adapter._agent_run_result({"response": "done", "usage": usage})
 
     assert result.usage is not None
+    assert result.usage.extensions == {DETAILED_TOKEN_USAGE_KEY: expected}
+
+
+def test_failed_agent_run_result_keeps_detailed_token_usage():
+    result_message = ResultMessage(
+        subtype="error_max_turns",
+        duration_ms=100,
+        duration_api_ms=80,
+        is_error=True,
+        num_turns=4,
+        session_id="claude-session",
+        usage={
+            "input_tokens": 12,
+            "cache_read_input_tokens": 3000,
+            "cache_creation_input_tokens": 400,
+            "output_tokens": 90,
+        },
+    )
+
+    result = adapter._agent_run_result(adapter.normalize_result([], result_message))
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.usage is not None
     assert result.usage.extensions[DETAILED_TOKEN_USAGE_KEY] == {
-        "input_tokens": 5,
-        "cached_input_tokens": 7,
-        "output_tokens": 1,
+        "input_tokens": 12,
+        "cached_input_tokens": 3000,
+        "cache_write_input_tokens": 400,
+        "input_tokens_include_cache": False,
+        "output_tokens": 90,
         "output_tokens_include_reasoning": True,
     }
 
