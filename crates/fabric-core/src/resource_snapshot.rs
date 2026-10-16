@@ -21,8 +21,9 @@
 //! A live process in the tree that cannot be read, or a process table that
 //! the Linux fallback cannot read in full, makes the snapshot unavailable
 //! instead of leaving the process out. On Linux with `/proc` mounted
-//! `hidepid=invisible`, another user's descendant is invisible and is not
-//! counted.
+//! `hidepid=invisible` or `hidepid=ptraceable`, a descendant that `/proc`
+//! hides, such as one running as another user, makes the snapshot unavailable,
+//! and the fallback for a kernel without children files is always unavailable.
 
 use std::time::SystemTime;
 
@@ -302,6 +303,10 @@ mod platform {
     pub(super) const TABLE_UNREADABLE: &str = "the process table cannot be read in full";
     pub(super) const TREE_CHANGING: &str =
         "the runtime's process tree kept changing during the read";
+    pub(super) const PROCESS_HIDDEN: &str =
+        "/proc hides a process in the runtime's process tree (hidepid)";
+    pub(super) const TABLE_HIDDEN: &str =
+        "/proc hides other users' processes (hidepid), so the process table cannot be read in full";
     /// Times a process's children are read while waiting for two reads that agree.
     const MAX_CHILDREN_READS: usize = 4;
 
@@ -373,7 +378,8 @@ mod platform {
     }
 
     fn stat(pid: u32) -> Result<Stat, ReadError> {
-        let text = std::fs::read_to_string(format!("/proc/{pid}/stat")).map_err(read_error)?;
+        let text = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .map_err(|error| process_read_error(pid, error))?;
         parse_stat(&text).ok_or(ReadError::Unavailable(PROCESS_UNREADABLE))
     }
 
@@ -381,7 +387,9 @@ mod platform {
     /// exited during the read is skipped; its children move to another thread.
     fn children_once(pid: u32) -> Result<Vec<u32>, ReadError> {
         let mut children = Vec::new();
-        for entry in std::fs::read_dir(format!("/proc/{pid}/task")).map_err(read_error)? {
+        let tasks = std::fs::read_dir(format!("/proc/{pid}/task"))
+            .map_err(|error| process_read_error(pid, error))?;
+        for entry in tasks {
             let tid = entry.map_err(read_error)?.file_name();
             let path = format!("/proc/{pid}/task/{}/children", tid.to_string_lossy());
             let text = match std::fs::read_to_string(path).map_err(read_error) {
@@ -459,6 +467,52 @@ mod platform {
         }
     }
 
+    /// A process whose `/proc` entry is missing exited, unless its PID still
+    /// names a process: then `/proc` is mounted with `hidepid` and hides it.
+    pub(super) fn process_read_error(pid: u32, error: std::io::Error) -> ReadError {
+        match read_error(error) {
+            ReadError::Gone if pid_exists(pid) => ReadError::Unavailable(PROCESS_HIDDEN),
+            other => other,
+        }
+    }
+
+    /// Whether a process holds `pid`. Signal 0 sends nothing: `ESRCH` means
+    /// no process has the PID, and `EPERM` means another user's process does.
+    fn pid_exists(pid: u32) -> bool {
+        // PID 0 would address this process group, so it is never checked.
+        let Some(pid) = libc::pid_t::try_from(pid).ok().filter(|pid| *pid > 0) else {
+            return false;
+        };
+        // SAFETY: kill with signal 0 only checks the target; it sends nothing.
+        let status = unsafe { libc::kill(pid, 0) };
+        status == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+    }
+
+    /// Whether the `/proc` mount in `mountinfo` leaves other users' processes
+    /// out of its listing: `hidepid=invisible` (2) or `hidepid=ptraceable`
+    /// (4). With `hidepid=noaccess` (1) they stay listed and reading them
+    /// fails, so the scan already reports the table as unreadable. The last
+    /// `/proc` mount listed is the one the path reaches.
+    pub(super) fn proc_hides_processes(mountinfo: &str) -> bool {
+        let proc_options = mountinfo.lines().rev().find_map(|line| {
+            // `<id> <parent> <dev> <root> <mount point> ... - <type> <source> <options>`
+            let (mount, filesystem) = line.split_once(" - ")?;
+            let mount_point = mount.split(' ').nth(4)?;
+            let mut filesystem = filesystem.split(' ');
+            let is_proc = filesystem.next()? == "proc";
+            let options = filesystem.nth(1)?;
+            (mount_point == "/proc" && is_proc).then_some(options)
+        });
+        proc_options.is_some_and(|options| {
+            options.split(',').any(|option| {
+                matches!(
+                    option,
+                    "hidepid=2" | "hidepid=invisible" | "hidepid=4" | "hidepid=ptraceable"
+                )
+            })
+        })
+    }
+
     pub(super) fn start_identity(pid: u32) -> Option<u64> {
         stat(pid).ok().map(|stat| stat.start)
     }
@@ -476,8 +530,14 @@ mod platform {
         })
     }
 
-    /// Children by parent PID, from one pass over every process.
+    /// Children by parent PID, from one pass over every process. A `/proc`
+    /// that leaves processes out of its listing makes the pass incomplete.
     pub(super) fn scan_children() -> Result<ChildSource, &'static str> {
+        let mountinfo =
+            std::fs::read_to_string("/proc/self/mountinfo").map_err(|_| TABLE_UNREADABLE)?;
+        if proc_hides_processes(&mountinfo) {
+            return Err(TABLE_HIDDEN);
+        }
         let by_parent = children_by_parent(all_pids()?, |pid| stat(pid).map(|stat| stat.ppid))?;
         Ok(ChildSource::Scanned(by_parent))
     }
@@ -1138,6 +1198,57 @@ mod tests {
 
         assert_eq!(scanned, BTreeMap::from([(1, vec![10]), (10, vec![11, 12])]));
         assert_eq!(incomplete.unwrap_err(), platform::TABLE_UNREADABLE);
+    }
+
+    /// A missing `/proc` entry is a hidden process while its PID still names
+    /// a process, and an exited one otherwise.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_missing_proc_entry_is_hidden_while_its_pid_is_live() {
+        let missing = || std::io::Error::from(std::io::ErrorKind::NotFound);
+        let mut reaped = std::process::Command::new("true")
+            .spawn()
+            .expect("spawn child");
+        reaped.wait().expect("reap child");
+
+        assert_eq!(
+            platform::process_read_error(std::process::id(), missing()),
+            ReadError::Unavailable(platform::PROCESS_HIDDEN)
+        );
+        assert_eq!(
+            platform::process_read_error(reaped.id(), missing()),
+            ReadError::Gone
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_proc_mount_that_hides_processes_is_detected() {
+        let proc_mount = |options: &str| {
+            format!("22 1 0:5 / /proc rw,nosuid,relatime shared:13 - proc proc {options}\n")
+        };
+        let other_mount = "23 22 0:6 / /proc/sys/fs/binfmt_misc rw - binfmt_misc binfmt_misc rw\n";
+        let hides = |mountinfo: &str| platform::proc_hides_processes(mountinfo);
+
+        for options in [
+            "rw,hidepid=2",
+            "rw,hidepid=invisible",
+            "rw,hidepid=4,gid=10",
+            "rw,hidepid=ptraceable",
+        ] {
+            assert!(hides(&(proc_mount(options) + other_mount)), "{options}");
+        }
+        for options in [
+            "rw",
+            "rw,hidepid=off",
+            "rw,hidepid=1",
+            "rw,hidepid=noaccess",
+        ] {
+            assert!(!hides(&(proc_mount(options) + other_mount)), "{options}");
+        }
+        // A later mount on /proc covers the earlier one.
+        assert!(!hides(&(proc_mount("rw,hidepid=2") + &proc_mount("rw"))));
+        assert!(!hides("30 1 0:7 / /tmp/proc rw - proc proc rw,hidepid=2\n"));
     }
 
     /// The fallback for a kernel without children files reads the tree too.
