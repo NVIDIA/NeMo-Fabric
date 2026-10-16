@@ -134,6 +134,7 @@ class RuntimeServer:
                     # The runtime is addressable; stop can clean it up.
                     self.start_uncertain = False
                     if runtime.status != RuntimeStatus.ACTIVE:
+                        result = {"runtime_id": runtime.runtime_id}
                         raise ProtocolError("start_failed", "start")
                     owned.state = "running"
                     response = envelope(

@@ -303,8 +303,11 @@ async def test_non_active_returned_runtime_is_owned_for_stop(
     mock_fabric.start_runtime.side_effect = [mock_runtime, next_runtime]
     response = await host.handle(host_request("start"))
     assert response["error"]["code"] == "start_failed"
+    assert response["result"] == {"runtime_id": "runtime-1"}
     assert host.runtimes["runtime-1"].runtime is mock_runtime
-    assert (await host.handle(host_request("stop")))["status"] == "succeeded"
+    assert (
+        await host.handle(host_request("stop", runtime_id=response["result"]["runtime_id"]))
+    )["status"] == "succeeded"
     mock_runtime.stop.assert_awaited_once_with()
     assert host.runtimes["runtime-1"].runtime is None
     next_response = await host.handle(host_request("start"))
