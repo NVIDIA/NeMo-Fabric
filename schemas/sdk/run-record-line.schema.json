@@ -411,7 +411,7 @@
       ]
     },
     "RuntimeResourceSnapshot": {
-      "description": "Timestamped resource usage of one runtime's local adapter host process tree.\n\nMemory, process count, and CPU time cover the adapter host process and its\nlive descendants. For a runtime started on a service, the shared service\nprocess is not included. Values Fabric cannot read are returned as an error,\nnever as zero.",
+      "description": "Timestamped resource usage of one runtime's local adapter host process tree.\n\nMemory, process count, and CPU time cover the adapter host process and its\nlive descendants. For a runtime started on a service, the shared service\nprocess is not included. Values NeMo Fabric cannot read are returned as an\nerror, never as zero.",
       "properties": {
         "cpu_time_seconds": {
           "description": "CPU time consumed by the tree since the adapter host started, in seconds,\nincluding exited descendants. It can drop when a descendant leaves the\ntree.",
@@ -420,7 +420,7 @@
           "type": "number"
         },
         "observed_at": {
-          "description": "When Fabric read these values, as an RFC 3339 UTC timestamp.",
+          "description": "When NeMo Fabric read these values, as an RFC 3339 UTC timestamp.",
           "format": "date-time",
           "type": "string"
         },
@@ -441,7 +441,7 @@
           "type": "string"
         },
         "started_at": {
-          "description": "When Fabric started the runtime's adapter host, as an RFC 3339 UTC timestamp.",
+          "description": "When NeMo Fabric started the runtime's adapter host, as an RFC 3339 UTC timestamp.",
           "format": "date-time",
           "type": "string"
         }
