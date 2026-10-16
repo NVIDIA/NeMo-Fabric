@@ -19,19 +19,20 @@ if sys.platform == "win32":
         "The Unix command bridge requires a Unix platform", allow_module_level=True
     )
 from nemo_fabric import Fabric, FabricConfig
-from _utils.configs import hermes_shim_config
 
 
 async def test_command_process_lifecycle_and_signal_cleanup(
-    hermes_shim_agent_dir,
+    blocking_adapter_config, tmp_path
 ):
     with tempfile.TemporaryDirectory(prefix="fh-process-", dir="/tmp") as directory:
         root = Path(directory)
-        shutil.copytree(hermes_shim_agent_dir, root, dirs_exist_ok=True)
+        for name in ("adapter.py", "blocking.fabric-adapter.json"):
+            shutil.copyfile(tmp_path / name, root / name)
+        (root / "release").write_text("release")
         socket = root / "fabric.sock"
         environment = {**os.environ, "FABRIC_HOST_SOCKET": str(socket)}
         command = [str(Path(sys.prefix) / "bin" / "fabric-agent-ctl")]
-        config = hermes_shim_config().to_mapping()
+        config = blocking_adapter_config.to_mapping()
         name = config["metadata"]["name"]
         config_path = root / "config.json"
         config_path.write_text(json.dumps(config))
@@ -93,7 +94,7 @@ async def test_command_process_lifecycle_and_signal_cleanup(
                 stdin=b'{"message":"hello"}',
             )
             assert invoked["status"] == "succeeded", invoked
-            assert invoked["result"]["output"]["received"] == {"message": "hello"}
+            assert invoked["result"]["output"] == {"response": "released"}
             stopped = await call(
                 "stop",
                 "--agent",
@@ -114,7 +115,24 @@ async def test_command_process_lifecycle_and_signal_cleanup(
             replacement_start = await call(
                 "start", "--agent", name, "--config", str(config_path)
             )
-            assert replacement_start["error"]["code"] == "runtime_exists"
+            assert replacement_start["status"] == "succeeded", replacement_start
+            replacement_id = replacement_start["result"]["runtime_id"]
+            replacement_invoke = await call(
+                "invoke",
+                "--agent",
+                name,
+                "--runtime-id",
+                replacement_id,
+                "--input",
+                "-",
+                stdin=b'{"message":"second runtime"}',
+            )
+            assert replacement_invoke["status"] == "succeeded", replacement_invoke
+            assert replacement_invoke["result"]["output"] == {"response": "released"}
+            replacement_stop = await call(
+                "stop", "--agent", name, "--runtime-id", replacement_id
+            )
+            assert replacement_stop["status"] == "succeeded", replacement_stop
             host.terminate()
             stdout, stderr = await asyncio.wait_for(host.communicate(), 6)
             assert host.returncode == 0, stderr
@@ -225,13 +243,17 @@ async def test_busy_shutdown_and_timeout_keep_sandbox_owned(
                     "blocking",
                     "--config",
                     str(config_path),
-                    expected_exit=1,
                 )
-                assert replacement_runtime["error"]["code"] == "runtime_exists"
-                assert (
-                    replacement_runtime["changed"] is False
-                    and replacement_runtime["error"]["effects"] == "none"
+                assert replacement_runtime["status"] == "succeeded", replacement_runtime
+                replacement_id = replacement_runtime["result"]["runtime_id"]
+                replacement_stop = await call(
+                    "stop",
+                    "--agent",
+                    "blocking",
+                    "--runtime-id",
+                    replacement_id,
                 )
+                assert replacement_stop["status"] == "succeeded", replacement_stop
             begin = asyncio.get_running_loop().time()
             host.terminate()
             stdout, stderr = await asyncio.wait_for(host.communicate(), 6)

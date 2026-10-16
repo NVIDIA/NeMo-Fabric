@@ -23,6 +23,21 @@ defaults:
     shell: bash
 
 jobs:
+  npm-bootstrap:
+    name: Check npm package bootstrap
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Check public package existence
+        run: python3 scripts/ci/check_npm_bootstrap.py
+
   test:
     name: Test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-24.04

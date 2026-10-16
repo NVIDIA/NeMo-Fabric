@@ -17,6 +17,16 @@ before editing.
 Use this skill when a change affects how NeMo Fabric is built, packaged, named, or
 consumed outside the source tree.
 
+## OpenShell Build Context
+
+The optional host provider lives in `environment-providers/openshell` and links
+the OpenShell Rust SDK at a pinned release commit. Build it with
+`just build-openshell-provider`. Keep gateway, CLI, and runtime versions aligned
+with the qualified release. Task Docker build contexts must include every Cargo
+workspace member, including this provider, even when building only the native
+Python SDK. Keep the Dockerfile COPY statements and its whitelist dockerignore
+in parity. The task uses `fabric-agent-ctl` from the Python SDK.
+
 ## Audit Areas
 
 - Rust `Cargo.toml` package names and workspace metadata
@@ -139,3 +149,17 @@ compatibility decisions using the distribution and linkage context.
 - `.pre-commit-config.yaml`
 - `scripts/licensing/license_diff.py`
 - `justfile`
+
+## New Public npm Packages
+
+Run `python3 scripts/ci/check_npm_bootstrap.py` when introducing a public npm
+package. The check discovers the contract and public adapter workspaces from
+manifests; add the adapter to the npm workspace. Separately wire it into release
+version stamping, build/test coverage, and the publication list before enabling
+uploads. Discovery alone does not enable publication. Complete the
+npm maintainer bootstrap and authenticated trusted-publisher readback in
+[`RELEASING.md`](../../../RELEASING.md#bootstrap-npm-trusted-publishing) before
+release. Public existence alone cannot verify trusted publishing. If the PR
+check reports HTTP 404, ask an authorized npm maintainer to bootstrap the exact
+manifest name, then rerun the check. Do not add CI write tokens or manually
+publish supported versions.

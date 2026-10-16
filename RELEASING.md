@@ -266,73 +266,82 @@ you are not committing them.
 ## Bootstrap npm Trusted Publishing
 
 An npm package must exist before npm can bind it to a GitHub trusted publisher.
-The following packages were published once at `0.0.0` as inert registry
-bootstraps:
+For every new public TypeScript package, complete bootstrap during its contribution
+PR, before cutting a release tag. TypeScript CI checks public package metadata;
+the release workflow checks every package before uploading any package. HTTP 404
+means the package is absent. Other HTTP or network failures mean the check could
+not establish existence and must be investigated or retried.
 
-- `nemo-fabric-adapter-contract`
-- `nemo-fabric-adapters-common`
-- `nemo-fabric-adapters-droid`
-- `nemo-fabric-adapters-pi`
+List public packages from the contract and adapter workspace manifests
+(no static package-name list):
 
-The first supported versions must be published by the trusted GitHub Actions
-workflows. Do not publish or tag `0.0.0` again. npm versions are immutable.
+```bash
+python3 scripts/ci/check_npm_bootstrap.py --list-directories
+python3 scripts/ci/check_npm_bootstrap.py
+```
 
-The bootstrap was published with `--tag next`. The registry also initialized
-`latest` to `0.0.0` because it was the package's first version and rejected
-removing that only `latest` tag. Leave both tags on the inert bootstrap: RC and
-beta releases move `next`, and the first stable release replaces `latest`.
+The bootstrap check discovers future public workspaces automatically and skips
+private workspaces. Publication retains its explicit package list, aligned with
+release version stamping and build/test coverage. When adding a package, update
+all three surfaces before enabling its publication. The discovered directory list
+is informational; it does not select uploads. A successful check proves public
+existence only, not ownership, trusted-publisher settings, or the presence of a
+proposed release version.
+Contributors without npm permissions should ask an NVIDIA npm maintainer to
+complete the following steps, then rerun the PR check.
 
-Before the first supported TypeScript package release:
-
-1. Add at least one more NVIDIA maintainer to the package so registry
-   administration does not depend on the bootstrap publisher's account:
+1. Read the exact `name` from the new package's `package.json`. On an authorized
+   maintainer's machine, authenticate with npm browser login and account-level
+   two-factor authentication. Never add an npm write token to CI.
+2. In a temporary directory outside the source package, prepare an inert bootstrap:
+   a `package.json` with that exact name, version `0.0.0`, license `Apache-2.0`,
+   and `files: ["README.md", "LICENSE"]`; a README explaining that this version
+   reserves the package name and contains no usable implementation; and the
+   repository's Apache-2.0 LICENSE. Include no dependencies, entry points,
+   executables, lifecycle scripts, or source code. Inspect `npm pack --dry-run`
+   and publish from that directory with:
 
    ```bash
-   for package in \
-     nemo-fabric-adapter-contract \
-     nemo-fabric-adapters-common \
-     nemo-fabric-adapters-droid \
-     nemo-fabric-adapters-pi; do
-     npm owner add <second-nvidia-maintainer> "$package"
-   done
+   npm publish --registry https://registry.npmjs.org --access public --tag next --ignore-scripts
    ```
 
-   npm sends each new maintainer an email invitation. The maintainer must accept
-   it before access is granted. Verify every expected account appears in
-   `npm owner ls <package-name>` before the release. Maintainers must use
-   account-level two-factor authentication.
-2. Create and protect the GitHub `npmjs` environment. Require the release
-   approvers who should authorize registry publication, and restrict deployment
-   tags to canonical release tags matching `v*`.
-3. Configure each package's single trusted publisher in npm with the common
-   values below and the package-specific workflow filename shown in the table.
-   The values are case-sensitive.
+   Bootstrap only an absent package. npm versions are immutable: do not publish
+   `0.0.0` again or manually publish a supported version. npm may initialize
+   `latest` to the first `0.0.0` and reject removing its only `latest` tag; leave
+   it in place. RC/beta releases move `next`; the first stable replaces `latest`.
+3. Add another NVIDIA maintainer with `npm owner add <account> <package-name>`.
+   Owner/trust changes require authenticated browser 2FA. The invited owner must
+   accept the email invitation before access is granted. Verify accepted owners
+   with `npm owner ls <package-name>`.
+4. Protect GitHub's `npmjs` environment with release approvers and canonical
+   `v*` deployment tags. Configure each package's trusted publisher with the
+   case-sensitive organization `NVIDIA`, repository `NeMo-Fabric`, workflow
+   filename `publish_typescript.yml`, environment `npmjs`, and allowed action
+   `npm publish`. With npm CLI 11.16.0, configure and read back:
 
-   - Organization or user: `NVIDIA`
-   - Repository: `NeMo-Fabric`
-   - Environment: `npmjs`
-   - Allowed action: `npm publish`
+   ```bash
+   npm trust github <package-name> --file publish_typescript.yml --repo NVIDIA/NeMo-Fabric --env npmjs --allow-publish --yes
+   npm trust list <package-name>
+   npm view <package-name> name --registry https://registry.npmjs.org
+   ```
 
-   | Package | Workflow filename |
-   |---|---|
-   | `nemo-fabric-adapter-contract` | `publish_typescript.yml` |
-   | `nemo-fabric-adapters-common` | `publish_typescript.yml` |
-   | `nemo-fabric-adapters-droid` | `publish_typescript.yml` |
-   | `nemo-fabric-adapters-pi` | `publish_typescript.yml` |
-
-4. Cut the canonical release tag. The publishing workflow uses that tag to
-   publish the contract and bundled TypeScript adapter packages in dependency
-   order, then verifies them in that order.
-5. Approve the `npmjs` environment when prompted. The workflows test, pack, and
-   publish through OIDC; do not manually pre-publish a supported version. On a
-   retry, a workflow exits without republishing only when its repack has
-   byte-identical integrity and the expected dist-tag is exact. A mismatch fails
-   closed because npm versions are immutable; do not overwrite or weaken the
-   check.
-6. Confirm each release's provenance on npm.
-   In the npm package settings, require two-factor authentication and disallow
-   token publication. Then remove or revoke any local credentials used for the
-   bootstrap.
+   See the [npm trust CLI reference](https://docs.npmjs.com/cli/v11/commands/npm-trust/)
+   for administration commands. Authenticated trust readback must confirm all
+   settings; public `npm view` and CI cannot verify this private configuration. Require package 2FA and disallow
+   token publication in npm settings. Remove or revoke local bootstrap credentials
+   after administration is complete.
+   Recheck trust immediately before release: npm expires unvalidated
+   configurations after 48 hours without a successful publish. If bootstrap
+   happened earlier, an npm maintainer may need to recreate expired trust near
+   release; do not manually publish a supported version to validate it. See
+   [npm's trust expiry announcement](https://github.blog/changelog/2026-10-02-unvalidated-npm-trusted-publishing-configurations-now-expire/).
+5. Cut the canonical release tag and approve the `npmjs` environment. Supported
+   versions are published through GitHub OIDC. Confirm release provenance on npm.
+   If a release job already failed because bootstrap or trust settings were missing,
+   repair those settings and rerun the failed job on the existing tag. Do not recut
+   tags or manually publish supported versions. Retry skips a version only when
+   repacking proves byte-identical integrity and the expected dist-tag matches;
+   inspect mismatches rather than weakening the immutable-version checks.
 
 The workflows publish stable versions with the `latest` dist-tag and beta and
 RC versions with `next`. Alpha versions are validated but are not published to
