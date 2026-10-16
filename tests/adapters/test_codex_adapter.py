@@ -858,7 +858,7 @@ async def test_mcp_login_deadline_covers_request_and_browser_launch(
 
 @pytest.mark.parametrize(
     ("invocation_timeout", "oauth_timeout", "expected_timeout"),
-    [(30, 12, 12), (5, 12, 5), (5.9, 12, 6)],
+    [(30, 12, 12), (5, 12, 5), (5.1, 12, 6)],
 )
 def test_codex_logs_into_mcp_server_before_first_turn(
     codex_payload,
@@ -888,6 +888,9 @@ def test_codex_logs_into_mcp_server_before_first_turn(
     mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
     open_browser = AsyncMock(return_value=True)
     monkeypatch.setattr(adapter, "_open_authorization_url", open_browser)
+    # Give the login an exact remaining budget, so the rounding check does not
+    # depend on how long the runner takes before the adapter reads the clock.
+    monkeypatch.setattr(adapter, "_remaining_timeout", lambda _: invocation_timeout)
 
     output = invoke_once(codex_payload)
 
