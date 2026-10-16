@@ -305,7 +305,9 @@ mod platform {
 
 #[cfg(target_os = "macos")]
 mod platform {
-    //! `proc_pid_rusage` reads, from the root down, each parent before its children.
+    //! `libproc` reads. One pass lists every process's parent and start time,
+    //! then the tree is read from the root down, each parent before its
+    //! children.
 
     use std::collections::{BTreeMap, VecDeque};
     use std::sync::OnceLock;
@@ -314,19 +316,118 @@ mod platform {
 
     pub(super) const SUPPORTED: bool = true;
 
-    fn rusage(pid: u32) -> Option<libc::rusage_info_v2> {
-        let pid = libc::c_int::try_from(pid).ok()?;
-        // SAFETY: rusage_info_v2 is plain data; zero is a valid initial value.
-        let mut info: libc::rusage_info_v2 = unsafe { std::mem::zeroed() };
-        // SAFETY: `info` is a writable rusage_info_v2, the layout RUSAGE_INFO_V2 names.
-        let status = unsafe {
-            libc::proc_pid_rusage(
-                pid,
-                libc::RUSAGE_INFO_V2,
-                (&raw mut info).cast::<libc::rusage_info_t>(),
+    /// Why one process could not be read.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(super) enum ReadError {
+        /// The process exited, or is a zombie the call cannot describe.
+        Gone,
+        /// The process exists but this process may not read it.
+        Denied,
+    }
+
+    /// A process's parent and start time, which together identify it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(super) struct Parent {
+        pub ppid: u32,
+        /// `pbi_start_tvsec` and `pbi_start_tvusec`.
+        pub started: (u64, u64),
+    }
+
+    /// The `proc_pid_rusage` fields a snapshot needs, CPU times in Mach units.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(super) struct Usage {
+        pub cpu_units: u64,
+        pub resident_bytes: u64,
+        /// `ri_proc_start_abstime`.
+        pub start: u64,
+        pub exited: bool,
+    }
+
+    /// The process reads a tree read makes. Tests script them.
+    pub(super) trait Libproc {
+        /// Every PID, or `None` when the process table cannot be listed.
+        fn pids(&self) -> Option<Vec<u32>>;
+        fn parent(&self, pid: u32) -> Result<Parent, ReadError>;
+        fn usage(&self, pid: u32) -> Result<Usage, ReadError>;
+    }
+
+    struct Live;
+
+    impl Libproc for Live {
+        fn pids(&self) -> Option<Vec<u32>> {
+            let mut pids = vec![0 as libc::pid_t; 1024];
+            let count = loop {
+                let bytes = libc::c_int::try_from(std::mem::size_of_val(pids.as_slice())).ok()?;
+                // SAFETY: the buffer is writable and sized in bytes as libproc requires.
+                let count = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes) };
+                let count = usize::try_from(count).ok().filter(|count| *count > 0)?;
+                if count < pids.len() {
+                    break count;
+                }
+                pids.resize(pids.len() * 2, 0);
+            };
+            Some(
+                pids[..count]
+                    .iter()
+                    .filter_map(|pid| u32::try_from(*pid).ok())
+                    .collect(),
             )
-        };
-        (status == 0).then_some(info)
+        }
+
+        /// `PROC_PIDTBSDINFO` fails for a zombie, so a zombie reads as gone.
+        fn parent(&self, pid: u32) -> Result<Parent, ReadError> {
+            let pid = libc::pid_t::try_from(pid).map_err(|_| ReadError::Gone)?;
+            // SAFETY: proc_bsdinfo is plain data; zero is a valid initial value.
+            let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+            let size = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>())
+                .map_err(|_| ReadError::Denied)?;
+            // SAFETY: `info` is writable and `size` bytes long, as PROC_PIDTBSDINFO needs.
+            let written = unsafe {
+                libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&raw mut info).cast(), size)
+            };
+            if written == size {
+                return Ok(Parent {
+                    ppid: info.pbi_ppid,
+                    started: (info.pbi_start_tvsec, info.pbi_start_tvusec),
+                });
+            }
+            Err(last_read_error())
+        }
+
+        fn usage(&self, pid: u32) -> Result<Usage, ReadError> {
+            let pid = libc::c_int::try_from(pid).map_err(|_| ReadError::Gone)?;
+            // SAFETY: rusage_info_v2 is plain data; zero is a valid initial value.
+            let mut info: libc::rusage_info_v2 = unsafe { std::mem::zeroed() };
+            // SAFETY: `info` is a writable rusage_info_v2, the layout RUSAGE_INFO_V2 names.
+            let status = unsafe {
+                libc::proc_pid_rusage(
+                    pid,
+                    libc::RUSAGE_INFO_V2,
+                    (&raw mut info).cast::<libc::rusage_info_t>(),
+                )
+            };
+            if status != 0 {
+                return Err(last_read_error());
+            }
+            Ok(Usage {
+                cpu_units: info
+                    .ri_user_time
+                    .saturating_add(info.ri_system_time)
+                    .saturating_add(info.ri_child_user_time)
+                    .saturating_add(info.ri_child_system_time),
+                resident_bytes: info.ri_resident_size,
+                start: info.ri_proc_start_abstime,
+                exited: info.ri_proc_exit_abstime != 0,
+            })
+        }
+    }
+
+    /// Classify the error of the libproc call that just failed.
+    fn last_read_error() -> ReadError {
+        match std::io::Error::last_os_error().raw_os_error() {
+            Some(libc::ESRCH) => ReadError::Gone,
+            _ => ReadError::Denied,
+        }
     }
 
     /// `mach_timebase_info_data_t`.
@@ -362,81 +463,66 @@ mod platform {
     }
 
     pub(super) fn start_identity(pid: u32) -> Option<u64> {
-        rusage(pid).map(|info| info.ri_proc_start_abstime)
+        Live.usage(pid).ok().map(|usage| usage.start)
     }
 
-    /// Every live process's children. One `proc_listallpids` call and one
-    /// `proc_pidinfo` per process: `proc_listchildpids` scans the whole
-    /// process table on each call, which costs too much for a wide tree.
-    /// `PROC_PIDTBSDINFO` fails for a zombie, so a zombie is never listed.
-    /// Returns `None` when the process table cannot be listed.
-    fn children_by_parent() -> Option<BTreeMap<u32, Vec<u32>>> {
-        let mut pids = vec![0 as libc::pid_t; 1024];
-        let count = loop {
-            let bytes = libc::c_int::try_from(std::mem::size_of_val(pids.as_slice())).ok()?;
-            // SAFETY: the buffer is writable and sized in bytes as libproc requires.
-            let count = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes) };
-            let count = usize::try_from(count).ok().filter(|count| *count > 0)?;
-            if count < pids.len() {
-                break count;
-            }
-            pids.resize(pids.len() * 2, 0);
-        };
-        let mut children: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
-        for &pid in &pids[..count] {
-            if let (Ok(pid), Some(ppid)) = (u32::try_from(pid), parent_pid(pid)) {
-                children.entry(ppid).or_default().push(pid);
+    pub(super) fn read_tree(root: u32, identity: u64) -> Option<TreeRead> {
+        read_tree_with(&Live, root, identity, timebase()?)
+    }
+
+    /// Every live process's children, each with its parent record. One
+    /// `proc_listallpids` call and one `proc_pidinfo` per process:
+    /// `proc_listchildpids` scans the whole process table on each call, which
+    /// costs too much for a wide tree.
+    fn children_by_parent(procs: &impl Libproc) -> Option<BTreeMap<u32, Vec<(u32, Parent)>>> {
+        let mut children: BTreeMap<u32, Vec<(u32, Parent)>> = BTreeMap::new();
+        for pid in procs.pids()? {
+            if let Ok(parent) = procs.parent(pid) {
+                children.entry(parent.ppid).or_default().push((pid, parent));
             }
         }
         Some(children)
     }
 
-    /// The parent of a live process, or `None` for a zombie or a missing process.
-    fn parent_pid(pid: libc::pid_t) -> Option<u32> {
-        // SAFETY: proc_bsdinfo is plain data; zero is a valid initial value.
-        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-        let size = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).ok()?;
-        // SAFETY: `info` is writable and `size` bytes long, as PROC_PIDTBSDINFO needs.
-        let written = unsafe {
-            libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&raw mut info).cast(), size)
-        };
-        (written == size).then_some(info.pbi_ppid)
-    }
-
     /// Read the tree under `root`, or `None` when the root has exited or its
-    /// PID now names a process with another start time than `identity`. A
-    /// child that seems to start before its parent reuses a PID and is left out.
-    pub(super) fn read_tree(root: u32, identity: u64) -> Option<TreeRead> {
-        parent_pid(libc::pid_t::try_from(root).ok()?)?;
-        let root_info = rusage(root).filter(|info| info.ri_proc_start_abstime == identity)?;
-        let timebase = timebase()?;
-        let children = children_by_parent()?;
+    /// PID now names a process with another start time than `identity`.
+    pub(super) fn read_tree_with(
+        procs: &impl Libproc,
+        root: u32,
+        identity: u64,
+        timebase: (u64, u64),
+    ) -> Option<TreeRead> {
+        let children = children_by_parent(procs)?;
+        // Read after the listing: a root that is still the same live process
+        // was alive during the whole listing, so its listed children are its own.
+        let root_usage = procs
+            .usage(root)
+            .ok()
+            .filter(|usage| usage.start == identity && !usage.exited)?;
         let mut read = TreeRead::default();
         let mut cpu_units: u64 = 0;
-        let mut resident: u64 = 0;
-        let mut pending = VecDeque::from([(root, root_info)]);
-        while let Some((pid, info)) = pending.pop_front() {
-            cpu_units = cpu_units
-                .saturating_add(info.ri_user_time)
-                .saturating_add(info.ri_system_time)
-                .saturating_add(info.ri_child_user_time)
-                .saturating_add(info.ri_child_system_time);
-            resident = resident.saturating_add(info.ri_resident_size);
+        let mut pending = VecDeque::from([(root, root_usage)]);
+        while let Some((pid, usage)) = pending.pop_front() {
+            cpu_units = cpu_units.saturating_add(usage.cpu_units);
+            read.resident_bytes = read.resident_bytes.saturating_add(usage.resident_bytes);
             read.process_count += 1;
-            let start = info.ri_proc_start_abstime;
-            let own = children.get(&pid).into_iter().flatten();
-            pending.extend(
-                own.filter_map(|child| rusage(*child).map(|info| (*child, info)))
-                    // Skip a child that exited after it was listed, and one
-                    // that seems to start before its parent (a reused PID).
-                    .filter(|(_, info)| {
-                        info.ri_proc_exit_abstime == 0 && info.ri_proc_start_abstime >= start
-                    }),
-            );
+            for &(child, listed) in children.get(&pid).into_iter().flatten() {
+                if let Some(usage) = listed_child_usage(procs, child, listed) {
+                    pending.push_back((child, usage));
+                }
+            }
         }
         read.cpu_nanos = mach_to_nanos(cpu_units, timebase);
-        read.resident_bytes = resident;
         Some(read)
+    }
+
+    /// The usage of `child`, or `None` when it exited or its PID no longer
+    /// names the listed process. A process that still has the listed parent
+    /// and start time after the usage read was the listed one throughout, so
+    /// the usage is its own.
+    fn listed_child_usage(procs: &impl Libproc, child: u32, listed: Parent) -> Option<Usage> {
+        let usage = procs.usage(child).ok().filter(|usage| !usage.exited)?;
+        (procs.parent(child).ok()? == listed).then_some(usage)
     }
 }
 
@@ -556,6 +642,108 @@ mod tests {
         assert_eq!(parsed.rss_pages, 250);
         assert!(!parsed.zombie);
         assert_eq!(platform::ticks_to_nanos(150, 100), 1_500_000_000);
+    }
+
+    /// Scripted `libproc` answers for the macOS tree walk.
+    #[cfg(target_os = "macos")]
+    #[derive(Default)]
+    struct ScriptedLibproc {
+        pids: Option<Vec<u32>>,
+        /// Answers to `parent`, first the listing's, then the later checks'.
+        parents: std::collections::BTreeMap<
+            u32,
+            std::cell::RefCell<Vec<std::result::Result<platform::Parent, platform::ReadError>>>,
+        >,
+        usages: std::collections::BTreeMap<
+            u32,
+            std::result::Result<platform::Usage, platform::ReadError>,
+        >,
+    }
+
+    #[cfg(target_os = "macos")]
+    impl ScriptedLibproc {
+        fn process(
+            mut self,
+            pid: u32,
+            parents: Vec<std::result::Result<platform::Parent, platform::ReadError>>,
+            usage: std::result::Result<platform::Usage, platform::ReadError>,
+        ) -> Self {
+            self.pids.get_or_insert_with(Vec::new).push(pid);
+            self.parents.insert(pid, std::cell::RefCell::new(parents));
+            self.usages.insert(pid, usage);
+            self
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    impl platform::Libproc for ScriptedLibproc {
+        fn pids(&self) -> Option<Vec<u32>> {
+            self.pids.clone()
+        }
+
+        fn parent(&self, pid: u32) -> std::result::Result<platform::Parent, platform::ReadError> {
+            let mut answers = self.parents.get(&pid).expect("scripted pid").borrow_mut();
+            if answers.len() > 1 {
+                answers.remove(0)
+            } else {
+                answers[0]
+            }
+        }
+
+        fn usage(&self, pid: u32) -> std::result::Result<platform::Usage, platform::ReadError> {
+            self.usages[&pid]
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn mac_parent(ppid: u32, started: u64) -> platform::Parent {
+        platform::Parent {
+            ppid,
+            started: (started, 0),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn mac_usage(start: u64, cpu_units: u64) -> platform::Usage {
+        platform::Usage {
+            cpu_units,
+            resident_bytes: 1000,
+            start,
+            exited: false,
+        }
+    }
+
+    /// The host (PID 10) has one listed child (PID 11). After the listing the
+    /// child exits and an unrelated, newer process takes PID 11.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_tree_read_skips_child_pid_reused_after_listing() {
+        let procs = ScriptedLibproc::default()
+            .process(10, vec![Ok(mac_parent(1, 100))], Ok(mac_usage(5, 7)))
+            .process(
+                11,
+                vec![Ok(mac_parent(10, 200)), Ok(mac_parent(1, 300))],
+                Ok(mac_usage(9, 1_000_000)),
+            );
+
+        let read = platform::read_tree_with(&procs, 10, 5, (1, 1)).expect("tree read");
+
+        assert_eq!(read.process_count, 1);
+        assert_eq!(read.cpu_nanos, 7);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_tree_read_counts_child_that_is_still_the_listed_process() {
+        let procs = ScriptedLibproc::default()
+            .process(10, vec![Ok(mac_parent(1, 100))], Ok(mac_usage(5, 7)))
+            .process(11, vec![Ok(mac_parent(10, 200))], Ok(mac_usage(9, 3)));
+
+        let read = platform::read_tree_with(&procs, 10, 5, (1, 1)).expect("tree read");
+
+        assert_eq!(read.process_count, 2);
+        assert_eq!(read.cpu_nanos, 10);
+        assert_eq!(read.resident_bytes, 2000);
     }
 
     #[cfg(target_os = "macos")]
