@@ -27,7 +27,7 @@ pub(crate) use cgroup::CgroupReader;
 pub(crate) use invocation::{HostExit, InvocationRecorder, RecordStart};
 pub(crate) use lines::RecordLine;
 pub(crate) use sampler::SampleTicker;
-#[cfg(test)]
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 pub(crate) use sampler::test_hooks as sampler_test_hooks;
 #[cfg(test)]
 pub(crate) use writer::test_hooks;

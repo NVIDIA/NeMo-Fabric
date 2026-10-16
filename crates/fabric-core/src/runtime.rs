@@ -6354,6 +6354,7 @@ for line in sys.stdin:
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn sample_lines(record: &Path) -> usize {
         fs::read_to_string(record)
             .expect("read record")
