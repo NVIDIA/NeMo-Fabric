@@ -414,11 +414,8 @@ mod platform {
         let mut read = TreeRead::default();
         let mut cpu_units: u64 = 0;
         let mut resident: u64 = 0;
-        let mut pending = VecDeque::from([(root, Some(root_info))]);
-        while let Some((pid, known)) = pending.pop_front() {
-            let Some(info) = known.or_else(|| rusage(pid)) else {
-                continue;
-            };
+        let mut pending = VecDeque::from([(root, root_info)]);
+        while let Some((pid, info)) = pending.pop_front() {
             cpu_units = cpu_units
                 .saturating_add(info.ri_user_time)
                 .saturating_add(info.ri_system_time)
@@ -434,8 +431,7 @@ mod platform {
                     // that seems to start before its parent (a reused PID).
                     .filter(|(_, info)| {
                         info.ri_proc_exit_abstime == 0 && info.ri_proc_start_abstime >= start
-                    })
-                    .map(|(child, info)| (child, Some(info))),
+                    }),
             );
         }
         read.cpu_nanos = mach_to_nanos(cpu_units, timebase);
