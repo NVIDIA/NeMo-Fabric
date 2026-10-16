@@ -306,11 +306,33 @@ class Fabric:
 
         plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
         native = self._require_native_module("prepare_environment")
+        prepared: str | None = None
+
+        def prepare() -> str:
+            nonlocal prepared
+            prepared = native.prepare_environment(json.dumps(plan.to_mapping()))
+            return prepared
+
         try:
-            raw = await _call_blocking(
-                lambda: native.prepare_environment(json.dumps(plan.to_mapping()))
-            )
+            raw = await _call_blocking(prepare)
             return EnvironmentHandle.from_mapping(json.loads(raw))
+        except asyncio.CancelledError:
+            if prepared is not None:
+                cleanup = asyncio.create_task(
+                    asyncio.to_thread(native.release_environment, prepared)
+                )
+                try:
+                    while not cleanup.done():
+                        try:
+                            await asyncio.sleep(0.01)
+                        except asyncio.CancelledError:
+                            continue
+                    cleanup.result()
+                except Exception:
+                    # The caller remains cancelled; the supervisor still owns
+                    # cleanup if a provider cannot confirm deletion.
+                    pass
+            raise
         except FabricError:
             raise
         except Exception as error:

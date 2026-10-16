@@ -8,6 +8,9 @@ that release is separate from runtime stop, and that lifecycle calls require
 typed environment handles before native dispatch.
 """
 
+import asyncio
+import json
+import threading
 from pathlib import Path, WindowsPath
 from unittest.mock import MagicMock
 
@@ -53,6 +56,39 @@ async def test_prepared_local_environment_supports_multiple_runtimes(
             await runtime.stop()
         await fabric.release_environment(environment)
     assert hermes_shim_agent_dir.is_dir()
+
+
+async def test_cancelled_prepare_releases_confirmed_environment(
+    monkeypatch, remote_handle
+):
+    fabric = Fabric()
+    plan = MagicMock()
+    plan.to_mapping.return_value = {}
+    monkeypatch.setattr(fabric, "plan", lambda config, base_dir=None: plan)
+    entered = threading.Event()
+    finish = threading.Event()
+    raw = json.dumps({**remote_handle, "ownership": "fabric_owned"})
+    native = MagicMock()
+
+    def prepare(_plan):
+        entered.set()
+        assert finish.wait(5)
+        return raw
+
+    native.prepare_environment.side_effect = prepare
+    monkeypatch.setattr(fabric, "_require_native_module", lambda operation: native)
+    task = asyncio.create_task(fabric.prepare_environment(MagicMock()))
+    try:
+        async with asyncio.timeout(5):
+            while not entered.is_set():
+                await asyncio.sleep(0.01)
+        task.cancel()
+        await asyncio.sleep(0.01)
+    finally:
+        finish.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    native.release_environment.assert_called_once_with(raw)
 
 
 @pytest.mark.parametrize("method", ["start", "release", "attach"])
