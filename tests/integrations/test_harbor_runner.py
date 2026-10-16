@@ -738,6 +738,7 @@ def test_harbor_023_options_schema_and_preflight():
         "fabric_model_base_url",
         "fabric_package",
         "fabric_python",
+        "fabric_record",
         "fabric_runtime_timeout_seconds",
         "fabric_system_instruction",
         "fabric_telemetry",

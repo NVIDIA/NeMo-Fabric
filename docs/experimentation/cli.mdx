@@ -149,6 +149,27 @@ still requires an Anthropic Messages-compatible model, while a Codex preset
 requires a Responses-compatible model. The `plan` and `doctor` commands accept
 the same overrides.
 
+Write a run record and label the run with four switches:
+
+```bash
+nemo-fabric run --preset hermes --input "Say hello" \
+  --record --artifacts ./runs --name hermes-baseline --task say-hello
+```
+
+`--record` sets `runtime.record.enabled`, and `--artifacts` sets
+`runtime.artifacts`, resolved against the current folder. The invocation then
+writes `./runs/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl` beside its
+`stdout.txt`. `--name` sets the config name (`metadata.name`), and `--task` sets
+`task_id` in the request context; the record's start line keeps both, and core
+forwards `task_id` to the adapter in the request context, as it forwards every
+context key. The `plan` and `doctor` commands
+accept `--record`, `--artifacts`, and `--name`, so they show the config that
+`run` executes; `--task` changes only the request, so it is a `run` switch.
+When the run writes a record, the CLI prints
+`nemo-fabric: run record under <folder>` to standard error before the run
+starts. `--record` needs an artifact root: the presets set none, so without
+`--artifacts` planning fails on `runtime.record.enabled`.
+
 ## Experiment With Examples
 
 List the maintained workflows and inspect an example's available variants:

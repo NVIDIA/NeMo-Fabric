@@ -31,9 +31,12 @@ use crate::config::{
     validate_tool_definitions, validate_workflow,
 };
 use crate::error::{FabricError, Result};
+use crate::record::{InvocationRecorder, RecordStart};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
+/// Lifecycle error code for an adapter result that core rejects.
+pub(crate) const INVALID_AGENT_RUN_RESULT: &str = "invalid_agent_run_result";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
 const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
 // Protocol liveness backstop. Adapters remain responsible for normal request
@@ -1728,9 +1731,37 @@ impl LocalHostInvocation {
 fn run_local_host_invocation_with_timeout(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
+    request: RunRequest,
+    invocation_kind: LocalHostInvocation,
+    invoke_timeout: Duration,
+) -> Result<RunResult> {
+    let mut recorder = None;
+    let outcome = local_host_invocation_result(
+        plan,
+        runtime,
+        request,
+        invocation_kind,
+        invoke_timeout,
+        &mut recorder,
+    );
+    match recorder {
+        // The end line and its sync run here, after the host lock is released.
+        Some(recorder) => recorder.finish(outcome),
+        None => outcome,
+    }
+}
+
+/// Run one invocation on the local host. When the plan turns the run record
+/// on, `recorder` is set before core sets the adapter deadline and writes
+/// `adapter-invocation.json`, so every invocation that core tried to send has
+/// a record.
+fn local_host_invocation_result(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
     mut request: RunRequest,
     invocation_kind: LocalHostInvocation,
     invoke_timeout: Duration,
+    recorder: &mut Option<InvocationRecorder>,
 ) -> Result<RunResult> {
     let operation = invocation_kind.operation();
     if request.request_id.is_empty() {
@@ -1772,6 +1803,18 @@ fn run_local_host_invocation_with_timeout(
             &host_guard.environment_env,
             &adapter_invocation.runtime_context.environment.env,
         )?;
+        // Record I/O runs before the adapter deadline is set, so slow record
+        // storage delays the request instead of shortening the adapter's budget.
+        if plan.config.runtime.record_enabled() && artifacts.root.is_some() {
+            *recorder = Some(InvocationRecorder::start(RecordStart {
+                plan,
+                runtime,
+                invocation: &invocation,
+                request: &request,
+                fabric_home: &fabric_home,
+                timeout: invoke_timeout,
+            }));
+        }
         adapter_invocation.runtime_context.deadline_millis =
             adapter_deadline_millis(invoke_timeout);
         let (lifecycle_request, adapter_payload) = match invocation_kind {
@@ -1851,7 +1894,7 @@ fn run_local_host_invocation_with_timeout(
         lifecycle_error(
             operation,
             &runtime.runtime_id,
-            "invalid_agent_run_result",
+            INVALID_AGENT_RUN_RESULT,
             format!("adapter returned an invalid AgentRunResult: {error}"),
             &stderr,
         )
@@ -1860,7 +1903,7 @@ fn run_local_host_invocation_with_timeout(
         lifecycle_error(
             operation,
             &runtime.runtime_id,
-            "invalid_agent_run_result",
+            INVALID_AGENT_RUN_RESULT,
             format!("adapter returned an invalid AgentRunResult: {error}"),
             &stderr,
         )
@@ -1870,7 +1913,7 @@ fn run_local_host_invocation_with_timeout(
         return Err(lifecycle_error(
             operation,
             &runtime.runtime_id,
-            "invalid_agent_run_result",
+            INVALID_AGENT_RUN_RESULT,
             "adapter returned artifacts without a configured runtime artifact root",
             &stderr,
         ));
@@ -3297,7 +3340,7 @@ fn relay_artifact_media_type(kind: &str) -> Option<&'static str> {
     }
 }
 
-fn unique_artifact_name(manifest: &ArtifactManifest, base: &str) -> String {
+pub(crate) fn unique_artifact_name(manifest: &ArtifactManifest, base: &str) -> String {
     if !manifest
         .artifacts
         .iter()
@@ -3330,9 +3373,26 @@ fn process_command_args(plan: &RunPlan, settings: &ProcessAdapterSettings) -> Ve
     args
 }
 
-fn artifact_manifest(plan: &RunPlan) -> Result<ArtifactManifest> {
-    let root = plan
-        .config
+/// The folder that holds a plan's run records, `.fabric` under its artifact
+/// root, when `runtime.record.enabled` is set. `None` otherwise. Plan
+/// validation guarantees that such a plan has an artifact root, the `local`
+/// environment provider and a local adapter host.
+pub fn run_record_folder(plan: &RunPlan) -> Option<PathBuf> {
+    if !plan.config.runtime.record_enabled() {
+        return None;
+    }
+    artifact_root(plan).map(|root| fabric_folder(&root))
+}
+
+/// Core's own folder under an artifact root.
+fn fabric_folder(root: &Path) -> PathBuf {
+    root.join(".fabric")
+}
+
+/// The runtime's artifact root resolved against the plan's base folder, else
+/// the environment's artifact root.
+fn artifact_root(plan: &RunPlan) -> Option<PathBuf> {
+    plan.config
         .runtime
         .artifacts
         .as_ref()
@@ -3341,7 +3401,11 @@ fn artifact_manifest(plan: &RunPlan) -> Result<ArtifactManifest> {
             plan.environment_plan
                 .as_ref()
                 .and_then(|environment| environment.artifacts.clone())
-        });
+        })
+}
+
+fn artifact_manifest(plan: &RunPlan) -> Result<ArtifactManifest> {
+    let root = artifact_root(plan);
     if let Some(root) = &root {
         std::fs::create_dir_all(root).map_err(|source| FabricError::Write {
             path: root.clone(),
@@ -3363,8 +3427,7 @@ fn prepare_fabric_home(
         .root
         .clone()
         .unwrap_or_else(|| std::env::temp_dir().join("nemo-fabric"));
-    let fabric_home = root
-        .join(".fabric")
+    let fabric_home = fabric_folder(&root)
         .join(&runtime.runtime_id)
         .join(&invocation.invocation_id);
     std::fs::create_dir_all(&fabric_home).map_err(|source| FabricError::Write {
@@ -3658,7 +3721,7 @@ fn telemetry_ref(
     })
 }
 
-fn event_with_metadata(
+pub(crate) fn event_with_metadata(
     kind: impl Into<String>,
     message: impl Into<String>,
     metadata: BTreeMap<String, Value>,
@@ -3947,12 +4010,16 @@ for line in sys.stdin:
             "context_env": invocation["runtime_context"]["environment"].get("env", {}),
             "deadline_millis": invocation["runtime_context"].get("deadline_millis"),
         }
-        if MODE in {"adapter_reported_failure", "blank_error_code"}:
+        if MODE in {"adapter_reported_failure", "blank_error_code", "free_text_error_code"}:
+            codes = {
+                "blank_error_code": " \t",
+                "free_text_error_code": "Rate limit for key sk-live-123 exceeded",
+            }
             result = {
                 "status": "failed",
                 "output": output,
                 "error": {
-                    "code": " \t" if MODE == "blank_error_code" else "fake_adapter_failure",
+                    "code": codes.get(MODE, "fake_adapter_failure"),
                     "message": "adapter rejected the invocation",
                     "retryable": True,
                     "extensions": {"source": "fake-host"},
@@ -5456,6 +5523,292 @@ for line in sys.stdin:
         assert_eq!(error.code, "runtime_stop_failed");
         assert!(error.message.contains("fake_stop"), "{}", error.message);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn record_plan(mode: &str) -> (PathBuf, RunPlan) {
+        let (root, mut plan) = local_host_plan(mode);
+        plan.config.runtime.record = Some(crate::config::RecordConfig { enabled: true });
+        (root, plan)
+    }
+
+    #[test]
+    fn run_record_folder_is_set_only_when_the_record_is_on() {
+        let (root, mut plan) = record_plan("success");
+        let artifact_root = resolve_path(
+            &plan.base_dir,
+            plan.config.runtime.artifacts.as_ref().expect("artifacts"),
+        );
+        assert_eq!(
+            run_record_folder(&plan),
+            Some(artifact_root.join(".fabric"))
+        );
+
+        plan.config.runtime.record = None;
+        assert_eq!(run_record_folder(&plan), None, "record off");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn record_files(root: &Path) -> Vec<PathBuf> {
+        let mut records = Vec::new();
+        let mut folders = vec![root.join("artifacts/.fabric")];
+        while let Some(folder) = folders.pop() {
+            let Ok(entries) = fs::read_dir(&folder) else {
+                continue;
+            };
+            for path in entries.flatten().map(|entry| entry.path()) {
+                if path.is_dir() {
+                    folders.push(path);
+                } else if path.ends_with("run-record.jsonl") {
+                    records.push(path);
+                }
+            }
+        }
+        records
+    }
+
+    fn record_line_validator() -> jsonschema::Validator {
+        let schema = crate::schema::generate_schema(crate::schema::SchemaName::RunRecordLine)
+            .expect("record line schema");
+        jsonschema::validator_for(&schema).expect("valid schema")
+    }
+
+    /// The only record under `root`, with every line checked against the
+    /// published line schema.
+    fn only_record(root: &Path) -> (String, Vec<Value>) {
+        let records = record_files(root);
+        assert_eq!(records.len(), 1, "{records:?}");
+        let text = fs::read_to_string(&records[0]).expect("read record");
+        let validator = record_line_validator();
+        let lines: Vec<Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("record line is JSON"))
+            .collect();
+        for line in &lines {
+            assert!(validator.is_valid(line), "{line}");
+        }
+        (text, lines)
+    }
+
+    /// The one line of `kind`. Lookup by kind keeps these tests independent
+    /// of other line kinds written between the start and end lines.
+    fn line_of_kind<'a>(lines: &'a [Value], kind: &str) -> &'a Value {
+        let mut matching = lines.iter().filter(|line| line["kind"] == kind);
+        let line = matching.next().unwrap_or_else(|| panic!("no {kind} line"));
+        assert!(matching.next().is_none(), "more than one {kind} line");
+        line
+    }
+
+    #[test]
+    fn record_off_with_an_artifact_root_writes_no_record() {
+        let (root, plan) = local_host_plan("typed_result");
+        assert!(plan.config.runtime.artifacts.is_some());
+
+        let result = run_plan(&plan, RunRequest::text("no record")).expect("run");
+
+        assert!(record_files(&root).is_empty());
+        assert!(
+            result
+                .artifacts
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.kind != "run_record")
+        );
+        assert!(
+            result
+                .events
+                .iter()
+                .all(|event| event.kind != "record_write_failed")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_on_writes_a_start_line_and_an_end_line() {
+        let (root, plan) = record_plan("typed_result");
+        let mut request = RunRequest::text("record");
+        request.context = BTreeMap::from([
+            ("task_id".to_string(), serde_json::json!("repo-io-fix")),
+            ("attempt".to_string(), serde_json::json!(2)),
+            (
+                "harbor_trial_name".to_string(),
+                serde_json::json!("trial-1"),
+            ),
+            ("step".to_string(), serde_json::json!({"nested": "value"})),
+            ("api_key".to_string(), serde_json::json!("sk-live-SECRET")),
+        ]);
+
+        let result = run_plan(&plan, request).expect("run");
+        let (text, lines) = only_record(&root);
+
+        let (start, end) = (line_of_kind(&lines, "start"), line_of_kind(&lines, "end"));
+        assert_eq!(lines.first(), Some(start), "{text}");
+        assert_eq!(lines.last(), Some(end), "{text}");
+        for line in &lines {
+            assert_eq!(line["schema"], "nemo.fabric.run_record");
+            assert_eq!(line["version"], "v1alpha1");
+            assert_eq!(line["runtime_id"], result.runtime_id.as_str());
+            assert_eq!(line["invocation_id"], result.invocation_id.as_str());
+            assert_eq!(line["request_id"], result.request_id.as_str());
+        }
+        assert_eq!(start["agent_name"], "local-host-test-agent");
+        assert_eq!(start["adapter_id"], "acme.fabric.local-host");
+        assert_eq!(start["timeout_ms"], 3_600_000);
+        assert_eq!(
+            start["context"],
+            serde_json::json!({
+                "api_key": {"recorded": false},
+                "attempt": 2,
+                "harbor_trial_name": "trial-1",
+                "step": {"recorded": false},
+                "task_id": "repo-io-fix",
+            })
+        );
+        assert!(!text.contains("SECRET"), "{text}");
+        assert_eq!(end["status"], "succeeded");
+        assert!(end["elapsed_ms"].is_u64());
+        assert_eq!(
+            end["usage"],
+            serde_json::json!({
+                "input_tokens": 3,
+                "cached_input_tokens": 1,
+                "input_tokens_include_cache": true,
+                "output_tokens": 5,
+                "total_tokens": 8,
+                "cost_usd": 0.25,
+            })
+        );
+        let report = end["artifacts"]
+            .as_array()
+            .expect("artifacts")
+            .iter()
+            .find(|artifact| artifact["name"] == "report")
+            .expect("report artifact");
+        assert_eq!(
+            report,
+            &serde_json::json!({
+                "name": "report",
+                "kind": "report",
+                "media_type": "application/json",
+                "path": "reports/result.json",
+            })
+        );
+        for marker in ["fake-host", "\"fake\"", "trace-1"] {
+            assert!(!text.contains(marker), "{marker} in {text}");
+        }
+        let record = result
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == "record")
+            .expect("record artifact");
+        assert_eq!(record.kind, "run_record");
+        assert_eq!(record.media_type.as_deref(), Some("application/jsonl"));
+        assert_eq!(record.path, record_files(&root)[0]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_end_line_keeps_the_error_code_and_drops_the_message() {
+        let (root, plan) = record_plan("adapter_reported_failure");
+
+        let result = run_plan(&plan, RunRequest::text("fail")).expect("failed result");
+        let (text, lines) = only_record(&root);
+
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(
+            line_of_kind(&lines, "end")["error"],
+            serde_json::json!({"code": "fake_adapter_failure", "stage": "invoke", "retryable": true})
+        );
+        assert!(!text.contains("adapter rejected"), "{text}");
+        let mut wrong_kind = line_of_kind(&lines, "end").clone();
+        wrong_kind["kind"] = serde_json::json!("start");
+        assert!(!record_line_validator().is_valid(&wrong_kind));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_end_line_replaces_a_free_text_error_code() {
+        let (root, plan) = record_plan("free_text_error_code");
+
+        let result = run_plan(&plan, RunRequest::text("fail")).expect("failed result");
+        let (text, lines) = only_record(&root);
+
+        assert!(result.error.expect("error").code.contains("sk-live-123"));
+        assert_eq!(line_of_kind(&lines, "end")["error"]["code"], "unrecognized");
+        assert!(!text.contains("sk-live-123"), "{text}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_lifecycle_error_writes_a_failed_end_line() {
+        let (root, plan) = record_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let error = run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("timeout raises");
+        let (_, lines) = only_record(&root);
+
+        assert!(error.to_string().contains("host_timeout"), "{error}");
+        let end = line_of_kind(&lines, "end");
+        assert_eq!(line_of_kind(&lines, "start")["timeout_ms"], 100);
+        assert_eq!(end["status"], "failed");
+        assert_eq!(
+            end["error"],
+            serde_json::json!({"code": "host_timeout", "stage": "invoke", "retryable": false})
+        );
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_preparation_does_not_shorten_the_adapter_deadline() {
+        let (root, mut plan) = record_plan("success");
+        plan.config.runtime.timeout_seconds = Some(60.0);
+        let runtime = start_runtime(&plan).expect("start local host");
+        let delay = Duration::from_millis(500);
+        crate::record::test_hooks::CREATE_DELAY.with(|slot| slot.set(delay));
+
+        let before = now_millis();
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("slow record storage"));
+        let after = now_millis();
+        crate::record::test_hooks::CREATE_DELAY.with(|slot| slot.set(Duration::ZERO));
+
+        let result = result.expect("invoke");
+        let deadline = u128::from(result.output["deadline_millis"].as_u64().expect("deadline"));
+        // The adapter's 50-second budget starts after the record is created,
+        // so slow record storage does not eat into it.
+        assert!(
+            (before + delay.as_millis() + 50_000..=after + 50_000).contains(&deadline),
+            "deadline {deadline}, before {before}, after {after}"
+        );
+        assert_eq!(record_files(&root).len(), 1);
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_warm_runtime_writes_one_record_per_invocation() {
+        let (root, plan) = record_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let first = invoke_runtime(&plan, &runtime, RunRequest::text("one")).expect("first");
+        let second = invoke_runtime(&plan, &runtime, RunRequest::text("two")).expect("second");
+        stop_runtime(&plan, &runtime).expect("stop");
+
+        let records = record_files(&root);
+        assert_eq!(records.len(), 2);
+        for result in [&first, &second] {
+            assert!(records.iter().any(|path| path.ends_with(format!(
+                ".fabric/{}/{}/run-record.jsonl",
+                result.runtime_id, result.invocation_id
+            ))));
+        }
         let _ = fs::remove_dir_all(root);
     }
 }

@@ -7,7 +7,7 @@ use clap::error::ErrorKind;
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use nemo_fabric_core::{
     ResolveContext, RunRequest, RunStatus, doctor_plan, resolve_diagnostic_plan_from_config,
-    resolve_run_plan_from_config, run_plan,
+    resolve_run_plan_from_config, run_plan, run_record_folder,
 };
 
 use crate::examples;
@@ -47,6 +47,13 @@ enum Command {
         /// Inline request text.
         #[arg(long, default_value = "")]
         input: String,
+        /// Task ID recorded on the run (sets `task_id` in the request context).
+        #[arg(
+            long,
+            value_name = "ID",
+            value_parser = clap::builder::NonEmptyStringValueParser::new()
+        )]
+        task: Option<String>,
     },
     /// Print the NVIDIA NeMo Fabric core version.
     Version,
@@ -87,6 +94,45 @@ enum ExampleCommand {
     },
 }
 
+/// Config switches that turn on and label the run record.
+#[derive(Debug, Default, Args)]
+struct RecordSwitches {
+    /// Write a run record for each invocation (sets `runtime.record.enabled`).
+    /// Needs `--artifacts` unless the example sets an artifact root.
+    #[arg(long)]
+    record: bool,
+    /// Artifact root, resolved against the current folder (sets `runtime.artifacts`).
+    #[arg(long, value_name = "DIR")]
+    artifacts: Option<std::path::PathBuf>,
+    /// Config name recorded on the run (sets `metadata.name`).
+    #[arg(
+        long,
+        value_name = "NAME",
+        value_parser = clap::builder::NonEmptyStringValueParser::new()
+    )]
+    name: Option<String>,
+}
+
+impl RecordSwitches {
+    /// Apply the switches to the selected config.
+    fn apply(&self, config: &mut nemo_fabric_core::FabricConfig) -> std::io::Result<()> {
+        if self.record {
+            config
+                .runtime
+                .record
+                .get_or_insert_with(nemo_fabric_core::RecordConfig::default)
+                .enabled = true;
+        }
+        if let Some(artifacts) = &self.artifacts {
+            config.runtime.artifacts = Some(std::path::absolute(artifacts)?);
+        }
+        if let Some(name) = &self.name {
+            config.metadata.name.clone_from(name);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Args)]
 #[command(group(
     ArgGroup::new("source")
@@ -125,6 +171,8 @@ struct Selector {
         value_parser = parse_temperature
     )]
     temperature: Option<f64>,
+    #[command(flatten)]
+    record: RecordSwitches,
 }
 
 fn parse_temperature(value: &str) -> Result<f64, String> {
@@ -147,6 +195,13 @@ impl SelectedSource {
         match self {
             Self::Preset(selected) => &selected.config,
             Self::Example(selected) => &selected.config,
+        }
+    }
+
+    fn config_mut(&mut self) -> &mut nemo_fabric_core::FabricConfig {
+        match self {
+            Self::Preset(selected) => &mut selected.config,
+            Self::Example(selected) => &mut selected.config,
         }
     }
 
@@ -245,13 +300,26 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             )?;
             println!("{}", serde_json::to_string_pretty(&doctor_plan(&plan))?);
         }
-        Command::Run { selector, input } => {
+        Command::Run {
+            selector,
+            input,
+            task,
+        } => {
             let selected = select_source(&selector)?;
             let plan = resolve_run_plan_from_config(
                 selected.config().clone(),
                 ResolveContext::new(selected.base_dir()),
             )?;
-            let result = match run_plan(&plan, RunRequest::text(input)) {
+            let mut request = RunRequest::text(input);
+            if let Some(task) = task {
+                request
+                    .context
+                    .insert("task_id".to_string(), serde_json::Value::from(task));
+            }
+            if let Some(folder) = run_record_folder(&plan) {
+                eprintln!("nemo-fabric: run record under {}", folder.display());
+            }
+            let result = match run_plan(&plan, request) {
                 Ok(result) => result,
                 Err(error) => {
                     println!(
@@ -284,17 +352,17 @@ fn require_successful_run(status: RunStatus) -> Result<(), String> {
 }
 
 fn select_source(selector: &Selector) -> Result<SelectedSource, Box<dyn std::error::Error>> {
-    if let Some(name) = &selector.preset {
+    let mut selected = if let Some(name) = &selector.preset {
         let mut selected = find_preset(name)?.stage()?;
         apply_model_overrides(&mut selected.config, selector)?;
-        return Ok(SelectedSource::Preset(selected));
-    }
-    if let Some(name) = &selector.example {
-        return Ok(SelectedSource::Example(
-            find_example(name)?.select(selector.variant.as_deref())?,
-        ));
-    }
-    unreachable!("Clap requires exactly one source selector")
+        SelectedSource::Preset(selected)
+    } else if let Some(name) = &selector.example {
+        SelectedSource::Example(find_example(name)?.select(selector.variant.as_deref())?)
+    } else {
+        unreachable!("Clap requires exactly one source selector")
+    };
+    selector.record.apply(selected.config_mut())?;
+    Ok(selected)
 }
 
 fn apply_model_overrides(
@@ -381,6 +449,7 @@ mod tests {
             variant: None,
             model: Some("meta/llama-3.3-70b-instruct".to_string()),
             temperature: Some(0.2),
+            record: RecordSwitches::default(),
         };
         let selected = select_source(&selector).expect("select preset");
         let model = selected.config().models.get("default").expect("model");
@@ -389,6 +458,7 @@ mod tests {
         assert_eq!(model.model, "meta/llama-3.3-70b-instruct");
         assert_eq!(model.temperature, Some(0.2));
         assert_eq!(model.api_key_env.as_deref(), Some("NVIDIA_API_KEY"));
+        assert!(selected.config().runtime.record.is_none());
     }
 
     #[test]
@@ -411,6 +481,7 @@ mod tests {
             variant: None,
             model: Some("other-model".to_string()),
             temperature: None,
+            record: RecordSwitches::default(),
         };
         assert_eq!(
             select_source(&selector)
@@ -476,5 +547,50 @@ mod tests {
     #[test]
     fn plan_requires_a_preset() {
         assert!(Cli::try_parse_from(["nemo-fabric", "plan"]).is_err());
+    }
+
+    #[test]
+    fn record_switches_parse_on_plan_doctor_and_run_and_set_the_config() {
+        let selectors: Vec<Selector> = ["plan", "doctor", "run"]
+            .into_iter()
+            .map(|command| {
+                let cli = Cli::try_parse_from([
+                    "nemo-fabric",
+                    command,
+                    "--preset",
+                    "scripted",
+                    "--record",
+                    "--artifacts",
+                    "runs",
+                    "--name",
+                    "swe-scripted",
+                ])
+                .expect("parse record switches");
+                match cli.command {
+                    Command::Plan(selector) | Command::Doctor(selector) => selector,
+                    Command::Run { selector, .. } => selector,
+                    _ => panic!("selector command expected"),
+                }
+            })
+            .collect();
+        for selector in &selectors {
+            assert!(selector.record.record);
+            assert_eq!(selector.record.name.as_deref(), Some("swe-scripted"));
+        }
+
+        let selected = select_source(&selectors[0]).expect("select");
+
+        let config = selected.config();
+        assert!(
+            config
+                .runtime
+                .record
+                .as_ref()
+                .is_some_and(|record| record.enabled)
+        );
+        let artifacts = config.runtime.artifacts.as_ref().expect("artifacts");
+        assert!(artifacts.is_absolute());
+        assert!(artifacts.ends_with("runs"));
+        assert_eq!(config.metadata.name, "swe-scripted");
     }
 }

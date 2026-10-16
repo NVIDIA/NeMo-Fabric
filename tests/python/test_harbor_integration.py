@@ -20,6 +20,7 @@ pytestmark = pytest.mark.usefixtures("requires_harbor")
 
 try:
     from harbor.models.agent.context import AgentContext
+    from harbor.models.job.lock import TaskLock
     from harbor.models.task.config import MCPServerConfig
     from nemo_fabric.integrations.harbor import FabricAgent
 except ImportError:
@@ -443,6 +444,131 @@ def test_harbor_propagates_runtime_identity(tmp_path: Path):
         "harbor_context_id": "594025f3-7d65-4655-8576-4bee95002eae",
     }
     assert agent.SUPPORTS_ATIF is False
+
+
+_LOCAL_DIGEST = "sha256:" + "a" * 64
+_GIT_DIGEST = "sha256:" + "b" * 64
+_PACKAGE_DIGEST = "sha256:" + "c" * 64
+
+
+def _write_trial_files(trial_dir: Path, task_lock: dict[str, str] | None) -> None:
+    """Write the trial's ``config.json`` and, unless ``task_lock`` is None,
+    the ``lock.json`` that Harbor writes before the agent runs. The task
+    entry goes through Harbor's ``TaskLock`` model, so a renamed or newly
+    validated field fails here."""
+
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    (trial_dir / "config.json").write_text(
+        json.dumps({"task": {"path": "tasks/fix-io"}, "trial_name": "hello-world__AbC12"}),
+        encoding="utf-8",
+    )
+    if task_lock is not None:
+        (trial_dir / "lock.json").write_text(
+            json.dumps(
+                {"schema_version": 2, "task": TaskLock(**task_lock).model_dump(mode="json")}
+            ),
+            encoding="utf-8",
+        )
+
+
+@pytest.mark.parametrize(
+    ("task_lock", "expected"),
+    [
+        (
+            {"name": "fix-io", "type": "local", "digest": _LOCAL_DIGEST},
+            {"task_id": "fix-io", "task_revision": _LOCAL_DIGEST},
+        ),
+        (
+            {
+                "name": "fix-io",
+                "type": "git",
+                "digest": _GIT_DIGEST,
+                "git_commit_id": "abc123",
+            },
+            {"task_id": "fix-io", "task_revision": _GIT_DIGEST},
+        ),
+        (
+            {"name": "harbor/hello-world", "type": "package", "digest": _PACKAGE_DIGEST},
+            {"task_id": "harbor/hello-world", "task_revision": _PACKAGE_DIGEST},
+        ),
+        (None, {}),
+    ],
+    ids=["local", "git", "package", "no-lock"],
+)
+def test_harbor_record_reads_task_identity_from_the_trial_lock(
+    tmp_path: Path, task_lock: dict[str, str] | None, expected: dict[str, str]
+):
+    _write_trial_files(tmp_path, task_lock)
+    agent = FabricAgent(
+        logs_dir=tmp_path / "agent",
+        fabric_adapter_id="nvidia.fabric.hermes",
+        fabric_record=True,
+    )
+
+    context = agent._build_request("fix it").context
+
+    assert context == {
+        "source": "harbor",
+        **expected,
+        "harbor_trial_name": "hello-world__AbC12",
+    }
+    assert agent._build_config().to_mapping()["runtime"]["record"] == {"enabled": True}
+
+
+def test_harbor_record_stays_off_without_fabric_record(tmp_path: Path):
+    _write_trial_files(tmp_path, {"name": "fix-io", "type": "local", "digest": _LOCAL_DIGEST})
+    agent = FabricAgent(
+        logs_dir=tmp_path / "agent",
+        fabric_adapter_id="nvidia.fabric.hermes",
+    )
+
+    assert agent._build_request("fix it").context == {"source": "harbor"}
+    assert "record" not in agent._build_config().to_mapping()["runtime"]
+
+
+def test_harbor_record_ignores_trial_files_that_are_not_json_objects(tmp_path: Path):
+    (tmp_path / "lock.json").write_text("not json", encoding="utf-8")
+    (tmp_path / "config.json").write_text("[]", encoding="utf-8")
+    agent = FabricAgent(
+        logs_dir=tmp_path / "agent",
+        fabric_adapter_id="nvidia.fabric.hermes",
+        fabric_record=True,
+    )
+
+    assert agent._build_request("fix it").context == {"source": "harbor"}
+
+
+async def _run_contexts(trial_dir: Path, runs: int) -> list[dict[str, Any]]:
+    agent = FabricAgent(
+        logs_dir=trial_dir / "agent",
+        fabric_adapter_id="nvidia.fabric.hermes",
+        fabric_record=True,
+    )
+    environment = FakeHarborEnvironment()
+    await agent.setup(environment)  # type: ignore[arg-type]
+    for run in range(runs):
+        await agent.run(f"step {run}", environment, AgentContext())  # type: ignore[arg-type]
+    return [
+        json.loads(environment.files[target])["request"]["context"]
+        for _, target in environment.uploads
+        if target.startswith("/tmp/fabric-run-")
+    ]
+
+
+async def test_harbor_record_numbers_each_step_of_a_multi_step_trial(tmp_path: Path):
+    # Harbor creates <trial>/steps/<step>/agent before each step's agent runs.
+    (tmp_path / "steps" / "one" / "agent").mkdir(parents=True)
+
+    contexts = await _run_contexts(tmp_path, runs=2)
+
+    assert [context["step"] for context in contexts] == [1, 2]
+
+
+async def test_harbor_record_single_step_trial_records_no_step(tmp_path: Path):
+    contexts = await _run_contexts(tmp_path, runs=1)
+
+    assert len(contexts) == 1
+    assert "step" not in contexts[0]
 
 
 async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):

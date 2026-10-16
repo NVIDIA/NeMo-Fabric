@@ -36,6 +36,7 @@ from nemo_fabric import McpAuthenticationConfig
 from nemo_fabric import McpConfig
 from nemo_fabric import McpServerConfig
 from nemo_fabric import MetadataConfig
+from nemo_fabric import RecordConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
 from nemo_fabric import RelayAtofFileSinkConfig
@@ -696,6 +697,28 @@ def test_instruction_content_must_be_non_empty(content: str):
     raw["instructions"] = {"system": {"content": content, "mode": "replace"}}
     with pytest.raises(FabricConfigError, match="non-empty string"):
         _FabricConfigSnapshot.from_mapping(raw)
+
+
+def test_runtime_record_round_trips_and_rejects_other_shapes():
+    config = FabricConfig(
+        metadata=MetadataConfig(name="demo"),
+        harness=HarnessConfig(adapter_id="test.fabric.shim"),
+        runtime=RuntimeConfig(artifacts="runs", record=RecordConfig(enabled=True)),
+    )
+
+    assert config.to_mapping()["runtime"]["record"] == {"enabled": True}
+    assert "record" not in RuntimeConfig().to_mapping()
+    for invalid in ({}, {"enabled": "yes"}, {"enabled": True, "durable": True}):
+        with pytest.raises(ValidationError):
+            RecordConfig.model_validate(invalid)
+
+    raw = _plan()["config"]
+    raw["runtime"] = {"record": {"enabled": True}}
+    assert _FabricConfigSnapshot.from_mapping(raw).runtime.record == {"enabled": True}
+    for invalid in ({}, {"enabled": 1}, {"enabled": True, "durable": True}):
+        raw["runtime"]["record"] = invalid
+        with pytest.raises(FabricConfigError, match="boolean enabled field"):
+            _FabricConfigSnapshot.from_mapping(raw)
 
 
 def test_max_turns_matches_rust_u32_range():
