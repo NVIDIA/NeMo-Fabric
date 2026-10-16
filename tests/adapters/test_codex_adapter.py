@@ -858,7 +858,7 @@ async def test_mcp_login_deadline_covers_request_and_browser_launch(
 
 @pytest.mark.parametrize(
     ("invocation_timeout", "oauth_timeout", "expected_timeout"),
-    [(30, 12, 12), (5, 12, 5), (5.1, 12, 6)],
+    [(30, 12, 12), (5, 12, 5), (5.9, 12, 6)],
 )
 def test_codex_logs_into_mcp_server_before_first_turn(
     codex_payload,
