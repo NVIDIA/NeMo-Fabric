@@ -6,10 +6,13 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Iterator
 from collections.abc import Mapping
 from collections.abc import Sequence
 from copy import deepcopy
+from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -66,6 +69,27 @@ def _required_text(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise FabricConfigError(f"{name} must be a non-empty string")
     return value
+
+
+# RFC 3339 date-time shape. fromisoformat also accepts a space separator,
+# date-only values and basic ISO 8601 forms, so check the shape first.
+_RFC3339_DATE_TIME = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})"
+)
+
+
+def _utc_timestamp(value: Any, name: str) -> str:
+    text = _required_text(value, name)
+    message = f"{name} must be an RFC 3339 UTC timestamp"
+    if _RFC3339_DATE_TIME.fullmatch(text) is None:
+        raise FabricConfigError(message)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        raise FabricConfigError(message) from None
+    if parsed.utcoffset() != timedelta(0):
+        raise FabricConfigError(message)
+    return text
 
 
 def _boolean(value: Any, name: str) -> bool:
@@ -1961,6 +1985,72 @@ class RunUsage(FabricMapping):
         return data
 
 
+class RuntimeResourceSnapshot(FabricMapping):
+    """Timestamped resource usage of one runtime's local adapter host process tree.
+
+    Memory, process count, and CPU time cover the adapter host process and its
+    live descendants, not a shared service process. Values that cannot be read
+    raise an error instead of reading as zero.
+
+    Attributes:
+        runtime_id: Runtime this snapshot describes.
+        started_at: When NeMo Fabric started the adapter host, as RFC 3339 UTC.
+        observed_at: When NeMo Fabric read these values, as RFC 3339 UTC.
+        resident_memory_bytes: Sum of the live processes' resident set sizes.
+            Pages shared between processes count once per process.
+        process_count: Live processes in the tree, including the adapter host.
+        cpu_time_seconds: CPU time used since the adapter host started,
+            including exited descendants. It can drop when a descendant
+            leaves the tree.
+    """
+
+    runtime_id: str
+    started_at: str
+    observed_at: str
+    resident_memory_bytes: int
+    process_count: int
+    cpu_time_seconds: float
+    _fields = frozenset(
+        {
+            "runtime_id",
+            "started_at",
+            "observed_at",
+            "resident_memory_bytes",
+            "process_count",
+            "cpu_time_seconds",
+        }
+    )
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["runtime_id"] = _required_text(data.get("runtime_id"), "runtime id")
+        for field in ("started_at", "observed_at"):
+            data[field] = _utc_timestamp(data.get(field), field.replace("_", " "))
+        for field in ("resident_memory_bytes", "process_count"):
+            value = data.get(field)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 0 <= value <= _UINT64_MAX
+            ):
+                raise FabricConfigError(
+                    f"{field.replace('_', ' ')} must be a nonnegative integer "
+                    f"no greater than {_UINT64_MAX}"
+                )
+        cpu = data.get("cpu_time_seconds")
+        if (
+            isinstance(cpu, bool)
+            or not isinstance(cpu, (int, float))
+            or not math.isfinite(cpu)
+            or cpu < 0
+        ):
+            raise FabricConfigError(
+                "cpu time seconds must be a finite nonnegative number"
+            )
+        data["cpu_time_seconds"] = float(cpu)
+        return data
+
+
 class RunResult(FabricMapping):
     """Normalized terminal result from one NeMo Fabric invocation.
 
@@ -1981,6 +2071,9 @@ class RunResult(FabricMapping):
             are preserved as-is.
         error: Structured failure, or ``None`` on success.
         usage: Normalized invocation usage, or ``None`` when unavailable.
+        resource_snapshot: Runtime resource snapshot read once after the
+            adapter returned this result, or ``None`` when the runtime's
+            resources could not be observed.
         artifacts: Normalized artifact manifest.
         telemetry: Ordered telemetry references.
         events: Ordered lifecycle and invocation events.
@@ -1998,6 +2091,7 @@ class RunResult(FabricMapping):
     output: RunOutput | JSONValue
     error: ErrorInfo | None
     usage: RunUsage | None
+    resource_snapshot: RuntimeResourceSnapshot | None
     artifacts: ArtifactManifest
     telemetry: Sequence[TelemetryRef]
     events: Sequence[FabricEvent]
@@ -2015,6 +2109,7 @@ class RunResult(FabricMapping):
             "output",
             "error",
             "usage",
+            "resource_snapshot",
             "artifacts",
             "telemetry",
             "events",
@@ -2040,6 +2135,11 @@ class RunResult(FabricMapping):
         )
         data["usage"] = (
             None if data.get("usage") is None else RunUsage.from_mapping(data["usage"])
+        )
+        data["resource_snapshot"] = (
+            None
+            if data.get("resource_snapshot") is None
+            else RuntimeResourceSnapshot.from_mapping(data["resource_snapshot"])
         )
         data["artifacts"] = ArtifactManifest.from_mapping(
             data.get("artifacts", {"artifacts": []})

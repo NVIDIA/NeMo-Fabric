@@ -13,6 +13,7 @@ use crate::config::{
     AdapterDescriptor, AdapterTargetDescriptor, AgentConfig, FabricConfig, RunPlan,
 };
 use crate::error::{FabricError, Result};
+use crate::resource_snapshot::RuntimeResourceSnapshot;
 use crate::runtime::{
     AdapterInvocation, ArtifactManifest, EnvironmentHandle, EnvironmentReference, ErrorInfo,
     FabricEvent, InvocationHandle, OpenAiStreamInvocation, OpenAiStreamRecord, RunRequest,
@@ -67,11 +68,13 @@ pub enum SchemaName {
     ErrorInfo,
     /// NeMo Fabric lifecycle event schema.
     FabricEvent,
+    /// Runtime resource snapshot schema.
+    RuntimeResourceSnapshot,
 }
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::Agent,
         Self::AgentConfig,
         Self::AgentRunRequest,
@@ -94,6 +97,7 @@ impl SchemaName {
         Self::ArtifactManifest,
         Self::ErrorInfo,
         Self::FabricEvent,
+        Self::RuntimeResourceSnapshot,
     ];
 
     /// Stable file stem for this schema.
@@ -121,6 +125,7 @@ impl SchemaName {
             Self::ArtifactManifest => "artifact-manifest",
             Self::ErrorInfo => "error-info",
             Self::FabricEvent => "fabric-event",
+            Self::RuntimeResourceSnapshot => "runtime-resource-snapshot",
         }
     }
 
@@ -175,6 +180,9 @@ impl SchemaName {
             "artifact-manifest" | "artifact_manifest" => Ok(Self::ArtifactManifest),
             "error-info" | "error_info" => Ok(Self::ErrorInfo),
             "fabric-event" | "fabric_event" => Ok(Self::FabricEvent),
+            "runtime-resource-snapshot" | "runtime_resource_snapshot" => {
+                Ok(Self::RuntimeResourceSnapshot)
+            }
             _ => Err(FabricError::UnknownSchema {
                 schema: value.to_string(),
                 available: Self::ALL
@@ -211,6 +219,7 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
         SchemaName::ArtifactManifest => to_value(schema_for!(ArtifactManifest)),
         SchemaName::ErrorInfo => to_value(schema_for!(ErrorInfo)),
         SchemaName::FabricEvent => to_value(schema_for!(FabricEvent)),
+        SchemaName::RuntimeResourceSnapshot => to_value(schema_for!(RuntimeResourceSnapshot)),
     }
 }
 
