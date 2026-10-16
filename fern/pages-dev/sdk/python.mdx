@@ -201,6 +201,23 @@ objects.
 NeMo Fabric provides the runtime contract. Applications own scheduling, queues,
 retries, worker scaling, and the number of runtimes to run.
 
+### Explicit Environment Lifecycle
+
+`prepare_environment(config)` returns an immutable `EnvironmentHandle` without
+starting an agent. Pass it to `start_runtime_in(config, environment)` to start a
+runtime, then invoke and stop that runtime normally. Call
+`release_environment(environment)` separately after collecting results. Local
+release preserves caller-owned files and supports multiple runtimes.
+
+`attach_environment(config, EnvironmentReference.from_mapping(...))` asks the
+selected provider to verify an existing resource. Providers that do not support
+attachment return an unsupported-provider error. Attachment retains caller
+ownership; release detaches without deleting that resource. Provider availability
+and runtime reuse limits depend on the selected environment implementation.
+Non-local workspace and artifact paths refer to the task environment and are
+not resolved against the host's `base_dir`. Runtime startup currently supports
+local environments; provider-specific startup is added alongside each provider.
+
 ### Sandbox Command Bridge
 
 `fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, and `stop` commands call the existing `Fabric.start_runtime()`, `Runtime.invoke()`, and `Runtime.stop()` methods. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
