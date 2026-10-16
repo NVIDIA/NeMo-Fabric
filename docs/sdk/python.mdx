@@ -1070,10 +1070,9 @@ can be read, `resources` is
 `{"error": "resource_observation_unavailable"}` or
 `{"error": "resource_observation_unsupported"}`. CPU time is cumulative since
 the adapter host started. When both the start and end lines hold a snapshot,
-the end line's `cpu_time_seconds` minus the start line's is a partial observed
-CPU delta for the invocation: it leaves out descendants that left the process
-tree before the end snapshot. Read a decrease as unknown, never as zero or a
-negative CPU time.
+the end line's `cpu_time_seconds` minus the start line's is an estimate of the
+invocation's CPU time. Reaping and changes to the process tree can make it
+overcount or undercount. Treat a negative difference as unknown.
 
 One NeMo Fabric thread writes the sample lines for every recorded invocation
 in the process, one record after another. Sampling does not take the host

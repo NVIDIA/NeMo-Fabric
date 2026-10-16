@@ -63,11 +63,11 @@ gives NeMo Fabric's failure cause (`fabric_failed`, `sandbox_failed`,
 for a timeout, and the adapter host's exit status. Only a `failed` result
 reads `agent_failed`; an error NeMo Fabric raises never does. Each line
 stores the runtime's resource snapshot as `resources`. When both the start and
-end lines hold one, end minus start is a partial observed CPU delta that
-leaves out descendants that left the process tree; read a decrease as
-unknown, never as zero or negative. It holds no prompts, output, or error
-messages. A recent sample shows that NeMo Fabric observed the record
-recently, not that the agent is making progress. After three sample intervals
+end lines hold one, end minus start CPU time is an estimate. Reaping and
+changes to the process tree can make it overcount or undercount the
+invocation's CPU time. Treat a negative difference as unknown. The file holds
+no prompts, output, or error messages. A recent sample shows that NeMo Fabric
+observed the record recently, not that the agent is making progress. After three sample intervals
 without an update, the record is stale and the invocation's outcome is
 unknown until an end line exists; never count a stale record as failed. One
 slow snapshot read delays samples for every record in the process, and a
