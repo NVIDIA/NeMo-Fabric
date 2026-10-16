@@ -1029,7 +1029,9 @@ Two timeouts reach this rule:
 - NeMo Fabric's own timeout fired (error code `host_timeout`). `forced` is
   `true`, and `usage` is the time until the timeout fired. `elapsed_ms` also
   covers NeMo Fabric stopping the hung adapter host, so it is larger.
-  `exit_signal` is then the signal NeMo Fabric sent, not a kernel kill.
+  On Linux and macOS, `exit_signal` is then usually the signal NeMo Fabric
+  sent (9), unless the host exited by itself during the 2-second grace period.
+  On Windows, a forced stop gives `exit_code` 1 and no signal.
 - The adapter stopped at the deadline NeMo Fabric gave it and reported error
   code `timeout`, in a `failed` result or as an error. `forced` is `false`.
   That deadline is earlier than `value`: the timeout less 10 seconds, and at

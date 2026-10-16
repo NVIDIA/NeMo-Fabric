@@ -467,7 +467,7 @@
           ]
         },
         "forced": {
-          "description": "Whether Fabric force-stopped the adapter host. After a forced stop,\n`exit_signal` is the signal Fabric sent.",
+          "description": "Whether Fabric force-stopped the adapter host. After a forced stop on\nLinux and macOS, `exit_signal` is usually the signal Fabric sent (9),\nunless the host exited by itself during the 2-second grace period.",
           "type": [
             "boolean",
             "null"

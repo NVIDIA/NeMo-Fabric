@@ -195,8 +195,9 @@ pub(crate) struct Stop {
     /// What stopped the invocation, when a limit did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<StopReason>,
-    /// Whether Fabric force-stopped the adapter host. After a forced stop,
-    /// `exit_signal` is the signal Fabric sent.
+    /// Whether Fabric force-stopped the adapter host. After a forced stop on
+    /// Linux and macOS, `exit_signal` is usually the signal Fabric sent (9),
+    /// unless the host exited by itself during the 2-second grace period.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forced: Option<bool>,
     /// The limit that ended the invocation.
