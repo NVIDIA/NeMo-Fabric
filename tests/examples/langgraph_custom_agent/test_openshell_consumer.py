@@ -103,6 +103,9 @@ def test_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
     args = _args(tmp_path, ownership=ownership, relay=True, mcp=True)
     events = []
     requests = []
+    state_file = tmp_path / "sandbox-state.json"
+    monkeypatch.setenv("OPENSHELL_FABRIC_SANDBOX_STATE_FILE", str(state_file))
+    prepared = SimpleNamespace(connection={"sandbox_id": "owned-sandbox-id"})
 
     class FakeRuntime:
         runtime_id = "langgraph-runtime"
@@ -133,11 +136,13 @@ def test_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
 
         async def prepare_environment(self, config):
             events.append("prepare")
-            return "environment"
+            return prepared
 
         async def start_runtime_in(self, config, environment):
             events.append("start")
-            assert environment == "environment"
+            assert environment == (
+                "environment" if ownership == "caller_owned" else prepared
+            )
             assert (
                 config.harness.adapter_id
                 == "nvidia.fabric.example.langgraph.email-phishing"
@@ -166,6 +171,13 @@ def test_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
     ]
     assert requests[0].relay_session_root == requests[1].relay_session_root
     assert json.loads(Path(args.results_file).read_text(encoding="utf-8")) == report
+    if ownership == "fabric_owned":
+        assert json.loads(state_file.read_text()) == {
+            "name": args.sandbox_name,
+            "id": "owned-sandbox-id",
+        }
+    else:
+        assert not state_file.exists()
 
 
 def test_failed_invocation_still_stops_and_releases_without_exposing_details(
@@ -173,6 +185,9 @@ def test_failed_invocation_still_stops_and_releases_without_exposing_details(
 ):
     args = _args(tmp_path)
     events = []
+    state_file = tmp_path / "sandbox-state.json"
+    monkeypatch.setenv("OPENSHELL_FABRIC_SANDBOX_STATE_FILE", str(state_file))
+    prepared = SimpleNamespace(connection={"sandbox_id": "owned-sandbox-id"})
 
     class FakeRuntime:
         runtime_id = "failed-langgraph-runtime"
@@ -188,7 +203,7 @@ def test_failed_invocation_still_stops_and_releases_without_exposing_details(
     class FakeFabric:
         async def prepare_environment(self, config):
             events.append("prepare")
-            return "environment"
+            return prepared
 
         async def start_runtime_in(self, config, environment):
             events.append("start")
@@ -204,3 +219,37 @@ def test_failed_invocation_still_stops_and_releases_without_exposing_details(
     assert report["error"] == {"code": "invoke_failed", "stage": "invoke"}
     assert "private provider details" not in json.dumps(report)
     assert events == ["prepare", "start", "stop", "release"]
+    assert json.loads(state_file.read_text())["id"] == "owned-sandbox-id"
+
+
+def test_prepared_sandbox_identity_is_saved_before_runtime_start(tmp_path, monkeypatch):
+    args = _args(tmp_path)
+    state_file = tmp_path / "sandbox-state.json"
+    monkeypatch.setenv("OPENSHELL_FABRIC_SANDBOX_STATE_FILE", str(state_file))
+    events = []
+    prepared = SimpleNamespace(connection={"sandbox_id": "owned-sandbox-id"})
+
+    class FakeFabric:
+        async def prepare_environment(self, config):
+            events.append("prepare")
+            return prepared
+
+        async def start_runtime_in(self, config, environment):
+            events.append("start")
+            assert environment is prepared
+            assert json.loads(state_file.read_text())["id"] == "owned-sandbox-id"
+            raise FabricRuntimeError("private details", code="start_failed", stage="start")
+
+        async def release_environment(self, environment):
+            events.append("release")
+
+    monkeypatch.setattr(openshell, "Fabric", FakeFabric)
+    report = asyncio.run(openshell.run_demo(args))
+
+    assert report["status"] == "failed"
+    assert report["error"] == {"code": "start_failed", "stage": "start"}
+    assert events == ["prepare", "start", "release"]
+    assert json.loads(state_file.read_text()) == {
+        "name": args.sandbox_name,
+        "id": "owned-sandbox-id",
+    }
