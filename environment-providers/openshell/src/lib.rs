@@ -21,6 +21,7 @@ use openshell_sdk::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 const PROTOCOL_VERSION: &str = "fabric.environment-provider.v1alpha1";
@@ -31,6 +32,15 @@ const DEFAULT_DELETE_TIMEOUT_SECONDS: u64 = 30;
 const DEFAULT_EXEC_TIMEOUT_SECONDS: u64 = 30;
 const GATEWAY_CALL_TIMEOUT_SECONDS: u64 = 30;
 const MAX_OPERATION_TIMEOUT_SECONDS: u64 = 600;
+
+// OpenShell 0.1.2 limits DNS-routable sandbox names to 19 bytes. Keep the
+// environment ID in the label for exact identity checks during reconciliation.
+fn generated_sandbox_name(environment_id: &str) -> String {
+    let digest = Sha256::digest(environment_id.as_bytes());
+    let mut prefix = [0_u8; 8];
+    prefix.copy_from_slice(&digest[..8]);
+    format!("nf-{:016x}", u64::from_be_bytes(prefix))
+}
 
 /// Provider process failure.
 #[derive(Debug, Error)]
@@ -258,7 +268,7 @@ where
     let sandbox_name = settings
         .sandbox_name
         .clone()
-        .unwrap_or_else(|| format!("nemo-fabric-{environment_id}"));
+        .unwrap_or_else(|| generated_sandbox_name(environment_id));
     let sandbox = match bounded_gateway_call(
         "create",
         Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS),
@@ -1608,6 +1618,20 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
+    #[test]
+    fn generated_sandbox_names_fit_the_openshell_gateway_contract() {
+        let id = "nemo-fabric-environment-1760559084-12345-678";
+        let name = generated_sandbox_name(id);
+        assert_eq!(name.len(), 19);
+        assert!(name.starts_with("nf-"));
+        assert!(
+            name.bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        );
+        assert_eq!(name, generated_sandbox_name(id));
+        assert_ne!(name, generated_sandbox_name("another-environment-id"));
+    }
+
     #[tokio::test]
     async fn bounded_gateway_call_reports_timeouts_without_sdk_details() {
         let error = bounded_gateway_call(
@@ -2254,6 +2278,15 @@ mod tests {
             workspace: Option<&str>,
             request: SandboxCreate,
         ) -> Result<SandboxSnapshot, ProviderError> {
+            let name = request.name.as_deref().expect("sandbox name");
+            assert!(
+                name.len() <= 19,
+                "OpenShell rejects sandbox names longer than 19 bytes: {name}"
+            );
+            assert!(
+                name.bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+            );
             assert_eq!(request.environment["FABRIC_VISIBLE"], "yes");
             assert_eq!(request.command, ["fabric-agent-ctl", "serve"]);
             self.calls.lock().expect("calls").push(format!(
