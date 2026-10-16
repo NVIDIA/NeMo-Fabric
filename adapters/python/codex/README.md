@@ -20,7 +20,7 @@ The following table shows which components each installation provides:
 | `pip install "nemo-fabric-adapters-codex[harness]"` | No | Yes | Yes | Yes |
 | `pip install nemo-fabric-adapters-codex` | No | Yes | No | No |
 
-For an environment-managed SDK, use `openai-codex==0.144.4`. For split runtime
+For an environment-managed SDK, use `openai-codex==0.154.0`. For split runtime
 and adapter environments, configure `ADAPTER_PYTHON` and use matching NeMo
 Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
@@ -117,7 +117,7 @@ Only Codex-specific controls belong in `harness.settings`:
 | `approval_mode` | One of `auto_review` or `deny_all` | No | `auto_review` |
 | `developer_instructions` | Nonempty string | No | No default |
 | `personality` | One of `none`, `friendly`, or `pragmatic` | No | No default |
-| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` | No | No default |
+| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | No | No default |
 | `service_tier` | Nonempty string | No | No default |
 | `output_schema` | JSON Schema object for the final assistant message | No | No default |
 | `config_overrides` | Object that maps nonempty dotted Codex configuration keys to JSON-compatible values | No | `{}` |

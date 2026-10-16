@@ -73,6 +73,8 @@ async def test_native_usage_round_trips_to_harbor_without_relay(
     original_response = mock_api_server._responses_response
 
     def counted_response(payload, output):
+        if tool_round_trip:
+            assert payload["reasoning"]["effort"] == "max"
         response = original_response(payload, output)
         response["usage"] = {
             "input_tokens": 20,
@@ -94,6 +96,7 @@ async def test_native_usage_round_trips_to_harbor_without_relay(
     config.environment.env["FABRIC_TEST_API_KEY"] = "test"
     config.runtime.artifacts = tmp_path / "artifacts"
     if tool_round_trip:
+        config.harness.settings["reasoning_effort"] = "max"
         response = requests.post(
             f"{api_server}/_scenario",
             json={"tool_call": _skill_tool_call(default_skill, tmp_path)},
