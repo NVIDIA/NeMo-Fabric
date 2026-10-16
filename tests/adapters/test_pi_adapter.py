@@ -217,6 +217,13 @@ def test_pi_relay_plugin_fixture_is_core_authored():
                 ],
             ),
             atif=RelayAtifConfig(enabled=True),
+            opentelemetry={
+                "enabled": True,
+                "file_sinks": [
+                    {"type": "openinference", "output_directory": "relay-otlp"},
+                    {"type": "full", "mode": "overwrite"},
+                ],
+            },
         )
     )
 

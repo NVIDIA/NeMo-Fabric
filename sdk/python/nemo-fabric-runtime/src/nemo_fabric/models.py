@@ -762,16 +762,21 @@ class RelayOpenTelemetryConfig(FabricBaseModel):
 
     @model_validator(mode="after")
     def _validate_v4_shape(self) -> Self:
-        legacy_fields = _LEGACY_FLAT_OTEL_FIELDS.intersection(self.model_extra or {})
+        extra = self.model_extra or {}
+        legacy_fields = _LEGACY_FLAT_OTEL_FIELDS.intersection(extra)
         if legacy_fields:
             fields = ", ".join(sorted(legacy_fields))
             raise ValueError(
                 "NeMo Relay observability config version 4 requires exporter "
                 f"fields inside opentelemetry.endpoints: {fields}"
             )
-        if self.enabled and not self.endpoints:
+        file_sinks = extra.get("file_sinks")
+        if "file_sinks" in extra and not isinstance(file_sinks, list):
+            raise ValueError("NeMo Relay opentelemetry.file_sinks must be a list")
+        if self.enabled and not self.endpoints and not file_sinks:
             raise ValueError(
-                "enabled NeMo Relay OpenTelemetry requires at least one endpoint"
+                "enabled NeMo Relay OpenTelemetry requires at least one endpoint "
+                "or file sink"
             )
         return self
 
@@ -884,10 +889,16 @@ class RelayConfig(FabricBaseModel):
                     "NeMo Relay opentelemetry.endpoints must be a list for "
                     f"relay.components[{index}]"
                 )
-            if enabled and not endpoints:
+            file_sinks = opentelemetry.get("file_sinks")
+            if "file_sinks" in opentelemetry and not isinstance(file_sinks, list):
+                raise ValueError(
+                    "NeMo Relay opentelemetry.file_sinks must be a list for "
+                    f"relay.components[{index}]"
+                )
+            if enabled and not endpoints and not file_sinks:
                 raise ValueError(
                     "enabled NeMo Relay OpenTelemetry requires at least one "
-                    f"endpoint for relay.components[{index}]"
+                    f"endpoint or file sink for relay.components[{index}]"
                 )
             for endpoint_index, endpoint_config in enumerate(endpoints or []):
                 if not isinstance(endpoint_config, Mapping):

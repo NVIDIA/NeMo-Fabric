@@ -3373,6 +3373,7 @@ struct RelayArtifactOutput {
 struct RelayArtifactCandidate {
     kind: String,
     path: PathBuf,
+    format: Option<String>,
 }
 
 fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactManifest) {
@@ -3384,7 +3385,7 @@ fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactMa
             continue;
         };
         let kind = artifact.kind.as_str();
-        if !matches!(kind, "atof" | "atif") {
+        if !matches!(kind, "atof" | "atif" | "otlp") {
             continue;
         }
         if artifact.path.as_os_str().is_empty() {
@@ -3406,7 +3407,8 @@ fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactMa
             name,
             kind: kind.to_string(),
             path,
-            media_type: relay_artifact_media_type(kind).map(str::to_string),
+            media_type: relay_artifact_media_type(kind, artifact.format.as_deref())
+                .map(str::to_string),
             metadata: BTreeMap::new(),
         });
     }
@@ -3423,9 +3425,11 @@ fn resolve_relay_artifact_path(manifest: &ArtifactManifest, path: &Path) -> Path
         .unwrap_or_else(|| path.to_path_buf())
 }
 
-fn relay_artifact_media_type(kind: &str) -> Option<&'static str> {
+fn relay_artifact_media_type(kind: &str, format: Option<&str>) -> Option<&'static str> {
     match kind {
         "atof" => Some("application/x-ndjson"),
+        "otlp" if format == Some("proto") => Some("application/x-protobuf"),
+        "otlp" if matches!(format, None | Some("json_lines")) => Some("application/x-ndjson"),
         "atif" => Some("application/json"),
         _ => None,
     }
@@ -5415,6 +5419,43 @@ for line in sys.stdin:
                     && message.contains("configured runtime artifact root")
         ));
         stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn relay_otlp_artifacts_take_their_media_type_from_the_sink_format() {
+        let root = std::env::temp_dir().join(new_id("fabric-relay-otlp-test"));
+        fs::create_dir_all(&root).expect("create root");
+        for name in ["trace.jsonl", "trace.otlp.pb", "trace.json", "trace.csv"] {
+            fs::write(root.join(name), b"").expect("write artifact");
+        }
+        let mut manifest = ArtifactManifest {
+            root: Some(root.clone()),
+            artifacts: Vec::new(),
+        };
+        let output = serde_json::json!({"relay_artifacts": [
+            {"kind": "otlp", "path": "trace.jsonl", "format": "proto"},
+            {"kind": "otlp", "path": "trace.otlp.pb"},
+            {"kind": "otlp", "path": "trace.json", "format": "json_lines"},
+            {"kind": "otlp", "path": "trace.csv", "format": "csv"},
+        ]});
+
+        promote_relay_artifacts_to_manifest(&output, &mut manifest);
+
+        let media_types: Vec<_> = manifest
+            .artifacts
+            .iter()
+            .map(|artifact| (artifact.kind.as_str(), artifact.media_type.as_deref()))
+            .collect();
+        assert_eq!(
+            media_types,
+            [
+                ("otlp", Some("application/x-protobuf")),
+                ("otlp", Some("application/x-ndjson")),
+                ("otlp", Some("application/x-ndjson")),
+                ("otlp", None),
+            ]
+        );
         let _ = fs::remove_dir_all(root);
     }
 
