@@ -199,9 +199,9 @@ docker build -f examples/code_review_agent/Dockerfile.openshell \
 uv pip install --python .venv/bin/python openshell==0.1.2
 ```
 
-The image records its installed descriptor inventory in `/opt/fabric/runtime-server.json`. It advertises interface version 2 and a single-runtime limit. The older NemoClaw v1 client uses a different bridge protocol and needs migration before it can manage this server directly.
+The image records its installed descriptor inventory in `/opt/fabric/runtime-server.json`. It advertises interface version 2.
 
-The current CLI exposes `serve`, `start`, `invoke`, and `stop`. The example waits for the socket, then starts, invokes, and stops using the returned runtime ID. Each sandbox supports one runtime lifecycle; create a fresh sandbox for each demonstration. Rebuild the image and create a new sandbox after updating the CLI; an existing sandbox keeps its original image and command protocol.
+The current CLI exposes `serve`, `start`, `invoke`, and `stop`. The example waits for the socket, then starts, invokes, and stops using the returned runtime ID. A sandbox can own multiple runtime IDs; invoking or stopping one does not affect the others. Rebuild the image and create a new sandbox after updating the CLI; an existing sandbox keeps its original image and command protocol.
 
 Select a registered test gateway using `OPENSHELL_GATEWAY` and set `OPENSHELL_WORKSPACE` to the test workspace. The real `OPENAI_API_KEY` belongs in the environment of the workstation shell running `openshell provider create`, outside the sandbox. OpenShell stores that credential at the gateway and supplies a shadow credential to processes inside the sandbox.
 
@@ -231,7 +231,7 @@ Run the two-turn review using the registered gateway:
 
 For a local plaintext gateway, add `--gateway 127.0.0.1:PORT`. `--model`, `--base-url`, and `--api-key-env` override the model connection. The command prints one JSON report containing the prompts, runtime ID, normalized review results, command timings and exit codes, stop result, and any structured error. `--output-dir` writes that report to `report.json` and a readable review transcript to `transcript.md`, including failed runs. The output directory must be new; existing results are preserved. The records omit raw stderr and exception details. The command does not retry an invocation after an uncertain outcome; it attempts stop for a confirmed runtime even when an invocation fails. A missing start response leaves runtime ownership unknown and requires sandbox cleanup.
 
-After stop, the runtime server and socket remain reachable and caller-owned files remain. The sandbox has used its runtime lifecycle; another start is rejected. Ordinary SDK stop does not prove that harness descendants exited, so `fabric.unclean` remains through server shutdown. Delete the sandbox through OpenShell after collecting evidence and create a fresh sandbox for another demonstration. The image excludes the optional Linux `setpriv` wrapper because OpenShell blocks capability activation. Qualify conversation continuity with a fresh tag on the first invocation and recall the tag on the second without including the tag again. Preserve the normalized review and stop results, independently read a retained file, and verify replacement start is rejected.
+After stop, the runtime server and socket remain reachable and caller-owned files remain. Another runtime can start in the same sandbox. Ordinary SDK stop does not prove that harness descendants exited, so `fabric.unclean` remains through server shutdown. Delete the sandbox through OpenShell after collecting evidence. The image excludes the optional Linux `setpriv` wrapper because OpenShell blocks capability activation. Qualify conversation continuity with a fresh tag on the first invocation and recall the tag on the second without including the tag again. Preserve the normalized review and stop results, independently read a retained file, and verify another runtime can start after stopping the first.
 
 After saving the report and transcript on your workstation, delete only the example sandbox. OpenShell's supervisor then cleans up the sandbox processes. The gateway, provider, and saved results remain available:
 
@@ -241,7 +241,7 @@ openshell sandbox delete code-review --workspace "$OPENSHELL_WORKSPACE"
 
 To run the example again, repeat the sandbox creation command above and choose a new `--output-dir`.
 
-If an invocation times out or cleanup fails, the same one-lifecycle restriction prevents overlap with a surviving harness. The enclosing sandbox supervisor handles descendant cleanup. Successful SDK stop alone is not evidence that harness children exited.
+If an invocation times out or cleanup fails, runtime IDs keep command routing separate, while the enclosing sandbox supervisor remains responsible for descendant cleanup. Successful SDK stop alone is not evidence that harness children exited.
 
 ### OpenHands (`openhands`)
 

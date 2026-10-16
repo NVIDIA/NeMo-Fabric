@@ -33,11 +33,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 WORKDIR /src/fabric
 COPY Cargo.toml Cargo.lock pyproject.toml LICENSE ./
 COPY crates/ crates/
+COPY environment-providers/ environment-providers/
 COPY sdk/python/ sdk/python/
 COPY adapter-contract/python/ adapter-contract/python/
 COPY adapters/python/ adapters/python/
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/fabric/target \
     uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels --config-setting build-args=--locked sdk/python/nemo-fabric-runtime \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapter-contract/python \

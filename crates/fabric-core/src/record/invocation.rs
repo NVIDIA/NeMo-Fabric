@@ -446,9 +446,13 @@ fn error_end_line(
 ) -> EndLine {
     let (code, stage) = match error {
         FabricError::AdapterLifecycleOperation { code, .. } => (code.as_str(), ErrorStage::Invoke),
-        // After the record starts, only the check of the adapter's result
-        // extensions raises this, the same fault as a rejected result.
-        FabricError::AdapterCompatibility { .. } => (INVALID_AGENT_RUN_RESULT, ErrorStage::Invoke),
+        // After the record starts, the check of the adapter's result
+        // extensions raises these: an extension the descriptor does not
+        // declare, or one that breaks its declared schema. Both are the same
+        // fault as a rejected result.
+        FabricError::AdapterCompatibility { .. } | FabricError::InvalidAdapterExtension { .. } => {
+            (INVALID_AGENT_RUN_RESULT, ErrorStage::Invoke)
+        }
         FabricError::Write { .. } => (ARTIFACT_WRITE_FAILED, ErrorStage::Artifact),
         _ => (FABRIC_ERROR, ErrorStage::Invoke),
     };
@@ -508,6 +512,30 @@ mod tests {
     use super::*;
     use crate::config::{FabricConfig, ResolveContext, resolve_run_plan_from_config};
     use crate::record::test_hooks::{self, Fault};
+
+    #[test]
+    fn rejected_result_extensions_read_invalid_agent_run_result() {
+        let undeclared = FabricError::AdapterCompatibility {
+            adapter_id: "demo".to_string(),
+            field: "result.extensions".to_string(),
+            reason: "not declared".to_string(),
+        };
+        let schema_invalid = FabricError::InvalidAdapterExtension {
+            adapter_id: "demo".to_string(),
+            descriptor_source: crate::config::DescriptorSource::Bundled,
+            descriptor_path: std::path::PathBuf::from("adapter.json"),
+            extension_path: "result.extensions.demo".to_string(),
+            reason: "breaks the declared schema".to_string(),
+        };
+        for error in [undeclared, schema_invalid] {
+            let line = error_end_line(&error, 1, OomKills::Count(0), None);
+            assert_eq!(
+                line.error.expect("end line error").code,
+                INVALID_AGENT_RUN_RESULT,
+                "{error}"
+            );
+        }
+    }
 
     fn record_test_fixture() -> (RunPlan, RuntimeHandle, InvocationHandle) {
         let config: FabricConfig = serde_json::from_value(serde_json::json!({
