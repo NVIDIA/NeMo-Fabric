@@ -9,8 +9,10 @@ pub mod agent_execution;
 pub mod config;
 pub mod doctor;
 pub mod error;
+mod record;
 pub mod runtime;
 pub mod schema;
+mod time;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
 pub use agent_execution::{
@@ -28,10 +30,11 @@ pub use config::{
     EnvironmentOwnership, EnvironmentPlan, FabricConfig, HarnessConfig, InstructionConfig,
     InstructionMode, InstructionsConfig, McpAuthenticationConfig, McpConfig, McpExposure,
     McpServerPlan, McpTransport, MetadataConfig, ModelConfig, OAuthTokenEndpointAuthMethod,
-    ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, ResolvedAdapterTargetDescriptor,
-    RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
-    TelemetryProvider, TelemetryProviderConfig, ToolDefinitionConfig, ToolsConfig, WorkflowConfig,
-    WorkflowEntrypointConfig, WorkflowTargetSpec, inspect_adapter_config, load_adapter_descriptor,
+    RecordConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor,
+    ResolvedAdapterTargetDescriptor, RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig,
+    TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig,
+    ToolDefinitionConfig, ToolsConfig, WorkflowConfig, WorkflowEntrypointConfig,
+    WorkflowTargetSpec, inspect_adapter_config, load_adapter_descriptor,
     load_adapter_target_descriptor, resolve_diagnostic_plan_from_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories, resolve_run_plan_from_config,
     resolve_run_plan_from_config_with_adapter_directories,
