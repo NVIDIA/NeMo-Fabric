@@ -294,6 +294,8 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 },
             );
         }
+        // TODO(#428): Sandbox readiness can precede the Fabric server socket.
+        // Poll the server-scope `fabric-agent-ctl check` here before Start.
         let command = TaskCommand::Start {
             agent: plan.agent_name.clone(),
             config,
