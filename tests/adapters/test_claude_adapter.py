@@ -23,6 +23,7 @@ from claude_agent_sdk import ClaudeSDKError
 from claude_agent_sdk import CLIConnectionError
 from claude_agent_sdk import CLIJSONDecodeError
 from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import ConversationResetMessage
 from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
@@ -1047,6 +1048,97 @@ async def test_claude_runtime_reuses_one_connected_sdk_client(
     assert second["response"] == "done-2"
     assert invalid["error"]["code"] == "claude_invalid_request"
     assert first["session_id"] == second["session_id"] == "claude-session"
+
+
+def running_total_result(total_cost_usd: float | None) -> ResultMessage:
+    return ResultMessage(
+        subtype="success",
+        duration_ms=100,
+        duration_api_ms=80,
+        is_error=False,
+        num_turns=1,
+        session_id="claude-session",
+        total_cost_usd=total_cost_usd,
+        usage={"input_tokens": 1, "output_tokens": 1},
+        result="done",
+    )
+
+
+def install_scripted_client(
+    monkeypatch: pytest.MonkeyPatch, responses: list[list[Message]]
+) -> None:
+    remaining = iter(responses)
+
+    async def respond(_client: MagicMock) -> AsyncIterator[Message]:
+        for message in next(remaining):
+            yield message
+
+    install_fake_client(monkeypatch, respond)
+
+
+async def invocation_costs(
+    claude_payload: dict[str, Any], invocations: int
+) -> list[float | None]:
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(start_payload))
+    costs = []
+    for _ in range(invocations):
+        result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+        assert result.usage is not None
+        assert result.output["cost_usd"] == result.usage.cost_usd
+        costs.append(result.usage.cost_usd)
+    await runtime.stop()
+    return costs
+
+
+@pytest.mark.parametrize(
+    ("totals", "expected"),
+    [
+        pytest.param([0.10, 0.30], [0.10, 0.20], id="running-total"),
+        pytest.param([0.10, 0.10], [0.10, 0.0], id="no-new-spend"),
+        pytest.param([0.30, 0.10, 0.15], [0.30, None, 0.05], id="decreasing-total"),
+        pytest.param(
+            [0.10, None, 0.40, 0.50], [0.10, None, None, 0.10], id="missing-total"
+        ),
+    ],
+)
+async def test_claude_runtime_reports_cost_per_invocation(
+    claude_payload, monkeypatch, totals, expected
+):
+    install_scripted_client(
+        monkeypatch, [[running_total_result(total)] for total in totals]
+    )
+
+    assert await invocation_costs(claude_payload, len(totals)) == expected
+
+
+async def test_claude_runtime_leaves_cost_unknown_after_conversation_reset(
+    claude_payload, monkeypatch
+):
+    reset = ConversationResetMessage(
+        new_conversation_id="conversation-2",
+        uuid="reset-1",
+        session_id="claude-session",
+    )
+    install_scripted_client(
+        monkeypatch,
+        [[reset, running_total_result(0.02)], [running_total_result(0.05)]],
+    )
+
+    assert await invocation_costs(claude_payload, 2) == [None, 0.03]
+
+
+async def test_claude_runtime_cost_starts_from_zero_for_each_client(
+    claude_payload, monkeypatch
+):
+    install_scripted_client(
+        monkeypatch, [[running_total_result(0.10)], [running_total_result(0.10)]]
+    )
+
+    assert await invocation_costs(claude_payload, 1) == [0.10]
+    assert await invocation_costs(claude_payload, 1) == [0.10]
 
 
 async def test_claude_runtime_removes_mcp_config_after_failed_sdk_connect(
