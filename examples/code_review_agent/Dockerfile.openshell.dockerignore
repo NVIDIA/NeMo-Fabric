@@ -5,6 +5,8 @@
 !LICENSE
 !crates/
 !crates/**
+!environment-providers/
+!environment-providers/**
 !sdk/
 !sdk/python/
 !sdk/python/**

@@ -211,7 +211,7 @@ async def serve(
         # Retain ownership after any runtime lifecycle. SDK stop alone
         # does not prove that harness descendants exited.
         shutdown_completed = True
-        unused_lifecycle = not host.lifecycle_used
+        unused_lifecycle = not host.has_used_runtime
     finally:
         if owned_socket is not None:
             host.shutting_down = True

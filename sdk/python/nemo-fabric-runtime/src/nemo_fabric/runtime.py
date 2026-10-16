@@ -1055,9 +1055,11 @@ async def _call_blocking(func: Any) -> Any:
     try:
         return await asyncio.shield(worker)
     except asyncio.CancelledError as cancelled:
+        # Re-awaiting shield in a cancelled task can prevent the worker result
+        # from becoming observable, so let the event loop finish it first.
         while not worker.done():
             try:
-                await asyncio.shield(worker)
+                await asyncio.sleep(0.01)
             except asyncio.CancelledError:
                 continue
         try:

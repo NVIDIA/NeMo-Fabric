@@ -458,9 +458,13 @@ fn result_end_line(result: &RunResult, end: EndValues) -> EndLine {
 fn error_end_line(error: &FabricError, end: EndValues) -> EndLine {
     let (code, stage) = match error {
         FabricError::AdapterLifecycleOperation { code, .. } => (code.as_str(), ErrorStage::Invoke),
-        // After the record starts, only the check of the adapter's result
-        // extensions raises this, the same fault as a rejected result.
-        FabricError::AdapterCompatibility { .. } => (INVALID_AGENT_RUN_RESULT, ErrorStage::Invoke),
+        // After the record starts, the check of the adapter's result
+        // extensions raises these: an extension the descriptor does not
+        // declare, or one that breaks its declared schema. Both are the same
+        // fault as a rejected result.
+        FabricError::AdapterCompatibility { .. } | FabricError::InvalidAdapterExtension { .. } => {
+            (INVALID_AGENT_RUN_RESULT, ErrorStage::Invoke)
+        }
         FabricError::Write { .. } => (ARTIFACT_WRITE_FAILED, ErrorStage::Artifact),
         _ => (FABRIC_ERROR, ErrorStage::Invoke),
     };
@@ -539,6 +543,36 @@ mod tests {
     /// A ticker whose thread never ticks during a test.
     fn idle_ticker() -> Arc<SampleTicker> {
         SampleTicker::new(Duration::from_secs(3600))
+    }
+
+    #[test]
+    fn rejected_result_extensions_read_invalid_agent_run_result() {
+        let undeclared = FabricError::AdapterCompatibility {
+            adapter_id: "demo".to_string(),
+            field: "result.extensions".to_string(),
+            reason: "not declared".to_string(),
+        };
+        let schema_invalid = FabricError::InvalidAdapterExtension {
+            adapter_id: "demo".to_string(),
+            descriptor_source: crate::config::DescriptorSource::Bundled,
+            descriptor_path: std::path::PathBuf::from("adapter.json"),
+            extension_path: "result.extensions.demo".to_string(),
+            reason: "breaks the declared schema".to_string(),
+        };
+        for error in [undeclared, schema_invalid] {
+            let end = EndValues {
+                elapsed_ms: 1,
+                resources: Resources::UNAVAILABLE,
+                oom_kills: OomKills::Count(0),
+                stop: None,
+            };
+            let line = error_end_line(&error, end);
+            assert_eq!(
+                line.error.expect("end line error").code,
+                INVALID_AGENT_RUN_RESULT,
+                "{error}"
+            );
+        }
     }
 
     fn record_test_fixture() -> (RunPlan, RuntimeHandle, InvocationHandle) {

@@ -74,9 +74,11 @@ slow snapshot read delays samples for every record in the process, and a
 suspended process can resume. A record also stops changing when a write
 fails; the result's `record_write_failed` event says so. Without
 `sample_interval_ms`, a record without an end line has an unknown outcome.
-Recording is synchronous and best-effort: a failed record
-write adds a `record_write_failed` event and does not replace the result, and
-slow storage delays the invocation. The format is the `v1alpha1`
+Recording is synchronous and best-effort: when the invocation returns a
+result, a failed record write adds a `record_write_failed` event to it, and its
+status, output, error, and usage stay the same; when the invocation raises,
+the error stays the same error. Slow storage delays the invocation. The format
+is the `v1alpha1`
 [run record line schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/sdk/run-record-line.schema.json)
 and may change until the `nemo-fabric report` command ships.
 
