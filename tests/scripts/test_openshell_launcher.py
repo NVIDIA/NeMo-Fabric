@@ -339,6 +339,8 @@ def test_hermes_code_review_workload_selects_harness_and_optional_relay(
     launcher, relay_enabled
 ):
     _, root, _ = launcher
+    profile = root / "local-model-profile.yaml"
+    profile.write_text("id: local-code-review\n")
     completed = _run(
         launcher,
         ROOT / "examples/code_review_agent/demo-openshell-hermes-sdk.sh",
@@ -347,8 +349,8 @@ def test_hermes_code_review_workload_selects_harness_and_optional_relay(
             "OPENSHELL_CODE_REVIEW_RELAY": str(relay_enabled).lower(),
             "OPENAI_API_KEY": "test-key-must-not-appear-in-command-arguments",
             "MOCK_EXPECTED_MODEL_API_KEY": "test-key-must-not-appear-in-command-arguments",
-            "OPENSHELL_MODEL_PROVIDER_PROFILE": "/tmp/local-model-profile.yaml",
-            "OPENSHELL_CODE_REVIEW_BASE_URL": "http://10.0.0.10:8000/v1",
+            "OPENSHELL_MODEL_PROVIDER_PROFILE": str(profile),
+            "OPENSHELL_CODE_REVIEW_BASE_URL": "https://inference.example.test/v1",
             "OPENSHELL_CODE_REVIEW_MODEL": "nvidia/nemotron-3-ultra-550b-a55b",
         },
     )
@@ -360,7 +362,7 @@ def test_hermes_code_review_workload_selects_harness_and_optional_relay(
     assert call["args"][call["args"].index("--harness") + 1] == "hermes"
     assert ("--relay" in call["args"]) is relay_enabled
     assert call["args"][call["args"].index("--base-url") + 1] == (
-        "http://10.0.0.10:8000/v1"
+        "https://inference.example.test/v1"
     )
     assert call["args"][call["args"].index("--model") + 1] == (
         "nvidia/nemotron-3-ultra-550b-a55b"
@@ -371,7 +373,7 @@ def test_hermes_code_review_workload_selects_harness_and_optional_relay(
         if operation["command"] == "openshell" and "profile" in operation["args"]
     )
     assert profile_call["args"][profile_call["args"].index("--file") + 1] == (
-        "/tmp/local-model-profile.yaml"
+        str(profile)
     )
     provider_call = next(
         operation
@@ -380,6 +382,9 @@ def test_hermes_code_review_workload_selects_harness_and_optional_relay(
         and "provider" in operation["args"]
     )
     assert provider_call["model_key_matches_expected"]
+    assert provider_call["args"][provider_call["args"].index("--type") + 1] == (
+        "local-code-review"
+    )
     assert "test-key-must-not-appear-in-command-arguments" not in json.dumps(operations)
 
 
@@ -404,6 +409,27 @@ def test_hermes_default_profile_uses_nvidia_key_when_both_keys_exist(launcher):
         and "provider" in operation["args"]
     )
     assert provider_call["model_key_matches_expected"]
+
+
+def test_hermes_missing_credential_stops_before_provider_creation(launcher):
+    _, root, _ = launcher
+    completed = _run(
+        launcher,
+        ROOT / "examples/code_review_agent/demo-openshell-hermes-sdk.sh",
+        {
+            "OPENSHELL_EXAMPLE_MODE": "caller_owned",
+            "NVIDIA_API_KEY": "",
+            "OPENAI_API_KEY": "",
+        },
+    )
+
+    assert completed.returncode == 2
+    assert "NVIDIA_API_KEY is required" in completed.stderr
+    assert not any(
+        operation["command"] == "openshell"
+        and ("provider" in operation["args"] or "sandbox" in operation["args"])
+        for operation in _operations(root)
+    )
 
 
 @pytest.mark.parametrize(

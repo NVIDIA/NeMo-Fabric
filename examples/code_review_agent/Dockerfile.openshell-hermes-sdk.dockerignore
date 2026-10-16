@@ -11,6 +11,7 @@
 !adapters/python/hermes/
 !adapters/python/hermes/**
 !examples/
+!examples/__init__.py
 !examples/code_review_agent/
 !examples/code_review_agent/**
 **/__pycache__

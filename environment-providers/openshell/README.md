@@ -9,20 +9,20 @@ This optional host process connects NVIDIA NeMo Fabric to OpenShell through its 
 
 ## Architecture
 
-The diagram shows where Fabric processes run on the host and in the sandbox.
+The diagram shows where NeMo Fabric processes run on the host and in the sandbox.
 
 ![Fabric agent execution in OpenShell](../../assets/openshell_architecture.png)
 
 [Edit the architecture diagram](../../assets/openshell_architecture.excalidraw).
 
-On the first OpenShell operation, Fabric launches the OpenShell environment
+On the first OpenShell operation, NeMo Fabric launches the OpenShell environment
 provider (`fabric-environment-openshell serve --stdio`) as a child process on
 the host. It uses `NEMO_FABRIC_OPEN_SHELL_PROVIDER` when set or finds the binary
-on `PATH`. Fabric exchanges JSON with that process through standard input and
+on `PATH`. NeMo Fabric exchanges JSON with that process through standard input and
 output. It reuses an OpenShell provider process for environment operations and
 keeps runtime command processes separate by runtime ID.
 
-For a Fabric-owned sandbox, the OpenShell provider passes `settings.command`
+For a NeMo Fabric-owned sandbox, the OpenShell provider passes `settings.command`
 to OpenShell when creating it; for a caller-owned sandbox, it verifies the
 existing startup command. The examples use `fabric-agent-ctl serve` as that
 long-running sandbox command.
@@ -56,11 +56,14 @@ Use a registered OpenShell gateway and match the CLI, gateway, and runtime compo
 Environment configuration uses `provider="openshell"` and `control_location="in_env_control"`. The gateway connection selects a named workspace or explicitly uses OpenShell's default workspace. Workspace and artifact roots are absolute POSIX paths inside the sandbox; `runtime.artifacts` remains the host collection destination. Select an immutable image digest or local Docker image ID. Task images contain the SDK, `fabric-agent-ctl`, the selected adapter, and the agent/harness.
 
 When `settings.providers` is configured, prepare and attach wait for each
-provider's receipt-bound readiness before returning. The bounded wait prevents
+provider readiness before returning. The bounded wait prevents
 SDK runtime commands from racing OpenShell's asynchronous credential and policy
 installation.
 
-When `settings.sandbox_name` is omitted, the OpenShell provider derives a stable 19-character name from the Fabric environment ID, within OpenShell's sandbox-name limit. This lets it reconcile a create request whose response times out.
+When `settings.sandbox_name` is omitted, the OpenShell provider derives a stable
+19-character name from the NeMo Fabric environment ID, within OpenShell's
+sandbox-name limit. This lets it reconcile a create request whose response
+times out.
 
 With an existing Fabric-ready configuration, use the normal SDK lifecycle:
 
