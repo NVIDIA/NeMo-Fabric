@@ -142,7 +142,8 @@ pub struct RunResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<RunUsage>,
     /// Resource snapshot of the runtime, read once after the adapter returned this
-    /// result. Absent when the runtime's resources could not be observed.
+    /// result. Absent when the runtime's resources could not be observed;
+    /// `runtime_resource_snapshot` returns the error that explains it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource_snapshot: Option<RuntimeResourceSnapshot>,
     /// Artifacts produced or collected by this run.
@@ -1179,8 +1180,8 @@ pub fn invoke_runtime(
 /// [`FabricError::ResourceObservationUnavailable`] when the runtime stopped, is
 /// stopping, its host exited, or a live process in its tree or the process
 /// table cannot be read, and
-/// [`FabricError::ResourceObservationUnsupported`] when the environment provider
-/// or operating system has no resource reader.
+/// [`FabricError::ResourceObservationUnsupported`] when the adapter kind,
+/// environment provider, or operating system has no resource reader.
 pub fn runtime_resource_snapshot(
     plan: &RunPlan,
     runtime: &RuntimeHandle,

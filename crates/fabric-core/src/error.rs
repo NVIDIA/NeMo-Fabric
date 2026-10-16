@@ -287,7 +287,8 @@ pub enum FabricError {
         /// Why the runtime cannot be observed.
         reason: String,
     },
-    /// The runtime's environment provider or operating system has no resource reader.
+    /// The runtime's adapter kind, environment provider, or operating system has
+    /// no resource reader.
     #[error("resource observation is unsupported for runtime `{runtime_id}`: {reason}")]
     ResourceObservationUnsupported {
         /// Runtime handle id.

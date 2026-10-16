@@ -415,7 +415,7 @@
           "type": "null"
         }
       ],
-      "description": "Resource snapshot of the runtime, read once after the adapter returned this\nresult. Absent when the runtime's resources could not be observed."
+      "description": "Resource snapshot of the runtime, read once after the adapter returned this\nresult. Absent when the runtime's resources could not be observed;\n`runtime_resource_snapshot` returns the error that explains it."
     },
     "runtime_id": {
       "description": "Runtime handle id.",

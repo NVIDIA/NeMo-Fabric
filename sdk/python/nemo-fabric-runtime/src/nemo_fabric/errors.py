@@ -90,4 +90,8 @@ class ResourceObservationUnavailableError(FabricRuntimeError):
 
 
 class ResourceObservationUnsupportedError(FabricRuntimeError):
-    """The runtime's environment provider or operating system has no resource reader."""
+    """Runtime resources have no reader.
+
+    The runtime's adapter kind, environment provider, or operating system has
+    no resource reader.
+    """

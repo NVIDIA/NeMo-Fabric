@@ -718,14 +718,17 @@ returning zeros or leaving a process out:
 
 - `ResourceObservationUnavailableError` when the runtime stopped, is stopping,
   its adapter host process exited, or a live process in its tree or the
-  process table cannot be read, for example a macOS descendant that runs as
-  another user.
-- `ResourceObservationUnsupportedError` when the runtime's environment provider
-  or operating system has no resource reader. Windows raises this error.
+  process table cannot be read. For example, on macOS, the snapshot is
+  unavailable while a descendant runs as another user, including setuid
+  programs such as `ps`, `top`, and `sudo`.
+- `ResourceObservationUnsupportedError` when the runtime's adapter kind,
+  environment provider, or operating system has no resource reader. The `http`
+  and `native_plugin` adapter kinds and Windows raise this error.
 
 Each `RunResult` from a local runtime also carries `resource_snapshot`, read
 once after the adapter returned the result. It is `None` when the read failed;
-a failed read never fails the invocation. To estimate one invocation's CPU time,
+a failed read never fails the invocation, and `Runtime.resource_snapshot()`
+raises the error that explains it. To estimate one invocation's CPU time,
 take a snapshot before it and subtract its `cpu_time_seconds` from the
 result's snapshot. CPU time can drop when a descendant is reparented out of the
 tree, so treat a difference as an estimate and a negative difference as
@@ -1121,7 +1124,7 @@ All public SDK errors inherit from `FabricError`.
 | `FabricStateError` | Invalid runtime state transition, such as invoking after stop or starting overlapping invocations. |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 | `ResourceObservationUnavailableError` | `Runtime.resource_snapshot()` cannot read the runtime because it stopped, is stopping, its adapter host exited, or a live process in its tree or the process table cannot be read. Subclass of `FabricRuntimeError`. |
-| `ResourceObservationUnsupportedError` | The runtime's environment provider or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
+| `ResourceObservationUnsupportedError` | The runtime's adapter kind, environment provider, or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
 
 Consumers own job-level retries and rollout-level failure policy.
 Core host-operation deadlines (`host_timeout`) become Python `TimeoutError`, then

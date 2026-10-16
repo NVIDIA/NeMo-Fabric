@@ -751,8 +751,9 @@ class Runtime:
             ResourceObservationUnavailableError: If the runtime stopped, is
                 stopping, its adapter host process exited, or a live process
                 in its tree or the process table cannot be read.
-            ResourceObservationUnsupportedError: If the runtime's environment
-                provider or operating system has no resource reader.
+            ResourceObservationUnsupportedError: If the runtime's adapter
+                kind, environment provider, or operating system has no
+                resource reader.
             FabricNativeUnavailableError: If the native extension is missing.
             FabricRuntimeError: If the native snapshot call fails otherwise.
         """

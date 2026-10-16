@@ -34,7 +34,7 @@ pyo3::create_exception!(
     _native,
     ResourceObservationUnsupportedError,
     PyRuntimeError,
-    "Raised when a runtime's environment provider or operating system has no resource reader."
+    "Raised when a runtime's adapter kind, environment provider, or operating system has no resource reader."
 );
 
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";

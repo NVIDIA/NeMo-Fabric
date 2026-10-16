@@ -17,7 +17,7 @@ Every invocation that reaches the adapter boundary returns a normalized
 | `error` | Structured failure metadata when available. Branch on `status`, not on this field. |
 | `output` | Harness output normalized to the configured output schema. |
 | `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
-| `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. `None` when the read failed. |
+| `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. `None` when the read failed; `runtime.resource_snapshot()` raises the error that explains it. |
 | `artifacts` | Output files, logs, patches, and other materialized references. |
 | `telemetry` | References to NVIDIA NeMo Relay or other telemetry streams from the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
@@ -84,7 +84,7 @@ Refer to the [errors reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/
 | `FabricStateError` | Invalid runtime state transition (invoking after stop, overlapping invocations). |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 | `ResourceObservationUnavailableError` | A resource snapshot cannot be read because the runtime stopped, is stopping, its adapter host exited, or a live process in its tree or the process table cannot be read. Subclass of `FabricRuntimeError`. |
-| `ResourceObservationUnsupportedError` | The runtime's environment provider or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
+| `ResourceObservationUnsupportedError` | The runtime's adapter kind, environment provider, or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
 
 ## Cleanup And Resilience
 
