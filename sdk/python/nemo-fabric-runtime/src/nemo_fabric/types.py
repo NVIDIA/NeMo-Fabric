@@ -6,10 +6,13 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Iterator
 from collections.abc import Mapping
 from collections.abc import Sequence
 from copy import deepcopy
+from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -66,6 +69,27 @@ def _required_text(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise FabricConfigError(f"{name} must be a non-empty string")
     return value
+
+
+# RFC 3339 date-time shape. fromisoformat also accepts a space separator,
+# date-only values and basic ISO 8601 forms, so check the shape first.
+_RFC3339_DATE_TIME = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})"
+)
+
+
+def _utc_timestamp(value: Any, name: str) -> str:
+    text = _required_text(value, name)
+    message = f"{name} must be an RFC 3339 UTC timestamp"
+    if _RFC3339_DATE_TIME.fullmatch(text) is None:
+        raise FabricConfigError(message)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        raise FabricConfigError(message) from None
+    if parsed.utcoffset() != timedelta(0):
+        raise FabricConfigError(message)
+    return text
 
 
 def _boolean(value: Any, name: str) -> bool:
@@ -2022,8 +2046,9 @@ class RuntimeResourceSnapshot(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        for field in ("runtime_id", "started_at", "observed_at"):
-            data[field] = _required_text(data.get(field), field.replace("_", " "))
+        data["runtime_id"] = _required_text(data.get("runtime_id"), "runtime id")
+        for field in ("started_at", "observed_at"):
+            data[field] = _utc_timestamp(data.get(field), field.replace("_", " "))
         for field in ("resident_memory_bytes", "process_count"):
             value = data.get(field)
             if (

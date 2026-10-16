@@ -106,6 +106,30 @@ def test_runtime_resource_snapshot_round_trips_and_rejects_invalid_fields():
             RuntimeResourceSnapshot.from_mapping({**_SNAPSHOT, field: value})
 
 
+@pytest.mark.parametrize("field", ["started_at", "observed_at"])
+def test_runtime_resource_snapshot_timestamps_accept_core_utc_format(field):
+    snapshot = RuntimeResourceSnapshot.from_mapping(
+        {**_SNAPSHOT, field: "2026-10-14T18:01:10.205Z"}
+    )
+
+    assert getattr(snapshot, field) == "2026-10-14T18:01:10.205Z"
+
+
+@pytest.mark.parametrize("field", ["started_at", "observed_at"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "yesterday",
+        "2026-10-14",
+        "2026-10-14T18:01:10+02:00",
+        "2026-10-14T180110Z",
+    ],
+)
+def test_runtime_resource_snapshot_timestamps_reject_non_rfc3339_utc(field, value):
+    with pytest.raises(FabricConfigError, match="RFC 3339 UTC timestamp"):
+        RuntimeResourceSnapshot.from_mapping({**_SNAPSHOT, field: value})
+
+
 def test_run_result_resource_snapshot_is_typed_or_none():
     base = {
         "agent_name": "demo",
