@@ -58,8 +58,10 @@ result lists the file as the artifact with kind `run_record`. The file has a
 elapsed time, error code, numeric usage, and artifact names. It holds no
 prompts, output, or error messages. A record without an end line has an
 unknown outcome; do not count it as failed. Recording is synchronous and
-best-effort: a failed record write adds a `record_write_failed` event and does
-not replace the result, and slow storage delays the invocation. The format is
+best-effort: when the invocation returns a result, a failed record write adds
+a `record_write_failed` event to it and changes nothing else; when the
+invocation raises, the error stays the same error. Slow storage delays the
+invocation. The format is
 the `v1alpha1`
 [run record line schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/sdk/run-record-line.schema.json)
 and may change until a reader ships.
