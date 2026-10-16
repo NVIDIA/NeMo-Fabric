@@ -1050,14 +1050,19 @@ async def test_claude_runtime_reuses_one_connected_sdk_client(
     assert first["session_id"] == second["session_id"] == "claude-session"
 
 
-def running_total_result(total_cost_usd: float | None) -> ResultMessage:
+def running_total_result(
+    total_cost_usd: float | None,
+    *,
+    subtype: str = "success",
+    session_id: str = "claude-session",
+) -> ResultMessage:
     return ResultMessage(
-        subtype="success",
+        subtype=subtype,
         duration_ms=100,
         duration_api_ms=80,
-        is_error=False,
+        is_error=subtype != "success",
         num_turns=1,
-        session_id="claude-session",
+        session_id=session_id,
         total_cost_usd=total_cost_usd,
         usage={"input_tokens": 1, "output_tokens": 1},
         result="done",
@@ -1122,20 +1127,73 @@ async def test_claude_runtime_reports_cost_per_invocation(
     assert await invocation_costs(claude_payload, len(totals)) == expected
 
 
+async def test_claude_runtime_reports_cost_of_failed_invocation(
+    claude_payload, monkeypatch
+):
+    install_scripted_client(
+        monkeypatch,
+        [
+            [running_total_result(0.10)],
+            [running_total_result(0.15, subtype="error_during_execution")],
+            [running_total_result(0.20)],
+        ],
+    )
+
+    assert await invocation_costs(claude_payload, 3) == [0.10, 0.05, 0.05]
+
+
+def conversation_reset(session_id: str) -> ConversationResetMessage:
+    return ConversationResetMessage(
+        new_conversation_id="conversation-2",
+        uuid="reset-1",
+        session_id=session_id,
+    )
+
+
 async def test_claude_runtime_leaves_cost_unknown_after_conversation_reset(
     claude_payload, monkeypatch
 ):
-    reset = ConversationResetMessage(
-        new_conversation_id="conversation-2",
-        uuid="reset-1",
-        session_id="claude-session",
-    )
+    # Messages after a reset carry a new session id.
     install_scripted_client(
         monkeypatch,
-        [[reset, running_total_result(0.02)], [running_total_result(0.05)]],
+        [
+            [
+                conversation_reset("claude-session"),
+                running_total_result(0.02, session_id="claude-session-2"),
+            ],
+            [running_total_result(0.05, session_id="claude-session-2")],
+        ],
     )
 
     assert await invocation_costs(claude_payload, 2) == [None, 0.03]
+
+
+async def test_claude_runtime_rejects_conversation_reset_after_established_session(
+    claude_payload, monkeypatch
+):
+    install_scripted_client(
+        monkeypatch,
+        [
+            [running_total_result(0.10)],
+            [
+                conversation_reset("claude-session"),
+                running_total_result(0.02, session_id="claude-session-2"),
+            ],
+        ],
+    )
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(start_payload))
+
+    first = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    second = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    third = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    await runtime.stop()
+
+    assert first.usage.cost_usd == 0.10
+    assert second.error.code == "claude_session_mismatch"
+    assert third.error.code == "claude_runtime_unavailable"
 
 
 async def test_claude_runtime_cost_starts_from_zero_for_each_client(
