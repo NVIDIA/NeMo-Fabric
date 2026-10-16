@@ -533,7 +533,8 @@ relay_config.enable_relay(
 NeMo Fabric handles these files as follows:
 
 - As with ATOF and ATIF files, each runtime writes to its own directory: `<output_directory>/<runtime_id>`. If you omit `output_directory`, NeMo Fabric uses `artifacts/relay`.
-- File sinks append to an existing file, so it keeps the spans from earlier invocations. To replace the file instead, set `"mode": "overwrite"` on the sink.
+- If you omit `filename`, Relay names each file with a timestamp when it starts. A later invocation can then write to a new file.
+- File sinks append by default. If you set `filename`, that file keeps the spans from earlier invocations. To replace it each time Relay starts, set `"mode": "overwrite"`.
 - `RunResult.artifacts` lists each file as an artifact of kind `otlp`. Its media type is `application/x-ndjson` for the default `json_lines` format and `application/x-protobuf` for the `proto` format.
 
 Relay buffers spans and writes them in batches. It writes the final batch when it shuts down, so read the files after the runtime stops. If Relay crashes, or is forcibly stopped because it does not shut down in time, a file can be missing its most recent spans.

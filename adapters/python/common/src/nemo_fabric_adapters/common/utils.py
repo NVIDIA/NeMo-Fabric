@@ -602,6 +602,12 @@ def _normalize_relay_output_directory(
     return path
 
 
+def _set_default(config: dict[str, Any], key: str, value: Any) -> None:
+    # Unlike dict.setdefault, treat a null field as omitted, as the Pi adapter does.
+    if config.get(key) is None:
+        config[key] = value
+
+
 def normalize_relay_output_dirs(
     plugin_config: dict[str, Any], payload: dict[str, Any]
 ) -> None:
@@ -623,8 +629,8 @@ def normalize_relay_output_dirs(
                     sink, f"atof.sinks[{index}]", base, runtime_id
                 )
                 path.mkdir(parents=True, exist_ok=True)
-                sink.setdefault("filename", "events.atof.jsonl")
-                sink.setdefault("mode", "overwrite")
+                _set_default(sink, "filename", "events.atof.jsonl")
+                _set_default(sink, "mode", "overwrite")
 
         # Relay validates file sinks even in a disabled section or component and
         # creates the directory when it opens a sink. A runtime may reopen Relay,
@@ -635,16 +641,16 @@ def normalize_relay_output_dirs(
                 _normalize_relay_output_directory(
                     sink, f"opentelemetry.file_sinks[{index}]", base, runtime_id
                 )
-                sink.setdefault("mode", "append")
+                _set_default(sink, "mode", "append")
 
         atif = config.get("atif")
         if not isinstance(atif, dict) or not atif.get("enabled"):
             continue
         path = _normalize_relay_output_directory(atif, "atif", base, runtime_id)
         path.mkdir(parents=True, exist_ok=True)
-        atif.setdefault("filename_template", "trajectory-{session_id}.atif.json")
-        atif.setdefault("agent_name", agent_name(payload))
-        atif.setdefault("model_name", relay_model_name(payload))
+        _set_default(atif, "filename_template", "trajectory-{session_id}.atif.json")
+        _set_default(atif, "agent_name", agent_name(payload))
+        _set_default(atif, "model_name", relay_model_name(payload))
 
 
 def _artifact_directory(value: Any) -> Path | None:

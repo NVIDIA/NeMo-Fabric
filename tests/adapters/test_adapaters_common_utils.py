@@ -853,27 +853,67 @@ def test_normalize_relay_output_dirs_rejects_an_invalid_output_directory(
         )
 
 
-@pytest.mark.parametrize("configured", [{}, {"output_directory": None}])
-def test_normalize_relay_output_dirs_defaults_an_omitted_output_directory(
-    tmp_path: Path, configured: dict[str, Any]
+@pytest.mark.parametrize("null", [False, True], ids=["omitted", "null"])
+def test_normalize_relay_output_dirs_defaults_omitted_and_null_fields(
+    tmp_path: Path, null: bool
 ):
+    def fields(*names: str) -> dict[str, None]:
+        return dict.fromkeys(names) if null else {}
+
     observability = {
-        "atof": {"enabled": True, "sinks": [{"type": "file", **configured}]},
-        "opentelemetry": {"file_sinks": [{"type": "full", **configured}]},
-        "atif": {"enabled": True, **configured},
+        "atof": {
+            "enabled": True,
+            "sinks": [
+                {"type": "file", **fields("output_directory", "filename", "mode")}
+            ],
+        },
+        "opentelemetry": {
+            "file_sinks": [{"type": "full", **fields("output_directory", "mode")}]
+        },
+        "atif": {
+            "enabled": True,
+            **fields(
+                "output_directory", "filename_template", "agent_name", "model_name"
+            ),
+        },
     }
 
     common_utils.normalize_relay_output_dirs(
         {"components": [{"kind": "observability", "config": observability}]},
-        {"base_dir": str(tmp_path), "runtime_context": {"runtime_id": "runtime"}},
+        {
+            "agent_name": "review-agent",
+            "base_dir": str(tmp_path),
+            "config": {"models": {"default": {"model": "nvidia/review-model"}}},
+            "runtime_context": {"runtime_id": "runtime"},
+        },
     )
 
-    default = str(tmp_path / "artifacts" / "relay" / "runtime")
-    assert [
-        observability["atof"]["sinks"][0]["output_directory"],
-        observability["opentelemetry"]["file_sinks"][0]["output_directory"],
-        observability["atif"]["output_directory"],
-    ] == [default] * 3
+    directory = str(tmp_path / "artifacts" / "relay" / "runtime")
+    assert observability == {
+        "atof": {
+            "enabled": True,
+            "sinks": [
+                {
+                    "type": "file",
+                    "output_directory": directory,
+                    "filename": "events.atof.jsonl",
+                    "mode": "overwrite",
+                }
+            ],
+        },
+        "opentelemetry": {
+            "file_sinks": [
+                {"type": "full", "output_directory": directory, "mode": "append"}
+            ]
+        },
+        "atif": {
+            "enabled": True,
+            "output_directory": directory,
+            "filename_template": "trajectory-{session_id}.atif.json",
+            "agent_name": "review-agent",
+            "model_name": "nvidia/review-model",
+        },
+    }
 
 
 def test_load_relay_plugin_config_preserves_core_authored_atif_model_name(

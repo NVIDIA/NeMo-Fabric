@@ -585,7 +585,7 @@ test("skips disabled components during output normalization and artifact collect
   }
 });
 
-test("rejects an invalid Relay output directory and defaults an omitted one", async () => {
+test("rejects an invalid Relay output directory and defaults omitted or null fields", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-output-directory-")));
   try {
     for (const [config, section] of [
@@ -609,19 +609,30 @@ test("rejects an invalid Relay output directory and defaults an omitted one", as
       });
     }
 
-    const outputDirectory = join(root, "artifacts", "relay", "runtime-1");
-    for (const configured of [{}, { output_directory: null }]) {
+    const directory = join(root, "artifacts", "relay", "runtime-1");
+    for (const nullFields of [false, true]) {
+      const fields = (...names) => (nullFields ? Object.fromEntries(names.map((name) => [name, null])) : {});
       const pluginConfig = observability({
-        atof: { enabled: true, sinks: [{ type: "file", ...configured }] },
-        opentelemetry: { file_sinks: [{ type: "full", ...configured }] },
-        atif: { enabled: true, ...configured },
+        atof: { enabled: true, sinks: [{ type: "file", ...fields("output_directory", "filename", "mode") }] },
+        opentelemetry: { file_sinks: [{ type: "full", ...fields("output_directory", "mode") }] },
+        atif: { enabled: true, ...fields("output_directory", "filename_template", "agent_name", "model_name") },
       });
       await normalizeRelayOutputDirs(pluginConfig, startInput(root));
-      const { atof, opentelemetry, atif } = pluginConfig.components[0].config;
-      assert.deepEqual(
-        [atof.sinks[0].output_directory, opentelemetry.file_sinks[0].output_directory, atif.output_directory],
-        [outputDirectory, outputDirectory, outputDirectory],
-      );
+      assert.deepEqual(pluginConfig.components[0].config, {
+        version: 4,
+        atof: {
+          enabled: true,
+          sinks: [{ type: "file", output_directory: directory, filename: "events.atof.jsonl", mode: "overwrite" }],
+        },
+        opentelemetry: { file_sinks: [{ type: "full", output_directory: directory, mode: "append" }] },
+        atif: {
+          enabled: true,
+          output_directory: directory,
+          filename_template: "trajectory-{session_id}.atif.json",
+          agent_name: "pi-relay-test",
+          model_name: "gpt-4.1-mini",
+        },
+      });
     }
   } finally {
     await rm(root, { recursive: true, force: true });
