@@ -638,7 +638,7 @@ def build_options(
     settings = _settings(config)
     model = _selected_model_config(config)
     effort: EffortLevel | None = settings.get("effort")
-    if effort is not None and effort not in get_args(EffortLevel):
+    if "effort" in settings and effort not in get_args(EffortLevel):
         raise AdapterConfigError("claude_invalid_configuration", "effort is invalid")
     permission_mode = settings.get("permission_mode")
     if permission_mode is not None and permission_mode not in PERMISSION_MODES:

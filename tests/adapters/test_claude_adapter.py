@@ -455,7 +455,7 @@ def test_build_options_keeps_harness_effort_default_when_omitted(claude_payload)
     assert build_options(claude_payload).effort is None
 
 
-@pytest.mark.parametrize("effort", [True, 1, [], {}, "", "unknown", "ultra"])
+@pytest.mark.parametrize("effort", [None, True, 1, [], {}, "", "unknown", "ultra"])
 def test_build_options_rejects_effort_before_staging(
     claude_payload, monkeypatch, effort
 ):
