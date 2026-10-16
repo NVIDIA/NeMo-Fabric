@@ -18,9 +18,10 @@
 //! leaving the process out.
 //!
 //! Linux reads `/proc/<pid>/stat` and macOS reads `proc_pid_rusage`. To find
-//! the tree, the readers also read other processes' parent IDs and start
-//! times. A snapshot exposes only its own fields: never command lines,
-//! environment variables, open files, or processes outside the tree.
+//! the tree, the macOS reader, and the Linux reader on a kernel without
+//! `/proc/<pid>/task/<tid>/children`, also read other processes' parent IDs.
+//! A snapshot exposes only its own fields: never command lines, environment
+//! variables, open files, or processes outside the tree.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -198,8 +199,10 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 
 #[cfg(target_os = "linux")]
 mod platform {
-    //! `/proc` reads: one pass lists every process's parent, then the tree is
-    //! read from the root down, each parent before its children.
+    //! `/proc` reads, from the root down, each parent before its children.
+    //! Each process's children come from `/proc/<pid>/task/<tid>/children`,
+    //! so a read visits only the runtime's own processes. A kernel built
+    //! without those files falls back to one pass over every process's parent.
 
     use std::collections::{BTreeMap, VecDeque};
     use std::sync::OnceLock;
@@ -248,8 +251,15 @@ mod platform {
         })
     }
 
+    /// Times a process's children are read while waiting for two reads that agree.
+    const MAX_CHILDREN_READS: usize = 4;
+
     /// The `/proc` reads a tree read makes. Tests script them.
     pub(super) trait Procfs {
+        /// Whether the kernel provides `/proc/<pid>/task/<tid>/children`.
+        fn has_children_files(&self) -> bool;
+        /// The children of every thread of `pid`, sorted.
+        fn children(&self, pid: u32) -> Result<Vec<u32>, ReadError>;
         /// Every PID in `/proc`.
         fn pids(&self) -> Result<Vec<u32>, ReadError>;
         fn stat(&self, pid: u32) -> Result<Stat, ReadError>;
@@ -258,6 +268,18 @@ mod platform {
     struct Live;
 
     impl Procfs for Live {
+        fn has_children_files(&self) -> bool {
+            static PRESENT: OnceLock<bool> = OnceLock::new();
+            *PRESENT.get_or_init(|| {
+                let pid = std::process::id();
+                std::path::Path::new(&format!("/proc/{pid}/task/{pid}/children")).exists()
+            })
+        }
+
+        fn children(&self, pid: u32) -> Result<Vec<u32>, ReadError> {
+            read_until_stable(|| children_once(pid))
+        }
+
         fn pids(&self) -> Result<Vec<u32>, ReadError> {
             let mut pids = Vec::new();
             for entry in std::fs::read_dir("/proc").map_err(read_error)? {
@@ -273,6 +295,43 @@ mod platform {
             let text = std::fs::read_to_string(format!("/proc/{pid}/stat")).map_err(read_error)?;
             parse_stat(&text).ok_or(ReadError::Unreadable)
         }
+    }
+
+    /// One read of the children files of every thread of `pid`. A thread that
+    /// exited during the read is skipped; its children move to another thread.
+    fn children_once(pid: u32) -> Result<Vec<u32>, ReadError> {
+        let mut children = Vec::new();
+        for entry in std::fs::read_dir(format!("/proc/{pid}/task")).map_err(read_error)? {
+            let tid = entry.map_err(read_error)?.file_name();
+            let path = format!("/proc/{pid}/task/{}/children", tid.to_string_lossy());
+            let text = match std::fs::read_to_string(path).map_err(read_error) {
+                Ok(text) => text,
+                Err(ReadError::Gone) => continue,
+                Err(unreadable) => return Err(unreadable),
+            };
+            for child in text.split_whitespace() {
+                children.push(child.parse().map_err(|_| ReadError::Unreadable)?);
+            }
+        }
+        children.sort_unstable();
+        Ok(children)
+    }
+
+    /// Read a process's children until two reads in a row agree. The kernel
+    /// can skip a live child when a sibling is reaped during the read, and a
+    /// thread's children move when it exits; either changes the next read.
+    pub(super) fn read_until_stable(
+        mut read: impl FnMut() -> Result<Vec<u32>, ReadError>,
+    ) -> Result<Vec<u32>, ReadError> {
+        let mut last = read()?;
+        for _ in 1..MAX_CHILDREN_READS {
+            let next = read()?;
+            if next == last {
+                return Ok(next);
+            }
+            last = next;
+        }
+        Err(ReadError::Unreadable)
     }
 
     /// `ENOENT` and `ESRCH` mean the process exited; anything else means it
@@ -309,21 +368,15 @@ mod platform {
         read_tree_with(&Live, root, identity, clock_ticks_per_second(), page_size())
     }
 
-    /// Child PIDs and start times by parent PID.
-    type ChildrenByParent = BTreeMap<u32, Vec<(u32, u64)>>;
-
-    /// Every process's children, each with its start time. A process that
-    /// exited during the pass is left out; one that cannot be read leaves the
-    /// listing incomplete.
-    fn children_by_parent(procfs: &impl Procfs) -> Result<ChildrenByParent, &'static str> {
+    /// Every process's children, for a kernel without children files. A
+    /// process that exited during the pass is left out; one that cannot be
+    /// read leaves the listing incomplete.
+    fn children_by_parent(procfs: &impl Procfs) -> Result<BTreeMap<u32, Vec<u32>>, &'static str> {
         let pids = procfs.pids().map_err(|_| reason::TABLE_UNREADABLE)?;
-        let mut children = ChildrenByParent::new();
+        let mut children: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
         for pid in pids {
             match procfs.stat(pid) {
-                Ok(stat) => children
-                    .entry(stat.ppid)
-                    .or_default()
-                    .push((pid, stat.start)),
+                Ok(stat) => children.entry(stat.ppid).or_default().push(pid),
                 Err(ReadError::Gone) => {}
                 Err(ReadError::Unreadable) => return Err(reason::TABLE_UNREADABLE),
             }
@@ -341,16 +394,32 @@ mod platform {
         ticks_per_second: u64,
         page_size: u64,
     ) -> Result<TreeRead, &'static str> {
-        let children = children_by_parent(procfs)?;
+        let listing = if procfs.has_children_files() {
+            None
+        } else {
+            Some(children_by_parent(procfs)?)
+        };
         let mut read = TreeRead::default();
         let mut cpu_ticks: u64 = 0;
         let mut rss_pages: u64 = 0;
-        let mut pending = VecDeque::from([(root, identity)]);
-        while let Some((pid, expected_start)) = pending.pop_front() {
-            let stat = match procfs.stat(pid) {
-                Ok(stat) if stat.start == expected_start && !(pid == root && stat.zombie) => stat,
+        // Each entry is a PID and the parent it was listed under (none for the root).
+        let mut pending = VecDeque::from([(root, None)]);
+        while let Some((pid, parent)) = pending.pop_front() {
+            // List the children before the stat read: a stat that still names
+            // the expected process shows the listed children were its own.
+            let children = match &listing {
+                Some(listing) => Ok(listing.get(&pid).cloned().unwrap_or_default()),
+                None => procfs.children(pid),
+            };
+            let found = children.and_then(|children| Ok((procfs.stat(pid)?, children)));
+            let expected = |stat: &Stat| match parent {
+                None => stat.start == identity && !stat.zombie,
+                Some(parent) => stat.ppid == parent,
+            };
+            let (stat, children) = match found {
+                Ok((stat, children)) if expected(&stat) => (stat, children),
                 // An exited child, or one whose PID now names another process.
-                Ok(_) | Err(ReadError::Gone) if pid != root => continue,
+                Ok(_) | Err(ReadError::Gone) if parent.is_some() => continue,
                 Ok(_) | Err(ReadError::Gone) => return Err(reason::HOST_EXITED),
                 Err(ReadError::Unreadable) => return Err(reason::PROCESS_UNREADABLE),
             };
@@ -359,9 +428,7 @@ mod platform {
                 rss_pages = rss_pages.saturating_add(stat.rss_pages);
                 read.process_count += 1;
             }
-            // A child never starts before its parent; one that seems to reuses a PID.
-            let own = children.get(&pid).into_iter().flatten();
-            pending.extend(own.filter(|(_, start)| *start >= stat.start).copied());
+            pending.extend(children.into_iter().map(|child| (child, Some(pid))));
         }
         read.cpu_nanos = ticks_to_nanos(cpu_ticks, ticks_per_second);
         read.resident_bytes = rss_pages.saturating_mul(page_size);
@@ -581,16 +648,17 @@ mod platform {
         read_tree_with(&Live, root, identity, timebase)
     }
 
+    /// Child PIDs, each with its parent record, by parent PID.
+    type ChildrenByParent = BTreeMap<u32, Vec<(u32, Parent)>>;
+
     /// Every live process's children, each with its parent record. One
     /// `proc_listallpids` call and one `proc_pidinfo` per process:
     /// `proc_listchildpids` scans the whole process table on each call, which
     /// costs too much for a wide tree. A process that exited during the pass
     /// is left out; one that cannot be read leaves the listing incomplete.
-    fn children_by_parent(
-        procs: &impl Libproc,
-    ) -> Result<BTreeMap<u32, Vec<(u32, Parent)>>, &'static str> {
+    fn children_by_parent(procs: &impl Libproc) -> Result<ChildrenByParent, &'static str> {
         let pids = procs.pids().ok_or(reason::TABLE_UNREADABLE)?;
-        let mut children: BTreeMap<u32, Vec<(u32, Parent)>> = BTreeMap::new();
+        let mut children = ChildrenByParent::new();
         for pid in pids {
             match procs.parent(pid) {
                 Ok(parent) => children.entry(parent.ppid).or_default().push((pid, parent)),
@@ -997,6 +1065,11 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[derive(Default)]
     struct ScriptedProcfs {
+        /// Children by parent from children files, or `None` for a kernel
+        /// without them.
+        children: Option<
+            std::collections::BTreeMap<u32, std::result::Result<Vec<u32>, platform::ReadError>>,
+        >,
         pids: Vec<u32>,
         unlisted: bool,
         /// Answers to `stat`, first the listing's, then the walk's.
@@ -1021,6 +1094,15 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     impl platform::Procfs for ScriptedProcfs {
+        fn has_children_files(&self) -> bool {
+            self.children.is_some()
+        }
+
+        fn children(&self, pid: u32) -> std::result::Result<Vec<u32>, platform::ReadError> {
+            let children = self.children.as_ref().expect("children files");
+            children.get(&pid).cloned().unwrap_or(Ok(Vec::new()))
+        }
+
         fn pids(&self) -> std::result::Result<Vec<u32>, platform::ReadError> {
             if self.unlisted {
                 return Err(platform::ReadError::Unreadable);
@@ -1134,6 +1216,78 @@ mod tests {
             host(Err(platform::ReadError::Unreadable)),
             reason::PROCESS_UNREADABLE
         );
+    }
+
+    /// A kernel with children files: the host is PID 10 started at tick 5 and
+    /// lists child PID 11. The process table is never listed.
+    #[cfg(target_os = "linux")]
+    fn linux_children_tree(
+        host_children: std::result::Result<Vec<u32>, platform::ReadError>,
+        child: std::result::Result<platform::Stat, platform::ReadError>,
+    ) -> std::result::Result<TreeRead, &'static str> {
+        let mut procfs = ScriptedProcfs {
+            children: Some(std::collections::BTreeMap::from([(10, host_children)])),
+            unlisted: true,
+            ..ScriptedProcfs::default()
+        }
+        .process(10, vec![Ok(linux_stat(1, 5, 7))])
+        .process(11, vec![child]);
+        procfs.pids.clear();
+        platform::read_tree_with(&procfs, 10, 5, 1, 1)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_tree_read_with_children_files_reads_only_the_tree() {
+        let read = linux_children_tree(Ok(vec![11]), Ok(linux_stat(10, 9, 3))).expect("tree read");
+
+        assert_eq!(read.process_count, 2);
+        assert_eq!(read.cpu_nanos, 10_000_000_000);
+        assert_eq!(read.resident_bytes, 2);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_tree_read_with_children_files_skips_reaped_or_replaced_child() {
+        let reaped =
+            linux_children_tree(Ok(vec![11]), Err(platform::ReadError::Gone)).expect("tree read");
+        let replaced =
+            linux_children_tree(Ok(vec![11]), Ok(linux_stat(1, 12, 900))).expect("tree read");
+
+        for read in [reaped, replaced] {
+            assert_eq!(read.process_count, 1);
+            assert_eq!(read.cpu_nanos, 7_000_000_000);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_tree_read_with_children_files_and_unreadable_process_is_unavailable() {
+        let child = linux_children_tree(Ok(vec![11]), Err(platform::ReadError::Unreadable));
+        let host_children = linux_children_tree(
+            Err(platform::ReadError::Unreadable),
+            Ok(linux_stat(10, 9, 3)),
+        );
+        let host_gone =
+            linux_children_tree(Err(platform::ReadError::Gone), Ok(linux_stat(10, 9, 3)));
+
+        assert_eq!(child.unwrap_err(), reason::PROCESS_UNREADABLE);
+        assert_eq!(host_children.unwrap_err(), reason::PROCESS_UNREADABLE);
+        assert_eq!(host_gone.unwrap_err(), reason::HOST_EXITED);
+    }
+
+    /// The second read finds a child the first skipped; the third agrees.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_children_read_waits_for_two_reads_that_agree() {
+        let mut reads = vec![vec![11, 13], vec![11, 12, 13], vec![11, 12, 13]].into_iter();
+        let mut changing = (0..).map(|n| vec![n]);
+
+        let stable = platform::read_until_stable(|| Ok(reads.next().expect("read")));
+        let unstable = platform::read_until_stable(|| Ok(changing.next().expect("read")));
+
+        assert_eq!(stable, Ok(vec![11, 12, 13]));
+        assert_eq!(unstable, Err(platform::ReadError::Unreadable));
     }
 
     #[cfg(target_os = "macos")]

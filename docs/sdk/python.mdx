@@ -705,8 +705,11 @@ the runtime, plus its descendants. For a runtime started on a shared service,
 the service process is not included. A descendant that starts a new session or
 process group still counts while its parent chain leads to the host. A process
 whose parent exited is reparented outside the tree and no longer counts. The
-snapshot reads `/proc` on Linux and `proc_pid_rusage` on macOS. To find the
-tree, it reads the parent ID and start time of every process on the machine.
+snapshot reads `/proc` on Linux and `proc_pid_rusage` on macOS. On Linux it
+finds the tree from each process's `/proc/<pid>/task/<tid>/children` list, so it
+reads only the runtime's own processes. On macOS, and on a Linux kernel without
+those lists, it reads the parent ID of every process on the machine to find the
+tree, and macOS also reads each process's start time to detect a reused PID.
 The snapshot exposes only the fields above, never command lines, environment
 variables, credentials, or processes outside the runtime's tree.
 
