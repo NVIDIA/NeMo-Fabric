@@ -133,14 +133,24 @@ by the SDK and is not persisted as a NeMo Fabric artifact.
 ## Token Usage
 
 The result's `usage` carries Claude Code's `input_tokens`, `output_tokens`, and
-reported `cost_usd`. Claude Code's `input_tokens` excludes cache reads and cache
-writes, so the adapter also returns the
-`nemo_fabric.detailed_token_usage.v1` usage extension with
-`cached_input_tokens`, `cache_write_input_tokens`, and
-`output_tokens_include_reasoning: true`. It sets
-`input_tokens_include_cache: false` only when Claude Code reports input, cache
-reads, and cache writes. The descriptor declares the extension under
-`extension_schemas.usage`.
+reported `cost_usd`. Claude Code counts tokens for its main agent loop only: its
+usage leaves out Task subagent, sidechain, and auxiliary model calls.
+
+Claude Code's `input_tokens` excludes cache reads and cache writes, so the
+adapter also returns the `nemo_fabric.detailed_token_usage.v1` usage extension,
+declared under `extension_schemas.usage` in the descriptor. When Claude Code
+reports input, cache reads, and cache writes, the extension carries all three as
+`input_tokens`, `cached_input_tokens`, and `cache_write_input_tokens` with
+`input_tokens_include_cache: false`. If any of the three is missing, the
+extension carries no input counters. Output is reported as `output_tokens` with
+`output_tokens_include_reasoning: true`, because Anthropic bills thinking as
+output tokens.
+
+Harbor accounting reads these counters before any ATIF trajectory. With the
+input counters present, Harbor sets `n_input_tokens` to input plus cache reads
+plus cache writes and `n_cache_tokens` to cache reads, from the same main-loop
+scope as `n_output_tokens`. A Relay trajectory then fills only the counts the
+result leaves unknown.
 
 ## Relay Observability
 
