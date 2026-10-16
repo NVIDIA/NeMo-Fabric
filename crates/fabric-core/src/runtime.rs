@@ -1383,7 +1383,44 @@ fn validate_environment_handle(plan: &RunPlan, environment: &EnvironmentHandle) 
         "ownership",
         environment_ownership_name(expected_ownership),
         environment_ownership_name(environment.ownership),
-    )
+    )?;
+    let (expected_workspace, expected_artifacts) = if let Some(configured) = &plan.environment_plan
+    {
+        (
+            configured
+                .workspace
+                .clone()
+                .map(absolute_path)
+                .transpose()?,
+            configured.artifacts.clone(),
+        )
+    } else {
+        (
+            Some(absolute_path(plan.base_dir.clone())?),
+            plan.config
+                .runtime
+                .artifacts
+                .as_ref()
+                .map(|artifacts| resolve_path(&plan.base_dir, artifacts)),
+        )
+    };
+    if environment.workspace != expected_workspace {
+        return environment_handle_mismatch(
+            environment,
+            "workspace",
+            &format!("{expected_workspace:?}"),
+            &format!("{:?}", environment.workspace),
+        );
+    }
+    if environment.artifacts != expected_artifacts {
+        return environment_handle_mismatch(
+            environment,
+            "artifacts",
+            &format!("{expected_artifacts:?}"),
+            &format!("{:?}", environment.artifacts),
+        );
+    }
+    Ok(())
 }
 
 fn expect_environment_field(
@@ -5732,6 +5769,39 @@ for line in sys.stdin:
         assert_eq!(runtime.environment, environment);
         stop_runtime(&plan, &runtime).expect("stop runtime");
         release_environment(&environment).expect("release environment");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_binding_rejects_a_handle_with_different_paths() {
+        let (root, plan) = local_host_plan("success");
+        let environment = prepare_environment(&plan).expect("prepare local environment");
+
+        for (field, path) in [
+            ("workspace", root.join("other-workspace")),
+            ("artifacts", root.join("other-artifacts")),
+        ] {
+            let mut changed_plan = plan.clone();
+            let configured = changed_plan
+                .environment_plan
+                .as_mut()
+                .expect("resolved environment plan");
+            if field == "workspace" {
+                configured.workspace = Some(path);
+            } else {
+                configured.artifacts = Some(path);
+            }
+            let error = start_runtime_in(&changed_plan, &environment)
+                .expect_err("environment paths must match the plan");
+            assert!(matches!(
+                error,
+                FabricError::EnvironmentHandleMismatch {
+                    field: mismatch_field,
+                    ..
+                } if mismatch_field == field
+            ));
+        }
 
         let _ = fs::remove_dir_all(root);
     }
