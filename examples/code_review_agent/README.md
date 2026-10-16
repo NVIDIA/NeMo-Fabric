@@ -211,7 +211,7 @@ uses `Fabric.attach_environment` or `Fabric.prepare_environment` and
 `Fabric.start_runtime_in`; it does not send raw runtime control commands.
 
 The same SDK lifecycle can run Hermes instead of OpenClaw. The Hermes image
-installs the Fabric Hermes adapter and pins Hermes to the Relay-compatible
+installs the NeMo Fabric Hermes adapter and pins Hermes to the Relay-compatible
 revision used by `just install-hermes-agent`:
 
 ```bash

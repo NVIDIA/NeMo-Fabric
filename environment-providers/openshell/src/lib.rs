@@ -16,7 +16,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use miniz_oxide::inflate::decompress_to_vec_zlib_with_limit;
 use openshell_sdk::provider_readiness::{
-    ProviderWaitOutcome, provider_status, provider_wait_deadline, wait_for_provider_status_until,
+    ProviderWaitOutcome, ProviderWaitResult, provider_status, provider_wait_deadline,
+    wait_for_provider_status_until,
 };
 use openshell_sdk::raw::proto;
 use openshell_sdk::{
@@ -1888,6 +1889,26 @@ struct SdkGateway {
     client: OpenShellClient,
 }
 
+fn require_provider_ready(result: ProviderWaitResult) -> Result<(), ProviderError> {
+    match result.outcome {
+        ProviderWaitOutcome::Complete
+            if result.status.state == proto::ProviderReadinessState::Ready as i32 =>
+        {
+            Ok(())
+        }
+        ProviderWaitOutcome::TimedOut => Err(ProviderError::contract(
+            "provider_readiness_timeout",
+            "OpenShell did not finish applying the provider before the timeout",
+        )),
+        ProviderWaitOutcome::Complete | ProviderWaitOutcome::Terminal => {
+            Err(ProviderError::contract(
+                "provider_readiness_failed",
+                "OpenShell could not apply the configured provider",
+            ))
+        }
+    }
+}
+
 #[async_trait]
 impl Gateway for SdkGateway {
     async fn health(&self) -> Result<GatewayHealth, ProviderError> {
@@ -2039,17 +2060,7 @@ impl Gateway for SdkGateway {
                     "OpenShell provider readiness wait failed",
                 )
             })?;
-        match result.outcome {
-            ProviderWaitOutcome::Complete => Ok(()),
-            ProviderWaitOutcome::TimedOut => Err(ProviderError::contract(
-                "provider_readiness_timeout",
-                "OpenShell did not finish applying the provider before the timeout",
-            )),
-            ProviderWaitOutcome::Terminal => Err(ProviderError::contract(
-                "provider_readiness_failed",
-                "OpenShell could not apply the configured provider",
-            )),
-        }
+        require_provider_ready(result)
     }
 
     async fn exec(
@@ -2230,6 +2241,24 @@ mod tests {
         );
         assert_eq!(name, generated_sandbox_name(id));
         assert_ne!(name, generated_sandbox_name("another-environment-id"));
+    }
+
+    #[test]
+    fn completed_provider_wait_requires_ready_state() {
+        for (state, expected) in [
+            (proto::ProviderReadinessState::Ready, true),
+            (proto::ProviderReadinessState::Revoked, false),
+            (proto::ProviderReadinessState::Unspecified, false),
+        ] {
+            let result = ProviderWaitResult {
+                status: proto::ProviderReadinessStatus {
+                    state: state as i32,
+                    ..Default::default()
+                },
+                outcome: ProviderWaitOutcome::Complete,
+            };
+            assert_eq!(require_provider_ready(result).is_ok(), expected);
+        }
     }
 
     #[test]

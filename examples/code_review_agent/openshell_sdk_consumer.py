@@ -58,9 +58,8 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
             / "adapters/python/hermes/hermes.fabric-adapter.json"
         )
         if not hermes_descriptor.is_file():
-            # The task image includes this descriptor in the runtime's readable area.
-            hermes_descriptor = (
-                Path("/opt/fabric/adapters/python/hermes/hermes.fabric-adapter.json")
+            raise FileNotFoundError(
+                "Hermes adapter descriptor is missing from this checkout"
             )
         config.discovery = DiscoveryConfig(local_paths=[hermes_descriptor])
         task_discovery_paths = [HERMES_TASK_DISCOVERY_PATH]
