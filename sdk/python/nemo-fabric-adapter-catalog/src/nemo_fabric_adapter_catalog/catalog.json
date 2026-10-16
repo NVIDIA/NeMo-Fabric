@@ -493,7 +493,8 @@
                 "medium",
                 "high",
                 "xhigh",
-                "max"
+                "max",
+                "ultra"
               ],
               "type": "string"
             },
@@ -542,7 +543,7 @@
         "name": "nemo-fabric-adapters-codex",
         "version": "0.6.0"
       },
-      "sha256": "ff18b3dcd0e8a04f82706fdbe2a733514bfb073f67769eba212730018329f76e",
+      "sha256": "166582997e8e2ea564875f98a0bac7500c057819033a28c7cd400607c0d36a21",
       "source": "adapters/python/codex/codex.fabric-adapter.json"
     },
     "nvidia.fabric.droid": {
