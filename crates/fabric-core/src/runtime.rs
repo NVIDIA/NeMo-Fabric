@@ -1856,13 +1856,23 @@ fn local_host_invocation_result(
             }
         };
         let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
-        match exchange_lifecycle_message(
+        let exchange = exchange_lifecycle_message(
             &mut host_guard,
             &runtime.runtime_id,
             &lifecycle_request,
             invoke_timeout,
-        ) {
+        );
+        let ended_at = Instant::now();
+        // Read while the host lock is held and before a timed-out host is
+        // stopped, so the end values count this invocation and no later one.
+        let exchange_end = recorder
+            .as_ref()
+            .map(|recorder| recorder.read_exchange_end(ended_at));
+        match exchange {
             Ok(output) => {
+                if let (Some(recorder), Some(end)) = (recorder.as_mut(), exchange_end) {
+                    recorder.exchange_ended(end);
+                }
                 let stderr = take_local_host_stderr(&mut host_guard);
                 Ok((
                     output,
@@ -1876,7 +1886,6 @@ fn local_host_invocation_result(
                 ))
             }
             Err(error) => {
-                let failed_at = Instant::now();
                 if matches!(
                     &error,
                     FabricError::AdapterLifecycleOperation { code, .. } if code == HOST_TIMEOUT
@@ -1884,12 +1893,18 @@ fn local_host_invocation_result(
                     invalidate_timed_out_local_host(&runtime.runtime_id, &host, &mut host_guard);
                 }
                 // Only a record reads the exit status, so a run without one never waits.
-                if let Some(recorder) = recorder.as_mut() {
+                if let (Some(recorder), Some(end)) = (recorder.as_mut(), exchange_end) {
                     let crashed = matches!(
                         &error,
                         FabricError::AdapterLifecycleOperation { code, .. } if code == HOST_CRASHED
                     );
-                    recorder.exchange_failed(failed_at, local_host_exit(&mut host_guard, crashed));
+                    let end = end.with_host_exit(local_host_exit(&mut host_guard, crashed));
+                    let end = if crashed {
+                        recorder.recount_oom_kills(end)
+                    } else {
+                        end
+                    };
+                    recorder.exchange_ended(end);
                 }
                 Err(error)
             }

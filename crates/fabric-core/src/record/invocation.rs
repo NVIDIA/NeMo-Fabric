@@ -111,16 +111,35 @@ pub(crate) struct InvocationRecorder {
     cgroup: CgroupReader,
     oom_kills_at_start: OomKills,
     exclusive_container: bool,
-    failed_exchange: Option<FailedExchange>,
+    exchange: Option<ExchangeEnd>,
 }
 
-/// What core saw when the exchange with the adapter host failed.
-#[derive(Debug, Clone, Copy)]
-struct FailedExchange {
-    /// Time from the start line to the failure, before core's own cleanup.
+/// What core saw when the exchange with the adapter host ended. Core reads
+/// it under the host lock, before it stops a timed-out host and before a
+/// later invocation can run, so every value describes this invocation.
+#[derive(Debug, Clone)]
+pub(crate) struct ExchangeEnd {
+    /// Time from the start line to the end of the exchange, before core's
+    /// own cleanup.
     elapsed_ms: u64,
-    /// The host's wait status, when it had exited.
+    /// The container's out-of-memory kill count at that moment, or the
+    /// larger count read after a crashed host's exit.
+    oom_kills: OomKills,
+    /// Whether the exchange raised an error.
+    failed: bool,
+    /// The host's wait status after a failed exchange, when it had exited.
     host_exit: Option<HostExit>,
+}
+
+impl ExchangeEnd {
+    /// Mark the exchange failed, with the host's wait status when it exited.
+    pub(crate) fn with_host_exit(self, host_exit: Option<HostExit>) -> Self {
+        Self {
+            failed: true,
+            host_exit,
+            ..self
+        }
+    }
 }
 
 impl InvocationRecorder {
@@ -141,7 +160,7 @@ impl InvocationRecorder {
             cgroup: start.cgroup.clone(),
             oom_kills_at_start,
             exclusive_container: exclusive_container(start.plan),
-            failed_exchange: None,
+            exchange: None,
         };
         match RecordWriter::create(&recorder.path) {
             Ok(writer) => {
@@ -154,14 +173,33 @@ impl InvocationRecorder {
         recorder
     }
 
-    /// Keep when the exchange with the adapter host failed and the host's
-    /// wait status, for the end line's `stop`. Core calls this before its
-    /// cleanup, such as stopping a timed-out host, so `failed_at` excludes it.
-    pub(crate) fn exchange_failed(&mut self, failed_at: Instant, host_exit: Option<HostExit>) {
-        self.failed_exchange = Some(FailedExchange {
-            elapsed_ms: millis(failed_at.saturating_duration_since(self.started)),
-            host_exit,
-        });
+    /// The end values at `ended_at`, when the exchange with the host
+    /// returned: the container's out-of-memory kill count, read now. Core
+    /// calls this under the host lock.
+    pub(crate) fn read_exchange_end(&self, ended_at: Instant) -> ExchangeEnd {
+        ExchangeEnd {
+            elapsed_ms: millis(ended_at.saturating_duration_since(self.started)),
+            oom_kills: self.cgroup.oom_kills(),
+            failed: false,
+            host_exit: None,
+        }
+    }
+
+    /// `end` with the larger of its out-of-memory kill count and a count
+    /// read now. Core calls this after a crashed host's exit is observed:
+    /// the kernel counts a kill after it sends SIGKILL, so a host killed for
+    /// another process's allocation can exit before the count rises.
+    pub(crate) fn recount_oom_kills(&self, end: ExchangeEnd) -> ExchangeEnd {
+        let oom_kills = match (end.oom_kills, self.cgroup.oom_kills()) {
+            (OomKills::Count(at_end), OomKills::Count(now)) => OomKills::Count(at_end.max(now)),
+            (at_end, _) => at_end,
+        };
+        ExchangeEnd { oom_kills, ..end }
+    }
+
+    /// Keep what the exchange saw for the end line.
+    pub(crate) fn exchange_ended(&mut self, end: ExchangeEnd) {
+        self.exchange = Some(end);
     }
 
     /// Write and sync the end line for `outcome`, then return it. A result
@@ -169,7 +207,11 @@ impl InvocationRecorder {
     /// `record_write_failed` event when any write or the sync failed.
     pub(crate) fn finish(mut self, outcome: Result<RunResult>) -> Result<RunResult> {
         let elapsed_ms = millis(self.started.elapsed());
-        let oom_kills = self.cgroup.oom_kills();
+        // Core always records the exchange's end; reading here is a fallback.
+        let oom_kills = self
+            .exchange
+            .as_ref()
+            .map_or_else(|| self.cgroup.oom_kills(), |exchange| exchange.oom_kills);
         let stop = self.stop(&outcome, elapsed_ms, oom_kills);
         let end = match &outcome {
             Ok(result) => result_end_line(result, elapsed_ms, oom_kills, stop),
@@ -218,6 +260,7 @@ impl InvocationRecorder {
         elapsed_ms: u64,
         oom_kills_at_end: OomKills,
     ) -> Option<Stop> {
+        let exchange = self.exchange.as_ref();
         let oom_rose = self.exclusive_container
             && matches!(
                 (self.oom_kills_at_start, oom_kills_at_end),
@@ -255,7 +298,7 @@ impl InvocationRecorder {
                 let forced = code == Some(HOST_TIMEOUT);
                 let timed_out = forced || code == Some(ADAPTER_TIMEOUT_CODE);
                 let host_exited = code == Some(HOST_CRASHED);
-                let exchange_error = self.failed_exchange.is_some();
+                let exchange_error = exchange.is_some_and(|exchange| exchange.failed);
                 let facts = StopFacts {
                     status: RunStatus::Failed,
                     fabric_failed: !(timed_out || host_exited || (exchange_error && oom_rose)),
@@ -267,10 +310,8 @@ impl InvocationRecorder {
                 (facts, timed_out.then_some(forced))
             }
         };
-        let usage = self
-            .failed_exchange
-            .map_or(elapsed_ms, |failed| failed.elapsed_ms);
-        let host_exit = self.failed_exchange.and_then(|failed| failed.host_exit);
+        let usage = exchange.map_or(elapsed_ms, |exchange| exchange.elapsed_ms);
+        let host_exit = exchange.and_then(|exchange| exchange.host_exit);
         let stop = Stop {
             cause: stop_cause(facts),
             reason: forced.map(|_| StopReason::Timeout),
@@ -827,8 +868,15 @@ mod tests {
 
     /// Run one invocation whose exchange with the host fails with `code` after
     /// the host died of SIGKILL, while a fake cgroup's `oom_kill` count rises
-    /// from 4 to 5, and return its start and end lines.
-    fn oom_kill_record(name: &str, exclusive_container: bool, code: &str) -> (Value, Value) {
+    /// from 4 to 5, and return its start and end lines. With `counted_late`,
+    /// the count rises only after the exchange's end was read, and the end is
+    /// recounted as core does for a crashed host.
+    fn oom_kill_record(
+        name: &str,
+        exclusive_container: bool,
+        code: &str,
+        counted_late: bool,
+    ) -> (Value, Value) {
         use crate::config::RecordConfig;
         use crate::record::cgroup::tests::{fake_root, memory_events};
         let (mut plan, runtime, invocation) = record_test_fixture();
@@ -849,15 +897,22 @@ mod tests {
             timeout: Duration::from_secs(5),
             cgroup: CgroupReader::with_root(&root),
         });
-        std::fs::write(root.join("sys/fs/cgroup/memory.events"), memory_events(5))
-            .expect("oom kill");
-        recorder.exchange_failed(
-            Instant::now(),
-            Some(HostExit {
+        let count_the_kill =
+            || std::fs::write(root.join("sys/fs/cgroup/memory.events"), memory_events(5));
+        if !counted_late {
+            count_the_kill().expect("oom kill");
+        }
+        let mut end = recorder
+            .read_exchange_end(Instant::now())
+            .with_host_exit(Some(HostExit {
                 exit_code: None,
                 exit_signal: Some(9),
-            }),
-        );
+            }));
+        if counted_late {
+            count_the_kill().expect("oom kill");
+            end = recorder.recount_oom_kills(end);
+        }
+        recorder.exchange_ended(end);
 
         let error = recorder
             .finish(Err(FabricError::AdapterLifecycleOperation {
@@ -886,7 +941,7 @@ mod tests {
 
     #[test]
     fn oom_kill_rise_in_an_exclusive_container_reads_sandbox_failed() {
-        let (start, end) = oom_kill_record("exclusive", true, HOST_CRASHED);
+        let (start, end) = oom_kill_record("exclusive", true, HOST_CRASHED, false);
 
         assert_eq!(start["container_oom_kills"], 4);
         assert_eq!(start["exclusive_container"], true);
@@ -899,7 +954,7 @@ mod tests {
 
     #[test]
     fn oom_kill_rise_in_a_shared_container_sets_no_sandbox_cause() {
-        let (start, end) = oom_kill_record("shared", false, HOST_CRASHED);
+        let (start, end) = oom_kill_record("shared", false, HOST_CRASHED, false);
 
         assert_eq!(start["exclusive_container"], false);
         assert_eq!(end["container_oom_kills"], 5);
@@ -911,11 +966,67 @@ mod tests {
 
     #[test]
     fn oom_kill_rise_outranks_an_adapter_error_from_the_exchange() {
-        let (_, end) = oom_kill_record("adapter-error", true, "lifecycle_adapter_invoke_failed");
+        let (_, end) = oom_kill_record(
+            "adapter-error",
+            true,
+            "lifecycle_adapter_invoke_failed",
+            false,
+        );
 
         assert_eq!(
             end["stop"],
             serde_json::json!({"cause": "sandbox_failed", "exit_signal": 9})
         );
+    }
+
+    #[test]
+    fn oom_kill_counted_after_the_crashed_host_exited_still_reads_sandbox_failed() {
+        let (_, end) = oom_kill_record("counted-late", true, HOST_CRASHED, true);
+
+        assert_eq!(end["container_oom_kills"], 5);
+        assert_eq!(
+            end["stop"],
+            serde_json::json!({"cause": "sandbox_failed", "exit_signal": 9})
+        );
+    }
+
+    #[test]
+    fn oom_kill_counted_after_the_exchange_ended_stays_out_of_the_record() {
+        use crate::config::RecordConfig;
+        use crate::record::cgroup::tests::{fake_root, memory_events};
+        let (mut plan, runtime, invocation) = record_test_fixture();
+        plan.config.runtime.record = Some(RecordConfig {
+            enabled: true,
+            exclusive_container: true,
+        });
+        let root = fake_root("after-exchange", "0::/\n", Some(&memory_events(4)));
+        let folder = root.join("invocation");
+        std::fs::create_dir_all(&folder).expect("invocation folder");
+        let request = RunRequest::text("input");
+        let mut recorder = InvocationRecorder::start(RecordStart {
+            plan: &plan,
+            runtime: &runtime,
+            invocation: &invocation,
+            request: &request,
+            fabric_home: &folder,
+            timeout: Duration::from_secs(5),
+            cgroup: CgroupReader::with_root(&root),
+        });
+        recorder.exchange_ended(recorder.read_exchange_end(Instant::now()));
+        // Core released the host lock, so a later invocation on the same
+        // runtime can be killed before this result is finished.
+        std::fs::write(root.join("sys/fs/cgroup/memory.events"), memory_events(5))
+            .expect("later oom kill");
+        let mut result = succeeded_result(&invocation);
+        result.status = RunStatus::Failed;
+
+        recorder.finish(Ok(result)).expect("result");
+
+        let text = std::fs::read_to_string(folder.join(RECORD_FILE_NAME)).expect("record");
+        let _ = std::fs::remove_dir_all(root);
+        let end: Value =
+            serde_json::from_str(text.lines().last().expect("end line")).expect("json");
+        assert_eq!(end["container_oom_kills"], 4, "{end}");
+        assert_eq!(end["stop"], serde_json::json!({"cause": "agent_failed"}));
     }
 }

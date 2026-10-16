@@ -1043,7 +1043,11 @@ wait status.
 On Linux with cgroup v2, when NeMo Fabric runs at the root of its own
 container's cgroup, both lines record the container's `memory.events`
 `oom_kill` count as `container_oom_kills`. Otherwise the field reads
-`{"reason": "platform" | "cgroup_v1" | "no_owned_cgroup"}`. The start line
+`{"reason": "platform" | "cgroup_v1" | "no_owned_cgroup"}`. The end line's
+count is read when the adapter host answers, crashes, or reaches the timeout,
+before NeMo Fabric stops a hung host and before the next invocation on the
+runtime can start. After a crash, NeMo Fabric reads the count again once the
+host's exit is seen and keeps the larger value. The start line
 also records `exclusive_container`. Set `exclusive_container` in
 `runtime.record` to `True` only when nothing else runs in the container during
 an invocation, including other runtimes in the same process. Otherwise a kill
