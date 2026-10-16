@@ -20,6 +20,7 @@ pytestmark = pytest.mark.usefixtures("requires_harbor")
 
 try:
     from harbor.models.agent.context import AgentContext
+    from harbor.models.job.lock import TaskLock
     from harbor.models.task.config import MCPServerConfig
     from nemo_fabric.integrations.harbor import FabricAgent
 except ImportError:
@@ -445,9 +446,16 @@ def test_harbor_propagates_runtime_identity(tmp_path: Path):
     assert agent.SUPPORTS_ATIF is False
 
 
+_LOCAL_DIGEST = "sha256:" + "a" * 64
+_GIT_DIGEST = "sha256:" + "b" * 64
+_PACKAGE_DIGEST = "sha256:" + "c" * 64
+
+
 def _write_trial_files(trial_dir: Path, task_lock: dict[str, str] | None) -> None:
     """Write the trial's ``config.json`` and, unless ``task_lock`` is None,
-    the ``lock.json`` that Harbor writes before the agent runs."""
+    the ``lock.json`` that Harbor writes before the agent runs. The task
+    entry goes through Harbor's ``TaskLock`` model, so a renamed or newly
+    validated field fails here."""
 
     trial_dir.mkdir(parents=True, exist_ok=True)
     (trial_dir / "config.json").write_text(
@@ -456,7 +464,10 @@ def _write_trial_files(trial_dir: Path, task_lock: dict[str, str] | None) -> Non
     )
     if task_lock is not None:
         (trial_dir / "lock.json").write_text(
-            json.dumps({"schema_version": 2, "task": task_lock}), encoding="utf-8"
+            json.dumps(
+                {"schema_version": 2, "task": TaskLock(**task_lock).model_dump(mode="json")}
+            ),
+            encoding="utf-8",
         )
 
 
@@ -464,21 +475,21 @@ def _write_trial_files(trial_dir: Path, task_lock: dict[str, str] | None) -> Non
     ("task_lock", "expected"),
     [
         (
-            {"name": "fix-io", "type": "local", "digest": "sha256:aa01"},
-            {"task_id": "fix-io", "task_revision": "sha256:aa01"},
+            {"name": "fix-io", "type": "local", "digest": _LOCAL_DIGEST},
+            {"task_id": "fix-io", "task_revision": _LOCAL_DIGEST},
         ),
         (
             {
                 "name": "fix-io",
                 "type": "git",
-                "digest": "sha256:bb02",
+                "digest": _GIT_DIGEST,
                 "git_commit_id": "abc123",
             },
-            {"task_id": "fix-io", "task_revision": "sha256:bb02"},
+            {"task_id": "fix-io", "task_revision": _GIT_DIGEST},
         ),
         (
-            {"name": "harbor/hello-world", "type": "package", "digest": "sha256:9f2c"},
-            {"task_id": "harbor/hello-world", "task_revision": "sha256:9f2c"},
+            {"name": "harbor/hello-world", "type": "package", "digest": _PACKAGE_DIGEST},
+            {"task_id": "harbor/hello-world", "task_revision": _PACKAGE_DIGEST},
         ),
         (None, {}),
     ],
@@ -505,7 +516,7 @@ def test_harbor_record_reads_task_identity_from_the_trial_lock(
 
 
 def test_harbor_record_stays_off_without_fabric_record(tmp_path: Path):
-    _write_trial_files(tmp_path, {"name": "fix-io", "type": "local", "digest": "sha256:aa01"})
+    _write_trial_files(tmp_path, {"name": "fix-io", "type": "local", "digest": _LOCAL_DIGEST})
     agent = FabricAgent(
         logs_dir=tmp_path / "agent",
         fabric_adapter_id="nvidia.fabric.hermes",
@@ -515,7 +526,9 @@ def test_harbor_record_stays_off_without_fabric_record(tmp_path: Path):
     assert "record" not in agent._build_config().to_mapping()["runtime"]
 
 
-def test_harbor_record_without_trial_files_has_no_task_identity(tmp_path: Path):
+def test_harbor_record_with_malformed_trial_files_has_no_task_identity(tmp_path: Path):
+    (tmp_path / "lock.json").write_text("not json", encoding="utf-8")
+    (tmp_path / "config.json").write_text("[]", encoding="utf-8")
     agent = FabricAgent(
         logs_dir=tmp_path / "agent",
         fabric_adapter_id="nvidia.fabric.hermes",

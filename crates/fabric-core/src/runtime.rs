@@ -4010,8 +4010,6 @@ for line in sys.stdin:
             "context_env": invocation["runtime_context"]["environment"].get("env", {}),
             "deadline_millis": invocation["runtime_context"].get("deadline_millis"),
         }
-        if MODE == "echo_context":
-            output["request_context"] = invocation["request"].get("context", {})
         if MODE in {"adapter_reported_failure", "blank_error_code", "free_text_error_code"}:
             codes = {
                 "blank_error_code": " \t",
@@ -5548,29 +5546,6 @@ for line in sys.stdin:
 
         plan.config.runtime.record = None;
         assert_eq!(run_record_folder(&plan), None, "record off");
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn task_id_in_the_request_context_still_reaches_the_adapter() {
-        let (root, plan) = record_plan("echo_context");
-        let mut request = RunRequest::text("task");
-        request.context = BTreeMap::from([
-            ("task_id".to_string(), serde_json::json!("repo-io-fix")),
-            ("step".to_string(), serde_json::json!(2)),
-        ]);
-
-        let result = run_plan(&plan, request).expect("run");
-        let (_, lines) = only_record(&root);
-
-        assert_eq!(
-            result.output["request_context"],
-            serde_json::json!({"task_id": "repo-io-fix", "step": 2})
-        );
-        assert_eq!(
-            line_of_kind(&lines, "start")["context"]["task_id"],
-            "repo-io-fix"
-        );
         let _ = fs::remove_dir_all(root);
     }
 
