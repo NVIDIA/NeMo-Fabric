@@ -70,6 +70,7 @@ class HermesRuntime:
         # Hermes reports session totals; each invocation reports the change
         # from this baseline. A counter missing from it has no baseline.
         self._session_token_totals: dict[str, int] = _fresh_session_totals()
+        self._usage_less_responses = 0
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -222,6 +223,7 @@ class HermesRuntime:
                     )
                 )
                 self._session_token_totals = _fresh_session_totals()
+                self._count_usage_less_responses(self._agent)
             self._agent_config = agent_config
             self._started = True
         except BaseException:
@@ -293,6 +295,7 @@ class HermesRuntime:
         # failed, cancelled or timed-out invocation never hands its tokens to
         # the next one.
         previous_totals, self._session_token_totals = self._session_token_totals, {}
+        usage_less_before = self._usage_less_responses
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
 
@@ -378,12 +381,37 @@ class HermesRuntime:
                     message="Hermes did not complete the invocation",
                 )
         usage, self._session_token_totals = _invocation_usage(result, previous_totals)
+        if self._usage_less_responses != usage_less_before:
+            # A provider response without usage added no tokens, so the
+            # change in the counters is an undercount, not this invocation's.
+            usage = None
         return AgentRunResult(
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
             output=output,
             error=error,
             usage=usage,
         )
+
+    def _count_usage_less_responses(self, agent: Any) -> None:
+        """Count the agent's provider responses that carried no usage.
+
+        Hermes counts such a response as an API call but leaves its token
+        counters unchanged, so the counters cannot tell an unreported call
+        from a reported zero. Hermes reports each of these responses to the
+        context compressor's ``note_usage_less_response`` hook, so the
+        adapter wraps that hook on the agent it owns.
+        """
+        compressor = agent.context_compressor
+        note_usage_less_response = getattr(
+            compressor, "note_usage_less_response", None
+        )
+
+        def count_and_note() -> None:
+            self._usage_less_responses += 1
+            if callable(note_usage_less_response):
+                note_usage_less_response()
+
+        compressor.note_usage_less_response = count_and_note
 
     async def _authenticate_mcp_servers(self) -> None:
         if self._mcp_authentication_checked:

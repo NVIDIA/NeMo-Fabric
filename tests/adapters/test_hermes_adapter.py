@@ -16,6 +16,7 @@ import tomllib
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -874,6 +875,7 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     mock_session_db = MagicMock(spec=SessionDB)
     mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
     mock_ai_agent = MagicMock(spec=AIAgent)
+    mock_ai_agent.context_compressor = MagicMock()
     mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
     monkeypatch.setattr(
         mock_ai_agent_type.__init__.__func__,
@@ -1352,6 +1354,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
 
     mock_ai_agent = MagicMock(spec=AIAgent)
+    mock_ai_agent.context_compressor = MagicMock()
     mock_ai_agent.session_id = "runtime-fabric-123"
     mock_ai_agent.model = "test-model"
     mock_ai_agent.platform = "fabric"
@@ -1618,6 +1621,129 @@ def test_invocation_usage_with_lower_or_missing_counters_leaves_them_unknown():
     assert totals["input_tokens"] == 10
     assert missing is None
     assert no_baseline is None
+
+
+class _UsageRecordingAgent:
+    """Hermes agent stand-in whose turns run scripted provider responses
+    through Hermes' own usage accounting and context compressor."""
+
+    def __init__(self, turns: list[list[dict[str, int] | None]]) -> None:
+        from agent.context_compressor import ContextCompressor
+
+        self._turns = turns
+        self.context_compressor = ContextCompressor(
+            model="test-model", quiet_mode=True
+        )
+        self.provider = "custom"
+        self.api_mode = "chat_completions"
+        self.model = "test-model"
+        self.base_url = "http://127.0.0.1:1/v1"
+        self.api_key = ""
+        self.client = None
+        self.session_id = "runtime-usage"
+        self._session_db = None
+        self.quiet_mode = True
+        self.verbose_logging = False
+        for counter in (
+            "api_calls",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "input_tokens",
+            "output_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+            "reasoning_tokens",
+            "estimated_cost_usd",
+        ):
+            setattr(self, f"session_{counter}", 0)
+
+    def run_conversation(self, user_message: str) -> dict[str, object]:
+        from agent.turn_usage import record_response_usage
+
+        messages = [{"role": "user", "content": user_message}]
+        for usage in self._turns.pop(0):
+            record_response_usage(
+                self,
+                SimpleNamespace(usage=usage),
+                messages=messages,
+                api_call_count=1,
+                api_duration=0.0,
+                compression_attempts=0,
+                max_compression_attempts=3,
+            )
+        return {
+            "final_response": "done",
+            "completed": True,
+            "messages": messages,
+            **{
+                key: getattr(self, f"session_{key}")
+                for key in (
+                    "input_tokens",
+                    "cache_read_tokens",
+                    "cache_write_tokens",
+                    "output_tokens",
+                )
+            },
+        }
+
+
+async def test_hermes_usage_from_provider_responses_keeps_unreported_tokens_unknown():
+    def reported(prompt: int, completion: int) -> dict[str, int]:
+        return {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": prompt + completion,
+        }
+
+    agent = _UsageRecordingAgent(
+        [
+            [reported(120, 7), reported(200, 3)],
+            [reported(0, 0)],
+            [None],
+            [reported(50, 5), None],
+            [reported(400, 40)],
+        ]
+    )
+    agent_config = _agent_config(
+        {"models": {"default": {"provider": "test", "model": "test-model"}}}
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._agent_config = agent_config
+    runtime._model_config = agent_config.models["default"]
+    runtime._runtime_id = "runtime-usage"
+    runtime._agent = agent
+    runtime._count_usage_less_responses(agent)
+    invocation = _invocation(
+        {
+            "runtime_context": _runtime_context(
+                runtime_id="runtime-usage"
+            ).to_mapping(),
+            "request": {"input": "next"},
+        }
+    )
+
+    two_calls = await runtime.invoke(*invocation)
+    reported_zero = await runtime.invoke(*invocation)
+    omitted = await runtime.invoke(*invocation)
+    mixed = await runtime.invoke(*invocation)
+    after_mixed = await runtime.invoke(*invocation)
+
+    assert agent.session_api_calls == 7
+    assert two_calls.usage is not None
+    assert (two_calls.usage.input_tokens, two_calls.usage.output_tokens) == (320, 10)
+    assert reported_zero.usage is not None
+    assert reported_zero.usage.input_tokens == 0
+    assert reported_zero.usage.output_tokens == 0
+    assert reported_zero.usage.total_tokens == 0
+    # Hermes counts a response without usage as an API call but adds no
+    # tokens, so the invocation's tokens are unknown rather than 0 or partial.
+    assert omitted.usage is None
+    assert mixed.usage is None
+    assert after_mixed.usage is not None
+    assert after_mixed.usage.input_tokens == 400
+    assert after_mixed.usage.output_tokens == 40
 
 
 @pytest.mark.parametrize(

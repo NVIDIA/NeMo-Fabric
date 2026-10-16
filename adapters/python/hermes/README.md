@@ -119,12 +119,14 @@ session per runtime, so each result's `usage` is the change since the previous
 invocation: `input_tokens` with cache reads and cache writes included,
 `cached_input_tokens`, `output_tokens`, and `total_tokens`. Hermes records
 auxiliary calls, such as context-compression summaries, separately from these
-counters, so they are not included. A counter that Hermes does not report, or
-that went down, is left out for that invocation. After an invocation that raised, was
-cancelled, or timed out, or whose result held no counters, the adapter has no
-baseline. The next invocation then reports no token counters rather than a
-carried-over or whole-session total, and the one after it reports its own
-change again.
+counters, so they are not included. Hermes adds no tokens for a provider
+response that carried no usage, so an invocation with such a response has no
+`usage`. A response that reported zero tokens still counts as 0. A counter that
+Hermes does not report, or that went down, is left out for that invocation.
+After an invocation that raised, was cancelled, or timed out, or whose result
+held no counters, the adapter has no baseline. The next invocation then reports
+no token counters rather than a carried-over or whole-session total, and the
+one after it reports its own change again.
 
 ## Execution Model
 
