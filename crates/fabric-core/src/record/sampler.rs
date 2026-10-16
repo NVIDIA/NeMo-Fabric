@@ -6,7 +6,8 @@
 //! The thread starts with the first recorded invocation and serves every
 //! runtime in the process, so N parallel runtimes cost one wake-up per
 //! interval, not N threads. Each tick reads each record's runtime snapshot,
-//! which never waits for the runtime's host lock.
+//! which never takes the runtime's host lock. Records are sampled one after
+//! another, so one slow read delays the samples of every record.
 
 use std::collections::BTreeMap;
 use std::panic::{self, AssertUnwindSafe};
@@ -36,7 +37,7 @@ struct ActiveRecord {
 impl ActiveRecord {
     /// Read the snapshot, then append the sample line. The read runs without
     /// the file lock, so a slow read never delays the end line. A read that
-    /// panics is written as unavailable, so the record keeps its heartbeat.
+    /// panics is written as unavailable, so the record keeps its sample lines.
     fn sample(&self) {
         let resources = panic::catch_unwind(AssertUnwindSafe(|| Resources::from(&(self.read)())))
             .unwrap_or(Resources::UNAVAILABLE);

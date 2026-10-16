@@ -86,7 +86,7 @@
         },
         "container_oom_kills": {
           "$ref": "#/$defs/OomKills",
-          "description": "The container's cgroup v2 `oom_kill` count when the invocation ended,\nread with `resources`."
+          "description": "The container's cgroup v2 `oom_kill` count, read with `resources`.\nAfter a crashed host's exit, a larger count read then replaces it.\nBest effort: the kernel can count a kill after the host's exit is\nseen."
         },
         "elapsed_ms": {
           "description": "Monotonic time from the start line to the end line, in milliseconds.",
@@ -707,7 +707,7 @@
     },
     {
       "$ref": "#/$defs/SampleLine",
-      "description": "Written about every 10 s while the invocation runs, when the start\nline has `sample_interval_ms`.",
+      "description": "Written about every 10 s until the exchange with the adapter host\nends, when the start line has `sample_interval_ms`. A recent sample\nshows that Fabric observed the record recently, not that the agent is\nmaking progress.",
       "properties": {
         "kind": {
           "const": "sample",

@@ -5,7 +5,8 @@
 //!
 //! When `runtime.record.enabled` is set, core appends one start line before it
 //! sends the request to the adapter host, a sample line about every 10 seconds
-//! while the invocation runs, and one end line after it returns or fails.
+//! until the exchange with the host ends, and one end line after the
+//! invocation returns or fails.
 //! Recording is synchronous and best-effort: record I/O errors do not replace
 //! the invocation result. A failed write stops the record and becomes a
 //! `record_write_failed` event on the result, and slow storage delays the

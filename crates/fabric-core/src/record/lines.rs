@@ -71,8 +71,10 @@ pub(crate) enum RecordVersion {
 pub(crate) enum LineBody {
     /// Written once, before core sends the request to the adapter host.
     Start(StartLine),
-    /// Written about every 10 s while the invocation runs, when the start
-    /// line has `sample_interval_ms`.
+    /// Written about every 10 s until the exchange with the adapter host
+    /// ends, when the start line has `sample_interval_ms`. A recent sample
+    /// shows that Fabric observed the record recently, not that the agent is
+    /// making progress.
     Sample(SampleLine),
     /// Written once, after the invocation returned a result or failed.
     End(EndLine),
@@ -169,8 +171,10 @@ pub(crate) struct EndLine {
     /// the runtime's host lock right after the adapter host answered or the
     /// timeout fired.
     pub resources: Resources,
-    /// The container's cgroup v2 `oom_kill` count when the invocation ended,
-    /// read with `resources`.
+    /// The container's cgroup v2 `oom_kill` count, read with `resources`.
+    /// After a crashed host's exit, a larger count read then replaces it.
+    /// Best effort: the kernel can count a kill after the host's exit is
+    /// seen.
     pub container_oom_kills: OomKills,
     /// Why the invocation stopped; absent when it holds nothing, as on success.
     #[serde(default, skip_serializing_if = "Option::is_none")]
