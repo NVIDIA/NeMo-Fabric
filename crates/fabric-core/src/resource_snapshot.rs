@@ -834,9 +834,9 @@ mod tests {
 
         assert_eq!(running.process_count, 2, "child never seen: {running:?}");
         assert_eq!(exited.process_count, 1, "child still running: {exited:?}");
-        // The host only sleeps, so two 10 ms clock ticks can come only from
-        // the exited child. A fast shell can finish the loop in well under
-        // 100 ms.
+        // The host only sleeps, so 20 ms of CPU can come only from the exited
+        // child. That is two clock ticks on Linux (10 ms each), and a fast
+        // shell can finish the loop in well under 100 ms.
         assert!(
             exited.cpu_time_seconds >= 0.02,
             "exited child's CPU (at least two clock ticks) missing: {exited:?}"
