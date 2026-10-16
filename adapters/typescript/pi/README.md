@@ -220,13 +220,16 @@ report usage, finished compaction summaries, and usage entries such as cache
 warm-ups. It holds `input_tokens` with cache reads and cache writes included,
 `cached_input_tokens`, `output_tokens`, and `total_tokens`. Pi fills a model
 call's usage with zeros until the provider reports it, so the adapter treats a
-model call whose counts are all zero as unreported. The result has no `usage`
+model call whose counts are all zero as unreported. A provider report of all
+zeros looks the same, so the adapter discards it too. The result has no `usage`
 when Pi produced no assistant message, when one of those calls has no complete
 usage report, when an assistant message was aborted, when a compaction was
 aborted or reported no usage, or when Pi retried a compaction summary call,
-because Pi keeps no usage for the failed attempt. Pi computes its cost figures
-from the model catalog's rates, so the adapter does not report them as
-`cost_usd`.
+because Pi keeps no usage for the failed attempt. It also has no `usage` when a
+compaction cuts inside a turn, because Pi then summarizes the earlier history
+and the start of that turn in separate calls and reports only their combined
+usage. Pi computes its cost figures from the model catalog's rates, so the
+adapter does not report them as `cost_usd`.
 
 ## Custom Tool Modules
 

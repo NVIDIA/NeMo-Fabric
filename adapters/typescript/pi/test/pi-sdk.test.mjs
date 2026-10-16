@@ -1498,6 +1498,15 @@ test("a model call with zero-filled usage leaves the prompt's tokens unknown", (
   assert.deepEqual(addEventUsage(zero, { type: "message_end", message: { role: "toolResult", usage: unreported } }), zero);
 });
 
+test("a split-turn compaction leaves the prompt's tokens unknown", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const prepared = (preparation) => ({ type: "session_before_compact", preparation });
+
+  assert.deepEqual(addEventUsage(zero, prepared({ isSplitTurn: false })), zero);
+  assert.equal(addEventUsage(zero, prepared({ isSplitTurn: true })), undefined);
+  assert.equal(addEventUsage(zero, prepared(undefined)), undefined);
+});
+
 test("a retried compaction summary leaves the prompt's tokens unknown", () => {
   const usage = { input: 20, output: 1, cacheRead: 0, cacheWrite: 0 };
   const events = [
@@ -1514,8 +1523,9 @@ test("a retried compaction summary leaves the prompt's tokens unknown", () => {
  * Run prompts through the real Pi SDK against a local chat-completions endpoint
  * that answers each request from `replies` in order. A reply's `usage` is sent
  * as the stream's final usage chunk; a reply without one sends no usage.
+ * `modelExtensions` overrides the catalog entry, such as its context window.
  */
-async function promptsAgainstScriptedEndpoint(replies, prompts) {
+async function promptsAgainstScriptedEndpoint(replies, prompts, modelExtensions = undefined) {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-usage-")));
   await writeFile(join(workspace, "note.txt"), "nonce\n", "utf8");
   let served = 0;
@@ -1543,7 +1553,13 @@ async function promptsAgainstScriptedEndpoint(replies, prompts) {
       baseDir: workspace,
       config: {
         models: {
-          default: { api_key_env: "TEST_API_KEY", base_url: `${providerUrl}/v1`, model: "openai/gpt-oss-20b", provider: "nvidia" },
+          default: {
+            api_key_env: "TEST_API_KEY",
+            base_url: `${providerUrl}/v1`,
+            model: "openai/gpt-oss-20b",
+            provider: "nvidia",
+            ...(modelExtensions === undefined ? {} : { extensions: modelExtensions }),
+          },
         },
         tools: { enabled: null },
       },
@@ -1600,5 +1616,50 @@ test(
     assert.equal(mixed.text, "partial");
     assert.equal(mixed.usage, undefined);
     assert.deepEqual(reported.usage, { input: 50, output: 5, cacheRead: 0, cacheWrite: 0 });
+  },
+);
+
+test(
+  "counts a compaction that Pi summarizes in one call",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    // The second prompt is longer than Pi's 20,000 recent tokens, so Pi cuts at
+    // that prompt and summarizes only the earlier history, in one call.
+    const [, compacted] = await promptsAgainstScriptedEndpoint(
+      [
+        { content: "first", usage: { prompt_tokens: 100, completion_tokens: 5 } },
+        { readNote: true, usage: { prompt_tokens: 200, completion_tokens: 5 } },
+        { content: "done", usage: { prompt_tokens: 90_000, completion_tokens: 5 } },
+        { content: "history summary", usage: { prompt_tokens: 20, completion_tokens: 1 } },
+      ],
+      ["one", "y".repeat(100_000)],
+      { context_window: 100_000, max_tokens: 1_000 },
+    );
+
+    assert.deepEqual(compacted.usage, { input: 90_220, output: 11, cacheRead: 0, cacheWrite: 0 });
+  },
+);
+
+test(
+  "leaves a prompt's tokens unknown after a split-turn compaction",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    // The second prompt's final reply reports a context above the compaction
+    // threshold and is longer than Pi's 20,000 recent tokens, so Pi cuts inside
+    // that turn and summarizes the history and the turn prefix in two calls.
+    // The history summary reports no usage; the turn-prefix summary does.
+    const [, compacted] = await promptsAgainstScriptedEndpoint(
+      [
+        { content: "first", usage: { prompt_tokens: 100, completion_tokens: 5 } },
+        { readNote: true, usage: { prompt_tokens: 200, completion_tokens: 5 } },
+        { content: "x".repeat(100_000), usage: { prompt_tokens: 90_000, completion_tokens: 5 } },
+        { content: "history summary" },
+        { content: "turn prefix summary", usage: { prompt_tokens: 20, completion_tokens: 1 } },
+      ],
+      ["one", "read the note"],
+      { context_window: 100_000, max_tokens: 1_000 },
+    );
+
+    assert.equal(compacted.usage, undefined);
   },
 );
