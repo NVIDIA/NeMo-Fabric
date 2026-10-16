@@ -29,11 +29,11 @@ Where NeMo Fabric control code runs.
 
 ### `workspace: Option<PathBuf>`
 
-Workspace visible to the harness runtime.
+Workspace visible to the harness runtime. For non-local providers this is an environment-local path and must not be resolved on the host.
 
 ### `artifacts: Option<PathBuf>`
 
-Artifact root visible to the harness runtime.
+Artifact root visible to the harness runtime. For non-local providers this is an environment-local path and must not be resolved on the host.
 
 ### `env: BTreeMap<String, String>`
 

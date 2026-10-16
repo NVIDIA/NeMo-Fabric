@@ -118,6 +118,7 @@ descriptor schema.
 ### Runtime Lifecycle
 
 - `sdk/environment-handle`: prepared execution environment context.
+- `sdk/environment-reference`: provider-specific identity of an existing caller-owned environment.
 - `sdk/runtime-handle`: active harness runtime identity and opaque adapter binding.
 - `sdk/invocation-handle`: one request or turn sent to a runtime.
 

@@ -1,8 +1,8 @@
 ---
 title: "Function start_runtime"
 sidebar-title: "start_runtime"
-description: "Start or connect to a harness runtime."
-position: 39
+description: "Start or connect to a harness runtime in its configured local environment."
+position: 41
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -11,4 +11,6 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn start_runtime(plan: &amp;<a href=\"../config/struct-runplan.mdx\">RunPlan</a>) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"struct-runtimehandle.mdx\">RuntimeHandle</a>&gt;"}} /></pre>
 
-Start or connect to a harness runtime.
+Start or connect to a harness runtime in its configured local environment.
+
+For a non-local provider, prepare or attach to the environment explicitly and call [`start_runtime_in`](fn-start-runtime-in.mdx) with the returned handle.

@@ -269,13 +269,53 @@ pub enum FabricError {
         /// Service handle id.
         service_id: String,
     },
-    /// An environment provider is not runnable for the selected adapter in this POC.
+    /// An environment provider is not runnable for the selected adapter.
     #[error("environment provider `{provider}` is not implemented for adapter `{adapter_kind:?}`")]
     UnsupportedEnvironmentProvider {
         /// Environment provider.
         provider: String,
         /// Adapter kind.
         adapter_kind: AdapterKind,
+    },
+    /// An environment provider does not implement release.
+    #[error("environment provider `{provider}` is not implemented for environment release")]
+    UnsupportedEnvironmentRelease {
+        /// Environment provider.
+        provider: String,
+    },
+    /// An environment provider process could not complete an operation.
+    #[error("environment provider `{provider}` failed during `{operation}` ({code}): {message}")]
+    EnvironmentProviderOperation {
+        /// Environment provider.
+        provider: String,
+        /// Lifecycle operation.
+        operation: String,
+        /// Stable provider or host error code.
+        code: String,
+        /// Human-readable message that excludes credentials and raw diagnostics.
+        message: String,
+    },
+    /// A non-local runtime was started without an explicitly prepared environment handle.
+    #[error(
+        "environment provider `{provider}` requires an explicit EnvironmentHandle; call prepare_environment() and then start_runtime_in()"
+    )]
+    EnvironmentHandleRequired {
+        /// Environment provider selected by the run plan.
+        provider: String,
+    },
+    /// A prepared environment handle does not match the run plan that is binding to it.
+    #[error(
+        "environment handle does not match run plan for `{field}`: expected `{expected}` but found `{actual}` (environment `{environment_id}`)"
+    )]
+    EnvironmentHandleMismatch {
+        /// Mismatched environment field.
+        field: &'static str,
+        /// Expected value from the run plan.
+        expected: String,
+        /// Actual value from the environment handle.
+        actual: String,
+        /// Environment handle id.
+        environment_id: String,
     },
     /// Process adapter settings were invalid.
     #[error("invalid process adapter settings for {path}: {source}")]

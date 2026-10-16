@@ -133,6 +133,9 @@ jobs:
             echo "dist_tag=$dist_tag"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Check npm package bootstrap
+        run: python3 scripts/ci/check_npm_bootstrap.py
+
       - name: Test packages
         run: |
           just test-typescript
@@ -145,6 +148,7 @@ jobs:
           RELEASE_DIST_TAG: ${{ steps.release.outputs.dist_tag }}
         run: |
           set -euo pipefail
+          # Keep publication aligned with the explicit versioning/build coverage.
           for package_directory in \
             adapter-contract/typescript \
             adapters/typescript/common \

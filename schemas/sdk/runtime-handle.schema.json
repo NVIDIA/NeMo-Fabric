@@ -45,7 +45,7 @@
       "description": "Resolved execution environment context.",
       "properties": {
         "artifacts": {
-          "description": "Artifact root visible to the harness runtime.",
+          "description": "Artifact root visible to the harness runtime. For non-local providers this\nis an environment-local path and must not be resolved on the host.",
           "type": [
             "string",
             "null"
@@ -85,7 +85,7 @@
           "type": "string"
         },
         "workspace": {
-          "description": "Workspace visible to the harness runtime.",
+          "description": "Workspace visible to the harness runtime. For non-local providers this is\nan environment-local path and must not be resolved on the host.",
           "type": [
             "string",
             "null"

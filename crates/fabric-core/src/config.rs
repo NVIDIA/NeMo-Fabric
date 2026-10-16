@@ -1895,6 +1895,29 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
             "at least one of harness.adapter_id or workflow.target_id is required",
         );
     }
+    if let Some(environment) = &config.environment
+        && environment.provider == "openshell"
+    {
+        for (field, path) in [
+            ("workspace", &environment.workspace),
+            ("artifacts", &environment.artifacts),
+        ] {
+            if let Some(path) = path {
+                let valid = path.to_str().is_some_and(|value| {
+                    value.starts_with('/')
+                        && !value.contains('\\')
+                        && !value.contains('\0')
+                        && !value.split('/').any(|part| part == "..")
+                });
+                if !valid {
+                    return invalid_config(
+                        format!("environment.{field}"),
+                        "must be an absolute POSIX task path",
+                    );
+                }
+            }
+        }
+    }
     if let Some(harness) = &config.harness
         && harness.adapter_id.trim().is_empty()
     {
@@ -3687,18 +3710,31 @@ fn resolve_environment_plan(config: &FabricConfig, base_dir: &Path) -> Option<En
         workspace: environment
             .workspace
             .as_ref()
-            .map(|workspace| resolve_path(base_dir, workspace)),
+            .map(|workspace| environment_path(environment, base_dir, workspace)),
         artifacts: environment
             .artifacts
             .as_ref()
-            .or(config.runtime.artifacts.as_ref())
-            .map(|artifacts| resolve_path(base_dir, artifacts)),
+            .or_else(|| {
+                (environment.provider == "local")
+                    .then_some(config.runtime.artifacts.as_ref())
+                    .flatten()
+            })
+            .map(|artifacts| environment_path(environment, base_dir, artifacts)),
         env: environment.env.clone(),
         env_names: environment.env_names.clone(),
         connection: environment.connection.clone(),
         metadata: environment.metadata.clone(),
         settings: environment.settings.clone(),
     })
+}
+
+fn environment_path(environment: &EnvironmentConfig, base_dir: &Path, path: &Path) -> PathBuf {
+    if environment.provider == "local" {
+        resolve_path(base_dir, path)
+    } else {
+        // Provider paths belong to the task. Do not resolve them on the host.
+        path.to_path_buf()
+    }
 }
 
 fn resolve_capability_plan(
@@ -7443,18 +7479,25 @@ mod tests {
 
     #[test]
     fn record_enabled_with_a_non_local_provider_fails_validation() {
-        let mut config = typed_config("nvidia.fabric.hermes");
-        config.runtime.artifacts = Some(PathBuf::from("runs"));
-        config.runtime.record = Some(RecordConfig { enabled: true });
-        config.environment.as_mut().expect("environment").provider = "docker".to_string();
+        for provider in ["docker", "openshell"] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.runtime.artifacts = Some(PathBuf::from("runs"));
+            config.runtime.record = Some(RecordConfig { enabled: true });
+            let environment = config.environment.as_mut().expect("environment");
+            environment.provider = provider.to_string();
+            // Valid OpenShell task paths, so only the record check can fail.
+            environment.workspace = Some(PathBuf::from("/sandbox/workspace"));
+            environment.artifacts = Some(PathBuf::from("/sandbox/artifacts"));
 
-        assert_eq!(
-            record_error(&config),
-            Some((
-                "runtime.record.enabled".to_string(),
-                "supported only with the local environment provider".to_string()
-            ))
-        );
+            assert_eq!(
+                record_error(&config),
+                Some((
+                    "runtime.record.enabled".to_string(),
+                    "supported only with the local environment provider".to_string()
+                )),
+                "{provider}"
+            );
+        }
     }
 
     #[test]
@@ -7500,6 +7543,57 @@ mod tests {
             assert!(
                 serde_json::from_value::<FabricConfig>(value).is_err(),
                 "{runtime}"
+            );
+        }
+    }
+
+    #[test]
+    fn remote_environment_paths_are_not_resolved_on_the_host() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        let environment = config.environment.as_mut().expect("environment");
+        environment.provider = "openshell".to_string();
+        environment.workspace = Some(PathBuf::from("/sandbox/workspace"));
+        environment.artifacts = Some(PathBuf::from("/sandbox/artifacts"));
+        let plan =
+            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
+        assert_eq!(plan.workspace, Some(PathBuf::from("/sandbox/workspace")));
+        assert_eq!(plan.artifacts, Some(PathBuf::from("/sandbox/artifacts")));
+        config.environment.as_mut().expect("environment").workspace =
+            Some(PathBuf::from("relative/task/workspace"));
+        let plan =
+            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
+        assert_eq!(
+            plan.workspace,
+            Some(PathBuf::from("relative/task/workspace"))
+        );
+    }
+    #[test]
+    fn remote_environment_does_not_use_the_host_artifact_destination() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        let environment = config.environment.as_mut().expect("environment");
+        environment.provider = "openshell".to_string();
+        environment.artifacts = None;
+        config.runtime.artifacts = Some(PathBuf::from("host/review-results"));
+        let plan =
+            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
+        assert_eq!(plan.artifacts, None);
+    }
+    #[test]
+    fn openshell_paths_reject_host_syntax_and_parent_traversal() {
+        for value in [
+            "relative",
+            "C:/workspace",
+            "/sandbox/../host",
+            "/sandbox\\workspace",
+            "/sandbox\0workspace",
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            let environment = config.environment.as_mut().expect("environment");
+            environment.provider = "openshell".to_string();
+            environment.workspace = Some(PathBuf::from(value));
+            let error = validate_config(&config).expect_err("invalid task path");
+            assert!(
+                matches!(error, FabricError::InvalidConfig {field, ..} if field == "environment.workspace")
             );
         }
     }
