@@ -7479,18 +7479,25 @@ mod tests {
 
     #[test]
     fn record_enabled_with_a_non_local_provider_fails_validation() {
-        let mut config = typed_config("nvidia.fabric.hermes");
-        config.runtime.artifacts = Some(PathBuf::from("runs"));
-        config.runtime.record = Some(RecordConfig { enabled: true });
-        config.environment.as_mut().expect("environment").provider = "docker".to_string();
+        for provider in ["docker", "openshell"] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.runtime.artifacts = Some(PathBuf::from("runs"));
+            config.runtime.record = Some(RecordConfig { enabled: true });
+            let environment = config.environment.as_mut().expect("environment");
+            environment.provider = provider.to_string();
+            // Valid OpenShell task paths, so only the record check can fail.
+            environment.workspace = Some(PathBuf::from("/sandbox/workspace"));
+            environment.artifacts = Some(PathBuf::from("/sandbox/artifacts"));
 
-        assert_eq!(
-            record_error(&config),
-            Some((
-                "runtime.record.enabled".to_string(),
-                "supported only with the local environment provider".to_string()
-            ))
-        );
+            assert_eq!(
+                record_error(&config),
+                Some((
+                    "runtime.record.enabled".to_string(),
+                    "supported only with the local environment provider".to_string()
+                )),
+                "{provider}"
+            );
+        }
     }
 
     #[test]
