@@ -14,13 +14,7 @@ just build-openshell-provider
 export NEMO_FABRIC_OPEN_SHELL_PROVIDER="$PWD/target/debug/fabric-environment-openshell"
 ```
 
-Use a registered OpenShell gateway and match the CLI, gateway, and runtime components to **0.1.2**. The provider pins that release's SDK to commit `6648bd0c290efbc41ba131ee9831ee45cd431f94`.
-
-## Initial Host Support
-
-NeMo Fabric qualifies this integration on Linux for the initial implementation. This is not an OpenShell platform restriction: [OpenShell 0.1.2 supports Apple Silicon macOS and lists Windows through WSL 2 as experimental](https://docs.nvidia.com/openshell/v0.1.2/about/support-matrix). The NeMo Fabric provider process cannot write requests on native Windows.
-
-The provider cannot present a TLS client certificate. It therefore cannot connect to [package-managed local gateways that require mTLS](https://docs.nvidia.com/openshell/v0.1.2/how-it-works/gateways/authentication), including Homebrew on macOS and Debian or RPM packages on Linux. `connection.ca_cert_env` verifies the gateway's server certificate, and `connection.insecure_skip_verify` disables that verification; neither authenticates the client. The local Linux examples use a development gateway without mTLS. Other host and gateway combinations need separate qualification, and mTLS gateways need client-certificate support in the OpenShell Rust SDK and this provider.
+Use a registered OpenShell gateway and match the CLI, gateway, and runtime components to **0.1.2**. The provider pins that release's SDK to commit `6648bd0c290efbc41ba131ee9831ee45cd431f94`. Initial support has been tested only on Linux.
 
 Environment configuration uses `provider="openshell"` and `control_location="in_env_control"`. The gateway connection selects a named workspace or explicitly uses OpenShell's default workspace. Workspace and artifact roots are absolute POSIX paths inside the sandbox; `runtime.artifacts` remains the host collection destination. Select an immutable image digest or local Docker image ID. Task images contain the SDK, `fabric-agent-ctl`, the selected adapter, and the agent/harness.
 
