@@ -76,8 +76,10 @@ The record's start line keeps them with `harbor_session_id` and
 forwards every request context key; no first-party adapter reads them. Harbor
 runs each attempt as its own trial and gives the trial no attempt index, so the
 bridge sets no `attempt`. Group a task's attempts by `task_id` and
-`task_revision`. A missing or unreadable `lock.json` or `config.json` adds none
-of its keys, and the run goes on.
+`task_revision`. A missing or unreadable `lock.json` or `config.json`, or one
+that does not hold a JSON object, adds none of its keys, and the run goes on.
+Otherwise the bridge copies each field in the table that is a nonempty string on
+its own, and does not check the file against Harbor's lock or config model.
 
 On the host, each record is at
 `<trial>/agent/fabric-artifacts/<config name>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`,

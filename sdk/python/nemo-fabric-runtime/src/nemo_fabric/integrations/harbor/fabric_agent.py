@@ -676,7 +676,9 @@ def harbor_trial_identity(trial_dir: Path) -> dict[str, str]:
     registry task, and the task folder's name for a git or local task, never
     a local path. The task revision is the lock's content digest of the task
     (``sha256:...``), which Harbor computes for every task kind. A missing or
-    malformed file adds nothing, so the run goes on without that identity.
+    unreadable file, or one that does not hold a JSON object, adds none of its
+    keys. Otherwise each field that is a nonempty string is copied on its own;
+    the files are not checked against Harbor's lock or config model.
     """
 
     identity: dict[str, str] = {}
