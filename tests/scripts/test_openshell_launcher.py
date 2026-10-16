@@ -438,6 +438,8 @@ def test_langgraph_openshell_workload_uses_sdk_consumer_and_host_provider(
 ):
     _, root, _ = launcher
     secret = "test-model-key-must-not-appear-in-command-arguments"
+    profile = root / "langgraph-model-profile.yaml"
+    profile.write_text("id: custom-langgraph\n")
     completed = _run(
         launcher,
         ROOT / "examples/langgraph_custom_agent/demo-openshell-sdk.sh",
@@ -447,7 +449,7 @@ def test_langgraph_openshell_workload_uses_sdk_consumer_and_host_provider(
             "OPENSHELL_LANGGRAPH_MCP": str(mcp).lower(),
             "OPENAI_API_KEY": secret,
             "MOCK_EXPECTED_MODEL_API_KEY": secret,
-            "OPENSHELL_MODEL_PROVIDER_PROFILE": "/tmp/langgraph-model-profile.yaml",
+            "OPENSHELL_MODEL_PROVIDER_PROFILE": str(profile),
             "OPENSHELL_LANGGRAPH_BASE_URL": "https://models.example.test/v1",
         },
     )
@@ -467,7 +469,7 @@ def test_langgraph_openshell_workload_uses_sdk_consumer_and_host_provider(
         if operation["command"] == "openshell" and "profile" in operation["args"]
     )
     assert profile_call["args"][profile_call["args"].index("--file") + 1] == (
-        "/tmp/langgraph-model-profile.yaml"
+        str(profile)
     )
     provider_call = next(
         operation
@@ -476,7 +478,9 @@ def test_langgraph_openshell_workload_uses_sdk_consumer_and_host_provider(
         and "provider" in operation["args"]
         and operation["args"][operation["args"].index("provider") + 1] == "create"
     )
-    assert "nvidia-langgraph" in provider_call["args"]
+    assert provider_call["args"][provider_call["args"].index("--type") + 1] == (
+        "custom-langgraph"
+    )
     assert provider_call["model_key_matches_expected"]
     assert secret not in json.dumps(operations)
 
@@ -491,6 +495,29 @@ def test_langgraph_default_profile_uses_nvidia_key_when_both_keys_exist(launcher
             "NVIDIA_API_KEY": "expected-nvidia-key",
             "OPENAI_API_KEY": "different-openai-key",
             "MOCK_EXPECTED_MODEL_API_KEY": "expected-nvidia-key",
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    provider_call = next(
+        operation
+        for operation in _operations(root)
+        if operation["command"] == "openshell" and "create" in operation["args"]
+        and "provider" in operation["args"]
+    )
+    assert provider_call["model_key_matches_expected"]
+
+
+def test_langgraph_default_profile_falls_back_to_openai_key(launcher):
+    _, root, _ = launcher
+    completed = _run(
+        launcher,
+        ROOT / "examples/langgraph_custom_agent/demo-openshell-sdk.sh",
+        {
+            "OPENSHELL_EXAMPLE_MODE": "caller_owned",
+            "NVIDIA_API_KEY": "",
+            "OPENAI_API_KEY": "fallback-model-key",
+            "MOCK_EXPECTED_MODEL_API_KEY": "fallback-model-key",
         },
     )
 
