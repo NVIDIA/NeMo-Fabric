@@ -217,6 +217,13 @@ impl InvocationRecorder {
         ExchangeEnd { oom_kills, ..end }
     }
 
+    /// The record's sampling registration. Core holds it under the host lock
+    /// and drops it when the exchange ends, which closes the sampling window
+    /// before a later invocation on the runtime can start.
+    pub(crate) fn take_sampling(&mut self) -> Option<Registration> {
+        self.sampling.take()
+    }
+
     /// Keep what the exchange saw for the end line.
     pub(crate) fn exchange_ended(&mut self, end: ExchangeEnd) {
         self.exchange = Some(end);

@@ -1883,6 +1883,12 @@ fn local_host_invocation_result(
                 ticker: SampleTicker::global(),
             }));
         }
+        // Dropping `sampling` closes the record's sampling window. It is
+        // declared after `host_guard`, so an early return also closes the
+        // window before the host lock is released.
+        let sampling = recorder
+            .as_mut()
+            .and_then(InvocationRecorder::take_sampling);
         adapter_invocation.runtime_context.deadline_millis =
             adapter_deadline_millis(invoke_timeout);
         let (lifecycle_request, adapter_payload) = match invocation_kind {
@@ -1932,6 +1938,9 @@ fn local_host_invocation_result(
             .as_ref()
             .zip(end_snapshot.as_ref())
             .map(|(recorder, snapshot)| recorder.read_exchange_end(ended_at, snapshot));
+        // No later sample belongs to this invocation: the next invocation on
+        // this runtime can start as soon as the host lock is released.
+        drop(sampling);
         match exchange {
             Ok(output) => {
                 if let (Some(recorder), Some(end)) = (recorder.as_mut(), exchange_end) {
@@ -6341,6 +6350,101 @@ for line in sys.stdin:
         assert_eq!(end["error"]["code"], "host_timeout");
         assert_eq!(end["resources"]["runtime_id"], runtime.runtime_id.as_str());
         assert!(end["resources"]["process_count"].as_u64().expect("count") >= 1);
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn sample_lines(record: &Path) -> usize {
+        fs::read_to_string(record)
+            .expect("read record")
+            .lines()
+            .filter(|line| line.contains(r#""kind":"sample""#))
+            .count()
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn record_gets_no_sample_after_its_exchange_ends_while_a_later_invocation_runs() {
+        let (root, plan) = record_plan("success");
+        let ticker = SampleTicker::new(Duration::from_millis(10));
+        crate::record::sampler_test_hooks::TICKER
+            .with(|slot| *slot.borrow_mut() = Some(Arc::clone(&ticker)));
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        // Invocation A's exchange ends, and its result is not finished yet.
+        let mut first = None;
+        let first_outcome = local_host_invocation_result(
+            &plan,
+            &runtime,
+            RunRequest::text("first"),
+            LocalHostInvocation::Invoke,
+            Duration::from_secs(30),
+            &mut first,
+        );
+        let first = first.expect("first record");
+        let first_record = record_files(&root).pop().expect("first record file");
+        let samples_at_exchange_end = sample_lines(&first_record);
+        // Invocation B runs on the same runtime while A is unfinished.
+        run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("second"),
+            Duration::from_secs(30),
+        )
+        .expect("second invocation");
+        // A record that stays open on the same ticker shows that the ticker
+        // ticked after both exchanges.
+        let sentinel_home = root.join("sentinel");
+        fs::create_dir_all(&sentinel_home).expect("sentinel folder");
+        let sentinel_invocation = InvocationHandle {
+            invocation_id: "invocation-sentinel".to_string(),
+            request_id: "request-sentinel".to_string(),
+            runtime_id: runtime.runtime_id.clone(),
+        };
+        let sentinel = InvocationRecorder::start(RecordStart {
+            plan: &plan,
+            runtime: &runtime,
+            invocation: &sentinel_invocation,
+            request: &RunRequest::text("sentinel"),
+            fabric_home: &sentinel_home,
+            timeout: Duration::from_secs(30),
+            cgroup: CgroupReader::system(),
+            read_resources: {
+                let runtime = runtime.clone();
+                Arc::new(move || local_runtime_resource_snapshot(&runtime))
+            },
+            ticker: Arc::clone(&ticker),
+        });
+        let sentinel_record = sentinel_home.join("run-record.jsonl");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while sample_lines(&sentinel_record) < 3 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            sample_lines(&sentinel_record) >= 3,
+            "the ticker never ticked"
+        );
+
+        first.finish(first_outcome).expect("first result");
+        drop(sentinel);
+        crate::record::sampler_test_hooks::TICKER.with(|slot| *slot.borrow_mut() = None);
+
+        let lines: Vec<Value> = fs::read_to_string(&first_record)
+            .expect("read record")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("record line"))
+            .collect();
+        let sample_times: Vec<&Value> = lines
+            .iter()
+            .filter(|line| line["kind"] == "sample")
+            .map(|line| &line["elapsed_ms"])
+            .collect();
+        assert_eq!(
+            sample_times.len(),
+            samples_at_exchange_end,
+            "sample elapsed_ms: {sample_times:?}"
+        );
+        assert_eq!(lines.last().expect("end line")["kind"], "end");
         let _ = stop_runtime(&plan, &runtime);
         let _ = fs::remove_dir_all(root);
     }

@@ -21,8 +21,9 @@ pub(crate) struct RecordFile {
     writer: Option<RecordWriter>,
     /// The first create, write or sync failure.
     pub failure: Option<io::Error>,
-    /// Set when the end line is written; no sample line follows it.
-    ended: bool,
+    /// Set when the sampling window closes, at the exchange's end or at the
+    /// end line; no sample line follows it.
+    sampling_closed: bool,
 }
 
 impl RecordFile {
@@ -44,7 +45,7 @@ impl RecordFile {
             request_id,
             writer,
             failure,
-            ended: false,
+            sampling_closed: false,
         }
     }
 
@@ -68,18 +69,24 @@ impl RecordFile {
         }
     }
 
-    /// Append a sample line, unless the end line is already written.
+    /// Append a sample line, unless the sampling window is closed.
     pub(crate) fn append_sample(&mut self, body: LineBody) {
-        if !self.ended {
+        if !self.sampling_closed {
             self.append(body);
         }
+    }
+
+    /// Close the sampling window. A sample whose read finishes later is
+    /// discarded.
+    pub(crate) fn close_sampling(&mut self) {
+        self.sampling_closed = true;
     }
 
     /// Append the end line, sync the file and close it. No sample line
     /// follows, and a sample tick that still holds this record keeps no open
     /// file handle.
     pub(crate) fn append_end(&mut self, body: LineBody) {
-        self.ended = true;
+        self.sampling_closed = true;
         self.append(body);
         if let Some(writer) = self.writer.take()
             && let Err(error) = writer.sync()

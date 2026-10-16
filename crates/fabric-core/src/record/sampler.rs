@@ -75,6 +75,10 @@ impl SampleTicker {
 
     /// The process-wide ticker, sampling every [`SAMPLE_INTERVAL_MS`].
     pub(crate) fn global() -> Arc<Self> {
+        #[cfg(test)]
+        if let Some(ticker) = test_hooks::TICKER.with(|slot| slot.borrow().clone()) {
+            return ticker;
+        }
         GLOBAL.clone()
     }
 
@@ -114,7 +118,7 @@ impl SampleTicker {
         self.lock_records().insert(
             id,
             Arc::new(ActiveRecord {
-                file,
+                file: Arc::clone(&file),
                 started,
                 read,
             }),
@@ -122,6 +126,7 @@ impl SampleTicker {
         Registration {
             ticker: Arc::clone(self),
             id,
+            file,
         }
     }
 
@@ -161,15 +166,19 @@ fn run(ticker: &Weak<SampleTicker>, interval: Duration) {
     }
 }
 
-/// Keeps a record in the ticker; dropping it stops sampling that record.
+/// Keeps a record in the ticker. Dropping it closes the record's sampling
+/// window: the ticker stops sampling the record, and a sample whose read is
+/// still running is discarded.
 pub(crate) struct Registration {
     ticker: Arc<SampleTicker>,
     id: u64,
+    file: Arc<Mutex<RecordFile>>,
 }
 
 impl Drop for Registration {
     fn drop(&mut self) {
         self.ticker.lock_records().remove(&self.id);
+        lock(&self.file).close_sampling();
     }
 }
 
@@ -179,6 +188,21 @@ impl std::fmt::Debug for Registration {
             .debug_struct("Registration")
             .field("id", &self.id)
             .finish()
+    }
+}
+
+/// A per-thread ticker that replaces the process-wide one in tests.
+#[cfg(test)]
+pub(crate) mod test_hooks {
+    use std::cell::RefCell;
+    use std::sync::Arc;
+
+    use super::SampleTicker;
+
+    thread_local! {
+        /// Ticker for records started on this thread, instead of the
+        /// process-wide one.
+        pub(crate) static TICKER: RefCell<Option<Arc<SampleTicker>>> = const { RefCell::new(None) };
     }
 }
 
