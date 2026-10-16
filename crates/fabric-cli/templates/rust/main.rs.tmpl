@@ -38,6 +38,7 @@ fn build_config() -> FabricConfig {
             artifacts: None,
             timeout_seconds: {{TIMEOUT_SECONDS}},
             max_turns: {{MAX_TURNS}},
+            record: None,
             extensions: BTreeMap::new(),
         },
         environment: Some(EnvironmentConfig {

@@ -127,6 +127,11 @@ descriptor schema.
 - `sdk/artifact-manifest`: normalized artifact references.
 - `sdk/error-info`: structured runtime or adapter error metadata.
 - `sdk/fabric-event`: NeMo Fabric lifecycle or progress event.
+- `sdk/run-record-line`: one line of the opt-in per-invocation run record,
+  `run-record.jsonl`. The schema is `v1alpha1` and may change until the
+  `nemo-fabric report` command ships.
+- `sdk/runtime-resource-snapshot`: timestamped memory, process count, and CPU
+  time of a runtime's local adapter host and its descendants.
 
 ### Deferred Core Objects
 

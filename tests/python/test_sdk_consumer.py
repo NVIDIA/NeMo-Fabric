@@ -10,7 +10,7 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
-from nemo_fabric import Fabric, FabricConfigError, RunPlan
+from nemo_fabric import Fabric, FabricConfigError, RecordConfig, RunPlan
 
 from _utils.configs import hermes_shim_config
 
@@ -148,3 +148,16 @@ async def test_installed_descriptors_reject_invalid_config_before_native_start(
             base_dir=hermes_shim_agent_dir,
         )
     mock_start.assert_not_called()
+
+
+def test_record_without_an_artifact_root_fails_native_planning(hermes_shim_agent_dir):
+    config = hermes_shim_config()
+    config.runtime.artifacts = None
+    config.environment.artifacts = None
+    config.runtime.record = RecordConfig(enabled=True)
+
+    with pytest.raises(FabricConfigError, match="runtime.record.enabled"):
+        Fabric().plan(config, base_dir=hermes_shim_agent_dir)
+
+    config.runtime.artifacts = "./artifacts"
+    assert Fabric().plan(config, base_dir=hermes_shim_agent_dir).config.runtime.record == {"enabled": True}

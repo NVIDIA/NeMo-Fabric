@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import SerializerFunctionWrapHandler
+from pydantic import StrictBool
 from pydantic import field_validator
 from pydantic import model_serializer
 from pydantic import model_validator
@@ -187,6 +188,29 @@ class InstructionsConfig(FabricBaseModel):
     system: InstructionConfig | None = None
 
 
+class RecordConfig(FabricBaseModel):
+    """Opt-in per-invocation run record.
+
+    When ``enabled`` is true, NeMo Fabric writes
+    ``<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl``
+    for each invocation. It requires an artifact root, the ``local``
+    environment provider, and a ``process`` or ``python`` adapter.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: StrictBool
+    exclusive_container: StrictBool | None = Field(
+        default=None,
+        description=(
+            "Whether nothing else runs in the container during an invocation, "
+            "including other runtimes in the same process, so a rise in the "
+            "container's out-of-memory kill count reads sandbox_failed in the "
+            "record. Unset means false."
+        ),
+    )
+
+
 class RuntimeConfig(FabricBaseModel):
     """Invocation runtime contract."""
 
@@ -199,6 +223,7 @@ class RuntimeConfig(FabricBaseModel):
         allow_inf_nan=False,
     )
     max_turns: int | None = Field(default=None, gt=0, le=(1 << 32) - 1)
+    record: RecordConfig | None = None
 
 
 class EnvironmentConfig(FabricBaseModel):

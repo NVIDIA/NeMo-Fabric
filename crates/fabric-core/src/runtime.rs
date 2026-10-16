@@ -31,9 +31,17 @@ use crate::config::{
     validate_tool_definitions, validate_workflow,
 };
 use crate::error::{FabricError, Result};
+use crate::record::{CgroupReader, HostExit, InvocationRecorder, RecordStart, SampleTicker};
+use crate::resource_snapshot::{LocalHostProcess, RuntimeResourceSnapshot, snapshot_local_host};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
+/// Lifecycle error code for an invocation that outlived core's timeout.
+pub(crate) const HOST_TIMEOUT: &str = "host_timeout";
+/// Lifecycle error code for an adapter host that exited or closed its pipes.
+pub(crate) const HOST_CRASHED: &str = "host_crashed";
+/// Lifecycle error code for an adapter result that core rejects.
+pub(crate) const INVALID_AGENT_RUN_RESULT: &str = "invalid_agent_run_result";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
 const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
 // Protocol liveness backstop. Adapters remain responsible for normal request
@@ -44,6 +52,8 @@ const LOCAL_HOST_INVOKE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const LOCAL_HOST_ADAPTER_RESERVE: Duration = Duration::from_secs(10);
 const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(10);
 const LOCAL_HOST_EXIT_GRACE: Duration = Duration::from_secs(2);
+// How long a run record waits for a crashed host's exit status.
+const LOCAL_HOST_CRASH_WAIT: Duration = Duration::from_secs(1);
 const LOCAL_HOST_DIAGNOSTIC_LIMIT: usize = 16 * 1024;
 #[cfg(test)]
 pub(crate) const OPENAI_STREAM_HOST: &str = "127.0.0.1";
@@ -71,6 +81,10 @@ const DEFAULT_PYTHON: &str = "python.exe";
 #[cfg(test)]
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static LOCAL_HOSTS: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalAdapterHost>>>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+// Adapter host processes by runtime id. A host's own mutex stays locked for a
+// whole invocation, so a resource snapshot reads the PID from here instead.
+static LOCAL_HOST_PROCESSES: LazyLock<Mutex<BTreeMap<String, LocalHostProcess>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 static LOCAL_SERVICES: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalServiceRecord>>>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
@@ -136,6 +150,10 @@ pub struct RunResult {
     /// Normalized invocation usage when reported by the adapter target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<RunUsage>,
+    /// Resource snapshot of the runtime, read once after the adapter returned this
+    /// result. Absent when the runtime's resources could not be observed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_snapshot: Option<RuntimeResourceSnapshot>,
     /// Artifacts produced or collected by this run.
     #[serde(default)]
     pub artifacts: ArtifactManifest,
@@ -1163,6 +1181,47 @@ pub fn invoke_runtime(
     })
 }
 
+/// Read a timestamped resource snapshot of a started runtime.
+///
+/// The snapshot covers the runtime's local adapter host process and its live
+/// descendants. It does not wait for a running invocation. It returns
+/// [`FabricError::ResourceObservationUnavailable`] when the runtime stopped, is
+/// stopping, its host exited, a live process in its tree or the process table
+/// cannot be read, or the process tree kept changing during the read, and
+/// [`FabricError::ResourceObservationUnsupported`] when the adapter kind,
+/// environment provider, or operating system has no resource reader.
+pub fn runtime_resource_snapshot(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+) -> Result<RuntimeResourceSnapshot> {
+    validate_runtime_handle(plan, runtime)?;
+    if !uses_local_host(plan) {
+        return Err(FabricError::ResourceObservationUnsupported {
+            runtime_id: runtime.runtime_id.clone(),
+            reason: format!(
+                "adapter kind `{}` has no resource reader",
+                adapter_kind_name(runtime.adapter_kind)
+            ),
+        });
+    }
+    local_runtime_resource_snapshot(runtime)
+}
+
+fn local_runtime_resource_snapshot(runtime: &RuntimeHandle) -> Result<RuntimeResourceSnapshot> {
+    if runtime.environment.provider != "local" {
+        return Err(FabricError::ResourceObservationUnsupported {
+            runtime_id: runtime.runtime_id.clone(),
+            reason: format!(
+                "environment provider `{}` has no resource reader",
+                runtime.environment.provider
+            ),
+        });
+    }
+    // Clone the entry so the map lock is released before the process tree is read.
+    let host = local_host_processes().get(&runtime.runtime_id).cloned();
+    snapshot_local_host(&runtime.runtime_id, host.as_ref())
+}
+
 /// Invoke a started harness runtime and pass through native OpenAI chat-completion chunks.
 pub fn invoke_openai_stream(
     plan: &RunPlan,
@@ -1523,6 +1582,7 @@ impl RuntimeAdapter for LocalHostAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+        local_host_processes().remove(&runtime.runtime_id);
         let Some(host) = local_hosts().remove(&runtime.runtime_id) else {
             return Ok(vec![local_host_stop_event(runtime, true, false)]);
         };
@@ -1543,7 +1603,7 @@ impl RuntimeAdapter for LocalHostAdapter {
         let host_crashed = matches!(
             &result,
             Err(FabricError::AdapterLifecycleOperation { code, .. })
-                if code == "host_crashed"
+                if code == HOST_CRASHED
         );
         if !host_crashed {
             result?;
@@ -1620,6 +1680,7 @@ fn start_local_runtime(
     )?;
     let environment_env = start.runtime_context.environment.env.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
+    let started_at = SystemTime::now();
     let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)?;
     if let Err(error) = exchange_lifecycle_message(
         &mut host,
@@ -1631,6 +1692,10 @@ fn start_local_runtime(
         let _ = remove_local_host_files(&host);
         return Err(error);
     }
+    local_host_processes().insert(
+        runtime.runtime_id.clone(),
+        LocalHostProcess::new(host.child.id(), started_at),
+    );
     local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
     Ok(runtime)
 }
@@ -1728,9 +1793,37 @@ impl LocalHostInvocation {
 fn run_local_host_invocation_with_timeout(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
+    request: RunRequest,
+    invocation_kind: LocalHostInvocation,
+    invoke_timeout: Duration,
+) -> Result<RunResult> {
+    let mut recorder = None;
+    let outcome = local_host_invocation_result(
+        plan,
+        runtime,
+        request,
+        invocation_kind,
+        invoke_timeout,
+        &mut recorder,
+    );
+    match recorder {
+        // The end line and its sync run here, after the host lock is released.
+        Some(recorder) => recorder.finish(outcome),
+        None => outcome,
+    }
+}
+
+/// Run one invocation on the local host. When the plan turns the run record
+/// on, `recorder` is set before core sets the adapter deadline and writes
+/// `adapter-invocation.json`, so every invocation that core tried to send has
+/// a record.
+fn local_host_invocation_result(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
     mut request: RunRequest,
     invocation_kind: LocalHostInvocation,
     invoke_timeout: Duration,
+    recorder: &mut Option<InvocationRecorder>,
 ) -> Result<RunResult> {
     let operation = invocation_kind.operation();
     if request.request_id.is_empty() {
@@ -1772,6 +1865,30 @@ fn run_local_host_invocation_with_timeout(
             &host_guard.environment_env,
             &adapter_invocation.runtime_context.environment.env,
         )?;
+        // Record I/O runs before the adapter deadline is set, so slow record
+        // storage delays the request instead of shortening the adapter's budget.
+        if plan.config.runtime.record_enabled() && artifacts.root.is_some() {
+            *recorder = Some(InvocationRecorder::start(RecordStart {
+                plan,
+                runtime,
+                invocation: &invocation,
+                request: &request,
+                fabric_home: &fabric_home,
+                timeout: invoke_timeout,
+                cgroup: CgroupReader::system(),
+                read_resources: {
+                    let runtime = runtime.clone();
+                    Arc::new(move || local_runtime_resource_snapshot(&runtime))
+                },
+                ticker: SampleTicker::global(),
+            }));
+        }
+        // Dropping `sampling` closes the record's sampling window. It is
+        // declared after `host_guard`, so an early return also closes the
+        // window before the host lock is released.
+        let sampling = recorder
+            .as_mut()
+            .and_then(InvocationRecorder::take_sampling);
         adapter_invocation.runtime_context.deadline_millis =
             adapter_deadline_millis(invoke_timeout);
         let (lifecycle_request, adapter_payload) = match invocation_kind {
@@ -1806,16 +1923,34 @@ fn run_local_host_invocation_with_timeout(
             }
         };
         let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
-        match exchange_lifecycle_message(
+        let exchange = exchange_lifecycle_message(
             &mut host_guard,
             &runtime.runtime_id,
             &lifecycle_request,
             invoke_timeout,
-        ) {
+        );
+        let ended_at = Instant::now();
+        // Read while the host lock is held and before a timed-out host is
+        // stopped, so the end values count this invocation and no later one.
+        let end_snapshot = (exchange.is_ok() || recorder.is_some())
+            .then(|| local_runtime_resource_snapshot(runtime));
+        let exchange_end = recorder
+            .as_ref()
+            .zip(end_snapshot.as_ref())
+            .map(|(recorder, snapshot)| recorder.read_exchange_end(ended_at, snapshot));
+        // No later sample belongs to this invocation: the next invocation on
+        // this runtime can start as soon as the host lock is released.
+        drop(sampling);
+        match exchange {
             Ok(output) => {
+                if let (Some(recorder), Some(end)) = (recorder.as_mut(), exchange_end) {
+                    recorder.exchange_ended(end);
+                }
                 let stderr = take_local_host_stderr(&mut host_guard);
+                let resource_snapshot = end_snapshot.and_then(Result::ok);
                 Ok((
                     output,
+                    resource_snapshot,
                     stderr,
                     host_guard.command.clone(),
                     host_guard.child.id(),
@@ -1828,9 +1963,24 @@ fn run_local_host_invocation_with_timeout(
             Err(error) => {
                 if matches!(
                     &error,
-                    FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"
+                    FabricError::AdapterLifecycleOperation { code, .. } if code == HOST_TIMEOUT
                 ) {
                     invalidate_timed_out_local_host(&runtime.runtime_id, &host, &mut host_guard);
+                }
+                // Only a record reads the exit status, so a run without one
+                // never waits. After a forced stop it is the signal core sent.
+                if let (Some(recorder), Some(end)) = (recorder.as_mut(), exchange_end) {
+                    let crashed = matches!(
+                        &error,
+                        FabricError::AdapterLifecycleOperation { code, .. } if code == HOST_CRASHED
+                    );
+                    let end = end.with_host_exit(local_host_exit(&mut host_guard, crashed));
+                    let end = if crashed {
+                        recorder.recount_oom_kills(end)
+                    } else {
+                        end
+                    };
+                    recorder.exchange_ended(end);
                 }
                 Err(error)
             }
@@ -1838,6 +1988,7 @@ fn run_local_host_invocation_with_timeout(
     };
     let (
         adapter_output,
+        resource_snapshot,
         stderr,
         host_command,
         host_pid,
@@ -1851,7 +2002,7 @@ fn run_local_host_invocation_with_timeout(
         lifecycle_error(
             operation,
             &runtime.runtime_id,
-            "invalid_agent_run_result",
+            INVALID_AGENT_RUN_RESULT,
             format!("adapter returned an invalid AgentRunResult: {error}"),
             &stderr,
         )
@@ -1860,7 +2011,7 @@ fn run_local_host_invocation_with_timeout(
         lifecycle_error(
             operation,
             &runtime.runtime_id,
-            "invalid_agent_run_result",
+            INVALID_AGENT_RUN_RESULT,
             format!("adapter returned an invalid AgentRunResult: {error}"),
             &stderr,
         )
@@ -1870,7 +2021,7 @@ fn run_local_host_invocation_with_timeout(
         return Err(lifecycle_error(
             operation,
             &runtime.runtime_id,
-            "invalid_agent_run_result",
+            INVALID_AGENT_RUN_RESULT,
             "adapter returned artifacts without a configured runtime artifact root",
             &stderr,
         ));
@@ -1989,11 +2140,31 @@ fn run_local_host_invocation_with_timeout(
         output,
         error,
         usage: agent_result.usage.as_ref().map(run_usage),
+        resource_snapshot,
         artifacts,
         telemetry: telemetry_ref(plan, relay_config.as_ref()),
         events,
         metadata,
     })
+}
+
+/// The host's wait status after a failed exchange, when it has exited. A
+/// crashed host gets up to [`LOCAL_HOST_CRASH_WAIT`] for its exit to become
+/// observable.
+fn local_host_exit(host: &mut LocalAdapterHost, crashed: bool) -> Option<HostExit> {
+    let deadline = Instant::now()
+        + if crashed {
+            LOCAL_HOST_CRASH_WAIT
+        } else {
+            Duration::ZERO
+        };
+    loop {
+        match host.child.try_wait() {
+            Ok(Some(status)) => return Some(HostExit::from_status(status)),
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+            Ok(None) | Err(_) => return None,
+        }
+    }
 }
 
 fn invalidate_timed_out_local_host(
@@ -2008,6 +2179,7 @@ fn invalidate_timed_out_local_host(
             .is_some_and(|host| Arc::ptr_eq(host, expected_host))
         {
             hosts.remove(runtime_id);
+            local_host_processes().remove(runtime_id);
         }
     }
 
@@ -2105,7 +2277,7 @@ fn stop_service_host(record: &mut LocalServiceRecord) -> Result<()> {
     let removal = remove_local_host_files(&record.host);
     let host_crashed = matches!(
         &result,
-        Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "host_crashed"
+        Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == HOST_CRASHED
     );
     if !host_crashed {
         result?;
@@ -2159,6 +2331,12 @@ fn service_release_event(service: &ServiceHandle, already_released: bool) -> Fab
 
 fn local_hosts() -> std::sync::MutexGuard<'static, BTreeMap<String, Arc<Mutex<LocalAdapterHost>>>> {
     LOCAL_HOSTS
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+fn local_host_processes() -> std::sync::MutexGuard<'static, BTreeMap<String, LocalHostProcess>> {
+    LOCAL_HOST_PROCESSES
         .lock()
         .unwrap_or_else(|error| error.into_inner())
 }
@@ -2395,7 +2573,7 @@ fn exchange_lifecycle_message(
         return Err(lifecycle_error(
             operation,
             runtime_id,
-            "host_crashed",
+            HOST_CRASHED,
             format!(
                 "persistent local adapter host exited before {} ({status})",
                 operation.as_str()
@@ -2413,7 +2591,7 @@ fn exchange_lifecycle_message(
         let code = match (source.kind(), host.child.try_wait()) {
             // A closed lifecycle pipe is terminal even when the child exit
             // status is not observable yet.
-            (ErrorKind::BrokenPipe, _) | (_, Ok(Some(_))) => "host_crashed",
+            (ErrorKind::BrokenPipe, _) | (_, Ok(Some(_))) => HOST_CRASHED,
             _ => "host_io",
         };
         return Err(lifecycle_error(
@@ -2434,7 +2612,7 @@ fn exchange_lifecycle_message(
             return Err(lifecycle_error(
                 operation,
                 runtime_id,
-                "host_timeout",
+                HOST_TIMEOUT,
                 format!(
                     "persistent local adapter host did not complete {} within {} ms",
                     operation.as_str(),
@@ -2447,7 +2625,7 @@ fn exchange_lifecycle_message(
             return Err(lifecycle_error(
                 operation,
                 runtime_id,
-                "host_crashed",
+                HOST_CRASHED,
                 format!(
                     "persistent local adapter host exited while processing {}",
                     operation.as_str()
@@ -3297,7 +3475,7 @@ fn relay_artifact_media_type(kind: &str) -> Option<&'static str> {
     }
 }
 
-fn unique_artifact_name(manifest: &ArtifactManifest, base: &str) -> String {
+pub(crate) fn unique_artifact_name(manifest: &ArtifactManifest, base: &str) -> String {
     if !manifest
         .artifacts
         .iter()
@@ -3658,7 +3836,7 @@ fn telemetry_ref(
     })
 }
 
-fn event_with_metadata(
+pub(crate) fn event_with_metadata(
     kind: impl Into<String>,
     message: impl Into<String>,
     metadata: BTreeMap<String, Value>,
@@ -3908,6 +4086,17 @@ for line in sys.stdin:
         if MODE == "invoke_failure":
             response("invoke", error=failure("invoke", "fake_invoke", "invoke rejected"))
             continue
+        if MODE == "invoke_deadline_error":
+            response("invoke", error=failure("invoke", "timeout", "deadline reached"))
+            continue
+        if MODE == "exit_3":
+            sys.exit(3)
+        if MODE == "self_kill":
+            os.kill(os.getpid(), 9)
+        if MODE == "allocate_until_killed":
+            blocks = []
+            while True:
+                blocks.append(b"x" * (16 * 1024 * 1024))
         invocation = message["payload"]
         expected_fields = (
             {"runtime_context", "request", "stream"}
@@ -3936,6 +4125,10 @@ for line in sys.stdin:
                     "choices": [{"index": 0, "delta": {"content": "lo"}}],
                 },
             ])
+        if MODE == "busy":
+            # A descendant that burns 1.2 s of CPU, then exits and is waited for.
+            subprocess.run([sys.executable, "-c",
+                "import time\nwhile time.process_time() < 1.2:\n    pass"], check=True)
         output = {
             "host_pid": os.getpid(),
             "invocation_count": invocations,
@@ -3947,12 +4140,30 @@ for line in sys.stdin:
             "context_env": invocation["runtime_context"]["environment"].get("env", {}),
             "deadline_millis": invocation["runtime_context"].get("deadline_millis"),
         }
-        if MODE in {"adapter_reported_failure", "blank_error_code"}:
+        if MODE == "cancelled":
+            result = {"status": "cancelled", "output": output}
+        elif MODE == "cancelled_at_deadline":
+            result = {
+                "status": "cancelled",
+                "output": output,
+                "error": {"code": "timeout", "message": "deadline reached", "retryable": False},
+            }
+        elif MODE == "adapter_deadline":
+            result = {
+                "status": "failed",
+                "output": output,
+                "error": {"code": "timeout", "message": "deadline reached", "retryable": False},
+            }
+        elif MODE in {"adapter_reported_failure", "blank_error_code", "free_text_error_code"}:
+            codes = {
+                "blank_error_code": " \t",
+                "free_text_error_code": "Rate limit for key sk-live-123 exceeded",
+            }
             result = {
                 "status": "failed",
                 "output": output,
                 "error": {
-                    "code": " \t" if MODE == "blank_error_code" else "fake_adapter_failure",
+                    "code": codes.get(MODE, "fake_adapter_failure"),
                     "message": "adapter rejected the invocation",
                     "retryable": True,
                     "extensions": {"source": "fake-host"},
@@ -4667,6 +4878,200 @@ for line in sys.stdin:
         assert_eq!(first.output["invocation_count"], 1);
         assert_eq!(second.output["invocation_count"], 2);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn assert_unavailable(result: &Result<RuntimeResourceSnapshot>, runtime_id: &str) {
+        match result {
+            Err(FabricError::ResourceObservationUnavailable {
+                runtime_id: actual, ..
+            }) => assert_eq!(actual, runtime_id),
+            other => panic!("expected ResourceObservationUnavailable, got {other:?}"),
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_of_active_runtime_reads_host_tree() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let snapshot = runtime_resource_snapshot(&plan, &runtime).expect("snapshot");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        assert_eq!(snapshot.runtime_id, runtime.runtime_id);
+        assert!(snapshot.process_count >= 1);
+        assert!(snapshot.resident_memory_bytes > 0);
+        assert!(snapshot.cpu_time_seconds >= 0.0);
+        assert!(snapshot.started_at.ends_with('Z'));
+        assert!(snapshot.started_at <= snapshot.observed_at);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_during_invocation_returns_before_invocation_ends() {
+        let (root, plan) = local_host_plan("busy");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let saw_descendant = thread::scope(|scope| {
+            let invocation =
+                scope.spawn(|| invoke_runtime(&plan, &runtime, RunRequest::text("work")));
+            let mut saw_descendant = false;
+            while !saw_descendant && !invocation.is_finished() {
+                let snapshot = runtime_resource_snapshot(&plan, &runtime).expect("live snapshot");
+                saw_descendant = snapshot.process_count >= 2 && !invocation.is_finished();
+                thread::sleep(Duration::from_millis(20));
+            }
+            invocation
+                .join()
+                .expect("invocation thread")
+                .expect("invoke local host");
+            saw_descendant
+        });
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        assert!(saw_descendant, "no snapshot saw the running descendant");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn invocation_result_carries_final_resource_snapshot_with_waited_descendant_cpu() {
+        let (root, plan) = local_host_plan("busy");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let result =
+            invoke_runtime(&plan, &runtime, RunRequest::text("work")).expect("invoke local host");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        let snapshot = result.resource_snapshot.expect("final resource snapshot");
+        assert_eq!(snapshot.runtime_id, result.runtime_id);
+        assert!(snapshot.process_count >= 1);
+        assert!(
+            snapshot.cpu_time_seconds >= 1.0,
+            "descendant CPU missing: {snapshot:?}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_resource_snapshot_after_stop_is_unavailable() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        let result = runtime_resource_snapshot(&plan, &runtime);
+
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
+            assert_unavailable(&result, &runtime.runtime_id);
+        } else {
+            assert!(matches!(
+                result,
+                Err(FabricError::ResourceObservationUnsupported { .. })
+            ));
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_after_host_exit_is_unavailable() {
+        let (root, plan) = local_host_plan("crash_after_start");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut result = runtime_resource_snapshot(&plan, &runtime);
+        while result.is_ok() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(50));
+            result = runtime_resource_snapshot(&plan, &runtime);
+        }
+        let _ = stop_runtime(&plan, &runtime);
+
+        assert_unavailable(&result, &runtime.runtime_id);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_during_concurrent_stop_is_snapshot_or_unavailable() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let results = thread::scope(|scope| {
+            let snapshots = scope.spawn(|| {
+                let mut results = Vec::new();
+                loop {
+                    let result = runtime_resource_snapshot(&plan, &runtime);
+                    let stopped = result.is_err();
+                    results.push(result);
+                    if stopped {
+                        return results;
+                    }
+                }
+            });
+            thread::sleep(Duration::from_millis(50));
+            stop_runtime(&plan, &runtime).expect("stop local host");
+            snapshots.join().expect("snapshot thread")
+        });
+
+        let (last, earlier) = results.split_last().expect("at least one snapshot");
+        assert!(earlier.iter().all(Result::is_ok));
+        assert_unavailable(last, &runtime.runtime_id);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_after_invocation_timeout_is_unavailable() {
+        let (root, plan) = local_host_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+        runtime_resource_snapshot(&plan, &runtime).expect("snapshot before the timeout");
+
+        run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("unresponsive host must time out");
+
+        assert_unavailable(
+            &runtime_resource_snapshot(&plan, &runtime),
+            &runtime.runtime_id,
+        );
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_resource_snapshot_of_non_local_environment_is_unsupported() {
+        let (root, plan) = local_host_plan("success");
+        let mut environment = prepare_environment(&plan).expect("prepare environment");
+        environment.provider = "remote".to_string();
+        let runtime_id = new_id("runtime");
+        let runtime = RuntimeHandle {
+            runtime_binding: runtime_binding(&runtime_id, None, &plan, &environment)
+                .expect("runtime binding"),
+            runtime_id,
+            agent_name: plan.agent_name.clone(),
+            harness: harness(&plan),
+            adapter_kind: adapter_kind(&plan),
+            adapter_id: adapter_id(&plan),
+            service_id: None,
+            environment,
+        };
+
+        let result = runtime_resource_snapshot(&plan, &runtime);
+
+        assert!(
+            matches!(
+                &result,
+                Err(FabricError::ResourceObservationUnsupported { runtime_id, reason })
+                    if *runtime_id == runtime.runtime_id && reason.contains("remote")
+            ),
+            "{result:?}"
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -5456,6 +5861,592 @@ for line in sys.stdin:
         assert_eq!(error.code, "runtime_stop_failed");
         assert!(error.message.contains("fake_stop"), "{}", error.message);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn record_plan(mode: &str) -> (PathBuf, RunPlan) {
+        let (root, mut plan) = local_host_plan(mode);
+        plan.config.runtime.record = Some(crate::config::RecordConfig {
+            enabled: true,
+            exclusive_container: false,
+        });
+        (root, plan)
+    }
+
+    fn record_files(root: &Path) -> Vec<PathBuf> {
+        let mut records = Vec::new();
+        let mut folders = vec![root.join("artifacts/.fabric")];
+        while let Some(folder) = folders.pop() {
+            let Ok(entries) = fs::read_dir(&folder) else {
+                continue;
+            };
+            for path in entries.flatten().map(|entry| entry.path()) {
+                if path.is_dir() {
+                    folders.push(path);
+                } else if path.ends_with("run-record.jsonl") {
+                    records.push(path);
+                }
+            }
+        }
+        records
+    }
+
+    fn record_line_validator() -> jsonschema::Validator {
+        let schema = crate::schema::generate_schema(crate::schema::SchemaName::RunRecordLine)
+            .expect("record line schema");
+        jsonschema::validator_for(&schema).expect("valid schema")
+    }
+
+    /// The only record under `root`, with every line checked against the
+    /// published line schema.
+    fn only_record(root: &Path) -> (String, Vec<Value>) {
+        let records = record_files(root);
+        assert_eq!(records.len(), 1, "{records:?}");
+        let text = fs::read_to_string(&records[0]).expect("read record");
+        let validator = record_line_validator();
+        let lines: Vec<Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("record line is JSON"))
+            .collect();
+        for line in &lines {
+            assert!(validator.is_valid(line), "{line}");
+        }
+        (text, lines)
+    }
+
+    /// The one line of `kind`. Lookup by kind keeps these tests independent
+    /// of other line kinds written between the start and end lines.
+    fn line_of_kind<'a>(lines: &'a [Value], kind: &str) -> &'a Value {
+        let mut matching = lines.iter().filter(|line| line["kind"] == kind);
+        let line = matching.next().unwrap_or_else(|| panic!("no {kind} line"));
+        assert!(matching.next().is_none(), "more than one {kind} line");
+        line
+    }
+
+    #[test]
+    fn record_off_with_an_artifact_root_writes_no_record() {
+        let (root, plan) = local_host_plan("typed_result");
+        assert!(plan.config.runtime.artifacts.is_some());
+
+        let result = run_plan(&plan, RunRequest::text("no record")).expect("run");
+
+        assert!(record_files(&root).is_empty());
+        assert!(
+            result
+                .artifacts
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.kind != "run_record")
+        );
+        assert!(
+            result
+                .events
+                .iter()
+                .all(|event| event.kind != "record_write_failed")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_on_writes_a_start_line_and_an_end_line() {
+        let (root, plan) = record_plan("typed_result");
+        let mut request = RunRequest::text("record");
+        request.context = BTreeMap::from([
+            ("task_id".to_string(), serde_json::json!("repo-io-fix")),
+            ("attempt".to_string(), serde_json::json!(2)),
+            (
+                "harbor_trial_name".to_string(),
+                serde_json::json!("trial-1"),
+            ),
+            ("step".to_string(), serde_json::json!({"nested": "value"})),
+            ("api_key".to_string(), serde_json::json!("sk-live-SECRET")),
+        ]);
+
+        let result = run_plan(&plan, request).expect("run");
+        let (text, lines) = only_record(&root);
+
+        let (start, end) = (line_of_kind(&lines, "start"), line_of_kind(&lines, "end"));
+        assert_eq!(lines.first(), Some(start), "{text}");
+        assert_eq!(lines.last(), Some(end), "{text}");
+        for line in &lines {
+            assert_eq!(line["schema"], "nemo.fabric.run_record");
+            assert_eq!(line["version"], "v1alpha1");
+            assert_eq!(line["runtime_id"], result.runtime_id.as_str());
+            assert_eq!(line["invocation_id"], result.invocation_id.as_str());
+            assert_eq!(line["request_id"], result.request_id.as_str());
+        }
+        assert_eq!(start["agent_name"], "local-host-test-agent");
+        assert_eq!(start["adapter_id"], "acme.fabric.local-host");
+        assert_eq!(start["timeout_ms"], 3_600_000);
+        assert_eq!(
+            start["context"],
+            serde_json::json!({
+                "api_key": {"recorded": false},
+                "attempt": 2,
+                "harbor_trial_name": "trial-1",
+                "step": {"recorded": false},
+                "task_id": "repo-io-fix",
+            })
+        );
+        assert!(!text.contains("SECRET"), "{text}");
+        assert_eq!(end["status"], "succeeded");
+        assert!(end["elapsed_ms"].is_u64());
+        assert_eq!(
+            end["usage"],
+            serde_json::json!({
+                "input_tokens": 3,
+                "cached_input_tokens": 1,
+                "input_tokens_include_cache": true,
+                "output_tokens": 5,
+                "total_tokens": 8,
+                "cost_usd": 0.25,
+            })
+        );
+        let report = end["artifacts"]
+            .as_array()
+            .expect("artifacts")
+            .iter()
+            .find(|artifact| artifact["name"] == "report")
+            .expect("report artifact");
+        assert_eq!(
+            report,
+            &serde_json::json!({
+                "name": "report",
+                "kind": "report",
+                "media_type": "application/json",
+                "path": "reports/result.json",
+            })
+        );
+        for marker in ["fake-host", "\"fake\"", "trace-1"] {
+            assert!(!text.contains(marker), "{marker} in {text}");
+        }
+        let record = result
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == "record")
+            .expect("record artifact");
+        assert_eq!(record.kind, "run_record");
+        assert_eq!(record.media_type.as_deref(), Some("application/jsonl"));
+        assert_eq!(record.path, record_files(&root)[0]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_end_line_keeps_the_error_code_and_drops_the_message() {
+        let (root, plan) = record_plan("adapter_reported_failure");
+
+        let result = run_plan(&plan, RunRequest::text("fail")).expect("failed result");
+        let (text, lines) = only_record(&root);
+
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(
+            line_of_kind(&lines, "end")["error"],
+            serde_json::json!({"code": "fake_adapter_failure", "stage": "invoke", "retryable": true})
+        );
+        assert!(!text.contains("adapter rejected"), "{text}");
+        let mut wrong_kind = line_of_kind(&lines, "end").clone();
+        wrong_kind["kind"] = serde_json::json!("start");
+        assert!(!record_line_validator().is_valid(&wrong_kind));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_end_line_replaces_a_free_text_error_code() {
+        let (root, plan) = record_plan("free_text_error_code");
+
+        let result = run_plan(&plan, RunRequest::text("fail")).expect("failed result");
+        let (text, lines) = only_record(&root);
+
+        assert!(result.error.expect("error").code.contains("sk-live-123"));
+        assert_eq!(line_of_kind(&lines, "end")["error"]["code"], "unrecognized");
+        assert!(!text.contains("sk-live-123"), "{text}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_lifecycle_error_writes_a_failed_end_line() {
+        let (root, plan) = record_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let error = run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("timeout raises");
+        let (_, lines) = only_record(&root);
+
+        assert!(error.to_string().contains("host_timeout"), "{error}");
+        let end = line_of_kind(&lines, "end");
+        assert_eq!(line_of_kind(&lines, "start")["timeout_ms"], 100);
+        assert_eq!(end["status"], "failed");
+        assert_eq!(
+            end["error"],
+            serde_json::json!({"code": "host_timeout", "stage": "invoke", "retryable": false})
+        );
+        let stop = &end["stop"];
+        assert_eq!(stop["cause"], "agent_exhausted_budget");
+        assert_eq!(stop["reason"], "timeout");
+        assert_eq!(stop["forced"], true);
+        assert_eq!(stop["limit"]["value"], 100);
+        let usage = stop["limit"]["usage"].as_u64().expect("usage");
+        // Usage stops when the timeout fires; the end line's elapsed time also
+        // covers core's stop of the hung host.
+        assert!(usage >= 100, "{stop}");
+        assert!(
+            usage < end["elapsed_ms"].as_u64().expect("elapsed"),
+            "{end}"
+        );
+        #[cfg(unix)]
+        assert_eq!(stop["exit_signal"], 9, "{stop}");
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_preparation_does_not_shorten_the_adapter_deadline() {
+        let (root, mut plan) = record_plan("success");
+        plan.config.runtime.timeout_seconds = Some(60.0);
+        let runtime = start_runtime(&plan).expect("start local host");
+        let delay = Duration::from_millis(500);
+        crate::record::test_hooks::CREATE_DELAY.with(|slot| slot.set(delay));
+
+        let before = now_millis();
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("slow record storage"));
+        let after = now_millis();
+        crate::record::test_hooks::CREATE_DELAY.with(|slot| slot.set(Duration::ZERO));
+
+        let result = result.expect("invoke");
+        let deadline = u128::from(result.output["deadline_millis"].as_u64().expect("deadline"));
+        // The adapter's 50-second budget starts after the record is created,
+        // so slow record storage does not eat into it.
+        assert!(
+            (before + delay.as_millis() + 50_000..=after + 50_000).contains(&deadline),
+            "deadline {deadline}, before {before}, after {after}"
+        );
+        assert_eq!(record_files(&root).len(), 1);
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_warm_runtime_writes_one_record_per_invocation() {
+        let (root, plan) = record_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let first = invoke_runtime(&plan, &runtime, RunRequest::text("one")).expect("first");
+        let second = invoke_runtime(&plan, &runtime, RunRequest::text("two")).expect("second");
+        stop_runtime(&plan, &runtime).expect("stop");
+
+        let records = record_files(&root);
+        assert_eq!(records.len(), 2);
+        for result in [&first, &second] {
+            assert!(records.iter().any(|path| path.ends_with(format!(
+                ".fabric/{}/{}/run-record.jsonl",
+                result.runtime_id, result.invocation_id
+            ))));
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn end_line_of(root: &Path) -> Value {
+        let (text, lines) = only_record(root);
+        let end = lines.last().expect("end line").clone();
+        assert_eq!(end["kind"], "end", "{text}");
+        end
+    }
+
+    fn failed_invocation_end_line(mode: &str) -> (FabricError, Value) {
+        let (root, plan) = record_plan(mode);
+        let runtime = start_runtime(&plan).expect("start local host");
+        let error = invoke_runtime(&plan, &runtime, RunRequest::text("fail"))
+            .expect_err("lifecycle error still raises");
+        let end = end_line_of(&root);
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+        (error, end)
+    }
+
+    fn result_end_line(mode: &str) -> (RunResult, Value) {
+        let (root, plan) = record_plan(mode);
+        let result = run_plan(&plan, RunRequest::text("run")).expect("result");
+        let end = end_line_of(&root);
+        let _ = fs::remove_dir_all(root);
+        (result, end)
+    }
+
+    #[test]
+    fn stop_succeeded_invocation_has_no_stop() {
+        let (result, end) = result_end_line("success");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        assert!(end.get("stop").is_none(), "{end}");
+        assert!(end.get("container_oom_kills").is_some(), "{end}");
+    }
+
+    #[test]
+    fn stop_host_exit_3_reads_unclassified_with_the_exit_code() {
+        let (error, end) = failed_invocation_end_line("exit_3");
+
+        assert!(error.to_string().contains("host_crashed"), "{error}");
+        assert_eq!(end["error"]["code"], "host_crashed");
+        assert_eq!(
+            end["stop"],
+            serde_json::json!({"cause": "unclassified", "exit_code": 3})
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_host_killed_by_a_signal_reads_unclassified_with_the_signal() {
+        let (_, end) = failed_invocation_end_line("self_kill");
+
+        assert_eq!(
+            end["stop"],
+            serde_json::json!({"cause": "unclassified", "exit_signal": 9})
+        );
+    }
+
+    #[test]
+    fn stop_invalid_adapter_result_reads_fabric_failed() {
+        let (error, end) = failed_invocation_end_line("blank_error_code");
+
+        assert!(
+            error.to_string().contains("invalid_agent_run_result"),
+            "{error}"
+        );
+        assert_eq!(end["stop"], serde_json::json!({"cause": "fabric_failed"}));
+    }
+
+    #[test]
+    fn stop_host_reported_invoke_failure_reads_fabric_failed() {
+        let (_, end) = failed_invocation_end_line("invoke_failure");
+
+        assert_eq!(end["error"]["code"], "fake_invoke");
+        assert_eq!(end["stop"], serde_json::json!({"cause": "fabric_failed"}));
+    }
+
+    #[test]
+    fn stop_adapter_deadline_reported_as_a_lifecycle_error_reads_an_unforced_time_limit() {
+        let (_, end) = failed_invocation_end_line("invoke_deadline_error");
+
+        assert_eq!(end["error"]["code"], "timeout");
+        let stop = &end["stop"];
+        assert_eq!(stop["cause"], "agent_exhausted_budget");
+        assert_eq!(stop["forced"], false);
+        assert_eq!(stop["limit"]["value"], 3_600_000);
+    }
+
+    /// The out-of-memory path end to end. It needs Linux with cgroup v2 and
+    /// a memory-limited container in which Fabric owns the root cgroup, so it
+    /// is ignored by default; the PR body gives the `docker run` command.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "needs a memory-limited cgroup v2 container"]
+    fn stop_oom_kill_in_an_exclusive_container_reads_sandbox_failed() {
+        let (root, mut plan) = record_plan("allocate_until_killed");
+        plan.config.runtime.record = Some(crate::config::RecordConfig {
+            enabled: true,
+            exclusive_container: true,
+        });
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        invoke_runtime(&plan, &runtime, RunRequest::text("allocate"))
+            .expect_err("the kernel kills the host");
+        let (_, lines) = only_record(&root);
+
+        let count = |kind| line_of_kind(&lines, kind)["container_oom_kills"].as_u64();
+        let (start, end) = (
+            count("start").expect("start count"),
+            count("end").expect("end count"),
+        );
+        assert!(end > start, "{lines:?}");
+        let stop = &line_of_kind(&lines, "end")["stop"];
+        assert_eq!(stop["cause"], "sandbox_failed", "{stop}");
+        assert_eq!(stop["exit_signal"], 9, "{stop}");
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn stop_failed_result_reads_agent_failed() {
+        let (result, end) = result_end_line("adapter_reported_failure");
+
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(end["stop"], serde_json::json!({"cause": "agent_failed"}));
+    }
+
+    #[test]
+    fn stop_cancelled_result_has_no_stop() {
+        let (result, end) = result_end_line("cancelled");
+
+        assert_eq!(result.status, RunStatus::Cancelled);
+        assert_eq!(end["status"], "cancelled");
+        assert!(end.get("stop").is_none(), "{end}");
+    }
+
+    #[test]
+    fn stop_cancelled_result_with_a_timeout_error_code_has_no_stop() {
+        let (result, end) = result_end_line("cancelled_at_deadline");
+
+        assert_eq!(result.status, RunStatus::Cancelled);
+        assert_eq!(end["error"]["code"], "timeout");
+        assert!(end.get("stop").is_none(), "{end}");
+    }
+
+    #[test]
+    fn stop_adapter_deadline_reads_an_unforced_time_limit() {
+        let (_, end) = result_end_line("adapter_deadline");
+
+        let stop = &end["stop"];
+        assert_eq!(stop["cause"], "agent_exhausted_budget");
+        assert_eq!(stop["reason"], "timeout");
+        assert_eq!(stop["forced"], false);
+        assert_eq!(stop["limit"]["type"], "time");
+        assert_eq!(stop["limit"]["value"], 3_600_000);
+        assert!(stop["limit"]["usage"].is_u64(), "{stop}");
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn record_start_and_end_lines_carry_the_runtime_snapshot() {
+        let (root, plan) = record_plan("success");
+
+        let result = run_plan(&plan, RunRequest::text("snapshot")).expect("run");
+        let (_, lines) = only_record(&root);
+
+        let (start, end) = (line_of_kind(&lines, "start"), line_of_kind(&lines, "end"));
+        assert_eq!(start["sample_interval_ms"], 10_000);
+        for line in [start, end] {
+            assert_eq!(line["resources"]["runtime_id"], result.runtime_id.as_str());
+            assert!(line["resources"]["process_count"].as_u64().expect("count") >= 1);
+        }
+        assert_eq!(
+            end["resources"],
+            serde_json::to_value(result.resource_snapshot.expect("result snapshot"))
+                .expect("snapshot JSON")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn record_end_line_of_a_timed_out_invocation_keeps_the_hung_host_snapshot() {
+        let (root, plan) = record_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("timeout raises");
+        let (_, lines) = only_record(&root);
+
+        let end = line_of_kind(&lines, "end");
+        assert_eq!(end["error"]["code"], "host_timeout");
+        assert_eq!(end["resources"]["runtime_id"], runtime.runtime_id.as_str());
+        assert!(end["resources"]["process_count"].as_u64().expect("count") >= 1);
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn sample_lines(record: &Path) -> usize {
+        fs::read_to_string(record)
+            .expect("read record")
+            .lines()
+            .filter(|line| line.contains(r#""kind":"sample""#))
+            .count()
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn record_gets_no_sample_after_its_exchange_ends_while_a_later_invocation_runs() {
+        let (root, plan) = record_plan("success");
+        let ticker = SampleTicker::new(Duration::from_millis(10));
+        crate::record::sampler_test_hooks::TICKER
+            .with(|slot| *slot.borrow_mut() = Some(Arc::clone(&ticker)));
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        // Invocation A's exchange ends, and its result is not finished yet.
+        let mut first = None;
+        let first_outcome = local_host_invocation_result(
+            &plan,
+            &runtime,
+            RunRequest::text("first"),
+            LocalHostInvocation::Invoke,
+            Duration::from_secs(30),
+            &mut first,
+        );
+        let first = first.expect("first record");
+        let first_record = record_files(&root).pop().expect("first record file");
+        let samples_at_exchange_end = sample_lines(&first_record);
+        // Invocation B runs on the same runtime while A is unfinished.
+        run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("second"),
+            Duration::from_secs(30),
+        )
+        .expect("second invocation");
+        // A record that stays open on the same ticker shows that the ticker
+        // ticked after both exchanges.
+        let sentinel_home = root.join("sentinel");
+        fs::create_dir_all(&sentinel_home).expect("sentinel folder");
+        let sentinel_invocation = InvocationHandle {
+            invocation_id: "invocation-sentinel".to_string(),
+            request_id: "request-sentinel".to_string(),
+            runtime_id: runtime.runtime_id.clone(),
+        };
+        let sentinel = InvocationRecorder::start(RecordStart {
+            plan: &plan,
+            runtime: &runtime,
+            invocation: &sentinel_invocation,
+            request: &RunRequest::text("sentinel"),
+            fabric_home: &sentinel_home,
+            timeout: Duration::from_secs(30),
+            cgroup: CgroupReader::system(),
+            read_resources: {
+                let runtime = runtime.clone();
+                Arc::new(move || local_runtime_resource_snapshot(&runtime))
+            },
+            ticker: Arc::clone(&ticker),
+        });
+        let sentinel_record = sentinel_home.join("run-record.jsonl");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while sample_lines(&sentinel_record) < 3 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            sample_lines(&sentinel_record) >= 3,
+            "the ticker never ticked"
+        );
+
+        first.finish(first_outcome).expect("first result");
+        drop(sentinel);
+        crate::record::sampler_test_hooks::TICKER.with(|slot| *slot.borrow_mut() = None);
+
+        let lines: Vec<Value> = fs::read_to_string(&first_record)
+            .expect("read record")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("record line"))
+            .collect();
+        let sample_times: Vec<&Value> = lines
+            .iter()
+            .filter(|line| line["kind"] == "sample")
+            .map(|line| &line["elapsed_ms"])
+            .collect();
+        assert_eq!(
+            sample_times.len(),
+            samples_at_exchange_end,
+            "sample elapsed_ms: {sample_times:?}"
+        );
+        assert_eq!(lines.last().expect("end line")["kind"], "end");
+        let _ = stop_runtime(&plan, &runtime);
         let _ = fs::remove_dir_all(root);
     }
 }

@@ -558,6 +558,24 @@
         }
       ]
     },
+    "RecordConfig": {
+      "additionalProperties": false,
+      "description": "Per-invocation run record settings.\n\nWhen enabled, core appends a start line, sample lines about every 10\nseconds while the adapter host works on the request, and an end line for\neach local invocation to\n`<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`.",
+      "properties": {
+        "enabled": {
+          "description": "Whether to write a run record for each invocation. Requires an\nartifact root, the `local` environment provider, and a `process` or\n`python` adapter.",
+          "type": "boolean"
+        },
+        "exclusive_container": {
+          "description": "Whether nothing else runs in the container during an invocation,\nincluding other runtimes in the same process, so a rise in the\ncontainer's out-of-memory kill count reads `sandbox_failed` in the\nrecord. Unset means false.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
     "RelayAtifConfig": {
       "additionalProperties": true,
       "description": "Relay ATIF export configuration.",
@@ -1328,6 +1346,17 @@
           "default": "text",
           "description": "Output schema label.",
           "type": "string"
+        },
+        "record": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecordConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Opt-in per-invocation run record. Core-only; never sent to adapters."
         },
         "timeout_seconds": {
           "description": "Maximum duration of one invocation in seconds.",

@@ -372,11 +372,20 @@ class _RuntimeConfig(_ConfigMapping):
         artifacts: Optional artifact-root path.
         timeout_seconds: Optional invocation deadline in seconds.
         max_turns: Optional harness turn limit.
+        record: Optional run record settings, ``{"enabled": bool}`` with an
+            optional boolean ``exclusive_container``.
         extra_fields: Preserved extension fields not recognized by this SDK.
     """
 
     _fields = frozenset(
-        {"input_schema", "output_schema", "artifacts", "timeout_seconds", "max_turns"}
+        {
+            "input_schema",
+            "output_schema",
+            "artifacts",
+            "timeout_seconds",
+            "max_turns",
+            "record",
+        }
     )
 
     def __init__(
@@ -387,6 +396,7 @@ class _RuntimeConfig(_ConfigMapping):
         artifacts: str | Path | None = None,
         timeout_seconds: float | None = None,
         max_turns: int | None = None,
+        record: Mapping[str, Any] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
         values: dict[str, Any] = {}
@@ -419,6 +429,18 @@ class _RuntimeConfig(_ConfigMapping):
                     "runtime max_turns must be between 1 and 4294967295"
                 )
             values["max_turns"] = max_turns
+        if record is not None:
+            record = _mapping(record, "runtime record")
+            if (
+                "enabled" not in record
+                or not set(record) <= {"enabled", "exclusive_container"}
+                or not all(isinstance(value, bool) for value in record.values())
+            ):
+                raise FabricConfigError(
+                    "runtime record must be an object with a boolean enabled field "
+                    "and an optional boolean exclusive_container field"
+                )
+            values["record"] = dict(record)
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
@@ -432,6 +454,7 @@ class _RuntimeConfig(_ConfigMapping):
             artifacts=data.get("artifacts"),
             timeout_seconds=data.get("timeout_seconds"),
             max_turns=data.get("max_turns"),
+            record=data.get("record"),
             extra_fields={
                 key: item for key, item in data.items() if key not in cls._fields
             },
@@ -1834,6 +1857,71 @@ class RunUsage(FabricMapping):
         return data
 
 
+class RuntimeResourceSnapshot(FabricMapping):
+    """Timestamped resource usage of one runtime's local adapter host process tree.
+
+    Memory, process count, and CPU time cover the adapter host process and its
+    live descendants, not a shared service process. Values that cannot be read
+    raise an error instead of reading as zero.
+
+    Attributes:
+        runtime_id: Runtime this snapshot describes.
+        started_at: When NeMo Fabric started the adapter host, as RFC 3339 UTC.
+        observed_at: When NeMo Fabric read these values, as RFC 3339 UTC.
+        resident_memory_bytes: Sum of the live processes' resident set sizes.
+            Pages shared between processes count once per process.
+        process_count: Live processes in the tree, including the adapter host.
+        cpu_time_seconds: CPU time used since the adapter host started,
+            including exited descendants. It can drop when a descendant
+            leaves the tree.
+    """
+
+    runtime_id: str
+    started_at: str
+    observed_at: str
+    resident_memory_bytes: int
+    process_count: int
+    cpu_time_seconds: float
+    _fields = frozenset(
+        {
+            "runtime_id",
+            "started_at",
+            "observed_at",
+            "resident_memory_bytes",
+            "process_count",
+            "cpu_time_seconds",
+        }
+    )
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        for field in ("runtime_id", "started_at", "observed_at"):
+            data[field] = _required_text(data.get(field), field.replace("_", " "))
+        for field in ("resident_memory_bytes", "process_count"):
+            value = data.get(field)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 0 <= value <= _UINT64_MAX
+            ):
+                raise FabricConfigError(
+                    f"{field.replace('_', ' ')} must be a nonnegative integer "
+                    f"no greater than {_UINT64_MAX}"
+                )
+        cpu = data.get("cpu_time_seconds")
+        if (
+            isinstance(cpu, bool)
+            or not isinstance(cpu, (int, float))
+            or not math.isfinite(cpu)
+            or cpu < 0
+        ):
+            raise FabricConfigError(
+                "cpu time seconds must be a finite nonnegative number"
+            )
+        data["cpu_time_seconds"] = float(cpu)
+        return data
+
+
 class RunResult(FabricMapping):
     """Normalized terminal result from one NeMo Fabric invocation.
 
@@ -1854,6 +1942,9 @@ class RunResult(FabricMapping):
             are preserved as-is.
         error: Structured failure, or ``None`` on success.
         usage: Normalized invocation usage, or ``None`` when unavailable.
+        resource_snapshot: Runtime resource snapshot read once after the
+            adapter returned this result, or ``None`` when the runtime's
+            resources could not be observed.
         artifacts: Normalized artifact manifest.
         telemetry: Ordered telemetry references.
         events: Ordered lifecycle and invocation events.
@@ -1871,6 +1962,7 @@ class RunResult(FabricMapping):
     output: RunOutput | JSONValue
     error: ErrorInfo | None
     usage: RunUsage | None
+    resource_snapshot: RuntimeResourceSnapshot | None
     artifacts: ArtifactManifest
     telemetry: Sequence[TelemetryRef]
     events: Sequence[FabricEvent]
@@ -1888,6 +1980,7 @@ class RunResult(FabricMapping):
             "output",
             "error",
             "usage",
+            "resource_snapshot",
             "artifacts",
             "telemetry",
             "events",
@@ -1913,6 +2006,11 @@ class RunResult(FabricMapping):
         )
         data["usage"] = (
             None if data.get("usage") is None else RunUsage.from_mapping(data["usage"])
+        )
+        data["resource_snapshot"] = (
+            None
+            if data.get("resource_snapshot") is None
+            else RuntimeResourceSnapshot.from_mapping(data["resource_snapshot"])
         )
         data["artifacts"] = ArtifactManifest.from_mapping(
             data.get("artifacts", {"artifacts": []})

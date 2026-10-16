@@ -17,6 +17,7 @@ Every invocation that reaches the adapter boundary returns a normalized
 | `error` | Structured failure metadata when available. Branch on `status`, not on this field. |
 | `output` | Harness output normalized to the configured output schema. |
 | `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
+| `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. `None` when the read failed. |
 | `artifacts` | Output files, logs, patches, and other materialized references. |
 | `telemetry` | References to NVIDIA NeMo Relay or other telemetry streams from the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
@@ -46,6 +47,52 @@ if result.usage is not None:
 
 Treat missing counters and cost as unknown, not zero. `cached_input_tokens` reports cached prompt tokens; `input_tokens_include_cache` declares whether `input_tokens` includes them (`True`), excludes them (`False`), or has unknown semantics (absent). Do not add cache to an inclusive input count. Adapters can put cache-write, reasoning, peak request, and per-model detail in the descriptor-declared `usage.extensions["nemo_fabric.detailed_token_usage.v1"]` object. NeMo Fabric preserves that object at `result.usage["metadata"]["nemo_fabric.detailed_token_usage.v1"]`. Treat detailed input and output independently: any detailed accounting field for a dimension makes that dimension authoritative, with no fallback to its top-level counters. The views can diverge. Calculate an inclusive total only when the selected detailed counters provide enough information; otherwise leave the total unknown. Keep estimated costs separate in provider metadata; `cost_usd` is reported cost, not an estimate.
 
+## Run Records
+
+Set `RuntimeConfig(artifacts=..., record=RecordConfig(enabled=True))` to have
+NeMo Fabric write `run-record.jsonl` for each invocation under
+`<artifact root>/.fabric/<runtime_id>/<invocation_id>/`. Recording is off by
+default and needs an artifact root, the `local` environment provider, and a
+`process` or `python` adapter. The result lists the file as the artifact with
+kind `run_record`. The file has a `start` line, written before the request, a
+`sample` line about every 10 seconds until the adapter host answers or the
+timeout fires, when the start line has `sample_interval_ms`, and an `end` line with status, elapsed time, error
+code, numeric usage, artifact names, and `stop`, which
+gives NeMo Fabric's failure cause (`fabric_failed`, `sandbox_failed`,
+`agent_exhausted_budget`, `unclassified`, or `agent_failed`), the time limit
+for a timeout, and the adapter host's exit status. Only a `failed` result
+reads `agent_failed`; an error NeMo Fabric raises never does. Each line
+stores the runtime's resource snapshot as `resources`. When both the start and
+end lines hold one, end minus start CPU time is an estimate. Reaping and
+changes to the process tree can make it overcount or undercount the
+invocation's CPU time. Treat a negative difference as unknown. The file holds
+no prompts, output, or error messages. A recent sample shows that NeMo Fabric
+observed the record recently, not that the agent is making progress. After three sample intervals
+without an update, the record is stale and the invocation's outcome is
+unknown until an end line exists; never count a stale record as failed. One
+slow snapshot read delays samples for every record in the process, and a
+suspended process can resume. A record also stops changing when a write
+fails; the result's `record_write_failed` event says so. Without
+`sample_interval_ms`, a record without an end line has an unknown outcome.
+Recording is synchronous and best-effort: a failed record
+write adds a `record_write_failed` event and does not replace the result, and
+slow storage delays the invocation. The format is the `v1alpha1`
+[run record line schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/sdk/run-record-line.schema.json)
+and may change until the `nemo-fabric report` command ships.
+
+## Runtime Resource Snapshots
+
+`await runtime.resource_snapshot()` returns a `RuntimeResourceSnapshot` with
+`runtime_id`, `started_at` and `observed_at` (RFC 3339 UTC),
+`resident_memory_bytes`, `process_count`, and `cpu_time_seconds`. It covers the
+local adapter host process and its descendants (not a shared service process),
+and it does not wait for an active invocation. CPU time is cumulative since the
+host started, so subtract an earlier snapshot to estimate one invocation; it
+can drop when a descendant leaves the tree, so treat a negative difference as
+unknown. Values that cannot be read raise an error, never read as zero.
+Snapshots observe only; enforce limits in the operating system or execution
+environment.
+
 ## Correlation IDs
 
 `runtime_id` identifies the runtime lifecycle, `invocation_id` identifies one
@@ -69,6 +116,8 @@ Refer to the [errors reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/
 | `FabricRuntimeError` | Startup, invocation, or shutdown failed before a normalized result. |
 | `FabricStateError` | Invalid runtime state transition (invoking after stop, overlapping invocations). |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
+| `ResourceObservationUnavailableError` | A resource snapshot cannot be read because the runtime stopped, is stopping, its adapter host exited, a live process in its tree or the process table cannot be read, or the process tree kept changing during the read. Subclass of `FabricRuntimeError`. |
+| `ResourceObservationUnsupportedError` | The runtime's adapter kind, environment provider, or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
 
 ## Cleanup And Resilience
 
