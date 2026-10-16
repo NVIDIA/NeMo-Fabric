@@ -1074,8 +1074,10 @@ impl RuntimeConfig {
 
 /// Per-invocation run record settings.
 ///
-/// When enabled, core appends a start line and an end line for each local
-/// invocation to `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`.
+/// When enabled, core appends a start line, sample lines about every 10
+/// seconds while the adapter host works on the request, and an end line for
+/// each local invocation to
+/// `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordConfig {
