@@ -77,7 +77,8 @@ export interface ArtifactRef {
  */
 export interface EnvironmentHandle {
   /**
-   * Artifact root visible to the harness runtime.
+   * Artifact root visible to the harness runtime. For non-local providers this
+   * is an environment-local path and must not be resolved on the host.
    */
   artifacts?: string | null;
   /**
@@ -111,7 +112,8 @@ export interface EnvironmentHandle {
    */
   provider: string;
   /**
-   * Workspace visible to the harness runtime.
+   * Workspace visible to the harness runtime. For non-local providers this is
+   * an environment-local path and must not be resolved on the host.
    */
   workspace?: string | null;
 }

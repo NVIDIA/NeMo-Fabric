@@ -321,6 +321,10 @@ build-rust:
     cargo build --workspace --locked
     cargo install --path crates/fabric-cli --locked --force
 
+# Build the optional OpenShell host provider against its pinned SDK.
+build-openshell-provider:
+    cargo build -p nemo-fabric-openshell-provider --locked
+
 # Build and install the Python distribution and native runtime in the project environment.
 # --set [no_uv=true|false]
 build-python:

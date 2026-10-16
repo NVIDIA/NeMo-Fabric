@@ -22,16 +22,21 @@ LIFECYCLE_OPERATIONS = ("start", "stop")
 MESSAGES = {
     "platform_unsupported": "The command bridge requires a Unix platform.",
     "cleanup_unconfirmed": "Previous runtime cleanup is unconfirmed; replace the sandbox before restarting the server.",
+    "runtime_busy": "A runtime operation is in progress; cleanup is unconfirmed.",
     "invalid_request": "The command request is invalid.",
     "interface_unsupported": "The requested local interface version is unsupported.",
     "wrong_agent": "The request does not identify this agent.",
     "validation_failed": "Fabric rejected the configuration.",
     "validation_unavailable": "Fabric could not establish configuration compatibility.",
     "start_failed": "Fabric could not establish an active runtime.",
+    "start_uncertain": "A previous runtime start has an uncertain outcome; replace the sandbox before starting another.",
+    "runtime_id_conflict": "Fabric returned a runtime ID that is already in use.",
     "stop_failed": "Fabric could not complete the stop operation.",
     "invoke_failed": "Fabric did not report a successful invocation.",
     "host_stopping": "The Fabric host is shutting down.",
     "runtime_unavailable": "No active Fabric runtime is available.",
+    # Keep the v2 response code recognizable for callers connected to an older
+    # runtime-server image that still enforces one start per sandbox.
     "runtime_exists": "This sandbox has used its runtime lifecycle; replace the sandbox before starting another.",
     "streaming_unsupported": "Streaming invocation is unsupported by this command interface.",
     "host_unavailable": "The Fabric host is unavailable.",
