@@ -64,78 +64,12 @@
                   "input_tokens_include_cache": {
                     "type": "boolean"
                   },
-                  "models": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "cache_write_input_tokens": {
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "cached_input_tokens": {
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "input_tokens": {
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "input_tokens_include_cache": {
-                          "type": "boolean"
-                        },
-                        "model": {
-                          "pattern": "\\S",
-                          "type": "string"
-                        },
-                        "output_tokens": {
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "output_tokens_include_reasoning": {
-                          "type": "boolean"
-                        },
-                        "peak_request_input_tokens": {
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "provider": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "reasoning_tokens": {
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "total_tokens": {
-                          "minimum": 0,
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "model"
-                      ],
-                      "type": "object"
-                    },
-                    "type": "array"
-                  },
                   "output_tokens": {
                     "minimum": 0,
                     "type": "integer"
                   },
                   "output_tokens_include_reasoning": {
                     "type": "boolean"
-                  },
-                  "peak_request_input_tokens": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "reasoning_tokens": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "total_tokens": {
-                    "minimum": 0,
-                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -262,7 +196,7 @@
         "name": "nemo-fabric-adapters-claude",
         "version": "0.6.0"
       },
-      "sha256": "52e45c61150f8e30862863f834ae7ddfdbf10d5e4165d6eef6f684731c1e972f",
+      "sha256": "cded65f1e927f3b7154f79b3eb6312a5fa34551265ffe6df1ec271e55de9c407",
       "source": "adapters/python/claude/claude.fabric-adapter.json"
     },
     "nvidia.fabric.cline": {

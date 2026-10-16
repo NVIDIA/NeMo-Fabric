@@ -52,17 +52,6 @@ ANTHROPIC_AUTH_ENV_NAMES = {
 }
 
 DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
-DETAILED_TOKEN_COUNTER_SCHEMAS = {
-    "input_tokens": {"type": "integer", "minimum": 0},
-    "cached_input_tokens": {"type": "integer", "minimum": 0},
-    "cache_write_input_tokens": {"type": "integer", "minimum": 0},
-    "input_tokens_include_cache": {"type": "boolean"},
-    "output_tokens": {"type": "integer", "minimum": 0},
-    "reasoning_tokens": {"type": "integer", "minimum": 0},
-    "output_tokens_include_reasoning": {"type": "boolean"},
-    "total_tokens": {"type": "integer", "minimum": 0},
-    "peak_request_input_tokens": {"type": "integer", "minimum": 0},
-}
 
 
 def lifecycle_invocation(
@@ -242,20 +231,15 @@ def test_claude_descriptor_is_narrow_and_versioned():
                     "nemo_fabric.detailed_token_usage.v1": {
                         "type": "object",
                         "properties": {
-                            **DETAILED_TOKEN_COUNTER_SCHEMAS,
-                            "models": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "model": {"type": "string", "pattern": "\\S"},
-                                        "provider": {"type": "string", "minLength": 1},
-                                        **DETAILED_TOKEN_COUNTER_SCHEMAS,
-                                    },
-                                    "required": ["model"],
-                                    "additionalProperties": False,
-                                },
+                            "input_tokens": {"type": "integer", "minimum": 0},
+                            "cached_input_tokens": {"type": "integer", "minimum": 0},
+                            "cache_write_input_tokens": {
+                                "type": "integer",
+                                "minimum": 0,
                             },
+                            "input_tokens_include_cache": {"type": "boolean"},
+                            "output_tokens": {"type": "integer", "minimum": 0},
+                            "output_tokens_include_reasoning": {"type": "boolean"},
                         },
                         "additionalProperties": False,
                     }
