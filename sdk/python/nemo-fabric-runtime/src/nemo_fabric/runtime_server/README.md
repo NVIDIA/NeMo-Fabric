@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric Runtime Server And Command Bridge
 
-`fabric-agent-ctl` is installed with `nemo-fabric-runtime`. One foreground `serve` process owns one runtime lifecycle inside one sandbox. Short-lived commands connect through a private Unix socket and call the existing public SDK. The caller owns image selection, credentials, mounts, network policy, retained storage, and sandbox deletion.
+`fabric-agent-ctl` is installed with `nemo-fabric-runtime`. One foreground `serve` process owns any number of independently addressed SDK runtimes inside one sandbox. Short-lived commands connect through a private Unix socket and call the existing public SDK. The caller owns image selection, credentials, mounts, network policy, retained storage, and sandbox deletion.
 
 ## Commands
 
@@ -35,11 +35,11 @@ The response envelope separates command diagnostics from the public SDK payload 
 
 Use `--request FILE` to forward a complete public `RunRequest`, including `request_id`, `relay_session_root`, `context`, `overrides`, and supported extensions. For example, a request file can contain `{"input": "Review calculator.py", "request_id": "review-1", "context": {"review_tag": "cedar-4827"}}`. `--input FILE` is a mutually exclusive convenience for any JSON-compatible SDK input: an object, array, string, number, boolean, or null. Null follows the SDK's normalization to an empty input string. Agent input fields named `stream` or `streaming` remain ordinary input data; this command calls `Runtime.invoke()`, never a streaming method.
 
-There are no health commands, generation tokens, fingerprints, state snapshots, or additional SDK lifecycle APIs. Caller-side preflight uses existing `Fabric.plan()` and `Fabric.doctor()`. `Fabric.start_runtime()` validates configuration against installed descriptors before native runtime startup. A configuration rejection before startup does not consume the sandbox lifecycle.
+There are no health commands, generation tokens, fingerprints, state snapshots, or additional SDK lifecycle APIs. Caller-side preflight uses existing `Fabric.plan()` and `Fabric.doctor()`. `Fabric.start_runtime()` validates configuration against installed descriptors before native runtime startup. A configuration rejection before startup does not create a runtime.
 
-## One Lifecycle Per Sandbox
+## Runtime Ownership
 
-After successful or uncertain runtime startup, every subsequent start returns `runtime_exists` without calling the SDK, including after stop or invocation timeout. Failed stops retain the owned handle. Replace the sandbox for another runtime lifecycle. Reuse and advanced descendant cleanup are deferred.
+Each successful start is recorded by its returned runtime ID. Invoke and stop address that ID and the exact agent name, so several runtimes can be active independently. Stopping one runtime does not affect the others, and a new runtime can start after a previous one stops. A failed stop retains the runtime handle so the caller can inspect failure and shutdown can retry it. An uncertain start or runtime-ID collision blocks further starts because the server cannot establish an unambiguous owner; replace the sandbox in that case.
 
 ```mermaid
 flowchart TD
@@ -47,11 +47,11 @@ flowchart TD
     Bridge["fabric-agent-ctl start / invoke / stop"]
     Socket["Private Unix socket"]
     Host["fabric-agent-ctl serve"]
-    Runtime["One SDK Runtime lifecycle"]
+    Runtime["SDK Runtime IDs"]
     Caller --> Bridge --> Socket --> Host --> Runtime
 ```
 
-The outer server is separate from the SDK's adapter process and the selected harness. Direct SDK consumers retain the existing ability to create multiple runtimes and use streaming or shared services. This server serializes runtime operations and waits for an active invocation before ordinary stop.
+The outer server is separate from the SDK's adapter process and the selected harness. It serializes starts and serializes invoke/stop operations for each runtime ID, while separate runtimes can progress independently. It waits for an active invocation before ordinary stop. Direct SDK consumers can also use streaming or shared services.
 
 Ordinary SDK stop does not establish that all harness descendants exited. A successful stop response reports completion of the SDK operation. The caller must delete the sandbox so the enclosing supervisor handles descendants. The server does not interrupt adapters through a new forced-stop SDK API.
 
@@ -69,7 +69,7 @@ The default socket is `/sandbox/fabric.sock`, mode `0600`. `FABRIC_HOST_SOCKET` 
 
 The server creates a private `fabric.unclean` ownership marker before accepting requests. After any successful or uncertain runtime start, the marker stays present even after SDK stop and normal server exit. A replacement server reports `cleanup_unconfirmed` instead of starting another runtime. An unused server can remove its own marker on orderly shutdown. With retained storage, clear the marker only after the enclosing supervisor has terminated the previous sandbox's processes.
 
-SIGTERM and SIGINT reject new work. An idle runtime receives ordinary SDK stop. If runtime work is active, shutdown reports `cleanup_unconfirmed` and leaves descendant cleanup to the sandbox supervisor. A four-second process watchdog bounds exit when native worker threads remain active. Failed teardown also preserves the marker. Shutdown removes only the owned socket and preserves caller-owned files.
+SIGTERM and SIGINT reject new work. An idle runtime receives ordinary SDK stop. If runtime work is active, shutdown reports `runtime_busy` and leaves descendant cleanup to the sandbox supervisor; an uncertain start or failed teardown reports `cleanup_unconfirmed`. A four-second process watchdog bounds exit when native worker threads remain active. Failed teardown also preserves the marker. Shutdown removes only the owned socket and preserves caller-owned files.
 
 The bridge requires Unix sockets and `fcntl`; Windows imports remain safe and commands report `platform_unsupported`. The public SDK does not depend on this bridge or OpenShell.
 
@@ -77,4 +77,4 @@ The bridge requires Unix sockets and `fcntl`; Windows imports remain safe and co
 
 Follow the [OpenShell Code Review instructions](../../../../../../examples/code_review_agent/README.md#openshell-code-review) to build the image and create a sandbox. The image contains the current SDK, runtime server, adapter, and harness, and advertises `fabric-agent-ctl`, interface version 2, and `start/invoke/stop/serve`. The server implementation is `nemo_fabric.runtime_server.state.RuntimeServer`. Rebuild older images and create fresh sandboxes after changes to this unreleased command interface.
 
-The example starts the server, waits for its socket, starts one runtime, invokes twice, and stops through separate exec calls. The older NemoClaw client using `validate/prepare/configure` requires migration. Version 1 requests fail explicitly. Direct SDK lifecycle and streaming APIs retain their existing behavior.
+The example starts the server, waits for its socket, starts a runtime, invokes twice, and stops through separate exec calls. The older NemoClaw client using `validate/prepare/configure` requires migration. Version 1 requests fail explicitly. Direct SDK lifecycle and streaming APIs retain their existing behavior.
