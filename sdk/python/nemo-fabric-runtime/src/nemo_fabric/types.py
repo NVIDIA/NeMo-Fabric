@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Iterator
 from collections.abc import Mapping
 from collections.abc import Sequence
@@ -70,12 +71,17 @@ def _required_text(value: Any, name: str) -> str:
     return value
 
 
+# RFC 3339 date-time shape. fromisoformat also accepts a space separator,
+# date-only values and basic ISO 8601 forms, so check the shape first.
+_RFC3339_DATE_TIME = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})"
+)
+
+
 def _utc_timestamp(value: Any, name: str) -> str:
     text = _required_text(value, name)
     message = f"{name} must be an RFC 3339 UTC timestamp"
-    # fromisoformat also accepts a space separator, date-only, and basic ISO
-    # 8601 forms, so require the RFC 3339 "YYYY-MM-DDT" prefix first.
-    if text[10:11] != "T":
+    if _RFC3339_DATE_TIME.fullmatch(text) is None:
         raise FabricConfigError(message)
     try:
         parsed = datetime.fromisoformat(text)
