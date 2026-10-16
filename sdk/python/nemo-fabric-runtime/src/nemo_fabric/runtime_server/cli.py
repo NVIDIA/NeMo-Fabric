@@ -148,7 +148,11 @@ def main(arguments: list[str] | None = None) -> int:
             print(
                 str(error)
                 if isinstance(error, ProtocolError)
-                and error.code in ("platform_unsupported", "cleanup_unconfirmed")
+                and error.code in (
+                    "platform_unsupported",
+                    "cleanup_unconfirmed",
+                    "runtime_busy",
+                )
                 else "Fabric host could not start or shut down cleanly.",
                 file=sys.stderr,
             )

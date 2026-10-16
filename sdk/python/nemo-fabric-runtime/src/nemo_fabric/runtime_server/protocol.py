@@ -22,6 +22,7 @@ LIFECYCLE_OPERATIONS = ("start", "stop")
 MESSAGES = {
     "platform_unsupported": "The command bridge requires a Unix platform.",
     "cleanup_unconfirmed": "Previous runtime cleanup is unconfirmed; replace the sandbox before restarting the server.",
+    "runtime_busy": "A runtime operation is in progress; cleanup is unconfirmed.",
     "invalid_request": "The command request is invalid.",
     "interface_unsupported": "The requested local interface version is unsupported.",
     "wrong_agent": "The request does not identify this agent.",

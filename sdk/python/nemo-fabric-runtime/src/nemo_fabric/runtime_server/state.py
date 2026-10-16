@@ -191,12 +191,10 @@ class RuntimeServer:
     async def shutdown(self) -> None:
         """Stop idle runtimes. The enclosing sandbox owns descendant cleanup."""
         self.shutting_down = True
-        if (
-            self._start_lock.locked()
-            or self.start_uncertain
-            or any(owned.lock.locked() for owned in self.runtimes.values())
-        ):
+        if self._start_lock.locked() or self.start_uncertain:
             raise ProtocolError("cleanup_unconfirmed", "stop")
+        if any(owned.lock.locked() for owned in self.runtimes.values()):
+            raise ProtocolError("runtime_busy", "stop")
         cleanup_failures: list[Exception] = []
         async with self._start_lock:
             for owned in tuple(self.runtimes.values()):

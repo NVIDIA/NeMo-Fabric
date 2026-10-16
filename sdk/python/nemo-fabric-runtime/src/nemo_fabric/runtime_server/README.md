@@ -69,7 +69,7 @@ The default socket is `/sandbox/fabric.sock`, mode `0600`. `FABRIC_HOST_SOCKET` 
 
 The server creates a private `fabric.unclean` ownership marker before accepting requests. After any successful or uncertain runtime start, the marker stays present even after SDK stop and normal server exit. A replacement server reports `cleanup_unconfirmed` instead of starting another runtime. An unused server can remove its own marker on orderly shutdown. With retained storage, clear the marker only after the enclosing supervisor has terminated the previous sandbox's processes.
 
-SIGTERM and SIGINT reject new work. An idle runtime receives ordinary SDK stop. If runtime work is active, shutdown reports `cleanup_unconfirmed` and leaves descendant cleanup to the sandbox supervisor. A four-second process watchdog bounds exit when native worker threads remain active. Failed teardown also preserves the marker. Shutdown removes only the owned socket and preserves caller-owned files.
+SIGTERM and SIGINT reject new work. An idle runtime receives ordinary SDK stop. If runtime work is active, shutdown reports `runtime_busy` and leaves descendant cleanup to the sandbox supervisor; an uncertain start or failed teardown reports `cleanup_unconfirmed`. A four-second process watchdog bounds exit when native worker threads remain active. Failed teardown also preserves the marker. Shutdown removes only the owned socket and preserves caller-owned files.
 
 The bridge requires Unix sockets and `fcntl`; Windows imports remain safe and commands report `platform_unsupported`. The public SDK does not depend on this bridge or OpenShell.
 

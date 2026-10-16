@@ -47,7 +47,7 @@ async def test_real_sdk_busy_shutdown_requires_sandbox_cleanup(
                 await asyncio.sleep(0.01)
         with pytest.raises(ProtocolError) as caught:
             await asyncio.wait_for(host.shutdown(), 3.5)
-        assert caught.value.code == "cleanup_unconfirmed"
+        assert caught.value.code == "runtime_busy"
         assert host.has_used_runtime
         assert host.runtimes[runtime_id].runtime is owned
         assert not invoked.done()

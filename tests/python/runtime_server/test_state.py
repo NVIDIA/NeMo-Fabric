@@ -355,7 +355,7 @@ async def test_busy_shutdown_defers_to_sandbox_supervisor(
     try:
         with pytest.raises(ProtocolError) as caught:
             await asyncio.wait_for(host.shutdown(), 0.5)
-        assert caught.value.code == "cleanup_unconfirmed"
+        assert caught.value.code == "runtime_busy"
         assert (await host.handle(host_request("stop")))["error"][
             "code"
         ] == "host_stopping"
