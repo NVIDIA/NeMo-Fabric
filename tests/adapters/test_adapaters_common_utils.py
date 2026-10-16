@@ -812,6 +812,70 @@ def test_collect_relay_artifacts_matches_default_otlp_names_by_format(
     assert common_utils.collect_relay_artifacts(plugin_config) == []
 
 
+@pytest.mark.parametrize(
+    ("observability", "section"),
+    [
+        (
+            {
+                "atof": {
+                    "enabled": True,
+                    "sinks": [
+                        {"type": "stream", "url": "https://example.test/events"},
+                        {"type": "file", "output_directory": 42},
+                    ],
+                }
+            },
+            r"atof\.sinks\[1\]",
+        ),
+        (
+            {
+                "opentelemetry": {
+                    "file_sinks": [{"type": "full", "output_directory": ""}]
+                }
+            },
+            r"opentelemetry\.file_sinks\[0\]",
+        ),
+        ({"atif": {"enabled": True, "output_directory": " "}}, "atif"),
+    ],
+)
+def test_normalize_relay_output_dirs_rejects_an_invalid_output_directory(
+    tmp_path: Path, observability: dict[str, Any], section: str
+):
+    plugin_config = {"components": [{"kind": "observability", "config": observability}]}
+
+    with pytest.raises(
+        ValueError,
+        match=rf"NeMo Relay {section}\.output_directory must be a non-empty string",
+    ):
+        common_utils.normalize_relay_output_dirs(
+            plugin_config,
+            {"base_dir": str(tmp_path), "runtime_context": {"runtime_id": "runtime"}},
+        )
+
+
+@pytest.mark.parametrize("configured", [{}, {"output_directory": None}])
+def test_normalize_relay_output_dirs_defaults_an_omitted_output_directory(
+    tmp_path: Path, configured: dict[str, Any]
+):
+    observability = {
+        "atof": {"enabled": True, "sinks": [{"type": "file", **configured}]},
+        "opentelemetry": {"file_sinks": [{"type": "full", **configured}]},
+        "atif": {"enabled": True, **configured},
+    }
+
+    common_utils.normalize_relay_output_dirs(
+        {"components": [{"kind": "observability", "config": observability}]},
+        {"base_dir": str(tmp_path), "runtime_context": {"runtime_id": "runtime"}},
+    )
+
+    default = str(tmp_path / "artifacts" / "relay" / "runtime")
+    assert [
+        observability["atof"]["sinks"][0]["output_directory"],
+        observability["opentelemetry"]["file_sinks"][0]["output_directory"],
+        observability["atif"]["output_directory"],
+    ] == [default] * 3
+
+
 def test_load_relay_plugin_config_preserves_core_authored_atif_model_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

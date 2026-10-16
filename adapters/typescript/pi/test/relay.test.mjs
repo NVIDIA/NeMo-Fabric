@@ -585,6 +585,49 @@ test("skips disabled components during output normalization and artifact collect
   }
 });
 
+test("rejects an invalid Relay output directory and defaults an omitted one", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-output-directory-")));
+  try {
+    for (const [config, section] of [
+      [
+        {
+          atof: {
+            enabled: true,
+            sinks: [
+              { type: "stream", url: "https://example.test/events" },
+              { type: "file", output_directory: 42 },
+            ],
+          },
+        },
+        "atof.sinks[1]",
+      ],
+      [{ opentelemetry: { file_sinks: [{ type: "full", output_directory: "" }] } }, "opentelemetry.file_sinks[0]"],
+      [{ atif: { enabled: true, output_directory: " " } }, "atif"],
+    ]) {
+      await assert.rejects(normalizeRelayOutputDirs(observability(config), startInput(root)), {
+        message: `NeMo Relay ${section}.output_directory must be a non-empty string`,
+      });
+    }
+
+    const outputDirectory = join(root, "artifacts", "relay", "runtime-1");
+    for (const configured of [{}, { output_directory: null }]) {
+      const pluginConfig = observability({
+        atof: { enabled: true, sinks: [{ type: "file", ...configured }] },
+        opentelemetry: { file_sinks: [{ type: "full", ...configured }] },
+        atif: { enabled: true, ...configured },
+      });
+      await normalizeRelayOutputDirs(pluginConfig, startInput(root));
+      const { atof, opentelemetry, atif } = pluginConfig.components[0].config;
+      assert.deepEqual(
+        [atof.sinks[0].output_directory, opentelemetry.file_sinks[0].output_directory, atif.output_directory],
+        [outputDirectory, outputDirectory, outputDirectory],
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("ignores disabled observability validation shapes at load time", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-disabled-validation-")));
   const previousConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;

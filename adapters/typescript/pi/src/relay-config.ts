@@ -191,10 +191,19 @@ function pythonStringRepr(value: string): string {
   return `${quote}${escaped}${quote}`;
 }
 
-function normalizeRelayOutputDirectory(config: Record<string, unknown>, base: string, runtimeId: string): string {
-  const configured = config.output_directory;
-  const root = typeof configured === "string" && configured.length > 0 ? configured : join("artifacts", "relay");
-  const outputDirectory = join(resolve(base, root), runtimeId);
+function normalizeRelayOutputDirectory(
+  config: Record<string, unknown>,
+  section: string,
+  base: string,
+  runtimeId: string,
+): string {
+  // Relay sees only the rewritten path, so reject an invalid directory here
+  // instead of replacing it with the default.
+  const configured = config.output_directory ?? join("artifacts", "relay");
+  if (typeof configured !== "string" || configured.trim().length === 0) {
+    throw new Error(`NeMo Relay ${section}.output_directory must be a non-empty string`);
+  }
+  const outputDirectory = join(resolve(base, configured), runtimeId);
   config.output_directory = outputDirectory;
   return outputDirectory;
 }
@@ -219,11 +228,11 @@ export async function normalizeRelayOutputDirs(
     const config = component.config;
     const atof = config.atof;
     if (isRecord(atof) && atof.enabled === true && Array.isArray(atof.sinks)) {
-      for (const sink of atof.sinks) {
+      for (const [index, sink] of atof.sinks.entries()) {
         if (!isRecord(sink) || sink.type !== "file") {
           continue;
         }
-        await mkdir(normalizeRelayOutputDirectory(sink, base, runtimeId), { recursive: true });
+        await mkdir(normalizeRelayOutputDirectory(sink, `atof.sinks[${index}]`, base, runtimeId), { recursive: true });
         sink.filename ??= "events.atof.jsonl";
         sink.mode ??= "overwrite";
       }
@@ -234,9 +243,9 @@ export async function normalizeRelayOutputDirs(
       // Relay validates file sinks even in a disabled section and creates the directory
       // when it opens a sink. A runtime may reopen Relay, so sinks append to keep its
       // earlier spans.
-      for (const sink of opentelemetry.file_sinks) {
+      for (const [index, sink] of opentelemetry.file_sinks.entries()) {
         if (isRecord(sink)) {
-          normalizeRelayOutputDirectory(sink, base, runtimeId);
+          normalizeRelayOutputDirectory(sink, `opentelemetry.file_sinks[${index}]`, base, runtimeId);
           sink.mode ??= "append";
         }
       }
@@ -246,7 +255,7 @@ export async function normalizeRelayOutputDirs(
     if (!isRecord(atif) || atif.enabled !== true) {
       continue;
     }
-    await mkdir(normalizeRelayOutputDirectory(atif, base, runtimeId), { recursive: true });
+    await mkdir(normalizeRelayOutputDirectory(atif, "atif", base, runtimeId), { recursive: true });
     atif.filename_template ??= "trajectory-{session_id}.atif.json";
     atif.agent_name ??= input.agentName;
     atif.model_name ??= relayModelName(input);

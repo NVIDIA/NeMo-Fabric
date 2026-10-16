@@ -586,10 +586,18 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_relay_output_directory(
-    config: dict[str, Any], base: Path, runtime_id: Any
+    config: dict[str, Any], section: str, base: Path, runtime_id: Any
 ) -> Path:
-    path = base / (config.get("output_directory") or "artifacts/relay")
-    path /= str(runtime_id)
+    # Relay sees only the rewritten path, so reject an invalid directory here
+    # instead of replacing it with the default.
+    output_directory = config.get("output_directory")
+    if output_directory is None:
+        output_directory = "artifacts/relay"
+    elif not isinstance(output_directory, str) or not output_directory.strip():
+        raise ValueError(
+            f"NeMo Relay {section}.output_directory must be a non-empty string"
+        )
+    path = base / output_directory / str(runtime_id)
     config["output_directory"] = str(path)
     return path
 
@@ -608,10 +616,12 @@ def normalize_relay_output_dirs(
 
         atof = config.get("atof")
         if isinstance(atof, dict) and atof.get("enabled"):
-            for sink in atof.get("sinks") or []:
+            for index, sink in enumerate(atof.get("sinks") or []):
                 if not isinstance(sink, dict) or sink.get("type") != "file":
                     continue
-                path = _normalize_relay_output_directory(sink, base, runtime_id)
+                path = _normalize_relay_output_directory(
+                    sink, f"atof.sinks[{index}]", base, runtime_id
+                )
                 path.mkdir(parents=True, exist_ok=True)
                 sink.setdefault("filename", "events.atof.jsonl")
                 sink.setdefault("mode", "overwrite")
@@ -619,15 +629,18 @@ def normalize_relay_output_dirs(
         # Relay validates file sinks even in a disabled section or component and
         # creates the directory when it opens a sink. A runtime may reopen Relay,
         # so sinks append to keep its earlier spans.
-        for sink in (config.get("opentelemetry") or {}).get("file_sinks") or []:
+        file_sinks = (config.get("opentelemetry") or {}).get("file_sinks") or []
+        for index, sink in enumerate(file_sinks):
             if isinstance(sink, dict):
-                _normalize_relay_output_directory(sink, base, runtime_id)
+                _normalize_relay_output_directory(
+                    sink, f"opentelemetry.file_sinks[{index}]", base, runtime_id
+                )
                 sink.setdefault("mode", "append")
 
         atif = config.get("atif")
         if not isinstance(atif, dict) or not atif.get("enabled"):
             continue
-        path = _normalize_relay_output_directory(atif, base, runtime_id)
+        path = _normalize_relay_output_directory(atif, "atif", base, runtime_id)
         path.mkdir(parents=True, exist_ok=True)
         atif.setdefault("filename_template", "trajectory-{session_id}.atif.json")
         atif.setdefault("agent_name", agent_name(payload))
