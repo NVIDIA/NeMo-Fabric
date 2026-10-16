@@ -3373,9 +3373,26 @@ fn process_command_args(plan: &RunPlan, settings: &ProcessAdapterSettings) -> Ve
     args
 }
 
-fn artifact_manifest(plan: &RunPlan) -> Result<ArtifactManifest> {
-    let root = plan
-        .config
+/// The folder that holds a plan's run records, `.fabric` under its artifact
+/// root, when `runtime.record.enabled` is set. `None` otherwise. Plan
+/// validation guarantees that such a plan has an artifact root, the `local`
+/// environment provider and a local adapter host.
+pub fn run_record_folder(plan: &RunPlan) -> Option<PathBuf> {
+    if !plan.config.runtime.record_enabled() {
+        return None;
+    }
+    artifact_root(plan).map(|root| fabric_folder(&root))
+}
+
+/// Core's own folder under an artifact root.
+fn fabric_folder(root: &Path) -> PathBuf {
+    root.join(".fabric")
+}
+
+/// The runtime's artifact root resolved against the plan's base folder, else
+/// the environment's artifact root.
+fn artifact_root(plan: &RunPlan) -> Option<PathBuf> {
+    plan.config
         .runtime
         .artifacts
         .as_ref()
@@ -3384,7 +3401,11 @@ fn artifact_manifest(plan: &RunPlan) -> Result<ArtifactManifest> {
             plan.environment_plan
                 .as_ref()
                 .and_then(|environment| environment.artifacts.clone())
-        });
+        })
+}
+
+fn artifact_manifest(plan: &RunPlan) -> Result<ArtifactManifest> {
+    let root = artifact_root(plan);
     if let Some(root) = &root {
         std::fs::create_dir_all(root).map_err(|source| FabricError::Write {
             path: root.clone(),
@@ -3406,8 +3427,7 @@ fn prepare_fabric_home(
         .root
         .clone()
         .unwrap_or_else(|| std::env::temp_dir().join("nemo-fabric"));
-    let fabric_home = root
-        .join(".fabric")
+    let fabric_home = fabric_folder(&root)
         .join(&runtime.runtime_id)
         .join(&invocation.invocation_id);
     std::fs::create_dir_all(&fabric_home).map_err(|source| FabricError::Write {
@@ -3990,6 +4010,8 @@ for line in sys.stdin:
             "context_env": invocation["runtime_context"]["environment"].get("env", {}),
             "deadline_millis": invocation["runtime_context"].get("deadline_millis"),
         }
+        if MODE == "echo_context":
+            output["request_context"] = invocation["request"].get("context", {})
         if MODE in {"adapter_reported_failure", "blank_error_code", "free_text_error_code"}:
             codes = {
                 "blank_error_code": " \t",
@@ -5510,6 +5532,46 @@ for line in sys.stdin:
         let (root, mut plan) = local_host_plan(mode);
         plan.config.runtime.record = Some(crate::config::RecordConfig { enabled: true });
         (root, plan)
+    }
+
+    #[test]
+    fn run_record_folder_is_set_only_when_the_record_is_on() {
+        let (root, mut plan) = record_plan("success");
+        let artifact_root = resolve_path(
+            &plan.base_dir,
+            plan.config.runtime.artifacts.as_ref().expect("artifacts"),
+        );
+        assert_eq!(
+            run_record_folder(&plan),
+            Some(artifact_root.join(".fabric"))
+        );
+
+        plan.config.runtime.record = None;
+        assert_eq!(run_record_folder(&plan), None, "record off");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn task_id_in_the_request_context_still_reaches_the_adapter() {
+        let (root, plan) = record_plan("echo_context");
+        let mut request = RunRequest::text("task");
+        request.context = BTreeMap::from([
+            ("task_id".to_string(), serde_json::json!("repo-io-fix")),
+            ("step".to_string(), serde_json::json!(2)),
+        ]);
+
+        let result = run_plan(&plan, request).expect("run");
+        let (_, lines) = only_record(&root);
+
+        assert_eq!(
+            result.output["request_context"],
+            serde_json::json!({"task_id": "repo-io-fix", "step": 2})
+        );
+        assert_eq!(
+            line_of_kind(&lines, "start")["context"]["task_id"],
+            "repo-io-fix"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     fn record_files(root: &Path) -> Vec<PathBuf> {

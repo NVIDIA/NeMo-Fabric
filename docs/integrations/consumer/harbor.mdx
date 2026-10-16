@@ -34,3 +34,35 @@ The existing `FabricAgent` bridge follows this flow for `fabric_environment_env`
 `environment_env_names` is Harbor's existing transport field. `environment.env_names` is the core NeMo Fabric forwarding field described in [Set Environment Values Or Forward Them By Name](../../sdk/python.mdx#set-environment-values-or-forward-them-by-name). This addition does not migrate the Harbor bridge to the core field: Harbor's retained run specification contains names, but its runner still puts resolved values in `environment.env`, where values are serialized into the NeMo Fabric run plan.
 
 Keep using Harbor's managed environment and redaction rules for credentials. Core `env_names` does not replace Harbor's secret delivery or redaction.
+
+## Trial Identity In Run Records
+
+Set `fabric_record=True` on `FabricAgent` to write a NeMo Fabric run record for
+each trial under the bridge's artifact root. It is off by default, and without
+it the bridge sends the same request as before. With it on, the bridge reads
+the trial's `lock.json` and `config.json`, which Harbor writes to the trial
+folder before the agent starts, and adds these keys to the request context:
+
+| Key | Source |
+| --- | --- |
+| `task_id` | The task name in `lock.json`: `org/name` for a registry task, and the task folder's name for a git or local task |
+| `task_revision` | Harbor's content digest of the task (`sha256:...`) in `lock.json`, for every task kind |
+| `harbor_trial_name` | The trial's `trial_name` in `config.json` |
+| `step` | On a multi-step trial only (Harbor creates the trial's `steps` folder), the bridge's run count in the trial: 1 for the first step, 2 for the second, and so on |
+
+The record's start line keeps them with `harbor_session_id` and
+`harbor_context_id`. NeMo Fabric forwards these keys to the adapter, as it
+forwards every request context key; no first-party adapter reads them. Harbor
+has no attempt number, so each trial is its own attempt. A missing or
+unreadable `lock.json` or `config.json` adds none of its keys, and the run goes
+on.
+
+On the host, each record is at
+`<trial>/agent/fabric-artifacts/<config name>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`,
+where the config name is `harbor-` followed by the last part of the adapter
+ID, such as `harbor-hermes`. On a multi-step trial, Harbor moves or copies the
+agent folder's contents into `<trial>/steps/<step>/agent/` after each step, so
+each step's records are there.
+
+`fabric_record=True` needs a NeMo Fabric version with `runtime.record` in the
+trial environment. An older `fabric_package` rejects the config.

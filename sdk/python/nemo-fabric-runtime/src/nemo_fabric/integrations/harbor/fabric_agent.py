@@ -33,6 +33,7 @@ from nemo_fabric import InstructionConfig
 from nemo_fabric import InstructionsConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
+from nemo_fabric import RecordConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
 from nemo_fabric import RelayAtofFileSinkConfig
@@ -151,6 +152,10 @@ else:
         )
         fabric_runtime_timeout_seconds: float | None = Field(
             default=None, gt=0, description="Fabric runtime timeout in seconds."
+        )
+        fabric_record: bool = Field(
+            default=False,
+            description="Write a Fabric run record with the trial's task identity.",
         )
         fabric_environment_env: dict[str, str] | None = Field(
             default=None,
@@ -299,6 +304,7 @@ else:
             fabric_system_instruction: str | None = None,
             fabric_max_turns: int | None = None,
             fabric_runtime_timeout_seconds: float | None = None,
+            fabric_record: bool = False,
             fabric_environment_env: dict[str, str] | None = None,
             fabric_blocked_tools: list[str] | None = None,
             fabric_enabled_tools: list[str] | None = None,
@@ -333,6 +339,7 @@ else:
                 fabric_system_instruction=fabric_system_instruction,
                 fabric_max_turns=fabric_max_turns,
                 fabric_runtime_timeout_seconds=fabric_runtime_timeout_seconds,
+                fabric_record=fabric_record,
                 fabric_environment_env=fabric_environment_env,
                 fabric_blocked_tools=fabric_blocked_tools,
                 fabric_enabled_tools=fabric_enabled_tools,
@@ -359,6 +366,9 @@ else:
             self.fabric_system_instruction = options.fabric_system_instruction
             self.fabric_max_turns = options.fabric_max_turns
             self.fabric_runtime_timeout_seconds = options.fabric_runtime_timeout_seconds
+            self.fabric_record = options.fabric_record
+            # Harbor calls run() once per step of a multi-step task.
+            self._invocation_count = 0
             self.fabric_environment_env = resolve_env_vars(
                 options.fabric_environment_env or {}
             )
@@ -482,6 +492,7 @@ else:
             context: AgentContext,
         ) -> None:
             self._result_path = None
+            self._invocation_count += 1
             token = uuid.uuid4().hex
             spec = self._build_spec(instruction)
             host_spec_path = self.logs_dir / f"fabric-run-{token}.json"
@@ -533,13 +544,21 @@ else:
             ensure_success("NeMo Fabric run failed", result)
 
         def _build_request(self, instruction: str) -> RunRequest:
-            context = {"source": "harbor"}
+            context: dict[str, Any] = {"source": "harbor"}
             session_id = getattr(self, "session_id", None)
             context_id = getattr(self, "context_id", None)
             if session_id is not None:
                 context["harbor_session_id"] = session_id
             if context_id is not None:
                 context["harbor_context_id"] = str(context_id)
+            if self.fabric_record:
+                # The trial folder is the parent of the agent's logs folder.
+                trial_dir = self.logs_dir.parent
+                context.update(harbor_trial_identity(trial_dir))
+                # A multi-step trial creates <trial>/steps/<step>/ before each
+                # step's agent runs; a single-step trial never creates steps/.
+                if self._invocation_count and (trial_dir / "steps").is_dir():
+                    context["step"] = self._invocation_count
             return RunRequest(input=instruction, context=context)
 
         def _build_spec(self, instruction: str) -> FabricRunPayload:
@@ -567,6 +586,7 @@ else:
                 system_instruction=self.fabric_system_instruction,
                 max_turns=self.fabric_max_turns,
                 timeout_seconds=self.fabric_runtime_timeout_seconds,
+                record=self.fabric_record,
                 environment_env=self.fabric_environment_env,
                 blocked_tools=self.fabric_blocked_tools,
                 enabled_tools=self.fabric_enabled_tools,
@@ -648,6 +668,38 @@ else:
             return env
 
 
+def harbor_trial_identity(trial_dir: Path) -> dict[str, str]:
+    """Return the task identity of a Harbor trial, with unset fields left out.
+
+    Harbor writes ``lock.json`` and ``config.json`` to the trial folder before
+    the agent runs. The task ID is the lock's task name: ``org/name`` for a
+    registry task, and the task folder's name for a git or local task, never
+    a local path. The task revision is the lock's content digest of the task
+    (``sha256:...``), which Harbor computes for every task kind. A missing or
+    malformed file adds nothing, so the run goes on without that identity.
+    """
+
+    identity: dict[str, str] = {}
+    task = _read_json_object(trial_dir / "lock.json").get("task")
+    if isinstance(task, dict):
+        for key, field in (("task_id", "name"), ("task_revision", "digest")):
+            value = task.get(field)
+            if isinstance(value, str) and value:
+                identity[key] = value
+    trial_name = _read_json_object(trial_dir / "config.json").get("trial_name")
+    if isinstance(trial_name, str) and trial_name:
+        identity["harbor_trial_name"] = trial_name
+    return identity
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return document if isinstance(document, dict) else {}
+
+
 def build_harbor_config(
     *,
     adapter_id: str,
@@ -658,6 +710,7 @@ def build_harbor_config(
     system_instruction: str | None = None,
     max_turns: int | None = None,
     timeout_seconds: float | None = None,
+    record: bool = False,
     environment_env: dict[str, str] | None = None,
     blocked_tools: list[str] | None = None,
     enabled_tools: list[str] | None = None,
@@ -692,6 +745,7 @@ def build_harbor_config(
             artifacts=artifact_root,
             timeout_seconds=timeout_seconds,
             max_turns=max_turns,
+            record=RecordConfig(enabled=True) if record else None,
         ),
         environment=EnvironmentConfig(
             provider="local",

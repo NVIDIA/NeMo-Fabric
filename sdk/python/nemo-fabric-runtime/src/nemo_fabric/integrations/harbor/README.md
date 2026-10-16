@@ -55,6 +55,38 @@ The bridge does not
 inspect harness IDs, native error-code lists, or diagnostic text. Other
 adapter-specific timeout codes are not automatically reclassified.
 
+## Trial Identity In Run Records
+
+Set `fabric_record=True` on `FabricAgent` to write a NeMo Fabric run record for
+each trial under the bridge's artifact root. It is off by default, and without
+it the bridge sends the same request as before. With it on, the bridge reads
+the trial's `lock.json` and `config.json`, which Harbor writes to the trial
+folder before the agent starts, and adds these keys to the request context:
+
+| Key | Source |
+| --- | --- |
+| `task_id` | The task name in `lock.json`: `org/name` for a registry task, and the task folder's name for a git or local task |
+| `task_revision` | Harbor's content digest of the task (`sha256:...`) in `lock.json`, for every task kind |
+| `harbor_trial_name` | The trial's `trial_name` in `config.json` |
+| `step` | On a multi-step trial only (Harbor creates the trial's `steps` folder), the bridge's run count in the trial: 1 for the first step, 2 for the second, and so on |
+
+The record's start line keeps them with `harbor_session_id` and
+`harbor_context_id`. NeMo Fabric forwards these keys to the adapter, as it
+forwards every request context key; no first-party adapter reads them. Harbor
+has no attempt number, so each trial is its own attempt. A missing or
+unreadable `lock.json` or `config.json` adds none of its keys, and the run goes
+on.
+
+On the host, each record is at
+`<trial>/agent/fabric-artifacts/<config name>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`,
+where the config name is `harbor-` followed by the last part of the adapter
+ID, such as `harbor-hermes`. On a multi-step trial, Harbor moves or copies the
+agent folder's contents into `<trial>/steps/<step>/agent/` after each step, so
+each step's records are there.
+
+`fabric_record=True` needs a NeMo Fabric version with `runtime.record` in the
+trial environment. An older `fabric_package` rejects the config.
+
 ## Finalized Telemetry Artifacts
 
 The task runner validates telemetry after the one-shot NeMo Fabric runtime shuts down. For Relay trajectories finalized during shutdown, it reads the runtime-owned plugin configuration and collects local ATIF files from that runtime's configured output directory. It validates the trajectory before promoting it to Harbor's `agent/trajectory.json`; ambiguous or malformed artifacts remain telemetry failures rather than changing the verifier reward. Remote-only output and nested filename templates are not collected by this fallback. Adapter invocation results and multi-turn behavior are unchanged.
