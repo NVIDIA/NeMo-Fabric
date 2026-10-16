@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import logging
 import math
 import os
 from collections.abc import Mapping
@@ -56,6 +57,7 @@ except ImportError:
 
 
 _COLLECTOR_CONTROL_TIMEOUT_MARGIN_SECONDS = 1.0
+logger = logging.getLogger(__name__)
 
 
 class Fabric:
@@ -316,7 +318,7 @@ class Fabric:
         try:
             raw = await _call_blocking(prepare)
             return EnvironmentHandle.from_mapping(json.loads(raw))
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as cancelled:
             if prepared is not None:
                 cleanup = asyncio.create_task(
                     asyncio.to_thread(native.release_environment, prepared)
@@ -328,10 +330,31 @@ class Fabric:
                         except asyncio.CancelledError:
                             continue
                     cleanup.result()
-                except Exception:
-                    # The caller remains cancelled; the supervisor still owns
-                    # cleanup if a provider cannot confirm deletion.
-                    pass
+                except Exception as cleanup_error:
+                    try:
+                        details = json.loads(prepared)
+                    except (TypeError, ValueError):
+                        details = {}
+                    if not isinstance(details, dict):
+                        details = {}
+                    identity = {
+                        key: details[key]
+                        for key in ("provider", "environment_id")
+                        if key in details
+                    }
+                    connection = details.get("connection", {})
+                    if isinstance(connection, dict):
+                        identity.update(
+                            (key, connection[key])
+                            for key in ("sandbox_id", "sandbox_name")
+                            if key in connection
+                        )
+                    message = (
+                        "environment cleanup failed after preparation was cancelled "
+                        f"for {json.dumps(identity, sort_keys=True)}: {cleanup_error}"
+                    )
+                    cancelled.add_note(message)
+                    logger.error("%s", message, exc_info=True)
             raise
         except FabricError:
             raise

@@ -58,8 +58,9 @@ async def test_prepared_local_environment_supports_multiple_runtimes(
     assert hermes_shim_agent_dir.is_dir()
 
 
+@pytest.mark.parametrize("release_fails", [False, True])
 async def test_cancelled_prepare_releases_confirmed_environment(
-    monkeypatch, remote_handle
+    monkeypatch, remote_handle, caplog, release_fails
 ):
     fabric = Fabric()
     plan = MagicMock()
@@ -76,6 +77,8 @@ async def test_cancelled_prepare_releases_confirmed_environment(
         return raw
 
     native.prepare_environment.side_effect = prepare
+    if release_fails:
+        native.release_environment.side_effect = RuntimeError("deletion denied")
     monkeypatch.setattr(fabric, "_require_native_module", lambda operation: native)
     task = asyncio.create_task(fabric.prepare_environment(MagicMock()))
     try:
@@ -86,9 +89,15 @@ async def test_cancelled_prepare_releases_confirmed_environment(
         await asyncio.sleep(0.01)
     finally:
         finish.set()
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(asyncio.CancelledError) as cancelled:
         await task
     native.release_environment.assert_called_once_with(raw)
+    if release_fails:
+        note = cancelled.value.__notes__[0]
+        assert "deletion denied" in note
+        assert '"environment_id": "environment-1"' in note
+        assert '"sandbox_id": "immutable-1"' in note
+        assert note in caplog.text
 
 
 @pytest.mark.parametrize("method", ["start", "release", "attach"])
