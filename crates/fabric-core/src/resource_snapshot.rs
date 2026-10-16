@@ -197,15 +197,40 @@ mod tree {
         fn read(&self, pid: u32) -> Result<Process, ReadError>;
     }
 
-    /// Whether `process`, listed as a child of `parent` at `listed_at` and
-    /// read afterwards, is still the listed process. A parent PID read with
-    /// the record shows it directly. Without one, a process that started
-    /// before the list was read already held its PID then, so it is the
-    /// listed process.
-    fn is_listed_child(process: &Process, parent: u32, listed_at: u64) -> bool {
+    /// The process that listed a child, as the tree read saw it.
+    #[derive(Debug, Clone, Copy)]
+    struct Parent {
+        pid: u32,
+        /// The parent's start time when the tree read counted it.
+        start: u64,
+        /// When the parent's children were listed.
+        listed_at: u64,
+    }
+
+    /// Whether `process`, listed as a child of `parent` and read afterwards,
+    /// is still a child of that same parent process.
+    ///
+    /// With a parent PID in the record, the parent is read again after the
+    /// child. A parent that still has the start time it was counted with
+    /// held its PID throughout, so the child's parent PID names it and not a
+    /// later process that reused its PID. A parent that exited no longer
+    /// shows that, so its child is not counted, like a reparented child.
+    ///
+    /// Without a parent PID, a process that started before the list was read
+    /// already held its PID then, so it is the listed process.
+    fn is_listed_child(
+        table: &impl ProcessTable,
+        process: &Process,
+        parent: Parent,
+    ) -> Result<bool, &'static str> {
         match process.ppid {
-            Some(ppid) => ppid == parent,
-            None => process.start < listed_at,
+            Some(ppid) if ppid != parent.pid => Ok(false),
+            Some(_) => match table.read(parent.pid) {
+                Ok(now) => Ok(now.start == parent.start),
+                Err(ReadError::Gone) => Ok(false),
+                Err(ReadError::Unavailable(reason)) => Err(reason),
+            },
+            None => Ok(process.start < parent.listed_at),
         }
     }
 
@@ -218,38 +243,41 @@ mod tree {
         identity: u64,
     ) -> Result<TreeRead, &'static str> {
         let mut read = TreeRead::default();
-        // Each entry is a PID and, for a child, its parent and the time the
-        // parent's children were listed.
+        // Each entry is a PID and, for a child, the parent that listed it.
         let mut pending = VecDeque::from([(root, None)]);
-        while let Some((pid, listed)) = pending.pop_front() {
+        while let Some((pid, parent)) = pending.pop_front() {
             // List the children before reading the process: a read that still
             // shows the expected process proves the listed children were its own.
             let found = table
                 .children(pid)
                 .and_then(|children| Ok((table.read(pid)?, children)));
-            let expected = |process: &Process| match listed {
-                None => process.start == identity && !process.exited,
-                Some((parent, listed_at)) => is_listed_child(process, parent, listed_at),
-            };
-            let (process, children) = match found {
-                Ok((process, children)) if expected(&process) => (process, children),
-                // A reaped child, or one whose PID now names another process.
-                Ok(_) | Err(ReadError::Gone) if listed.is_some() => continue,
-                Ok(_) | Err(ReadError::Gone) => return Err(HOST_EXITED),
-                Err(ReadError::Unavailable(reason)) => return Err(reason),
+            let (process, children) = match (found, parent) {
+                (Ok((process, children)), None) if process.start == identity && !process.exited => {
+                    (process, children)
+                }
+                (Ok(_) | Err(ReadError::Gone), None) => return Err(HOST_EXITED),
+                (Ok((process, children)), Some(parent)) => {
+                    if !is_listed_child(table, &process, parent)? {
+                        // Its PID now names another process, or it left the tree.
+                        continue;
+                    }
+                    (process, children)
+                }
+                // A reaped child.
+                (Err(ReadError::Gone), Some(_)) => continue,
+                (Err(ReadError::Unavailable(reason)), _) => return Err(reason),
             };
             read.cpu_nanos = read.cpu_nanos.saturating_add(process.cpu_nanos);
             if !process.exited {
                 read.resident_bytes = read.resident_bytes.saturating_add(process.resident_bytes);
                 read.process_count += 1;
             }
-            let listed_at = children.listed_at;
-            pending.extend(
-                children
-                    .pids
-                    .into_iter()
-                    .map(|child| (child, Some((pid, listed_at)))),
-            );
+            let parent = Parent {
+                pid,
+                start: process.start,
+                listed_at: children.listed_at,
+            };
+            pending.extend(children.pids.into_iter().map(|child| (child, Some(parent))));
         }
         Ok(read)
     }
@@ -897,6 +925,107 @@ mod tests {
                 assert_eq!(read.process_count, 1, "{lineage:?}");
                 assert_eq!(read.cpu_nanos, 7, "{lineage:?}");
             }
+        }
+    }
+
+    /// How the Linux reader lists children.
+    #[derive(Debug, Clone, Copy)]
+    enum Listing {
+        /// `/proc/<pid>/task/<tid>/children`, read when the walk reaches the process.
+        ChildrenFiles,
+        /// One pass over every process's parent, made before the walk.
+        Scan,
+    }
+
+    const LISTINGS: [Listing; 2] = [Listing::ChildrenFiles, Listing::Scan];
+
+    /// A table in which other processes take some PIDs once the walk has
+    /// read `reused_after`: `before` answers until then and `after` from then
+    /// on. A scan lists children from `before`, because it ran before the walk.
+    struct PidReuseTable {
+        before: ScriptedTable,
+        after: ScriptedTable,
+        reused_after: u32,
+        reused: std::cell::Cell<bool>,
+        listing: Listing,
+    }
+
+    impl PidReuseTable {
+        fn current(&self) -> &ScriptedTable {
+            if self.reused.get() {
+                &self.after
+            } else {
+                &self.before
+            }
+        }
+    }
+
+    impl ProcessTable for PidReuseTable {
+        fn children(&self, pid: u32) -> std::result::Result<Children, ReadError> {
+            match self.listing {
+                Listing::ChildrenFiles => self.current().children(pid),
+                Listing::Scan => self.before.children(pid),
+            }
+        }
+
+        fn read(&self, pid: u32) -> std::result::Result<Process, ReadError> {
+            let read = self.current().read(pid);
+            if pid == self.reused_after {
+                self.reused.set(true);
+            }
+            read
+        }
+    }
+
+    /// The host's child 11 and grandchild 12 exit right after the walk reads
+    /// 11. `after_11` is what PID 11 then reads as; PID 12 is an unrelated
+    /// process whose parent PID is 11 and which used 900 ns of CPU time.
+    fn read_tree_after_reuse(
+        listing: Listing,
+        after_11: std::result::Result<Process, ReadError>,
+    ) -> std::result::Result<TreeRead, &'static str> {
+        let lineage = Lineage::ParentPid;
+        let before = ScriptedTable::default()
+            .process(HOST, Ok(vec![11]), Ok(lineage.host(7)))
+            .process(11, Ok(vec![12]), Ok(lineage.child(HOST, 3)))
+            .process(12, Ok(vec![]), Ok(lineage.child(11, 2)));
+        let after = ScriptedTable::default()
+            .process(HOST, Ok(vec![]), Ok(lineage.host(7)))
+            .process(11, Ok(vec![12]), after_11)
+            .process(12, Ok(vec![]), Ok(lineage.child(11, 900)));
+        let table = PidReuseTable {
+            before,
+            after,
+            reused_after: 11,
+            reused: std::cell::Cell::new(false),
+            listing,
+        };
+        read_tree_with(&table, HOST, HOST_START)
+    }
+
+    #[test]
+    fn tree_read_skips_child_whose_parent_pid_was_reused() {
+        for listing in LISTINGS {
+            let unrelated_parent = Process {
+                ppid: Some(1),
+                start: LISTED_AT + 50,
+                ..Lineage::ParentPid.child(1, 500)
+            };
+            for after_11 in [Ok(unrelated_parent), Err(ReadError::Gone)] {
+                let read = read_tree_after_reuse(listing, after_11).expect("tree read");
+
+                assert_eq!(read.process_count, 2, "{listing:?} {after_11:?}");
+                assert_eq!(read.cpu_nanos, 7 + 3, "{listing:?} {after_11:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn tree_read_with_parent_unreadable_after_child_read_is_unavailable() {
+        for listing in LISTINGS {
+            let read = read_tree_after_reuse(listing, Err(ReadError::Unavailable("hidden")));
+
+            assert_eq!(read.unwrap_err(), "hidden", "{listing:?}");
         }
     }
 
