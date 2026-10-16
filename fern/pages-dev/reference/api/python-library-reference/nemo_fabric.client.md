@@ -400,7 +400,7 @@ async def start_runtime_in(
 
 Start one stateful runtime in an explicitly prepared or attached environment.
 
-Starting or stopping the runtime does not release ``environment``. Runtime and reuse limits depend on the provider. Release the environment separately after stopping the runtime and collecting results. Runtime startup is currently implemented for local environments.
+Starting or stopping the runtime does not release ``environment``. Runtime and reuse limits depend on the provider. Release the environment separately after stopping the runtime and collecting results. Runtime startup is supported by local environments and the OpenShell command bridge. OpenShell invocation is buffered and supports multiple runtime IDs per sandbox.
 
 
 

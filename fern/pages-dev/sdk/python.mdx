@@ -215,8 +215,19 @@ attachment return an unsupported-provider error. Attachment retains caller
 ownership; release detaches without deleting that resource. Provider availability
 and runtime reuse limits depend on the selected environment implementation.
 Non-local workspace and artifact paths refer to the task environment and are
-not resolved against the host's `base_dir`. Runtime startup currently supports
-local environments; provider-specific startup is added alongside each provider.
+not resolved against the host's `base_dir`. The OpenShell provider starts the
+agent through the task SDK command bridge. One sandbox can host multiple
+independent runtime IDs; invoke and stop target a specific ID, and stopping one
+does not stop the others. Streaming and shared-service hosting remain local SDK
+capabilities.
+
+The optional [OpenShell provider](https://github.com/NVIDIA/NeMo-Fabric/blob/main/environment-providers/openshell/README.md)
+uses the task command bridge and returns the task-generated SDK runtime ID and
+normalized results. Declared files are collected under the host's
+`runtime.artifacts/<runtime_id>/<invocation_id>/` directory. The task artifact
+root is separate. OpenShell invocation is buffered; streaming and shared-service
+hosting remain local SDK capabilities. Commands with uncertain outcomes are
+never replayed; an uncertain start blocks further starts in that sandbox.
 
 ### Sandbox Command Bridge
 
