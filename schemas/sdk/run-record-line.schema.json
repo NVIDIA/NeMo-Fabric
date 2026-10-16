@@ -758,7 +758,7 @@
     },
     "version": {
       "$ref": "#/$defs/RecordVersion",
-      "description": "Line format version. `v1alpha1` may change until a record reader ships."
+      "description": "Line format version. `v1alpha1` may change until the `nemo-fabric report`\ncommand ships."
     }
   },
   "required": [

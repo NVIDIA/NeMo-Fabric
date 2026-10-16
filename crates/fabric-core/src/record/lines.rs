@@ -33,7 +33,8 @@ const UNRECOGNIZED_CODE: &str = "unrecognized";
 pub(crate) struct RecordLine {
     /// Always `nemo.fabric.run_record`.
     pub schema: RecordSchema,
-    /// Line format version. `v1alpha1` may change until a record reader ships.
+    /// Line format version. `v1alpha1` may change until the `nemo-fabric report`
+    /// command ships.
     pub version: RecordVersion,
     /// Runtime id.
     pub runtime_id: String,

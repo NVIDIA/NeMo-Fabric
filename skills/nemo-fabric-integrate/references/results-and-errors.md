@@ -78,7 +78,7 @@ Recording is synchronous and best-effort: a failed record
 write adds a `record_write_failed` event and does not replace the result, and
 slow storage delays the invocation. The format is the `v1alpha1`
 [run record line schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/sdk/run-record-line.schema.json)
-and may change until a reader ships.
+and may change until the `nemo-fabric report` command ships.
 
 ## Runtime Resource Snapshots
 
