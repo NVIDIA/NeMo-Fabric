@@ -998,8 +998,9 @@ with stage `stop`, and the record still holds the invocation's own end line.
 The end line's `stop` says why the invocation stopped. It is absent on
 success. `stop.cause` comes from NeMo Fabric's own closed list. Three names are
 Harbor's failure causes: `sandbox_failed`, `agent_exhausted_budget`, and
-`unclassified`. A Harbor runner maps `fabric_failed` to `harbor_failed` and
-`agent_failed` to `unclassified`. The first rule that matches sets the cause:
+`unclassified`. A Harbor consumer of the record can map `fabric_failed` to
+`harbor_failed` and `agent_failed` to `unclassified`. The first rule that
+matches sets the cause:
 
 1. `fabric_failed`: NeMo Fabric or the adapter host raised an error that is
    not a timeout or a host exit. Examples are an invalid adapter result and an
@@ -1032,9 +1033,10 @@ Two timeouts reach this rule:
 - NeMo Fabric's own timeout fired (error code `host_timeout`). `forced` is
   `true`, and `usage` is the time until the timeout fired. `elapsed_ms` also
   covers NeMo Fabric stopping the hung adapter host, so it is larger.
-  On Linux and macOS, `exit_signal` is then usually the signal NeMo Fabric
-  sent (9), unless the host exited by itself during the 2-second grace period.
-  On Windows, a forced stop gives `exit_code` 1 and no signal.
+  When NeMo Fabric terminates the host, `exit_signal` is the signal it sent
+  (9) on Linux and macOS, and on Windows `exit_code` is 1 with no signal. A
+  host that exits by itself during the 2-second grace period records its own
+  exit status instead, while `forced` stays `true`.
 - The adapter stopped at the deadline NeMo Fabric gave it and reported error
   code `timeout`, in a `failed` result or as an error. `forced` is `false`.
   That deadline is earlier than `value`: the timeout less 10 seconds, and at
