@@ -213,3 +213,18 @@ def test_openshell_config_rejects_host_or_traversal_paths(path):
 
     with pytest.raises(ValidationError, match="absolute POSIX task path"):
         EnvironmentConfig(provider="openshell", workspace=path)
+
+
+async def test_remote_streaming_is_rejected_before_native_dispatch(
+    monkeypatch, remote_handle
+):
+    fabric = Fabric()
+    mock_native = MagicMock()
+    monkeypatch.setattr(fabric, "_require_native_module", mock_native)
+    with pytest.raises(FabricConfigError, match="buffered"):
+        await fabric.start_runtime_in(
+            hermes_shim_config(),
+            EnvironmentHandle.from_mapping(remote_handle),
+            streaming=True,
+        )
+    mock_native.assert_not_called()

@@ -33,6 +33,9 @@ use crate::config::{
 use crate::environment::resolve_environment_provider;
 use crate::error::{FabricError, Result};
 
+mod openshell;
+use openshell::OpenShellRuntimeAdapter;
+
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
@@ -140,9 +143,9 @@ pub struct RunResult {
     /// Artifacts produced or collected by this run.
     #[serde(default)]
     pub artifacts: ArtifactManifest,
-    /// Telemetry reference when available.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub telemetry: Option<TelemetryRef>,
+    /// Ordered telemetry references when available.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub telemetry: Vec<TelemetryRef>,
     /// NeMo Fabric lifecycle/progress events emitted during the run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<FabricEvent>,
@@ -263,8 +266,21 @@ pub struct ArtifactRef {
 /// Reference to telemetry emitted by Relay or another configured telemetry path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TelemetryRef {
-    /// Whether Relay was enabled for this run.
+    /// Whether Relay was enabled for this run; retained for native compatibility.
+    #[serde(default)]
     pub relay_enabled: bool,
+    /// Provider in the public SDK reference representation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// Reference category in the public SDK representation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Location of the persisted telemetry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    /// Provider trace identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
     /// Telemetry metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, Value>,
@@ -925,6 +941,9 @@ pub fn attach_environment(
 ///
 /// Caller-owned resources detach without deletion; local files remain in place.
 pub fn release_environment(environment: &EnvironmentHandle) -> Result<()> {
+    if environment.provider == "openshell" {
+        return openshell::release(environment);
+    }
     crate::environment::release_environment(environment).map(|_| ())
 }
 
@@ -1156,6 +1175,9 @@ pub fn invoke_runtime(
     validate_adapter_compatibility(plan)?;
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
+        if runtime.environment.provider == "openshell" {
+            return OpenShellRuntimeAdapter.invoke(plan, runtime, request);
+        }
         return LocalHostAdapter.invoke(plan, runtime, request);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
@@ -1185,6 +1207,9 @@ pub fn invoke_openai_stream(
     }
     validate_openai_stream_transport(&transport)?;
     if uses_local_host(plan) {
+        if runtime.environment.provider == "openshell" {
+            return OpenShellRuntimeAdapter.invoke_openai_stream(plan, runtime, request, transport);
+        }
         return LocalHostAdapter.invoke_openai_stream(plan, runtime, request, transport);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
@@ -1238,7 +1263,11 @@ fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
 pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
-        let events = LocalHostAdapter.stop(runtime)?;
+        let events = if runtime.environment.provider == "openshell" {
+            OpenShellRuntimeAdapter.stop(runtime)?
+        } else {
+            LocalHostAdapter.stop(runtime)?
+        };
         if let Some(service_id) = runtime.service_id.as_ref()
             && let Some(record) = local_services().get(service_id).cloned()
         {
@@ -1267,6 +1296,15 @@ fn start_runtime_in_validated(
     plan: &RunPlan,
     environment: &EnvironmentHandle,
 ) -> Result<RuntimeHandle> {
+    if environment.provider == "openshell" {
+        if uses_local_host(plan) {
+            return OpenShellRuntimeAdapter.start(plan, environment.clone());
+        }
+        return Err(FabricError::UnsupportedRuntimeAdapter {
+            harness: harness(plan),
+            adapter_kind: adapter_kind(plan),
+        });
+    }
     if environment.provider != "local" {
         return Err(FabricError::UnsupportedEnvironmentProvider {
             provider: environment.provider.clone(),
@@ -2124,7 +2162,9 @@ fn run_local_host_invocation_with_timeout(
         error,
         usage: agent_result.usage.as_ref().map(run_usage),
         artifacts,
-        telemetry: telemetry_ref(plan, relay_config.as_ref()),
+        telemetry: telemetry_ref(plan, relay_config.as_ref())
+            .into_iter()
+            .collect(),
         events,
         metadata,
     })
@@ -3792,6 +3832,10 @@ fn telemetry_ref(
     }
     Some(TelemetryRef {
         relay_enabled: telemetry.relay_enabled,
+        provider: None,
+        kind: None,
+        uri: None,
+        trace_id: None,
         metadata,
     })
 }
@@ -4337,6 +4381,50 @@ for line in sys.stdin:
 
         assert_eq!(telemetry.metadata["native_config"], native_config);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sdk_run_result_preserves_ordered_telemetry_references() {
+        let result = RunResult {
+            agent_name: "agent".to_string(),
+            harness: "harness".to_string(),
+            adapter_kind: AdapterKind::Python,
+            adapter_id: None,
+            runtime_id: "runtime-1".to_string(),
+            invocation_id: "invocation-1".to_string(),
+            request_id: "request-1".to_string(),
+            status: RunStatus::Succeeded,
+            output: Value::Null,
+            error: None,
+            usage: None,
+            artifacts: ArtifactManifest::default(),
+            telemetry: vec![
+                TelemetryRef {
+                    relay_enabled: true,
+                    provider: Some("relay".to_string()),
+                    kind: Some("trace".to_string()),
+                    uri: Some("artifacts/trace".to_string()),
+                    trace_id: Some("trace-1".to_string()),
+                    metadata: BTreeMap::new(),
+                },
+                TelemetryRef {
+                    relay_enabled: false,
+                    provider: Some("native".to_string()),
+                    kind: Some("metrics".to_string()),
+                    uri: Some("artifacts/metrics".to_string()),
+                    trace_id: None,
+                    metadata: BTreeMap::new(),
+                },
+            ],
+            events: Vec::new(),
+            metadata: BTreeMap::new(),
+        };
+
+        let encoded = serde_json::to_value(&result).expect("serialize SDK run result");
+        assert!(encoded["telemetry"].is_array());
+        let decoded: RunResult =
+            serde_json::from_value(encoded).expect("deserialize SDK run result");
+        assert_eq!(decoded.telemetry, result.telemetry);
     }
 
     fn stopped_agents() -> Vec<String> {
@@ -5827,8 +5915,8 @@ for line in sys.stdin:
         plan.environment_plan
             .as_mut()
             .expect("resolved environment plan")
-            .provider = "openshell".to_string();
-        environment.provider = "openshell".to_string();
+            .provider = "docker".to_string();
+        environment.provider = "docker".to_string();
 
         let error = start_runtime_in(&plan, &environment)
             .expect_err("non-local environment must use its provider runtime");
@@ -5838,7 +5926,7 @@ for line in sys.stdin:
             FabricError::UnsupportedEnvironmentProvider {
                 provider,
                 adapter_kind: AdapterKind::Python,
-            } if provider == "openshell"
+            } if provider == "docker"
         ));
         let _ = fs::remove_dir_all(root);
     }

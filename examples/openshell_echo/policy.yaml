@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Constrain the echo task image to its sandbox filesystem and local runtime.
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only: [/usr, /opt, /lib, /lib64, /etc, /proc, /dev/urandom]
+  read_write: [/sandbox, /home/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort

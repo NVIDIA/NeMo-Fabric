@@ -85,7 +85,6 @@ metadata = {
     "fabric_version": version("nemo-fabric-runtime"),
     "interface_version": 2,
     "operations": ["start", "invoke", "stop", "serve"],
-    "runtime_limit": 1,
     "adapters": [plan.get("adapter_descriptor")],
 }
 Path("/opt/fabric/runtime-server.json").write_text(json.dumps(metadata, indent=2) + "\n")
