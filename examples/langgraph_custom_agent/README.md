@@ -213,3 +213,37 @@ The example intentionally omits generic workflow loading, named tools, skills,
 durable checkpointing, cancellation, cold resume, updates, and native
 streaming. The stdio MCP path is kept optional so the required adapter
 lifecycle remains easy to identify.
+
+## Run the Custom Agent in OpenShell
+
+The source example above shows the agent and adapter boundary. This deployment
+path packages the same LangGraph agent and custom adapter in a task image; a
+host-side consumer uses the normal NeMo Fabric SDK and OpenShell provider for
+both sandbox ownership modes.
+
+From the repository root, use a host Python environment with the NeMo Fabric
+SDK and native extension, Docker with Linux containers, Rust/Cargo, and `uv`.
+Set `NVIDIA_API_KEY`, then run:
+
+```bash
+bash examples/openshell/run-demo.sh \
+  examples/langgraph_custom_agent/demo-openshell-sdk.sh
+```
+
+The example runs two ordered email assessments on one SDK runtime and writes
+normalized reports under `.tmp/langgraph-custom-agent/`; collected runtime
+artifacts are written on the host under its `artifacts/` subdirectory. The agent
+uses `/sandbox/langgraph/workspace` and `/sandbox/langgraph/artifacts` inside the
+sandbox. Set
+`OPENSHELL_EXAMPLE_MODE=caller_owned` or `fabric_owned` to run one ownership
+mode. Set `OPENSHELL_LANGGRAPH_RELAY=true` to collect correlated Relay ATOF and
+ATIF artifacts, or `OPENSHELL_LANGGRAPH_MCP=true` to enable the local URL
+inspection tool. The switches compose.
+
+For another OpenAI-compatible model, set `OPENSHELL_LANGGRAPH_MODEL` and
+`OPENSHELL_LANGGRAPH_BASE_URL`. The imported OpenShell provider profile must
+authorize the endpoint and expose the shadow `OPENAI_API_KEY`. OpenShell 0.1.2
+rejects IP-literal URLs for policy-controlled TCP; use a DNS hostname that
+resolves to the endpoint from the sandbox. See the
+[OpenShell networking notes](../openshell/README.md#agent-readiness) for private
+endpoints.

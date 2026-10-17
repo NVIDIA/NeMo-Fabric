@@ -1,0 +1,61 @@
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Extend the reusable OpenShell task image with the custom LangGraph agent,
+# its dependencies, and the Fabric adapter that runs inside the sandbox.
+FROM fabric-openshell-sdk:source
+
+USER root
+COPY examples/langgraph_custom_agent/ /opt/fabric/examples/langgraph_custom_agent/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python /opt/fabric/bin/python \
+        'langchain>=1.3,<2.0' \
+        'langchain-mcp-adapters>=0.1,<0.3.0' \
+        'langchain-openai>=0.3,<2.0' \
+        'langgraph>=1.2,<2.0' \
+        'mcp>=1.28.1,<2.0' \
+        'nemo-relay>=0.9,<0.11'
+RUN install -d -m 0700 -o 1000 -g 1000 /sandbox/tmp /sandbox/langgraph/workspace \
+    /sandbox/langgraph/artifacts /sandbox/.cache
+RUN PYTHONPATH=/opt/fabric /opt/fabric/bin/python - <<'PY'
+from pathlib import Path
+from types import SimpleNamespace
+
+from nemo_fabric import Fabric
+from examples.langgraph_custom_agent.consumer.openshell import build_config
+
+for relay in (False, True):
+    for mcp in (False, True):
+        args = SimpleNamespace(
+            ownership="caller_owned",
+            gateway="http://127.0.0.1:18080",
+            workspace="default",
+            image="fabric-langgraph-custom-agent:build-check",
+            policy_file="/opt/fabric/examples/langgraph_custom_agent/openshell-sdk-policy.yaml",
+            sandbox_name="langgraph-build-check",
+            sandbox_id="sandbox-build-check",
+            results_file="/tmp/langgraph-build-check/results.json",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            base_url="https://integrate.api.nvidia.com/v1",
+            relay=relay,
+            mcp=mcp,
+        )
+        config = build_config(args)
+        assert Path(config.runtime.artifacts) == Path("/tmp/langgraph-build-check/artifacts")
+        assert Path(config.environment.artifacts) == Path("/sandbox/langgraph/artifacts")
+        config.environment.provider = "local"
+        plan = Fabric().plan(config, base_dir=Path("/sandbox/langgraph"))
+        descriptor = plan.get("adapter_descriptor", {}).get("descriptor", {})
+        assert descriptor.get("adapter_id") == "nvidia.fabric.example.langgraph.email-phishing"
+PY
+ENV PATH=/opt/fabric/bin:/usr/local/bin:/usr/bin:/bin \
+    PYTHONPATH=/opt/fabric \
+    HOME=/home/sandbox \
+    ADAPTER_PYTHON=/opt/fabric/bin/python \
+    FABRIC_HOST_SOCKET=/sandbox/fabric.sock \
+    TMPDIR=/sandbox/tmp \
+    XDG_CACHE_HOME=/sandbox/.cache \
+    PYTHONDONTWRITEBYTECODE=1
+WORKDIR /sandbox/langgraph/workspace
+USER sandbox:sandbox
