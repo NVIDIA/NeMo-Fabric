@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Verify the OpenClaw code-review consumer's SDK and OpenShell wiring.
+"""Verify the code-review consumer's SDK and OpenShell wiring.
 
 The tests cover both sandbox ownership modes, request context, and artifact
 handling without starting a gateway or model endpoint.
@@ -15,12 +15,18 @@ from typing import get_type_hints
 
 import pytest
 
+from nemo_fabric import FabricRuntimeError
+
 from examples.code_review_agent import openshell, openshell_sdk_consumer as consumer
 
 
 @pytest.mark.parametrize("ownership", ["caller_owned", "fabric_owned"])
+@pytest.mark.parametrize(
+    ("harness", "relay"),
+    [("openclaw", False), ("hermes", False), ("hermes", True)],
+)
 def test_code_review_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
-    ownership, tmp_path, monkeypatch
+    ownership, harness, relay, tmp_path, monkeypatch
 ):
     policy = tmp_path / "policy.yaml"
     policy.write_text("version: 1\n", encoding="utf-8")
@@ -34,6 +40,8 @@ def test_code_review_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
         results_file=str(results),
         sandbox_name=f"review-{ownership}",
         sandbox_id="caller-sandbox-id" if ownership == "caller_owned" else None,
+        harness=harness,
+        relay=relay,
         model="nvidia/test-model",
         base_url="https://integrate.api.nvidia.com/v1",
         inputs=["Review calculator.py", "Summarize and remember cedar-4827"],
@@ -78,9 +86,15 @@ def test_code_review_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
         async def start_runtime_in(self, config, environment):
             events.append("start")
             assert environment.connection["sandbox_id"] == "fabric-sandbox-id"
-            assert config.harness.adapter_id == "nvidia.fabric.openclaw"
+            assert config.harness.adapter_id == f"nvidia.fabric.{args.harness}"
             assert config.environment.provider == "openshell"
             assert config.environment.settings["providers"] == ["hosted"]
+            if harness == "hermes":
+                assert config.environment.settings["task_discovery_paths"] == [
+                    consumer.HERMES_TASK_DISCOVERY_PATH
+                ]
+            else:
+                assert "task_discovery_paths" not in config.environment.settings
             assert config.models["default"].api_key_env == "OPENAI_API_KEY"
             assert config.skills.paths == ["/sandbox/code-review/skills/code-review"]
             return FakeRuntime()
@@ -115,7 +129,59 @@ def test_code_review_consumer_uses_sdk_lifecycle_and_preserves_two_turn_context(
         assert not state_file.exists()
 
 
-def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path, monkeypatch):
+@pytest.mark.parametrize("relay", [False, True])
+def test_hermes_config_enables_code_review_tools_and_optional_relay(relay, tmp_path):
+    policy = tmp_path / "policy.yaml"
+    policy.write_text("version: 1\n", encoding="utf-8")
+    args = SimpleNamespace(
+        ownership="fabric_owned",
+        gateway="http://127.0.0.1:18080",
+        workspace="default",
+        image="sha256:" + "a" * 64,
+        policy_file=str(policy),
+        results_file=str(tmp_path / "report.json"),
+        sandbox_name="review-hermes",
+        sandbox_id=None,
+        harness="hermes",
+        relay=relay,
+        model="nvidia/test-model",
+        base_url="https://integrate.api.nvidia.com/v1",
+    )
+
+    config = consumer.build_config(args)
+
+    assert config.harness.adapter_id == "nvidia.fabric.hermes"
+    assert config.discovery.local_paths == [
+        Path(consumer.__file__).resolve().parents[2]
+        / "adapters/python/hermes/hermes.fabric-adapter.json"
+    ]
+    assert config.environment.settings["task_discovery_paths"] == [
+        consumer.HERMES_TASK_DISCOVERY_PATH
+    ]
+    assert config.tools.enabled == ["terminal"]
+    assert config.runtime.max_turns == 6
+    assert "Use the terminal tool to read workspace files" in config.instructions.system.content
+    assert config.models["default"].api_key_env == "OPENAI_API_KEY"
+    assert config.runtime.artifacts == tmp_path / "artifacts"
+    assert config.environment.artifacts == "/sandbox/artifacts"
+    assert (config.relay is not None) is relay
+    if relay:
+        assert config.relay.output_dir == "./artifacts/relay"
+        assert config.relay.observability.atif.output_directory == (
+            "./artifacts/relay"
+        )
+
+
+@pytest.mark.parametrize(
+    ("harness", "invoke_status", "output", "expected_error"),
+    [
+        ("openclaw", "failed", None, "invoke_failed"),
+        ("hermes", "succeeded", {"completed": False}, "hermes_incomplete"),
+    ],
+)
+def test_failed_or_incomplete_invocation_still_cleans_up(
+    tmp_path, monkeypatch, harness, invoke_status, output, expected_error
+):
     policy = tmp_path / "policy.yaml"
     policy.write_text("version: 1\n", encoding="utf-8")
     args = SimpleNamespace(
@@ -127,6 +193,8 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
         results_file=str(tmp_path / "report.json"),
         sandbox_name="review-failure",
         sandbox_id=None,
+        harness=harness,
+        relay=False,
         model="nvidia/test-model",
         base_url="https://integrate.api.nvidia.com/v1",
         inputs=["Review", "Follow up"],
@@ -141,9 +209,9 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
 
         async def invoke(self, *, request):
             return SimpleNamespace(
-                status="failed",
+                status=invoke_status,
                 request_id=request.request_id,
-                to_mapping=lambda: {"status": "failed"},
+                to_mapping=lambda: {"status": invoke_status, "output": output},
             )
 
         async def stop(self):
@@ -163,6 +231,7 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
     report = asyncio.run(consumer.run_demo(args))
 
     assert report["status"] == "failed"
+    assert report["error"]["code"] == expected_error
     assert events == ["stop", "release"]
     assert json.loads(Path(args.results_file).read_text(encoding="utf-8"))["status"] == "failed"
     assert json.loads(state_file.read_text(encoding="utf-8")) == {
@@ -174,3 +243,39 @@ def test_failed_invocation_still_stops_runtime_and_releases_environment(tmp_path
 def test_code_review_type_annotations_resolve():
     get_type_hints(openshell.OpenShellCodeReview._command)
     get_type_hints(consumer.run_demo)
+
+
+def test_sdk_error_report_keeps_structured_stage_without_diagnostic_text(
+    tmp_path, monkeypatch
+):
+    policy = tmp_path / "policy.yaml"
+    policy.write_text("version: 1\n", encoding="utf-8")
+    args = SimpleNamespace(
+        ownership="fabric_owned",
+        gateway="http://127.0.0.1:18080",
+        workspace="default",
+        image="sha256:" + "a" * 64,
+        policy_file=str(policy),
+        results_file=str(tmp_path / "report.json"),
+        sandbox_name="review-error",
+        sandbox_id=None,
+        harness="openclaw",
+        relay=False,
+        model="nvidia/test-model",
+        base_url="https://integrate.api.nvidia.com/v1",
+        inputs=["Review", "Follow up"],
+    )
+
+    class FakeFabric:
+        async def prepare_environment(self, config):
+            raise FabricRuntimeError(
+                "private provider diagnostic",
+                stage="environment_prepare",
+                code="provider_error",
+            )
+
+    monkeypatch.setattr(consumer, "Fabric", FakeFabric)
+    report = asyncio.run(consumer.run_demo(args))
+
+    assert report["error"] == {"code": "provider_error", "stage": "environment_prepare"}
+    assert "private provider diagnostic" not in json.dumps(report)

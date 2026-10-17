@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import zlib
 
 import pytest
 
@@ -40,7 +41,9 @@ def test_export_preserves_complete_binary_files(tmp_path):
     code, result, stderr = read(tmp_path, ["nested/review.gz"])
     assert code == 0
     assert stderr == ""
-    assert bytes(result["files"][0]["content"]) == contents
+    file = result["files"][0]
+    assert file["uncompressed_size"] == len(contents)
+    assert zlib.decompress(bytes(file["content"])) == contents
 
 
 @pytest.mark.parametrize(
@@ -94,7 +97,7 @@ def test_export_rejects_nonregular_or_escaping_files(tmp_path, kind):
     elif kind == "directory":
         (root / path).mkdir()
     else:
-        (root / path).write_bytes(b"x" * (256 * 1024 + 1))
+        (root / path).write_bytes(b"x" * (1024 * 1024 + 1))
     code, result, stderr = read(root, [path])
     assert code == 1
     assert result == {"error": "artifact_read_failed"}
@@ -103,12 +106,58 @@ def test_export_rejects_nonregular_or_escaping_files(tmp_path, kind):
 
 @pytest.mark.parametrize("case", ["file_count", "total_bytes"])
 def test_export_rejects_limits_without_partial_file_results(tmp_path, case):
-    size = 256 * 1024 if case == "total_bytes" else 1
+    size = 1024 * 1024 if case == "total_bytes" else 1
     count = 3 if case == "total_bytes" else 17
     paths = [f"file-{i}" for i in range(count)]
     for path in paths:
         (tmp_path / path).write_bytes(b"x" * size)
     code, result, stderr = read(tmp_path, paths)
+    assert code == 1
+    assert result == {"error": "artifact_read_failed"}
+    assert stderr == ""
+
+
+def test_export_accepts_two_turn_relay_artifacts_within_aggregate_limit(tmp_path):
+    sizes = (237_157, 227_987, 168_277)
+    paths = [f"relay-{index}" for index in range(len(sizes))]
+    for path, size in zip(paths, sizes, strict=True):
+        (tmp_path / path).write_bytes(b"x" * size)
+
+    code, result, stderr = read(tmp_path, paths)
+
+    assert code == 0
+    assert stderr == ""
+    assert [file["uncompressed_size"] for file in result["files"]] == list(sizes)
+    assert all(
+        zlib.decompress(bytes(file["content"])) == b"x" * size
+        for file, size in zip(result["files"], sizes, strict=True)
+    )
+
+
+def test_export_compresses_large_relay_files_within_transfer_limit(tmp_path):
+    sizes = (687_836, 406_705)
+    paths = [f"relay-{index}" for index in range(len(sizes))]
+    for path, size in zip(paths, sizes, strict=True):
+        (tmp_path / path).write_bytes(b"event-data\n" * (size // 11) + b"x" * (size % 11))
+
+    code, result, stderr = read(tmp_path, paths)
+
+    assert code == 0
+    assert stderr == ""
+    assert [file["uncompressed_size"] for file in result["files"]] == list(sizes)
+    assert all(len(file["content"]) < 256 * 1024 for file in result["files"])
+    assert all(
+        zlib.decompress(bytes(file["content"]))
+        == (tmp_path / file["path"]).read_bytes()
+        for file in result["files"]
+    )
+
+
+def test_export_rejects_large_incompressible_file(tmp_path):
+    (tmp_path / "uncompressible").write_bytes(os.urandom(300_000))
+
+    code, result, stderr = read(tmp_path, ["uncompressible"])
+
     assert code == 1
     assert result == {"error": "artifact_read_failed"}
     assert stderr == ""
