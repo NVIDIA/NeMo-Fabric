@@ -542,6 +542,7 @@ def test_single_invocation_uses_native_thread_and_turn_contract(
     assert start["sandbox"] == adapter.Sandbox.workspace_write
     assert start["config"] == {
         "features": {"web_search": False},
+        "mcp_optional_startup_grace_ms": 0,
         "model_reasoning_effort": "high",
     }
     client.thread.turn.assert_awaited_once_with(
@@ -649,6 +650,7 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
 
     assert output["completed"] is True
     config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    assert config["mcp_optional_startup_grace_ms"] == 0
     assert config["mcp_servers"] == {
         "remote": {
             "url": "https://mcp.example.test/mcp",
@@ -1846,14 +1848,18 @@ def test_relay_stop_failure_is_reported_by_runtime_stop(
     assert error.code == "codex_relay_stop_failed"
 
 
+@pytest.mark.parametrize(
+    "effort",
+    [None, "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+)
 def test_native_sdk_controls_and_telemetry_are_request_scoped(
-    codex_payload, mock_codex
+    codex_payload, mock_codex, effort
 ):
     settings = codex_payload["config"]["harness"]["settings"]
     settings.update(
         {
             "personality": "pragmatic",
-            "reasoning_effort": "xhigh",
+            "reasoning_effort": effort,
             "output_schema": {
                 "type": "object",
                 "properties": {"summary": {"type": "string"}},
@@ -1903,7 +1909,9 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
         },
     }
     turn = client.thread.turn.await_args.kwargs
-    assert turn["effort"] == adapter.ReasoningEffort.xhigh
+    assert turn["effort"] == (
+        None if effort is None else adapter.ReasoningEffort(effort)
+    )
     assert turn["output_schema"]["required"] == ["summary"]
 
 
@@ -1973,6 +1981,9 @@ def test_descriptor_has_no_codex_binary_requirement():
     )
 
     assert descriptor["adapter_id"] == "nvidia.fabric.codex"
+    assert descriptor["settings_schema"]["properties"]["reasoning_effort"]["enum"] == [
+        effort.value for effort in adapter.ReasoningEffort
+    ]
     assert descriptor["runner"] == {
         "module": "nemo_fabric_adapters.codex.adapter",
     }
@@ -2103,3 +2114,22 @@ def test_main_serves_persistent_runtime(monkeypatch):
     serve.assert_called_once_with(
         adapter.CodexRuntime, config_loader=AgentConfig.from_mapping
     )
+
+
+@pytest.mark.parametrize("effort", [True, 1, [], {}, "", "unknown"])
+def test_native_reasoning_effort_rejected_before_startup(
+    codex_payload, mock_codex, monkeypatch, effort
+):
+    codex_payload["config"]["harness"]["settings"]["reasoning_effort"] = effort
+    prepare_relay = MagicMock()
+    monkeypatch.setattr(adapter, "prepare_codex_relay", prepare_relay)
+
+    error = runtime_start_error(codex_payload)
+
+    assert error.code == "codex_invalid_configuration"
+    assert error.message in {
+        "reasoning_effort is invalid",
+        "harness.settings.reasoning_effort must be a non-empty string",
+    }
+    prepare_relay.assert_not_called()
+    assert mock_codex.instances == []

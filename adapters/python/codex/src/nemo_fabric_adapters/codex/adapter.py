@@ -844,6 +844,8 @@ def thread_config(
     mcp_servers = _native_mcp_servers(config)
     if mcp_servers:
         result["mcp_servers"] = mcp_servers
+    # Keep the pre-0.154 behavior of waiting for configured MCP servers.
+    result["mcp_optional_startup_grace_ms"] = 0
     if callback_url := _mcp_oauth_callback_url(config):
         result["mcp_oauth_callback_url"] = callback_url
     overrides = _mapping(
@@ -927,12 +929,12 @@ def _reasoning_effort(config: AgentConfig) -> ReasoningEffort | None:
     value = _optional_string(_settings(config), "reasoning_effort")
     if value is None:
         return None
-    try:
-        return ReasoningEffort(value)
-    except ValueError as error:
+    # The SDK accepts unknown strings; only its declared members are supported.
+    if value not in tuple(ReasoningEffort):
         raise AdapterConfigError(
             "codex_invalid_configuration", "reasoning_effort is invalid"
-        ) from error
+        )
+    return ReasoningEffort(value)
 
 
 def _output_schema(config: AgentConfig) -> dict[str, Any] | None:

@@ -101,6 +101,17 @@
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
+            "effort": {
+              "description": "Claude reasoning effort. Omit to preserve the harness default.",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
             "max_budget_usd": {
               "description": "Maximum amount in US dollars that Claude may spend during one invocation.",
               "exclusiveMinimum": 0,
@@ -161,7 +172,7 @@
         "name": "nemo-fabric-adapters-claude",
         "version": "0.6.0"
       },
-      "sha256": "f74534781fc0be118810ef80146cef286be7db9031cc5035063757300bdb8828",
+      "sha256": "e478035aaddae2384caccfe9d5fcc4a57567539018f704e4a0259d338796355d",
       "source": "adapters/python/claude/claude.fabric-adapter.json"
     },
     "nvidia.fabric.cline": {
@@ -446,7 +457,9 @@
                 "low",
                 "medium",
                 "high",
-                "xhigh"
+                "xhigh",
+                "max",
+                "ultra"
               ],
               "type": "string"
             },
@@ -495,7 +508,7 @@
         "name": "nemo-fabric-adapters-codex",
         "version": "0.6.0"
       },
-      "sha256": "f66fb66d3a366977619bc9e88a4d926e0b71bbc28ac965b9a416bf2559106ce5",
+      "sha256": "166582997e8e2ea564875f98a0bac7500c057819033a28c7cd400607c0d36a21",
       "source": "adapters/python/codex/codex.fabric-adapter.json"
     },
     "nvidia.fabric.droid": {

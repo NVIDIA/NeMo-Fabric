@@ -19,6 +19,7 @@ from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from typing import get_args
 
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk import ClaudeSDKClient
@@ -31,6 +32,7 @@ from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
+from claude_agent_sdk.types import EffortLevel
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
@@ -634,6 +636,9 @@ def build_options(
 ) -> ClaudeAgentOptions:
     settings = _settings(config)
     model = _selected_model_config(config)
+    effort: EffortLevel | None = settings.get("effort")
+    if "effort" in settings and effort not in get_args(EffortLevel):
+        raise AdapterConfigError("claude_invalid_configuration", "effort is invalid")
     permission_mode = settings.get("permission_mode")
     if permission_mode is not None and permission_mode not in PERMISSION_MODES:
         raise AdapterConfigError(
@@ -699,6 +704,7 @@ def build_options(
             max_turns=max_turns,
             max_budget_usd=max_budget,
             max_buffer_size=settings.get("max_buffer_size"),
+            effort=effort,
             setting_sources=sources,
             cli_path=_resolve_path(base_dir, cli_path) if cli_path else None,
             mcp_servers=mcp.config_path if mcp is not None else {},

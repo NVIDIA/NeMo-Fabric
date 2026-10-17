@@ -267,7 +267,9 @@ def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
     assert adapter.selected_model(config) == "gpt-5.4"
     assert adapter.sandbox(config) == adapter.Sandbox.workspace_write
     assert adapter._reasoning_effort(config) == adapter.ReasoningEffort.high
-    assert adapter.thread_config(config, context, relay=None) == {}
+    assert adapter.thread_config(config, context, relay=None) == {
+        "mcp_optional_startup_grace_ms": 0
+    }
     assert adapter.resolve_cwd(context, payload["base_dir"]) == tmp_path
 
 
