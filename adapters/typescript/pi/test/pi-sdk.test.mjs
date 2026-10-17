@@ -9,6 +9,8 @@ import test from "node:test";
 import { createServer } from "node:http";
 
 import {
+  addEventUsage,
+  addUsage,
   buildCatalogModel,
   modelAwareCompactionReserveTokens,
   PiSdkSessionFactory,
@@ -1440,3 +1442,224 @@ test("accepts a well-formed extensions.cost", async () => {
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("sums each assistant message's usage and drops an incomplete one", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const first = addUsage(zero, { input: 10, output: 2, cacheRead: 5, cacheWrite: 1, totalTokens: 18 });
+  const second = addUsage(first, { input: 3, output: 4, cacheRead: 0, cacheWrite: 0, reasoning: 2 });
+
+  assert.deepEqual(second, { input: 13, output: 6, cacheRead: 5, cacheWrite: 1 });
+  assert.equal(addUsage(second, { input: 1, output: 1 }), undefined);
+  assert.equal(addUsage(undefined, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }), undefined);
+});
+
+test("counts the tokens Pi bills outside assistant messages", () => {
+  const usage = (tokens) => ({ input: tokens, output: 1, cacheRead: 0, cacheWrite: 0 });
+  const events = [
+    { type: "message_end", message: { role: "assistant", usage: usage(10) } },
+    { type: "compaction_end", aborted: false, result: { summary: "s", usage: usage(100) } },
+    { type: "message_end", message: { role: "toolResult", usage: usage(20) } },
+    { type: "message_end", message: { role: "toolResult" } },
+    { type: "entry_appended", entry: { type: "usage", usage: usage(5) } },
+    { type: "entry_appended", entry: { type: "custom" } },
+    { type: "turn_start" },
+  ];
+
+  const total = events.reduce(addEventUsage, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+
+  assert.deepEqual(total, { input: 135, output: 4, cacheRead: 0, cacheWrite: 0 });
+});
+
+test("a compaction without a usage report leaves the prompt's tokens unknown", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+  assert.equal(addEventUsage(zero, { type: "compaction_end", aborted: false, result: { summary: "s" } }), undefined);
+  assert.equal(addEventUsage(zero, { type: "compaction_end", aborted: true }), undefined);
+});
+
+test("an aborted assistant message leaves the prompt's tokens unknown", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+  assert.equal(
+    addEventUsage(zero, { type: "message_end", message: { role: "assistant", stopReason: "aborted", usage } }),
+    undefined,
+  );
+});
+
+test("a model call with zero-filled usage leaves the prompt's tokens unknown", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const unreported = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+
+  assert.equal(addEventUsage(zero, { type: "message_end", message: { role: "assistant", usage: unreported } }), undefined);
+  assert.equal(addEventUsage(zero, { type: "compaction_end", aborted: false, result: { usage: unreported } }), undefined);
+  assert.equal(addEventUsage(zero, { type: "entry_appended", entry: { type: "usage", usage: unreported } }), undefined);
+  // A tool reports its own usage, so a zero there is a measured zero.
+  assert.deepEqual(addEventUsage(zero, { type: "message_end", message: { role: "toolResult", usage: unreported } }), zero);
+});
+
+test("a split-turn compaction leaves the prompt's tokens unknown", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const prepared = (preparation) => ({ type: "session_before_compact", preparation });
+
+  assert.deepEqual(addEventUsage(zero, prepared({ isSplitTurn: false })), zero);
+  assert.equal(addEventUsage(zero, prepared({ isSplitTurn: true })), undefined);
+  assert.equal(addEventUsage(zero, prepared(undefined)), undefined);
+});
+
+test("a retried compaction summary leaves the prompt's tokens unknown", () => {
+  const usage = { input: 20, output: 1, cacheRead: 0, cacheWrite: 0 };
+  const events = [
+    { type: "summarization_retry_scheduled", attempt: 1, maxAttempts: 3, delayMs: 0, errorMessage: "stream dropped" },
+    { type: "summarization_retry_attempt_start" },
+    { type: "summarization_retry_finished" },
+    { type: "compaction_end", aborted: false, result: { summary: "s", usage } },
+  ];
+
+  assert.equal(events.reduce(addEventUsage, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }), undefined);
+});
+
+/**
+ * Run prompts through the real Pi SDK against a local chat-completions endpoint
+ * that answers each request from `replies` in order. A reply's `usage` is sent
+ * as the stream's final usage chunk; a reply without one sends no usage.
+ * `modelExtensions` overrides the catalog entry, such as its context window.
+ */
+async function promptsAgainstScriptedEndpoint(replies, prompts, modelExtensions = undefined) {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-usage-")));
+  await writeFile(join(workspace, "note.txt"), "nonce\n", "utf8");
+  let served = 0;
+  const provider = createServer(async (request, response) => {
+    for await (const _chunk of request);
+    const reply = replies[served++];
+    const common = { id: `chatcmpl-usage-${served}`, object: "chat.completion.chunk", created: 0, model: "openai/gpt-oss-20b" };
+    const chunk = (fields) => `data: ${JSON.stringify({ ...common, ...fields })}\n\n`;
+    const delta = reply.readNote
+      ? { role: "assistant", tool_calls: [{ index: 0, id: `call-${served}`, type: "function", function: { name: "read", arguments: JSON.stringify({ path: "note.txt" }) } }] }
+      : { role: "assistant", content: reply.content };
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end(
+      chunk({ choices: [{ index: 0, delta, finish_reason: null }] }) +
+        chunk({ choices: [{ index: 0, delta: {}, finish_reason: reply.readNote ? "tool_calls" : "stop" }] }) +
+        (reply.usage === undefined ? "" : chunk({ choices: [], usage: reply.usage })) +
+        "data: [DONE]\n\n",
+    );
+  });
+  const providerUrl = await listen(provider);
+  let handle;
+  try {
+    handle = await new PiSdkSessionFactory().create({
+      agentName: "pi-usage-test",
+      baseDir: workspace,
+      config: {
+        models: {
+          default: {
+            api_key_env: "TEST_API_KEY",
+            base_url: `${providerUrl}/v1`,
+            model: "openai/gpt-oss-20b",
+            provider: "nvidia",
+            ...(modelExtensions === undefined ? {} : { extensions: modelExtensions }),
+          },
+        },
+        tools: { enabled: null },
+      },
+      runtimeContext: { ...makeRuntimeContext(workspace), telemetry: undefined },
+    });
+    const outcomes = [];
+    for (const prompt of prompts) {
+      outcomes.push(await handle.prompt(prompt));
+    }
+    assert.equal(served, replies.length);
+    return outcomes;
+  } finally {
+    await handle?.stop();
+    await close(provider);
+    await rm(workspace, { recursive: true, force: true });
+  }
+}
+
+test(
+  "reports each prompt's own tokens through the Pi SDK",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    const [first, second] = await promptsAgainstScriptedEndpoint(
+      [
+        { readNote: true, usage: { prompt_tokens: 100, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 40 } } },
+        { content: "first", usage: { prompt_tokens: 150, completion_tokens: 0 } },
+        { content: "second", usage: { prompt_tokens: 300, completion_tokens: 25 } },
+      ],
+      ["read the note", "again"],
+    );
+
+    // A reported zero output count stays a measured zero.
+    assert.deepEqual(first.usage, { input: 210, output: 10, cacheRead: 40, cacheWrite: 0 });
+    assert.deepEqual(second.usage, { input: 300, output: 25, cacheRead: 0, cacheWrite: 0 });
+  },
+);
+
+test(
+  "leaves a prompt's tokens unknown when any provider response omits usage",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    const [omitted, mixed, reported] = await promptsAgainstScriptedEndpoint(
+      [
+        { content: "no usage" },
+        { readNote: true, usage: { prompt_tokens: 100, completion_tokens: 10 } },
+        { content: "partial" },
+        { content: "reported", usage: { prompt_tokens: 50, completion_tokens: 5 } },
+      ],
+      ["one", "two", "three"],
+    );
+
+    assert.equal(omitted.text, "no usage");
+    assert.equal(omitted.usage, undefined);
+    assert.equal(mixed.text, "partial");
+    assert.equal(mixed.usage, undefined);
+    assert.deepEqual(reported.usage, { input: 50, output: 5, cacheRead: 0, cacheWrite: 0 });
+  },
+);
+
+test(
+  "counts a compaction that Pi summarizes in one call",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    // The second prompt is longer than Pi's 20,000 recent tokens, so Pi cuts at
+    // that prompt and summarizes only the earlier history, in one call.
+    const [, compacted] = await promptsAgainstScriptedEndpoint(
+      [
+        { content: "first", usage: { prompt_tokens: 100, completion_tokens: 5 } },
+        { readNote: true, usage: { prompt_tokens: 200, completion_tokens: 5 } },
+        { content: "done", usage: { prompt_tokens: 90_000, completion_tokens: 5 } },
+        { content: "history summary", usage: { prompt_tokens: 20, completion_tokens: 1 } },
+      ],
+      ["one", "y".repeat(100_000)],
+      { context_window: 100_000, max_tokens: 1_000 },
+    );
+
+    assert.deepEqual(compacted.usage, { input: 90_220, output: 11, cacheRead: 0, cacheWrite: 0 });
+  },
+);
+
+test(
+  "leaves a prompt's tokens unknown after a split-turn compaction",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    // The second prompt's final reply reports a context above the compaction
+    // threshold and is longer than Pi's 20,000 recent tokens, so Pi cuts inside
+    // that turn and summarizes the history and the turn prefix in two calls.
+    // The history summary reports no usage; the turn-prefix summary does.
+    const [, compacted] = await promptsAgainstScriptedEndpoint(
+      [
+        { content: "first", usage: { prompt_tokens: 100, completion_tokens: 5 } },
+        { readNote: true, usage: { prompt_tokens: 200, completion_tokens: 5 } },
+        { content: "x".repeat(100_000), usage: { prompt_tokens: 90_000, completion_tokens: 5 } },
+        { content: "history summary" },
+        { content: "turn prefix summary", usage: { prompt_tokens: 20, completion_tokens: 1 } },
+      ],
+      ["one", "read the note"],
+      { context_window: 100_000, max_tokens: 1_000 },
+    );
+
+    assert.equal(compacted.usage, undefined);
+  },
+);

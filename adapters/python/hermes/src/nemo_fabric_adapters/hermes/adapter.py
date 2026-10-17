@@ -27,6 +27,7 @@ from nemo_fabric_adapter_contract.models import AgentRunError
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
+from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
@@ -66,6 +67,10 @@ class HermesRuntime:
         self._relay_plugin_config: dict[str, Any] | None = None
         self._relay_plugin_config_path: Path | None = None
         self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
+        # Hermes reports session totals; each invocation reports the change
+        # from this baseline. A counter missing from it has no baseline.
+        self._session_token_totals: dict[str, int] = _fresh_session_totals()
+        self._usage_less_responses = 0
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -217,6 +222,8 @@ class HermesRuntime:
                         session_db=self._session_db,
                     )
                 )
+                self._session_token_totals = _fresh_session_totals()
+                self._count_usage_less_responses(self._agent)
             self._agent_config = agent_config
             self._started = True
         except BaseException:
@@ -284,6 +291,11 @@ class HermesRuntime:
                 "hermes_invocation_in_progress",
                 "Hermes runtime already has an active invocation",
             )
+        # Until this invocation's result arrives the baseline is unknown, so a
+        # failed, cancelled or timed-out invocation never hands its tokens to
+        # the next one.
+        previous_totals, self._session_token_totals = self._session_token_totals, {}
+        usage_less_before = self._usage_less_responses
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
 
@@ -368,11 +380,38 @@ class HermesRuntime:
                     code="hermes_reported_failure",
                     message="Hermes did not complete the invocation",
                 )
+        usage, self._session_token_totals = _invocation_usage(result, previous_totals)
+        if self._usage_less_responses != usage_less_before:
+            # A provider response without usage added no tokens, so the
+            # change in the counters is an undercount, not this invocation's.
+            usage = None
         return AgentRunResult(
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
             output=output,
             error=error,
+            usage=usage,
         )
+
+    def _count_usage_less_responses(self, agent: Any) -> None:
+        """Count the agent's provider responses that carried no usage.
+
+        Hermes counts such a response as an API call but leaves its token
+        counters unchanged, so the counters cannot tell an unreported call
+        from a reported zero. Hermes reports each of these responses to the
+        context compressor's ``note_usage_less_response`` hook, so the
+        adapter wraps that hook on the agent it owns.
+        """
+        compressor = agent.context_compressor
+        note_usage_less_response = getattr(
+            compressor, "note_usage_less_response", None
+        )
+
+        def count_and_note() -> None:
+            self._usage_less_responses += 1
+            if callable(note_usage_less_response):
+                note_usage_less_response()
+
+        compressor.note_usage_less_response = count_and_note
 
     async def _authenticate_mcp_servers(self) -> None:
         if self._mcp_authentication_checked:
@@ -582,6 +621,64 @@ def _invoke_hermes_turn(
             **conversation_kwargs,
         )
     return result, hermes_stdout.getvalue()
+
+
+# Hermes' per-session token counters in a turn's result. Its input_tokens
+# excludes cache reads and cache writes.
+_SESSION_TOKEN_KEYS = (
+    "input_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "output_tokens",
+)
+
+
+def _fresh_session_totals() -> dict[str, int]:
+    """Return the baseline of a new Hermes agent, whose counters start at 0."""
+    return dict.fromkeys(_SESSION_TOKEN_KEYS, 0)
+
+
+def _invocation_usage(
+    result: dict[str, Any], previous_totals: dict[str, int]
+) -> tuple[AgentUsage | None, dict[str, int]]:
+    """Return this invocation's usage and the session totals to keep as baseline.
+
+    Hermes keeps one session across a runtime's invocations, so each counter is
+    the change since ``previous_totals``. A counter that is missing from the
+    result or from ``previous_totals`` (no baseline: the previous invocation
+    failed or its result held no counters), or that went down, is unknown for
+    this invocation. The usage therefore never holds a whole-session total or
+    another invocation's tokens.
+    """
+    totals = {
+        key: value
+        for key in _SESSION_TOKEN_KEYS
+        if isinstance((value := result.get(key)), int)
+        and not isinstance(value, bool)
+        and 0 <= value <= (1 << 64) - 1
+    }
+    change = {
+        key: value - previous_totals[key]
+        for key, value in totals.items()
+        if key in previous_totals and value >= previous_totals[key]
+    }
+    fields: dict[str, Any] = {}
+    if all(
+        key in change
+        for key in ("input_tokens", "cache_read_tokens", "cache_write_tokens")
+    ):
+        fields["input_tokens"] = (
+            change["input_tokens"]
+            + change["cache_read_tokens"]
+            + change["cache_write_tokens"]
+        )
+        fields["cached_input_tokens"] = change["cache_read_tokens"]
+        fields["input_tokens_include_cache"] = True
+    if "output_tokens" in change:
+        fields["output_tokens"] = change["output_tokens"]
+    if "input_tokens" in fields and "output_tokens" in fields:
+        fields["total_tokens"] = fields["input_tokens"] + fields["output_tokens"]
+    return (AgentUsage(**fields) if fields else None), totals
 
 
 def filter_supported_kwargs(callable_obj: Any, **kwargs: Any) -> dict[str, Any]:

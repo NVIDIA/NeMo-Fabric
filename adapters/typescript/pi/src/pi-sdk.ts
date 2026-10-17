@@ -28,7 +28,7 @@ import {
   type PiRelayControllerFactory,
   type PiRelayRuntime,
 } from "./relay.js";
-import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runtime.js";
+import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle, PiTokenUsage } from "./runtime.js";
 
 // ProviderConfigInput isn't re-exported from pi's public entrypoint; derive it from
 // registerProvider's param type (ModelRuntime's constructor is private, so no InstanceType).
@@ -67,6 +67,97 @@ interface PiToolFactoryContext {
   name: string;
   settings: JsonObject;
   workspace: string;
+}
+
+const NO_TOKENS: PiTokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+/**
+ * Add one call's usage to a prompt's running total. A call without a complete
+ * usage report makes the whole total unknown.
+ */
+export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTokenUsage | undefined {
+  if (total === undefined || typeof usage !== "object" || usage === null) {
+    return undefined;
+  }
+  const counts = usage as Record<string, unknown>;
+  const count = (name: keyof PiTokenUsage): number | undefined => {
+    const value = counts[name];
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  };
+  const input = count("input");
+  const output = count("output");
+  const cacheRead = count("cacheRead");
+  const cacheWrite = count("cacheWrite");
+  if (input === undefined || output === undefined || cacheRead === undefined || cacheWrite === undefined) {
+    return undefined;
+  }
+  return {
+    input: total.input + input,
+    output: total.output + output,
+    cacheRead: total.cacheRead + cacheRead,
+    cacheWrite: total.cacheWrite + cacheWrite,
+  };
+}
+
+/**
+ * Add one model call's usage to a prompt's running total. Pi fills a call's
+ * usage with zeros before the response arrives and overwrites it only when the
+ * provider reports usage, so a call whose four counts are all zero is treated
+ * as unreported and makes the total unknown. A provider report of all zeros
+ * looks the same and is discarded too.
+ */
+function addModelCallUsage(total: PiTokenUsage | undefined, usage: unknown): PiTokenUsage | undefined {
+  const call = addUsage(NO_TOKENS, usage);
+  if (call === undefined || Object.values(call).every((count) => count === 0)) {
+    return undefined;
+  }
+  return addUsage(total, call);
+}
+
+/**
+ * Add the tokens one session event recorded to a prompt's running total, as
+ * Pi's own usage totals count them: an assistant message, a tool result that
+ * reports usage, a finished compaction's summary call, and a usage entry such
+ * as a cache warm-up. The total becomes unknown when a model call carries no
+ * usage report, when an assistant message or a compaction was aborted, or when
+ * a compaction summary call was retried: Pi keeps no usage for a call it
+ * stopped or a summary attempt that failed, and either may still have been
+ * billed. It also becomes unknown when Pi prepares a split-turn compaction
+ * (a `session_before_compact` event whose preparation has `isSplitTurn`):
+ * Pi summarizes the history and the turn prefix in separate calls and reports
+ * only their combined usage, so one unreported call cannot be detected.
+ */
+export function addEventUsage(total: PiTokenUsage | undefined, event: unknown): PiTokenUsage | undefined {
+  const fields = (typeof event === "object" && event !== null ? event : {}) as {
+    type?: unknown;
+    message?: { role?: unknown; stopReason?: unknown; usage?: unknown };
+    preparation?: { isSplitTurn?: unknown };
+    aborted?: unknown;
+    result?: { usage?: unknown };
+    entry?: { type?: unknown; usage?: unknown };
+  };
+  switch (fields.type) {
+    case "message_end":
+      if (fields.message?.role === "assistant") {
+        return fields.message.stopReason === "aborted" ? undefined : addModelCallUsage(total, fields.message.usage);
+      }
+      if (fields.message?.role === "toolResult" && fields.message.usage !== undefined) {
+        return addUsage(total, fields.message.usage);
+      }
+      return total;
+    case "compaction_end":
+      return fields.aborted === false && fields.result !== undefined
+        ? addModelCallUsage(total, fields.result.usage)
+        : undefined;
+    case "session_before_compact":
+      return fields.preparation?.isSplitTurn === false ? total : undefined;
+    case "summarization_retry_scheduled":
+      return undefined;
+    case "entry_appended":
+      return fields.entry?.type === "usage" ? addModelCallUsage(total, fields.entry.usage) : total;
+    default:
+      return total;
+  }
 }
 
 export function withCustomBaseUrl<T extends { api: string; baseUrl: string; compat?: object }>(
@@ -496,6 +587,20 @@ function mcpRegistrationExtension(servers: Record<string, McpServerConfig>): Ext
   };
 }
 
+/**
+ * Forward each compaction Pi prepares to the running prompts. Pi passes the
+ * preparation only to extensions, not to session subscribers.
+ */
+function compactionPreparationExtension(listeners: Set<(event: unknown) => void>): ExtensionFactory {
+  return (api) => {
+    api.on("session_before_compact", (event) => {
+      for (const listener of listeners) {
+        listener(event);
+      }
+    });
+  };
+}
+
 function selectModel(config: AgentConfig): AgentModelConfig {
   const entries = Object.entries(config.models ?? {});
   if (entries.length === 0) {
@@ -869,11 +974,19 @@ class PiSdkSessionHandle implements PiSessionHandle {
   private stopped = false;
   private cumulativeTurnCount = 0;
   private readonly runtimeDir: string;
+  private readonly compactionListeners: Set<(event: unknown) => void>;
 
-  constructor(session: AgentSession, state: { shutdownRequested: boolean }, runtimeDir: string, relay?: PiRelayRuntime) {
+  constructor(
+    session: AgentSession,
+    state: { shutdownRequested: boolean },
+    runtimeDir: string,
+    compactionListeners: Set<(event: unknown) => void>,
+    relay?: PiRelayRuntime,
+  ) {
     this.session = session;
     this.state = state;
     this.runtimeDir = runtimeDir;
+    this.compactionListeners = compactionListeners;
     this.relay = relay;
     this.unsubscribeTurnCounter = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
@@ -892,6 +1005,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
     let finalAssistant:
       | { role: "assistant"; content: unknown; stopReason: string; errorMessage?: string }
       | undefined;
+    let usage: PiTokenUsage | undefined = NO_TOKENS;
     const unsubscribe = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         turnStarted = true;
@@ -899,7 +1013,12 @@ class PiSdkSessionHandle implements PiSessionHandle {
       if (event.type === "message_end" && event.message.role === "assistant") {
         finalAssistant = event.message;
       }
+      usage = addEventUsage(usage, event);
     });
+    const onCompactionPrepared = (event: unknown): void => {
+      usage = addEventUsage(usage, event);
+    };
+    this.compactionListeners.add(onCompactionPrepared);
     try {
       await this.session.prompt(text, {
         expandPromptTemplates: true,
@@ -909,6 +1028,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
         },
       });
     } finally {
+      this.compactionListeners.delete(onCompactionPrepared);
       unsubscribe();
     }
     return {
@@ -919,6 +1039,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
       stopReason: finalAssistant?.stopReason,
       errorMessage: finalAssistant?.errorMessage,
       shutdownRequested: this.state.shutdownRequested,
+      usage: finalAssistant === undefined ? undefined : usage,
     };
   }
 
@@ -1079,9 +1200,16 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       runtimeDir = await mkdtemp(join(tmpdir(), "nemo-fabric-pi-"));
       const agentDir = runtimeDir;
       const mcpConnections = new Map(Object.keys(mcpServers).map((name) => [name, mcpReadiness()]));
+      const compactionListeners = new Set<(event: unknown) => void>();
+      const compactionExtension = {
+        name: "nemo-fabric-compaction-usage",
+        hidden: true,
+        factory: compactionPreparationExtension(compactionListeners),
+      };
       const extensionFactories = Object.keys(mcpServers).length === 0
-        ? []
+        ? [compactionExtension]
         : [
+            compactionExtension,
             { name: "nemo-fabric-mcp-servers", hidden: true, factory: mcpRegistrationExtension(mcpServers) },
             {
               name: "nemo-fabric-mcp",
@@ -1170,7 +1298,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         tools: enabled === null ? undefined : enabled,
         excludeTools: blocked,
       });
-      handle = new PiSdkSessionHandle(session, state, runtimeDir, relay);
+      handle = new PiSdkSessionHandle(session, state, runtimeDir, compactionListeners, relay);
       const blockedNames = new Set(blocked);
       const availableNames = new Set(session.getAllTools().map((tool) => tool.name));
       const missing = (enabled ?? []).filter((name) => !blockedNames.has(name) && !availableNames.has(name));
