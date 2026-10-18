@@ -295,6 +295,24 @@ pub enum FabricError {
         /// Human-readable message that excludes credentials and raw diagnostics.
         message: String,
     },
+    /// A runtime lifecycle operation is still active or has an uncertain outcome.
+    #[error(
+        "environment `{environment_id}` has an in-progress or uncertain runtime operation (`{runtime_id}`)"
+    )]
+    EnvironmentInUse {
+        /// Environment whose runtime operation is unresolved.
+        environment_id: String,
+        /// Runtime identity, or `unconfirmed` if the start response was lost.
+        runtime_id: String,
+    },
+    /// An environment release is already in progress.
+    #[error(
+        "environment `{environment_id}` is being released; wait for release_environment() to finish"
+    )]
+    EnvironmentReleaseInProgress {
+        /// Environment whose lifecycle is being released or detached.
+        environment_id: String,
+    },
     /// A non-local runtime was started without an explicitly prepared environment handle.
     #[error(
         "environment provider `{provider}` requires an explicit EnvironmentHandle; call prepare_environment() and then start_runtime_in()"

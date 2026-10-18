@@ -136,8 +136,15 @@ test("normalizes a core-authored Relay plugin document without mutating a stream
     const config = pluginConfig.components[0].config;
     assert.deepEqual(config.atof.sinks[1], streamSink);
     assert.equal(config.atof.sinks[0].output_directory, join(root, "relay-atof", "runtime-1"));
+    assert.deepEqual(await readdir(join(root, "relay-atof")), ["runtime-1"]);
+    assert.deepEqual(await readdir(join(root, "artifacts", "relay")), ["runtime-1"]);
     assert.equal(config.atof.sinks[0].filename, "events.atof.jsonl");
     assert.equal(config.atif.output_directory, join(root, "artifacts", "relay", "runtime-1"));
+    assert.equal(config.opentelemetry.file_sinks[0].output_directory, join(root, "relay-otlp", "runtime-1"));
+    assert.deepEqual(
+      config.opentelemetry.file_sinks.map((sink) => sink.mode),
+      ["append", "overwrite"],
+    );
     assert.equal(config.atif.filename_template, "nemo-relay-atif-{session_id}.json");
     assert.equal(config.atif.agent_name, "NeMo Relay");
     assert.equal(config.atif.model_name, "gpt-4.1-mini");
@@ -367,6 +374,14 @@ test("rejects removed and malformed Relay OpenTelemetry shapes", () => {
     /requires at least one endpoint/,
   );
   assert.throws(
+    () => validateRelayObservability(observability({ opentelemetry: { enabled: true, file_sinks: [] } })),
+    /requires at least one endpoint or file sink/,
+  );
+  assert.throws(
+    () => validateRelayObservability(observability({ opentelemetry: { enabled: true, file_sinks: null } })),
+    /file_sinks must be a list/,
+  );
+  assert.throws(
     () =>
       validateRelayObservability(
         observability({
@@ -441,6 +456,8 @@ test("collects Relay artifact files", async () => {
     await mkdir(atifDir);
     await mkdir(atofDir);
     await writeFile(join(atofDir, "events.atof.jsonl"), "{}\n", "utf8");
+    await writeFile(join(atofDir, "nemo-relay-otlp-1.jsonl"), "{}\n", "utf8");
+    await writeFile(join(atofDir, "nemo-relay-otlp-1.otlp.pb"), "", "utf8");
     const pluginConfig = observability({
       atof: {
         enabled: true,
@@ -457,12 +474,21 @@ test("collects Relay artifact files", async () => {
         output_directory: atifDir,
         filename_template: "trajectory-{session_id}.atif.json",
       },
+      opentelemetry: {
+        enabled: true,
+        file_sinks: [
+          { type: "full", output_directory: atofDir },
+          { type: "full", output_directory: atofDir, format: "proto" },
+        ],
+      },
     });
     const path = join(atifDir, "trajectory-session-1.atif.json");
     await writeFile(path, '{"session_id":"session-1"}', "utf8");
     assert.deepEqual(await collectRelayArtifacts(pluginConfig), [
       { kind: "atif", path },
       { kind: "atof", path: join(atofDir, "events.atof.jsonl") },
+      { kind: "otlp", path: join(atofDir, "nemo-relay-otlp-1.jsonl"), format: "json_lines" },
+      { kind: "otlp", path: join(atofDir, "nemo-relay-otlp-1.otlp.pb"), format: "proto" },
     ]);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -522,6 +548,15 @@ test("skips disabled components during output normalization and artifact collect
     const before = structuredClone(disabledConfig);
     await normalizeRelayOutputDirs(disabledConfig, startInput(root));
     assert.deepEqual(disabledConfig, before);
+    // A disabled section's sinks get a directory path, but no directory or artifacts.
+    const disabledSection = observability({ opentelemetry: { enabled: false, file_sinks: [{ type: "full" }] } });
+    await normalizeRelayOutputDirs(disabledSection, startInput(root));
+    const outputDirectory = join(root, "artifacts", "relay", "runtime-1");
+    assert.equal(disabledSection.components[0].config.opentelemetry.file_sinks[0].output_directory, outputDirectory);
+    assert.deepEqual(await readdir(root), []);
+    await mkdir(outputDirectory, { recursive: true });
+    await writeFile(join(outputDirectory, "nemo-relay-otlp-1.jsonl"), "{}\n", "utf8");
+    assert.deepEqual(await collectRelayArtifacts(disabledSection), []);
 
     const path = join(root, "events.atof.jsonl");
     await writeFile(path, "{}\n", "utf8");
@@ -546,6 +581,60 @@ test("skips disabled components during output normalization and artifact collect
     } else {
       process.env.FABRIC_RELAY_CONFIG_PATH = previousConfigPath;
     }
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects an invalid Relay output directory and defaults omitted or null fields", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-output-directory-")));
+  try {
+    for (const [config, section] of [
+      [
+        {
+          atof: {
+            enabled: true,
+            sinks: [
+              { type: "stream", url: "https://example.test/events" },
+              { type: "file", output_directory: 42 },
+            ],
+          },
+        },
+        "atof.sinks[1]",
+      ],
+      [{ opentelemetry: { file_sinks: [{ type: "full", output_directory: "" }] } }, "opentelemetry.file_sinks[0]"],
+      [{ atif: { enabled: true, output_directory: " " } }, "atif"],
+    ]) {
+      await assert.rejects(normalizeRelayOutputDirs(observability(config), startInput(root)), {
+        message: `NeMo Relay ${section}.output_directory must be a non-empty string`,
+      });
+    }
+
+    const directory = join(root, "artifacts", "relay", "runtime-1");
+    for (const nullFields of [false, true]) {
+      const fields = (...names) => (nullFields ? Object.fromEntries(names.map((name) => [name, null])) : {});
+      const pluginConfig = observability({
+        atof: { enabled: true, sinks: [{ type: "file", ...fields("output_directory", "filename", "mode") }] },
+        opentelemetry: { file_sinks: [{ type: "full", ...fields("output_directory", "mode") }] },
+        atif: { enabled: true, ...fields("output_directory", "filename_template", "agent_name", "model_name") },
+      });
+      await normalizeRelayOutputDirs(pluginConfig, startInput(root));
+      assert.deepEqual(pluginConfig.components[0].config, {
+        version: 4,
+        atof: {
+          enabled: true,
+          sinks: [{ type: "file", output_directory: directory, filename: "events.atof.jsonl", mode: "overwrite" }],
+        },
+        opentelemetry: { file_sinks: [{ type: "full", output_directory: directory, mode: "append" }] },
+        atif: {
+          enabled: true,
+          output_directory: directory,
+          filename_template: "trajectory-{session_id}.atif.json",
+          agent_name: "pi-relay-test",
+          model_name: "gpt-4.1-mini",
+        },
+      });
+    }
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

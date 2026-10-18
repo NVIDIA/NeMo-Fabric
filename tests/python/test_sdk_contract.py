@@ -1132,10 +1132,12 @@ def test_relay_generic_observability_component_reports_version_before_v4_shape()
     [
         ({"enabled": True}, False),
         ({"enabled": True, "endpoints": []}, False),
+        ({"enabled": True, "file_sinks": []}, False),
         ({"enabled": False, "endpoints": []}, True),
+        ({"enabled": True, "file_sinks": [{"type": "openinference"}]}, True),
     ],
 )
-def test_relay_generic_observability_component_requires_enabled_endpoint(
+def test_relay_generic_observability_component_requires_enabled_endpoint_or_file_sink(
     opentelemetry: dict[str, object],
     valid: bool,
 ):
@@ -1166,6 +1168,7 @@ def test_relay_generic_observability_component_requires_enabled_endpoint(
         ({"enabled": "true"}, r"opentelemetry\.enabled must be a boolean"),
         ({"endpoints": None}, r"opentelemetry\.endpoints must be a list"),
         ({"endpoints": "endpoint"}, r"opentelemetry\.endpoints must be a list"),
+        ({"file_sinks": None}, r"opentelemetry\.file_sinks must be a list"),
         (
             {"endpoints": [False]},
             r"endpoint must be an object for relay\.components\[0\]",
@@ -1291,11 +1294,18 @@ def test_relay_opentelemetry_endpoint_must_be_nonblank(endpoint: str):
         RelayOpenTelemetryEndpointConfig(type="full", endpoint=endpoint)
 
 
-def test_relay_opentelemetry_requires_an_endpoint_when_enabled():
+def test_relay_opentelemetry_requires_an_endpoint_or_file_sink_when_enabled():
     with pytest.raises(ValidationError, match="requires at least one endpoint"):
         RelayOpenTelemetryConfig(enabled=True)
+    with pytest.raises(ValidationError, match="at least one endpoint or file sink"):
+        RelayOpenTelemetryConfig(enabled=True, file_sinks=[])
+    with pytest.raises(ValidationError, match="file_sinks must be a list"):
+        RelayOpenTelemetryConfig(enabled=True, file_sinks=None)
 
     assert RelayOpenTelemetryConfig().endpoints == []
+    file_sinks = [{"type": "openinference", "output_directory": "./traces"}]
+    config = RelayOpenTelemetryConfig(enabled=True, file_sinks=file_sinks)
+    assert config.extra_fields == {"file_sinks": file_sinks}
 
 
 def test_relay_observability_rejects_legacy_openinference_section():
