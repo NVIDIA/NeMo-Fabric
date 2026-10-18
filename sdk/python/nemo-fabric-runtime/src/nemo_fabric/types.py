@@ -1609,7 +1609,9 @@ class TelemetryRef(FabricMapping):
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
         metadata = _mapping(data.get("metadata", {}), "telemetry metadata")
-        if "relay_enabled" in data:
+        if "provider" in data and "kind" in data:
+            data.pop("relay_enabled", None)
+        elif "relay_enabled" in data:
             providers = metadata.get("telemetry_providers")
             provider = (
                 providers[0]

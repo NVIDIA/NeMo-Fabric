@@ -14,6 +14,7 @@ mod record;
 pub mod resource_snapshot;
 pub mod runtime;
 pub mod schema;
+mod task_command;
 mod time;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};

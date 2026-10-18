@@ -41,4 +41,4 @@ Refer to the [NeMo Fabric documentation](https://docs.nvidia.com/nemo/fabric)
 for installation and usage guidance. Source code is available in the
 [NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/NeMo-Fabric).
 
-The package also installs `fabric-agent-ctl`, a command bridge and foreground runtime server for controlling one SDK runtime lifecycle inside one sandbox. Refer to the [NeMo Fabric runtime server guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md) for SDK command mappings, runtime IDs, socket ownership, and sandbox lifecycle.
+The package also installs `fabric-agent-ctl`, a command bridge and foreground runtime server for controlling multiple independent SDK runtime IDs inside one sandbox. Refer to the [NeMo Fabric runtime server guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md) for SDK command mappings, runtime IDs, socket ownership, and sandbox lifecycle.

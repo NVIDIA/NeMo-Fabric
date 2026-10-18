@@ -20,6 +20,7 @@ openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", rev = "6648bd0
 openshell-sdk = { git = "https://github.com/NVIDIA/OpenShell", rev = "6648bd0c290efbc41ba131ee9831ee45cd431f94" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.10"
 thiserror = { workspace = true }
 tokio = { version = "1.43", features = ["macros", "rt-multi-thread"] }
 tonic = "0.14"
