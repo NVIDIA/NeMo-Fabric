@@ -967,6 +967,7 @@ Important fields:
 | `telemetry` | References to NeMo Relay or other telemetry streams produced by the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
+| `what_ran` | What executed for this invocation, and how NeMo Fabric learned each fact. |
 | `runtime_id`, `invocation_id`, `request_id` | IDs for correlation across runtimes, logs, telemetry, and artifacts. |
 
 These are structured correlation fields, not interchangeable metadata:
@@ -995,6 +996,79 @@ Each counter is optional: missing values are unknown, not zero. `cached_input_to
 If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial
 `RunResult`.
+
+### What Ran
+
+`what_ran` records what executed for the invocation, as schema
+`nemo.fabric.what_ran` version `v1alpha1`. Each fact is an object with a
+`value`, or with a `state` and a `reason` when it has no value. Both forms
+carry `source`, `collected_by`, and `method`:
+
+- `source` is `observed` when NeMo Fabric core saw the fact itself, `reported`
+  when the adapter, harness, an MCP server, or a remote service said so, and
+  `configured` when it comes from the resolved plan.
+- `state` is `not_applicable` when the fact cannot exist for this run,
+  `unsupported` when there is no source for it, `collection_failed` when the
+  source failed, and `unavailable` when NeMo Fabric holds no value and no
+  evidence for the other states.
+- `collected_by`, `method`, and `reason` are open codes that match
+  `^[a-z0-9_.:#+/-]{1,128}$`. Accept values you do not recognize.
+  `collected_by` is `task_core` for facts a core inside an OpenShell sandbox
+  collected. `method` names the technique, such as `crate_version`,
+  `resolved_plan`, or `adapter_report`.
+
+| Part | Facts |
+| --- | --- |
+| `fabric` | `core_version` of the core that ran the adapter. `host_core_version` is `not_applicable` with reason `local_run` in a local run, and the host core's version in an OpenShell run. |
+| `adapter` | `id` from the plan, and the reported `package_version`. |
+| `harness` | The reported `name` and `version` of the harness program. |
+| `models.<role>` | `provider` and the `requested` model from the plan, and the reported `served` model. |
+| `mcp.servers.<name>` | `origin`, `transport`, the configured `endpoint`, and a `runtime` block with the reported `connected`, `protocol_version`, `server_name`, `server_version`, and `tool_names`. |
+| `environment` | The environment `provider`, such as `local` or `openshell`. |
+
+NeMo Fabric reads no adapter-reported facts yet, so every reported fact has
+state `unsupported` with reason `key_not_declared` and method
+`adapter_report`.
+
+Today every MCP entry has `origin` `plan`. An entry with `origin` `harness`
+describes a server the harness reports but the plan does not configure. It has
+the same shape, except that `transport` can be absent and `endpoint` has state
+`not_applicable` with reason `not_configured`.
+
+`endpoint` keeps no secret. A network server's endpoint is its lowercase scheme
+and host and its port. A URL without a port gets 80 for `http` and `ws` and 443
+for `https` and `wss`, so `https://example.com` and `https://example.com:443`
+give the same endpoint. An IPv6 host keeps its brackets, in compressed lowercase
+form such as `[2001:db8::1]`. A `stdio` server's endpoint is the file name of
+its executable, such as `server.exe` for `C:\MCP\server.exe`.
+User info, paths, queries, fragments, headers, arguments, and environment values
+are never copied.
+
+An endpoint NeMo Fabric cannot reduce safely has state `collection_failed` with
+reason `endpoint_unparsed` or `executable_unparsed`. Examples are a URL with an
+`@` after the host, a bracketed host that is not an IPv6 address, and an
+executable that contains `=` or any whitespace, even in a folder name. An empty
+URL or executable has state `unavailable` with reason `not_configured`.
+
+A string value longer than 256 characters keeps its first 240 characters, then
+`~`, then the first 15 hex digits of its SHA-256. The rule applies to each
+element of a list value too.
+
+`what_ran` is `None` when the core that produced the result predates it. The
+Rust core and the Python SDK apply the same structural checks. A `what_ran`
+that is not an object, names another schema or version, or has a malformed
+section or fact reads as `None`, and the rest of the result is unchanged. A
+fact with both `value` and `state` is malformed. Unknown properties are
+ignored. Treat `what_ran` as evidence, not as a key for grouping runs.
+
+```python
+what_ran = result.what_ran
+if what_ran is not None:
+    core = what_ran["fabric"]["core_version"]
+    print(core.get("value"), core["source"])
+    for role, model in what_ran["models"].items():
+        print(role, model["requested"].get("value"), model["served"].get("state"))
+```
 
 ## Events
 

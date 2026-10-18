@@ -21,6 +21,7 @@ Every invocation that reaches the adapter boundary returns a normalized
 | `telemetry` | References to NVIDIA NeMo Relay or other telemetry streams from the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
+| `what_ran` | What executed for this invocation: core version, adapter ID, requested models, configured MCP servers, and environment provider, each fact with its source, or `None` when the core predates it. |
 | `runtime_id`, `invocation_id`, `request_id` | Correlation IDs across runtimes, logs, telemetry, and artifacts. |
 
 Handle a result with this status-first pattern:
@@ -45,6 +46,15 @@ if result.usage is not None:
 ```
 
 Treat missing counters and cost as unknown, not zero. `cached_input_tokens` reports cached prompt tokens; `input_tokens_include_cache` declares whether `input_tokens` includes them (`True`), excludes them (`False`), or has unknown semantics (absent). Do not add cache to an inclusive input count. Adapters can put cache-write, reasoning, peak request, and per-model detail in the descriptor-declared `usage.extensions["nemo_fabric.detailed_token_usage.v1"]` object. NeMo Fabric preserves that object at `result.usage["metadata"]["nemo_fabric.detailed_token_usage.v1"]`. Treat detailed input and output independently: any detailed accounting field for a dimension makes that dimension authoritative, with no fallback to its top-level counters. The views can diverge. Calculate an inclusive total only when the selected detailed counters provide enough information; otherwise leave the total unknown. Keep estimated costs separate in provider metadata; `cost_usd` is reported cost, not an estimate.
+
+Read `what_ran` as evidence of what executed, never as a grouping key. Each
+fact holds a `value`, or a `state` and `reason` when it has no value, plus
+`source`, `collected_by`, and `method`. Accept `collected_by`, `method`, and
+`reason` codes you do not recognize. Adapter-reported facts, such as the
+harness version and the served model, currently read state `unsupported` with
+reason `key_not_declared`. A malformed `what_ran` reads as `None` without
+failing the result. Refer to
+[What Ran](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#what-ran).
 
 ## Correlation IDs
 
