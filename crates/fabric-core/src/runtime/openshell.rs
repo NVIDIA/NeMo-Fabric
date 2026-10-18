@@ -929,6 +929,10 @@ mod tests {
             "task_core"
         );
         assert_eq!(
+            what_ran["adapter"]["descriptor_fingerprint"]["collected_by"],
+            "task_core"
+        );
+        assert_eq!(
             what_ran["harness"]["version"]["collected_by"], "adapter",
             "adapter facts keep their collector"
         );

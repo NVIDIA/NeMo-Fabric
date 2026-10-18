@@ -51,6 +51,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::config::{McpServerPlan, McpTransport, ModelConfig, RunPlan};
+use crate::descriptor_fingerprint::METHOD_ADAPTER_DESCRIPTOR;
 use crate::endpoint::{endpoint_identity, executable_name};
 
 /// Schema name written into every [`WhatRan`].
@@ -355,6 +356,12 @@ pub struct AdapterFacts {
     pub id: Option<String>,
     /// Version of the adapter package, as the adapter reports it.
     pub package_version: Fact<String>,
+    /// Fingerprint `nemo.fabric.adapter_descriptor/v1` of the descriptor
+    /// contents as authored, `sha256:<hex>`. Core writes it whenever the
+    /// `adapter` section is present; readers accept its absence from cores
+    /// that predate it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descriptor_fingerprint: Option<Fact<String>>,
 }
 
 /// Harness facts.
@@ -457,6 +464,8 @@ const METHOD_RESOLVED_PLAN: &str = "resolved_plan";
 const METHOD_ADAPTER_REPORT: &str = "adapter_report";
 const REASON_KEY_NOT_DECLARED: &str = "key_not_declared";
 const REASON_LOCAL_RUN: &str = "local_run";
+const REASON_NO_ADAPTER: &str = "no_adapter";
+const REASON_NOT_IN_PLAN: &str = "not_in_plan";
 const REASON_NOT_CONFIGURED: &str = "not_configured";
 const REASON_ENDPOINT_UNPARSED: &str = "endpoint_unparsed";
 const REASON_EXECUTABLE_UNPARSED: &str = "executable_unparsed";
@@ -561,6 +570,12 @@ impl WhatRan {
         }
         if let Some(adapter) = adapter {
             origins.push(adapter.package_version.origin_mut());
+            origins.extend(
+                adapter
+                    .descriptor_fingerprint
+                    .as_mut()
+                    .map(Fact::origin_mut),
+            );
         }
         if let Some(harness) = harness {
             origins.extend([harness.name.origin_mut(), harness.version.origin_mut()]);
@@ -705,6 +720,7 @@ pub(crate) fn collect_before_request(
         adapter: Some(AdapterFacts {
             id: adapter_id,
             package_version: Fact::report_key_not_declared(),
+            descriptor_fingerprint: Some(descriptor_fingerprint_fact(plan)),
         }),
         harness: Some(HarnessFacts {
             name: Fact::report_key_not_declared(),
@@ -795,6 +811,31 @@ fn core_version_fact() -> Fact<String> {
         HOST_CORE,
         METHOD_CRATE_VERSION,
     )
+}
+
+/// The fingerprint plan resolution took of the adapter descriptor file.
+fn descriptor_fingerprint_fact(plan: &RunPlan) -> Fact<String> {
+    let missing = |state, reason| {
+        Fact::missing(
+            state,
+            reason,
+            FactSource::Observed,
+            HOST_CORE,
+            METHOD_ADAPTER_DESCRIPTOR,
+        )
+    };
+    let Some(adapter) = &plan.adapter_descriptor else {
+        return missing(FactState::NotApplicable, REASON_NO_ADAPTER);
+    };
+    match &adapter.descriptor_fingerprint {
+        Some(fingerprint) => Fact::text(
+            fingerprint,
+            FactSource::Observed,
+            HOST_CORE,
+            METHOD_ADAPTER_DESCRIPTOR,
+        ),
+        None => missing(FactState::Unavailable, REASON_NOT_IN_PLAN),
+    }
 }
 
 fn model_facts(model: &ModelConfig) -> ModelFacts {
@@ -1035,8 +1076,14 @@ mod tests {
 
     #[test]
     fn collected_facts_read_the_plan_and_mark_adapter_facts_key_not_declared() {
-        let what_ran = collect(&plan_with_secrets());
+        let plan = plan_with_secrets();
+        let what_ran = collect(&plan);
         let not_declared = not_declared();
+        let fingerprint = plan
+            .adapter_descriptor
+            .as_ref()
+            .and_then(|adapter| adapter.descriptor_fingerprint.as_deref())
+            .expect("plan resolution fingerprints the descriptor");
 
         assert_eq!(
             what_ran,
@@ -1050,7 +1097,13 @@ mod tests {
                         "source": "observed", "collected_by": "host_core",
                         "method": "crate_version"}
                 },
-                "adapter": {"id": "nvidia.fabric.claude", "package_version": not_declared},
+                "adapter": {
+                    "id": "nvidia.fabric.claude",
+                    "package_version": not_declared,
+                    "descriptor_fingerprint": {"value": fingerprint, "source": "observed",
+                        "collected_by": "host_core",
+                        "method": "nemo.fabric.adapter_descriptor/v1"}
+                },
                 "harness": {"name": not_declared, "version": not_declared},
                 "models": {"default": {
                     "provider": "anthropic",
@@ -1082,8 +1135,8 @@ mod tests {
         let what_ran = collect(&plan_with_secrets());
         let facts = facts(&what_ran);
 
-        // 2 fabric + 1 adapter + 2 harness + 2 model + 3 servers x (endpoint + 5 runtime).
-        assert_eq!(facts.len(), 25);
+        // 2 fabric + 2 adapter + 2 harness + 2 model + 3 servers x (endpoint + 5 runtime).
+        assert_eq!(facts.len(), 26);
         for fact in facts {
             assert_ne!(
                 fact.contains_key("value"),
@@ -1369,6 +1422,26 @@ mod tests {
         }
         let text = serde_json::to_string(&what_ran).expect("JSON");
         assert!(!text.contains("SECRET"), "{text}");
+    }
+
+    #[test]
+    fn descriptor_fingerprint_without_adapter_or_plan_value_reads_a_state() {
+        let mut plan = resolve_plan(config_for("nvidia.fabric.claude"));
+        let fact = |plan: &RunPlan| {
+            serde_json::to_value(descriptor_fingerprint_fact(plan)).expect("fact JSON")
+        };
+        let missing = |state: &str, reason: &str| {
+            json!({"state": state, "reason": reason, "source": "observed",
+                   "collected_by": "host_core",
+                   "method": "nemo.fabric.adapter_descriptor/v1"})
+        };
+
+        if let Some(adapter) = plan.adapter_descriptor.as_mut() {
+            adapter.descriptor_fingerprint = None;
+        }
+        assert_eq!(fact(&plan), missing("unavailable", "not_in_plan"));
+        plan.adapter_descriptor = None;
+        assert_eq!(fact(&plan), missing("not_applicable", "no_adapter"));
     }
 
     #[test]

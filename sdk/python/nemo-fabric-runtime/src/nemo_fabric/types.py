@@ -2075,8 +2075,13 @@ def _is_fabric_section(fabric: Any) -> bool:
 
 
 def _is_adapter_section(adapter: Any) -> bool:
-    return _has_facts(adapter, {"package_version": _is_text}) and (
-        adapter.get("id") is None or isinstance(adapter.get("id"), str)
+    return (
+        _has_facts(adapter, {"package_version": _is_text})
+        and (adapter.get("id") is None or isinstance(adapter.get("id"), str))
+        and (
+            adapter.get("descriptor_fingerprint") is None
+            or _is_fact(adapter["descriptor_fingerprint"], _is_text)
+        )
     )
 
 

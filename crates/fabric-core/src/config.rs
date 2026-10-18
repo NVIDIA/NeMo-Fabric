@@ -21,6 +21,7 @@ pub use crate::agent_config::{
     AgentToolDefinition, AgentToolsConfig, AgentWorkflowConfig, AgentWorkflowEntrypointConfig,
 };
 use crate::agent_execution::{AgentRunRequest, AgentRunResult};
+use crate::descriptor_fingerprint::fingerprint_authored_descriptor;
 use crate::error::{FabricError, Result};
 
 /// Versioned NVIDIA NeMo Fabric agent config.
@@ -425,6 +426,13 @@ pub struct ResolvedAdapterDescriptor {
     pub provenance: Vec<DescriptorProvenance>,
     /// Adapter-owned compatibility and capability metadata.
     pub descriptor: AdapterDescriptor,
+    /// Fingerprint `nemo.fabric.adapter_descriptor/v1` of the first
+    /// provenance record's file, the one core runs the adapter from:
+    /// `sha256:` and the lowercase hex SHA-256 of the RFC 8785 form of the
+    /// descriptor as authored, before core fills in defaults. Absent in
+    /// plans from cores that predate it and in standalone inspection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descriptor_fingerprint: Option<String>,
 }
 
 impl ResolvedAdapterDescriptor {
@@ -490,6 +498,10 @@ struct DescriptorDiagnostic {
 #[derive(Debug, Clone, Default)]
 struct DescriptorRegistry {
     adapters: BTreeMap<String, Vec<DescriptorRecord<AdapterDescriptor>>>,
+    /// Authored fingerprint of each adapter descriptor file, keyed by its
+    /// canonical path, taken from the same bytes the descriptor was loaded
+    /// from.
+    adapter_fingerprints: BTreeMap<PathBuf, String>,
     targets: BTreeMap<String, Vec<DescriptorRecord<AdapterTargetDescriptor>>>,
     diagnostics: Vec<DescriptorDiagnostic>,
 }
@@ -598,8 +610,9 @@ impl DescriptorRegistry {
             root,
         };
         match kind {
-            DescriptorKind::Adapter => match load_adapter_descriptor(&path) {
-                Ok(descriptor) => {
+            DescriptorKind::Adapter => match load_adapter_descriptor_with_fingerprint(&path) {
+                Ok((descriptor, fingerprint)) => {
+                    self.adapter_fingerprints.insert(path.clone(), fingerprint);
                     let id = descriptor.adapter_id.clone();
                     Self::insert_record(&mut self.adapters, id, descriptor, provenance);
                 }
@@ -1857,6 +1870,20 @@ pub fn load_adapter_descriptor(path: impl AsRef<Path>) -> Result<AdapterDescript
     Ok(descriptor)
 }
 
+/// Load an adapter descriptor and fingerprint it as authored, both from
+/// one read of the file.
+fn load_adapter_descriptor_with_fingerprint(path: &Path) -> Result<(AdapterDescriptor, String)> {
+    let raw = read_text(path)?;
+    let parse_error = |source| FabricError::ParseJson {
+        path: path.to_path_buf(),
+        source,
+    };
+    let descriptor: AdapterDescriptor = serde_json::from_str(&raw).map_err(parse_error)?;
+    validate_adapter_descriptor_shape(&descriptor, path)?;
+    let authored: Value = serde_json::from_str(&raw).map_err(parse_error)?;
+    Ok((descriptor, fingerprint_authored_descriptor(&authored)))
+}
+
 /// Load an Adapter Target Descriptor from declarative JSON metadata.
 pub fn load_adapter_target_descriptor(path: impl AsRef<Path>) -> Result<AdapterTargetDescriptor> {
     let path = path.as_ref();
@@ -2466,7 +2493,10 @@ pub fn inspect_adapter_config(
         .parent()
         .expect("canonical descriptor has a parent")
         .to_path_buf();
+    // Inspection returns only the descriptor and telemetry plan, so it
+    // takes no fingerprint.
     let resolved = ResolvedAdapterDescriptor {
+        descriptor_fingerprint: None,
         provenance: vec![DescriptorProvenance {
             source: DescriptorSource::ExplicitLocal,
             path,
@@ -2522,14 +2552,18 @@ fn resolve_run_plan_from_config_with_adapter_directories_mode(
     resolve_run_plan(config, base_dir, adapter_directories, enforce_compatibility)
 }
 
+fn read_text(path: &Path) -> Result<String> {
+    std::fs::read_to_string(path).map_err(|source| FabricError::Read {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
 fn read_json<T>(path: &Path) -> Result<T>
 where
     T: for<'de> Deserialize<'de>,
 {
-    let raw = std::fs::read_to_string(path).map_err(|source| FabricError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let raw = read_text(path)?;
     serde_json::from_str(&raw).map_err(|source| FabricError::ParseJson {
         path: path.to_path_buf(),
         source,
@@ -2937,6 +2971,11 @@ fn resolve_descriptors(
         Some(ResolvedAdapterDescriptor {
             provenance: adapter_record.provenance.clone(),
             descriptor: adapter_record.descriptor.clone(),
+            descriptor_fingerprint: adapter_record
+                .provenance
+                .first()
+                .and_then(|primary| registry.adapter_fingerprints.get(&primary.path))
+                .cloned(),
         }),
         target_record.map(|record| ResolvedAdapterTargetDescriptor {
             provenance: record.provenance.clone(),
@@ -4334,6 +4373,31 @@ mod tests {
         assert!(inspect_adapter_config(mismatch, &path).is_err());
     }
 
+    /// The fingerprint keeps the last of duplicate keys, so a duplicate
+    /// known field must never reach it: the typed loader rejects one.
+    #[test]
+    fn descriptor_with_a_duplicate_known_field_fails_to_load() {
+        let path = repository_adapter_dir().join("python/hermes/hermes.fabric-adapter.json");
+        let raw = fs::read_to_string(&path).expect("descriptor");
+        let duplicated = raw.replacen('{', r#"{"adapter_id": "other.adapter", "#, 1);
+
+        let error = serde_json::from_str::<AdapterDescriptor>(&duplicated)
+            .expect_err("a duplicate known field must fail");
+
+        assert!(error.to_string().contains("duplicate field"), "{error}");
+    }
+
+    #[test]
+    fn host_inspection_leaves_the_descriptor_fingerprint_absent() {
+        let path = repository_adapter_dir().join("python/hermes/hermes.fabric-adapter.json");
+
+        let inspection = inspect_adapter_config(typed_config("nvidia.fabric.hermes"), &path)
+            .expect("host inspection");
+
+        let text = serde_json::to_string(&inspection).expect("inspection JSON");
+        assert!(!text.contains("descriptor_fingerprint"), "{text}");
+    }
+
     fn typed_config(adapter_id: &str) -> FabricConfig {
         serde_json::from_value(serde_json::json!({
             "schema_version": "fabric.agent/v1alpha1",
@@ -4402,6 +4466,7 @@ mod tests {
                 path,
             }],
             descriptor,
+            descriptor_fingerprint: None,
         }
     }
 

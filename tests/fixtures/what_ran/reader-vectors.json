@@ -26,6 +26,12 @@
         "source": "reported",
         "collected_by": "adapter",
         "method": "adapter_report"
+      },
+      "descriptor_fingerprint": {
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "source": "observed",
+        "collected_by": "host_core",
+        "method": "nemo.fabric.adapter_descriptor/v1"
       }
     },
     "harness": {
@@ -445,6 +451,18 @@
               "dropped": 1
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "no descriptor fingerprint, from a core that predates it",
+      "patch": [
+        {
+          "path": [
+            "adapter",
+            "descriptor_fingerprint"
+          ],
+          "remove": true
         }
       ]
     }
@@ -1016,6 +1034,18 @@
             "servers_truncated"
           ],
           "value": null
+        }
+      ]
+    },
+    {
+      "name": "descriptor fingerprint that is not a fact",
+      "patch": [
+        {
+          "path": [
+            "adapter",
+            "descriptor_fingerprint"
+          ],
+          "value": "sha256:00"
         }
       ]
     }

@@ -422,6 +422,11 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert result.what_ran["adapter"]["id"] == "test.fabric.hermes_shim"
     assert result.what_ran["harness"]["version"]["reason"] == "key_not_declared"
     assert result.what_ran["environment"] == {"provider": "local"}
+    # The plan crossed the SDK as JSON, and the fingerprint survived it.
+    fingerprint = result.what_ran["adapter"]["descriptor_fingerprint"]
+    assert fingerprint["value"].startswith("sha256:")
+    assert len(fingerprint["value"]) == len("sha256:") + 64
+    assert fingerprint["method"] == "nemo.fabric.adapter_descriptor/v1"
     assert result.output["native_mcp_servers"] == ["github"]
     assert any(artifact.name == "stdout" for artifact in result.artifacts.artifacts)
     assert first["status"] == "succeeded"

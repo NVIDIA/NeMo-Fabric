@@ -7,6 +7,7 @@ pub mod adapter_contract;
 pub mod agent_config;
 pub mod agent_execution;
 pub mod config;
+mod descriptor_fingerprint;
 pub mod doctor;
 mod endpoint;
 mod environment;
