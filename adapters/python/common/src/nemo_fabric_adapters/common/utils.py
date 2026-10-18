@@ -524,9 +524,13 @@ def validate_relay_observability(plugin_config: dict[str, Any]) -> None:
         endpoints = opentelemetry.get("endpoints")
         if "endpoints" in opentelemetry and not isinstance(endpoints, list):
             raise ValueError("NeMo Relay opentelemetry.endpoints must be a list")
-        if enabled and not endpoints:
+        file_sinks = opentelemetry.get("file_sinks")
+        if "file_sinks" in opentelemetry and not isinstance(file_sinks, list):
+            raise ValueError("NeMo Relay opentelemetry.file_sinks must be a list")
+        if enabled and not endpoints and not file_sinks:
             raise ValueError(
-                "enabled NeMo Relay OpenTelemetry requires at least one endpoint"
+                "enabled NeMo Relay OpenTelemetry requires at least one endpoint "
+                "or file sink"
             )
         for index, endpoint in enumerate(endpoints or []):
             if not isinstance(endpoint, dict):
@@ -581,6 +585,29 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
     return plugin_config
 
 
+def _normalize_relay_output_directory(
+    config: dict[str, Any], section: str, base: Path, runtime_id: Any
+) -> Path:
+    # Relay sees only the rewritten path, so reject an invalid directory here
+    # instead of replacing it with the default.
+    output_directory = config.get("output_directory")
+    if output_directory is None:
+        output_directory = "artifacts/relay"
+    elif not isinstance(output_directory, str) or not output_directory.strip():
+        raise ValueError(
+            f"NeMo Relay {section}.output_directory must be a non-empty string"
+        )
+    path = base / output_directory / str(runtime_id)
+    config["output_directory"] = str(path)
+    return path
+
+
+def _set_default(config: dict[str, Any], key: str, value: Any) -> None:
+    # Unlike dict.setdefault, treat a null field as omitted, as the Pi adapter does.
+    if config.get(key) is None:
+        config[key] = value
+
+
 def normalize_relay_output_dirs(
     plugin_config: dict[str, Any], payload: dict[str, Any]
 ) -> None:
@@ -595,37 +622,35 @@ def normalize_relay_output_dirs(
 
         atof = config.get("atof")
         if isinstance(atof, dict) and atof.get("enabled"):
-            for sink in atof.get("sinks") or []:
+            for index, sink in enumerate(atof.get("sinks") or []):
                 if not isinstance(sink, dict) or sink.get("type") != "file":
                     continue
-                output_directory = sink.get("output_directory")
-                if output_directory:
-                    path = Path(output_directory)
-                    if not path.is_absolute():
-                        path = base / path
-                else:
-                    path = base / "artifacts" / "relay"
-                sink["output_directory"] = str(path / str(runtime_id))
-                Path(sink["output_directory"]).mkdir(parents=True, exist_ok=True)
-                sink.setdefault("filename", "events.atof.jsonl")
-                sink.setdefault("mode", "overwrite")
+                path = _normalize_relay_output_directory(
+                    sink, f"atof.sinks[{index}]", base, runtime_id
+                )
+                path.mkdir(parents=True, exist_ok=True)
+                _set_default(sink, "filename", "events.atof.jsonl")
+                _set_default(sink, "mode", "overwrite")
+
+        # Relay validates file sinks even in a disabled section or component and
+        # creates the directory when it opens a sink. A runtime may reopen Relay,
+        # so sinks append to keep its earlier spans.
+        file_sinks = (config.get("opentelemetry") or {}).get("file_sinks") or []
+        for index, sink in enumerate(file_sinks):
+            if isinstance(sink, dict):
+                _normalize_relay_output_directory(
+                    sink, f"opentelemetry.file_sinks[{index}]", base, runtime_id
+                )
+                _set_default(sink, "mode", "append")
 
         atif = config.get("atif")
         if not isinstance(atif, dict) or not atif.get("enabled"):
             continue
-        output_directory = atif.get("output_directory")
-        if output_directory:
-            path = Path(output_directory)
-            if not path.is_absolute():
-                path = base / path
-        else:
-            path = base / "artifacts" / "relay"
-
-        atif["output_directory"] = str(path / str(runtime_id))
-        Path(atif["output_directory"]).mkdir(parents=True, exist_ok=True)
-        atif.setdefault("filename_template", "trajectory-{session_id}.atif.json")
-        atif.setdefault("agent_name", agent_name(payload))
-        atif.setdefault("model_name", relay_model_name(payload))
+        path = _normalize_relay_output_directory(atif, "atif", base, runtime_id)
+        path.mkdir(parents=True, exist_ok=True)
+        _set_default(atif, "filename_template", "trajectory-{session_id}.atif.json")
+        _set_default(atif, "agent_name", agent_name(payload))
+        _set_default(atif, "model_name", relay_model_name(payload))
 
 
 def _artifact_directory(value: Any) -> Path | None:
@@ -664,6 +689,22 @@ def _artifact_glob(directory: Path, pattern: str) -> list[Path]:
         return []
 
 
+def _relay_sink_files(sink: dict[str, Any], default_pattern: str) -> list[Path]:
+    directory = _artifact_directory(sink.get("output_directory"))
+    if directory is None:
+        return []
+    filename = sink.get("filename")
+    if isinstance(filename, str) and filename:
+        paths = [directory / filename] if _artifact_name_is_local(filename) else []
+    else:
+        paths = _artifact_glob(directory, default_pattern)
+    return [
+        resolved
+        for path in paths
+        if (resolved := _artifact_file(path, directory=directory)) is not None
+    ]
+
+
 def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str]]:
     artifacts: list[dict[str, str]] = []
     for component in plugin_config.get("components", []):
@@ -675,21 +716,24 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
             for sink in atof.get("sinks") or []:
                 if not isinstance(sink, dict) or sink.get("type") != "file":
                     continue
-                directory = _artifact_directory(sink.get("output_directory"))
-                if directory is not None:
-                    filename = sink.get("filename")
-                    if isinstance(filename, str) and filename:
-                        paths = (
-                            [directory / filename]
-                            if _artifact_name_is_local(filename)
-                            else []
-                        )
-                    else:
-                        paths = _artifact_glob(directory, "*.jsonl")
-                    for path in paths:
-                        resolved = _artifact_file(path, directory=directory)
-                        if resolved is not None:
-                            artifacts.append({"kind": "atof", "path": str(resolved)})
+                artifacts.extend(
+                    {"kind": "atof", "path": str(path)}
+                    for path in _relay_sink_files(sink, "*.jsonl")
+                )
+
+        opentelemetry = config.get("opentelemetry")
+        if isinstance(opentelemetry, dict) and opentelemetry.get("enabled"):
+            for sink in opentelemetry.get("file_sinks") or []:
+                if not isinstance(sink, dict):
+                    continue
+                # Relay's defaults: JSON lines in nemo-relay-otlp-<timestamp> files.
+                encoding = "proto" if sink.get("format") == "proto" else "json_lines"
+                extension = "otlp.pb" if encoding == "proto" else "jsonl"
+                pattern = f"nemo-relay-otlp-*.{extension}"
+                artifacts.extend(
+                    {"kind": "otlp", "path": str(path), "format": encoding}
+                    for path in _relay_sink_files(sink, pattern)
+                )
 
         atif = config.get("atif")
         if isinstance(atif, dict) and atif.get("enabled"):

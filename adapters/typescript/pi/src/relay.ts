@@ -196,9 +196,7 @@ export class PiRelayRuntime {
         gateway_url: this.launch.url,
         gateway_log_path: this.launch.logPath,
       },
-      relay_artifacts: (artifacts ?? (await collectRelayArtifacts(this.pluginConfig, this.atifMatchers))).map(
-        ({ kind, path }): JsonObject => ({ kind, path }),
-      ),
+      relay_artifacts: artifacts ?? (await collectRelayArtifacts(this.pluginConfig, this.atifMatchers)),
     };
   }
 

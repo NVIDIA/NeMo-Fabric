@@ -1106,7 +1106,7 @@ def resolve_observability(
     """Resolve the nemo_relay observability plugin config for relay or native telemetry.
 
     Relay telemetry loads its plugin config from ``FABRIC_RELAY_CONFIG_PATH`` and
-    collects ATOF/ATIF artifacts. Native telemetry reads
+    collects ATOF/ATIF/OTLP artifacts. Native telemetry reads
     ``RuntimeContext.telemetry.metadata.native_config`` (e.g. an
     OpenTelemetry/OpenInference exporter) and exports spans directly to the
     configured collector without writing relay artifacts.
