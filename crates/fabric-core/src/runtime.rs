@@ -32,6 +32,7 @@ use crate::config::{
 };
 use crate::environment::resolve_environment_provider;
 use crate::error::{FabricError, Result};
+use crate::what_ran::WhatRan;
 
 mod openshell;
 use openshell::OpenShellRuntimeAdapter;
@@ -152,6 +153,15 @@ pub struct RunResult {
     /// Adapter-specific metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, Value>,
+    /// What executed for this invocation, and how NeMo Fabric learned each
+    /// fact. Absent when the producing core predates it, or when this core
+    /// finds it malformed or of another schema or version.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::what_ran::deserialize_lenient"
+    )]
+    pub what_ran: Option<WhatRan>,
 }
 
 /// Runtime completion status.
@@ -1913,6 +1923,11 @@ fn run_local_host_invocation_with_timeout(
         request_id: request.request_id.clone(),
         runtime_id: runtime.runtime_id.clone(),
     };
+    let what_ran = crate::what_ran::collect_before_request(
+        plan,
+        adapter_id(plan),
+        &runtime.environment.provider,
+    );
     let host = local_hosts()
         .get(&runtime.runtime_id)
         .cloned()
@@ -2167,6 +2182,7 @@ fn run_local_host_invocation_with_timeout(
             .collect(),
         events,
         metadata,
+        what_ran: Some(what_ran),
     })
 }
 
@@ -4418,6 +4434,7 @@ for line in sys.stdin:
             ],
             events: Vec::new(),
             metadata: BTreeMap::new(),
+            what_ran: None,
         };
 
         let encoded = serde_json::to_value(&result).expect("serialize SDK run result");
@@ -5440,6 +5457,48 @@ for line in sys.stdin:
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_result_carries_what_ran_without_changing_the_outcome() {
+        let run_result_schema =
+            crate::schema::generate_schema(crate::schema::SchemaName::RunResult)
+                .expect("run result schema");
+        let validator = jsonschema::validator_for(&run_result_schema).expect("valid schema");
+        let not_declared = serde_json::json!({
+            "state": "unsupported", "reason": "key_not_declared", "source": "reported",
+            "collected_by": "adapter", "method": "adapter_report"
+        });
+        for (mode, status) in [
+            ("success", RunStatus::Succeeded),
+            ("adapter_reported_failure", RunStatus::Failed),
+        ] {
+            let (root, plan) = local_host_plan(mode);
+
+            let result = run_plan(&plan, RunRequest::text("provenance")).expect("result");
+
+            assert_eq!(result.status, status);
+            let result_json = serde_json::to_value(&result).expect("result JSON");
+            assert!(validator.is_valid(&result_json), "{result_json}");
+            let what_ran = &result_json["what_ran"];
+            assert_eq!(what_ran["schema"], "nemo.fabric.what_ran");
+            assert_eq!(what_ran["version"], "v1alpha1");
+            assert_eq!(
+                what_ran["fabric"]["core_version"]["value"],
+                crate::version()
+            );
+            assert_eq!(what_ran["adapter"]["id"], "acme.fabric.local-host");
+            assert_eq!(what_ran["adapter"]["package_version"], not_declared);
+            assert_eq!(what_ran["harness"]["name"], not_declared);
+            assert_eq!(what_ran["harness"]["version"], not_declared);
+            assert_eq!(what_ran["models"], serde_json::json!({}));
+            assert_eq!(what_ran["mcp"], serde_json::json!({"servers": {}}));
+            assert_eq!(
+                what_ran["environment"],
+                serde_json::json!({"provider": "local"})
+            );
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]

@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import math
+import re
+from collections.abc import Callable
 from collections.abc import Iterator
 from collections.abc import Mapping
 from collections.abc import Sequence
@@ -1963,6 +1965,133 @@ class RunUsage(FabricMapping):
         return data
 
 
+_WHAT_RAN_SCHEMA = "nemo.fabric.what_ran"
+_WHAT_RAN_VERSION = "v1alpha1"
+_FACT_SOURCES = frozenset({"observed", "reported", "configured"})
+_FACT_STATES = frozenset(
+    {"not_applicable", "unsupported", "collection_failed", "unavailable"}
+)
+_FACT_CODE = re.compile(r"[a-z0-9_.:#+/-]{1,128}")
+
+
+def _is_text(value: Any) -> bool:
+    return isinstance(value, str)
+
+
+def _is_flag(value: Any) -> bool:
+    return isinstance(value, bool)
+
+
+def _is_text_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _is_code(value: Any) -> bool:
+    return isinstance(value, str) and _FACT_CODE.fullmatch(value) is not None
+
+
+def _is_fact(fact: Any, is_value: Callable[[Any], bool]) -> bool:
+    """Whether ``fact`` holds ``value``, or ``state`` and ``reason``, never both."""
+
+    if not isinstance(fact, Mapping):
+        return False
+    source = fact.get("source")
+    if not (isinstance(source, str) and source in _FACT_SOURCES):
+        return False
+    if not (_is_code(fact.get("collected_by")) and _is_code(fact.get("method"))):
+        return False
+    if "value" in fact:
+        return "state" not in fact and "reason" not in fact and is_value(fact["value"])
+    state = fact.get("state")
+    return (
+        isinstance(state, str)
+        and state in _FACT_STATES
+        and _is_code(fact.get("reason"))
+    )
+
+
+def _has_facts(section: Any, facts: Mapping[str, Callable[[Any], bool]]) -> bool:
+    return isinstance(section, Mapping) and all(
+        _is_fact(section.get(name), is_value) for name, is_value in facts.items()
+    )
+
+
+def _is_model_entry(model: Any) -> bool:
+    return _has_facts(
+        model, {"requested": _is_text, "served": _is_text}
+    ) and isinstance(model.get("provider"), str)
+
+
+def _is_mcp_server_entry(server: Any) -> bool:
+    if not _has_facts(server, {"endpoint": _is_text}):
+        return False
+    origin = server.get("origin")
+    transport = server.get("transport")
+    # Only a server the harness reports may leave out its transport.
+    transport_ok = isinstance(transport, str) or (
+        transport is None and origin != "plan"
+    )
+    runtime_facts = {
+        "connected": _is_flag,
+        "protocol_version": _is_text,
+        "server_name": _is_text,
+        "server_version": _is_text,
+        "tool_names": _is_text_list,
+    }
+    return (
+        isinstance(origin, str)
+        and transport_ok
+        and _has_facts(server.get("runtime"), runtime_facts)
+    )
+
+
+def _is_readable_what_ran(value: Any) -> bool:
+    """Whether ``value`` is a ``what_ran`` object this SDK reads.
+
+    Mirrors the Rust core's reader: the schema and version match, every
+    section and fact is well formed, and unknown properties are ignored.
+    """
+
+    if not isinstance(value, Mapping):
+        return False
+    if (
+        value.get("schema") != _WHAT_RAN_SCHEMA
+        or value.get("version") != _WHAT_RAN_VERSION
+    ):
+        return False
+    adapter = value.get("adapter")
+    models = value.get("models")
+    mcp = value.get("mcp")
+    servers = mcp.get("servers") if isinstance(mcp, Mapping) else None
+    environment = value.get("environment")
+    return (
+        _has_facts(
+            value.get("fabric"),
+            {"core_version": _is_text, "host_core_version": _is_text},
+        )
+        and _has_facts(adapter, {"package_version": _is_text})
+        and (adapter.get("id") is None or isinstance(adapter.get("id"), str))
+        and _has_facts(value.get("harness"), {"name": _is_text, "version": _is_text})
+        and isinstance(models, Mapping)
+        and all(_is_model_entry(model) for model in models.values())
+        and isinstance(servers, Mapping)
+        and all(_is_mcp_server_entry(server) for server in servers.values())
+        and isinstance(environment, Mapping)
+        and isinstance(environment.get("provider"), str)
+    )
+
+
+def _readable_what_ran(value: Any) -> Mapping[str, Any] | None:
+    """Return ``what_ran``, or ``None`` when this SDK cannot read it.
+
+    As in the Rust core, a value that is absent, not a JSON object, names
+    another schema or version, or breaks the section's structure reads as
+    absent instead of failing the result.
+    """
+
+    return value if _is_readable_what_ran(value) else None
+
+
 class RunResult(FabricMapping):
     """Normalized terminal result from one NeMo Fabric invocation.
 
@@ -1987,6 +2116,13 @@ class RunResult(FabricMapping):
         telemetry: Ordered telemetry references.
         events: Ordered lifecycle and invocation events.
         metadata: Result-specific structured details.
+        what_ran: What executed for this invocation, schema
+            ``nemo.fabric.what_ran`` version ``v1alpha1``, as a JSON mapping.
+            Each fact holds ``value``, or ``state`` and ``reason``, plus
+            ``source``, ``collected_by`` and ``method``. ``None`` when the
+            producing core predates it, or when the value is not a
+            ``what_ran`` object of that schema and version with every section
+            and fact well formed, as the Rust core reads it.
     """
 
     agent_name: str
@@ -2004,6 +2140,7 @@ class RunResult(FabricMapping):
     telemetry: Sequence[TelemetryRef]
     events: Sequence[FabricEvent]
     metadata: Mapping[str, Any]
+    what_ran: Mapping[str, Any] | None
     _fields = frozenset(
         {
             "agent_name",
@@ -2021,9 +2158,10 @@ class RunResult(FabricMapping):
             "telemetry",
             "events",
             "metadata",
+            "what_ran",
         }
     )
-    _json_fields = frozenset({"metadata"})
+    _json_fields = frozenset({"metadata", "what_ran"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -2059,6 +2197,7 @@ class RunResult(FabricMapping):
             FabricEvent.from_mapping(event) for event in data.get("events", [])
         )
         data["metadata"] = _mapping(data.get("metadata", {}), "result metadata")
+        data["what_ran"] = _readable_what_ran(data.get("what_ran"))
         raw_output = data.get("output")
         if isinstance(raw_output, RunOutput):
             data["output"] = raw_output

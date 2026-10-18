@@ -418,6 +418,10 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert result["adapter_kind"] == "python"
     assert result["metadata"]["adapter_runner"] == "persistent_local_host"
     assert result["output"]["received"] == "hello native"
+    assert result.what_ran["fabric"]["core_version"]["value"] == native.version()
+    assert result.what_ran["adapter"]["id"] == "test.fabric.hermes_shim"
+    assert result.what_ran["harness"]["version"]["reason"] == "key_not_declared"
+    assert result.what_ran["environment"] == {"provider": "local"}
     assert result.output["native_mcp_servers"] == ["github"]
     assert any(artifact.name == "stdout" for artifact in result.artifacts.artifacts)
     assert first["status"] == "succeeded"

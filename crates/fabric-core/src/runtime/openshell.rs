@@ -433,6 +433,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                     "",
                 ));
             }
+            adopt_task_what_ran(&mut result, &runtime.environment);
             for telemetry in &mut result.telemetry {
                 telemetry.relay_enabled = telemetry
                     .metadata
@@ -513,6 +514,16 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 Value::String(runtime.runtime_id.clone()),
             )]),
         )])
+    }
+}
+
+/// Attribute the task core's `what_ran` to the task core, this host's
+/// version and this host's environment provider. A task result without a
+/// readable `what_ran`, from an older task core or one this host cannot
+/// decode, keeps `what_ran` absent and is otherwise unchanged.
+fn adopt_task_what_ran(result: &mut RunResult, environment: &EnvironmentHandle) {
+    if let Some(what_ran) = result.what_ran.as_mut() {
+        crate::what_ran::attribute_to_task_core(what_ran, &environment.provider);
     }
 }
 
@@ -844,6 +855,97 @@ mod tests {
                 ),
                 ("sandbox_id".to_string(), Value::String(new_id("sandbox"))),
             ]),
+        }
+    }
+
+    /// A task result as the task core returns it, with `what_ran` from the
+    /// shared reader vectors when given.
+    fn task_result(what_ran: Option<Value>) -> RunResult {
+        let mut result = serde_json::json!({
+            "agent_name": "agent", "harness": "nvidia.fabric.claude", "adapter_kind": "python",
+            "runtime_id": "runtime-task", "invocation_id": "invocation-1",
+            "request_id": "request-1", "status": "succeeded", "output": "done"
+        });
+        if let Some(what_ran) = what_ran {
+            result["what_ran"] = what_ran;
+        }
+        serde_json::from_value(result).expect("a task result decodes whatever what_ran holds")
+    }
+
+    fn task_what_ran() -> Value {
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../../../../tests/fixtures/what_ran/reader-vectors.json"
+        ))
+        .expect("reader vectors JSON");
+        vectors["base"].clone()
+    }
+
+    fn facts_collected_by(value: &Value, collector: &str) -> usize {
+        match value {
+            Value::Object(map) if map.contains_key("source") => {
+                usize::from(map.get("collected_by") == Some(&Value::from(collector)))
+            }
+            Value::Object(map) => map
+                .values()
+                .map(|value| facts_collected_by(value, collector))
+                .sum(),
+            _ => 0,
+        }
+    }
+
+    #[test]
+    fn task_what_ran_is_attributed_to_the_task_core_and_this_host() {
+        for task_version in [crate::version(), "0.5.0"] {
+            let mut what_ran = task_what_ran();
+            what_ran["fabric"]["core_version"]["value"] = Value::from(task_version);
+            let mut result = task_result(Some(what_ran));
+
+            adopt_task_what_ran(&mut result, &environment());
+
+            let what_ran = serde_json::to_value(result.what_ran).expect("what_ran JSON");
+            assert_task_facts_are_attributed(&what_ran, task_version);
+        }
+    }
+
+    fn assert_task_facts_are_attributed(what_ran: &Value, task_version: &str) {
+        let host_version = serde_json::json!({"value": crate::version(), "source": "observed",
+            "collected_by": "host_core", "method": "crate_version"});
+        let task_core_version = serde_json::json!({"value": task_version, "source": "observed",
+            "collected_by": "task_core", "method": "crate_version"});
+        assert_eq!(what_ran["fabric"]["core_version"], task_core_version);
+        assert_eq!(what_ran["fabric"]["host_core_version"], host_version);
+        assert_eq!(
+            facts_collected_by(what_ran, "host_core"),
+            1,
+            "only host_core_version is the host's fact"
+        );
+        assert_eq!(what_ran["environment"]["provider"], "openshell");
+        assert_eq!(
+            what_ran["models"]["default"]["requested"]["collected_by"],
+            "task_core"
+        );
+        assert_eq!(
+            what_ran["mcp"]["servers"]["docs"]["endpoint"]["collected_by"],
+            "task_core"
+        );
+        assert_eq!(
+            what_ran["harness"]["version"]["collected_by"], "adapter",
+            "adapter facts keep their collector"
+        );
+    }
+
+    #[test]
+    fn task_result_without_readable_what_ran_is_kept_without_it() {
+        let mut undecodable = task_what_ran();
+        undecodable["harness"]["version"]["state"] = Value::from("withheld");
+        for what_ran in [None, Some(undecodable)] {
+            let mut result = task_result(what_ran);
+
+            adopt_task_what_ran(&mut result, &environment());
+
+            assert_eq!(result.what_ran, None);
+            assert_eq!(result.status, RunStatus::Succeeded);
+            assert_eq!(result.output, Value::from("done"));
         }
     }
 
