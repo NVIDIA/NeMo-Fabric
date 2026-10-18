@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct ResolvedAdapterDescriptor &#123;\n    pub provenance: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-descriptorprovenance.mdx\">DescriptorProvenance</a>&gt;,\n    pub descriptor: <a href=\"struct-adapterdescriptor.mdx\">AdapterDescriptor</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct ResolvedAdapterDescriptor &#123;\n    pub provenance: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-descriptorprovenance.mdx\">DescriptorProvenance</a>&gt;,\n    pub descriptor: <a href=\"struct-adapterdescriptor.mdx\">AdapterDescriptor</a>,\n    pub descriptor_fingerprint: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n&#125;"}} /></pre>
 
 Adapter descriptor selected for a run plan.
 
@@ -22,6 +22,10 @@ Every semantically identical record discovered for this descriptor.
 ### `descriptor: AdapterDescriptor`
 
 Adapter-owned compatibility and capability metadata.
+
+### `descriptor_fingerprint: Option<String>`
+
+Fingerprint `nemo.fabric.adapter_descriptor/v1` of the first provenance record's file, the one core runs the adapter from: `sha256:` and the lowercase hex SHA-256 of the RFC 8785 form of the descriptor as authored, before core fills in defaults. Absent in plans from cores that predate it and in standalone inspection.
 
 ## Trait Implementations
 

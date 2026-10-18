@@ -10,7 +10,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct AdapterFacts &#123;\n    pub id: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub package_version: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct AdapterFacts &#123;\n    pub id: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub package_version: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub descriptor_fingerprint: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;&gt;,\n&#125;"}} /></pre>
 
 Adapter facts.
 
@@ -23,6 +23,10 @@ Adapter ID from the plan, when an adapter was resolved.
 ### `package_version: Fact<String>`
 
 Version of the adapter package, as the adapter reports it.
+
+### `descriptor_fingerprint: Option<Fact<String>>`
+
+Fingerprint `nemo.fabric.adapter_descriptor/v1` of the descriptor contents as authored, `sha256:<hex>`. Core writes it whenever the `adapter` section is present; readers accept its absence from cores that predate it.
 
 ## Trait Implementations
 
