@@ -1,0 +1,13 @@
+{
+  "operation": "invoke",
+  "agent": "echo",
+  "runtime_id": "runtime-task",
+  "request": {
+    "request_id": "caller-request-1",
+    "input": ["review", {"stream": true}, null],
+    "relay_session_root": "8da8e329-a5c3-49d3-8004-6f31e6833736",
+    "context": {"turn": 2},
+    "overrides": {"max_iterations": 3},
+    "max_iterations": 3
+  }
+}

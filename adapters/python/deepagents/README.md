@@ -300,7 +300,7 @@ includes the NeMo Relay Python package.
     (without dropping consumer-provided callbacks) to capture LangGraph scopes
     and human-in-the-loop interrupt/resume marks.
 
-  Runs emit ATOF/ATIF artifacts to the configured output directory, referenced in
+  Runs emit ATOF/ATIF/OTLP artifacts to the configured output directory, referenced in
   the normalized result's `relay_artifacts` (and the `RunResult` `ArtifactManifest`).
   OTel/OpenInference export is available through the relay plugin config; the
   example provides `with_relay_otel(...)` and

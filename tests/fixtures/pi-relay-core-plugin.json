@@ -33,6 +33,19 @@
           "model_name": "gpt-4.1-mini",
           "filename_template": "nemo-relay-atif-{session_id}.json"
         },
+        "opentelemetry": {
+          "enabled": true,
+          "file_sinks": [
+            {
+              "type": "openinference",
+              "output_directory": "relay-otlp"
+            },
+            {
+              "type": "full",
+              "mode": "overwrite"
+            }
+          ]
+        },
         "enable_full_payloads": false
       }
     }
