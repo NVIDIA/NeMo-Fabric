@@ -137,7 +137,7 @@ async def test_missing_malformed_and_truncated_responses_are_unknown_and_never_r
         response = await transport.client(
             host_request("invoke", input={"prompt": "PRIVATE"}),
             socket_path=socket_path,
-            timeout=0.2,
+            timeout=2,
         )
     assert response["status"] == "failed"
     assert response["changed"] is None

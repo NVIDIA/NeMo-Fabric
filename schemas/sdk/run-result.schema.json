@@ -282,19 +282,45 @@
     "TelemetryRef": {
       "description": "Reference to telemetry emitted by Relay or another configured telemetry path.",
       "properties": {
+        "kind": {
+          "description": "Reference category in the public SDK representation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "metadata": {
           "additionalProperties": true,
           "description": "Telemetry metadata.",
           "type": "object"
         },
+        "provider": {
+          "description": "Provider in the public SDK reference representation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "relay_enabled": {
-          "description": "Whether Relay was enabled for this run.",
+          "default": false,
+          "description": "Whether Relay was enabled for this run; retained for native compatibility.",
           "type": "boolean"
+        },
+        "trace_id": {
+          "description": "Provider trace identity.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uri": {
+          "description": "Location of the persisted telemetry.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
-      "required": [
-        "relay_enabled"
-      ],
       "type": "object"
     }
   },
@@ -369,15 +395,11 @@
       "description": "Runtime status."
     },
     "telemetry": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/TelemetryRef"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Telemetry reference when available."
+      "description": "Ordered telemetry references when available.",
+      "items": {
+        "$ref": "#/$defs/TelemetryRef"
+      },
+      "type": "array"
     },
     "usage": {
       "anyOf": [

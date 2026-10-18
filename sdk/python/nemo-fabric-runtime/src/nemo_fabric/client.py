@@ -418,7 +418,9 @@ class Fabric:
         Starting or stopping the runtime does not release ``environment``.
         Runtime and reuse limits depend on the provider. Release the environment
         separately after stopping the runtime and collecting results. Runtime
-        startup is currently implemented for local environments.
+        startup is supported by local environments and the OpenShell command
+        bridge. OpenShell invocation is buffered and supports multiple runtime
+        IDs per sandbox.
 
         Args:
             config: Complete typed ``FabricConfig`` matching the environment.
@@ -438,6 +440,10 @@ class Fabric:
         """
 
         _environment_json(environment)
+        if environment.provider == "openshell" and streaming:
+            raise FabricConfigError(
+                "OpenShell supports buffered invocation; streaming is unavailable"
+            )
         return await self._start_runtime(
             config,
             environment=environment,

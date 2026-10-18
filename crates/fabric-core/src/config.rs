@@ -2060,10 +2060,17 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                         "moved into each typed endpoint in observability config version 3",
                     );
                 }
-                if opentelemetry.enabled && opentelemetry.endpoints.is_empty() {
+                let file_sinks = relay_otel_file_sinks(
+                    "relay.observability.opentelemetry.file_sinks",
+                    opentelemetry.extensions.get("file_sinks"),
+                )?;
+                if opentelemetry.enabled
+                    && opentelemetry.endpoints.is_empty()
+                    && file_sinks.is_empty()
+                {
                     return invalid_config(
                         "relay.observability.opentelemetry.endpoints",
-                        "must contain at least one endpoint when OpenTelemetry export is enabled",
+                        "must contain at least one endpoint or file sink when OpenTelemetry export is enabled",
                     );
                 }
                 for (index, endpoint) in opentelemetry.endpoints.iter().enumerate() {
@@ -2135,10 +2142,14 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                     }
                     None => None,
                 };
-                if enabled && endpoints.is_none_or(Vec::is_empty) {
+                let file_sinks = relay_otel_file_sinks(
+                    format!("relay.components.{index}.config.opentelemetry.file_sinks"),
+                    opentelemetry.get("file_sinks"),
+                )?;
+                if enabled && endpoints.is_none_or(Vec::is_empty) && file_sinks.is_empty() {
                     return invalid_config(
                         format!("relay.components.{index}.config.opentelemetry.endpoints"),
-                        "must contain at least one endpoint when OpenTelemetry export is enabled",
+                        "must contain at least one endpoint or file sink when OpenTelemetry export is enabled",
                     );
                 }
                 if let Some(endpoints) = endpoints {
@@ -2358,6 +2369,14 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn relay_otel_file_sinks(field: impl Into<String>, value: Option<&Value>) -> Result<&[Value]> {
+    match value {
+        None => Ok(&[]),
+        Some(Value::Array(file_sinks)) => Ok(file_sinks),
+        Some(_) => invalid_config(field, "must be an array"),
+    }
 }
 
 fn relay_legacy_flat_otel_field(contains_field: impl Fn(&str) -> bool) -> Option<&'static str> {
@@ -4757,11 +4776,19 @@ mod tests {
     }
 
     #[test]
-    fn generic_relay_observability_component_requires_enabled_endpoint() {
+    fn generic_relay_observability_component_requires_enabled_endpoint_or_file_sink() {
         for (opentelemetry, valid) in [
             (serde_json::json!({"enabled": true}), false),
             (serde_json::json!({"enabled": true, "endpoints": []}), false),
+            (
+                serde_json::json!({"enabled": true, "file_sinks": []}),
+                false,
+            ),
             (serde_json::json!({"enabled": false, "endpoints": []}), true),
+            (
+                serde_json::json!({"enabled": true, "file_sinks": [{"type": "openinference"}]}),
+                true,
+            ),
         ] {
             let mut config = typed_config("nvidia.fabric.hermes");
             config.relay = Some(RelayConfig {
@@ -4778,10 +4805,10 @@ mod tests {
             });
 
             if valid {
-                validate_config(&config).expect("disabled exporter may omit endpoints");
+                validate_config(&config).expect("exporter has a destination or is disabled");
             } else {
-                let error =
-                    validate_config(&config).expect_err("enabled exporter needs an endpoint");
+                let error = validate_config(&config)
+                    .expect_err("enabled exporter needs an endpoint or file sink");
                 assert!(matches!(
                     error,
                     FabricError::InvalidConfig { field, .. }
@@ -4892,6 +4919,10 @@ mod tests {
                 "relay.components.0.config.opentelemetry.endpoints",
             ),
             (
+                serde_json::json!({"file_sinks": null}),
+                "relay.components.0.config.opentelemetry.file_sinks",
+            ),
+            (
                 serde_json::json!({"endpoints": [false]}),
                 "relay.components.0.config.opentelemetry.endpoints.0",
             ),
@@ -4934,25 +4965,43 @@ mod tests {
     }
 
     #[test]
-    fn enabled_relay_opentelemetry_requires_an_endpoint() {
-        let mut config = typed_config("nvidia.fabric.hermes");
-        config.relay = Some(RelayConfig {
-            observability: Some(RelayObservabilityConfig {
-                opentelemetry: Some(RelayOpenTelemetryConfig {
-                    enabled: true,
-                    ..RelayOpenTelemetryConfig::default()
+    fn enabled_relay_opentelemetry_requires_an_endpoint_or_file_sink() {
+        for (file_sinks, invalid_field) in [
+            (None, Some("relay.observability.opentelemetry.endpoints")),
+            (
+                Some(serde_json::json!([])),
+                Some("relay.observability.opentelemetry.endpoints"),
+            ),
+            (
+                Some(serde_json::json!(null)),
+                Some("relay.observability.opentelemetry.file_sinks"),
+            ),
+            (Some(serde_json::json!([{"type": "openinference"}])), None),
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.relay = Some(RelayConfig {
+                observability: Some(RelayObservabilityConfig {
+                    opentelemetry: Some(RelayOpenTelemetryConfig {
+                        enabled: true,
+                        extensions: BTreeMap::from_iter(
+                            file_sinks.map(|file_sinks| ("file_sinks".to_string(), file_sinks)),
+                        ),
+                        ..RelayOpenTelemetryConfig::default()
+                    }),
+                    ..RelayObservabilityConfig::default()
                 }),
-                ..RelayObservabilityConfig::default()
-            }),
-            ..RelayConfig::default()
-        });
+                ..RelayConfig::default()
+            });
 
-        let error = validate_config(&config).expect_err("enabled exporter needs an endpoint");
-        assert!(matches!(
-            error,
-            FabricError::InvalidConfig { field, .. }
-                if field == "relay.observability.opentelemetry.endpoints"
-        ));
+            let result = validate_config(&config);
+            match invalid_field {
+                None => result.expect("a file sink needs no endpoint"),
+                Some(invalid_field) => assert!(matches!(
+                    result,
+                    Err(FabricError::InvalidConfig { field, .. }) if field == invalid_field
+                )),
+            }
+        }
     }
 
     #[test]
