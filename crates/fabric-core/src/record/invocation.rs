@@ -1128,13 +1128,23 @@ mod tests {
         ticker: &Arc<SampleTicker>,
         read: ReadResources,
     ) -> (PathBuf, InvocationRecorder) {
-        let (plan, runtime, invocation) = record_test_fixture();
-        let folder = temp_folder(name);
+        start_recorder_in(temp_folder(name), &record_test_fixture(), ticker, read)
+    }
+
+    /// Start a record in `folder` from a fixture the test already built, so
+    /// a race test does no plan resolution or folder setup while a blocked
+    /// sample read waits for it.
+    fn start_recorder_in(
+        folder: PathBuf,
+        (plan, runtime, invocation): &(RunPlan, RuntimeHandle, InvocationHandle),
+        ticker: &Arc<SampleTicker>,
+        read: ReadResources,
+    ) -> (PathBuf, InvocationRecorder) {
         let request = RunRequest::text("input");
         let recorder = InvocationRecorder::start(RecordStart {
-            plan: &plan,
-            runtime: &runtime,
-            invocation: &invocation,
+            plan,
+            runtime,
+            invocation,
             request: &request,
             fabric_home: &folder,
             timeout: Duration::from_secs(5),
@@ -1254,21 +1264,28 @@ mod tests {
     #[test]
     fn a_sample_read_in_flight_when_the_record_ends_writes_nothing_after_the_end_line() {
         let ticker = SampleTicker::new(Duration::from_millis(10));
+        // Build everything before the first record starts: once it does, the
+        // blocked sample read waits only HANDSHAKE_TIMEOUT for the release.
+        let fixture = record_test_fixture();
+        let result = succeeded_result(&fixture.2);
+        let folder = temp_folder("in-flight");
+        let sentinel_folder = temp_folder("in-flight-sentinel");
         // The first sample read waits until the test has finished the record.
         let (read, entered, release) = read_blocked_at_first_sample();
-        let (folder, recorder) = start_recorder("in-flight", &ticker, read);
+        let (folder, recorder) = start_recorder_in(folder, &fixture, &ticker, read);
         // A second record on the same ticker, sampled after the first in
         // each tick, shows when the blocked tick has finished.
-        let (sentinel_folder, sentinel) =
-            start_recorder("in-flight-sentinel", &ticker, Arc::new(|| Ok(snapshot())));
+        let (sentinel_folder, sentinel) = start_recorder_in(
+            sentinel_folder,
+            &fixture,
+            &ticker,
+            Arc::new(|| Ok(snapshot())),
+        );
         let path = folder.join(RECORD_FILE_NAME);
         let sentinel_path = sentinel_folder.join(RECORD_FILE_NAME);
 
         wait_until_entered(&entered);
-        let (_, _, invocation) = record_test_fixture();
-        recorder
-            .finish(Ok(succeeded_result(&invocation)))
-            .expect("result");
+        recorder.finish(Ok(result)).expect("result");
         let sentinel_samples = samples(&sentinel_path).len();
         release
             .send(())
@@ -1286,13 +1303,20 @@ mod tests {
     #[test]
     fn a_sample_read_in_flight_when_the_exchange_ends_writes_nothing_to_the_open_record() {
         let ticker = SampleTicker::new(Duration::from_millis(10));
+        // Build everything before the first record starts: once it does, the
+        // blocked sample read waits only HANDSHAKE_TIMEOUT for the release.
+        let fixture = record_test_fixture();
+        let result = succeeded_result(&fixture.2);
+        let folder = temp_folder("window-closed");
+        let sentinel_folder = temp_folder("window-closed-sentinel");
         // The first sample read waits until the test has closed the window.
         let (read, entered, release) = read_blocked_at_first_sample();
-        let (folder, mut recorder) = start_recorder("window-closed", &ticker, read);
+        let (folder, mut recorder) = start_recorder_in(folder, &fixture, &ticker, read);
         // A second record on the same ticker, sampled after the first in
         // each tick, shows when the blocked tick has finished.
-        let (sentinel_folder, sentinel) = start_recorder(
-            "window-closed-sentinel",
+        let (sentinel_folder, sentinel) = start_recorder_in(
+            sentinel_folder,
+            &fixture,
             &ticker,
             Arc::new(|| Ok(snapshot())),
         );
@@ -1312,10 +1336,7 @@ mod tests {
         let lines = read_lines(&path);
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert_eq!(lines[0]["kind"], "start");
-        let (_, _, invocation) = record_test_fixture();
-        recorder
-            .finish(Ok(succeeded_result(&invocation)))
-            .expect("result");
+        recorder.finish(Ok(result)).expect("result");
         assert!(samples(&path).is_empty(), "{:?}", read_lines(&path));
         drop(sentinel);
         let _ = std::fs::remove_dir_all(folder);
