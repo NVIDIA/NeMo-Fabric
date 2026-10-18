@@ -1443,6 +1443,7 @@ The model is both attribute-accessible and mapping-compatible. A harness failure
  - <b>`telemetry`</b>:  Ordered telemetry references.
  - <b>`events`</b>:  Ordered lifecycle and invocation events.
  - <b>`metadata`</b>:  Result-specific structured details.
+ - <b>`what_ran`</b>:  What executed for this invocation, schema  ``nemo.fabric.what_ran`` version ``v1alpha1``, as a JSON mapping.  Each fact holds ``value``, or ``state`` and ``reason``, plus  ``source``, ``collected_by`` and ``method``. ``None`` when the  producing core predates it, or when the value is not a  ``what_ran`` object of that schema and version with every section  and fact well formed, as the Rust core reads it.
 
 
 
@@ -1467,6 +1468,7 @@ The mapping exposes the following typed fields:
 | `telemetry` | `Sequence[TelemetryRef]` |
 | `events` | `Sequence[FabricEvent]` |
 | `metadata` | `Mapping[str, Any]` |
+| `what_ran` | `Mapping[str, Any] \| None` |
 
 ### <kbd>method</kbd> `__init__`
 
