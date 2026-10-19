@@ -229,29 +229,47 @@ never replayed; an uncertain start blocks further starts in that sandbox.
 
 ### Runtime Health
 
-Use `Fabric.check(environment=..., request=CheckRequest(scope="server"))` to
-check the NeMo Fabric runtime server in an OpenShell environment. The SDK maps this
-request to `fabric-agent-ctl check` inside the selected sandbox:
+Use `Fabric.check(environment=..., request=...)` to check runtime health. Local Pi runtimes support `live`, `active`, and `ready`.
+The runtime ID selects the exact session inside the supplied environment:
 
 ```python
 from nemo_fabric import CheckRequest, Fabric
 
-report = await Fabric().check(
-    environment=environment,
-    request=CheckRequest(scope="server", timeout_seconds=3.0),
-)
-print(report.outcome)
+fabric = Fabric()
+environment = await fabric.prepare_environment(config)
+runtime = await fabric.start_runtime_in(config, environment)
+try:
+    report = await fabric.check(
+        environment=environment,
+        request=CheckRequest(
+            scope="runtime", runtime_id=runtime.runtime_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+finally:
+    await runtime.stop()
+    await fabric.release_environment(environment)
 ```
 
-Server checks work before a runtime starts and during an invocation. A
-responding server passes; a stopping server reports `failed/server_stopping`.
-A timeout reports `unknown/probe_timeout`, and an invalid or unavailable
-transport reports `unknown/probe_error`. Reports are immutable
-`fabric.check/v1alpha1` mappings with fixed reason and source identifiers.
-One positive, finite deadline covers SDK routing, gateway calls, the command
-bridge, and response decoding. The default timeout is three seconds.
+The default level is `live`, and the default timeout is three seconds. A request
+for `ready` evaluates `live`, `active`, and `ready` in order, stopping at the
+first nonpassing result. One deadline covers routing, every probe, and response
+decoding. Checks can run during an invocation; a busy session can pass all
+three levels. A timeout returns `unknown/probe_timeout`. Stop or environment release during a probe returns
+`unknown/observation_changed`.
 
-Local server checks and runtime requests return `unsupported/unsupported_scope`.
+`CheckReport` is an immutable mapping with outcomes `passed`, `failed`, `unknown`,
+and `unsupported`. Reports contain fixed evidence-source IDs, UTC timestamps,
+and elapsed milliseconds. An unavailable runtime returns
+`unknown/runtime_unavailable`. Adapters without health support return
+`unsupported/unsupported_adapter`.
+
+Pi checks native session liveness, initialization and request-interface guards,
+and required model, tool, and MCP connection state. A local `CheckRequest(scope="server")` returns `unsupported/unsupported_scope`. For OpenShell environments,
+`Fabric.check()` maps to `fabric-agent-ctl check` in the sandbox. Server requests
+stop at the runtime server; runtime requests select the owned agent and use the
+local SDK health path inside the sandbox. Health uses an independent provider
+worker during remote invocations.
 
 ```mermaid
 flowchart LR
@@ -266,7 +284,7 @@ in separate worker threads.
 
 ### Sandbox Command Bridge
 
-`fabric-agent-ctl check` checks server responsiveness with a three-second default deadline. Use `--timeout-seconds SECONDS` to set another positive, finite budget. Checks work before a runtime exists and during an invocation. Completed checks return a `fabric.check/v1alpha1` server report in `result`, with `changed: false`; passed health exits 0, while a stopping server or a timeout exits 1. The public `Fabric.check()` method maps OpenShell server requests to this command.
+`fabric-agent-ctl check` checks server responsiveness with a three-second default deadline. Use `--timeout-seconds SECONDS` to set another positive, finite budget. Checks work before a runtime exists and during an invocation. Completed checks return a `fabric.check/v1alpha1` server report in `result`, with `changed: false`; passed health exits 0, while a stopping server or a timeout exits 1. Use `fabric-agent-ctl check --agent researcher --runtime-id R1 --ready` for one runtime. Runtime checks require both target flags and default to `--live`; `--active` and `--ready` are mutually exclusive alternatives. OpenShell SDK requests map to these named commands. Each layer forwards the remaining deadline, and failed health evidence stays in the typed SDK report.
 
 `fabric.check/v1alpha1` identifies the shared report schema returned by
 `Fabric.check()` and `fabric-agent-ctl check`. The executable ships with

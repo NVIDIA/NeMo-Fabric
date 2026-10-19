@@ -25,6 +25,10 @@ nemo-fabric-core = { path = "crates/fabric-core", version = "0.6.0" }
 
 # UTC health evidence and strict RFC 3339 timestamp validation.
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+# Authenticate local health messages without transmitting the endpoint secret.
+getrandom = "0.4.3"
+hmac = "0.12.1"
+sha2 = "0.10.9"
 
 clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "suggestions"] }
 # Validate adapter-owned JSON Schema in Rust while preserving precise instance paths.

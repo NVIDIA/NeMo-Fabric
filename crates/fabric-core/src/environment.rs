@@ -616,7 +616,10 @@ where
     else {
         unreachable!("runtime provider path requires a runtime command")
     };
-    if let TaskCommand::Check { timeout_seconds } = task_command {
+    if let TaskCommand::Check {
+        timeout_seconds, ..
+    } = task_command
+    {
         let budget = *timeout_seconds;
         return request_check_provider_process(command, operation, budget);
     }

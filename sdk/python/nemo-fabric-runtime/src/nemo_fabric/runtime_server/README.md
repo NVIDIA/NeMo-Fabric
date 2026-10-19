@@ -13,6 +13,7 @@ SPDX-License-Identifier: Apache-2.0
 | --- | --- |
 | `serve` | Start the foreground runtime server; no agent selection |
 | `check [--timeout-seconds SECONDS]` | Check runtime server responsiveness |
+| `check --agent NAME --runtime-id ID [--live \| --active \| --ready]` | Check the selected runtime through `Fabric.check()` |
 | `start --agent NAME --config FILE` | `Fabric.start_runtime(config, base_dir=...)` |
 | `invoke --agent NAME --runtime-id ID --input FILE` | `Runtime.invoke(input=...)` |
 | `invoke --agent NAME --runtime-id ID --request FILE` | `Runtime.invoke(request=RunRequest(...))` |
@@ -37,15 +38,15 @@ The response envelope separates command diagnostics from the public SDK payload 
 
 Use `--request FILE` to forward a complete public `RunRequest`, including `request_id`, `relay_session_root`, `context`, `overrides`, and supported extensions. For example, a request file can contain `{"input": "Review calculator.py", "request_id": "review-1", "context": {"review_tag": "cedar-4827"}}`. `--input FILE` is a mutually exclusive convenience for any JSON-compatible SDK input: an object, array, string, number, boolean, or null. Null follows the SDK's normalization to an empty input string. Agent input fields named `stream` or `streaming` remain ordinary input data; this command calls `Runtime.invoke()`, never a streaming method.
 
-`check` reports runtime server responsiveness. A responding server passes, including before runtime startup and during invocations. A stopping server returns `failed/server_stopping`.
+`check` reports server responsiveness. Add both `--agent` and `--runtime-id` to check one runtime. Runtime checks default to `live`; the mutually exclusive `--active` and `--ready` flags include preceding levels. Checks can run during invocations, and busy agents can pass.
 
-Each completed check preserves a `fabric.check/v1alpha1` report in `result`, with `scope: "server"`, a server state, UTC observation and completion times, elapsed milliseconds, and one server observation. `runtime_id`, `requested_level`, and `runtime` are null. `changed` is always false. A passed check exits 0; failed or unknown health exits 1. Check errors have `effects: "none"`. Missing or invalid responses produce fixed transport errors with `result: null`.
+Each completed check preserves an immutable `fabric.check/v1alpha1` report in `result`. Server reports use `scope: "server"`, with null runtime fields and one server observation. Runtime reports identify the exact runtime and requested level and include ordered agent observations. `changed` is always false. Passed health exits 0; failed, unknown, and unsupported health exit 1. Check diagnostics have `effects: "none"`. Missing or invalid responses produce fixed transport errors with `result: null`.
 
 `fabric.check/v1alpha1` identifies the shared health request and report format so readers can reject formats they do not support. The identifier stays the same across SDK releases while the health format remains compatible. `fabric-agent-ctl` ships with `nemo-fabric-runtime`; the executable and all subcommands follow the SDK package release.
 
 Report timing covers the client call, including connection, response decoding, and validation. `completed_at` records client completion; each `observed_at` records when the server collected the evidence. Successful checks, confirmed failures, and timeouts use the same timing interval.
 
-Checks use one three-second deadline for connection, sending, and response decoding. Use `fabric-agent-ctl check --timeout-seconds 1` to select another positive, finite budget. A timeout returns `unknown/probe_timeout`, with an unobserved server observation. The public `Fabric.check(environment=..., request=CheckRequest(scope="server"))` method maps OpenShell server requests to this command.
+Checks use one three-second deadline across routing, gateway calls, command transport, all requested levels, and response validation. Use `--timeout-seconds SECONDS` to select another positive, finite budget. A timeout returns `unknown/probe_timeout` for the requested scope. `Fabric.check()` maps OpenShell requests to these named commands; runtime checks then call the local SDK inside the sandbox. Stop or replacement invalidates in-flight evidence.
 
 ## Runtime Ownership
 

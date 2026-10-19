@@ -17,7 +17,10 @@ import type {
   AgentRunResult,
   JsonObject,
   RuntimeContext,
+  AdapterCheckResult,
+  CheckLevel,
 } from "nemo-fabric-adapter-contract";
+import { serveHealth, unobservedHealth } from "./health.js";
 
 export interface AdapterStartInput {
   agentName: string;
@@ -32,6 +35,7 @@ export interface AdapterRuntime {
   start(input: AdapterStartInput): Promise<void>;
   invoke(request: AgentRunRequest, context: RuntimeContext): Promise<AgentRunResult>;
   stop(): Promise<void>;
+  check?(level: CheckLevel): Promise<AdapterCheckResult>;
 }
 
 export type AdapterRuntimeFactory = () => AdapterRuntime | Promise<AdapterRuntime>;
@@ -46,6 +50,9 @@ interface HostState {
   runtime?: AdapterRuntime;
   runtimeId?: string;
   failed: boolean;
+  generation: number;
+  stopping?: boolean;
+  health?: { close(): Promise<void> };
 }
 
 interface LifecycleRequest {
@@ -280,6 +287,20 @@ async function dispatch(
     state.runtime = candidate;
     state.runtimeId = messageRuntimeId;
     state.failed = false;
+    const directory = process.env.FABRIC_HOME;
+    if (directory !== undefined && candidate.check !== undefined) {
+      state.health = await serveHealth(messageRuntimeId, directory, async (level) => {
+        const generation = state.generation;
+        const runtime = state.runtime;
+        if (state.stopping || runtime?.check === undefined) return unobservedHealth("observation_changed");
+        if (state.failed && level !== "live") return {
+          ...unobservedHealth("endpoint_unavailable"), outcome: "failed",
+        };
+        const result = await runtime.check(level);
+        return state.generation === generation && state.runtime === runtime && !state.stopping
+          ? result : unobservedHealth("observation_changed");
+      });
+    }
     return success("start");
   }
 
@@ -291,6 +312,8 @@ async function dispatch(
   }
 
   if (request.operation === "stop") {
+    state.generation += 1;
+    state.stopping = true;
     const active = state.runtime;
     await callAdapter("stop", () => active.stop());
     state.runtime = undefined;
@@ -360,7 +383,7 @@ export async function serve(factory: AdapterRuntimeFactory, options: LifecycleHo
     process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
   }
   const lines = createInterface({ input, crlfDelay: Infinity });
-  const state: HostState = { failed: false };
+  const state: HostState = { failed: false, generation: 0 };
 
   try {
     for await (const line of lines) {
@@ -408,6 +431,9 @@ export async function serve(factory: AdapterRuntimeFactory, options: LifecycleHo
     }
   } finally {
     lines.close();
+    state.generation += 1;
+    state.stopping = true;
+    await state.health?.close();
     if (state.runtime !== undefined) {
       await stopQuietly(state.runtime, diagnostics);
     }

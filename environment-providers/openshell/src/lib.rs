@@ -532,6 +532,15 @@ fn valid_diagnostic_code(code: &str) -> bool {
             | "server_stopping"
             | "probe_timeout"
             | "probe_error"
+            | "observation_changed"
+            | "unsupported_adapter"
+            | "unsupported_level"
+            | "unsupported_scope"
+            | "capabilities_unverified"
+            | "agent_exited"
+            | "session_closed"
+            | "endpoint_unavailable"
+            | "health_failed"
     )
 }
 
@@ -1236,6 +1245,12 @@ enum ProviderOperation {
 enum TaskCommand {
     Check {
         timeout_seconds: f64,
+        #[serde(default)]
+        agent: Option<String>,
+        #[serde(default)]
+        runtime_id: Option<String>,
+        #[serde(default)]
+        level: Option<String>,
     },
     Start {
         agent: String,
@@ -1254,7 +1269,9 @@ enum TaskCommand {
 impl TaskCommand {
     fn check_timeout(&self) -> Option<f64> {
         match self {
-            Self::Check { timeout_seconds } => Some(*timeout_seconds),
+            Self::Check {
+                timeout_seconds, ..
+            } => Some(*timeout_seconds),
             _ => None,
         }
     }
@@ -1262,7 +1279,12 @@ impl TaskCommand {
     fn arguments(self) -> Result<(&'static str, Vec<String>, Option<Value>), ProviderError> {
         let mut arguments = vec!["fabric-agent-ctl".to_string()];
         let (operation, agent, runtime_id, payload) = match self {
-            Self::Check { timeout_seconds } => {
+            Self::Check {
+                timeout_seconds,
+                agent,
+                runtime_id,
+                level,
+            } => {
                 if !timeout_seconds.is_finite() || timeout_seconds <= 0.0 {
                     return Err(ProviderError::contract(
                         "invalid_runtime_command",
@@ -1274,6 +1296,31 @@ impl TaskCommand {
                     "--timeout-seconds".into(),
                     timeout_seconds.to_string(),
                 ]);
+                match (agent, runtime_id, level) {
+                    (None, None, None) => {}
+                    (Some(agent), Some(runtime_id), Some(level))
+                        if !agent.trim().is_empty()
+                            && !agent.contains('\0')
+                            && !runtime_id.trim().is_empty()
+                            && !runtime_id.contains('\0')
+                            && ["live", "active", "ready", "operational"]
+                                .contains(&level.as_str()) =>
+                    {
+                        arguments.extend([
+                            "--agent".into(),
+                            agent,
+                            "--runtime-id".into(),
+                            runtime_id,
+                            format!("--{level}"),
+                        ]);
+                    }
+                    _ => {
+                        return Err(ProviderError::contract(
+                            "invalid_runtime_command",
+                            "invalid health target",
+                        ));
+                    }
+                }
                 return Ok(("check", arguments, None));
             }
             Self::Start { agent, config } => ("start", agent, None, Some(config)),
@@ -2167,6 +2214,29 @@ mod tests {
             ["fabric-agent-ctl", "check", "--timeout-seconds", "0.25"]
         );
         assert!(input.is_none());
+    }
+
+    #[test]
+    fn runtime_check_maps_to_the_exact_agent_and_level() {
+        let command: TaskCommand = serde_json::from_value(json!({
+            "operation": "check", "agent": "researcher", "runtime_id": "runtime-1",
+            "level": "ready", "timeout_seconds": 0.25
+        }))
+        .unwrap();
+        let (operation, arguments, payload) = command.arguments().unwrap();
+        assert_eq!(operation, "check");
+        assert!(payload.is_none());
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["--agent", "researcher"])
+        );
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["--runtime-id", "runtime-1"])
+        );
+        assert_eq!(arguments.last().unwrap(), "--ready");
     }
 
     #[test]
