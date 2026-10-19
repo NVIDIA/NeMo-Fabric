@@ -43,7 +43,7 @@ Each completed check preserves a `fabric.check/v1alpha1` report in `result`, wit
 
 Report timing covers the client call, including connection, response decoding, and validation. `completed_at` records client completion; each `observed_at` records when the server collected the evidence. Successful checks, confirmed failures, and timeouts use the same timing interval.
 
-Checks use one three-second deadline for connection, sending, and response decoding. Use `fabric-agent-ctl check --timeout-seconds 1` to select another positive, finite budget. A timeout returns `unknown/probe_timeout`, with an unobserved server observation. Check timeouts do not cancel invocations, stop runtimes, or change sandbox ownership. The public `Fabric.check()` method and agent health checks remain future work.
+Checks use one three-second deadline for connection, sending, and response decoding. Use `fabric-agent-ctl check --timeout-seconds 1` to select another positive, finite budget. A timeout returns `unknown/probe_timeout`, with an unobserved server observation. Check timeouts do not cancel invocations, stop runtimes, or change sandbox ownership. The public `Fabric.check(environment=..., request=CheckRequest(scope="server"))` method maps OpenShell server requests to this command. Runtime targets and agent health checks follow in the next stacked change.
 
 ## Runtime Ownership
 

@@ -23,6 +23,9 @@ repository = "https://github.com/NVIDIA/nemo-fabric"
 [workspace.dependencies]
 nemo-fabric-core = { path = "crates/fabric-core", version = "0.6.0" }
 
+# UTC health evidence and strict RFC 3339 timestamp validation.
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+
 clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "suggestions"] }
 # Validate adapter-owned JSON Schema in Rust while preserving precise instance paths.
 # `schemars` only generates schemas, and delegating validation to Python would cross

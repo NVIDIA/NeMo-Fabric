@@ -20,9 +20,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
-use std::time::Duration;
-#[cfg(unix)]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -487,6 +485,118 @@ where
     }
 }
 
+// Health must not acquire an invocation worker or the shared provider lock.
+// This process owns only the read-only check command and is always retired.
+fn request_check_provider_process<T>(
+    command: OsString,
+    operation: ProviderOperation<'_>,
+    timeout_seconds: f64,
+) -> Result<T>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let started = Instant::now();
+    let budget = Duration::try_from_secs_f64(timeout_seconds).unwrap_or(Duration::MAX);
+    let remaining = || {
+        let remaining = budget.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            Err(provider_failure(
+                "runtime_command",
+                "probe_timeout",
+                "health deadline expired".into(),
+            ))
+        } else {
+            Ok(remaining)
+        }
+    };
+    let request_id = new_id("health-provider-request");
+    let mut process = ProviderProcess::spawn(command, "runtime_command")?;
+    let result = (|| {
+        let mut request = serde_json::to_value(ProviderRequest {
+            protocol_version: PROVIDER_PROTOCOL_VERSION,
+            request_id: &request_id,
+            operation,
+        })
+        .map_err(FabricError::SerializeJson)?;
+        let seconds = remaining()?.as_secs_f64();
+        request["command"]["timeout_seconds"] = Value::from(seconds);
+        request["timeout_seconds"] = Value::from(seconds.ceil().clamp(1.0, 320.0) as u64);
+        let mut encoded = serde_json::to_vec(&request).map_err(FabricError::SerializeJson)?;
+        if encoded.len() > MAX_PROVIDER_REQUEST_BYTES {
+            return provider_error(
+                "runtime_command",
+                "request_too_large",
+                "health request exceeds its limit".into(),
+            );
+        }
+        encoded.push(b'\n');
+        process.write_request(&encoded, remaining()?).map_err(|_| {
+            provider_failure(
+                "runtime_command",
+                "provider_protocol_error",
+                "health request could not be delivered".into(),
+            )
+        })?;
+        let output = match process.responses.recv_timeout(remaining()?) {
+            Ok(Ok(output)) => output,
+            Err(RecvTimeoutError::Timeout) => {
+                return provider_error(
+                    "runtime_command",
+                    "probe_timeout",
+                    "health deadline expired".into(),
+                );
+            }
+            _ => {
+                return provider_error(
+                    "runtime_command",
+                    "provider_protocol_error",
+                    "health response is unavailable".into(),
+                );
+            }
+        };
+        remaining()?;
+        if output.is_empty() || output.len() > 16 * 1024 || output.last() != Some(&b'\n') {
+            return provider_error(
+                "runtime_command",
+                "provider_protocol_error",
+                "invalid health response framing".into(),
+            );
+        }
+        let response: ProviderResponse = serde_json::from_slice(&output).map_err(|_| {
+            provider_failure(
+                "runtime_command",
+                "provider_protocol_error",
+                "invalid health response".into(),
+            )
+        })?;
+        if response.protocol_version != PROVIDER_PROTOCOL_VERSION
+            || response.request_id != request_id
+        {
+            return provider_error(
+                "runtime_command",
+                "provider_correlation_mismatch",
+                "health response correlation failed".into(),
+            );
+        }
+        match response.outcome {
+            ProviderOutcome::Succeeded { output } => serde_json::from_value(output).map_err(|_| {
+                provider_failure(
+                    "runtime_command",
+                    "provider_protocol_error",
+                    "invalid health command result".into(),
+                )
+            }),
+            ProviderOutcome::Failed { .. } => provider_error(
+                "runtime_command",
+                "probe_error",
+                "health command failed".into(),
+            ),
+        }
+    })();
+    process.shutdown();
+    result
+}
+
 fn request_runtime_provider_process<T>(
     command: OsString,
     operation: ProviderOperation<'_>,
@@ -502,10 +612,15 @@ where
     else {
         unreachable!("runtime provider path requires a runtime command")
     };
+    if let TaskCommand::Check { timeout_seconds } = task_command {
+        let budget = *timeout_seconds;
+        return request_check_provider_process(command, operation, budget);
+    }
     let operation_name = operation.name();
     let request_id = new_id("environment-provider-request");
     let environment_key = environment_resource_key(environment)?;
     let (identity, is_start, is_stop) = match task_command {
+        TaskCommand::Check { .. } => unreachable!("health uses a separate provider process"),
         TaskCommand::Start { .. } => (request_id.clone(), true, false),
         TaskCommand::Invoke { runtime_id, .. } => (runtime_id.clone(), false, false),
         TaskCommand::Stop { runtime_id, .. } => (runtime_id.clone(), false, true),

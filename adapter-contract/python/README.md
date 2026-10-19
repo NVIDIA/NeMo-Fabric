@@ -28,6 +28,12 @@ An adapter descriptor opts into the southbound configuration with
 `config.input=agent_config`. Python adapters using the optional common
 lifecycle host pass `AgentConfig.from_mapping` as the `config_loader`.
 
+`AdapterCheckRequest` and `AdapterCheckResult` in the same models module define
+the closed health-probe contract. A result preserves required null fields and
+uses fixed reason codes and evidence-source identifiers. Health dispatch is
+independent of invocation dispatch; the bundled Python lifecycle host does not
+implement health transport yet.
+
 ## Install
 
 Install the package directly when developing a Python adapter:

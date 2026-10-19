@@ -1,0 +1,208 @@
+{
+  "$defs": {
+    "CheckOutcome": {
+      "description": "Health outcome, independent of invocation outcomes.",
+      "oneOf": [
+        {
+          "const": "passed",
+          "description": "All requested evidence passed.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "A confirmed problem was observed.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Evidence is unavailable or invalidated.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported",
+          "description": "The requested check is unimplemented.",
+          "type": "string"
+        }
+      ]
+    },
+    "CheckReason": {
+      "description": "Fixed diagnostic codes; reports never include exception text.",
+      "oneOf": [
+        {
+          "const": "server_stopping",
+          "description": "The server is stopping.",
+          "type": "string"
+        },
+        {
+          "const": "capabilities_unverified",
+          "description": "Advertised capability evidence is unavailable.",
+          "type": "string"
+        },
+        {
+          "const": "runtime_unavailable",
+          "description": "No matching runtime binding exists.",
+          "type": "string"
+        },
+        {
+          "const": "agent_exited",
+          "description": "The owned process exited.",
+          "type": "string"
+        },
+        {
+          "const": "session_closed",
+          "description": "The native session closed.",
+          "type": "string"
+        },
+        {
+          "const": "endpoint_unavailable",
+          "description": "The native request interface is unavailable.",
+          "type": "string"
+        },
+        {
+          "const": "health_failed",
+          "description": "Required local setup failed.",
+          "type": "string"
+        },
+        {
+          "const": "probe_timeout",
+          "description": "The shared deadline expired.",
+          "type": "string"
+        },
+        {
+          "const": "probe_error",
+          "description": "The probe did not provide valid evidence.",
+          "type": "string"
+        },
+        {
+          "const": "observation_changed",
+          "description": "Ownership or lifecycle changed while checking.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported_adapter",
+          "description": "The adapter does not implement health checks.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported_level",
+          "description": "The requested level is unavailable.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported_scope",
+          "description": "This environment does not implement the requested scope.",
+          "type": "string"
+        }
+      ]
+    },
+    "CheckSource": {
+      "description": "Fixed evidence-source identifiers.",
+      "oneOf": [
+        {
+          "const": "fabric.runtime_server",
+          "description": "Runtime server observation.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.runtime_server.transport",
+          "description": "Runtime-server transport observation.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter",
+          "description": "Unobserved adapter transport or unsupported probe.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter.pi.session",
+          "description": "Fresh native Pi context observation.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter.pi.interface",
+          "description": "Pi initialization and interface guards.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter.pi.setup",
+          "description": "Pi model, tool, and connection inspection.",
+          "type": "string"
+        }
+      ]
+    },
+    "RuntimeActivity": {
+      "description": "Current runtime activity; busy alone does not fail health.",
+      "oneOf": [
+        {
+          "const": "idle",
+          "description": "No invocation is running.",
+          "type": "string"
+        },
+        {
+          "const": "busy",
+          "description": "An invocation is running.",
+          "type": "string"
+        },
+        {
+          "const": "stopping",
+          "description": "Shutdown has begun.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "Shutdown completed.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Current activity could not be verified.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One adapter-owned observation, returned through the independent health channel.",
+  "properties": {
+    "activity": {
+      "$ref": "#/$defs/RuntimeActivity",
+      "description": "Current agent activity."
+    },
+    "observed_at": {
+      "description": "Native observation time in UTC, or null if no observation was made.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "outcome": {
+      "$ref": "#/$defs/CheckOutcome",
+      "description": "Probe outcome."
+    },
+    "reason_code": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CheckReason"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Fixed diagnostic or null on pass."
+    },
+    "source": {
+      "$ref": "#/$defs/CheckSource",
+      "description": "Fixed evidence source."
+    }
+  },
+  "required": [
+    "activity",
+    "observed_at",
+    "outcome",
+    "reason_code",
+    "source"
+  ],
+  "title": "AdapterCheckResult",
+  "type": "object"
+}

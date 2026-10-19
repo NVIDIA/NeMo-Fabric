@@ -1,0 +1,16 @@
+---
+title: "Function check_environment"
+sidebar-title: "check_environment"
+description: "Observe server health through the command bridge without lifecycle effects."
+position: 27
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn check_environment(\n    environment: &amp;<a href=\"../runtime/struct-environmenthandle.mdx\">EnvironmentHandle</a>,\n    request: &amp;<a href=\"enum-checkrequest.mdx\">CheckRequest</a>,\n) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"struct-checkreport.mdx\">CheckReport</a>&gt;"}} /></pre>
+
+Observe server health through the command bridge without lifecycle effects.
+
+OpenShell server checks map to `fabric-agent-ctl check` in the selected sandbox. Local server checks and runtime checks are unsupported in this slice.

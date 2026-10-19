@@ -65,6 +65,15 @@ these related representations do not drift.
 
 ## Adapter Contract
 
+- `adapter-contract/adapter-check-request` and `adapter-check-result`: one
+  independently dispatched health probe and its fixed, safe observation.
+  These closed objects preserve required null fields and never carry prompts,
+  configuration values, credentials, or raw exceptions.
+- `sdk/check-request` and `check-report`: server or runtime target selection,
+  the shared deadline, and ordered health evidence. Runtime checks default to
+  `live`; `operational` is reserved and runs no probes. All health reports use
+  `fabric.check/v1alpha1`.
+
 - `adapter-contract/adapter-descriptor`: adapter identity, runner,
   requirements, accepted normalized fields, schemas, telemetry support, and
   runtime capability claims.

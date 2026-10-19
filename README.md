@@ -69,6 +69,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 - [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.
 - [Host admission](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host): Validate requested capabilities and reject host/task descriptor drift before execution.
 - [NeMo Fabric runtime server](sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md): Control multiple SDK runtimes inside one sandbox through `fabric-agent-ctl` and one private local socket. Use `fabric-agent-ctl check` to check server responsiveness before starting a runtime. Unconfirmed cleanup retains sandbox ownership and blocks replacement servers.
+- [SDK server health](docs/sdk/python.mdx#runtime-health): Call `Fabric.check()` to run `fabric-agent-ctl check` in an OpenShell sandbox before starting a runtime or during an invocation.
 - [Documentation overview](docs/about-nemo-fabric/overview.mdx): Understand the execution model and choose an interface.
 - [Adapter reference](adapters/README.md): Compare adapter configuration, runtime, and observability support.
 - [Contribution guide](CONTRIBUTING.md): Build, test, and contribute to the project.
