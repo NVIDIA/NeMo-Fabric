@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from nemo_fabric.runtime_server.protocol import (
     envelope,
     validate_request,
 )
+from nemo_fabric.runtime_server.health import server_report
 
 MAX_STOPPED_RUNTIME_RECORDS = 128
 
@@ -83,6 +85,7 @@ class RuntimeServer:
             self.runtimes.pop(runtime_id, None)
 
     async def handle(self, request: Any) -> dict[str, Any]:
+        started = time.monotonic()
         operation = (
             request.get("operation", "unknown")
             if isinstance(request, dict)
@@ -96,6 +99,16 @@ class RuntimeServer:
             validate_request(request)
             if operation == "serve":
                 raise ProtocolError()
+            if operation == "check":
+                return envelope(
+                    operation,
+                    server_report(
+                        "stopping" if self.shutting_down else "responding", started
+                    ),
+                    error=ProtocolError("server_stopping", "check")
+                    if self.shutting_down
+                    else None,
+                )
             if self.shutting_down:
                 raise ProtocolError("host_stopping")
 

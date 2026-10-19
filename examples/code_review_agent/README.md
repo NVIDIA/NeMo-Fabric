@@ -237,6 +237,8 @@ OpenShell sandbox; the host uses OpenShell's Python SDK to invoke
 sandbox. This example bypasses NeMo Fabric's environment provider and
 host-side lifecycle SDK. The SDK example above demonstrates that full path.
 
+After the server socket appears, callers can run `fabric-agent-ctl check` inside the sandbox to check server responsiveness before starting a runtime. This server check also works during invocations and does not establish OpenClaw readiness.
+
 Prerequisites are Docker with Linux containers, the OpenShell CLI, and a registered OpenShell gateway. Match the OpenShell CLI and Python SDK to the gateway version; this example was tested with `0.1.2`. Build from the NeMo Fabric repository root so the image contains the current native extension, server, adapter, code-review skill, and sample repository. The Dockerfile uses public, digest-pinned Python, Node, OpenClaw, Rust, and uv images:
 
 ```sh
