@@ -619,7 +619,9 @@ async def _capture_stream(
         tail.append(line.decode(errors="replace").rstrip())
 
 
-async def _parent_death_prefix() -> list[str]:
+async def _parent_death_prefix(
+    *, timeout: float = DEFAULT_STARTUP_TIMEOUT_SECONDS
+) -> list[str]:
     """Return the ``setpriv`` prefix that signals the Gateway when the adapter dies.
 
     The prefix is used only when ``setpriv`` can run here. ``setpriv`` applies
@@ -646,7 +648,15 @@ async def _parent_death_prefix() -> list[str]:
         )
     except OSError:
         return []
-    return prefix if await probe.wait() == 0 else []
+    try:
+        returncode = await asyncio.wait_for(probe.wait(), timeout=timeout)
+    except TimeoutError:
+        await _kill_and_reap(probe)
+        return []
+    except asyncio.CancelledError:
+        await _kill_and_reap(probe)
+        raise
+    return prefix if returncode == 0 else []
 
 
 def _gateway_command(
@@ -890,7 +900,7 @@ class OpenClawRuntime:
             gateway_command = _gateway_command(
                 command,
                 port=port,
-                prefix=await _parent_death_prefix(),
+                prefix=await _parent_death_prefix(timeout=startup_timeout),
             )
             self._process = await asyncio.create_subprocess_exec(
                 *gateway_command,

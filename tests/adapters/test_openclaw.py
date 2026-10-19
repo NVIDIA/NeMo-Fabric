@@ -266,6 +266,64 @@ async def test_openclaw_gateway_skips_setpriv_when_the_probe_cannot_start(
     assert await adapter._parent_death_prefix() == []
 
 
+async def test_openclaw_gateway_probe_timeout_kills_and_reaps_process(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    mock_process.wait = AsyncMock(side_effect=asyncio.Event().wait)
+    mock_process.communicate = AsyncMock(return_value=(b"", b""))
+    monkeypatch.setattr(adapter.sys, "platform", "linux")
+    monkeypatch.setattr(
+        adapter.shutil, "which", MagicMock(return_value="/usr/bin/setpriv")
+    )
+    monkeypatch.setattr(
+        adapter.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=mock_process),
+    )
+
+    assert await adapter._parent_death_prefix(timeout=0.01) == []
+
+    mock_process.kill.assert_called_once_with()
+    mock_process.communicate.assert_awaited_once_with()
+
+
+async def test_openclaw_gateway_probe_cancellation_kills_and_reaps_process(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    started = asyncio.Event()
+
+    async def wait() -> int:
+        started.set()
+        await asyncio.Event().wait()
+        return 0
+
+    mock_process.wait = AsyncMock(side_effect=wait)
+    mock_process.communicate = AsyncMock(return_value=(b"", b""))
+    monkeypatch.setattr(adapter.sys, "platform", "linux")
+    monkeypatch.setattr(
+        adapter.shutil, "which", MagicMock(return_value="/usr/bin/setpriv")
+    )
+    monkeypatch.setattr(
+        adapter.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=mock_process),
+    )
+    task = asyncio.create_task(adapter._parent_death_prefix())
+    await started.wait()
+
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    mock_process.kill.assert_called_once_with()
+    mock_process.communicate.assert_awaited_once_with()
+
+
 @pytest.mark.parametrize(
     "prefix",
     [
