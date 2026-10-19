@@ -267,6 +267,23 @@ class EnvironmentConfig(FabricBaseModel):
         description="Whether NeMo Fabric control code runs outside or inside the environment.",
     )
 
+    @model_validator(mode="after")
+    def _validate_task_paths(self) -> Self:
+        if self.provider == "openshell":
+            for field in ("workspace", "artifacts"):
+                value = getattr(self, field)
+                if value is not None and (
+                    not isinstance(value, str)
+                    or not value.startswith("/")
+                    or "\\" in value
+                    or "\0" in value
+                    or ".." in value.split("/")
+                ):
+                    raise ValueError(
+                        f"environment.{field} must be an absolute POSIX task path"
+                    )
+        return self
+
     @field_validator("env")
     @classmethod
     def _validate_env_names(cls, value: dict[str, str]) -> dict[str, str]:
@@ -360,9 +377,7 @@ class McpAuthenticationConfig(FabricBaseModel):
     type: Literal["oauth2", "service_account"]
     client_id: str | None = None
     client_secret_env: str | None = None
-    scopes: list[str] = Field(
-        default_factory=list, exclude_if=lambda value: not value
-    )
+    scopes: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     redirect_uri: str | None = None
     enable_dynamic_registration: bool = Field(
         default=True, exclude_if=lambda value: value
@@ -474,9 +489,7 @@ class McpServerConfig(FabricBaseModel):
     transport: Literal["stdio", "sse", "streamable-http"]
     url: str = Field(
         min_length=1,
-        description=(
-            "MCP server URL for network transports or executable for stdio."
-        ),
+        description=("MCP server URL for network transports or executable for stdio."),
     )
     args: list[str] = Field(
         default_factory=list,
@@ -538,7 +551,9 @@ class McpServerConfig(FabricBaseModel):
             overlap = set(self.allowed_tools).intersection(self.blocked_tools)
             if overlap:
                 name = sorted(overlap)[0]
-                raise ValueError(f"MCP tool {name!r} cannot be both allowed and blocked")
+                raise ValueError(
+                    f"MCP tool {name!r} cannot be both allowed and blocked"
+                )
         return self
 
     def to_mapping(self) -> dict[str, Any]:
@@ -747,16 +762,21 @@ class RelayOpenTelemetryConfig(FabricBaseModel):
 
     @model_validator(mode="after")
     def _validate_v4_shape(self) -> Self:
-        legacy_fields = _LEGACY_FLAT_OTEL_FIELDS.intersection(self.model_extra or {})
+        extra = self.model_extra or {}
+        legacy_fields = _LEGACY_FLAT_OTEL_FIELDS.intersection(extra)
         if legacy_fields:
             fields = ", ".join(sorted(legacy_fields))
             raise ValueError(
                 "NeMo Relay observability config version 4 requires exporter "
                 f"fields inside opentelemetry.endpoints: {fields}"
             )
-        if self.enabled and not self.endpoints:
+        file_sinks = extra.get("file_sinks")
+        if "file_sinks" in extra and not isinstance(file_sinks, list):
+            raise ValueError("NeMo Relay opentelemetry.file_sinks must be a list")
+        if self.enabled and not self.endpoints and not file_sinks:
             raise ValueError(
-                "enabled NeMo Relay OpenTelemetry requires at least one endpoint"
+                "enabled NeMo Relay OpenTelemetry requires at least one endpoint "
+                "or file sink"
             )
         return self
 
@@ -775,7 +795,9 @@ class RelayObservabilityConfig(FabricBaseModel):
     @classmethod
     def _validate_version(cls, value: Any) -> Any:
         if not isinstance(value, int) or isinstance(value, bool) or value != 4:
-            raise ValueError("NeMo Fabric requires Relay observability config version 4")
+            raise ValueError(
+                "NeMo Fabric requires Relay observability config version 4"
+            )
         return value
 
     @model_validator(mode="after")
@@ -847,9 +869,7 @@ class RelayConfig(FabricBaseModel):
                     "NeMo Relay opentelemetry config must be an object for "
                     f"relay.components[{index}]"
                 )
-            legacy_fields = sorted(
-                _LEGACY_FLAT_OTEL_FIELDS.intersection(opentelemetry)
-            )
+            legacy_fields = sorted(_LEGACY_FLAT_OTEL_FIELDS.intersection(opentelemetry))
             if legacy_fields:
                 fields = ", ".join(legacy_fields)
                 raise ValueError(
@@ -869,10 +889,16 @@ class RelayConfig(FabricBaseModel):
                     "NeMo Relay opentelemetry.endpoints must be a list for "
                     f"relay.components[{index}]"
                 )
-            if enabled and not endpoints:
+            file_sinks = opentelemetry.get("file_sinks")
+            if "file_sinks" in opentelemetry and not isinstance(file_sinks, list):
+                raise ValueError(
+                    "NeMo Relay opentelemetry.file_sinks must be a list for "
+                    f"relay.components[{index}]"
+                )
+            if enabled and not endpoints and not file_sinks:
                 raise ValueError(
                     "enabled NeMo Relay OpenTelemetry requires at least one "
-                    f"endpoint for relay.components[{index}]"
+                    f"endpoint or file sink for relay.components[{index}]"
                 )
             for endpoint_index, endpoint_config in enumerate(endpoints or []):
                 if not isinstance(endpoint_config, Mapping):
@@ -1033,8 +1059,7 @@ class ToolsConfig(FabricBaseModel):
         overlap = {"kind", "ref", "settings"}.intersection(extras)
         if overlap:
             raise ValueError(
-                "extra_fields duplicates known fields: "
-                + ", ".join(sorted(overlap))
+                "extra_fields duplicates known fields: " + ", ".join(sorted(overlap))
             )
         value = {
             "kind": kind,

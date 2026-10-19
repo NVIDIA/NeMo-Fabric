@@ -308,6 +308,38 @@ def test_unknown_usage_preserves_existing_context(result_path, usage, expected):
             (20, 5, 8, 1.25),
         ),
         (None, (12, 3, 4, 0.25)),
+        pytest.param(
+            {
+                "input_tokens": 5,
+                "output_tokens": 90,
+                "metadata": {
+                    "nemo_fabric.detailed_token_usage.v1": {
+                        "input_tokens": 5,
+                        "cached_input_tokens": 3000,
+                        "cache_write_input_tokens": 400,
+                        "input_tokens_include_cache": False,
+                        "output_tokens": 90,
+                        "output_tokens_include_reasoning": True,
+                    }
+                },
+            },
+            (3405, 3000, 90, 0.25),
+            id="complete-detailed-input-takes-input-and-cache-from-result",
+        ),
+        pytest.param(
+            {
+                "input_tokens": 5,
+                "output_tokens": 90,
+                "metadata": {
+                    "nemo_fabric.detailed_token_usage.v1": {
+                        "output_tokens": 90,
+                        "output_tokens_include_reasoning": True,
+                    }
+                },
+            },
+            (12, 3, 90, 0.25),
+            id="output-only-detailed-takes-input-and-cache-from-atif",
+        ),
     ],
 )
 def test_atif_only_fills_missing_accounting(result_path, tmp_path, usage, expected):

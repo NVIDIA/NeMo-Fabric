@@ -201,11 +201,39 @@ objects.
 NeMo Fabric provides the runtime contract. Applications own scheduling, queues,
 retries, worker scaling, and the number of runtimes to run.
 
+### Explicit Environment Lifecycle
+
+`prepare_environment(config)` returns an immutable `EnvironmentHandle` without
+starting an agent. Pass it to `start_runtime_in(config, environment)` to start a
+runtime, then invoke and stop that runtime normally. Call
+`release_environment(environment)` separately after collecting results. Local
+release preserves caller-owned files and supports multiple runtimes.
+
+`attach_environment(config, EnvironmentReference.from_mapping(...))` asks the
+selected provider to verify an existing resource. Providers that do not support
+attachment return an unsupported-provider error. Attachment retains caller
+ownership; release detaches without deleting that resource. Provider availability
+and runtime reuse limits depend on the selected environment implementation.
+Non-local workspace and artifact paths refer to the task environment and are
+not resolved against the host's `base_dir`. The OpenShell provider starts the
+agent through the task SDK command bridge. One sandbox can host multiple
+independent runtime IDs; invoke and stop target a specific ID, and stopping one
+does not stop the others. Streaming and shared-service hosting remain local SDK
+capabilities.
+
+The optional [OpenShell provider](https://github.com/NVIDIA/NeMo-Fabric/blob/main/environment-providers/openshell/README.md)
+uses the task command bridge and returns the task-generated SDK runtime ID and
+normalized results. Declared files are collected under the host's
+`runtime.artifacts/<runtime_id>/<invocation_id>/` directory. The task artifact
+root is separate. OpenShell invocation is buffered; streaming and shared-service
+hosting remain local SDK capabilities. Commands with uncertain outcomes are
+never replayed; an uncertain start blocks further starts in that sandbox.
+
 ### Sandbox Command Bridge
 
 `fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, and `stop` commands call the existing `Fabric.start_runtime()`, `Runtime.invoke()`, and `Runtime.stop()` methods. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
 
-Each sandbox supports one runtime lifecycle. Further starts are rejected after successful or uncertain startup, including after stop. Ordinary SDK stop does not confirm descendant cleanup, so the runtime server retains `fabric.unclean` until the caller replaces the sandbox. Direct SDK consumers retain multiple-runtime support. Refer to the [runtime server command guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md).
+One sandbox can own multiple runtimes, each addressed by its returned runtime ID. Invoke and stop operations are independent across IDs; stopping one runtime leaves the others usable, and another runtime can be started after a stop. An uncertain start blocks further starts because the server cannot safely determine whether an unaddressable runtime exists. Ordinary SDK stop does not confirm descendant cleanup, so the runtime server retains `fabric.unclean` after runtime use and refuses a replacement server until the sandbox supervisor has cleaned up the previous sandbox. Refer to the [runtime server command guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md).
 
 ## Configure Agents In Code
 
@@ -511,6 +539,33 @@ relay_config.enable_relay(
     ),
 )
 ```
+
+To write OpenTelemetry spans to local files, add `file_sinks` to the `opentelemetry` section. File sinks need NeMo Relay 0.10 or later. You can use them instead of endpoints or alongside them. When `opentelemetry` is enabled, it needs at least one endpoint or file sink.
+
+The following example writes OpenInference spans to files instead of sending them to a collector:
+
+```python
+relay_config.enable_relay(
+    output_dir="./artifacts/relay",
+    observability={
+        "opentelemetry": {
+            "enabled": True,
+            "file_sinks": [
+                {"type": "openinference", "output_directory": "./artifacts/relay"}
+            ],
+        },
+    },
+)
+```
+
+NeMo Fabric handles these files as follows:
+
+- As with ATOF and ATIF files, each runtime writes to its own directory: `<output_directory>/<runtime_id>`. If you omit `output_directory`, NeMo Fabric uses `artifacts/relay`.
+- If you omit `filename`, Relay names each file with a timestamp when it starts. A later invocation can then write to a new file.
+- File sinks append by default. If you set `filename`, that file keeps the spans from earlier invocations. To replace it each time Relay starts, set `"mode": "overwrite"`.
+- `RunResult.artifacts` lists each file as an artifact of kind `otlp`. Its media type is `application/x-ndjson` for the default `json_lines` format and `application/x-protobuf` for the `proto` format.
+
+Relay buffers spans and writes them in batches. It writes the final batch when it shuts down, so read the files after the runtime stops. If Relay crashes, or is forcibly stopped because it does not shut down in time, a file can be missing its most recent spans.
 
 `RelayAtifConfig.model_name` is an optional ATIF-only override. When you omit
 it, NeMo Fabric writes the selected `default` model, or the only configured

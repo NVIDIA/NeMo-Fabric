@@ -1872,6 +1872,29 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
             "at least one of harness.adapter_id or workflow.target_id is required",
         );
     }
+    if let Some(environment) = &config.environment
+        && environment.provider == "openshell"
+    {
+        for (field, path) in [
+            ("workspace", &environment.workspace),
+            ("artifacts", &environment.artifacts),
+        ] {
+            if let Some(path) = path {
+                let valid = path.to_str().is_some_and(|value| {
+                    value.starts_with('/')
+                        && !value.contains('\\')
+                        && !value.contains('\0')
+                        && !value.split('/').any(|part| part == "..")
+                });
+                if !valid {
+                    return invalid_config(
+                        format!("environment.{field}"),
+                        "must be an absolute POSIX task path",
+                    );
+                }
+            }
+        }
+    }
     if let Some(harness) = &config.harness
         && harness.adapter_id.trim().is_empty()
     {
@@ -2007,10 +2030,17 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                         "moved into each typed endpoint in observability config version 3",
                     );
                 }
-                if opentelemetry.enabled && opentelemetry.endpoints.is_empty() {
+                let file_sinks = relay_otel_file_sinks(
+                    "relay.observability.opentelemetry.file_sinks",
+                    opentelemetry.extensions.get("file_sinks"),
+                )?;
+                if opentelemetry.enabled
+                    && opentelemetry.endpoints.is_empty()
+                    && file_sinks.is_empty()
+                {
                     return invalid_config(
                         "relay.observability.opentelemetry.endpoints",
-                        "must contain at least one endpoint when OpenTelemetry export is enabled",
+                        "must contain at least one endpoint or file sink when OpenTelemetry export is enabled",
                     );
                 }
                 for (index, endpoint) in opentelemetry.endpoints.iter().enumerate() {
@@ -2082,10 +2112,14 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                     }
                     None => None,
                 };
-                if enabled && endpoints.is_none_or(Vec::is_empty) {
+                let file_sinks = relay_otel_file_sinks(
+                    format!("relay.components.{index}.config.opentelemetry.file_sinks"),
+                    opentelemetry.get("file_sinks"),
+                )?;
+                if enabled && endpoints.is_none_or(Vec::is_empty) && file_sinks.is_empty() {
                     return invalid_config(
                         format!("relay.components.{index}.config.opentelemetry.endpoints"),
-                        "must contain at least one endpoint when OpenTelemetry export is enabled",
+                        "must contain at least one endpoint or file sink when OpenTelemetry export is enabled",
                     );
                 }
                 if let Some(endpoints) = endpoints {
@@ -2305,6 +2339,14 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn relay_otel_file_sinks(field: impl Into<String>, value: Option<&Value>) -> Result<&[Value]> {
+    match value {
+        None => Ok(&[]),
+        Some(Value::Array(file_sinks)) => Ok(file_sinks),
+        Some(_) => invalid_config(field, "must be an array"),
+    }
 }
 
 fn relay_legacy_flat_otel_field(contains_field: impl Fn(&str) -> bool) -> Option<&'static str> {
@@ -3616,18 +3658,31 @@ fn resolve_environment_plan(config: &FabricConfig, base_dir: &Path) -> Option<En
         workspace: environment
             .workspace
             .as_ref()
-            .map(|workspace| resolve_path(base_dir, workspace)),
+            .map(|workspace| environment_path(environment, base_dir, workspace)),
         artifacts: environment
             .artifacts
             .as_ref()
-            .or(config.runtime.artifacts.as_ref())
-            .map(|artifacts| resolve_path(base_dir, artifacts)),
+            .or_else(|| {
+                (environment.provider == "local")
+                    .then_some(config.runtime.artifacts.as_ref())
+                    .flatten()
+            })
+            .map(|artifacts| environment_path(environment, base_dir, artifacts)),
         env: environment.env.clone(),
         env_names: environment.env_names.clone(),
         connection: environment.connection.clone(),
         metadata: environment.metadata.clone(),
         settings: environment.settings.clone(),
     })
+}
+
+fn environment_path(environment: &EnvironmentConfig, base_dir: &Path, path: &Path) -> PathBuf {
+    if environment.provider == "local" {
+        resolve_path(base_dir, path)
+    } else {
+        // Provider paths belong to the task. Do not resolve them on the host.
+        path.to_path_buf()
+    }
 }
 
 fn resolve_capability_plan(
@@ -4644,11 +4699,19 @@ mod tests {
     }
 
     #[test]
-    fn generic_relay_observability_component_requires_enabled_endpoint() {
+    fn generic_relay_observability_component_requires_enabled_endpoint_or_file_sink() {
         for (opentelemetry, valid) in [
             (serde_json::json!({"enabled": true}), false),
             (serde_json::json!({"enabled": true, "endpoints": []}), false),
+            (
+                serde_json::json!({"enabled": true, "file_sinks": []}),
+                false,
+            ),
             (serde_json::json!({"enabled": false, "endpoints": []}), true),
+            (
+                serde_json::json!({"enabled": true, "file_sinks": [{"type": "openinference"}]}),
+                true,
+            ),
         ] {
             let mut config = typed_config("nvidia.fabric.hermes");
             config.relay = Some(RelayConfig {
@@ -4665,10 +4728,10 @@ mod tests {
             });
 
             if valid {
-                validate_config(&config).expect("disabled exporter may omit endpoints");
+                validate_config(&config).expect("exporter has a destination or is disabled");
             } else {
-                let error =
-                    validate_config(&config).expect_err("enabled exporter needs an endpoint");
+                let error = validate_config(&config)
+                    .expect_err("enabled exporter needs an endpoint or file sink");
                 assert!(matches!(
                     error,
                     FabricError::InvalidConfig { field, .. }
@@ -4779,6 +4842,10 @@ mod tests {
                 "relay.components.0.config.opentelemetry.endpoints",
             ),
             (
+                serde_json::json!({"file_sinks": null}),
+                "relay.components.0.config.opentelemetry.file_sinks",
+            ),
+            (
                 serde_json::json!({"endpoints": [false]}),
                 "relay.components.0.config.opentelemetry.endpoints.0",
             ),
@@ -4821,25 +4888,43 @@ mod tests {
     }
 
     #[test]
-    fn enabled_relay_opentelemetry_requires_an_endpoint() {
-        let mut config = typed_config("nvidia.fabric.hermes");
-        config.relay = Some(RelayConfig {
-            observability: Some(RelayObservabilityConfig {
-                opentelemetry: Some(RelayOpenTelemetryConfig {
-                    enabled: true,
-                    ..RelayOpenTelemetryConfig::default()
+    fn enabled_relay_opentelemetry_requires_an_endpoint_or_file_sink() {
+        for (file_sinks, invalid_field) in [
+            (None, Some("relay.observability.opentelemetry.endpoints")),
+            (
+                Some(serde_json::json!([])),
+                Some("relay.observability.opentelemetry.endpoints"),
+            ),
+            (
+                Some(serde_json::json!(null)),
+                Some("relay.observability.opentelemetry.file_sinks"),
+            ),
+            (Some(serde_json::json!([{"type": "openinference"}])), None),
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.relay = Some(RelayConfig {
+                observability: Some(RelayObservabilityConfig {
+                    opentelemetry: Some(RelayOpenTelemetryConfig {
+                        enabled: true,
+                        extensions: BTreeMap::from_iter(
+                            file_sinks.map(|file_sinks| ("file_sinks".to_string(), file_sinks)),
+                        ),
+                        ..RelayOpenTelemetryConfig::default()
+                    }),
+                    ..RelayObservabilityConfig::default()
                 }),
-                ..RelayObservabilityConfig::default()
-            }),
-            ..RelayConfig::default()
-        });
+                ..RelayConfig::default()
+            });
 
-        let error = validate_config(&config).expect_err("enabled exporter needs an endpoint");
-        assert!(matches!(
-            error,
-            FabricError::InvalidConfig { field, .. }
-                if field == "relay.observability.opentelemetry.endpoints"
-        ));
+            let result = validate_config(&config);
+            match invalid_field {
+                None => result.expect("a file sink needs no endpoint"),
+                Some(invalid_field) => assert!(matches!(
+                    result,
+                    Err(FabricError::InvalidConfig { field, .. }) if field == invalid_field
+                )),
+            }
+        }
     }
 
     #[test]
@@ -7341,5 +7426,55 @@ mod tests {
             } if id == "test.fabric.installed"
                 && paths.len() == 2
         ));
+    }
+    #[test]
+    fn remote_environment_paths_are_not_resolved_on_the_host() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        let environment = config.environment.as_mut().expect("environment");
+        environment.provider = "openshell".to_string();
+        environment.workspace = Some(PathBuf::from("/sandbox/workspace"));
+        environment.artifacts = Some(PathBuf::from("/sandbox/artifacts"));
+        let plan =
+            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
+        assert_eq!(plan.workspace, Some(PathBuf::from("/sandbox/workspace")));
+        assert_eq!(plan.artifacts, Some(PathBuf::from("/sandbox/artifacts")));
+        config.environment.as_mut().expect("environment").workspace =
+            Some(PathBuf::from("relative/task/workspace"));
+        let plan =
+            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
+        assert_eq!(
+            plan.workspace,
+            Some(PathBuf::from("relative/task/workspace"))
+        );
+    }
+    #[test]
+    fn remote_environment_does_not_use_the_host_artifact_destination() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        let environment = config.environment.as_mut().expect("environment");
+        environment.provider = "openshell".to_string();
+        environment.artifacts = None;
+        config.runtime.artifacts = Some(PathBuf::from("host/review-results"));
+        let plan =
+            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
+        assert_eq!(plan.artifacts, None);
+    }
+    #[test]
+    fn openshell_paths_reject_host_syntax_and_parent_traversal() {
+        for value in [
+            "relative",
+            "C:/workspace",
+            "/sandbox/../host",
+            "/sandbox\\workspace",
+            "/sandbox\0workspace",
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            let environment = config.environment.as_mut().expect("environment");
+            environment.provider = "openshell".to_string();
+            environment.workspace = Some(PathBuf::from(value));
+            let error = validate_config(&config).expect_err("invalid task path");
+            assert!(
+                matches!(error, FabricError::InvalidConfig {field, ..} if field == "environment.workspace")
+            );
+        }
     }
 }

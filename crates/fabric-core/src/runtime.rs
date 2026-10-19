@@ -30,7 +30,11 @@ use crate::config::{
     validate_agent_run_result_extensions, validate_config, validate_harness_settings,
     validate_tool_definitions, validate_workflow,
 };
+use crate::environment::resolve_environment_provider;
 use crate::error::{FabricError, Result};
+
+mod openshell;
+use openshell::OpenShellRuntimeAdapter;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
@@ -139,9 +143,9 @@ pub struct RunResult {
     /// Artifacts produced or collected by this run.
     #[serde(default)]
     pub artifacts: ArtifactManifest,
-    /// Telemetry reference when available.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub telemetry: Option<TelemetryRef>,
+    /// Ordered telemetry references when available.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub telemetry: Vec<TelemetryRef>,
     /// NeMo Fabric lifecycle/progress events emitted during the run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<FabricEvent>,
@@ -262,8 +266,21 @@ pub struct ArtifactRef {
 /// Reference to telemetry emitted by Relay or another configured telemetry path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TelemetryRef {
-    /// Whether Relay was enabled for this run.
+    /// Whether Relay was enabled for this run; retained for native compatibility.
+    #[serde(default)]
     pub relay_enabled: bool,
+    /// Provider in the public SDK reference representation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// Reference category in the public SDK representation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Location of the persisted telemetry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    /// Provider trace identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
     /// Telemetry metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, Value>,
@@ -285,6 +302,17 @@ pub struct FabricEvent {
     pub metadata: BTreeMap<String, Value>,
 }
 
+/// Provider-specific reference to an existing execution environment.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EnvironmentReference {
+    /// Environment provider that owns the referenced resource.
+    pub provider: String,
+    /// Provider-specific resource identity used to verify and attach.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub resource: BTreeMap<String, Value>,
+}
+
 /// Resolved execution environment context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -295,10 +323,12 @@ pub struct EnvironmentHandle {
     pub provider: String,
     /// Where NeMo Fabric control code runs.
     pub control_location: ControlLocation,
-    /// Workspace visible to the harness runtime.
+    /// Workspace visible to the harness runtime. For non-local providers this is
+    /// an environment-local path and must not be resolved on the host.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<PathBuf>,
-    /// Artifact root visible to the harness runtime.
+    /// Artifact root visible to the harness runtime. For non-local providers this
+    /// is an environment-local path and must not be resolved on the host.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<PathBuf>,
     /// Environment variables visible to the harness and its tools.
@@ -870,73 +900,60 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
     Ok(result)
 }
 
-/// Resolve or attach to the execution environment context for a run plan.
+/// Prepare an execution environment for a run plan.
+///
+/// This block implements local environment preparation. Other providers return
+/// [`FabricError::UnsupportedEnvironmentProvider`] until their provider block
+/// is added.
 pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
-    let mut metadata = BTreeMap::new();
-    let mut connection = BTreeMap::new();
-    let (
-        provider,
-        control_location,
-        ownership,
-        workspace,
-        artifacts,
-        environment_env,
-        connection_settings,
-        environment_metadata,
-        settings,
-    ) = if let Some(environment) = &plan.environment_plan {
-        (
-            environment.provider.clone(),
-            environment.control_location,
-            environment.ownership,
-            environment.workspace.clone(),
-            environment.artifacts.clone(),
-            environment.env.clone(),
-            environment.connection.clone(),
-            environment.metadata.clone(),
-            environment.settings.clone(),
-        )
-    } else {
-        (
-            "local".to_string(),
-            ControlLocation::ExternalControl,
-            EnvironmentOwnership::CallerOwned,
-            Some(plan.base_dir.clone()),
-            plan.config
-                .runtime
-                .artifacts
-                .as_ref()
-                .map(|artifacts| resolve_path(&plan.base_dir, artifacts)),
-            BTreeMap::new(),
-            serde_json::Map::new(),
-            serde_json::Map::new(),
-            serde_json::Map::new(),
-        )
-    };
-    let workspace = match workspace {
-        Some(path) => Some(absolute_path(path)?),
-        None => None,
-    };
-    for (key, value) in connection_settings {
-        connection.insert(key, value);
+    let provider_id = planned_environment_provider(plan);
+    let provider = resolve_environment_provider(provider_id).ok_or_else(|| {
+        FabricError::UnsupportedEnvironmentProvider {
+            provider: provider_id.to_string(),
+            adapter_kind: adapter_kind(plan),
+        }
+    })?;
+    provider.prepare(plan)
+}
+
+/// Verify and attach to an existing caller-owned environment.
+pub fn attach_environment(
+    plan: &RunPlan,
+    reference: &EnvironmentReference,
+) -> Result<EnvironmentHandle> {
+    let provider = planned_environment_provider(plan);
+    if reference.provider != provider {
+        return Err(FabricError::InvalidConfig {
+            field: "environment_reference.provider".to_string(),
+            reason: "reference provider must match the configured environment".to_string(),
+        });
     }
-    for (key, value) in settings {
-        metadata.insert(key, value);
+    let provider = resolve_environment_provider(provider).ok_or_else(|| {
+        FabricError::UnsupportedEnvironmentProvider {
+            provider: reference.provider.clone(),
+            adapter_kind: adapter_kind(plan),
+        }
+    })?;
+    provider.attach(plan, reference)
+}
+
+/// Release or detach an environment through its provider.
+///
+/// Caller-owned resources detach without deletion; local files remain in place.
+pub fn release_environment(environment: &EnvironmentHandle) -> Result<()> {
+    if environment.provider == "openshell" {
+        return openshell::release(environment);
     }
-    for (key, value) in environment_metadata {
-        metadata.insert(key, value);
-    }
-    Ok(EnvironmentHandle {
-        environment_id: new_id("environment"),
-        provider,
-        control_location,
-        workspace,
-        artifacts,
-        env: environment_env,
-        ownership,
-        connection,
-        metadata,
-    })
+    crate::environment::release_environment(environment).map(|_| ())
+}
+
+/// Start a runtime in an explicitly prepared environment.
+///
+/// Stopping the runtime does not release the environment.
+pub fn start_runtime_in(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<RuntimeHandle> {
+    validate_start_plan(plan)?;
+    validate_environment_handle(plan, environment)?;
+    start_runtime_in_validated(plan, environment)
 }
 
 /// Prepare a Fabric-owned long-lived service for a resolved run plan.
@@ -1133,17 +1150,20 @@ fn validate_start_plan(plan: &RunPlan) -> Result<()> {
     )
 }
 
-/// Start or connect to a harness runtime.
+/// Start or connect to a harness runtime in its configured local environment.
+///
+/// For a non-local provider, prepare or attach to the environment explicitly
+/// and call [`start_runtime_in`] with the returned handle.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
     validate_start_plan(plan)?;
-    let environment = prepare_environment(plan)?;
-    if uses_local_host(plan) {
-        return LocalHostAdapter.start(plan, environment);
+    let provider = planned_environment_provider(plan);
+    if provider != "local" {
+        return Err(FabricError::EnvironmentHandleRequired {
+            provider: provider.to_string(),
+        });
     }
-    Err(FabricError::UnsupportedRuntimeAdapter {
-        harness: harness(plan),
-        adapter_kind: adapter_kind(plan),
-    })
+    let environment = prepare_environment(plan)?;
+    start_runtime_in_validated(plan, &environment)
 }
 
 /// Invoke a started harness runtime.
@@ -1155,6 +1175,9 @@ pub fn invoke_runtime(
     validate_adapter_compatibility(plan)?;
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
+        if runtime.environment.provider == "openshell" {
+            return OpenShellRuntimeAdapter.invoke(plan, runtime, request);
+        }
         return LocalHostAdapter.invoke(plan, runtime, request);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
@@ -1184,6 +1207,9 @@ pub fn invoke_openai_stream(
     }
     validate_openai_stream_transport(&transport)?;
     if uses_local_host(plan) {
+        if runtime.environment.provider == "openshell" {
+            return OpenShellRuntimeAdapter.invoke_openai_stream(plan, runtime, request, transport);
+        }
         return LocalHostAdapter.invoke_openai_stream(plan, runtime, request, transport);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
@@ -1237,7 +1263,11 @@ fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
 pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
-        let events = LocalHostAdapter.stop(runtime)?;
+        let events = if runtime.environment.provider == "openshell" {
+            OpenShellRuntimeAdapter.stop(runtime)?
+        } else {
+            LocalHostAdapter.stop(runtime)?
+        };
         if let Some(service_id) = runtime.service_id.as_ref()
             && let Some(record) = local_services().get(service_id).cloned()
         {
@@ -1260,6 +1290,148 @@ fn uses_local_host(plan: &RunPlan) -> bool {
         adapter_kind(plan),
         AdapterKind::Process | AdapterKind::Python
     )
+}
+
+fn start_runtime_in_validated(
+    plan: &RunPlan,
+    environment: &EnvironmentHandle,
+) -> Result<RuntimeHandle> {
+    if environment.provider == "openshell" {
+        if uses_local_host(plan) {
+            return OpenShellRuntimeAdapter.start(plan, environment.clone());
+        }
+        return Err(FabricError::UnsupportedRuntimeAdapter {
+            harness: harness(plan),
+            adapter_kind: adapter_kind(plan),
+        });
+    }
+    if environment.provider != "local" {
+        return Err(FabricError::UnsupportedEnvironmentProvider {
+            provider: environment.provider.clone(),
+            adapter_kind: adapter_kind(plan),
+        });
+    }
+    if uses_local_host(plan) {
+        return LocalHostAdapter.start(plan, environment.clone());
+    }
+    Err(FabricError::UnsupportedRuntimeAdapter {
+        harness: harness(plan),
+        adapter_kind: adapter_kind(plan),
+    })
+}
+
+fn planned_environment_provider(plan: &RunPlan) -> &str {
+    plan.environment_plan
+        .as_ref()
+        .map_or("local", |environment| environment.provider.as_str())
+}
+
+fn validate_environment_handle(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<()> {
+    if environment.environment_id.trim().is_empty() {
+        return environment_handle_mismatch(environment, "environment_id", "non-empty", "");
+    }
+    expect_environment_field(
+        environment,
+        "provider",
+        planned_environment_provider(plan),
+        &environment.provider,
+    )?;
+    let (expected_control, expected_ownership) = plan.environment_plan.as_ref().map_or(
+        (
+            ControlLocation::ExternalControl,
+            EnvironmentOwnership::CallerOwned,
+        ),
+        |configured| (configured.control_location, configured.ownership),
+    );
+    expect_environment_field(
+        environment,
+        "control_location",
+        control_location_name(expected_control),
+        control_location_name(environment.control_location),
+    )?;
+    expect_environment_field(
+        environment,
+        "ownership",
+        environment_ownership_name(expected_ownership),
+        environment_ownership_name(environment.ownership),
+    )?;
+    let (expected_workspace, expected_artifacts) = if let Some(configured) = &plan.environment_plan
+    {
+        (
+            configured
+                .workspace
+                .clone()
+                .map(absolute_path)
+                .transpose()?,
+            configured.artifacts.clone(),
+        )
+    } else {
+        (
+            Some(absolute_path(plan.base_dir.clone())?),
+            plan.config
+                .runtime
+                .artifacts
+                .as_ref()
+                .map(|artifacts| resolve_path(&plan.base_dir, artifacts)),
+        )
+    };
+    if environment.workspace != expected_workspace {
+        return environment_handle_mismatch(
+            environment,
+            "workspace",
+            &format!("{expected_workspace:?}"),
+            &format!("{:?}", environment.workspace),
+        );
+    }
+    if environment.artifacts != expected_artifacts {
+        return environment_handle_mismatch(
+            environment,
+            "artifacts",
+            &format!("{expected_artifacts:?}"),
+            &format!("{:?}", environment.artifacts),
+        );
+    }
+    Ok(())
+}
+
+fn expect_environment_field(
+    environment: &EnvironmentHandle,
+    field: &'static str,
+    expected: &str,
+    actual: &str,
+) -> Result<()> {
+    if expected == actual {
+        return Ok(());
+    }
+    environment_handle_mismatch(environment, field, expected, actual)
+}
+
+fn environment_handle_mismatch<T>(
+    environment: &EnvironmentHandle,
+    field: &'static str,
+    expected: &str,
+    actual: &str,
+) -> Result<T> {
+    Err(FabricError::EnvironmentHandleMismatch {
+        field,
+        expected: expected.to_string(),
+        actual: actual.to_string(),
+        environment_id: environment.environment_id.clone(),
+    })
+}
+
+fn control_location_name(location: ControlLocation) -> &'static str {
+    match location {
+        ControlLocation::ExternalControl => "external_control",
+        ControlLocation::InEnvControl => "in_env_control",
+    }
+}
+
+fn environment_ownership_name(ownership: EnvironmentOwnership) -> &'static str {
+    match ownership {
+        EnvironmentOwnership::CallerOwned => "caller_owned",
+        EnvironmentOwnership::FabricOwned => "fabric_owned",
+    }
 }
 
 fn validate_runtime_handle(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<()> {
@@ -1990,7 +2162,9 @@ fn run_local_host_invocation_with_timeout(
         error,
         usage: agent_result.usage.as_ref().map(run_usage),
         artifacts,
-        telemetry: telemetry_ref(plan, relay_config.as_ref()),
+        telemetry: telemetry_ref(plan, relay_config.as_ref())
+            .into_iter()
+            .collect(),
         events,
         metadata,
     })
@@ -3077,7 +3251,7 @@ fn runtime_telemetry_context(
     })
 }
 
-fn resolve_path(root: &Path, path: &Path) -> PathBuf {
+pub(crate) fn resolve_path(root: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() {
         return path.to_path_buf();
     }
@@ -3218,7 +3392,7 @@ fn fallback_interpreter(
     }
 }
 
-fn absolute_path(path: PathBuf) -> Result<PathBuf> {
+pub(crate) fn absolute_path(path: PathBuf) -> Result<PathBuf> {
     if path.is_absolute() {
         return Ok(path);
     }
@@ -3239,6 +3413,7 @@ struct RelayArtifactOutput {
 struct RelayArtifactCandidate {
     kind: String,
     path: PathBuf,
+    format: Option<String>,
 }
 
 fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactManifest) {
@@ -3250,7 +3425,7 @@ fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactMa
             continue;
         };
         let kind = artifact.kind.as_str();
-        if !matches!(kind, "atof" | "atif") {
+        if !matches!(kind, "atof" | "atif" | "otlp") {
             continue;
         }
         if artifact.path.as_os_str().is_empty() {
@@ -3272,7 +3447,8 @@ fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactMa
             name,
             kind: kind.to_string(),
             path,
-            media_type: relay_artifact_media_type(kind).map(str::to_string),
+            media_type: relay_artifact_media_type(kind, artifact.format.as_deref())
+                .map(str::to_string),
             metadata: BTreeMap::new(),
         });
     }
@@ -3289,9 +3465,11 @@ fn resolve_relay_artifact_path(manifest: &ArtifactManifest, path: &Path) -> Path
         .unwrap_or_else(|| path.to_path_buf())
 }
 
-fn relay_artifact_media_type(kind: &str) -> Option<&'static str> {
+fn relay_artifact_media_type(kind: &str, format: Option<&str>) -> Option<&'static str> {
     match kind {
         "atof" => Some("application/x-ndjson"),
+        "otlp" if format == Some("proto") => Some("application/x-protobuf"),
+        "otlp" if matches!(format, None | Some("json_lines")) => Some("application/x-ndjson"),
         "atif" => Some("application/json"),
         _ => None,
     }
@@ -3654,6 +3832,10 @@ fn telemetry_ref(
     }
     Some(TelemetryRef {
         relay_enabled: telemetry.relay_enabled,
+        provider: None,
+        kind: None,
+        uri: None,
+        trace_id: None,
         metadata,
     })
 }
@@ -3672,7 +3854,7 @@ fn event_with_metadata(
     }
 }
 
-fn new_id(prefix: &str) -> String {
+pub(crate) fn new_id(prefix: &str) -> String {
     // The atomic counter only differentiates ids within one Fabric process.
     // Include the process id so independently running Fabric processes cannot
     // collide when they generate ids in the same millisecond.
@@ -4199,6 +4381,50 @@ for line in sys.stdin:
 
         assert_eq!(telemetry.metadata["native_config"], native_config);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sdk_run_result_preserves_ordered_telemetry_references() {
+        let result = RunResult {
+            agent_name: "agent".to_string(),
+            harness: "harness".to_string(),
+            adapter_kind: AdapterKind::Python,
+            adapter_id: None,
+            runtime_id: "runtime-1".to_string(),
+            invocation_id: "invocation-1".to_string(),
+            request_id: "request-1".to_string(),
+            status: RunStatus::Succeeded,
+            output: Value::Null,
+            error: None,
+            usage: None,
+            artifacts: ArtifactManifest::default(),
+            telemetry: vec![
+                TelemetryRef {
+                    relay_enabled: true,
+                    provider: Some("relay".to_string()),
+                    kind: Some("trace".to_string()),
+                    uri: Some("artifacts/trace".to_string()),
+                    trace_id: Some("trace-1".to_string()),
+                    metadata: BTreeMap::new(),
+                },
+                TelemetryRef {
+                    relay_enabled: false,
+                    provider: Some("native".to_string()),
+                    kind: Some("metrics".to_string()),
+                    uri: Some("artifacts/metrics".to_string()),
+                    trace_id: None,
+                    metadata: BTreeMap::new(),
+                },
+            ],
+            events: Vec::new(),
+            metadata: BTreeMap::new(),
+        };
+
+        let encoded = serde_json::to_value(&result).expect("serialize SDK run result");
+        assert!(encoded["telemetry"].is_array());
+        let decoded: RunResult =
+            serde_json::from_value(encoded).expect("deserialize SDK run result");
+        assert_eq!(decoded.telemetry, result.telemetry);
     }
 
     fn stopped_agents() -> Vec<String> {
@@ -5285,6 +5511,43 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn relay_otlp_artifacts_take_their_media_type_from_the_sink_format() {
+        let root = std::env::temp_dir().join(new_id("fabric-relay-otlp-test"));
+        fs::create_dir_all(&root).expect("create root");
+        for name in ["trace.jsonl", "trace.otlp.pb", "trace.json", "trace.csv"] {
+            fs::write(root.join(name), b"").expect("write artifact");
+        }
+        let mut manifest = ArtifactManifest {
+            root: Some(root.clone()),
+            artifacts: Vec::new(),
+        };
+        let output = serde_json::json!({"relay_artifacts": [
+            {"kind": "otlp", "path": "trace.jsonl", "format": "proto"},
+            {"kind": "otlp", "path": "trace.otlp.pb"},
+            {"kind": "otlp", "path": "trace.json", "format": "json_lines"},
+            {"kind": "otlp", "path": "trace.csv", "format": "csv"},
+        ]});
+
+        promote_relay_artifacts_to_manifest(&output, &mut manifest);
+
+        let media_types: Vec<_> = manifest
+            .artifacts
+            .iter()
+            .map(|artifact| (artifact.kind.as_str(), artifact.media_type.as_deref()))
+            .collect();
+        assert_eq!(
+            media_types,
+            [
+                ("otlp", Some("application/x-protobuf")),
+                ("otlp", Some("application/x-ndjson")),
+                ("otlp", Some("application/x-ndjson")),
+                ("otlp", None),
+            ]
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn promoted_agent_artifact_names_do_not_shadow_existing_artifacts() {
         let root = PathBuf::from("artifacts");
         let mut manifest = ArtifactManifest {
@@ -5456,6 +5719,215 @@ for line in sys.stdin:
         assert_eq!(error.code, "runtime_stop_failed");
         assert!(error.message.contains("fake_stop"), "{}", error.message);
 
+        let _ = fs::remove_dir_all(root);
+    }
+    #[test]
+    fn default_environment_prepares_through_local_provider() {
+        let (root, mut plan) = local_host_plan("success");
+        plan.environment_plan = None;
+        plan.config.environment = None;
+
+        let environment = prepare_environment(&plan).expect("prepare default environment");
+
+        assert_eq!(environment.provider, "local");
+        assert_eq!(
+            environment.control_location,
+            ControlLocation::ExternalControl
+        );
+        assert_eq!(environment.ownership, EnvironmentOwnership::CallerOwned);
+        assert_eq!(environment.workspace, Some(root.clone()));
+        assert_eq!(environment.artifacts, Some(root.join("artifacts")));
+        assert!(environment.env.is_empty());
+        assert!(environment.connection.is_empty());
+        assert!(environment.metadata.is_empty());
+        release_environment(&environment).expect("release local environment");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_local_provider_preserves_resolved_environment_fields() {
+        let (root, mut plan) = local_host_plan("success");
+        let environment_plan = plan
+            .environment_plan
+            .as_mut()
+            .expect("resolved environment plan");
+        environment_plan.control_location = ControlLocation::InEnvControl;
+        environment_plan.ownership = EnvironmentOwnership::FabricOwned;
+        environment_plan.workspace = Some(root.join("workspace"));
+        environment_plan.artifacts = Some(root.join("collected"));
+        environment_plan
+            .connection
+            .insert("endpoint".to_string(), serde_json::json!("local"));
+        environment_plan
+            .settings
+            .insert("setting".to_string(), serde_json::json!(true));
+        environment_plan
+            .settings
+            .insert("shared".to_string(), serde_json::json!("setting"));
+        environment_plan
+            .metadata
+            .insert("shared".to_string(), serde_json::json!("consumer"));
+
+        let environment = prepare_environment(&plan).expect("prepare explicit local environment");
+
+        assert_eq!(environment.provider, "local");
+        assert_eq!(environment.control_location, ControlLocation::InEnvControl);
+        assert_eq!(environment.ownership, EnvironmentOwnership::FabricOwned);
+        assert_eq!(environment.workspace, Some(root.join("workspace")));
+        assert_eq!(environment.artifacts, Some(root.join("collected")));
+        assert_eq!(
+            environment.env.get("FABRIC_NORMALIZED_ENV"),
+            Some(&"visible".to_string())
+        );
+        assert_eq!(
+            environment.connection.get("endpoint"),
+            Some(&serde_json::json!("local"))
+        );
+        assert_eq!(
+            environment.metadata.get("setting"),
+            Some(&serde_json::json!(true))
+        );
+        assert_eq!(
+            environment.metadata.get("shared"),
+            Some(&serde_json::json!("consumer"))
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn environment_preparation_rejects_unregistered_provider() {
+        let (root, mut plan) = local_host_plan("success");
+        plan.environment_plan
+            .as_mut()
+            .expect("resolved environment plan")
+            .provider = "unregistered".to_string();
+
+        let error = prepare_environment(&plan).expect_err("provider must be registered");
+
+        assert!(matches!(
+            error,
+            FabricError::UnsupportedEnvironmentProvider {
+                provider,
+                adapter_kind: AdapterKind::Python,
+            } if provider == "unregistered"
+        ));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_binding_starts_in_the_prepared_local_environment() {
+        let (root, plan) = local_host_plan("success");
+        let environment = prepare_environment(&plan).expect("prepare local environment");
+
+        let runtime = start_runtime_in(&plan, &environment).expect("bind local environment");
+
+        assert_eq!(
+            runtime.environment.environment_id,
+            environment.environment_id
+        );
+        assert_eq!(runtime.environment, environment);
+        stop_runtime(&plan, &runtime).expect("stop runtime");
+        release_environment(&environment).expect("release environment");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_binding_rejects_a_handle_with_different_paths() {
+        let (root, plan) = local_host_plan("success");
+        let environment = prepare_environment(&plan).expect("prepare local environment");
+
+        for (field, path) in [
+            ("workspace", root.join("other-workspace")),
+            ("artifacts", root.join("other-artifacts")),
+        ] {
+            let mut changed_plan = plan.clone();
+            let configured = changed_plan
+                .environment_plan
+                .as_mut()
+                .expect("resolved environment plan");
+            if field == "workspace" {
+                configured.workspace = Some(path);
+            } else {
+                configured.artifacts = Some(path);
+            }
+            let error = start_runtime_in(&changed_plan, &environment)
+                .expect_err("environment paths must match the plan");
+            assert!(matches!(
+                error,
+                FabricError::EnvironmentHandleMismatch {
+                    field: mismatch_field,
+                    ..
+                } if mismatch_field == field
+            ));
+        }
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn environment_release_reports_unsupported_provider_without_adapter_kind() {
+        let (root, plan) = local_host_plan("success");
+        let mut environment = prepare_environment(&plan).expect("prepare local environment");
+        environment.provider = "unregistered".to_string();
+
+        let error = release_environment(&environment).expect_err("release is unsupported");
+
+        assert!(matches!(
+            error,
+            FabricError::UnsupportedEnvironmentRelease { ref provider }
+                if provider == "unregistered"
+        ));
+        assert!(error.to_string().contains("environment release"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_binding_rejects_a_handle_from_another_provider() {
+        let (root, plan) = local_host_plan("success");
+        let mut environment = prepare_environment(&plan).expect("prepare local environment");
+        environment.provider = "openshell".to_string();
+
+        let error = start_runtime_in(&plan, &environment).expect_err("provider must match");
+
+        assert!(matches!(
+            error,
+            FabricError::EnvironmentHandleMismatch {
+                field: "provider",
+                expected,
+                actual,
+                environment_id,
+            } if expected == "local"
+                && actual == "openshell"
+                && environment_id == environment.environment_id
+        ));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_binding_does_not_run_a_non_local_environment_on_the_host() {
+        let (root, mut plan) = local_host_plan("success");
+        let mut environment = prepare_environment(&plan).expect("prepare local environment");
+        plan.environment_plan
+            .as_mut()
+            .expect("resolved environment plan")
+            .provider = "docker".to_string();
+        environment.provider = "docker".to_string();
+
+        let error = start_runtime_in(&plan, &environment)
+            .expect_err("non-local environment must use its provider runtime");
+
+        assert!(matches!(
+            error,
+            FabricError::UnsupportedEnvironmentProvider {
+                provider,
+                adapter_kind: AdapterKind::Python,
+            } if provider == "docker"
+        ));
         let _ = fs::remove_dir_all(root);
     }
 }
