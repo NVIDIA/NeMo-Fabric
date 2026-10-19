@@ -13,10 +13,12 @@ import os
 import sys
 import threading
 import tomllib
+from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -1630,7 +1632,7 @@ class _UsageRecordingAgent:
 
     def __init__(
         self,
-        turns: list[list[dict[str, object] | None]],
+        turns: list[list[dict[str, object] | Callable[[Any], None] | None]],
         api_mode: str = "chat_completions",
     ) -> None:
         from agent.context_compressor import ContextCompressor
@@ -1671,6 +1673,9 @@ class _UsageRecordingAgent:
 
         messages = [{"role": "user", "content": user_message}]
         for usage in self._turns.pop(0):
+            if callable(usage):
+                usage(self)
+                continue
             turn_response_check.record_response_usage(
                 self,
                 SimpleNamespace(usage=usage),
@@ -1854,6 +1859,43 @@ async def test_hermes_usage_reports_cache_counts_only_when_the_provider_sent_the
     assert with_cache_fields.usage.input_tokens == 130
     assert with_cache_fields.usage.cached_input_tokens == 30
     assert with_cache_fields.usage.total_tokens == 135
+
+
+@pytest.mark.parametrize(
+    ("action", "counted"), [("break", False), ("fallthrough", True)]
+)
+async def test_hermes_refused_response_before_a_fallback_reply(action, counted):
+    # Hermes hands a content-filter refusal to handle_content_policy_refusal;
+    # with a fallback configured it returns "break" and the fallback model
+    # answers, so the refused call is billed but never recorded.
+    refusal = adapter._observed_response_handler(
+        "handle_content_policy_refusal",
+        lambda agent, response, *args, **kwargs: SimpleNamespace(action=action),
+    )
+
+    def refused(agent: Any) -> None:
+        refused_usage = {"prompt_tokens": 40, "completion_tokens": 0}
+        refusal(agent, SimpleNamespace(usage=refused_usage), None)
+
+    agent = _UsageRecordingAgent(
+        [
+            [refused, {"prompt_tokens": 50, "completion_tokens": 5}],
+            [{"prompt_tokens": 60, "completion_tokens": 6}],
+        ]
+    )
+    runtime = _usage_recording_runtime(agent)
+    invocation = _usage_invocation()
+
+    fallback = await runtime.invoke(*invocation)
+    after = await runtime.invoke(*invocation)
+
+    if counted:
+        assert fallback.usage is not None
+        assert fallback.usage.input_tokens == 50
+    else:
+        assert fallback.usage is None
+    assert after.usage is not None
+    assert (after.usage.input_tokens, after.usage.output_tokens) == (60, 6)
 
 
 async def test_hermes_stop_unregisters_the_agent_usage_observer():

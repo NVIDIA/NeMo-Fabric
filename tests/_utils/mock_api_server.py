@@ -11,6 +11,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import uvicorn
 
+# The sentinel an OpenAI-compatible router returns as the assistant message
+# when its upstream connection times out.
+_ROUTER_TIMEOUT_TEXT = "Connect timeout, please try again later."
 # Chat-completion usage the mock reports unless a scenario sets another one.
 _ZERO_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
@@ -22,7 +25,8 @@ def mock_api_server(port: int) -> Iterator[str]:
 
     Use the /_requests endpoint to inspect captured chat-completion payloads after a test action.
     Use the /_scenario endpoint to configure a status code, ordered tool calls, or the
-    chat-completion usage object and finish reason for subsequent requests.
+    chat-completion usage object, finish reason and number of leading invalid responses
+    for subsequent requests.
     Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
@@ -42,6 +46,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.mcp_authorization_headers = []
         app.state.usage = dict(_ZERO_USAGE)
         app.state.finish_reason = "stop"
+        app.state.invalid_responses = 0
 
     reset_state()
 
@@ -82,6 +87,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.tool_call_index = 0
         app.state.usage = payload.get("usage", dict(_ZERO_USAGE))
         app.state.finish_reason = payload.get("finish_reason", "stop")
+        app.state.invalid_responses = int(payload.get("invalid_responses", 0))
         return {
             "status_code": app.state.status_code,
             "tool_call": tool_call,
@@ -185,6 +191,11 @@ def mock_api_server(port: int) -> Iterator[str]:
         ]
         latest = user_messages[-1].get("content", "") if user_messages else ""
         content = f"echo user_count={len(user_messages)} latest={latest}"
+        if app.state.invalid_responses > 0:
+            # A router timeout reported as a successful completion, which
+            # OpenAI-compatible clients such as Hermes reject as invalid.
+            app.state.invalid_responses -= 1
+            content = _ROUTER_TIMEOUT_TEXT
         if payload.get("stream") is True:
             return StreamingResponse(
                 _stream_chat_completion(

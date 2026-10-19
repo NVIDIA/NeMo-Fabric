@@ -154,24 +154,30 @@ async def test_hermes_persistent_host_reports_usage_for_each_invocation(
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
 @pytest.mark.parametrize(
-    ("finish_reason", "usage"),
+    "scenario",
     [
         # A reply cut off at max_tokens bills the whole budget.
-        (
-            "length",
-            {"prompt_tokens": 40, "completion_tokens": 512, "total_tokens": 552},
-        ),
-        (
-            "content_filter",
-            {"prompt_tokens": 40, "completion_tokens": 0, "total_tokens": 40},
-        ),
+        {
+            "finish_reason": "length",
+            "usage": {
+                "prompt_tokens": 40,
+                "completion_tokens": 512,
+                "total_tokens": 552,
+            },
+        },
+        # A router timeout reported as a completion that billed the prompt,
+        # then a successful retry.
+        {
+            "invalid_responses": 1,
+            "usage": {"prompt_tokens": 40, "completion_tokens": 0, "total_tokens": 40},
+        },
     ],
+    ids=["length", "invalid_then_retry"],
 )
 async def test_hermes_usage_is_unknown_when_hermes_skips_a_response(
     code_review_agent_dir: Path,
     api_server: str,
-    finish_reason: str,
-    usage: dict[str, int],
+    scenario: dict[str, object],
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     config = hermes_config()
@@ -182,15 +188,13 @@ async def test_hermes_usage_is_unknown_when_hermes_skips_a_response(
     ) as runtime:
         counted = await runtime.invoke(input="first")
         scenario_response = requests.post(
-            f"{api_server}/_scenario",
-            json={"finish_reason": finish_reason, "usage": usage},
-            timeout=5,
+            f"{api_server}/_scenario", json=scenario, timeout=5
         )
         scenario_response.raise_for_status()
         skipped = await runtime.invoke(input="second")
 
     assert counted.usage is not None, counted.to_mapping()
-    # Hermes returns on a truncated or refused reply before recording its
+    # Hermes returns on a truncated or invalid response before recording its
     # usage, so the invocation's counters miss a billed call.
     assert skipped.usage is None, skipped.to_mapping()
 

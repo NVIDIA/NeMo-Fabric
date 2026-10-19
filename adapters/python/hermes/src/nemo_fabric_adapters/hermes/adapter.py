@@ -439,15 +439,16 @@ class HermesRuntime:
         omitted count from a reported zero, and Hermes passes the raw usage to
         no per-agent hook. The adapter therefore registers the agent with
         process-wide wrappers around the functions Hermes' turn loop calls for
-        each response; see ``_install_usage_observer``. A refused or truncated
-        response that Hermes never records counts as a response without usage.
+        each response; see ``_install_usage_observer``. An invalid, refused or
+        truncated response that Hermes never records counts as a response
+        without usage.
         """
         _install_usage_observer()
 
         def count_unreported(handler: str, response: Any, outcome: Any) -> None:
             if handler != "record_response_usage":
-                # Hermes returns on a refused or truncated response before
-                # recording its usage, unless the truncation falls through.
+                # Hermes returns on an invalid, refused or truncated response
+                # before recording its usage, unless the handler falls through.
                 if getattr(outcome, "action", None) != "fallthrough":
                     self._uncounted_responses += 1
                 return
@@ -689,11 +690,12 @@ _USAGE_OBSERVERS: weakref.WeakKeyDictionary[Any, Callable[[str, Any, Any], None]
 )
 # The functions ``agent.turn_response_check.check_api_response`` calls with
 # (agent, response, ...) for a provider response, by the module defining
-# each. record_response_usage folds the usage; on a content-filter refusal or
-# a reply cut off at the token limit, Hermes calls one of the other two and
-# returns before recording the usage.
+# each. record_response_usage folds the usage; on an invalid response, a
+# content-filter refusal or a reply cut off at the token limit, Hermes calls
+# one of the other three and returns before recording the usage.
 _RESPONSE_HANDLERS = {
     "record_response_usage": "agent.turn_usage",
+    "retry_invalid_response": "agent.turn_response_check",
     "handle_content_policy_refusal": "agent.turn_truncation",
     "recover_from_truncation": "agent.turn_truncation",
 }
@@ -733,8 +735,10 @@ def _install_usage_observer() -> None:
         current = getattr(turn_response_check, name, None)
         if getattr(current, "nemo_fabric_observed", False):
             continue
-        if name not in called or current is not getattr(
-            importlib.import_module(module), name, None
+        if (
+            current is None
+            or name not in called
+            or current is not getattr(importlib.import_module(module), name, None)
         ):
             raise lifecycle.LifecycleError(
                 "hermes_usage_accounting_unsupported",
