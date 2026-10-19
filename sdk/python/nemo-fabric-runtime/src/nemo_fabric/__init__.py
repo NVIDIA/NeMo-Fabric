@@ -4,6 +4,7 @@
 """Python SDK surface for NeMo Fabric."""
 
 from nemo_fabric.client import Fabric
+from nemo_fabric.check import CheckReport, CheckRequest
 from nemo_fabric.capabilities import AdapterCapabilityProfile
 from nemo_fabric.capabilities import inspect_adapter
 from nemo_fabric.errors import FabricCapabilityError
@@ -83,6 +84,8 @@ from nemo_fabric.types import ServiceReference
 from nemo_fabric.types import TelemetryRef
 
 __all__ = [
+    "CheckReport",
+    "CheckRequest",
     "AdapterCapabilityProfile",
     "AdapterInfo",
     "ArtifactManifest",

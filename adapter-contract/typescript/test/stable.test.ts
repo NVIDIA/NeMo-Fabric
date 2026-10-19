@@ -3,6 +3,8 @@
 
 import { ADAPTER_CONTRACT_VERSION } from "../src/index.js";
 import type {
+  AdapterCheckRequest,
+  AdapterCheckResult,
   AdapterContractVersion,
   AdapterDescriptor,
   AdapterKind,
@@ -29,6 +31,15 @@ const descriptor: AdapterDescriptor = {
     agent_config: { type: "object", additionalProperties: true },
   },
 };
+
+const healthRequest: AdapterCheckRequest = { runtime_id: "runtime-1", level: "ready", timeout_seconds: 3 };
+const healthResult: AdapterCheckResult = { outcome: "passed", reason_code: null, activity: "busy",
+  source: "fabric.adapter.pi.session", observed_at: "2026-10-19T12:00:00Z" };
+void healthRequest;
+void healthResult;
+// @ts-expect-error a health result preserves its required null fields
+const incompleteHealth: AdapterCheckResult = { outcome: "unknown", activity: "unknown", source: "fabric.adapter" };
+void incompleteHealth;
 
 const usage: AgentUsage = {
   input_tokens: 20,

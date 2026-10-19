@@ -42,6 +42,12 @@ task runtime server. That server selects the runtime ID and returns a
 `RunResult` through the same path.
 Start and stop use the same command route.
 
+`Fabric.check()` maps health requests to `fabric-agent-ctl check`. Checks use
+an independent provider worker and one remaining deadline across gateway
+connection, identity verification, exec, and response decoding. Failed or
+unknown health reports remain SDK results; checks never cancel invocations or
+stop runtimes.
+
 ## Use the OpenShell Provider
 
 Build from the repository root:

@@ -12,6 +12,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 - [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 - [`nemo_fabric.capabilities`](./nemo_fabric.capabilities.md#module-nemo_fabriccapabilities): Metadata-only adapter inspection for host-side admission.
+- [`nemo_fabric.check`](./nemo_fabric.check.md#module-nemo_fabriccheck): Strict, safe health requests and immutable health reports.
 - [`nemo_fabric.runtime`](./nemo_fabric.runtime.md#module-nemo_fabricruntime): Runtime lifecycle support for the NVIDIA NeMo Fabric Python SDK.
 - [`nemo_fabric.service`](./nemo_fabric.service.md#module-nemo_fabricservice): Long-lived service lifecycle support for the NeMo Fabric Python SDK.
 - [`nemo_fabric.streaming`](./nemo_fabric.streaming.md#module-nemo_fabricstreaming): NVIDIA NeMo Relay streaming support for the NVIDIA NeMo Fabric Python SDK.
@@ -24,6 +25,8 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 - [`client.Fabric`](./nemo_fabric.client.md#class-fabric): Primary Python entrypoint for NeMo Fabric.
 - [`capabilities.AdapterCapabilityProfile`](./nemo_fabric.capabilities.md#class-adaptercapabilityprofile): Declared support for a standalone runtime, not observed execution provenance.
+- [`check.CheckReport`](./nemo_fabric.check.md#class-checkreport): Immutable health evidence, independent of invocation outcomes.
+- [`check.CheckRequest`](./nemo_fabric.check.md#class-checkrequest): Select server or runtime health in a separately supplied environment.
 - [`runtime.Runtime`](./nemo_fabric.runtime.md#class-runtime): One logical, stateful harness execution.
 - [`runtime.RuntimeStatus`](./nemo_fabric.runtime.md#class-runtimestatus): Lifecycle state of a runtime.
 - [`service.Service`](./nemo_fabric.service.md#class-service): One prepared or attached long-lived adapter service.

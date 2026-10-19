@@ -1,0 +1,462 @@
+{
+  "$defs": {
+    "CheckLevel": {
+      "description": "Agent health level; operational checks are reserved and unsupported.",
+      "oneOf": [
+        {
+          "const": "live",
+          "description": "Observe the native process or session.",
+          "type": "string"
+        },
+        {
+          "const": "active",
+          "description": "Observe the initialized request interface.",
+          "type": "string"
+        },
+        {
+          "const": "ready",
+          "description": "Observe required local model, tool, and connection setup.",
+          "type": "string"
+        },
+        {
+          "const": "operational",
+          "description": "Reserved; never dispatch an agent probe.",
+          "type": "string"
+        }
+      ]
+    },
+    "CheckObservation": {
+      "additionalProperties": false,
+      "description": "One attempted stage in evaluation order.",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/CheckStage",
+          "description": "Stage that was attempted."
+        },
+        "observed_at": {
+          "description": "Fresh observation time, or null if unobserved.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/CheckOutcome",
+          "description": "Stage outcome."
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CheckReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Fixed diagnostic or null on pass."
+        },
+        "source": {
+          "$ref": "#/$defs/CheckSource",
+          "description": "Fixed evidence source."
+        }
+      },
+      "required": [
+        "name",
+        "observed_at",
+        "outcome",
+        "reason_code",
+        "source"
+      ],
+      "type": "object"
+    },
+    "CheckOutcome": {
+      "description": "Health outcome, independent of invocation outcomes.",
+      "oneOf": [
+        {
+          "const": "passed",
+          "description": "All requested evidence passed.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "A confirmed problem was observed.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Evidence is unavailable or invalidated.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported",
+          "description": "The requested check is unimplemented.",
+          "type": "string"
+        }
+      ]
+    },
+    "CheckReason": {
+      "description": "Fixed diagnostic codes; reports never include exception text.",
+      "oneOf": [
+        {
+          "const": "server_stopping",
+          "description": "The server is stopping.",
+          "type": "string"
+        },
+        {
+          "const": "capabilities_unverified",
+          "description": "Advertised capability evidence is unavailable.",
+          "type": "string"
+        },
+        {
+          "const": "runtime_unavailable",
+          "description": "No matching runtime binding exists.",
+          "type": "string"
+        },
+        {
+          "const": "agent_exited",
+          "description": "The owned process exited.",
+          "type": "string"
+        },
+        {
+          "const": "session_closed",
+          "description": "The native session closed.",
+          "type": "string"
+        },
+        {
+          "const": "endpoint_unavailable",
+          "description": "The native request interface is unavailable.",
+          "type": "string"
+        },
+        {
+          "const": "health_failed",
+          "description": "Required local setup failed.",
+          "type": "string"
+        },
+        {
+          "const": "probe_timeout",
+          "description": "The shared deadline expired.",
+          "type": "string"
+        },
+        {
+          "const": "probe_error",
+          "description": "The probe did not provide valid evidence.",
+          "type": "string"
+        },
+        {
+          "const": "observation_changed",
+          "description": "Ownership or lifecycle changed while checking.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported_adapter",
+          "description": "The adapter does not implement health checks.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported_level",
+          "description": "The requested level is unavailable.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported_scope",
+          "description": "This environment does not implement the requested scope.",
+          "type": "string"
+        }
+      ]
+    },
+    "CheckRuntimeState": {
+      "description": "Runtime lifecycle state; no state implies descendant cleanup.",
+      "oneOf": [
+        {
+          "const": "active",
+          "description": "The bound runtime is active.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "The runtime stopped.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Runtime operation failed.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "State could not be verified.",
+          "type": "string"
+        }
+      ]
+    },
+    "CheckScope": {
+      "description": "Requested health scope.",
+      "oneOf": [
+        {
+          "const": "server",
+          "description": "Runtime server.",
+          "type": "string"
+        },
+        {
+          "const": "runtime",
+          "description": "Agent in a selected runtime.",
+          "type": "string"
+        }
+      ]
+    },
+    "CheckSource": {
+      "description": "Fixed evidence-source identifiers.",
+      "oneOf": [
+        {
+          "const": "fabric.runtime_server",
+          "description": "Runtime server observation.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.runtime_server.transport",
+          "description": "Runtime-server transport observation.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter",
+          "description": "Unobserved adapter transport or unsupported probe.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter.pi.session",
+          "description": "Fresh native Pi context observation.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter.pi.interface",
+          "description": "Pi initialization and interface guards.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter.pi.setup",
+          "description": "Pi model, tool, and connection inspection.",
+          "type": "string"
+        }
+      ]
+    },
+    "CheckStage": {
+      "description": "One attempted server or agent stage.",
+      "oneOf": [
+        {
+          "const": "server",
+          "description": "Server responsiveness.",
+          "type": "string"
+        },
+        {
+          "const": "live",
+          "description": "Native session liveness.",
+          "type": "string"
+        },
+        {
+          "const": "active",
+          "description": "Request interface availability.",
+          "type": "string"
+        },
+        {
+          "const": "ready",
+          "description": "Local setup readiness.",
+          "type": "string"
+        }
+      ]
+    },
+    "CheckVersion": {
+      "description": "Version of the health request and report contract.",
+      "oneOf": [
+        {
+          "const": "fabric.check/v1alpha1",
+          "description": "Initial bounded health contract.",
+          "type": "string"
+        }
+      ]
+    },
+    "RuntimeActivity": {
+      "description": "Current runtime activity; busy alone does not fail health.",
+      "oneOf": [
+        {
+          "const": "idle",
+          "description": "No invocation is running.",
+          "type": "string"
+        },
+        {
+          "const": "busy",
+          "description": "An invocation is running.",
+          "type": "string"
+        },
+        {
+          "const": "stopping",
+          "description": "Shutdown has begun.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "Shutdown completed.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Current activity could not be verified.",
+          "type": "string"
+        }
+      ]
+    },
+    "RuntimeObservation": {
+      "additionalProperties": false,
+      "description": "Runtime evidence, kept separate from agent observations.",
+      "properties": {
+        "activity": {
+          "$ref": "#/$defs/RuntimeActivity",
+          "description": "Observed activity."
+        },
+        "state": {
+          "$ref": "#/$defs/CheckRuntimeState",
+          "description": "Verified runtime state."
+        }
+      },
+      "required": [
+        "state",
+        "activity"
+      ],
+      "type": "object"
+    },
+    "ServerObservation": {
+      "additionalProperties": false,
+      "description": "Server lifecycle observation.",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/ServerState",
+          "description": "Server responsiveness or shutdown state."
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "ServerState": {
+      "description": "Server states supported by the health contract.",
+      "oneOf": [
+        {
+          "const": "responding",
+          "description": "The server replied.",
+          "type": "string"
+        },
+        {
+          "const": "stopping",
+          "description": "Shutdown began.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "No server evidence is available.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Public health result; no prompts, configuration, or raw exceptions.",
+  "properties": {
+    "checks": {
+      "description": "Exactly the attempted stages, in order.",
+      "items": {
+        "$ref": "#/$defs/CheckObservation"
+      },
+      "type": "array"
+    },
+    "completed_at": {
+      "description": "UTC completion timestamp.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "elapsed_ms": {
+      "description": "Elapsed time across all routing and probes.",
+      "format": "double",
+      "minimum": 0,
+      "type": "number"
+    },
+    "outcome": {
+      "$ref": "#/$defs/CheckOutcome",
+      "description": "Aggregate outcome."
+    },
+    "reason_code": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CheckReason"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Fixed aggregate diagnostic."
+    },
+    "requested_level": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CheckLevel"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Defaulted level, or null for server scope."
+    },
+    "runtime": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RuntimeObservation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Runtime evidence when the binding is verified."
+    },
+    "runtime_id": {
+      "description": "Selected runtime ID, or null for server scope.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "schema_version": {
+      "$ref": "#/$defs/CheckVersion",
+      "description": "Version of this contract."
+    },
+    "scope": {
+      "$ref": "#/$defs/CheckScope",
+      "description": "Scope requested by the caller."
+    },
+    "server": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ServerObservation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Server evidence, absent for runtime scope."
+    }
+  },
+  "required": [
+    "checks",
+    "completed_at",
+    "elapsed_ms",
+    "outcome",
+    "reason_code",
+    "requested_level",
+    "runtime",
+    "runtime_id",
+    "schema_version",
+    "scope",
+    "server"
+  ],
+  "title": "CheckReport",
+  "type": "object"
+}
