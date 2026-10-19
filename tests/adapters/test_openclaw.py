@@ -1394,8 +1394,27 @@ def test_windows_job_assigns_process_and_enables_kill_on_close(
     mock_kernel32.AssignProcessToJobObject.assert_called_once_with(job, process_handle)
 
 
+def _setpriv_can_signal() -> bool:
+    """Whether setpriv can set the parent-death signal here, probed as the adapter does."""
+    setpriv = shutil.which("setpriv")
+    if setpriv is None:
+        return False
+    try:
+        completed = subprocess.run(
+            [setpriv, "--pdeathsig", "SIGTERM", "--", sys.executable, "-c", ""],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0
+
+
 @pytest.mark.skipif(
-    sys.platform != "linux" or shutil.which("setpriv") is None,
+    sys.platform != "linux" or not _setpriv_can_signal(),
     reason="Linux setpriv parent-death signal",
 )
 def test_linux_parent_death_stops_openclaw_gateway(mock_openclaw: Path, tmp_path: Path):
@@ -1459,6 +1478,50 @@ def test_linux_parent_death_stops_openclaw_gateway(mock_openclaw: Path, tmp_path
         if gateway_pid is not None and not stopped_path.exists():
             with suppress(ProcessLookupError):
                 os.killpg(os.getpgid(gateway_pid), signal.SIGKILL)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux setpriv fallback")
+async def test_openclaw_gateway_starts_and_stops_where_setpriv_cannot_run(
+    mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # A setpriv that refuses, as in an OpenShell sandbox. It records each call.
+    calls = tmp_path / "setpriv.calls"
+    setpriv = tmp_path / "bin" / "setpriv"
+    setpriv.parent.mkdir()
+    setpriv.write_text(
+        "#!/bin/sh\n"
+        f'echo "$*" >> "{calls}"\n'
+        "echo 'setpriv: activate capabilities: Operation not permitted' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    setpriv.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{setpriv.parent}{os.pathsep}{os.environ['PATH']}")
+    pid_path = tmp_path / "gateway.pid"
+    stopped_path = tmp_path / "gateway.stopped"
+    monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(tmp_path / "config.json"))
+    monkeypatch.setenv("FAKE_OPENCLAW_REQUEST", str(tmp_path / "request.json"))
+    monkeypatch.setenv("FAKE_OPENCLAW_PID", str(pid_path))
+    monkeypatch.setenv("FAKE_OPENCLAW_STOPPED", str(stopped_path))
+
+    runtime = adapter.OpenClawRuntime()
+    await runtime.start(
+        {
+            "config": _config(mock_openclaw),
+            "runtime_context": _context(tmp_path).to_mapping(),
+            "base_dir": str(tmp_path),
+        }
+    )
+    try:
+        assert int(pid_path.read_text(encoding="utf-8")) > 0
+        # setpriv ran only as the probe; the Gateway started without it.
+        recorded = calls.read_text(encoding="utf-8").splitlines()
+        assert len(recorded) == 1
+        assert recorded[0].startswith("--pdeathsig SIGTERM -- ")
+    finally:
+        await runtime.stop()
+
+    assert stopped_path.read_text(encoding="utf-8") == "stopped"
 
 
 @pytest.mark.skipif(
