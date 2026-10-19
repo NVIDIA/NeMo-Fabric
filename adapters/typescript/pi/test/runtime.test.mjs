@@ -583,3 +583,35 @@ test("reports the invocation's tokens with cache reads and writes inside the inp
     total_tokens: 460,
   });
 });
+
+test("reports only the token counts the prompt's provider reported", async () => {
+  const outcomes = [
+    { input: 100, cacheRead: 30, cacheWrite: 0 },
+    { output: 5 },
+  ];
+  const runtime = new PiAdapterRuntime({
+    async create() {
+      let turnCount = 0;
+      return {
+        async prompt() {
+          turnCount += 1;
+          const usage = outcomes.shift();
+          return { accepted: true, turnStarted: true, turnCount, text: "ok", stopReason: "stop", usage };
+        },
+        async stop() {},
+      };
+    },
+  });
+
+  await runtime.start(startInput());
+  const inputOnly = await runtime.invoke({ input: "one" }, context);
+  const outputOnly = await runtime.invoke({ input: "two" }, context);
+  await runtime.stop();
+
+  assert.deepEqual(inputOnly.usage, {
+    input_tokens: 130,
+    cached_input_tokens: 30,
+    input_tokens_include_cache: true,
+  });
+  assert.deepEqual(outputOnly.usage, { output_tokens: 5 });
+});

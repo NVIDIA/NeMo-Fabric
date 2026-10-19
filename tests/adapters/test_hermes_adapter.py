@@ -1625,7 +1625,8 @@ def test_invocation_usage_with_lower_or_missing_counters_leaves_them_unknown():
 
 class _UsageRecordingAgent:
     """Hermes agent stand-in whose turns run scripted provider responses
-    through Hermes' own usage accounting and context compressor."""
+    through Hermes' own usage accounting and context compressor, called the
+    way Hermes' turn loop calls it."""
 
     def __init__(self, turns: list[list[dict[str, int] | None]]) -> None:
         from agent.context_compressor import ContextCompressor
@@ -1659,11 +1660,11 @@ class _UsageRecordingAgent:
             setattr(self, f"session_{counter}", 0)
 
     def run_conversation(self, user_message: str) -> dict[str, object]:
-        from agent.turn_usage import record_response_usage
+        from agent import turn_response_check
 
         messages = [{"role": "user", "content": user_message}]
         for usage in self._turns.pop(0):
-            record_response_usage(
+            turn_response_check.record_response_usage(
                 self,
                 SimpleNamespace(usage=usage),
                 messages=messages,
@@ -1688,6 +1689,31 @@ class _UsageRecordingAgent:
         }
 
 
+def _usage_recording_runtime(agent: _UsageRecordingAgent) -> adapter.HermesRuntime:
+    agent_config = _agent_config(
+        {"models": {"default": {"provider": "test", "model": "test-model"}}}
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._agent_config = agent_config
+    runtime._model_config = agent_config.models["default"]
+    runtime._runtime_id = "runtime-usage"
+    runtime._agent = agent
+    runtime._observe_usage_reports(agent)
+    return runtime
+
+
+def _usage_invocation() -> tuple[AgentRunRequest, RuntimeContext]:
+    return _invocation(
+        {
+            "runtime_context": _runtime_context(
+                runtime_id="runtime-usage"
+            ).to_mapping(),
+            "request": {"input": "next"},
+        }
+    )
+
+
 async def test_hermes_usage_from_provider_responses_keeps_unreported_tokens_unknown():
     def reported(prompt: int, completion: int) -> dict[str, int]:
         return {
@@ -1705,24 +1731,8 @@ async def test_hermes_usage_from_provider_responses_keeps_unreported_tokens_unkn
             [reported(400, 40)],
         ]
     )
-    agent_config = _agent_config(
-        {"models": {"default": {"provider": "test", "model": "test-model"}}}
-    )
-    runtime = adapter.HermesRuntime()
-    runtime._started = True
-    runtime._agent_config = agent_config
-    runtime._model_config = agent_config.models["default"]
-    runtime._runtime_id = "runtime-usage"
-    runtime._agent = agent
-    runtime._count_usage_less_responses(agent)
-    invocation = _invocation(
-        {
-            "runtime_context": _runtime_context(
-                runtime_id="runtime-usage"
-            ).to_mapping(),
-            "request": {"input": "next"},
-        }
-    )
+    runtime = _usage_recording_runtime(agent)
+    invocation = _usage_invocation()
 
     two_calls = await runtime.invoke(*invocation)
     reported_zero = await runtime.invoke(*invocation)
@@ -1744,6 +1754,49 @@ async def test_hermes_usage_from_provider_responses_keeps_unreported_tokens_unkn
     assert after_mixed.usage is not None
     assert after_mixed.usage.input_tokens == 400
     assert after_mixed.usage.output_tokens == 40
+
+
+async def test_hermes_usage_with_partial_provider_report_leaves_omitted_count_unknown():
+    agent = _UsageRecordingAgent(
+        [
+            [{"prompt_tokens": 100}],
+            [{"completion_tokens": 5}],
+            [{"prompt_tokens": 0, "completion_tokens": 0}],
+            [{"prompt_tokens": 60, "completion_tokens": 6}, {"prompt_tokens": 70}],
+            [{"prompt_tokens": 400, "completion_tokens": 40}],
+        ]
+    )
+    runtime = _usage_recording_runtime(agent)
+    invocation = _usage_invocation()
+
+    input_only = await runtime.invoke(*invocation)
+    output_only = await runtime.invoke(*invocation)
+    reported_zero = await runtime.invoke(*invocation)
+    one_partial = await runtime.invoke(*invocation)
+    after_partial = await runtime.invoke(*invocation)
+
+    # Hermes normalizes an omitted count to 0; the provider's report decides.
+    assert input_only.usage is not None
+    assert input_only.usage.input_tokens == 100
+    assert input_only.usage.output_tokens is None
+    assert input_only.usage.total_tokens is None
+    assert output_only.usage is not None
+    assert output_only.usage.input_tokens is None
+    assert output_only.usage.cached_input_tokens is None
+    assert output_only.usage.output_tokens == 5
+    assert output_only.usage.total_tokens is None
+    assert reported_zero.usage is not None
+    assert reported_zero.usage.input_tokens == 0
+    assert reported_zero.usage.output_tokens == 0
+    assert reported_zero.usage.total_tokens == 0
+    # One response without an output count leaves the invocation's output unknown.
+    assert one_partial.usage is not None
+    assert one_partial.usage.input_tokens == 130
+    assert one_partial.usage.output_tokens is None
+    assert after_partial.usage is not None
+    assert after_partial.usage.input_tokens == 400
+    assert after_partial.usage.output_tokens == 40
+    assert after_partial.usage.total_tokens == 440
 
 
 @pytest.mark.parametrize(

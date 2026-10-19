@@ -21,13 +21,15 @@ export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" |
 
 /**
  * Token counts Pi recorded during one prompt. Pi's `input` excludes cache
- * reads and writes.
+ * reads and writes. `input`, `cacheRead` and `cacheWrite` are absent together
+ * when a call's provider left its input count unreported, and `output` is
+ * absent when one left its output count unreported.
  */
 export interface PiTokenUsage {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
 }
 
 export interface PiPromptOutcome {
@@ -38,7 +40,7 @@ export interface PiPromptOutcome {
   stopReason?: PiStopReason;
   errorMessage?: string;
   shutdownRequested?: boolean;
-  /** Absent when any call of the prompt carried no complete usage. */
+  /** Absent when no count of the prompt's calls is known. */
   usage?: PiTokenUsage;
 }
 
@@ -61,18 +63,29 @@ function failed(code: string, message: string): AgentRunResult {
   };
 }
 
-/** The invocation's usage, with input counting its cache reads and writes. */
+/**
+ * The invocation's usage, with input counting its cache reads and writes. A
+ * count that a call left unreported stays absent, and so does the total unless
+ * both input and output are known.
+ */
 function agentUsage(usage: PiTokenUsage | undefined): AgentUsage | undefined {
   if (usage === undefined) {
     return undefined;
   }
-  const input = usage.input + usage.cacheRead + usage.cacheWrite;
+  const { output, cacheRead, cacheWrite } = usage;
+  const input =
+    usage.input !== undefined && cacheRead !== undefined && cacheWrite !== undefined
+      ? usage.input + cacheRead + cacheWrite
+      : undefined;
+  if (input === undefined && output === undefined) {
+    return undefined;
+  }
   return {
-    input_tokens: input,
-    cached_input_tokens: usage.cacheRead,
-    input_tokens_include_cache: true,
-    output_tokens: usage.output,
-    total_tokens: input + usage.output,
+    ...(input === undefined
+      ? {}
+      : { input_tokens: input, cached_input_tokens: cacheRead, input_tokens_include_cache: true }),
+    ...(output === undefined ? {} : { output_tokens: output }),
+    ...(input === undefined || output === undefined ? {} : { total_tokens: input + output }),
   };
 }
 

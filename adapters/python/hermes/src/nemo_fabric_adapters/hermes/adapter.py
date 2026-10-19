@@ -71,6 +71,8 @@ class HermesRuntime:
         # from this baseline. A counter missing from it has no baseline.
         self._session_token_totals: dict[str, int] = _fresh_session_totals()
         self._usage_less_responses = 0
+        # Provider responses whose usage left out the input or output count.
+        self._unreported_counts = {"input": 0, "output": 0}
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -223,7 +225,7 @@ class HermesRuntime:
                     )
                 )
                 self._session_token_totals = _fresh_session_totals()
-                self._count_usage_less_responses(self._agent)
+                self._observe_usage_reports(self._agent)
             self._agent_config = agent_config
             self._started = True
         except BaseException:
@@ -296,6 +298,7 @@ class HermesRuntime:
         # the next one.
         previous_totals, self._session_token_totals = self._session_token_totals, {}
         usage_less_before = self._usage_less_responses
+        unreported_before = dict(self._unreported_counts)
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
 
@@ -380,7 +383,14 @@ class HermesRuntime:
                     code="hermes_reported_failure",
                     message="Hermes did not complete the invocation",
                 )
-        usage, self._session_token_totals = _invocation_usage(result, previous_totals)
+        usage, self._session_token_totals = _invocation_usage(
+            result,
+            previous_totals,
+            input_reported=self._unreported_counts["input"]
+            == unreported_before["input"],
+            output_reported=self._unreported_counts["output"]
+            == unreported_before["output"],
+        )
         if self._usage_less_responses != usage_less_before:
             # A provider response without usage added no tokens, so the
             # change in the counters is an undercount, not this invocation's.
@@ -391,6 +401,11 @@ class HermesRuntime:
             error=error,
             usage=usage,
         )
+
+    def _observe_usage_reports(self, agent: Any) -> None:
+        """Count the agent's provider responses that left usage unreported."""
+        self._count_usage_less_responses(agent)
+        self._count_unreported_counts(agent)
 
     def _count_usage_less_responses(self, agent: Any) -> None:
         """Count the agent's provider responses that carried no usage.
@@ -412,6 +427,36 @@ class HermesRuntime:
                 note_usage_less_response()
 
         compressor.note_usage_less_response = count_and_note
+
+    def _count_unreported_counts(self, agent: Any) -> None:
+        """Count the agent's provider responses whose usage left out the input
+        or the output count.
+
+        Hermes reads a missing count as 0, so its counters cannot tell an
+        omitted count from a reported zero. Hermes' turn loop passes every
+        response to ``agent.turn_response_check.record_response_usage``, so
+        the adapter wraps that call and reads the raw usage before Hermes
+        normalizes it. Responses of other agents, such as delegated
+        subagents, are not counted: their tokens never reach this agent's
+        counters. The lifecycle host serves one runtime per process, so the
+        wrapper is installed once.
+        """
+        from agent import turn_response_check
+
+        record_response_usage = turn_response_check.record_response_usage
+
+        def count_and_record(
+            usage_agent: Any, response: Any, *args: Any, **kwargs: Any
+        ) -> Any:
+            usage = getattr(response, "usage", None)
+            # A response without usage is counted by the compressor hook.
+            if usage_agent is agent and usage:
+                for count, fields in _RAW_COUNT_FIELDS.items():
+                    if not any(_is_reported_count(usage, field) for field in fields):
+                        self._unreported_counts[count] += 1
+            return record_response_usage(usage_agent, response, *args, **kwargs)
+
+        turn_response_check.record_response_usage = count_and_record
 
     async def _authenticate_mcp_servers(self) -> None:
         if self._mcp_authentication_checked:
@@ -633,13 +678,32 @@ _SESSION_TOKEN_KEYS = (
 )
 
 
+# The raw usage fields Hermes reads for a response's input and output counts.
+# Chat Completions usage may use either spelling; Anthropic Messages and
+# Responses usage carry only input_tokens and output_tokens.
+_RAW_COUNT_FIELDS = {
+    "input": ("prompt_tokens", "input_tokens"),
+    "output": ("completion_tokens", "output_tokens"),
+}
+
+
+def _is_reported_count(usage: Any, field: str) -> bool:
+    """Return whether the provider's raw usage reports ``field`` as a count."""
+    value = usage.get(field) if isinstance(usage, dict) else getattr(usage, field, None)
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
 def _fresh_session_totals() -> dict[str, int]:
     """Return the baseline of a new Hermes agent, whose counters start at 0."""
     return dict.fromkeys(_SESSION_TOKEN_KEYS, 0)
 
 
 def _invocation_usage(
-    result: dict[str, Any], previous_totals: dict[str, int]
+    result: dict[str, Any],
+    previous_totals: dict[str, int],
+    *,
+    input_reported: bool = True,
+    output_reported: bool = True,
 ) -> tuple[AgentUsage | None, dict[str, int]]:
     """Return this invocation's usage and the session totals to keep as baseline.
 
@@ -648,7 +712,9 @@ def _invocation_usage(
     result or from ``previous_totals`` (no baseline: the previous invocation
     failed or its result held no counters), or that went down, is unknown for
     this invocation. The usage therefore never holds a whole-session total or
-    another invocation's tokens.
+    another invocation's tokens. ``input_reported`` or ``output_reported`` is
+    False when a provider response of this invocation left that count out,
+    which Hermes counted as 0, so that count and the total are unknown.
     """
     totals = {
         key: value
@@ -663,7 +729,7 @@ def _invocation_usage(
         if key in previous_totals and value >= previous_totals[key]
     }
     fields: dict[str, Any] = {}
-    if all(
+    if input_reported and all(
         key in change
         for key in ("input_tokens", "cache_read_tokens", "cache_write_tokens")
     ):
@@ -674,7 +740,7 @@ def _invocation_usage(
         )
         fields["cached_input_tokens"] = change["cache_read_tokens"]
         fields["input_tokens_include_cache"] = True
-    if "output_tokens" in change:
+    if output_reported and "output_tokens" in change:
         fields["output_tokens"] = change["output_tokens"]
     if "input_tokens" in fields and "output_tokens" in fields:
         fields["total_tokens"] = fields["input_tokens"] + fields["output_tokens"]

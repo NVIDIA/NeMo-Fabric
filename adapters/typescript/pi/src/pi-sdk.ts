@@ -71,12 +71,20 @@ interface PiToolFactoryContext {
 
 const NO_TOKENS: PiTokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
-/**
- * Add one call's usage to a prompt's running total. A call without a complete
- * usage report makes the whole total unknown.
- */
-export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTokenUsage | undefined {
-  if (total === undefined || typeof usage !== "object" || usage === null) {
+/** Which counts of one model call the provider reported before Pi filled the rest with 0. */
+export interface ReportedCounts {
+  input: boolean;
+  output: boolean;
+}
+
+/** What the provider reported for the model call that produced a usage object, if the adapter saw it. */
+export type ReportedCountsLookup = (usage: unknown) => ReportedCounts | undefined;
+
+const BOTH_REPORTED: ReportedCounts = { input: true, output: true };
+
+/** One call's four token counts, or undefined unless each is a non-negative safe integer. */
+function callCounts(usage: unknown): Required<PiTokenUsage> | undefined {
+  if (typeof usage !== "object" || usage === null) {
     return undefined;
   }
   const counts = usage as Record<string, unknown>;
@@ -91,43 +99,76 @@ export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTok
   if (input === undefined || output === undefined || cacheRead === undefined || cacheWrite === undefined) {
     return undefined;
   }
-  return {
-    input: total.input + input,
-    output: total.output + output,
-    cacheRead: total.cacheRead + cacheRead,
-    cacheWrite: total.cacheWrite + cacheWrite,
-  };
+  return { input, output, cacheRead, cacheWrite };
 }
 
 /**
- * Add one model call's usage to a prompt's running total. Pi fills a call's
- * usage with zeros before the response arrives and overwrites it only when the
- * provider reports usage, so a call whose four counts are all zero is treated
- * as unreported and makes the total unknown. A provider report of all zeros
- * looks the same and is discarded too.
+ * Add a call's counts to a prompt's running total. The input side (input with
+ * its cache reads and writes) and the output stay known only while every call
+ * reported them; the total is unknown once neither is.
  */
-function addModelCallUsage(total: PiTokenUsage | undefined, usage: unknown): PiTokenUsage | undefined {
-  const call = addUsage(NO_TOKENS, usage);
-  if (call === undefined || Object.values(call).every((count) => count === 0)) {
+function sumCounts(total: PiTokenUsage, call: Required<PiTokenUsage>, reported: ReportedCounts): PiTokenUsage | undefined {
+  const sum: PiTokenUsage = {};
+  if (reported.input && total.input !== undefined && total.cacheRead !== undefined && total.cacheWrite !== undefined) {
+    sum.input = total.input + call.input;
+    sum.cacheRead = total.cacheRead + call.cacheRead;
+    sum.cacheWrite = total.cacheWrite + call.cacheWrite;
+  }
+  if (reported.output && total.output !== undefined) {
+    sum.output = total.output + call.output;
+  }
+  return Object.keys(sum).length === 0 ? undefined : sum;
+}
+
+/**
+ * Add one call's own usage report, such as a tool's, to a prompt's running
+ * total. A report without all four counts makes the whole total unknown.
+ */
+export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTokenUsage | undefined {
+  const call = callCounts(usage);
+  return total === undefined || call === undefined ? undefined : sumCounts(total, call, BOTH_REPORTED);
+}
+
+/**
+ * Add one model call's usage to a prompt's running total. Pi's provider
+ * parsers fill a count the provider omitted with 0, so `reportedCounts` says
+ * which counts the provider actually reported, from the raw stream events the
+ * session recorded for that call. A count the provider omitted is unknown for
+ * the whole prompt, and so is every count of a call whose raw events the
+ * adapter did not see. A reported zero stays a measured zero.
+ */
+function addModelCallUsage(
+  total: PiTokenUsage | undefined,
+  usage: unknown,
+  reportedCounts: ReportedCountsLookup,
+): PiTokenUsage | undefined {
+  const call = callCounts(usage);
+  const reported = reportedCounts(usage);
+  if (total === undefined || call === undefined || reported === undefined) {
     return undefined;
   }
-  return addUsage(total, call);
+  return sumCounts(total, call, reported);
 }
 
 /**
  * Add the tokens one session event recorded to a prompt's running total, as
  * Pi's own usage totals count them: an assistant message, a tool result that
  * reports usage, a finished compaction's summary call, and a usage entry such
- * as a cache warm-up. The total becomes unknown when a model call carries no
- * usage report, when an assistant message or a compaction was aborted, or when
- * a compaction summary call was retried: Pi keeps no usage for a call it
+ * as a cache warm-up. A model call adds only the counts its provider
+ * reported, as `reportedCounts` records them. The total becomes unknown when a
+ * model call reports no count, when an assistant message or a compaction was
+ * aborted, or when a compaction summary call was retried: Pi keeps no usage for a call it
  * stopped or a summary attempt that failed, and either may still have been
  * billed. It also becomes unknown when Pi prepares a split-turn compaction
  * (a `session_before_compact` event whose preparation has `isSplitTurn`):
  * Pi summarizes the history and the turn prefix in separate calls and reports
  * only their combined usage, so one unreported call cannot be detected.
  */
-export function addEventUsage(total: PiTokenUsage | undefined, event: unknown): PiTokenUsage | undefined {
+export function addEventUsage(
+  total: PiTokenUsage | undefined,
+  event: unknown,
+  reportedCounts: ReportedCountsLookup,
+): PiTokenUsage | undefined {
   const fields = (typeof event === "object" && event !== null ? event : {}) as {
     type?: unknown;
     message?: { role?: unknown; stopReason?: unknown; usage?: unknown };
@@ -139,7 +180,9 @@ export function addEventUsage(total: PiTokenUsage | undefined, event: unknown): 
   switch (fields.type) {
     case "message_end":
       if (fields.message?.role === "assistant") {
-        return fields.message.stopReason === "aborted" ? undefined : addModelCallUsage(total, fields.message.usage);
+        return fields.message.stopReason === "aborted"
+          ? undefined
+          : addModelCallUsage(total, fields.message.usage, reportedCounts);
       }
       if (fields.message?.role === "toolResult" && fields.message.usage !== undefined) {
         return addUsage(total, fields.message.usage);
@@ -147,17 +190,120 @@ export function addEventUsage(total: PiTokenUsage | undefined, event: unknown): 
       return total;
     case "compaction_end":
       return fields.aborted === false && fields.result !== undefined
-        ? addModelCallUsage(total, fields.result.usage)
+        ? addModelCallUsage(total, fields.result.usage, reportedCounts)
         : undefined;
     case "session_before_compact":
       return fields.preparation?.isSplitTurn === false ? total : undefined;
     case "summarization_retry_scheduled":
       return undefined;
     case "entry_appended":
-      return fields.entry?.type === "usage" ? addModelCallUsage(total, fields.entry.usage) : total;
+      return fields.entry?.type === "usage" ? addModelCallUsage(total, fields.entry.usage, reportedCounts) : total;
     default:
       return total;
   }
+}
+
+/** A field of a raw provider event, or undefined when `value` is not an object. */
+function rawField(value: unknown, name: string): unknown {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>)[name] : undefined;
+}
+
+/**
+ * Record which counts one raw provider stream event reports, before Pi's parser
+ * for the call's wire protocol fills an omitted count with 0. Each case reads
+ * the fields that parser reads (`@earendil-works/pi-ai` 1.0.3). Anthropic
+ * Messages keeps the counts of `message_start` and then takes only the counts a
+ * `message_delta` carries, so its reports accumulate; the other protocols
+ * replace a call's usage with each usage report. For Google, the output count
+ * is `candidatesTokenCount`, to which Pi adds any thinking tokens.
+ */
+export function noteReportedCounts(reported: ReportedCounts, api: string, data: unknown): void {
+  const hasCount = (usage: unknown, name: string): boolean => {
+    const value = rawField(usage, name);
+    return typeof value === "number" && Number.isFinite(value) && value >= 0;
+  };
+  const replace = (usage: unknown, input: string, output: string): void => {
+    if (usage) {
+      reported.input = hasCount(usage, input);
+      reported.output = hasCount(usage, output);
+    }
+  };
+  const type = rawField(data, "type");
+  switch (api) {
+    case "openai-completions": {
+      const choices = rawField(data, "choices");
+      const choice = Array.isArray(choices) ? choices[0] : undefined;
+      replace(rawField(data, "usage") || rawField(choice, "usage"), "prompt_tokens", "completion_tokens");
+      return;
+    }
+    case "mistral-conversations":
+      replace(rawField(data, "usage"), "prompt_tokens", "completion_tokens");
+      return;
+    case "openai-responses":
+    case "azure-openai-responses":
+    case "openai-codex-responses":
+      if (type === "response.completed" || type === "response.incomplete" || type === "response.done") {
+        replace(rawField(rawField(data, "response"), "usage"), "input_tokens", "output_tokens");
+      }
+      return;
+    case "bedrock-converse-stream":
+      replace(rawField(rawField(data, "metadata"), "usage"), "inputTokens", "outputTokens");
+      return;
+    case "google-generative-ai":
+    case "google-vertex":
+      replace(rawField(data, "usageMetadata"), "promptTokenCount", "candidatesTokenCount");
+      return;
+    case "pi-messages":
+      if (type === "done" || type === "error") {
+        replace(rawField(data, "usage"), "input", "output");
+      }
+      return;
+    case "anthropic-messages":
+      if (type === "message_start") {
+        replace(rawField(rawField(data, "message"), "usage"), "input_tokens", "output_tokens");
+      } else if (type === "message_delta") {
+        const usage = rawField(data, "usage");
+        if (usage) {
+          reported.input ||= hasCount(usage, "input_tokens");
+          reported.output ||= hasCount(usage, "output_tokens");
+        }
+      }
+      return;
+  }
+}
+
+/**
+ * Record which counts each model call's provider reported, keyed by the call's
+ * final usage object. Pi hands every raw provider stream event to
+ * `onProviderStreamEvent` before parsing it. The agent loop and compaction
+ * summaries both call the agent's stream function, so wrapping it covers both,
+ * and Pi passes the final usage object unchanged to `message_end` and
+ * `compaction_end`. The record is stored before Pi emits either event. Pi's
+ * cache warmer replays a request with its options but sends it through its own
+ * model runtime, so the record is copied when the call ends and a warm-up's
+ * usage entry has no record.
+ */
+function recordReportedCounts(agent: AgentSession["agent"], reportedCounts: WeakMap<object, ReportedCounts>): void {
+  const streamFunction = agent.streamFunction;
+  agent.streamFunction = async (model, context, options) => {
+    const reported: ReportedCounts = { input: false, output: false };
+    const response = await streamFunction(model, context, {
+      ...options,
+      onProviderStreamEvent: async (data, eventModel) => {
+        noteReportedCounts(reported, model.api, data);
+        await options?.onProviderStreamEvent?.(data, eventModel);
+      },
+    });
+    void response.result().then(
+      (message) => {
+        if (typeof message.usage === "object" && message.usage !== null) {
+          reportedCounts.set(message.usage, { ...reported });
+        }
+      },
+      () => undefined,
+    );
+    return response;
+  };
 }
 
 export function withCustomBaseUrl<T extends { api: string; baseUrl: string; compat?: object }>(
@@ -975,6 +1121,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
   private cumulativeTurnCount = 0;
   private readonly runtimeDir: string;
   private readonly compactionListeners: Set<(event: unknown) => void>;
+  private readonly reportedCounts = new WeakMap<object, ReportedCounts>();
 
   constructor(
     session: AgentSession,
@@ -988,6 +1135,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
     this.runtimeDir = runtimeDir;
     this.compactionListeners = compactionListeners;
     this.relay = relay;
+    recordReportedCounts(session.agent, this.reportedCounts);
     this.unsubscribeTurnCounter = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         this.cumulativeTurnCount += 1;
@@ -1006,6 +1154,8 @@ class PiSdkSessionHandle implements PiSessionHandle {
       | { role: "assistant"; content: unknown; stopReason: string; errorMessage?: string }
       | undefined;
     let usage: PiTokenUsage | undefined = NO_TOKENS;
+    const reportedCounts: ReportedCountsLookup = (callUsage) =>
+      typeof callUsage === "object" && callUsage !== null ? this.reportedCounts.get(callUsage) : undefined;
     const unsubscribe = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         turnStarted = true;
@@ -1013,10 +1163,10 @@ class PiSdkSessionHandle implements PiSessionHandle {
       if (event.type === "message_end" && event.message.role === "assistant") {
         finalAssistant = event.message;
       }
-      usage = addEventUsage(usage, event);
+      usage = addEventUsage(usage, event, reportedCounts);
     });
     const onCompactionPrepared = (event: unknown): void => {
-      usage = addEventUsage(usage, event);
+      usage = addEventUsage(usage, event, reportedCounts);
     };
     this.compactionListeners.add(onCompactionPrepared);
     try {

@@ -121,7 +121,11 @@ invocation: `input_tokens` with cache reads and cache writes included,
 auxiliary calls, such as context-compression summaries, separately from these
 counters, so they are not included. Hermes adds no tokens for a provider
 response that carried no usage, so an invocation with such a response has no
-`usage`. A response that reported zero tokens still counts as 0. A counter that
+`usage`. A response that reported zero tokens still counts as 0. Hermes also
+reads a count that a response's usage left out as 0. When a response left out
+its input count, the invocation's `usage` leaves out `input_tokens`,
+`cached_input_tokens`, and `total_tokens`. When it left out its output count,
+the `usage` leaves out `output_tokens` and `total_tokens`. A counter that
 Hermes does not report, or that went down, is left out for that invocation.
 After an invocation that raised, was cancelled, or timed out, or whose result
 held no counters, the adapter has no baseline. The next invocation then reports

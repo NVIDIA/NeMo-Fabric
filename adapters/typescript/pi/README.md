@@ -218,14 +218,20 @@ Each result's `usage` sums the tokens Pi records during the invocation, counted
 the way Pi's own usage totals count them: assistant messages, tool results that
 report usage, finished compaction summaries, and usage entries such as cache
 warm-ups. It holds `input_tokens` with cache reads and cache writes included,
-`cached_input_tokens`, `output_tokens`, and `total_tokens`. Pi fills a model
-call's usage with zeros until the provider reports it, so the adapter treats a
-model call whose counts are all zero as unreported. A provider report of all
-zeros looks the same, so the adapter discards it too. The result has no `usage`
-when Pi produced no assistant message, when one of those calls has no complete
-usage report, when an assistant message was aborted, when a compaction was
-aborted or reported no usage, or when Pi retried a compaction summary call,
-because Pi keeps no usage for the failed attempt. It also has no `usage` when a
+`cached_input_tokens`, `output_tokens`, and `total_tokens`. Pi fills a count
+that the provider did not report with 0, so the adapter reads the provider's
+raw stream events for each assistant message and compaction summary call and
+keeps only the counts the provider reported. A reported zero counts as 0. When
+a call left out its input count, the result leaves out `input_tokens`,
+`cached_input_tokens`, and `total_tokens`. When a call left out its output
+count, the result leaves out `output_tokens` and `total_tokens`. The result has
+no `usage` when Pi produced no assistant message, when a model call reported no
+counts, when a tool result has no complete usage report, when an assistant
+message was aborted, when a compaction was aborted or reported no usage, or
+when Pi retried a compaction summary call, because Pi keeps no usage for the
+failed attempt. It also has no `usage` when Pi recorded a cache warm-up during
+the invocation, because Pi sends warm-ups outside the agent's stream function,
+where the adapter cannot read the raw report. It also has no `usage` when a
 compaction cuts inside a turn, because Pi then summarizes the earlier history
 and the start of that turn in separate calls and reports only their combined
 usage. Pi computes its cost figures from the model catalog's rates, so the
