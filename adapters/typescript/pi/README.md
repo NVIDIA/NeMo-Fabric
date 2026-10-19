@@ -228,12 +228,15 @@ summary call and keeps only the counts the provider reported. A reported zero
 counts as 0, including a report of all zeros. When a call left out its input
 count, the result leaves out `input_tokens`, `cached_input_tokens`, and
 `total_tokens`. Anthropic Messages usage reports input without the cache, so
-its input count also needs both cache fields. When a call left out its output
-count, the result leaves out `output_tokens` and `total_tokens`; for Anthropic
-Messages, only a `message_delta` reports the final output count. When a call
-sent no cache details, the result leaves out `cached_input_tokens`. A wire
-protocol outside Pi's built-in ones reports no counts the adapter can check, so
-its calls leave the result without `usage`.
+its input count also needs both cache fields. Bedrock Converse also reports
+input without the cache, but its API documents the cache fields as optional, so
+its input count needs only `inputTokens` rather than going unknown on every
+call that omits them. When a call left out its output count, the result leaves
+out `output_tokens` and `total_tokens`; for Anthropic Messages, only a
+`message_delta` reports the final output count. When a call sent no cache
+details, the result leaves out `cached_input_tokens`. A wire protocol outside
+Pi's built-in ones reports no counts the adapter can check, so its calls leave
+the result without `usage`.
 
 The result has no `usage` when Pi produced no assistant message, when a model
 call reported none of the counts, when a tool result has no complete usage
