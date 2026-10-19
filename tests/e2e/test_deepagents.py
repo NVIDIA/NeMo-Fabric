@@ -23,12 +23,15 @@ from _utils.utils import assert_atof_model, assert_atof_skill_selection
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
-async def test_deepagents_persistent_host_with_mock_model(api_server, tmp_path):
+@pytest.mark.parametrize("effort", [None, "none"])
+async def test_deepagents_persistent_host_with_mock_model(api_server, tmp_path, effort):
     pytest.importorskip("deepagents")
     from examples.code_review_agent import deepagents_config
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
     config = deepagents_config()
+    if effort is not None:
+        config.harness.settings["reasoning_effort"] = effort
     config.models["default"].base_url = f"{api_server}/v1"
     config.environment = EnvironmentConfig(
         provider="local",
@@ -53,6 +56,15 @@ async def test_deepagents_persistent_host_with_mock_model(api_server, tmp_path):
     assert first["output"]["resumed"] is False, results
     assert second["output"]["resumed"] is True, results
     assert "user_count=2" in second["output"]["response"], results
+    captured = requests.get(f"{api_server}/_requests", timeout=5)
+    captured.raise_for_status()
+    model_requests = captured.json()
+    assert len(model_requests) == 2
+    for request in model_requests:
+        if effort is None:
+            assert "reasoning_effort" not in request
+        else:
+            assert request["reasoning_effort"] == effort
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
