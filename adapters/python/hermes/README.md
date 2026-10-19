@@ -127,15 +127,17 @@ rather than a carried-over or whole-session total, and the one after it reports
 its own change again.
 
 Hermes adds no tokens for a provider response that carried no usage, so an
-invocation with such a response has no `usage`. Hermes also reads a count that
-a response's usage left out as 0, so the adapter checks each response's usage
-before Hermes normalizes it. A reported zero still counts as 0. When a response
-left out its input count, the invocation's `usage` leaves out `input_tokens`,
-`cached_input_tokens`, and `total_tokens`. Anthropic Messages usage reports
-input without the cache, so its input count also needs both cache fields. When
-a response left out its output count, the `usage` leaves out `output_tokens`
-and `total_tokens`. When a response sent no cache details, the `usage` leaves
-out `cached_input_tokens`.
+invocation with such a response has no `usage`. Hermes also returns before
+recording the usage of a reply that hit the token limit or a content filter, so
+an invocation with such a reply has no `usage` either. Hermes reads a count
+that a response's usage left out as 0, so the adapter checks each response's
+usage before Hermes normalizes it. A reported zero still counts as 0. When a
+response left out its input count, the invocation's `usage` leaves out
+`input_tokens`, `cached_input_tokens`, and `total_tokens`. Anthropic Messages
+usage reports input without the cache, so its input count also needs both cache
+fields. When a response left out its output count, the `usage` leaves out
+`output_tokens` and `total_tokens`. When a response sent no cache details, the
+`usage` leaves out `cached_input_tokens`.
 
 This check covers the usage that the OpenAI-compatible, Responses, and
 Anthropic clients return. Hermes' native Gemini and Bedrock transports, and its

@@ -22,7 +22,7 @@ def mock_api_server(port: int) -> Iterator[str]:
 
     Use the /_requests endpoint to inspect captured chat-completion payloads after a test action.
     Use the /_scenario endpoint to configure a status code, ordered tool calls, or the
-    chat-completion usage object for subsequent requests.
+    chat-completion usage object and finish reason for subsequent requests.
     Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
@@ -41,6 +41,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.tool_call_index = 0
         app.state.mcp_authorization_headers = []
         app.state.usage = dict(_ZERO_USAGE)
+        app.state.finish_reason = "stop"
 
     reset_state()
 
@@ -80,6 +81,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         )
         app.state.tool_call_index = 0
         app.state.usage = payload.get("usage", dict(_ZERO_USAGE))
+        app.state.finish_reason = payload.get("finish_reason", "stop")
         return {
             "status_code": app.state.status_code,
             "tool_call": tool_call,
@@ -185,7 +187,9 @@ def mock_api_server(port: int) -> Iterator[str]:
         content = f"echo user_count={len(user_messages)} latest={latest}"
         if payload.get("stream") is True:
             return StreamingResponse(
-                _stream_chat_completion(payload, content, app.state.usage),
+                _stream_chat_completion(
+                    payload, content, app.state.usage, app.state.finish_reason
+                ),
                 media_type="text/event-stream",
             )
 
@@ -199,7 +203,7 @@ def mock_api_server(port: int) -> Iterator[str]:
                     {
                         "index": 0,
                         "message": {"role": "assistant", "content": content},
-                        "finish_reason": "stop",
+                        "finish_reason": app.state.finish_reason,
                     }
                 ],
                 "usage": app.state.usage,
@@ -281,7 +285,10 @@ def mock_api_server(port: int) -> Iterator[str]:
 
 
 def _stream_chat_completion(
-    payload: dict[str, object], content: str, usage: dict[str, object]
+    payload: dict[str, object],
+    content: str,
+    usage: dict[str, object],
+    finish_reason: str,
 ) -> Iterator[str]:
     model = payload.get("model", "fabric-echo")
     chunks = [
@@ -320,7 +327,7 @@ def _stream_chat_completion(
                 {
                     "index": 0,
                     "delta": {},
-                    "finish_reason": "stop",
+                    "finish_reason": finish_reason,
                 }
             ],
         },

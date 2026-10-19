@@ -72,7 +72,7 @@ class HermesRuntime:
         # Hermes reports session totals; each invocation reports the change
         # from this baseline. A counter missing from it has no baseline.
         self._session_token_totals: dict[str, int] = _fresh_session_totals()
-        self._usage_less_responses = 0
+        self._uncounted_responses = 0
         # Provider responses whose usage left out a count, by count.
         self._unreported_counts = dict.fromkeys(_REPORTED_COUNTS, 0)
 
@@ -299,7 +299,7 @@ class HermesRuntime:
         # failed, cancelled or timed-out invocation never hands its tokens to
         # the next one.
         previous_totals, self._session_token_totals = self._session_token_totals, {}
-        usage_less_before = self._usage_less_responses
+        uncounted_before = self._uncounted_responses
         unreported_before = dict(self._unreported_counts)
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
@@ -394,9 +394,10 @@ class HermesRuntime:
                 if responses != unreported_before[count]
             ),
         )
-        if self._usage_less_responses != usage_less_before:
-            # A provider response without usage added no tokens, so the
-            # change in the counters is an undercount, not this invocation's.
+        if self._uncounted_responses != uncounted_before:
+            # A provider response without usage, or one Hermes returned on
+            # before recording its usage, added no tokens, so the change in
+            # the counters is an undercount, not this invocation's.
             usage = None
         return AgentRunResult(
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
@@ -425,7 +426,7 @@ class HermesRuntime:
         )
 
         def count_and_note() -> None:
-            self._usage_less_responses += 1
+            self._uncounted_responses += 1
             if callable(note_usage_less_response):
                 note_usage_less_response()
 
@@ -436,13 +437,20 @@ class HermesRuntime:
 
         Hermes reads a missing count as 0, so its counters cannot tell an
         omitted count from a reported zero, and Hermes passes the raw usage to
-        no per-agent hook. The adapter therefore registers the agent with a
-        process-wide wrapper around the function Hermes' turn loop calls for
-        each response; see ``_install_usage_observer``.
+        no per-agent hook. The adapter therefore registers the agent with
+        process-wide wrappers around the functions Hermes' turn loop calls for
+        each response; see ``_install_usage_observer``. A refused or truncated
+        response that Hermes never records counts as a response without usage.
         """
         _install_usage_observer()
 
-        def count_unreported(response: Any) -> None:
+        def count_unreported(handler: str, response: Any, outcome: Any) -> None:
+            if handler != "record_response_usage":
+                # Hermes returns on a refused or truncated response before
+                # recording its usage, unless the truncation falls through.
+                if getattr(outcome, "action", None) != "fallthrough":
+                    self._uncounted_responses += 1
+                return
             usage = getattr(response, "usage", None)
             # A response without usage is counted by the compressor hook.
             if usage:
@@ -673,54 +681,69 @@ _SESSION_TOKEN_KEYS = (
 )
 
 
-# Response observers by Hermes agent, called before Hermes records a
-# response's usage. Delegated subagents are never registered: their tokens
+# Response observers by Hermes agent, called with each response Hermes'
+# turn loop handles. Delegated subagents are never registered: their tokens
 # never reach the registered agent's counters.
-_USAGE_OBSERVERS: weakref.WeakKeyDictionary[Any, Callable[[Any], None]] = (
+_USAGE_OBSERVERS: weakref.WeakKeyDictionary[Any, Callable[[str, Any, Any], None]] = (
     weakref.WeakKeyDictionary()
 )
+# The functions ``agent.turn_response_check.check_api_response`` calls with
+# (agent, response, ...) for a provider response, by the module defining
+# each. record_response_usage folds the usage; on a content-filter refusal or
+# a reply cut off at the token limit, Hermes calls one of the other two and
+# returns before recording the usage.
+_RESPONSE_HANDLERS = {
+    "record_response_usage": "agent.turn_usage",
+    "handle_content_policy_refusal": "agent.turn_truncation",
+    "recover_from_truncation": "agent.turn_truncation",
+}
 
 
-def _observed_record_response_usage(
-    agent: Any, response: Any, *args: Any, **kwargs: Any
-) -> Any:
-    """Show ``response`` to the agent's observer, then record it as Hermes does."""
-    from agent import turn_usage
+def _observed_response_handler(name: str, handler: Callable[..., Any]) -> Any:
+    """Wrap a Hermes response handler to show each call to the agent's observer."""
 
-    observer = _USAGE_OBSERVERS.get(agent)
-    if observer is not None:
-        observer(response)
-    return turn_usage.record_response_usage(agent, response, *args, **kwargs)
+    def observed(agent: Any, response: Any, *args: Any, **kwargs: Any) -> Any:
+        outcome = handler(agent, response, *args, **kwargs)
+        observer = _USAGE_OBSERVERS.get(agent)
+        if observer is not None:
+            observer(name, response, outcome)
+        return outcome
+
+    observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
+    return observed
 
 
 def _install_usage_observer() -> None:
-    """Route Hermes' per-response usage accounting through the observers.
+    """Route Hermes' per-response handlers through the observers.
 
-    ``agent.turn_response_check.check_api_response`` calls
-    ``record_response_usage`` for each provider response, looked up as a
-    global of its module, and that function is the first place the raw usage
-    reaches before Hermes normalizes it. The wrapper replaces that module
-    global once per process and always delegates to Hermes' function. If
-    Hermes no longer calls usage accounting through that name, start fails
-    rather than reporting omitted counts as measured zeros.
+    ``check_api_response`` looks up each handler as a global of its module,
+    and ``record_response_usage`` is the first place the raw usage reaches
+    before Hermes normalizes it. The wrappers replace those module globals
+    once per process and always delegate to Hermes' functions. If Hermes no
+    longer calls a handler through that name, start fails rather than
+    reporting an omitted or uncounted response as measured tokens.
     """
-    from agent import turn_response_check
-    from agent import turn_usage
+    import importlib
 
-    current = turn_response_check.record_response_usage
-    if current is _observed_record_response_usage:
-        return
-    if (
-        current is not turn_usage.record_response_usage
-        or "record_response_usage"
-        not in turn_response_check.check_api_response.__code__.co_names
-    ):
-        raise lifecycle.LifecycleError(
-            "hermes_usage_accounting_unsupported",
-            "This Hermes version records response usage outside "
-            "agent.turn_response_check.record_response_usage",
-        )
-    turn_response_check.record_response_usage = _observed_record_response_usage
+    from agent import turn_response_check
+
+    called = turn_response_check.check_api_response.__code__.co_names
+    handlers = {}
+    for name, module in _RESPONSE_HANDLERS.items():
+        current = getattr(turn_response_check, name, None)
+        if getattr(current, "nemo_fabric_observed", False):
+            continue
+        if name not in called or current is not getattr(
+            importlib.import_module(module), name, None
+        ):
+            raise lifecycle.LifecycleError(
+                "hermes_usage_accounting_unsupported",
+                f"This Hermes version handles responses outside "
+                f"agent.turn_response_check.{name}",
+            )
+        handlers[name] = current
+    for name, handler in handlers.items():
+        setattr(turn_response_check, name, _observed_response_handler(name, handler))
 
 
 _REPORTED_COUNTS = ("input", "cached", "output")

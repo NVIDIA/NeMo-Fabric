@@ -153,6 +153,49 @@ async def test_hermes_persistent_host_reports_usage_for_each_invocation(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
+@pytest.mark.parametrize(
+    ("finish_reason", "usage"),
+    [
+        # A reply cut off at max_tokens bills the whole budget.
+        (
+            "length",
+            {"prompt_tokens": 40, "completion_tokens": 512, "total_tokens": 552},
+        ),
+        (
+            "content_filter",
+            {"prompt_tokens": 40, "completion_tokens": 0, "total_tokens": 40},
+        ),
+    ],
+)
+async def test_hermes_usage_is_unknown_when_hermes_skips_a_response(
+    code_review_agent_dir: Path,
+    api_server: str,
+    finish_reason: str,
+    usage: dict[str, int],
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = hermes_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as runtime:
+        counted = await runtime.invoke(input="first")
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={"finish_reason": finish_reason, "usage": usage},
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+        skipped = await runtime.invoke(input="second")
+
+    assert counted.usage is not None, counted.to_mapping()
+    # Hermes returns on a truncated or refused reply before recording its
+    # usage, so the invocation's counters miss a billed call.
+    assert skipped.usage is None, skipped.to_mapping()
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
 async def test_env_secrets_in_headers(
     code_review_agent_dir: Path,
     api_server: str,
