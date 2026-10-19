@@ -14,7 +14,7 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 Facts about one MCP server.
 
-An entry with origin `harness` is a server the harness reports and the plan does not configure. It has the same shape: its `endpoint` reads `not_applicable` with reason `not_configured`, its `transport` may be absent, and runtime facts the adapter did not collect read `unavailable` with reason `not_collected`.
+An entry with origin `harness` is a server the harness reports and the plan does not configure. It has the same shape: its `endpoint` reads `not_applicable` with reason `not_configured`, and runtime facts the adapter did not collect read `unavailable` with reason `not_collected`. Only a `plan` entry must name its transport. An entry of any other origin may leave it out.
 
 ## Fields
 
@@ -24,7 +24,7 @@ Where the entry comes from: `plan` for a server the plan configures, `harness` f
 
 ### `transport: Option<String>`
 
-Transport, such as `stdio` or `streamable-http`. Always present for a `plan` entry.
+Transport, such as `stdio` or `streamable-http`. Required for a `plan` entry, and optional for any other origin.
 
 ### `endpoint: Fact<String>`
 

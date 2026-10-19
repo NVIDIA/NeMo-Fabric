@@ -10,7 +10,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct McpFacts &#123;\n    pub servers: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-mcpserverfacts.mdx\">McpServerFacts</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct McpFacts &#123;\n    pub servers: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-mcpserverfacts.mdx\">McpServerFacts</a>&gt;,\n    pub servers_truncated: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-truncatedentries.mdx\">TruncatedEntries</a>&gt;,\n&#125;"}} /></pre>
 
 MCP facts.
 
@@ -18,7 +18,11 @@ MCP facts.
 
 ### `servers: BTreeMap<String, McpServerFacts>`
 
-Servers keyed by name. Empty when the plan configures no MCP server and the harness reports none.
+Servers keyed by name. Empty when the plan configures no MCP server and the harness reports none. At most 32 servers, in sorted key order, each key at most 128 characters.
+
+### `servers_truncated: Option<TruncatedEntries>`
+
+Servers dropped from `servers`. Absent when none was dropped, never `null`.
 
 ## Trait Implementations
 

@@ -3,18 +3,20 @@ title: "Struct WhatRan"
 sidebar-title: "WhatRan"
 slug: "/reference/api/rust-library-reference/nemo-fabric-core/what_ran/struct-whatran"
 description: "What executed for one invocation."
-position: 12
+position: 13
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct WhatRan &#123;\n    pub schema: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub version: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub fabric: <a href=\"struct-fabricfacts.mdx\">FabricFacts</a>,\n    pub adapter: <a href=\"struct-adapterfacts.mdx\">AdapterFacts</a>,\n    pub harness: <a href=\"struct-harnessfacts.mdx\">HarnessFacts</a>,\n    pub models: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-modelfacts.mdx\">ModelFacts</a>&gt;,\n    pub mcp: <a href=\"struct-mcpfacts.mdx\">McpFacts</a>,\n    pub environment: <a href=\"struct-environmentfacts.mdx\">EnvironmentFacts</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct WhatRan &#123;\n    pub schema: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub version: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub fabric: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-fabricfacts.mdx\">FabricFacts</a>&gt;,\n    pub adapter: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-adapterfacts.mdx\">AdapterFacts</a>&gt;,\n    pub harness: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-harnessfacts.mdx\">HarnessFacts</a>&gt;,\n    pub models: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-modelfacts.mdx\">ModelFacts</a>&gt;&gt;,\n    pub models_truncated: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-truncatedentries.mdx\">TruncatedEntries</a>&gt;,\n    pub mcp: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-mcpfacts.mdx\">McpFacts</a>&gt;,\n    pub environment: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentfacts.mdx\">EnvironmentFacts</a>&gt;,\n    pub what_ran_truncated: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-truncatedentries.mdx\">TruncatedEntries</a>&gt;,\n&#125;"}} /></pre>
 
 What executed for one invocation.
 
-Decoding a `WhatRan` directly checks the shape of every section and fact. `RunResult` also checks the schema name and version, and that every `plan` MCP entry names its transport.
+Every section is present, unless `what_ran_truncated` is present: then the object is a minimal one that the byte budget left with only its schema name and version, and every section may be absent.
+
+Decoding a `WhatRan` directly checks the shape of every section and fact, and that no section is `null`. `RunResult` also checks the schema name and version, that every section is present unless `what_ran_truncated` is, and that every `plan` MCP entry names its transport.
 
 ## Fields
 
@@ -26,29 +28,37 @@ Schema name, `nemo.fabric.what_ran`.
 
 Contract version, `v1alpha1`.
 
-### `fabric: FabricFacts`
+### `fabric: Option<FabricFacts>`
 
 NeMo Fabric core that ran the adapter.
 
-### `adapter: AdapterFacts`
+### `adapter: Option<AdapterFacts>`
 
 Adapter that ran.
 
-### `harness: HarnessFacts`
+### `harness: Option<HarnessFacts>`
 
 Harness behind the adapter.
 
-### `models: BTreeMap<String, ModelFacts>`
+### `models: Option<BTreeMap<String, ModelFacts>>`
 
-Model facts keyed by the role names of the plan's `models` settings.
+Model facts keyed by the role names of the plan's `models` settings. At most 16 roles, in sorted key order, each key at most 128 characters.
 
-### `mcp: McpFacts`
+### `models_truncated: Option<TruncatedEntries>`
+
+Model roles dropped from `models`. Absent when none was dropped, never `null`.
+
+### `mcp: Option<McpFacts>`
 
 MCP server facts.
 
-### `environment: EnvironmentFacts`
+### `environment: Option<EnvironmentFacts>`
 
 Environment the runtime ran in.
+
+### `what_ran_truncated: Option<TruncatedEntries>`
+
+Present only on a minimal object: every section was dropped to keep the object within 128 KiB, with reason `byte_budget` and a dropped count of 1.
 
 ## Trait Implementations
 

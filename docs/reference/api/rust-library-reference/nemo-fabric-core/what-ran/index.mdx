@@ -16,6 +16,8 @@ What executed for one invocation, and how NeMo Fabric learned each fact.
 
 A string value longer than 256 characters, in a string fact or as an element of a string-list fact, keeps its first 240 characters, then `~`, then the first 15 hex digits of its SHA-256. Map keys and the plain names above are never cut.
 
+`models` keeps at most 16 roles and `mcp.servers` at most 32 servers, in sorted key order. An entry whose key is longer than 128 characters is dropped. While the compact JSON of the whole object is larger than 128 KiB, MCP server entries are dropped from the end of the sorted order, then model roles. Dropped entries are counted in a [`TruncatedEntries`](struct-truncatedentries.mdx) marker next to the map: `models_truncated` and `mcp.servers_truncated`. If the object is still too large with no MCP server and no model role, it is replaced by a minimal one that holds only the schema name, the version and the `what_ran_truncated` marker.
+
 `what_ran` is evidence. It never decides which runs are compared.
 
 Compatibility rules for readers:
@@ -38,6 +40,7 @@ Compatibility rules for readers:
 - [McpServerFacts](struct-mcpserverfacts.mdx): Facts about one MCP server.
 - [MissingFact](struct-missingfact.mdx): A fact without a value.
 - [ModelFacts](struct-modelfacts.mdx): Facts about one model role.
+- [TruncatedEntries](struct-truncatedentries.mdx): Entries core dropped to keep `what_ran` within its bounds: next to a map for the entries dropped from it, or as `what_ran_truncated` for the whole object.
 - [WhatRan](struct-whatran.mdx): What executed for one invocation.
 
 ## Enums
