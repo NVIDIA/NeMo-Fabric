@@ -11,6 +11,8 @@ import signal
 import stat
 import threading
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -31,6 +33,7 @@ from nemo_fabric.runtime_server.protocol import (
     validate_response,
 )
 from nemo_fabric.runtime_server.state import RuntimeServer
+from nemo_fabric.runtime_server.health import CHECK_SECONDS, server_report
 
 if sys.platform != "win32":
     import fcntl
@@ -80,6 +83,7 @@ async def client(
     socket_path: Path = Path(SOCKET_PATH),
     timeout: float = CALL_SECONDS,
 ) -> dict[str, Any]:
+    started = time.monotonic()
     operation = request["operation"]
     if fcntl is None:
         return envelope(
@@ -90,8 +94,13 @@ async def client(
     writer = None
     try:
         encoded = encode_request(request)
+        if operation == "check":
+            timeout = min(timeout, request.get("timeout_seconds", CHECK_SECONDS))
+        deadline = started + timeout
         # One deadline covers connection, write, and the complete response.
-        async with asyncio.timeout(timeout):
+        async with asyncio.timeout_at(
+            asyncio.get_running_loop().time() + max(0, deadline - time.monotonic())
+        ):
             reader, writer = await asyncio.open_unix_connection(
                 socket_path, limit=RESPONSE_LIMIT
             )
@@ -100,8 +109,24 @@ async def client(
             await writer.drain()
             response = await read_message(reader, RESPONSE_LIMIT)
             validate_response(response, operation)
+            if operation == "check":
+                finished = time.monotonic()
+                if finished >= deadline:
+                    raise TimeoutError()
+                report = response["result"]
+                if report is not None:
+                    report["elapsed_ms"] = max(0.0, (finished - started) * 1000)
+                    report["completed_at"] = (
+                        datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                    )
             return response
     except (OSError, ValueError, TypeError, KeyError, TimeoutError) as error:
+        if operation == "check" and isinstance(error, TimeoutError):
+            return envelope(
+                operation,
+                server_report("unknown", started),
+                error=ProtocolError("probe_timeout", "check"),
+            )
         if not isinstance(error, ProtocolError):
             error = ProtocolError(
                 "invalid_response" if sent else "host_unavailable", "transport"
@@ -117,10 +142,11 @@ async def client(
     finally:
         if writer is not None:
             writer.close()
-            try:
-                await asyncio.wait_for(writer.wait_closed(), 1)
-            except (OSError, TimeoutError):
-                pass
+            if operation != "check":
+                try:
+                    await asyncio.wait_for(writer.wait_closed(), 1)
+                except (OSError, TimeoutError):
+                    pass
 
 
 async def serve(
