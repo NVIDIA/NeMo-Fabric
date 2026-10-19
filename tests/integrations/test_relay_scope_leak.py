@@ -168,7 +168,7 @@ async def test_uuid_request_id_seeds_real_relay_parent(
     monkeypatch, make_runtime_context
 ):
     async def fake_invoke(agent, user_message, thread_id, callbacks=None):
-        return {"messages": []}, [], []
+        return {"messages": []}, []
 
     monkeypatch.setattr(adapter, "invoke_compiled_agent", fake_invoke)
 
@@ -210,7 +210,7 @@ async def test_overlapping_turns_stay_telemetry_clean(
     async def fake_invoke(agent, user_message, thread_id, callbacks=None):
         if callbacks:
             await _overlapping_chain_runs(callbacks[0])
-        return {"messages": []}, [], []
+        return {"messages": []}, []
 
     monkeypatch.setattr(adapter, "invoke_compiled_agent", fake_invoke)
     recording_scope = _RecordingScope()

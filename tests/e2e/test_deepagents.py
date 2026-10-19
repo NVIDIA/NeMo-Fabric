@@ -486,7 +486,6 @@ async def test_deepagents_builtin_subagent_delegation():
         call["args"]["subagent_type"] == "general-purpose" for call in task_calls
     ), result.to_mapping()
     assert any("subgraph" in event for event in output["events"]), result.to_mapping()
-    # delegated steps are folded into this turn's usage aggregation
     assert output["resumed"] is False, result.to_mapping()
 
 

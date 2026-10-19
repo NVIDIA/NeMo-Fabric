@@ -227,10 +227,30 @@ service.
 
 The normalized result includes the final response, buffered messages and
 per-step events, LangGraph thread id, token usage (and cost when the provider
-reports it), and errors. Usage aggregates the current turn across the main agent
-and any delegated subagents (streamed with `subgraphs=True`). Configuration and
-preflight failures (a missing credential, an absent `deepagents` package, or an
-invalid MCP server) fail runtime start before an invocation is accepted.
+reports it), and errors. Configuration and preflight failures (a missing
+credential, an absent `deepagents` package, or an invalid MCP server) fail
+runtime start before an invocation is accepted.
+
+Usage sums every chat-model call that runs in the adapter process for the
+invocation: the main agent, declarative subagents, and Deep Agents
+summarization. Agent Protocol subagents (entries with `graph_id`) run in their
+remote service, and their tokens are not included. A token count or cost is
+reported only when every counted call reported it; otherwise it stays unknown.
+This also holds for a failed invocation. A request the provider rejects with a
+4xx status (other than 408) contributes no usage. A 5xx response, timeout,
+cancellation or unfinished call leaves the invocation's counts and cost
+unknown, because the provider may have done work without reporting usage.
+OpenAI SDK retries happen inside one LangChain call, so a 5xx the SDK retries
+to success is not visible to the adapter, and only the final response's
+reported usage counts. Usage replayed from a configured LangChain model cache
+would be counted as reported; Fabric configures no such cache.
+
+When a response carries OpenAI-shaped usage in
+`response_metadata.token_usage`, as `ChatOpenAI` responses without streaming
+do, the raw counts decide what was reported: an omitted count stays unknown,
+and the provider's total is used when present. Other providers and streamed
+responses use LangChain's `usage_metadata`, which some integrations fill with 0
+for an omitted count.
 
 ## Runtime Lifecycle
 
