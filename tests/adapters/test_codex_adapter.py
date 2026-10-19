@@ -23,7 +23,11 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.codex import adapter
 from openai_codex import AsyncCodex, AsyncThread, AsyncTurnHandle, JsonRpcError
-from openai_codex.types import TurnStatus
+from openai_codex import TransportClosedError
+from openai_codex.generated.v2_all import ItemCompletedNotification
+from openai_codex.generated.v2_all import ThreadTokenUsageUpdatedNotification
+from openai_codex.generated.v2_all import TurnCompletedNotification
+from openai_codex.models import Notification
 
 
 def lifecycle_start_payload(payload):
@@ -137,25 +141,70 @@ def configure_mcp(payload, servers):
     payload["config"]["mcp"] = {"servers": servers}
 
 
-def successful_result(response="done"):
-    return SimpleNamespace(
-        id="turn-1",
-        status=TurnStatus.completed,
-        error=None,
-        started_at=100,
-        completed_at=101,
-        duration_ms=1000,
-        final_response=response,
-        items=[
-            {
-                "id": "item-1",
-                "type": "agentMessage",
-                "phase": "final_answer",
-                "text": response,
-            }
-        ],
-        usage={"total": {"inputTokens": 10, "outputTokens": 3}},
+def token_usage(input_tokens, output_tokens, *, cached_input_tokens=0):
+    """Return a Codex thread usage snapshot whose counters are cumulative."""
+    total = {
+        "inputTokens": input_tokens,
+        "cachedInputTokens": cached_input_tokens,
+        "outputTokens": output_tokens,
+        "reasoningOutputTokens": 0,
+        "totalTokens": input_tokens + output_tokens,
+    }
+    return {"total": total, "last": total, "modelContextWindow": 272000}
+
+
+def usage_event(usage):
+    return Notification(
+        method="thread/tokenUsage/updated",
+        payload=ThreadTokenUsageUpdatedNotification.model_validate(
+            {"threadId": "thread-123", "turnId": "turn-1", "tokenUsage": usage}
+        ),
     )
+
+
+def turn_completed(error=None):
+    turn = {
+        "id": "turn-1",
+        "items": [],
+        "status": "completed" if error is None else "failed",
+        "startedAt": 100,
+        "completedAt": 101,
+        "durationMs": 1000,
+    }
+    if error is not None:
+        turn["error"] = {"message": error}
+    return Notification(
+        method="turn/completed",
+        payload=TurnCompletedNotification.model_validate(
+            {"threadId": "thread-123", "turn": turn}
+        ),
+    )
+
+
+def turn_events(response="done", *, usage=None):
+    """Return the SDK notifications Codex sends for one completed turn."""
+    events = [usage_event(token_usage(10, 3) if usage is None else usage)]
+    if response is not None:
+        events.append(
+            Notification(
+                method="item/completed",
+                payload=ItemCompletedNotification.model_validate(
+                    {
+                        "completedAtMs": 101000,
+                        "threadId": "thread-123",
+                        "turnId": "turn-1",
+                        "item": {
+                            "id": "item-1",
+                            "type": "agentMessage",
+                            "phase": "final_answer",
+                            "text": response,
+                        },
+                    }
+                ),
+            )
+        )
+    events.append(turn_completed())
+    return events
 
 
 def test_agent_run_result_discards_oversized_token_count():
@@ -253,13 +302,46 @@ def test_reset_cumulative_counter_rebaselines_without_negative_usage():
     assert resumed.usage.output_tokens == 2
 
 
-def mock_turn_handle(result=None):
+def test_usage_keeps_reported_zeros():
+    """Pins existing behavior: counters Codex reports as zero stay zero."""
+    total = {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+    }
+
+    result = adapter._agent_run_result({"usage": {"total": total}})
+
+    assert result.usage.to_mapping() == {
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens_include_cache": True,
+        "output_tokens": 0,
+        "total_tokens": 0,
+    }
+
+
+def mock_turn_handle(events=None):
+    """Stream notifications; an exception is raised and a callable is awaited."""
     mock_handle = MagicMock(spec=AsyncTurnHandle)
-    outcome = successful_result() if result is None else result
-    if isinstance(outcome, BaseException):
-        mock_handle.run.side_effect = outcome
-    else:
-        mock_handle.run.return_value = outcome
+    mock_handle.id = "turn-1"
+    if events is None:
+        events = turn_events()
+    elif isinstance(events, BaseException):
+        events = [events]
+    mock_handle.events = events
+
+    async def stream():
+        for event in mock_handle.events:
+            if isinstance(event, BaseException):
+                raise event
+            if callable(event):
+                await event()
+                continue
+            yield event
+
+    mock_handle.stream.side_effect = stream
     mock_handle.interrupted = False
 
     async def mark_interrupted():
@@ -269,10 +351,10 @@ def mock_turn_handle(result=None):
     return mock_handle
 
 
-def mock_thread(thread_id, result=None):
+def mock_thread(thread_id, events=None):
     mock_sdk_thread = MagicMock(spec=AsyncThread)
     mock_sdk_thread.id = thread_id
-    mock_sdk_thread.handle = mock_turn_handle(result)
+    mock_sdk_thread.handle = mock_turn_handle(events)
     mock_sdk_thread.turn.return_value = mock_sdk_thread.handle
     return mock_sdk_thread
 
@@ -1360,9 +1442,8 @@ async def test_relay_waits_for_delayed_atif_before_collecting_artifacts(
             )
 
         write_task = asyncio.create_task(write_atif())
-        return successful_result()
 
-    mock_sdk_thread.handle.run.side_effect = finish_turn
+    mock_sdk_thread.handle.events.insert(-1, finish_turn)
     mock_codex.next_thread = mock_sdk_thread
     runtime = adapter.CodexRuntime()
 
@@ -1456,13 +1537,127 @@ def test_sdk_failure_preserves_jsonrpc_code():
 
 
 def test_incomplete_sdk_turn_is_failed(codex_payload, mock_codex):
-    result = successful_result(response=None)
-    mock_codex.next_result = result
+    mock_codex.next_result = turn_events(response=None)
 
     output = invoke_once(codex_payload)
 
     assert output["error"]["code"] == "codex_turn_incomplete"
     assert output["turn_status"] == "completed"
+
+
+async def invoke_turns(payload, mock_codex, *turns):
+    """Invoke one runtime once per (input, events) pair; None events mean no turn starts."""
+    mock_codex.next_thread = mock_thread("thread-123")
+    mock_codex.next_thread.turn.side_effect = [
+        mock_turn_handle(events) for _, events in turns if events is not None
+    ]
+    start_payload = dict(payload)
+    start_payload.pop("request")
+    runtime = adapter.CodexRuntime()
+    await runtime.start(lifecycle_start_payload(start_payload))
+    results = []
+    try:
+        for request_input, _ in turns:
+            payload["request"]["input"] = request_input
+            results.append(await runtime.invoke(*lifecycle_invocation(payload)))
+    finally:
+        await runtime.stop()
+    return results
+
+
+@pytest.mark.parametrize(
+    ("failure", "code"),
+    [
+        ([turn_completed(error="model request failed")], "codex_turn_failed"),
+        ([TimeoutError("SDK request timed out")], "codex_timed_out"),
+        ([TransportClosedError("closed")], "codex_connection_failed"),
+    ],
+    ids=["failed-turn", "sdk-timeout", "connection-closed"],
+)
+async def test_failed_invocation_keeps_usage_codex_reported_before_failure(
+    codex_payload, mock_codex, failure, code
+):
+    _, failed = await invoke_turns(
+        codex_payload,
+        mock_codex,
+        ("Inspect.", turn_events(usage=token_usage(10, 3, cached_input_tokens=2))),
+        (
+            "Continue.",
+            [usage_event(token_usage(40, 8, cached_input_tokens=6)), *failure],
+        ),
+    )
+
+    assert failed.status is AgentRunStatus.FAILED
+    assert failed.error.code == code
+    assert failed.usage.to_mapping() == {
+        "input_tokens": 30,
+        "cached_input_tokens": 4,
+        "input_tokens_include_cache": True,
+        "output_tokens": 5,
+        "total_tokens": 35,
+    }
+    assert failed.output["usage"]["total"]["inputTokens"] == 40
+
+
+async def test_context_window_overflow_reports_usage_before_codex_fills_the_window(
+    codex_payload, mock_codex
+):
+    window = 272000
+    filled = {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "reasoningOutputTokens": 0,
+        "totalTokens": window,
+    }
+    (failed,) = await invoke_turns(
+        codex_payload,
+        mock_codex,
+        (
+            "Inspect.",
+            [
+                usage_event(token_usage(40, 8)),
+                usage_event(
+                    {
+                        "total": filled,
+                        "last": {**filled, "totalTokens": window - 48},
+                        "modelContextWindow": window,
+                    }
+                ),
+                turn_completed(error="context window exceeded"),
+            ],
+        ),
+    )
+
+    assert failed.error.code == "codex_turn_failed"
+    assert failed.usage.to_mapping() == {
+        "input_tokens": 40,
+        "cached_input_tokens": 0,
+        "input_tokens_include_cache": True,
+        "output_tokens": 8,
+        "total_tokens": 48,
+    }
+
+
+async def test_rejected_request_keeps_the_usage_baseline(codex_payload, mock_codex):
+    first, rejected, third = await invoke_turns(
+        codex_payload,
+        mock_codex,
+        ("Inspect.", turn_events(usage=token_usage(10, 3))),
+        ({"messages": []}, None),
+        ("Continue.", turn_events(usage=token_usage(25, 7))),
+    )
+
+    assert first.usage.input_tokens == 10
+    assert rejected.error.code == "codex_invalid_request"
+    assert rejected.usage is None
+    assert third.usage.to_mapping() == {
+        "input_tokens": 15,
+        "cached_input_tokens": 0,
+        "input_tokens_include_cache": True,
+        "output_tokens": 4,
+        "total_tokens": 19,
+    }
 
 
 def test_custom_provider_requires_explicit_api_key_env(codex_payload, mock_codex):
@@ -1932,9 +2127,9 @@ def test_timeout_interrupts_native_turn_and_closes_sdk(
         await asyncio.sleep(60)
 
     # An SDK timeout before Fabric's deadline is not invocation expiry.
-    mock_blocking_thread.handle.run.side_effect = (
+    mock_blocking_thread.handle.events = [
         block if deadline_expires else TimeoutError("SDK request timed out")
-    )
+    ]
     mock_codex.next_thread = mock_blocking_thread
     codex_payload["runtime_context"]["deadline_millis"] = int(
         (time.time() + (0.05 if deadline_expires else 60)) * 1000

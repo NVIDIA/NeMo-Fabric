@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -30,6 +31,7 @@ from openai_codex import (
     JsonRpcError,
     Sandbox,
     TransportClosedError,
+    TurnResult,
     is_retryable_error,
 )
 from openai_codex.generated.v2_all import (
@@ -38,7 +40,13 @@ from openai_codex.generated.v2_all import (
     McpServerOauthLoginCompletedNotification,
     McpServerOauthLoginResponse,
     SkillsExtraRootsSetResponse,
+    ThreadTokenUsage,
+    ThreadTokenUsageUpdatedNotification,
 )
+
+# Private: the collector AsyncTurnHandle.run uses; recheck it on every openai-codex bump.
+from openai_codex._run import _collect_async_turn_result
+from openai_codex.models import Notification
 from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
 from nemo_fabric_adapter_contract.codec import ContractValidationError
@@ -1155,6 +1163,54 @@ def normalize_result(
     }
 
 
+@dataclass
+class _TurnUsage:
+    """Last thread token usage Codex reported for the running turn."""
+
+    snapshot: ThreadTokenUsage | None = None
+
+
+def _fills_context_window(usage: ThreadTokenUsage) -> bool:
+    """Detect Codex's context-window marker, which replaces the counted thread totals.
+
+    On a context-window overflow, Codex sets the thread total to the window size with
+    every other counter at zero and then fails the turn.
+    """
+    total = usage.total
+    return (
+        total.total_tokens == usage.model_context_window
+        and total.input_tokens == 0
+        and total.output_tokens == 0
+    )
+
+
+async def _turn_notifications(
+    handle: Any, usage: _TurnUsage
+) -> AsyncIterator[Notification]:
+    stream = handle.stream()
+    try:
+        async for event in stream:
+            payload = event.payload
+            if (
+                isinstance(payload, ThreadTokenUsageUpdatedNotification)
+                and payload.turn_id == handle.id
+                and not _fills_context_window(payload.token_usage)
+            ):
+                usage.snapshot = payload.token_usage
+            yield event
+    finally:
+        await stream.aclose()
+
+
+async def _run_turn(handle: Any, usage: _TurnUsage) -> TurnResult:
+    """Collect the turn as ``AsyncTurnHandle.run`` does, keeping usage if the turn fails."""
+    events = _turn_notifications(handle, usage)
+    try:
+        return await _collect_async_turn_result(events, turn_id=handle.id)
+    finally:
+        await events.aclose()
+
+
 async def _interrupt_turn(handle: Any) -> None:
     if handle is None:
         return
@@ -1216,6 +1272,7 @@ async def _invoke_thread(
     """Run one turn and report whether the connected SDK transport remains usable."""
 
     handle = None
+    usage = _TurnUsage()
     deadline = asyncio.timeout_at(invocation_deadline)
     try:
         async with deadline:
@@ -1224,7 +1281,7 @@ async def _invoke_thread(
                 effort=_reasoning_effort(config),
                 output_schema=_output_schema(config),
             )
-            result = await handle.run()
+            result = await _run_turn(handle, usage)
             return (
                 normalize_result(
                     config, context, base_dir, thread_id=thread.id, result=result
@@ -1234,12 +1291,19 @@ async def _invoke_thread(
     except TimeoutError as error:
         await _interrupt_turn(handle)
         if deadline.expired():
-            return _failure("timeout", "Codex invocation timed out"), False
-        return sdk_failure(error), False
+            failure = _failure("timeout", "Codex invocation timed out")
+        else:
+            failure = sdk_failure(error)
     except CodexAdapterError:
         raise
     except (CodexError, RuntimeError, OSError) as error:
-        return sdk_failure(error), False
+        failure = sdk_failure(error)
+    # Usage covers the snapshots Codex sent before the failure. Codex sends a response's
+    # usage after its tool calls finish, so on a timeout the last response is not
+    # counted if it was still streaming or its tools were still running.
+    if usage.snapshot is not None:
+        failure["usage"] = _json_safe(usage.snapshot)
+    return failure, False
 
 
 def _relay_output(
@@ -1458,6 +1522,7 @@ class CodexRuntime:
             )
 
         invocation_deadline = lifecycle.invocation_deadline(runtime_context)
+        turn_requested = False
         try:
             request_prompt(request)
             _reasoning_effort(config)
@@ -1477,6 +1542,7 @@ class CodexRuntime:
                 and relay_artifacts.expects_local_atif(relay.plugin_config)
                 else None
             )
+            turn_requested = True
             output, usable = await _invoke_thread(
                 config,
                 runtime_context,
@@ -1520,7 +1586,8 @@ class CodexRuntime:
         self._unusable = not usable
         if self._relay is not None:
             output = _relay_output(output, self._relay)
-        return _agent_run_result(output, self._usage_totals)
+        # A request rejected before its turn leaves Codex's thread totals unchanged.
+        return _agent_run_result(output, self._usage_totals if turn_requested else None)
 
     async def stop(self) -> None:
         client = self._client
