@@ -490,8 +490,12 @@
           "additionalProperties": {
             "$ref": "#/$defs/McpServerFacts"
           },
-          "description": "Servers keyed by name. Empty when the plan configures no MCP server\nand the harness reports none.",
+          "description": "Servers keyed by name. Empty when the plan configures no MCP server\nand the harness reports none. At most 32 servers, in sorted key\norder, each key at most 128 characters.",
           "type": "object"
+        },
+        "servers_truncated": {
+          "$ref": "#/$defs/TruncatedEntries",
+          "description": "Servers dropped from `servers`. Absent when none was dropped, never\n`null`."
         }
       },
       "required": [
@@ -533,7 +537,7 @@
       "type": "object"
     },
     "McpServerFacts": {
-      "description": "Facts about one MCP server.\n\nAn entry with origin `harness` is a server the harness reports and the\nplan does not configure. It has the same shape: its `endpoint` reads\n`not_applicable` with reason `not_configured`, its `transport` may be\nabsent, and runtime facts the adapter did not collect read\n`unavailable` with reason `not_collected`.",
+      "description": "Facts about one MCP server.\n\nAn entry with origin `harness` is a server the harness reports and the\nplan does not configure. It has the same shape: its `endpoint` reads\n`not_applicable` with reason `not_configured`, and runtime facts the\nadapter did not collect read `unavailable` with reason `not_collected`.\nOnly a `plan` entry must name its transport. An entry of any other\norigin may leave it out.",
       "if": {
         "properties": {
           "origin": {
@@ -555,7 +559,7 @@
           "description": "What the harness learned when it connected, as the adapter reports it."
         },
         "transport": {
-          "description": "Transport, such as `stdio` or `streamable-http`. Always present for\na `plan` entry.",
+          "description": "Transport, such as `stdio` or `streamable-http`. Required for a\n`plan` entry, and optional for any other origin.",
           "type": [
             "string",
             "null"
@@ -771,8 +775,47 @@
       },
       "type": "object"
     },
+    "TruncatedEntries": {
+      "description": "Entries core dropped to keep `what_ran` within its bounds: next to a\nmap for the entries dropped from it, or as `what_ran_truncated` for the\nwhole object.",
+      "properties": {
+        "dropped": {
+          "description": "How many entries were dropped. A JSON integer: the Rust and Python\nreaders reject `1.0`, although a JSON Schema validator may accept it.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "reason": {
+          "description": "Why the entries were dropped: `key_too_long` for a key longer than\n128 characters, `entry_cap` for an entry past the map's cap, or\n`byte_budget` for an entry dropped to keep the whole object within\n128 KiB. One marker covers a map: when more than one rule dropped\nentries from it, `reason` names the last rule applied, in that\norder, and `dropped` counts them all. An open code like a fact's\n`reason`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "dropped"
+      ],
+      "type": "object"
+    },
     "WhatRan": {
-      "description": "What executed for one invocation.\n\nDecoding a `WhatRan` directly checks the shape of every section and\nfact. `RunResult` also checks the schema name and version, and that\nevery `plan` MCP entry names its transport.",
+      "anyOf": [
+        {
+          "required": [
+            "what_ran_truncated"
+          ]
+        },
+        {
+          "required": [
+            "fabric",
+            "adapter",
+            "harness",
+            "models",
+            "mcp",
+            "environment"
+          ]
+        }
+      ],
+      "description": "What executed for one invocation.\n\nEvery section is present, unless `what_ran_truncated` is present: then\nthe object is a minimal one that the byte budget left with only its\nschema name and version, and every section may be absent.\n\nDecoding a `WhatRan` directly checks the shape of every section and\nfact, and that no section is `null`. `RunResult` also checks the schema\nname and version, that every section is present unless\n`what_ran_truncated` is, and that every `plan` MCP entry names its\ntransport.",
       "properties": {
         "adapter": {
           "$ref": "#/$defs/AdapterFacts",
@@ -798,8 +841,12 @@
           "additionalProperties": {
             "$ref": "#/$defs/ModelFacts"
           },
-          "description": "Model facts keyed by the role names of the plan's `models` settings.",
+          "description": "Model facts keyed by the role names of the plan's `models` settings.\nAt most 16 roles, in sorted key order, each key at most 128\ncharacters.",
           "type": "object"
+        },
+        "models_truncated": {
+          "$ref": "#/$defs/TruncatedEntries",
+          "description": "Model roles dropped from `models`. Absent when none was dropped,\nnever `null`."
         },
         "schema": {
           "const": "nemo.fabric.what_ran",
@@ -810,17 +857,15 @@
           "const": "v1alpha1",
           "description": "Contract version, `v1alpha1`.",
           "type": "string"
+        },
+        "what_ran_truncated": {
+          "$ref": "#/$defs/TruncatedEntries",
+          "description": "Present only on a minimal object: every section was dropped to keep\nthe object within 128 KiB, with reason `byte_budget` and a dropped\ncount of 1."
         }
       },
       "required": [
         "schema",
-        "version",
-        "fabric",
-        "adapter",
-        "harness",
-        "models",
-        "mcp",
-        "environment"
+        "version"
       ],
       "type": "object"
     }

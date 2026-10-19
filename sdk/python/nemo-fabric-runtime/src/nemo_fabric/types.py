@@ -1972,6 +1972,7 @@ _FACT_STATES = frozenset(
     {"not_applicable", "unsupported", "collection_failed", "unavailable"}
 )
 _FACT_CODE = re.compile(r"[a-z0-9_.:#+/-]{1,128}")
+_MAX_U64 = 2**64 - 1
 
 
 def _is_text(value: Any) -> bool:
@@ -2027,7 +2028,8 @@ def _is_mcp_server_entry(server: Any) -> bool:
         return False
     origin = server.get("origin")
     transport = server.get("transport")
-    # Only a server the harness reports may leave out its transport.
+    # A `plan` entry requires `transport`. An entry of any other origin,
+    # including an origin this SDK does not know, may leave it out.
     transport_ok = isinstance(transport, str) or (
         transport is None and origin != "plan"
     )
@@ -2045,11 +2047,84 @@ def _is_mcp_server_entry(server: Any) -> bool:
     )
 
 
+def _is_truncation_marker(marker: Any) -> bool:
+    """Whether ``marker`` counts the entries dropped from a map or section."""
+
+    if not isinstance(marker, Mapping):
+        return False
+    dropped = marker.get("dropped")
+    return (
+        _is_code(marker.get("reason"))
+        and isinstance(dropped, int)
+        and not isinstance(dropped, bool)
+        and 1 <= dropped <= _MAX_U64
+    )
+
+
+def _has_valid_marker(section: Mapping[str, Any], name: str) -> bool:
+    """Whether marker ``name`` is absent from ``section`` or well formed.
+
+    A marker is never ``null``.
+    """
+
+    return name not in section or _is_truncation_marker(section[name])
+
+
+def _is_fabric_section(fabric: Any) -> bool:
+    return _has_facts(fabric, {"core_version": _is_text, "host_core_version": _is_text})
+
+
+def _is_adapter_section(adapter: Any) -> bool:
+    return _has_facts(adapter, {"package_version": _is_text}) and (
+        adapter.get("id") is None or isinstance(adapter.get("id"), str)
+    )
+
+
+def _is_harness_section(harness: Any) -> bool:
+    return _has_facts(harness, {"name": _is_text, "version": _is_text})
+
+
+def _is_models_section(models: Any) -> bool:
+    return isinstance(models, Mapping) and all(
+        _is_model_entry(model) for model in models.values()
+    )
+
+
+def _is_mcp_section(mcp: Any) -> bool:
+    if not isinstance(mcp, Mapping):
+        return False
+    servers = mcp.get("servers")
+    return (
+        isinstance(servers, Mapping)
+        and all(_is_mcp_server_entry(server) for server in servers.values())
+        and _has_valid_marker(mcp, "servers_truncated")
+    )
+
+
+def _is_environment_section(environment: Any) -> bool:
+    return isinstance(environment, Mapping) and isinstance(
+        environment.get("provider"), str
+    )
+
+
+_WHAT_RAN_SECTIONS: Mapping[str, Callable[[Any], bool]] = {
+    "fabric": _is_fabric_section,
+    "adapter": _is_adapter_section,
+    "harness": _is_harness_section,
+    "models": _is_models_section,
+    "mcp": _is_mcp_section,
+    "environment": _is_environment_section,
+}
+
+
 def _is_readable_what_ran(value: Any) -> bool:
     """Whether ``value`` is a ``what_ran`` object this SDK reads.
 
     Mirrors the Rust core's reader: the schema and version match, every
-    section and fact is well formed, and unknown properties are ignored.
+    present section and fact is well formed, no section is ``null``, and
+    unknown properties are ignored. Every section is required unless
+    ``what_ran_truncated`` is present, which marks a minimal object that
+    the byte budget left with only its schema name and version.
     """
 
     if not isinstance(value, Mapping):
@@ -2059,26 +2134,16 @@ def _is_readable_what_ran(value: Any) -> bool:
         or value.get("version") != _WHAT_RAN_VERSION
     ):
         return False
-    adapter = value.get("adapter")
-    models = value.get("models")
-    mcp = value.get("mcp")
-    servers = mcp.get("servers") if isinstance(mcp, Mapping) else None
-    environment = value.get("environment")
-    return (
-        _has_facts(
-            value.get("fabric"),
-            {"core_version": _is_text, "host_core_version": _is_text},
-        )
-        and _has_facts(adapter, {"package_version": _is_text})
-        and (adapter.get("id") is None or isinstance(adapter.get("id"), str))
-        and _has_facts(value.get("harness"), {"name": _is_text, "version": _is_text})
-        and isinstance(models, Mapping)
-        and all(_is_model_entry(model) for model in models.values())
-        and isinstance(servers, Mapping)
-        and all(_is_mcp_server_entry(server) for server in servers.values())
-        and isinstance(environment, Mapping)
-        and isinstance(environment.get("provider"), str)
-    )
+    minimal = "what_ran_truncated" in value
+    if minimal and not _is_truncation_marker(value["what_ran_truncated"]):
+        return False
+    for name, is_section in _WHAT_RAN_SECTIONS.items():
+        if name in value:
+            if not is_section(value[name]):
+                return False
+        elif not minimal:
+            return False
+    return _has_valid_marker(value, "models_truncated")
 
 
 def _readable_what_ran(value: Any) -> Mapping[str, Any] | None:
@@ -2119,10 +2184,12 @@ class RunResult(FabricMapping):
         what_ran: What executed for this invocation, schema
             ``nemo.fabric.what_ran`` version ``v1alpha1``, as a JSON mapping.
             Each fact holds ``value``, or ``state`` and ``reason``, plus
-            ``source``, ``collected_by`` and ``method``. ``None`` when the
+            ``source``, ``collected_by`` and ``method``. A minimal object
+            that the byte budget left holds only ``schema``, ``version`` and
+            ``what_ran_truncated``, and reads as present. ``None`` when the
             producing core predates it, or when the value is not a
-            ``what_ran`` object of that schema and version with every section
-            and fact well formed, as the Rust core reads it.
+            ``what_ran`` object of that schema and version with every present
+            section and fact well formed, as the Rust core reads it.
     """
 
     agent_name: str

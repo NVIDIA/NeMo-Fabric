@@ -5502,6 +5502,83 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn local_host_what_ran_bounds_keep_the_status_and_error() {
+        let model = |provider: &str| -> crate::config::ModelConfig {
+            serde_json::from_value(serde_json::json!({"provider": provider, "model": "m"}))
+                .expect("model config")
+        };
+        // One `default` role keeps the adapter's single-role check satisfied.
+        let roles = || {
+            std::iter::once("default".to_string())
+                .chain((0..16).map(|index| format!("role-{index:02}")))
+        };
+        for mode in ["success", "adapter_reported_failure"] {
+            let (root, plan) = local_host_plan(mode);
+            let baseline = run_plan(&plan, RunRequest::text("provenance")).expect("result");
+            let mut accepting_models = plan.clone();
+            accepting_models
+                .adapter_descriptor
+                .as_mut()
+                .expect("adapter descriptor")
+                .descriptor
+                .config
+                .accepts
+                .push(crate::config::AdapterConfigField::Models);
+
+            let mut past_the_cap = accepting_models.clone();
+            past_the_cap.config.models = roles().map(|role| (role, model("openai"))).collect();
+            let mut past_the_budget = accepting_models.clone();
+            past_the_budget.config.models = roles()
+                .map(|role| (role, model(&"p".repeat(9_000))))
+                .collect();
+            let mut minimal = plan.clone();
+            minimal
+                .adapter_descriptor
+                .as_mut()
+                .expect("adapter descriptor")
+                .descriptor
+                .adapter_id = "a".repeat(140_000);
+
+            for (case, bounded_plan) in [
+                ("entry cap", past_the_cap),
+                ("byte budget", past_the_budget),
+                ("minimal", minimal),
+            ] {
+                let result =
+                    run_plan(&bounded_plan, RunRequest::text("provenance")).expect("result");
+
+                assert_eq!(result.status, baseline.status, "{case}");
+                assert_eq!(
+                    serde_json::to_value(&result.error).expect("error JSON"),
+                    serde_json::to_value(&baseline.error).expect("error JSON"),
+                    "{case}"
+                );
+                let what_ran = result.what_ran.expect("what_ran");
+                let marker = |marker: Option<crate::what_ran::TruncatedEntries>| {
+                    marker.map(|marker| (marker.reason, marker.dropped))
+                };
+                match case {
+                    "entry cap" => assert_eq!(
+                        marker(what_ran.models_truncated),
+                        Some(("entry_cap".to_string(), 1))
+                    ),
+                    "byte budget" => {
+                        let (reason, dropped) =
+                            marker(what_ran.models_truncated).expect("models marker");
+                        assert_eq!(reason, "byte_budget");
+                        assert!(dropped > 1, "{dropped}");
+                    }
+                    _ => assert_eq!(
+                        marker(what_ran.what_ran_truncated),
+                        Some(("byte_budget".to_string(), 1))
+                    ),
+                }
+            }
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
     fn local_host_preserves_detailed_usage_in_metadata() {
         let (root, plan) = local_host_plan("detailed_usage_result");
 

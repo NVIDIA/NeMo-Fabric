@@ -393,6 +393,60 @@
           "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         }
       ]
+    },
+    {
+      "name": "truncation markers next to models and MCP servers",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": {
+            "reason": "entry_cap",
+            "dropped": 1
+          }
+        },
+        {
+          "path": [
+            "mcp",
+            "servers_truncated"
+          ],
+          "value": {
+            "reason": "byte_budget",
+            "dropped": 3
+          }
+        }
+      ]
+    },
+    {
+      "name": "vendor truncation reason",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": {
+            "reason": "acme.quota",
+            "dropped": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "minimal section left by the byte budget",
+      "patch": [
+        {
+          "path": [],
+          "value": {
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": {
+              "reason": "byte_budget",
+              "dropped": 1
+            }
+          }
+        }
+      ]
     }
   ],
   "invalid": [
@@ -802,6 +856,166 @@
           "value": [
             "fact"
           ]
+        }
+      ]
+    },
+    {
+      "name": "truncation marker without a dropped count",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": {
+            "reason": "entry_cap"
+          }
+        }
+      ]
+    },
+    {
+      "name": "truncation marker with a zero dropped count",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers_truncated"
+          ],
+          "value": {
+            "reason": "byte_budget",
+            "dropped": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "truncation marker with a string dropped count",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": {
+            "reason": "entry_cap",
+            "dropped": "1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "truncation reason outside the code pattern",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers_truncated"
+          ],
+          "value": {
+            "reason": "Entry Cap",
+            "dropped": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "truncation marker that is not an object",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": "entry_cap"
+        }
+      ]
+    },
+    {
+      "name": "schema and version only, without the minimal marker",
+      "patch": [
+        {
+          "path": [],
+          "value": {
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "minimal section with a null marker",
+      "patch": [
+        {
+          "path": [],
+          "value": {
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "minimal section with a zero dropped count",
+      "patch": [
+        {
+          "path": [],
+          "value": {
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": {
+              "reason": "byte_budget",
+              "dropped": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "minimal section with a malformed section",
+      "patch": [
+        {
+          "path": [],
+          "value": {
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": {
+              "reason": "byte_budget",
+              "dropped": 1
+            },
+            "harness": "codex"
+          }
+        }
+      ]
+    },
+    {
+      "name": "null section",
+      "patch": [
+        {
+          "path": [
+            "harness"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "null models_truncated",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "null servers_truncated",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers_truncated"
+          ],
+          "value": null
         }
       ]
     }

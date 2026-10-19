@@ -15,6 +15,16 @@
 //! then the first 15 hex digits of its SHA-256. Map keys and the plain names
 //! above are never cut.
 //!
+//! `models` keeps at most 16 roles and `mcp.servers` at most 32 servers, in
+//! sorted key order. An entry whose key is longer than 128 characters is
+//! dropped. While the compact JSON of the whole object is larger than
+//! 128 KiB, MCP server entries are dropped from the end of the sorted order,
+//! then model roles. Dropped entries are counted in a [`TruncatedEntries`]
+//! marker next to the map: `models_truncated` and `mcp.servers_truncated`.
+//! If the object is still too large with no MCP server and no model role,
+//! it is replaced by a minimal one that holds only the schema name, the
+//! version and the `what_ran_truncated` marker.
+//!
 //! `what_ran` is evidence. It never decides which runs are compared.
 //!
 //! Compatibility rules for readers:
@@ -180,12 +190,66 @@ fn is_code(code: &str) -> bool {
         })
 }
 
+/// Entries core dropped to keep `what_ran` within its bounds: next to a
+/// map for the entries dropped from it, or as `what_ran_truncated` for the
+/// whole object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct TruncatedEntries {
+    /// Why the entries were dropped: `key_too_long` for a key longer than
+    /// 128 characters, `entry_cap` for an entry past the map's cap, or
+    /// `byte_budget` for an entry dropped to keep the whole object within
+    /// 128 KiB. One marker covers a map: when more than one rule dropped
+    /// entries from it, `reason` names the last rule applied, in that
+    /// order, and `dropped` counts them all. An open code like a fact's
+    /// `reason`.
+    #[schemars(extend("pattern" = CODE_PATTERN))]
+    pub reason: String,
+    /// How many entries were dropped. A JSON integer: the Rust and Python
+    /// readers reject `1.0`, although a JSON Schema validator may accept it.
+    #[schemars(range(min = 1, max = u64::MAX))]
+    pub dropped: u64,
+}
+
+impl<'de> Deserialize<'de> for TruncatedEntries {
+    /// Decode a marker, rejecting a `reason` outside the code pattern or a
+    /// `dropped` count of zero. Unknown properties are ignored.
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Marker {
+            reason: String,
+            dropped: u64,
+        }
+        let Marker { reason, dropped } = Marker::deserialize(deserializer)?;
+        if !is_code(&reason) {
+            return Err(D::Error::custom(format!(
+                "a truncation `reason` must match {CODE_PATTERN}"
+            )));
+        }
+        if dropped == 0 {
+            return Err(D::Error::custom(
+                "a truncation `dropped` count is at least 1",
+            ));
+        }
+        Ok(Self { reason, dropped })
+    }
+}
+
 /// What executed for one invocation.
 ///
+/// Every section is present, unless `what_ran_truncated` is present: then
+/// the object is a minimal one that the byte budget left with only its
+/// schema name and version, and every section may be absent.
+///
 /// Decoding a `WhatRan` directly checks the shape of every section and
-/// fact. `RunResult` also checks the schema name and version, and that
-/// every `plan` MCP entry names its transport.
+/// fact, and that no section is `null`. `RunResult` also checks the schema
+/// name and version, that every section is present unless
+/// `what_ran_truncated` is, and that every `plan` MCP entry names its
+/// transport.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("anyOf" = [
+    {"required": ["what_ran_truncated"]},
+    {"required": ["fabric", "adapter", "harness", "models", "mcp", "environment"]}
+]))]
 pub struct WhatRan {
     /// Schema name, `nemo.fabric.what_ran`.
     #[schemars(extend("const" = WHAT_RAN_SCHEMA))]
@@ -194,17 +258,83 @@ pub struct WhatRan {
     #[schemars(extend("const" = WHAT_RAN_VERSION))]
     pub version: String,
     /// NeMo Fabric core that ran the adapter.
-    pub fabric: FabricFacts,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "FabricFacts")]
+    pub fabric: Option<FabricFacts>,
     /// Adapter that ran.
-    pub adapter: AdapterFacts,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "AdapterFacts")]
+    pub adapter: Option<AdapterFacts>,
     /// Harness behind the adapter.
-    pub harness: HarnessFacts,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "HarnessFacts")]
+    pub harness: Option<HarnessFacts>,
     /// Model facts keyed by the role names of the plan's `models` settings.
-    pub models: BTreeMap<String, ModelFacts>,
+    /// At most 16 roles, in sorted key order, each key at most 128
+    /// characters.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "BTreeMap<String, ModelFacts>")]
+    pub models: Option<BTreeMap<String, ModelFacts>>,
+    /// Model roles dropped from `models`. Absent when none was dropped,
+    /// never `null`.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "TruncatedEntries")]
+    pub models_truncated: Option<TruncatedEntries>,
     /// MCP server facts.
-    pub mcp: McpFacts,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "McpFacts")]
+    pub mcp: Option<McpFacts>,
     /// Environment the runtime ran in.
-    pub environment: EnvironmentFacts,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "EnvironmentFacts")]
+    pub environment: Option<EnvironmentFacts>,
+    /// Present only on a minimal object: every section was dropped to keep
+    /// the object within 128 KiB, with reason `byte_budget` and a dropped
+    /// count of 1.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "TruncatedEntries")]
+    pub what_ran_truncated: Option<TruncatedEntries>,
+}
+
+/// Decode a property that may be absent but is never `null`.
+fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 /// NeMo Fabric core facts.
@@ -252,17 +382,28 @@ pub struct ModelFacts {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct McpFacts {
     /// Servers keyed by name. Empty when the plan configures no MCP server
-    /// and the harness reports none.
+    /// and the harness reports none. At most 32 servers, in sorted key
+    /// order, each key at most 128 characters.
     pub servers: BTreeMap<String, McpServerFacts>,
+    /// Servers dropped from `servers`. Absent when none was dropped, never
+    /// `null`.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "TruncatedEntries")]
+    pub servers_truncated: Option<TruncatedEntries>,
 }
 
 /// Facts about one MCP server.
 ///
 /// An entry with origin `harness` is a server the harness reports and the
 /// plan does not configure. It has the same shape: its `endpoint` reads
-/// `not_applicable` with reason `not_configured`, its `transport` may be
-/// absent, and runtime facts the adapter did not collect read
-/// `unavailable` with reason `not_collected`.
+/// `not_applicable` with reason `not_configured`, and runtime facts the
+/// adapter did not collect read `unavailable` with reason `not_collected`.
+/// Only a `plan` entry must name its transport. An entry of any other
+/// origin may leave it out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[schemars(extend(
     "if" = {"properties": {"origin": {"const": ORIGIN_PLAN}}},
@@ -272,8 +413,8 @@ pub struct McpServerFacts {
     /// Where the entry comes from: `plan` for a server the plan configures,
     /// `harness` for one only the harness reports.
     pub origin: String,
-    /// Transport, such as `stdio` or `streamable-http`. Always present for
-    /// a `plan` entry.
+    /// Transport, such as `stdio` or `streamable-http`. Required for a
+    /// `plan` entry, and optional for any other origin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<String>,
     /// Configured endpoint without secrets: the lowercase scheme and host
@@ -319,6 +460,18 @@ const REASON_LOCAL_RUN: &str = "local_run";
 const REASON_NOT_CONFIGURED: &str = "not_configured";
 const REASON_ENDPOINT_UNPARSED: &str = "endpoint_unparsed";
 const REASON_EXECUTABLE_UNPARSED: &str = "executable_unparsed";
+const REASON_ENTRY_CAP: &str = "entry_cap";
+const REASON_KEY_TOO_LONG: &str = "key_too_long";
+const REASON_BYTE_BUDGET: &str = "byte_budget";
+
+/// Most model roles `what_ran` keeps.
+const MAX_MODEL_ROLES: usize = 16;
+/// Most MCP servers `what_ran` keeps.
+const MAX_MCP_SERVERS: usize = 32;
+/// Longest map key `what_ran` keeps, in characters.
+const MAX_KEY_CHARS: usize = 128;
+/// Largest compact JSON of a whole `what_ran`, in bytes.
+const MAX_WHAT_RAN_BYTES: usize = 128 * 1024;
 
 /// Longest string value kept whole, in characters.
 const MAX_VALUE_CHARS: usize = 256;
@@ -399,17 +552,23 @@ impl WhatRan {
             mcp,
             ..
         } = self;
-        let mut origins = vec![
-            fabric.core_version.origin_mut(),
-            fabric.host_core_version.origin_mut(),
-            adapter.package_version.origin_mut(),
-            harness.name.origin_mut(),
-            harness.version.origin_mut(),
-        ];
-        for model in models.values_mut() {
+        let mut origins = Vec::new();
+        if let Some(fabric) = fabric {
+            origins.extend([
+                fabric.core_version.origin_mut(),
+                fabric.host_core_version.origin_mut(),
+            ]);
+        }
+        if let Some(adapter) = adapter {
+            origins.push(adapter.package_version.origin_mut());
+        }
+        if let Some(harness) = harness {
+            origins.extend([harness.name.origin_mut(), harness.version.origin_mut()]);
+        }
+        for model in models.iter_mut().flat_map(BTreeMap::values_mut) {
             origins.extend([model.requested.origin_mut(), model.served.origin_mut()]);
         }
-        for server in mcp.servers.values_mut() {
+        for server in mcp.iter_mut().flat_map(|mcp| mcp.servers.values_mut()) {
             let runtime = &mut server.runtime;
             origins.extend([
                 server.endpoint.origin_mut(),
@@ -423,19 +582,95 @@ impl WhatRan {
         origins
     }
 
-    /// Whether every `plan` MCP entry names its transport. Only a `harness`
-    /// entry may leave it out.
+    /// Keep the compact JSON of the whole object within 128 KiB. While it
+    /// is larger, drop the last MCP server in sorted key order, then the
+    /// last model role, counting each in its map's marker with reason
+    /// `byte_budget`. With neither left and the object still too large,
+    /// replace it with [`WhatRan::minimal`].
+    fn apply_byte_budget(&mut self) {
+        while self.serialized_len() > MAX_WHAT_RAN_BYTES {
+            if let Some(mcp) = self.mcp.as_mut()
+                && mcp.servers.pop_last().is_some()
+            {
+                mcp.servers_truncated = Some(one_more_byte_budget_drop(&mcp.servers_truncated));
+            } else if let Some(models) = self.models.as_mut()
+                && models.pop_last().is_some()
+            {
+                self.models_truncated = Some(one_more_byte_budget_drop(&self.models_truncated));
+            } else {
+                *self = Self::minimal();
+                return;
+            }
+        }
+    }
+
+    /// Apply the entry caps and the key rule to an object another core
+    /// collected, adding what they drop to the existing markers.
+    fn apply_entry_caps(&mut self) {
+        if let Some(models) = self.models.take() {
+            let (kept, dropped) = bounded_entries(&models, MAX_MODEL_ROLES, ModelFacts::clone);
+            self.models = Some(kept);
+            self.models_truncated = merged_marker(self.models_truncated.take(), dropped);
+        }
+        if let Some(mcp) = self.mcp.as_mut() {
+            let (kept, dropped) =
+                bounded_entries(&mcp.servers, MAX_MCP_SERVERS, McpServerFacts::clone);
+            mcp.servers = kept;
+            mcp.servers_truncated = merged_marker(mcp.servers_truncated.take(), dropped);
+        }
+    }
+
+    /// The object left when every section had to go: the schema name, the
+    /// version and a `what_ran_truncated` marker.
+    fn minimal() -> Self {
+        Self {
+            schema: WHAT_RAN_SCHEMA.to_string(),
+            version: WHAT_RAN_VERSION.to_string(),
+            fabric: None,
+            adapter: None,
+            harness: None,
+            models: None,
+            models_truncated: None,
+            mcp: None,
+            environment: None,
+            what_ran_truncated: Some(TruncatedEntries {
+                reason: REASON_BYTE_BUDGET.to_string(),
+                dropped: 1,
+            }),
+        }
+    }
+
+    fn serialized_len(&self) -> usize {
+        serde_json::to_vec(self)
+            .expect("what_ran has only string keys and is always JSON serializable")
+            .len()
+    }
+
+    /// Whether every `plan` MCP entry names its transport. An entry of any
+    /// other origin may leave it out.
     fn plan_servers_have_transports(&self) -> bool {
         self.mcp
-            .servers
-            .values()
+            .iter()
+            .flat_map(|mcp| mcp.servers.values())
             .all(|server| server.origin != ORIGIN_PLAN || server.transport.is_some())
+    }
+
+    /// Whether every section is present, or the object is a minimal one.
+    fn has_every_section_unless_truncated(&self) -> bool {
+        self.what_ran_truncated.is_some()
+            || (self.fabric.is_some()
+                && self.adapter.is_some()
+                && self.harness.is_some()
+                && self.models.is_some()
+                && self.mcp.is_some()
+                && self.environment.is_some())
     }
 }
 
 /// Collect the facts the core that runs the adapter knows before it sends
 /// the request: its own version and the plan's adapter ID, models, MCP
-/// servers and environment provider.
+/// servers and environment provider. The model and MCP server maps follow
+/// the entry caps and the byte budget, and collection never fails.
 ///
 /// Core reads no adapter report key yet, so every adapter-reported fact
 /// reads `unsupported` with reason `key_not_declared`. The collecting core
@@ -447,10 +682,17 @@ pub(crate) fn collect_before_request(
     adapter_id: Option<String>,
     environment_provider: &str,
 ) -> WhatRan {
-    WhatRan {
+    let (models, models_truncated) =
+        bounded_entries(&plan.config.models, MAX_MODEL_ROLES, model_facts);
+    let (servers, servers_truncated) = bounded_entries(
+        &plan.capability_plan.mcp_servers,
+        MAX_MCP_SERVERS,
+        mcp_server_facts,
+    );
+    let mut what_ran = WhatRan {
         schema: WHAT_RAN_SCHEMA.to_string(),
         version: WHAT_RAN_VERSION.to_string(),
-        fabric: FabricFacts {
+        fabric: Some(FabricFacts {
             core_version: core_version_fact(),
             host_core_version: Fact::missing(
                 FactState::NotApplicable,
@@ -459,32 +701,90 @@ pub(crate) fn collect_before_request(
                 HOST_CORE,
                 METHOD_CRATE_VERSION,
             ),
-        },
-        adapter: AdapterFacts {
+        }),
+        adapter: Some(AdapterFacts {
             id: adapter_id,
             package_version: Fact::report_key_not_declared(),
-        },
-        harness: HarnessFacts {
+        }),
+        harness: Some(HarnessFacts {
             name: Fact::report_key_not_declared(),
             version: Fact::report_key_not_declared(),
-        },
-        models: plan
-            .config
-            .models
-            .iter()
-            .map(|(role, model)| (role.clone(), model_facts(model)))
-            .collect(),
-        mcp: McpFacts {
-            servers: plan
-                .capability_plan
-                .mcp_servers
-                .iter()
-                .map(|(name, server)| (name.clone(), mcp_server_facts(server)))
-                .collect(),
-        },
-        environment: EnvironmentFacts {
+        }),
+        models: Some(models),
+        models_truncated,
+        mcp: Some(McpFacts {
+            servers,
+            servers_truncated,
+        }),
+        environment: Some(EnvironmentFacts {
             provider: environment_provider.to_string(),
-        },
+        }),
+        what_ran_truncated: None,
+    };
+    what_ran.apply_byte_budget();
+    what_ran
+}
+
+/// The facts of at most `cap` entries, taken in sorted key order, and a
+/// marker that counts the dropped entries.
+///
+/// An entry whose key is longer than 128 characters is dropped and takes no
+/// place under the cap. The marker reason is `entry_cap` when the cap
+/// dropped an entry, and `key_too_long` when only long keys were dropped.
+/// [`BTreeMap`] iteration gives the sorted key order, whatever order the
+/// plan's entries were written in.
+fn bounded_entries<P, F>(
+    entries: &BTreeMap<String, P>,
+    cap: usize,
+    facts: impl Fn(&P) -> F,
+) -> (BTreeMap<String, F>, Option<TruncatedEntries>) {
+    let mut kept = BTreeMap::new();
+    let (mut key_too_long, mut over_cap) = (0_u64, 0_u64);
+    for (key, entry) in entries {
+        if key.chars().count() > MAX_KEY_CHARS {
+            key_too_long += 1;
+        } else if kept.len() == cap {
+            over_cap += 1;
+        } else {
+            kept.insert(key.clone(), facts(entry));
+        }
+    }
+    let reason = if over_cap > 0 {
+        REASON_ENTRY_CAP
+    } else {
+        REASON_KEY_TOO_LONG
+    };
+    let dropped = key_too_long + over_cap;
+    let truncated = (dropped > 0).then(|| TruncatedEntries {
+        reason: reason.to_string(),
+        dropped,
+    });
+    (kept, truncated)
+}
+
+/// `marker` with one more dropped entry and reason `byte_budget`.
+fn one_more_byte_budget_drop(marker: &Option<TruncatedEntries>) -> TruncatedEntries {
+    TruncatedEntries {
+        reason: REASON_BYTE_BUDGET.to_string(),
+        dropped: marker
+            .as_ref()
+            .map_or(0, |marker| marker.dropped)
+            .saturating_add(1),
+    }
+}
+
+/// An `earlier` marker followed by a `later` one: the later reason, and the
+/// two counts added. A task core can send any count, so the sum saturates.
+fn merged_marker(
+    earlier: Option<TruncatedEntries>,
+    later: Option<TruncatedEntries>,
+) -> Option<TruncatedEntries> {
+    match (earlier, later) {
+        (Some(earlier), Some(later)) => Some(TruncatedEntries {
+            reason: later.reason,
+            dropped: earlier.dropped.saturating_add(later.dropped),
+        }),
+        (earlier, later) => later.or(earlier),
     }
 }
 
@@ -566,15 +866,24 @@ fn configured_endpoint(transport: McpTransport, url: &str) -> Fact<String> {
 /// The task core runs in a projected `local` environment and labels its
 /// own facts `host_core`. The host relabels them `task_core`, records its
 /// own version as `host_core_version`, and replaces the environment
-/// provider with its own, such as `openshell`.
+/// provider with its own, such as `openshell`. A minimal object stays
+/// minimal. The task core may run another Fabric version, and the host's
+/// own facts can grow the object, so the entry caps, the key rule and the
+/// byte budget apply again.
 pub(crate) fn attribute_to_task_core(what_ran: &mut WhatRan, environment_provider: &str) {
     for origin in what_ran.origins_mut() {
         if origin.collected_by == HOST_CORE {
             origin.collected_by = TASK_CORE.to_string();
         }
     }
-    what_ran.fabric.host_core_version = core_version_fact();
-    what_ran.environment.provider = environment_provider.to_string();
+    if let Some(fabric) = what_ran.fabric.as_mut() {
+        fabric.host_core_version = core_version_fact();
+    }
+    if let Some(environment) = what_ran.environment.as_mut() {
+        environment.provider = environment_provider.to_string();
+    }
+    what_ran.apply_entry_caps();
+    what_ran.apply_byte_budget();
 }
 
 /// `text` whole when it has at most 256 characters. A longer string keeps
@@ -609,6 +918,7 @@ where
         .filter(|what_ran| {
             what_ran.schema == WHAT_RAN_SCHEMA
                 && what_ran.version == WHAT_RAN_VERSION
+                && what_ran.has_every_section_unless_truncated()
                 && what_ran.plan_servers_have_transports()
         }))
 }
@@ -789,6 +1099,238 @@ mod tests {
                 assert!(fact.get(key).is_some_and(Value::is_string), "{fact:?}");
             }
         }
+    }
+
+    /// `plan_with_secrets` with `models` and MCP servers under the given
+    /// keys, each a copy of its `default` model or its `files` server.
+    fn plan_with_entries(model_roles: &[String], server_names: &[String]) -> RunPlan {
+        let mut plan = plan_with_secrets();
+        let model = plan.config.models["default"].clone();
+        let server = plan.capability_plan.mcp_servers["files"].clone();
+        plan.config.models = model_roles
+            .iter()
+            .map(|role| (role.clone(), model.clone()))
+            .collect();
+        plan.capability_plan.mcp_servers = server_names
+            .iter()
+            .map(|name| (name.clone(), server.clone()))
+            .collect();
+        plan
+    }
+
+    fn numbered_keys(prefix: &str, count: usize) -> Vec<String> {
+        (0..count)
+            .map(|index| format!("{prefix}-{index:02}"))
+            .collect()
+    }
+
+    fn map_keys(map: &Value) -> Vec<String> {
+        map.as_object().expect("map").keys().cloned().collect()
+    }
+
+    #[test]
+    fn models_past_16_roles_keep_the_first_in_sorted_order_and_count_the_rest() {
+        let mut roles = numbered_keys("role", 17);
+        roles.reverse();
+
+        let what_ran = collect(&plan_with_entries(&roles, &[]));
+
+        assert_eq!(map_keys(&what_ran["models"]), numbered_keys("role", 16));
+        assert_eq!(
+            what_ran["models_truncated"],
+            json!({"reason": "entry_cap", "dropped": 1})
+        );
+        assert!(what_ran["mcp"].get("servers_truncated").is_none());
+        assert!(what_ran_validator().is_valid(&what_ran), "{what_ran}");
+    }
+
+    #[test]
+    fn mcp_servers_past_32_keep_the_first_in_sorted_order_and_count_the_rest() {
+        let what_ran = collect(&plan_with_entries(&[], &numbered_keys("server", 35)));
+
+        assert_eq!(
+            map_keys(&what_ran["mcp"]["servers"]),
+            numbered_keys("server", 32)
+        );
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "entry_cap", "dropped": 3})
+        );
+        assert!(what_ran.get("models_truncated").is_none());
+        assert!(what_ran_validator().is_valid(&what_ran), "{what_ran}");
+    }
+
+    #[test]
+    fn keys_longer_than_128_characters_are_dropped_without_taking_a_place() {
+        let longest = "é".repeat(128);
+        let too_long = "é".repeat(129);
+        let mut roles = numbered_keys("role", 15);
+        roles.extend([longest.clone(), too_long.clone()]);
+        let mut expected_roles = numbered_keys("role", 15);
+        expected_roles.push(longest.clone());
+
+        let what_ran = collect(&plan_with_entries(&roles, &[longest, too_long]));
+
+        assert_eq!(map_keys(&what_ran["models"]), expected_roles);
+        assert_eq!(
+            what_ran["models_truncated"],
+            json!({"reason": "key_too_long", "dropped": 1})
+        );
+        assert_eq!(map_keys(&what_ran["mcp"]["servers"]), ["é".repeat(128)]);
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "key_too_long", "dropped": 1})
+        );
+        assert!(what_ran_validator().is_valid(&what_ran), "{what_ran}");
+    }
+
+    #[test]
+    fn a_long_key_and_the_cap_together_count_every_dropped_entry_as_entry_cap() {
+        let mut roles = numbered_keys("role", 17);
+        roles.push("r".repeat(129));
+
+        let what_ran = collect(&plan_with_entries(&roles, &[]));
+
+        assert_eq!(map_keys(&what_ran["models"]), numbered_keys("role", 16));
+        assert_eq!(
+            what_ran["models_truncated"],
+            json!({"reason": "entry_cap", "dropped": 2})
+        );
+    }
+
+    #[test]
+    fn retained_entries_do_not_depend_on_the_order_the_plan_lists_them() {
+        let roles = numbered_keys("role", 20);
+        let servers = numbered_keys("server", 40);
+        let mut reversed_roles = roles.clone();
+        reversed_roles.reverse();
+        let mut reversed_servers = servers.clone();
+        reversed_servers.reverse();
+
+        assert_eq!(
+            collect(&plan_with_entries(&roles, &servers)),
+            collect(&plan_with_entries(&reversed_roles, &reversed_servers))
+        );
+    }
+
+    /// A plan whose 16 model providers take most of the 128 KiB budget.
+    fn plan_near_the_byte_budget(server_names: &[String]) -> RunPlan {
+        let mut plan = plan_with_entries(&numbered_keys("role", 16), server_names);
+        for model in plan.config.models.values_mut() {
+            model.provider = "p".repeat(7_000);
+        }
+        plan
+    }
+
+    fn json_len(value: &Value) -> usize {
+        serde_json::to_vec(value).expect("JSON").len()
+    }
+
+    #[test]
+    fn mcp_servers_past_the_byte_budget_are_dropped_from_the_end_of_sorted_order() {
+        let servers = numbered_keys("server", 32);
+
+        let what_ran = collect(&plan_near_the_byte_budget(&servers));
+
+        assert!(json_len(&what_ran) <= 128 * 1024, "{}", json_len(&what_ran));
+        let kept = map_keys(&what_ran["mcp"]["servers"]);
+        assert!(!kept.is_empty() && kept.len() < servers.len(), "{kept:?}");
+        assert_eq!(kept, servers[..kept.len()]);
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "byte_budget", "dropped": servers.len() - kept.len()})
+        );
+        assert_eq!(map_keys(&what_ran["models"]).len(), 16);
+        assert!(what_ran_validator().is_valid(&what_ran));
+
+        // Keeping the next server in sorted order would exceed the budget.
+        let full = collect(&plan_with_entries(&[], &servers));
+        let mut one_more = what_ran.clone();
+        let next = &servers[kept.len()];
+        one_more["mcp"]["servers"][next] = full["mcp"]["servers"][next].clone();
+        assert!(json_len(&one_more) > 128 * 1024);
+    }
+
+    #[test]
+    fn the_byte_budget_counts_servers_the_entry_cap_already_dropped() {
+        let within_cap = collect(&plan_near_the_byte_budget(&numbered_keys("server", 32)));
+        let budget_dropped = within_cap["mcp"]["servers_truncated"]["dropped"]
+            .as_u64()
+            .expect("dropped count");
+
+        let what_ran = collect(&plan_near_the_byte_budget(&numbered_keys("server", 35)));
+
+        assert_eq!(what_ran["mcp"]["servers"], within_cap["mcp"]["servers"]);
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "byte_budget", "dropped": budget_dropped + 3})
+        );
+    }
+
+    /// A plan with the given model roles and MCP servers whose providers
+    /// together exceed the 128 KiB budget.
+    fn plan_over_the_byte_budget(roles: &[String], server_names: &[String]) -> RunPlan {
+        let mut plan = plan_with_entries(roles, server_names);
+        for model in plan.config.models.values_mut() {
+            model.provider = "p".repeat(9_000);
+        }
+        plan
+    }
+
+    #[test]
+    fn model_roles_are_dropped_for_the_byte_budget_after_every_mcp_server() {
+        let roles = numbered_keys("role", 18);
+        let servers = numbered_keys("server", 3);
+
+        let what_ran = collect(&plan_over_the_byte_budget(&roles, &servers));
+
+        assert!(json_len(&what_ran) <= 128 * 1024, "{}", json_len(&what_ran));
+        assert_eq!(what_ran["mcp"]["servers"], json!({}));
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "byte_budget", "dropped": 3})
+        );
+        let kept = map_keys(&what_ran["models"]);
+        assert!(!kept.is_empty() && kept.len() < 16, "{kept:?}");
+        assert_eq!(kept, roles[..kept.len()]);
+        // Two roles past the cap, then every role the budget dropped.
+        assert_eq!(
+            what_ran["models_truncated"],
+            json!({"reason": "byte_budget", "dropped": roles.len() - kept.len()})
+        );
+        assert!(what_ran_validator().is_valid(&what_ran));
+
+        // Keeping the next role in sorted order would exceed the budget.
+        let full = collect(&plan_with_entries(&roles, &[]));
+        let mut one_more = what_ran.clone();
+        let next = &roles[kept.len()];
+        one_more["models"][next] = full["models"][next].clone();
+        one_more["models"][next]["provider"] = json!("p".repeat(9_000));
+        assert!(json_len(&one_more) > 128 * 1024);
+    }
+
+    #[test]
+    fn an_object_over_the_byte_budget_without_maps_to_drop_becomes_minimal() {
+        let plan = plan_with_entries(&numbered_keys("role", 2), &numbered_keys("server", 2));
+        let adapter_id = "a".repeat(140_000);
+
+        let what_ran =
+            serde_json::to_value(collect_before_request(&plan, Some(adapter_id), "local"))
+                .expect("serialize what_ran");
+
+        assert_eq!(
+            what_ran,
+            json!({
+                "schema": "nemo.fabric.what_ran",
+                "version": "v1alpha1",
+                "what_ran_truncated": {"reason": "byte_budget", "dropped": 1}
+            })
+        );
+        assert!(what_ran_validator().is_valid(&what_ran));
+        let decoded = run_result_with(what_ran)
+            .what_ran
+            .expect("a minimal what_ran reads as present");
+        assert_eq!(decoded.fabric, None);
     }
 
     #[test]
@@ -977,7 +1519,12 @@ mod tests {
             .expect("unknown properties never fail what_ran");
 
         assert_eq!(
-            what_ran.fabric.core_version.origin().collected_by,
+            what_ran
+                .fabric
+                .expect("fabric section")
+                .core_version
+                .origin()
+                .collected_by,
             "acme.collector"
         );
     }

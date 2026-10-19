@@ -935,6 +935,53 @@ mod tests {
     }
 
     #[test]
+    fn task_what_ran_over_the_byte_budget_becomes_minimal_on_this_host() {
+        let minimal = serde_json::json!({
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": {"reason": "byte_budget", "dropped": 1}
+        });
+        let mut oversized = task_what_ran();
+        oversized["adapter"]["id"] = Value::from("a".repeat(140_000));
+        for what_ran in [oversized, minimal.clone()] {
+            let mut result = task_result(Some(what_ran));
+
+            adopt_task_what_ran(&mut result, &environment());
+
+            assert_eq!(
+                serde_json::to_value(result.what_ran).expect("what_ran JSON"),
+                minimal
+            );
+            assert_eq!(result.status, RunStatus::Succeeded);
+            assert_eq!(result.output, Value::from("done"));
+        }
+    }
+
+    #[test]
+    fn task_what_ran_past_the_entry_caps_is_bounded_on_this_host() {
+        let mut what_ran = task_what_ran();
+        let server = what_ran["mcp"]["servers"]["docs"].clone();
+        what_ran["mcp"]["servers"] = (0..35)
+            .map(|index| (format!("server-{index:02}"), server.clone()))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        what_ran["mcp"]["servers_truncated"] =
+            serde_json::json!({"reason": "key_too_long", "dropped": 2});
+        let mut result = task_result(Some(what_ran));
+
+        adopt_task_what_ran(&mut result, &environment());
+
+        let what_ran = serde_json::to_value(result.what_ran).expect("what_ran JSON");
+        let servers = what_ran["mcp"]["servers"].as_object().expect("servers");
+        let expected: Vec<String> = (0..32).map(|index| format!("server-{index:02}")).collect();
+        assert_eq!(servers.keys().cloned().collect::<Vec<_>>(), expected);
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            serde_json::json!({"reason": "entry_cap", "dropped": 5})
+        );
+    }
+
+    #[test]
     fn task_result_without_readable_what_ran_is_kept_without_it() {
         let mut undecodable = task_what_ran();
         undecodable["harness"]["version"]["state"] = Value::from("withheld");
