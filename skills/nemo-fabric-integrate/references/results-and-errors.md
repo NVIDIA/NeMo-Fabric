@@ -53,7 +53,9 @@ fact holds a `value`, or a `state` and `reason` when it has no value, plus
 `reason` codes you do not recognize. Adapter-reported facts, such as the
 harness version and the served model, currently read state `unsupported` with
 reason `key_not_declared`. A malformed `what_ran` reads as `None` without
-failing the result. Refer to
+failing the result. A `what_ran` over its 128 KiB budget can hold only
+`schema`, `version`, and `what_ran_truncated`, so check for that marker before
+reading a section. Refer to
 [What Ran](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#what-ran).
 
 ## Correlation IDs

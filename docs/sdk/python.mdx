@@ -1032,8 +1032,9 @@ state `unsupported` with reason `key_not_declared` and method
 
 Today every MCP entry has `origin` `plan`. An entry with `origin` `harness`
 describes a server the harness reports but the plan does not configure. It has
-the same shape, except that `transport` can be absent and `endpoint` has state
-`not_applicable` with reason `not_configured`.
+the same shape, except that `endpoint` has state `not_applicable` with reason
+`not_configured`. A `plan` entry always has `transport`. An entry of any other
+origin can leave it out.
 
 `endpoint` keeps no secret. A network server's endpoint is its lowercase scheme
 and host and its port. A URL without a port gets 80 for `http` and `ws` and 443
@@ -1054,6 +1055,21 @@ A string value longer than 256 characters keeps its first 240 characters, then
 `~`, then the first 15 hex digits of its SHA-256. The rule applies to each
 element of a list value too.
 
+`models` keeps at most 16 roles and `mcp.servers` at most 32 servers, taken in
+sorted key order. An entry whose key is longer than 128 characters is dropped.
+While the whole `what_ran` is larger than 128 KiB of compact JSON, MCP servers
+are dropped from the end of the sorted order, and then model roles. A map that
+lost entries has a marker next to it, `models_truncated` or
+`mcp.servers_truncated`, with the `reason` (`key_too_long`, `entry_cap`, or
+`byte_budget`) and the `dropped` count. Each map has one marker: when more than
+one rule dropped entries, `reason` names the last rule applied, in that order,
+and `dropped` counts every dropped entry. `dropped` is a JSON integer. The Rust
+core and the Python SDK reject `1.0`, although a JSON Schema validator may
+accept it. If `what_ran` is still too large with no MCP server and no model
+role left, it holds only `schema`, `version`, and `what_ran_truncated` with
+reason `byte_budget` and `dropped` 1. Check for `what_ran_truncated` before you
+read a section. Dropping entries never changes the run's status or error.
+
 `what_ran` is `None` when the core that produced the result predates it. The
 Rust core and the Python SDK apply the same structural checks. A `what_ran`
 that is not an object, names another schema or version, or has a malformed
@@ -1063,7 +1079,7 @@ ignored. Treat `what_ran` as evidence, not as a key for grouping runs.
 
 ```python
 what_ran = result.what_ran
-if what_ran is not None:
+if what_ran is not None and "what_ran_truncated" not in what_ran:
     core = what_ran["fabric"]["core_version"]
     print(core.get("value"), core["source"])
     for role, model in what_ran["models"].items():
