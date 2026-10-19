@@ -250,9 +250,34 @@ async def test_openclaw_gateway_uses_setpriv_on_linux_only_when_it_can_run(
     assert prefix == ([str(setpriv), "--pdeathsig", "SIGTERM", "--"] if usable else [])
 
 
-def test_openclaw_gateway_command_runs_the_gateway_after_its_prefix():
+async def test_openclaw_gateway_skips_setpriv_when_the_probe_cannot_start(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(adapter.sys, "platform", "linux")
+    monkeypatch.setattr(
+        adapter.shutil, "which", MagicMock(return_value="/usr/bin/setpriv")
+    )
+    monkeypatch.setattr(
+        adapter.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(side_effect=OSError("permission denied")),
+    )
+
+    assert await adapter._parent_death_prefix() == []
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        pytest.param(
+            ["/usr/bin/setpriv", "--pdeathsig", "SIGTERM", "--"], id="setpriv"
+        ),
+        # Where setpriv cannot run, the Gateway command runs unprefixed.
+        pytest.param([], id="unprefixed"),
+    ],
+)
+def test_openclaw_gateway_command_runs_the_gateway_after_its_prefix(prefix: list[str]):
     openclaw = Path("/usr/bin/openclaw")
-    prefix = ["/usr/bin/setpriv", "--pdeathsig", "SIGTERM", "--"]
 
     command = adapter._gateway_command(openclaw, port=20_000, prefix=prefix)
 
