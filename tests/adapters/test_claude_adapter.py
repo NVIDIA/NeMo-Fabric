@@ -16,6 +16,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+import jsonschema
 import pytest
 from claude_agent_sdk import AssistantMessage
 from claude_agent_sdk import ClaudeAgentOptions
@@ -23,6 +24,7 @@ from claude_agent_sdk import ClaudeSDKError
 from claude_agent_sdk import CLIConnectionError
 from claude_agent_sdk import CLIJSONDecodeError
 from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import ConversationResetMessage
 from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
@@ -49,6 +51,8 @@ ANTHROPIC_AUTH_ENV_NAMES = {
     "ANTHROPIC_SERVICE_ACCOUNT_ID",
     "ANTHROPIC_WORKSPACE_ID",
 }
+
+DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
 
 
 def lifecycle_invocation(
@@ -221,6 +225,28 @@ def test_claude_descriptor_is_narrow_and_versioned():
             "additionalProperties": False,
         },
         "extension_schemas": {
+            "usage": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "nemo_fabric.detailed_token_usage.v1": {
+                        "type": "object",
+                        "properties": {
+                            "input_tokens": {"type": "integer", "minimum": 0},
+                            "cached_input_tokens": {"type": "integer", "minimum": 0},
+                            "cache_write_input_tokens": {
+                                "type": "integer",
+                                "minimum": 0,
+                            },
+                            "input_tokens_include_cache": {"type": "boolean"},
+                            "output_tokens": {"type": "integer", "minimum": 0},
+                            "output_tokens_include_reasoning": {"type": "boolean"},
+                        },
+                        "additionalProperties": False,
+                    }
+                },
+                "additionalProperties": False,
+            },
             "run_error": {
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
@@ -231,7 +257,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
                     "timeout_seconds": {"type": "number", "minimum": 0},
                 },
                 "additionalProperties": False,
-            }
+            },
         },
         "config": {
             "accepts": [
@@ -979,6 +1005,196 @@ def test_agent_run_result_discards_tokens_larger_than_uint64():
     assert result.usage is None
 
 
+def test_agent_run_result_with_cache_counters_reports_detailed_token_usage():
+    result = adapter._agent_run_result(
+        {
+            "response": "done",
+            "usage": {
+                "input_tokens": 12,
+                "cache_read_input_tokens": 3000,
+                "cache_creation_input_tokens": 400,
+                "output_tokens": 90,
+            },
+            # Claude Code's model_usage is process-cumulative, so it is not
+            # reported as invocation usage.
+            "model_usage": {
+                "claude-sonnet-4-5": {
+                    "inputTokens": 10,
+                    "outputTokens": 80,
+                    "cacheReadInputTokens": 3000,
+                    "cacheCreationInputTokens": 400,
+                },
+            },
+        }
+    )
+
+    assert result.usage is not None
+    assert result.usage.input_tokens == 12
+    assert result.usage.cached_input_tokens is None
+    assert result.usage.extensions == {
+        DETAILED_TOKEN_USAGE_KEY: {
+            "input_tokens": 12,
+            "cached_input_tokens": 3000,
+            "cache_write_input_tokens": 400,
+            "input_tokens_include_cache": False,
+            "output_tokens": 90,
+            "output_tokens_include_reasoning": True,
+        }
+    }
+
+
+def test_agent_run_result_detailed_token_usage_matches_descriptor_schema():
+    descriptor = json.loads(
+        (
+            ROOT / "adapters" / "python" / "claude" / "claude.fabric-adapter.json"
+        ).read_text(encoding="utf-8")
+    )
+    result = adapter._agent_run_result(
+        {
+            "response": "done",
+            "usage": {
+                "input_tokens": 1,
+                "cache_read_input_tokens": 2,
+                "cache_creation_input_tokens": 3,
+                "output_tokens": 4,
+            },
+        }
+    )
+
+    assert result.usage is not None
+    jsonschema.validate(
+        result.usage.extensions, descriptor["extension_schemas"]["usage"]
+    )
+
+
+DETAILED_OUTPUT_ONLY = {"output_tokens": 1, "output_tokens_include_reasoning": True}
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
+        pytest.param(
+            {
+                "input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "output_tokens": 0,
+            },
+            {
+                "input_tokens": 0,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0,
+                "input_tokens_include_cache": False,
+                "output_tokens": 0,
+                "output_tokens_include_reasoning": True,
+            },
+            id="explicit-zeros-are-reported",
+        ),
+        pytest.param(
+            {
+                "input_tokens": 5,
+                "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 2,
+            },
+            {
+                "input_tokens": 5,
+                "cached_input_tokens": 7,
+                "cache_write_input_tokens": 2,
+                "input_tokens_include_cache": False,
+            },
+            id="missing-output",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "output_tokens": 1},
+            DETAILED_OUTPUT_ONLY,
+            id="absent-cache-counters",
+        ),
+        pytest.param(
+            {
+                "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 2,
+                "output_tokens": 1,
+            },
+            DETAILED_OUTPUT_ONLY,
+            id="missing-input",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "cache_creation_input_tokens": 2, "output_tokens": 1},
+            DETAILED_OUTPUT_ONLY,
+            id="missing-cache-read",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "cache_read_input_tokens": 7, "output_tokens": 1},
+            DETAILED_OUTPUT_ONLY,
+            id="missing-cache-write",
+        ),
+        *(
+            pytest.param(
+                {
+                    "input_tokens": 5,
+                    "cache_read_input_tokens": invalid,
+                    "cache_creation_input_tokens": 2,
+                    "output_tokens": 1,
+                },
+                DETAILED_OUTPUT_ONLY,
+                id=f"invalid-cache-read-{label}",
+            )
+            for label, invalid in (
+                ("negative", -1),
+                ("bool", True),
+                ("float", 7.0),
+                ("string", "7"),
+                ("null", None),
+                ("above-uint64", 1 << 64),
+            )
+        ),
+    ],
+)
+def test_agent_run_result_reports_detailed_input_only_when_complete(usage, expected):
+    result = adapter._agent_run_result({"response": "done", "usage": usage})
+
+    assert result.usage is not None
+    assert result.usage.extensions == {DETAILED_TOKEN_USAGE_KEY: expected}
+
+
+def test_failed_agent_run_result_keeps_detailed_token_usage():
+    result_message = ResultMessage(
+        subtype="error_max_turns",
+        duration_ms=100,
+        duration_api_ms=80,
+        is_error=True,
+        num_turns=4,
+        session_id="claude-session",
+        usage={
+            "input_tokens": 12,
+            "cache_read_input_tokens": 3000,
+            "cache_creation_input_tokens": 400,
+            "output_tokens": 90,
+        },
+    )
+
+    result = adapter._agent_run_result(adapter.normalize_result([], result_message))
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.usage is not None
+    assert result.usage.extensions[DETAILED_TOKEN_USAGE_KEY] == {
+        "input_tokens": 12,
+        "cached_input_tokens": 3000,
+        "cache_write_input_tokens": 400,
+        "input_tokens_include_cache": False,
+        "output_tokens": 90,
+        "output_tokens_include_reasoning": True,
+    }
+
+
+def test_agent_run_result_without_usage_reports_no_detailed_token_usage():
+    result = adapter._agent_run_result({"response": "done", "cost_usd": 0.5})
+
+    assert result.usage is not None
+    assert result.usage.cost_usd == 0.5
+    assert result.usage.extensions == {}
+
+
 async def test_claude_runtime_reuses_one_connected_sdk_client(
     claude_payload, monkeypatch
 ):
@@ -1047,6 +1263,163 @@ async def test_claude_runtime_reuses_one_connected_sdk_client(
     assert second["response"] == "done-2"
     assert invalid["error"]["code"] == "claude_invalid_request"
     assert first["session_id"] == second["session_id"] == "claude-session"
+
+
+def running_total_result(
+    total_cost_usd: float | None,
+    *,
+    subtype: str = "success",
+    session_id: str = "claude-session",
+) -> ResultMessage:
+    return ResultMessage(
+        subtype=subtype,
+        duration_ms=100,
+        duration_api_ms=80,
+        is_error=subtype != "success",
+        num_turns=1,
+        session_id=session_id,
+        total_cost_usd=total_cost_usd,
+        usage={"input_tokens": 1, "output_tokens": 1},
+        result="done",
+    )
+
+
+def install_scripted_client(
+    monkeypatch: pytest.MonkeyPatch, responses: list[list[Message]]
+) -> None:
+    remaining = iter(responses)
+
+    async def respond(_client: MagicMock) -> AsyncIterator[Message]:
+        for message in next(remaining):
+            yield message
+
+    install_fake_client(monkeypatch, respond)
+
+
+async def invocation_costs(
+    claude_payload: dict[str, Any], invocations: int
+) -> list[float | None]:
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(start_payload))
+    costs = []
+    for _ in range(invocations):
+        result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+        assert result.usage is not None
+        assert result.output["cost_usd"] == result.usage.cost_usd
+        costs.append(result.usage.cost_usd)
+    await runtime.stop()
+    return costs
+
+
+@pytest.mark.parametrize(
+    ("totals", "expected"),
+    [
+        pytest.param([0.10, 0.30], [0.10, 0.20], id="running-total"),
+        pytest.param([0.10, 0.10], [0.10, 0.0], id="no-new-spend"),
+        pytest.param([0.30, 0.10, 0.15], [0.30, None, 0.05], id="decreasing-total"),
+        pytest.param(
+            [0.10, None, 0.40, 0.50], [0.10, None, None, 0.10], id="missing-total"
+        ),
+        pytest.param(
+            [0.10, -0.20, 0.15, 0.25], [0.10, None, None, 0.10], id="negative-total"
+        ),
+        pytest.param(
+            [0.10, float("nan"), 0.40, 0.50],
+            [0.10, None, None, 0.10],
+            id="non-finite-total",
+        ),
+    ],
+)
+async def test_claude_runtime_reports_cost_per_invocation(
+    claude_payload, monkeypatch, totals, expected
+):
+    install_scripted_client(
+        monkeypatch, [[running_total_result(total)] for total in totals]
+    )
+
+    assert await invocation_costs(claude_payload, len(totals)) == expected
+
+
+async def test_claude_runtime_reports_cost_of_failed_invocation(
+    claude_payload, monkeypatch
+):
+    install_scripted_client(
+        monkeypatch,
+        [
+            [running_total_result(0.10)],
+            [running_total_result(0.15, subtype="error_during_execution")],
+            [running_total_result(0.20)],
+        ],
+    )
+
+    assert await invocation_costs(claude_payload, 3) == [0.10, 0.05, 0.05]
+
+
+def conversation_reset(session_id: str) -> ConversationResetMessage:
+    return ConversationResetMessage(
+        new_conversation_id="conversation-2",
+        uuid="reset-1",
+        session_id=session_id,
+    )
+
+
+async def test_claude_runtime_leaves_cost_unknown_after_conversation_reset(
+    claude_payload, monkeypatch
+):
+    # Messages after a reset carry a new session id.
+    install_scripted_client(
+        monkeypatch,
+        [
+            [
+                conversation_reset("claude-session"),
+                running_total_result(0.02, session_id="claude-session-2"),
+            ],
+            [running_total_result(0.05, session_id="claude-session-2")],
+        ],
+    )
+
+    assert await invocation_costs(claude_payload, 2) == [None, 0.03]
+
+
+async def test_claude_runtime_rejects_conversation_reset_after_established_session(
+    claude_payload, monkeypatch
+):
+    install_scripted_client(
+        monkeypatch,
+        [
+            [running_total_result(0.10)],
+            [
+                conversation_reset("claude-session"),
+                running_total_result(0.02, session_id="claude-session-2"),
+            ],
+        ],
+    )
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(start_payload))
+
+    first = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    second = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    third = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    await runtime.stop()
+
+    assert first.usage.cost_usd == 0.10
+    assert second.error.code == "claude_session_mismatch"
+    assert third.error.code == "claude_runtime_unavailable"
+
+
+async def test_claude_runtime_cost_starts_from_zero_for_each_client(
+    claude_payload, monkeypatch
+):
+    install_scripted_client(
+        monkeypatch, [[running_total_result(0.10)], [running_total_result(0.10)]]
+    )
+
+    assert await invocation_costs(claude_payload, 1) == [0.10]
+    assert await invocation_costs(claude_payload, 1) == [0.10]
 
 
 async def test_claude_runtime_removes_mcp_config_after_failed_sdk_connect(

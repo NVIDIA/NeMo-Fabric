@@ -26,6 +26,7 @@ from claude_agent_sdk import ClaudeSDKError
 from claude_agent_sdk import CLIConnectionError
 from claude_agent_sdk import CLIJSONDecodeError
 from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import ConversationResetMessage
 from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
@@ -823,6 +824,53 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
     return _failure("claude_failed", "Claude invocation failed")
 
 
+_DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
+# Claude Code's result usage keys and the detailed input counters they fill.
+# Anthropic's input_tokens excludes cache reads and cache writes, and its
+# output_tokens includes thinking, which Anthropic bills as output.
+_DETAILED_INPUT_COUNTERS = {
+    "input_tokens": "input_tokens",
+    "cache_read_input_tokens": "cached_input_tokens",
+    "cache_creation_input_tokens": "cache_write_input_tokens",
+}
+
+
+def _token_counter(value: Any) -> int | None:
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= (1 << 64) - 1
+    ):
+        return value
+    return None
+
+
+def _detailed_token_usage(usage: dict[str, Any]) -> dict[str, int | bool]:
+    """Return Claude Code's counters plus the inclusion flags Anthropic fixes.
+
+    Any detailed input field makes consumers such as Harbor accounting read
+    input and cache from this object rather than the top-level counters or a
+    trajectory, so the input counters are reported only when input and both
+    cache parts are known. ``output_tokens_include_reasoning`` keeps the
+    inclusive output total equal to ``output_tokens``; without it, those
+    consumers would read output as unknown.
+    """
+    counters: dict[str, int | bool] = {}
+    inputs = {
+        counter: value
+        for key, counter in _DETAILED_INPUT_COUNTERS.items()
+        if (value := _token_counter(usage.get(key))) is not None
+    }
+    if len(inputs) == len(_DETAILED_INPUT_COUNTERS):
+        counters.update(inputs)
+        counters["input_tokens_include_cache"] = False
+    output_tokens = _token_counter(usage.get("output_tokens"))
+    if output_tokens is not None:
+        counters["output_tokens"] = output_tokens
+        counters["output_tokens_include_reasoning"] = True
+    return counters
+
+
 def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
@@ -842,9 +890,7 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
     tokens = {
         name: value
         for name in ("input_tokens", "output_tokens", "total_tokens")
-        if isinstance((value := usage.get(name)), int)
-        and not isinstance(value, bool)
-        and 0 <= value <= (1 << 64) - 1
+        if (value := _token_counter(usage.get(name))) is not None
     }
     cost = normalized.get("cost_usd")
     if (
@@ -856,8 +902,12 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
         cost = None
         if "cost_usd" in normalized:
             normalized["cost_usd"] = None
+    detailed = _detailed_token_usage(usage)
+    extensions = {_DETAILED_TOKEN_USAGE_KEY: detailed} if detailed else {}
     agent_usage = (
-        AgentUsage(**tokens, cost_usd=cost) if tokens or cost is not None else None
+        AgentUsage(**tokens, cost_usd=cost, extensions=extensions)
+        if tokens or cost is not None or detailed
+        else None
     )
     return AgentRunResult(
         status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
@@ -1013,6 +1063,7 @@ class ClaudeRuntime:
         self._fabric_runtime_id: str | None = None
         self._claude_session_id: str | None = None
         self._client: ClaudeSDKClient | None = None
+        self._cost_total: float | None = None
         self._relay: ClaudeRelaySettings | None = None
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_config_path: Path | None = None
@@ -1058,6 +1109,8 @@ class ClaudeRuntime:
         self._agent_config = agent_config
         self._fabric_runtime_id = fabric_runtime_id
         self._client = client
+        # A new Claude Code process starts its running cost total at zero.
+        self._cost_total = 0.0
 
     async def invoke(
         self,
@@ -1189,6 +1242,7 @@ class ClaudeRuntime:
     ) -> dict[str, Any]:
         try:
             output = normalize_result(messages, result)
+            output["cost_usd"] = self._invocation_cost(messages, result)
             if not output["failed"]:
                 invalid_session = _validate_result_session(
                     self._claude_session_id, result
@@ -1201,6 +1255,39 @@ class ClaudeRuntime:
         except ClaudeAdapterError as error:
             self._unusable = True
             return adapter_failure(error)
+
+    def _invocation_cost(
+        self,
+        messages: list[Message],
+        result: ResultMessage,
+    ) -> float | None:
+        """Convert Claude Code's running cost total into this invocation's cost.
+
+        Every invocation of the runtime runs on one Claude Code process, whose
+        ``total_cost_usd`` accumulates across invocations. The lifecycle host
+        runs invocations one at a time, so the difference between successive
+        totals is this invocation's cost. A missing, non-finite, or negative
+        total leaves this invocation and the next one unknown, because the next
+        total has no baseline. A decreasing total or a conversation reset leaves
+        this invocation unknown and makes its total the new baseline.
+        """
+
+        previous = self._cost_total
+        total = result.total_cost_usd
+        if (
+            not isinstance(total, (int, float))
+            or isinstance(total, bool)
+            or not math.isfinite(total)
+            or total < 0
+        ):
+            total = None
+        self._cost_total = total
+        reset = any(isinstance(message, ConversationResetMessage) for message in messages)
+        if total is None or previous is None or reset or total < previous:
+            return None
+        # Drop float subtraction noise such as 0.19999999999999998. A tenth of a
+        # nanodollar is far below the price of a single token.
+        return round(total - previous, 10)
 
     async def stop(self) -> None:
         client = self._client
