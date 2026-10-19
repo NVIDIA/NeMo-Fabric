@@ -521,8 +521,7 @@ function selectModel(config: AgentConfig): AgentModelConfig {
  *
  * It does, however, require what Pi has no usable default for. For an unknown model that means a
  * complete-enough definition: `api` (enforced at registration — Pi can't resolve the wire
- * protocol otherwise), `base_url`, and `context_window`/`max_tokens` (absent, these resolve to
- * undefined and break compaction/limit math rather than getting a sane default). Supplied values
+ * protocol otherwise), `base_url`, `context_window`/`max_tokens`, `input`, and `cost`. Supplied values
  * are validated (`api` a {@link SUPPORTED_MODEL_APIS} value, token limits positive, cost
  * well-formed) so a malformed override fails fast instead of reaching Pi.
  */
@@ -559,27 +558,24 @@ export function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel
   const cost = parseCost(meta.cost, fail) ?? base?.cost;
   const contextWindow = positive(meta.context_window, base?.contextWindow, "context_window");
   const maxTokens = positive(model.max_tokens ?? meta.max_tokens, base?.maxTokens, "max_tokens");
-  // For an unknown model (not in Pi's catalog), require the fields Pi has no usable default for:
-  // base_url (Pi can't reach it otherwise) and context_window/max_tokens (absent, they resolve to
-  // undefined and break compaction/limit math rather than getting a sane Pi default). `api` is
-  // enforced separately at registration. The adapter still invents nothing — it requires the
-  // config to supply what Pi genuinely needs, failing fast with a clear error.
+  // An unknown model has no catalog entry to supply its endpoint, limits, input modalities,
+  // or cost rates. Require those fields before Pi uses them; `api` is enforced at registration.
   if (base === undefined) {
     const missing = [
       baseUrl === undefined ? "base_url" : undefined,
       contextWindow === undefined ? "context_window" : undefined,
       maxTokens === undefined ? "max_tokens" : undefined,
+      input === undefined ? "input" : undefined,
+      cost === undefined ? "cost" : undefined,
     ].filter((field): field is string => field !== undefined);
     if (missing.length > 0) {
       fail(
         `model '${model.model}' is not known to Pi, so a complete definition is required; ` +
-          `missing: ${missing.join(", ")} (set base_url and extensions.context_window/max_tokens)`,
+        `missing: ${missing.join(", ")} (set base_url and the required model extensions)`,
       );
     }
   }
-  // Build a sparse entry: include only resolved fields. Omitted optional ones (cost, reasoning,
-  // input) are left unset so Pi applies its own defaults — the adapter adds none. The SDK input
-  // type marks some fields non-optional but tolerates their absence at runtime.
+  // Include only resolved fields; the adapter adds no defaults for optional metadata.
   const entry: Record<string, unknown> = { id: model.model };
   if (typeof meta.name === "string" || base?.name !== undefined) {
     entry.name = typeof meta.name === "string" ? meta.name : base?.name;
@@ -1020,7 +1016,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
 
     // Register the selected model into Pi's catalog as an overlay on its existing entry (if any):
     // supplied config fields override, omitted ones keep Pi's native value, and for an unknown
-    // (gateway) model the overlay base is empty so defaults + a required `api` apply. This way
+    // (gateway) model the overlay base is empty so its required metadata must be explicit. This way
     // selecting a known provider/model and changing nothing preserves all its native properties,
     // while an explicit base_url / extensions field is still honored. A Fabric agent runs ONE
     // model role per session (selectModel enforces default-or-sole), mirroring the other

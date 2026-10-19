@@ -132,15 +132,20 @@ test("buildCatalogModel requires context_window and max_tokens for an unknown mo
 });
 
 test("buildCatalogModel accepts a complete unknown-model definition and invents no optional defaults", () => {
-  // api + base_url + context_window + max_tokens is complete; optional fields (cost, reasoning,
-  // input) stay unset so Pi defaults them — the adapter adds none.
+  // Required metadata is passed through, including zero cost rates; optional reasoning stays unset.
   const entry = buildCatalogModel(
     {
       provider: "gw",
       model: "gw/model",
       api_key_env: "K",
       base_url: "https://gw/v1",
-      extensions: { api: "openai-completions", context_window: 32_000, max_tokens: 4_096 },
+      extensions: {
+        api: "openai-completions",
+        context_window: 32_000,
+        max_tokens: 4_096,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
     },
     undefined,
   );
@@ -148,9 +153,9 @@ test("buildCatalogModel accepts a complete unknown-model definition and invents 
   assert.equal(entry.baseUrl, "https://gw/v1");
   assert.equal(entry.contextWindow, 32_000);
   assert.equal(entry.maxTokens, 4_096);
-  assert.equal(entry.cost, undefined);
+  assert.deepEqual(entry.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
   assert.equal(entry.reasoning, undefined);
-  assert.equal(entry.input, undefined);
+  assert.deepEqual(entry.input, ["text"]);
 });
 
 test("maps normalized MCP servers and tool filters to native Pi MCP configuration", () => {
@@ -1157,43 +1162,47 @@ test("resolves a gateway model's api from extensions.api", async () => {
   }
 });
 
-test("rejects an unknown gateway model that omits context_window/max_tokens", async () => {
-  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-minimal-")));
-  const extensionPath = join(workspace, "relay-extension.js");
-  await writeFile(extensionPath, "export default function () {}\n", "utf8");
-  const factory = captureModelFactory({});
-  try {
-    await assert.rejects(
-      factory.create({
-        agentName: "pi-catalog-minimal",
-        baseDir: workspace,
-        config: {
-          harness: { settings: { relay_extension_path: extensionPath } },
-          models: {
-            default: {
-              api_key_env: "TEST_API_KEY",
-              base_url: "https://gateway.example.test/v1",
-              model: "custom-gateway-model",
-              provider: "custom-gateway-provider",
-              // Only the wire protocol is supplied. context_window/max_tokens have no usable Pi
-              // default, so an incomplete gateway definition must be rejected (not registered
-              // with undefined limits that break compaction).
-              extensions: { api: "openai-completions" },
+for (const [description, missingFields, extensions] of [
+  ["missing context_window/max_tokens", ["context_window", "max_tokens"], { api: "openai-completions" }],
+  ["missing input/cost", ["input", "cost"], { api: "openai-completions", context_window: 32000, max_tokens: 4096 }],
+  ["missing input", ["input"], { ...GATEWAY_EXTENSIONS, input: undefined }],
+  ["missing cost", ["cost"], { ...GATEWAY_EXTENSIONS, cost: undefined }],
+  ["empty input", ["input"], { ...GATEWAY_EXTENSIONS, input: [] }],
+]) {
+  test(`rejects an unknown gateway model with ${description}`, async () => {
+    const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-minimal-")));
+    const extensionPath = join(workspace, "relay-extension.js");
+    await writeFile(extensionPath, "export default function () {}\n", "utf8");
+    const factory = captureModelFactory({});
+    try {
+      await assert.rejects(
+        factory.create({
+          agentName: "pi-catalog-minimal",
+          baseDir: workspace,
+          config: {
+            harness: { settings: { relay_extension_path: extensionPath } },
+            models: {
+              default: {
+                api_key_env: "TEST_API_KEY",
+                base_url: "https://gateway.example.test/v1",
+                model: "custom-gateway-model",
+                provider: "custom-gateway-provider",
+                extensions,
+              },
             },
+            tools: { enabled: [] },
           },
-          tools: { enabled: [] },
-        },
-        runtimeContext: makeRuntimeContext(workspace),
-      }),
-      (error) =>
-        error.code === "pi_model_extensions_invalid" &&
-        error.message.includes("context_window") &&
-        error.message.includes("max_tokens"),
-    );
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
-});
+          runtimeContext: makeRuntimeContext(workspace),
+        }),
+        (error) =>
+          error.code === "pi_model_extensions_invalid" &&
+          missingFields.every((field) => error.message.includes(field)),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+}
 
 test("rejects an unknown gateway model with no extensions.api", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-noapi-")));
