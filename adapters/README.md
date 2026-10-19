@@ -217,6 +217,11 @@ Agent Trajectory Interchange Format (ATIF).
 | [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a shared ATOF collector | Registers the request ID, maps it into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |
 
 Telemetry output names use the descriptor contract values. Claude, Codex,
+Local Pi runtimes also support `Fabric.check()` at the `live`, `active`, and
+`ready` levels. These observations can run during an invocation and inspect
+native session and local setup state. Other adapters return unsupported until
+their probes are implemented and qualified. See the [Pi health contract](typescript/pi/README.md#runtime-health).
+
 Hermes Agent, mini-SWE-agent, and Pi can emit NeMo Relay ATIF, OpenTelemetry, and
 OpenInference output. Deep Agents supports the same Relay outputs plus native
 OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry. The

@@ -39,6 +39,18 @@ This package is intended to be published as the shared runtime dependency for
 TypeScript adapters. Its public API will be versioned independently from the
 adapters that use it.
 
+## Runtime Health
+
+An optional `AdapterRuntime.check(level)` method provides native health evidence
+through the shared `AdapterCheckResult` contract. The lifecycle host exposes
+checks through a separate authenticated loopback channel while an invocation
+owns the ordered lifecycle pipe. Endpoint credentials are generated per process
+and stored in a private file under `FABRIC_HOME`. HMAC-SHA256 signs requests
+and responses with a fresh client challenge, so credentials never enter the
+network channel, reports, handles, or diagnostics. Responses cannot be replayed
+for another challenge. Deadlines and disconnects leave adapter work
+running. The host invalidates in-flight observations when shutdown begins.
+
 ## Dependency Rationale
 
 `ajv` enforces the canonical JSON Schema contracts at the process boundary;

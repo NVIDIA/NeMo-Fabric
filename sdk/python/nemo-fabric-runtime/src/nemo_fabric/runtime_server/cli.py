@@ -82,6 +82,10 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         flag = arguments[index]
         if flag in flags:
             raise ProtocolError()
+        if flag in ("--live", "--active", "--ready", "--operational"):
+            flags[flag] = True
+            index += 1
+            continue
         if flag in (
             "--agent",
             "--runtime-id",
@@ -106,6 +110,13 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
     allowed = required.copy()
     if operation == "check":
         allowed.add("--timeout-seconds")
+        if flags.keys() & {"--agent", "--runtime-id"}:
+            required.update({"--agent", "--runtime-id"})
+            allowed.update(required)
+            levels = flags.keys() & {"--live", "--active", "--ready", "--operational"}
+            if len(levels) > 1:
+                raise ProtocolError()
+            allowed.update(levels)
     if operation == "invoke":
         payload_flags = flags.keys() & {"--input", "--request"}
         if len(payload_flags) != 1:
@@ -117,6 +128,8 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         "interface_version": INTERFACE_VERSION,
         "operation": operation,
     }
+    if operation == "check" and "--runtime-id" in flags:
+        request["level"] = next(iter(levels))[2:] if levels else "live"
     if "--timeout-seconds" in flags:
         try:
             request["timeout_seconds"] = float(flags["--timeout-seconds"])

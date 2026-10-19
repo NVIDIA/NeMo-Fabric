@@ -1,13 +1,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Runtime server health reports for the command bridge."""
+"""Server and runtime health reports for the command bridge."""
 
 import re
 import sys
 import time
 from datetime import datetime, timezone
 from typing import Any
+
+from nemo_fabric.check import CheckReport, CheckRequest
 
 CHECK_SECONDS = 3.0
 SCHEMA_VERSION = "fabric.check/v1alpha1"
@@ -16,6 +18,77 @@ SERVER_STATES = {
     "stopping": ("failed", "server_stopping"),
     "unknown": ("unknown", "probe_timeout"),
 }
+
+
+def runtime_report(
+    request: CheckRequest, reason: str, started: float
+) -> dict[str, Any]:
+    if request.level == "operational":
+        reason = "unsupported_level"
+    report = CheckReport.from_mapping(
+        {
+            "schema_version": SCHEMA_VERSION,
+            "scope": "runtime",
+            "runtime_id": request.runtime_id,
+            "requested_level": request.level,
+            "outcome": "unsupported"
+            if reason.startswith("unsupported_")
+            else "unknown",
+            "reason_code": reason,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "elapsed_ms": 0,
+            "server": None,
+            "runtime": None,
+            "checks": [],
+        }
+    )
+    return report._complete(started).to_mapping()
+
+
+def check_response(report: dict[str, Any]) -> dict[str, Any]:
+    from nemo_fabric.runtime_server.protocol import ProtocolError, envelope
+
+    outcome = report["outcome"]
+    return envelope(
+        "check",
+        report,
+        error=None
+        if outcome == "passed"
+        else ProtocolError(
+            report["reason_code"], "check", unsupported=outcome == "unsupported"
+        ),
+    )
+
+
+def validate_check_response(response: dict[str, Any]) -> None:
+    report = response["result"]
+    if not isinstance(report, dict) or report.get("scope") != "runtime":
+        validate_server_response(response)
+        return
+    evidence = CheckReport.from_mapping(report)
+    if response["changed"] is not False:
+        raise ValueError("health checks cannot change state")
+    expected = (
+        "succeeded"
+        if evidence.outcome == "passed"
+        else "unsupported"
+        if evidence.outcome == "unsupported"
+        else "failed"
+    )
+    error = response["error"]
+    if (
+        response["status"] != expected
+        or (
+            error is not None
+            and (
+                error["effects"] != "none"
+                or error["stage"] != "check"
+                or error["code"] != evidence.reason_code
+            )
+        )
+        or (evidence.outcome == "passed") != (error is None)
+    ):
+        raise ValueError("inconsistent runtime check envelope")
 
 
 def server_report(state: str, started: float) -> dict[str, Any]:
