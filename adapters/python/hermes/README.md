@@ -127,26 +127,30 @@ rather than a carried-over or whole-session total, and the one after it reports
 its own change again.
 
 Hermes adds no tokens for a provider response that carried no usage, so an
-invocation with such a response has no `usage`. Hermes also returns before
-recording the usage of a reply that hit the token limit or a content filter, so
-an invocation with such a reply has no `usage` either. Hermes reads a count
-that a response's usage left out as 0, so the adapter checks each response's
-usage before Hermes normalizes it. A reported zero still counts as 0. When a
-response left out its input count, the invocation's `usage` leaves out
-`input_tokens`, `cached_input_tokens`, and `total_tokens`. Anthropic Messages
-usage reports input without the cache, so its input count also needs both cache
-fields. When a response left out its output count, the `usage` leaves out
-`output_tokens` and `total_tokens`. When a response sent no cache details, the
-`usage` leaves out `cached_input_tokens`.
+invocation with such a response has no `usage`. Hermes also skips usage
+recording for a response it rejects as invalid, a reply that hit the token
+limit, and a reply stopped by a content filter, so an invocation with such a
+response has no `usage` either. A streamed call that fails and is retried
+inside Hermes' API call, such as an empty stream, never reaches these checks,
+so its billed usage is not observed and the invocation can undercount. Hermes
+reads a count that a response's usage left out as 0, so the adapter checks each
+response's usage before Hermes normalizes it. A reported zero still counts as
+0. When a response left out its input count, the invocation's `usage` leaves
+out `input_tokens`, `cached_input_tokens`, and `total_tokens`. Anthropic
+Messages usage reports input without the cache, so its input count also needs
+both cache fields. When a response left out its output count, the `usage`
+leaves out `output_tokens` and `total_tokens`. When a response sent no cache
+details, the `usage` leaves out `cached_input_tokens`.
 
 This check covers the usage that the OpenAI-compatible, Responses, and
 Anthropic clients return. Hermes' native Gemini and Bedrock transports, and its
 Anthropic transport when a stream omits usage, fill missing counts with 0
 before the adapter sees them. Hermes' Codex app-server runtime records usage
 outside this path. Hermes passes a response's raw usage to no per-agent hook,
-so the adapter wraps `agent.turn_response_check.record_response_usage` once per
-process. The runtime fails to start if the installed Hermes records usage
-through another call.
+so the adapter wraps `record_response_usage` and the three handlers for
+invalid, truncated, and refused responses in `agent.turn_response_check` once
+per process. The runtime fails to start if the installed Hermes no longer calls
+them by those names.
 
 ## Execution Model
 
