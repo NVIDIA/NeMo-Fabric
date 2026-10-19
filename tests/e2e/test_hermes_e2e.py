@@ -126,6 +126,14 @@ async def test_hermes_persistent_host_reports_usage_for_each_invocation(
     ) as runtime:
         first = await runtime.invoke(input="first")
         second = await runtime.invoke(input="second")
+        # The provider now reports a prompt count but no completion count.
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={"usage": {"prompt_tokens": 12}},
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+        partial = await runtime.invoke(input="third")
 
     # The mock endpoint bills 0 tokens per call, so each invocation's change
     # since the previous one is a measured 0, not unknown.
@@ -134,6 +142,14 @@ async def test_hermes_persistent_host_reports_usage_for_each_invocation(
         assert turn.usage is not None, turn.to_mapping()
         assert turn.usage.input_tokens == 0, turn.to_mapping()
         assert turn.usage.output_tokens == 0, turn.to_mapping()
+    # Through Hermes' real turn loop, the omitted completion count stays
+    # unknown rather than a measured 0, and so does the total.
+    assert partial["status"] == "succeeded", partial.to_mapping()
+    assert partial.to_mapping()["usage"] == {
+        "input_tokens": 12,
+        "input_tokens_include_cache": True,
+        "metadata": {},
+    }, partial.to_mapping()
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")

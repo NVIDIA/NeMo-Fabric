@@ -1628,7 +1628,11 @@ class _UsageRecordingAgent:
     through Hermes' own usage accounting and context compressor, called the
     way Hermes' turn loop calls it."""
 
-    def __init__(self, turns: list[list[dict[str, int] | None]]) -> None:
+    def __init__(
+        self,
+        turns: list[list[dict[str, object] | None]],
+        api_mode: str = "chat_completions",
+    ) -> None:
         from agent.context_compressor import ContextCompressor
 
         self._turns = turns
@@ -1636,7 +1640,7 @@ class _UsageRecordingAgent:
             model="test-model", quiet_mode=True
         )
         self.provider = "custom"
-        self.api_mode = "chat_completions"
+        self.api_mode = api_mode
         self.model = "test-model"
         self.base_url = "http://127.0.0.1:1/v1"
         self.api_key = ""
@@ -1658,6 +1662,9 @@ class _UsageRecordingAgent:
             "estimated_cost_usd",
         ):
             setattr(self, f"session_{counter}", 0)
+
+    def close(self) -> None:
+        pass
 
     def run_conversation(self, user_message: str) -> dict[str, object]:
         from agent import turn_response_check
@@ -1778,6 +1785,8 @@ async def test_hermes_usage_with_partial_provider_report_leaves_omitted_count_un
     # Hermes normalizes an omitted count to 0; the provider's report decides.
     assert input_only.usage is not None
     assert input_only.usage.input_tokens == 100
+    # The provider sent no cache details, so the cached share is unknown.
+    assert input_only.usage.cached_input_tokens is None
     assert input_only.usage.output_tokens is None
     assert input_only.usage.total_tokens is None
     assert output_only.usage is not None
@@ -1797,6 +1806,87 @@ async def test_hermes_usage_with_partial_provider_report_leaves_omitted_count_un
     assert after_partial.usage.input_tokens == 400
     assert after_partial.usage.output_tokens == 40
     assert after_partial.usage.total_tokens == 440
+
+
+async def test_hermes_usage_reports_cache_counts_only_when_the_provider_sent_them():
+    chat = _UsageRecordingAgent(
+        [
+            [
+                {
+                    "prompt_tokens": 50,
+                    "completion_tokens": 5,
+                    "prompt_tokens_details": {"cached_tokens": 20},
+                }
+            ],
+        ]
+    )
+    # Anthropic's input_tokens excludes the cache, so input needs both cache fields.
+    anthropic = _UsageRecordingAgent(
+        [
+            [{"input_tokens": 100, "output_tokens": 5}],
+            [
+                {
+                    "input_tokens": 100,
+                    "cache_read_input_tokens": 30,
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 5,
+                }
+            ],
+        ],
+        api_mode="anthropic_messages",
+    )
+    chat_runtime = _usage_recording_runtime(chat)
+    anthropic_runtime = _usage_recording_runtime(anthropic)
+    invocation = _usage_invocation()
+
+    cached = await chat_runtime.invoke(*invocation)
+    without_cache_fields = await anthropic_runtime.invoke(*invocation)
+    with_cache_fields = await anthropic_runtime.invoke(*invocation)
+
+    assert cached.usage is not None
+    assert (cached.usage.input_tokens, cached.usage.cached_input_tokens) == (50, 20)
+    assert without_cache_fields.usage is not None
+    assert without_cache_fields.usage.input_tokens is None
+    assert without_cache_fields.usage.cached_input_tokens is None
+    assert without_cache_fields.usage.output_tokens == 5
+    assert without_cache_fields.usage.total_tokens is None
+    assert with_cache_fields.usage is not None
+    assert with_cache_fields.usage.input_tokens == 130
+    assert with_cache_fields.usage.cached_input_tokens == 30
+    assert with_cache_fields.usage.total_tokens == 135
+
+
+async def test_hermes_stop_unregisters_the_agent_usage_observer():
+    agent = _UsageRecordingAgent([])
+    runtime = _usage_recording_runtime(agent)
+    assert agent in adapter._USAGE_OBSERVERS
+
+    await runtime.stop()
+
+    assert agent not in adapter._USAGE_OBSERVERS
+
+
+@pytest.mark.parametrize("drift", ["replaced", "not_called"])
+def test_hermes_usage_observer_rejects_unknown_usage_call_site(monkeypatch, drift):
+    from agent import turn_response_check
+    from agent import turn_usage
+
+    monkeypatch.setattr(
+        turn_response_check, "record_response_usage", turn_usage.record_response_usage
+    )
+    if drift == "replaced":
+        monkeypatch.setattr(
+            turn_response_check, "record_response_usage", lambda *args, **kwargs: None
+        )
+    else:
+        monkeypatch.setattr(
+            turn_response_check, "check_api_response", lambda *args, **kwargs: None
+        )
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        adapter._install_usage_observer()
+
+    assert raised.value.code == "hermes_usage_accounting_unsupported"
 
 
 @pytest.mark.parametrize(

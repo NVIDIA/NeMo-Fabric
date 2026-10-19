@@ -559,7 +559,7 @@ test("retries Relay cleanup when gateway shutdown fails", async () => {
 });
 
 test("reports the invocation's tokens with cache reads and writes inside the input", async () => {
-  const usage = { input: 100, output: 40, cacheRead: 300, cacheWrite: 20 };
+  const usage = { input: 420, cacheRead: 300, output: 40 };
   const runtime = new PiAdapterRuntime({
     async create() {
       return {
@@ -585,10 +585,7 @@ test("reports the invocation's tokens with cache reads and writes inside the inp
 });
 
 test("reports only the token counts the prompt's provider reported", async () => {
-  const outcomes = [
-    { input: 100, cacheRead: 30, cacheWrite: 0 },
-    { output: 5 },
-  ];
+  const outcomes = [{ input: 130, cacheRead: 30 }, { output: 5 }, { input: 70, output: 7 }];
   const runtime = new PiAdapterRuntime({
     async create() {
       let turnCount = 0;
@@ -606,6 +603,7 @@ test("reports only the token counts the prompt's provider reported", async () =>
   await runtime.start(startInput());
   const inputOnly = await runtime.invoke({ input: "one" }, context);
   const outputOnly = await runtime.invoke({ input: "two" }, context);
+  const noCacheDetail = await runtime.invoke({ input: "three" }, context);
   await runtime.stop();
 
   assert.deepEqual(inputOnly.usage, {
@@ -614,4 +612,10 @@ test("reports only the token counts the prompt's provider reported", async () =>
     input_tokens_include_cache: true,
   });
   assert.deepEqual(outputOnly.usage, { output_tokens: 5 });
+  assert.deepEqual(noCacheDetail.usage, {
+    input_tokens: 70,
+    input_tokens_include_cache: true,
+    output_tokens: 7,
+    total_tokens: 77,
+  });
 });

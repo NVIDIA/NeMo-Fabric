@@ -15,6 +15,8 @@ import inspect
 import logging
 import os
 import sys
+import weakref
+from collections.abc import Callable
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -71,8 +73,8 @@ class HermesRuntime:
         # from this baseline. A counter missing from it has no baseline.
         self._session_token_totals: dict[str, int] = _fresh_session_totals()
         self._usage_less_responses = 0
-        # Provider responses whose usage left out the input or output count.
-        self._unreported_counts = {"input": 0, "output": 0}
+        # Provider responses whose usage left out a count, by count.
+        self._unreported_counts = dict.fromkeys(_REPORTED_COUNTS, 0)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -386,10 +388,11 @@ class HermesRuntime:
         usage, self._session_token_totals = _invocation_usage(
             result,
             previous_totals,
-            input_reported=self._unreported_counts["input"]
-            == unreported_before["input"],
-            output_reported=self._unreported_counts["output"]
-            == unreported_before["output"],
+            unreported=frozenset(
+                count
+                for count, responses in self._unreported_counts.items()
+                if responses != unreported_before[count]
+            ),
         )
         if self._usage_less_responses != usage_less_before:
             # A provider response without usage added no tokens, so the
@@ -429,34 +432,24 @@ class HermesRuntime:
         compressor.note_usage_less_response = count_and_note
 
     def _count_unreported_counts(self, agent: Any) -> None:
-        """Count the agent's provider responses whose usage left out the input
-        or the output count.
+        """Count the agent's provider responses whose usage left out a count.
 
         Hermes reads a missing count as 0, so its counters cannot tell an
-        omitted count from a reported zero. Hermes' turn loop passes every
-        response to ``agent.turn_response_check.record_response_usage``, so
-        the adapter wraps that call and reads the raw usage before Hermes
-        normalizes it. Responses of other agents, such as delegated
-        subagents, are not counted: their tokens never reach this agent's
-        counters. The lifecycle host serves one runtime per process, so the
-        wrapper is installed once.
+        omitted count from a reported zero, and Hermes passes the raw usage to
+        no per-agent hook. The adapter therefore registers the agent with a
+        process-wide wrapper around the function Hermes' turn loop calls for
+        each response; see ``_install_usage_observer``.
         """
-        from agent import turn_response_check
+        _install_usage_observer()
 
-        record_response_usage = turn_response_check.record_response_usage
-
-        def count_and_record(
-            usage_agent: Any, response: Any, *args: Any, **kwargs: Any
-        ) -> Any:
+        def count_unreported(response: Any) -> None:
             usage = getattr(response, "usage", None)
             # A response without usage is counted by the compressor hook.
-            if usage_agent is agent and usage:
-                for count, fields in _RAW_COUNT_FIELDS.items():
-                    if not any(_is_reported_count(usage, field) for field in fields):
-                        self._unreported_counts[count] += 1
-            return record_response_usage(usage_agent, response, *args, **kwargs)
+            if usage:
+                for count in _omitted_counts(agent, usage):
+                    self._unreported_counts[count] += 1
 
-        turn_response_check.record_response_usage = count_and_record
+        _USAGE_OBSERVERS[agent] = count_unreported
 
     async def _authenticate_mcp_servers(self) -> None:
         if self._mcp_authentication_checked:
@@ -573,6 +566,8 @@ class HermesRuntime:
 
         agent = self._agent
         session_db = self._session_db
+        if agent is not None:
+            _USAGE_OBSERVERS.pop(agent, None)
         had_mcp_servers = bool(self._hermes_config.get("mcp_servers"))
         had_relay_plugin = self._relay_plugin_config_path is not None
         self._agent = None
@@ -678,18 +673,114 @@ _SESSION_TOKEN_KEYS = (
 )
 
 
-# The raw usage fields Hermes reads for a response's input and output counts.
-# Chat Completions usage may use either spelling; Anthropic Messages and
-# Responses usage carry only input_tokens and output_tokens.
-_RAW_COUNT_FIELDS = {
-    "input": ("prompt_tokens", "input_tokens"),
-    "output": ("completion_tokens", "output_tokens"),
+# Response observers by Hermes agent, called before Hermes records a
+# response's usage. Delegated subagents are never registered: their tokens
+# never reach the registered agent's counters.
+_USAGE_OBSERVERS: weakref.WeakKeyDictionary[Any, Callable[[Any], None]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _observed_record_response_usage(
+    agent: Any, response: Any, *args: Any, **kwargs: Any
+) -> Any:
+    """Show ``response`` to the agent's observer, then record it as Hermes does."""
+    from agent import turn_usage
+
+    observer = _USAGE_OBSERVERS.get(agent)
+    if observer is not None:
+        observer(response)
+    return turn_usage.record_response_usage(agent, response, *args, **kwargs)
+
+
+def _install_usage_observer() -> None:
+    """Route Hermes' per-response usage accounting through the observers.
+
+    ``agent.turn_response_check.check_api_response`` calls
+    ``record_response_usage`` for each provider response, looked up as a
+    global of its module, and that function is the first place the raw usage
+    reaches before Hermes normalizes it. The wrapper replaces that module
+    global once per process and always delegates to Hermes' function. If
+    Hermes no longer calls usage accounting through that name, start fails
+    rather than reporting omitted counts as measured zeros.
+    """
+    from agent import turn_response_check
+    from agent import turn_usage
+
+    current = turn_response_check.record_response_usage
+    if current is _observed_record_response_usage:
+        return
+    if (
+        current is not turn_usage.record_response_usage
+        or "record_response_usage"
+        not in turn_response_check.check_api_response.__code__.co_names
+    ):
+        raise lifecycle.LifecycleError(
+            "hermes_usage_accounting_unsupported",
+            "This Hermes version records response usage outside "
+            "agent.turn_response_check.record_response_usage",
+        )
+    turn_response_check.record_response_usage = _observed_record_response_usage
+
+
+_REPORTED_COUNTS = ("input", "cached", "output")
+# The raw usage fields Hermes' normalize_usage reads for each count, by the
+# usage shape it picks (agent/usage_pricing.py). A count is reported when every
+# field of one alternative is present. Anthropic's input_tokens excludes cache
+# reads and writes, so its input needs both cache fields, as in the Claude
+# adapter. The other shapes' input count includes the cache, so a missing cache
+# detail leaves only the cached count unknown.
+_ANTHROPIC_FIELDS = {
+    "input": (
+        ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"),
+    ),
+    "cached": (("cache_read_input_tokens",),),
+    "output": (("output_tokens",),),
+}
+_RESPONSES_FIELDS = {
+    "input": (("input_tokens",),),
+    "cached": (("input_tokens_details.cached_tokens",),),
+    "output": (("output_tokens",),),
+}
+_CHAT_FIELDS = {
+    "input": (("prompt_tokens",), ("input_tokens",)),
+    "cached": (
+        ("prompt_tokens_details.cached_tokens",),
+        ("cache_read_input_tokens",),
+        ("prompt_cache_hit_tokens",),
+        ("cached_tokens",),
+    ),
+    "output": (("completion_tokens",), ("output_tokens",)),
 }
 
 
-def _is_reported_count(usage: Any, field: str) -> bool:
-    """Return whether the provider's raw usage reports ``field`` as a count."""
-    value = usage.get(field) if isinstance(usage, dict) else getattr(usage, field, None)
+def _omitted_counts(agent: Any, usage: Any) -> list[str]:
+    """Return the counts that the provider's raw ``usage`` left out."""
+    mode = str(getattr(agent, "api_mode", None) or "").strip().lower()
+    provider = str(getattr(agent, "provider", None) or "").strip().lower()
+    if mode == "anthropic_messages" or provider == "anthropic":
+        fields = _ANTHROPIC_FIELDS
+    elif mode == "codex_responses":
+        fields = _RESPONSES_FIELDS
+    else:
+        fields = _CHAT_FIELDS
+    return [
+        count
+        for count, alternatives in fields.items()
+        if not any(
+            all(_is_reported_count(usage, path) for path in alternative)
+            for alternative in alternatives
+        )
+    ]
+
+
+def _is_reported_count(usage: Any, path: str) -> bool:
+    """Return whether the raw usage reports the dotted ``path`` as a count."""
+    value = usage
+    for field in path.split("."):
+        value = (
+            value.get(field) if isinstance(value, dict) else getattr(value, field, None)
+        )
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
@@ -702,8 +793,7 @@ def _invocation_usage(
     result: dict[str, Any],
     previous_totals: dict[str, int],
     *,
-    input_reported: bool = True,
-    output_reported: bool = True,
+    unreported: frozenset[str] = frozenset(),
 ) -> tuple[AgentUsage | None, dict[str, int]]:
     """Return this invocation's usage and the session totals to keep as baseline.
 
@@ -712,9 +802,10 @@ def _invocation_usage(
     result or from ``previous_totals`` (no baseline: the previous invocation
     failed or its result held no counters), or that went down, is unknown for
     this invocation. The usage therefore never holds a whole-session total or
-    another invocation's tokens. ``input_reported`` or ``output_reported`` is
-    False when a provider response of this invocation left that count out,
-    which Hermes counted as 0, so that count and the total are unknown.
+    another invocation's tokens. ``unreported`` names the counts ("input",
+    "cached", "output") that a provider response of this invocation left out
+    and Hermes counted as 0. Those counts are unknown, and so is the total when
+    input or output is.
     """
     totals = {
         key: value
@@ -729,7 +820,7 @@ def _invocation_usage(
         if key in previous_totals and value >= previous_totals[key]
     }
     fields: dict[str, Any] = {}
-    if input_reported and all(
+    if "input" not in unreported and all(
         key in change
         for key in ("input_tokens", "cache_read_tokens", "cache_write_tokens")
     ):
@@ -738,9 +829,10 @@ def _invocation_usage(
             + change["cache_read_tokens"]
             + change["cache_write_tokens"]
         )
-        fields["cached_input_tokens"] = change["cache_read_tokens"]
+        if "cached" not in unreported:
+            fields["cached_input_tokens"] = change["cache_read_tokens"]
         fields["input_tokens_include_cache"] = True
-    if output_reported and "output_tokens" in change:
+    if "output" not in unreported and "output_tokens" in change:
         fields["output_tokens"] = change["output_tokens"]
     if "input_tokens" in fields and "output_tokens" in fields:
         fields["total_tokens"] = fields["input_tokens"] + fields["output_tokens"]

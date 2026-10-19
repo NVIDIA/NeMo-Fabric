@@ -20,16 +20,15 @@ import type { PiRelayRuntime } from "./relay.js";
 export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | string;
 
 /**
- * Token counts Pi recorded during one prompt. Pi's `input` excludes cache
- * reads and writes. `input`, `cacheRead` and `cacheWrite` are absent together
- * when a call's provider left its input count unreported, and `output` is
- * absent when one left its output count unreported.
+ * Token counts Pi recorded during one prompt. Each count is absent when a
+ * call's provider left it unreported.
  */
 export interface PiTokenUsage {
+  /** Input tokens, including cache reads and cache writes. */
   input?: number;
-  output?: number;
+  /** Cache reads, part of `input`. */
   cacheRead?: number;
-  cacheWrite?: number;
+  output?: number;
 }
 
 export interface PiPromptOutcome {
@@ -69,21 +68,13 @@ function failed(code: string, message: string): AgentRunResult {
  * both input and output are known.
  */
 function agentUsage(usage: PiTokenUsage | undefined): AgentUsage | undefined {
-  if (usage === undefined) {
+  if (usage === undefined || (usage.input === undefined && usage.output === undefined)) {
     return undefined;
   }
-  const { output, cacheRead, cacheWrite } = usage;
-  const input =
-    usage.input !== undefined && cacheRead !== undefined && cacheWrite !== undefined
-      ? usage.input + cacheRead + cacheWrite
-      : undefined;
-  if (input === undefined && output === undefined) {
-    return undefined;
-  }
+  const { input, cacheRead, output } = usage;
   return {
-    ...(input === undefined
-      ? {}
-      : { input_tokens: input, cached_input_tokens: cacheRead, input_tokens_include_cache: true }),
+    ...(input === undefined ? {} : { input_tokens: input, input_tokens_include_cache: true }),
+    ...(input === undefined || cacheRead === undefined ? {} : { cached_input_tokens: cacheRead }),
     ...(output === undefined ? {} : { output_tokens: output }),
     ...(input === undefined || output === undefined ? {} : { total_tokens: input + output }),
   };

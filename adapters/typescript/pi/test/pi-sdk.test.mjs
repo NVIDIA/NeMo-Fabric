@@ -11,10 +11,11 @@ import { createServer } from "node:http";
 import {
   addEventUsage,
   addUsage,
-  noteReportedCounts,
+  noteReportedFields,
   buildCatalogModel,
   modelAwareCompactionReserveTokens,
   PiSdkSessionFactory,
+  reportedCountsFrom,
   resolveCustomTools,
   selectPiMcpServers,
   withCustomBaseUrl,
@@ -1446,15 +1447,16 @@ test("accepts a well-formed extensions.cost", async () => {
 
 // Lookups for what a model call's provider reported: every count, or a call
 // whose raw stream events the adapter never saw.
-const allReported = () => ({ input: true, output: true });
+const allReported = () => ({ input: true, cacheRead: true, output: true });
 const unseen = () => undefined;
+// A prompt's running total before any call, with input counting the cache.
+const NO_TOKENS = { input: 0, cacheRead: 0, output: 0 };
 
 test("sums each assistant message's usage and drops an incomplete one", () => {
-  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  const first = addUsage(zero, { input: 10, output: 2, cacheRead: 5, cacheWrite: 1, totalTokens: 18 });
+  const first = addUsage(NO_TOKENS, { input: 10, output: 2, cacheRead: 5, cacheWrite: 1, totalTokens: 18 });
   const second = addUsage(first, { input: 3, output: 4, cacheRead: 0, cacheWrite: 0, reasoning: 2 });
 
-  assert.deepEqual(second, { input: 13, output: 6, cacheRead: 5, cacheWrite: 1 });
+  assert.deepEqual(second, { input: 19, cacheRead: 5, output: 6 });
   assert.equal(addUsage(second, { input: 1, output: 1 }), undefined);
   assert.equal(addUsage(undefined, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }), undefined);
 });
@@ -1471,31 +1473,25 @@ test("counts the tokens Pi bills outside assistant messages", () => {
     { type: "turn_start" },
   ];
 
-  const total = events.reduce(
-    (sum, event) => addEventUsage(sum, event, allReported),
-    { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  );
+  const total = events.reduce((sum, event) => addEventUsage(sum, event, allReported), NO_TOKENS);
 
-  assert.deepEqual(total, { input: 135, output: 4, cacheRead: 0, cacheWrite: 0 });
+  assert.deepEqual(total, { input: 135, cacheRead: 0, output: 4 });
 });
 
 test("a compaction without a usage report leaves the prompt's tokens unknown", () => {
-  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-
   assert.equal(
-    addEventUsage(zero, { type: "compaction_end", aborted: false, result: { summary: "s" } }, allReported),
+    addEventUsage(NO_TOKENS, { type: "compaction_end", aborted: false, result: { summary: "s" } }, allReported),
     undefined,
   );
-  assert.equal(addEventUsage(zero, { type: "compaction_end", aborted: true }, allReported), undefined);
+  assert.equal(addEventUsage(NO_TOKENS, { type: "compaction_end", aborted: true }, allReported), undefined);
 });
 
 test("an aborted assistant message leaves the prompt's tokens unknown", () => {
-  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
   assert.equal(
     addEventUsage(
-      zero,
+      NO_TOKENS,
       { type: "message_end", message: { role: "assistant", stopReason: "aborted", usage } },
       allReported,
     ),
@@ -1504,76 +1500,108 @@ test("an aborted assistant message leaves the prompt's tokens unknown", () => {
 });
 
 test("a model call's counts are known only as far as its provider reported them", () => {
-  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   const zeroFilled = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
   const assistant = { type: "message_end", message: { role: "assistant", usage: zeroFilled } };
-  const inputOnly = () => ({ input: true, output: false });
+  const reported = (counts) => () => ({ input: false, cacheRead: false, output: false, ...counts });
 
   // Pi fills an omitted count with 0, so a call the adapter did not see is unknown.
-  assert.equal(addEventUsage(zero, assistant, unseen), undefined);
-  assert.equal(addEventUsage(zero, { type: "compaction_end", aborted: false, result: { usage: zeroFilled } }, unseen), undefined);
-  assert.equal(addEventUsage(zero, { type: "entry_appended", entry: { type: "usage", usage: zeroFilled } }, unseen), undefined);
+  assert.equal(addEventUsage(NO_TOKENS, assistant, unseen), undefined);
+  assert.equal(
+    addEventUsage(NO_TOKENS, { type: "compaction_end", aborted: false, result: { usage: zeroFilled } }, unseen),
+    undefined,
+  );
+  assert.equal(
+    addEventUsage(NO_TOKENS, { type: "entry_appended", entry: { type: "usage", usage: zeroFilled } }, unseen),
+    undefined,
+  );
   // A reported zero is a measured zero; an omitted count stays unknown.
-  assert.deepEqual(addEventUsage(zero, assistant, allReported), zero);
-  assert.deepEqual(addEventUsage(zero, assistant, inputOnly), { input: 0, cacheRead: 0, cacheWrite: 0 });
-  assert.equal(addEventUsage(zero, assistant, () => ({ input: false, output: false })), undefined);
+  assert.deepEqual(addEventUsage(NO_TOKENS, assistant, allReported), NO_TOKENS);
+  assert.deepEqual(addEventUsage(NO_TOKENS, assistant, reported({ input: true, cacheRead: true })), {
+    input: 0,
+    cacheRead: 0,
+  });
+  assert.deepEqual(addEventUsage(NO_TOKENS, assistant, reported({ input: true, output: true })), {
+    input: 0,
+    output: 0,
+  });
+  assert.equal(addEventUsage(NO_TOKENS, assistant, reported({ cacheRead: true })), undefined);
   // A tool reports its own usage, so a zero there is a measured zero.
   assert.deepEqual(
-    addEventUsage(zero, { type: "message_end", message: { role: "toolResult", usage: zeroFilled } }, unseen),
-    zero,
+    addEventUsage(NO_TOKENS, { type: "message_end", message: { role: "toolResult", usage: zeroFilled } }, unseen),
+    NO_TOKENS,
   );
 });
 
 test("reads which counts each wire protocol's raw usage reports", () => {
   const counts = (api, events) => {
-    const reported = { input: false, output: false };
+    const seen = new Set();
     for (const event of events) {
-      noteReportedCounts(reported, api, event);
+      noteReportedFields(seen, api, event);
     }
-    return reported;
+    return reportedCountsFrom(api, seen);
   };
+  const anthropicStart = (usage) => ({ type: "message_start", message: { usage } });
+  const anthropicUsage = { input_tokens: 10, cache_read_input_tokens: 4, cache_creation_input_tokens: 0 };
 
-  // Anthropic keeps message_start's counts and takes the counts a delta carries.
+  // Anthropic input excludes the cache, so it needs both cache fields, and only
+  // a message_delta reports the output count.
   assert.deepEqual(
     counts("anthropic-messages", [
-      { type: "message_start", message: { usage: { input_tokens: 10, output_tokens: 1 } } },
+      anthropicStart({ ...anthropicUsage, output_tokens: 1 }),
       { type: "message_delta", usage: { output_tokens: 5 } },
     ]),
-    { input: true, output: true },
+    { input: true, cacheRead: true, output: true },
   );
   assert.deepEqual(
     counts("anthropic-messages", [
-      { type: "message_start", message: { usage: { output_tokens: 1 } } },
+      anthropicStart({ input_tokens: 10, output_tokens: 1 }),
       { type: "message_delta", usage: { output_tokens: 5 } },
     ]),
-    { input: false, output: true },
+    { input: false, cacheRead: false, output: true },
   );
-  // The other protocols replace a call's usage with each report.
   assert.deepEqual(
-    counts("openai-completions", [{ choices: [], usage: { prompt_tokens: 7 } }, { choices: [], usage: { completion_tokens: 2 } }]),
-    { input: false, output: true },
+    counts("anthropic-messages", [anthropicStart({ ...anthropicUsage, output_tokens: 1 }), { type: "message_delta" }]),
+    { input: true, cacheRead: true, output: false },
+  );
+  // The other protocols replace a call's usage with each report, and their
+  // input includes the cache, so a missing cache detail leaves only it unknown.
+  assert.deepEqual(
+    counts("openai-completions", [
+      { choices: [], usage: { prompt_tokens: 7, prompt_tokens_details: { cached_tokens: 2 } } },
+      { choices: [], usage: { completion_tokens: 2 } },
+    ]),
+    { input: false, cacheRead: false, output: true },
+  );
+  assert.deepEqual(
+    counts("openai-completions", [{ choices: [], usage: { prompt_tokens: 7, prompt_tokens_details: { cached_tokens: 2 } } }]),
+    { input: true, cacheRead: true, output: false },
   );
   assert.deepEqual(
     counts("openai-responses", [{ type: "response.completed", response: { usage: { input_tokens: 3 } } }]),
-    { input: true, output: false },
+    { input: true, cacheRead: false, output: false },
   );
   assert.deepEqual(
-    counts("google-generative-ai", [{ usageMetadata: { promptTokenCount: 4, candidatesTokenCount: 0 } }]),
-    { input: true, output: true },
+    counts("google-generative-ai", [{ usageMetadata: { promptTokenCount: 4, thoughtsTokenCount: 3 } }]),
+    { input: true, cacheRead: false, output: true },
   );
   assert.deepEqual(
     counts("bedrock-converse-stream", [{ metadata: { usage: { outputTokens: 6 } } }]),
-    { input: false, output: true },
+    { input: false, cacheRead: false, output: true },
   );
+  // A protocol the adapter does not know reports nothing it can trust.
+  assert.deepEqual(counts("custom-api", [{ usage: { prompt_tokens: 1, completion_tokens: 1 } }]), {
+    input: false,
+    cacheRead: false,
+    output: false,
+  });
 });
 
 test("a split-turn compaction leaves the prompt's tokens unknown", () => {
-  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   const prepared = (preparation) => ({ type: "session_before_compact", preparation });
 
-  assert.deepEqual(addEventUsage(zero, prepared({ isSplitTurn: false }), allReported), zero);
-  assert.equal(addEventUsage(zero, prepared({ isSplitTurn: true }), allReported), undefined);
-  assert.equal(addEventUsage(zero, prepared(undefined), allReported), undefined);
+  assert.deepEqual(addEventUsage(NO_TOKENS, prepared({ isSplitTurn: false }), allReported), NO_TOKENS);
+  assert.equal(addEventUsage(NO_TOKENS, prepared({ isSplitTurn: true }), allReported), undefined);
+  assert.equal(addEventUsage(NO_TOKENS, prepared(undefined), allReported), undefined);
 });
 
 test("a retried compaction summary leaves the prompt's tokens unknown", () => {
@@ -1586,10 +1614,7 @@ test("a retried compaction summary leaves the prompt's tokens unknown", () => {
   ];
 
   assert.equal(
-    events.reduce(
-      (sum, event) => addEventUsage(sum, event, allReported),
-      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    ),
+    events.reduce((sum, event) => addEventUsage(sum, event, allReported), NO_TOKENS),
     undefined,
   );
 });
@@ -1666,9 +1691,10 @@ test(
       ["read the note", "again"],
     );
 
-    // A reported zero output count stays a measured zero.
-    assert.deepEqual(first.usage, { input: 210, output: 10, cacheRead: 40, cacheWrite: 0 });
-    assert.deepEqual(second.usage, { input: 300, output: 25, cacheRead: 0, cacheWrite: 0 });
+    // A reported zero output count stays a measured zero. The second call sent
+    // no cache details, so the prompt's cache reads are unknown.
+    assert.deepEqual(first.usage, { input: 250, output: 10 });
+    assert.deepEqual(second.usage, { input: 300, output: 25 });
   },
 );
 
@@ -1690,7 +1716,7 @@ test(
     assert.equal(omitted.usage, undefined);
     assert.equal(mixed.text, "partial");
     assert.equal(mixed.usage, undefined);
-    assert.deepEqual(reported.usage, { input: 50, output: 5, cacheRead: 0, cacheWrite: 0 });
+    assert.deepEqual(reported.usage, { input: 50, output: 5 });
   },
 );
 
@@ -1702,7 +1728,7 @@ test(
       [
         { content: "input only", usage: { prompt_tokens: 100 } },
         { content: "output only", usage: { completion_tokens: 5 } },
-        { content: "zeros", usage: { prompt_tokens: 0, completion_tokens: 0 } },
+        { content: "zeros", usage: { prompt_tokens: 0, completion_tokens: 0, prompt_tokens_details: { cached_tokens: 0 } } },
         { readNote: true, usage: { prompt_tokens: 60 } },
         { content: "both", usage: { prompt_tokens: 70, completion_tokens: 7 } },
       ],
@@ -1710,11 +1736,11 @@ test(
     );
 
     // Pi fills an omitted count with 0; the provider's raw report decides.
-    assert.deepEqual(inputOnly.usage, { input: 100, cacheRead: 0, cacheWrite: 0 });
+    assert.deepEqual(inputOnly.usage, { input: 100 });
     assert.deepEqual(outputOnly.usage, { output: 5 });
-    assert.deepEqual(zeros.usage, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+    assert.deepEqual(zeros.usage, { input: 0, cacheRead: 0, output: 0 });
     // One call without an output count leaves the prompt's output unknown.
-    assert.deepEqual(afterPartial.usage, { input: 130, cacheRead: 0, cacheWrite: 0 });
+    assert.deepEqual(afterPartial.usage, { input: 130 });
   },
 );
 
@@ -1735,7 +1761,7 @@ test(
       { context_window: 100_000, max_tokens: 1_000 },
     );
 
-    assert.deepEqual(compacted.usage, { input: 90_220, output: 11, cacheRead: 0, cacheWrite: 0 });
+    assert.deepEqual(compacted.usage, { input: 90_220, output: 11 });
   },
 );
 

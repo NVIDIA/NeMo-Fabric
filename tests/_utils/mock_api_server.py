@@ -11,6 +11,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import uvicorn
 
+# Chat-completion usage the mock reports unless a scenario sets another one.
+_ZERO_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
 
 @contextmanager
 def mock_api_server(port: int) -> Iterator[str]:
@@ -18,7 +21,8 @@ def mock_api_server(port: int) -> Iterator[str]:
     Context manager for a mock API server.
 
     Use the /_requests endpoint to inspect captured chat-completion payloads after a test action.
-    Use the /_scenario endpoint to configure a status code or ordered tool calls for subsequent requests.
+    Use the /_scenario endpoint to configure a status code, ordered tool calls, or the
+    chat-completion usage object for subsequent requests.
     Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
@@ -36,6 +40,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.tool_calls = []
         app.state.tool_call_index = 0
         app.state.mcp_authorization_headers = []
+        app.state.usage = dict(_ZERO_USAGE)
 
     reset_state()
 
@@ -65,7 +70,7 @@ def mock_api_server(port: int) -> Iterator[str]:
 
     @app.post("/_scenario")
     async def scenario(request: Request) -> dict[str, object]:
-        """Configure the status code or ordered tool calls for subsequent requests."""
+        """Configure the status code, tool calls or usage for subsequent requests."""
 
         payload = await request.json()
         app.state.status_code = int(payload.get("status_code", 200))
@@ -74,6 +79,7 @@ def mock_api_server(port: int) -> Iterator[str]:
             [tool_call] if tool_call is not None else []
         )
         app.state.tool_call_index = 0
+        app.state.usage = payload.get("usage", dict(_ZERO_USAGE))
         return {
             "status_code": app.state.status_code,
             "tool_call": tool_call,
@@ -179,7 +185,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         content = f"echo user_count={len(user_messages)} latest={latest}"
         if payload.get("stream") is True:
             return StreamingResponse(
-                _stream_chat_completion(payload, content),
+                _stream_chat_completion(payload, content, app.state.usage),
                 media_type="text/event-stream",
             )
 
@@ -196,11 +202,7 @@ def mock_api_server(port: int) -> Iterator[str]:
                         "finish_reason": "stop",
                     }
                 ],
-                "usage": {
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
-                },
+                "usage": app.state.usage,
             }
         )
 
@@ -278,7 +280,9 @@ def mock_api_server(port: int) -> Iterator[str]:
         thread.join(timeout=5)
 
 
-def _stream_chat_completion(payload: dict[str, object], content: str) -> Iterator[str]:
+def _stream_chat_completion(
+    payload: dict[str, object], content: str, usage: dict[str, object]
+) -> Iterator[str]:
     model = payload.get("model", "fabric-echo")
     chunks = [
         {
@@ -325,19 +329,15 @@ def _stream_chat_completion(payload: dict[str, object], content: str) -> Iterato
     for chunk in chunks:
         yield f"data: {json.dumps(chunk)}\n\n"
     if payload.get("stream_options") == {"include_usage": True}:
-        usage = {
+        usage_chunk = {
             "id": "chatcmpl-fabric-test",
             "object": "chat.completion.chunk",
             "created": 0,
             "model": model,
             "choices": [],
-            "usage": {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0,
-            },
+            "usage": usage,
         }
-        yield f"data: {json.dumps(usage)}\n\n"
+        yield f"data: {json.dumps(usage_chunk)}\n\n"
     yield "data: [DONE]\n\n"
 
 

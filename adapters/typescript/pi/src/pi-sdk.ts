@@ -69,26 +69,30 @@ interface PiToolFactoryContext {
   workspace: string;
 }
 
-const NO_TOKENS: PiTokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+const NO_TOKENS: PiTokenUsage = { input: 0, cacheRead: 0, output: 0 };
 
 /** Which counts of one model call the provider reported before Pi filled the rest with 0. */
 export interface ReportedCounts {
   input: boolean;
+  cacheRead: boolean;
   output: boolean;
 }
 
 /** What the provider reported for the model call that produced a usage object, if the adapter saw it. */
 export type ReportedCountsLookup = (usage: unknown) => ReportedCounts | undefined;
 
-const BOTH_REPORTED: ReportedCounts = { input: true, output: true };
+const ALL_REPORTED: ReportedCounts = { input: true, cacheRead: true, output: true };
 
-/** One call's four token counts, or undefined unless each is a non-negative safe integer. */
+/**
+ * One call's counts from Pi's usage, with input counting its cache reads and
+ * writes, or undefined unless Pi's four counts are non-negative safe integers.
+ */
 function callCounts(usage: unknown): Required<PiTokenUsage> | undefined {
   if (typeof usage !== "object" || usage === null) {
     return undefined;
   }
   const counts = usage as Record<string, unknown>;
-  const count = (name: keyof PiTokenUsage): number | undefined => {
+  const count = (name: string): number | undefined => {
     const value = counts[name];
     return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
   };
@@ -99,25 +103,26 @@ function callCounts(usage: unknown): Required<PiTokenUsage> | undefined {
   if (input === undefined || output === undefined || cacheRead === undefined || cacheWrite === undefined) {
     return undefined;
   }
-  return { input, output, cacheRead, cacheWrite };
+  return { input: input + cacheRead + cacheWrite, cacheRead, output };
 }
 
 /**
- * Add a call's counts to a prompt's running total. The input side (input with
- * its cache reads and writes) and the output stay known only while every call
- * reported them; the total is unknown once neither is.
+ * Add a call's counts to a prompt's running total. Each count stays known only
+ * while every call reported it; the cache reads also need the input. The total
+ * is unknown once neither input nor output is known.
  */
 function sumCounts(total: PiTokenUsage, call: Required<PiTokenUsage>, reported: ReportedCounts): PiTokenUsage | undefined {
   const sum: PiTokenUsage = {};
-  if (reported.input && total.input !== undefined && total.cacheRead !== undefined && total.cacheWrite !== undefined) {
+  if (reported.input && total.input !== undefined) {
     sum.input = total.input + call.input;
-    sum.cacheRead = total.cacheRead + call.cacheRead;
-    sum.cacheWrite = total.cacheWrite + call.cacheWrite;
+    if (reported.cacheRead && total.cacheRead !== undefined) {
+      sum.cacheRead = total.cacheRead + call.cacheRead;
+    }
   }
   if (reported.output && total.output !== undefined) {
     sum.output = total.output + call.output;
   }
-  return Object.keys(sum).length === 0 ? undefined : sum;
+  return sum.input === undefined && sum.output === undefined ? undefined : sum;
 }
 
 /**
@@ -126,7 +131,7 @@ function sumCounts(total: PiTokenUsage, call: Required<PiTokenUsage>, reported: 
  */
 export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTokenUsage | undefined {
   const call = callCounts(usage);
-  return total === undefined || call === undefined ? undefined : sumCounts(total, call, BOTH_REPORTED);
+  return total === undefined || call === undefined ? undefined : sumCounts(total, call, ALL_REPORTED);
 }
 
 /**
@@ -134,8 +139,8 @@ export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTok
  * parsers fill a count the provider omitted with 0, so `reportedCounts` says
  * which counts the provider actually reported, from the raw stream events the
  * session recorded for that call. A count the provider omitted is unknown for
- * the whole prompt, and so is every count of a call whose raw events the
- * adapter did not see. A reported zero stays a measured zero.
+ * the whole prompt, and so is every count of a call the session has no
+ * record for, such as a cache warm-up. A reported zero stays a measured zero.
  */
 function addModelCallUsage(
   total: PiTokenUsage | undefined,
@@ -203,29 +208,106 @@ export function addEventUsage(
   }
 }
 
-/** A field of a raw provider event, or undefined when `value` is not an object. */
-function rawField(value: unknown, name: string): unknown {
-  return typeof value === "object" && value !== null ? (value as Record<string, unknown>)[name] : undefined;
+/** The value at a dotted `path` of a raw provider event, or undefined. */
+function rawField(value: unknown, path: string): unknown {
+  let field = value;
+  for (const name of path.split(".")) {
+    field = typeof field === "object" && field !== null ? (field as Record<string, unknown>)[name] : undefined;
+  }
+  return field;
 }
 
 /**
- * Record which counts one raw provider stream event reports, before Pi's parser
- * for the call's wire protocol fills an omitted count with 0. Each case reads
- * the fields that parser reads (`@earendil-works/pi-ai` 1.0.3). Anthropic
- * Messages keeps the counts of `message_start` and then takes only the counts a
- * `message_delta` carries, so its reports accumulate; the other protocols
- * replace a call's usage with each usage report. For Google, the output count
- * is `candidatesTokenCount`, to which Pi adds any thinking tokens.
+ * The raw usage fields Pi's parser reads for each count, by wire protocol
+ * (`@earendil-works/pi-ai` 1.0.3). Input is reported when every `input` field
+ * is present, cache reads and output when any of theirs is. Anthropic Messages
+ * and pi-messages report input without the cache, so their input also needs
+ * the cache fields, as in the Claude adapter. The other protocols' input count
+ * includes the cache, so a missing cache detail leaves only the cache reads
+ * unknown. Google output counts thinking tokens too.
  */
-export function noteReportedCounts(reported: ReportedCounts, api: string, data: unknown): void {
-  const hasCount = (usage: unknown, name: string): boolean => {
-    const value = rawField(usage, name);
-    return typeof value === "number" && Number.isFinite(value) && value >= 0;
+interface UsageFields {
+  input: string[];
+  cacheRead: string[];
+  output: string[];
+}
+const RESPONSES_FIELDS: UsageFields = {
+  input: ["input_tokens"],
+  cacheRead: ["input_tokens_details.cached_tokens"],
+  output: ["output_tokens"],
+};
+const GOOGLE_FIELDS: UsageFields = {
+  input: ["promptTokenCount"],
+  cacheRead: ["cachedContentTokenCount"],
+  output: ["candidatesTokenCount", "thoughtsTokenCount"],
+};
+const REPORTED_FIELDS: Record<string, UsageFields> = {
+  "openai-completions": {
+    input: ["prompt_tokens"],
+    cacheRead: ["prompt_tokens_details.cached_tokens", "prompt_cache_hit_tokens", "cached_tokens"],
+    output: ["completion_tokens"],
+  },
+  "mistral-conversations": {
+    input: ["prompt_tokens"],
+    cacheRead: [
+      "promptTokensDetails.cachedTokens",
+      "prompt_tokens_details.cached_tokens",
+      "promptTokenDetails.cachedTokens",
+      "prompt_token_details.cached_tokens",
+      "numCachedTokens",
+      "num_cached_tokens",
+    ],
+    output: ["completion_tokens"],
+  },
+  "openai-responses": RESPONSES_FIELDS,
+  "azure-openai-responses": RESPONSES_FIELDS,
+  "openai-codex-responses": RESPONSES_FIELDS,
+  "bedrock-converse-stream": {
+    input: ["inputTokens"],
+    cacheRead: ["cacheReadInputTokens"],
+    output: ["outputTokens"],
+  },
+  "google-generative-ai": GOOGLE_FIELDS,
+  "google-vertex": GOOGLE_FIELDS,
+  "pi-messages": {
+    input: ["input", "cacheRead", "cacheWrite"],
+    cacheRead: ["cacheRead"],
+    output: ["output"],
+  },
+  "anthropic-messages": {
+    input: ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"],
+    cacheRead: ["cache_read_input_tokens"],
+    output: ["output_tokens"],
+  },
+};
+
+/**
+ * Record the usage fields one raw provider stream event reports, in `seen`,
+ * before Pi's parser fills an omitted count with 0. Pi reads the usage where
+ * each protocol sends it. Anthropic Messages keeps the counts of
+ * `message_start` and then takes only the counts a `message_delta` carries, so
+ * its fields accumulate; its `message_start` output count is a placeholder
+ * that the delta replaces, so only a delta reports output. The other
+ * protocols replace a call's usage with each usage report.
+ */
+export function noteReportedFields(seen: Set<string>, api: string, data: unknown): void {
+  const fields = REPORTED_FIELDS[api];
+  if (fields === undefined) {
+    return;
+  }
+  const paths = [...fields.input, ...fields.cacheRead, ...fields.output];
+  const isCount = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value) && value >= 0;
+  const add = (usage: unknown, names: string[]): void => {
+    for (const path of names) {
+      if (isCount(rawField(usage, path))) {
+        seen.add(path);
+      }
+    }
   };
-  const replace = (usage: unknown, input: string, output: string): void => {
+  const replace = (usage: unknown, names = paths): void => {
     if (usage) {
-      reported.input = hasCount(usage, input);
-      reported.output = hasCount(usage, output);
+      seen.clear();
+      add(usage, names);
     }
   };
   const type = rawField(data, "type");
@@ -233,71 +315,83 @@ export function noteReportedCounts(reported: ReportedCounts, api: string, data: 
     case "openai-completions": {
       const choices = rawField(data, "choices");
       const choice = Array.isArray(choices) ? choices[0] : undefined;
-      replace(rawField(data, "usage") || rawField(choice, "usage"), "prompt_tokens", "completion_tokens");
+      replace(rawField(data, "usage") || rawField(choice, "usage"));
       return;
     }
     case "mistral-conversations":
-      replace(rawField(data, "usage"), "prompt_tokens", "completion_tokens");
+      replace(rawField(data, "usage"));
       return;
     case "openai-responses":
     case "azure-openai-responses":
     case "openai-codex-responses":
       if (type === "response.completed" || type === "response.incomplete" || type === "response.done") {
-        replace(rawField(rawField(data, "response"), "usage"), "input_tokens", "output_tokens");
+        replace(rawField(data, "response.usage"));
       }
       return;
     case "bedrock-converse-stream":
-      replace(rawField(rawField(data, "metadata"), "usage"), "inputTokens", "outputTokens");
+      replace(rawField(data, "metadata.usage"));
       return;
     case "google-generative-ai":
     case "google-vertex":
-      replace(rawField(data, "usageMetadata"), "promptTokenCount", "candidatesTokenCount");
+      replace(rawField(data, "usageMetadata"));
       return;
     case "pi-messages":
       if (type === "done" || type === "error") {
-        replace(rawField(data, "usage"), "input", "output");
+        replace(rawField(data, "usage"));
       }
       return;
     case "anthropic-messages":
       if (type === "message_start") {
-        replace(rawField(rawField(data, "message"), "usage"), "input_tokens", "output_tokens");
-      } else if (type === "message_delta") {
-        const usage = rawField(data, "usage");
-        if (usage) {
-          reported.input ||= hasCount(usage, "input_tokens");
-          reported.output ||= hasCount(usage, "output_tokens");
-        }
+        replace(rawField(data, "message.usage"), [...fields.input, ...fields.cacheRead]);
+      } else if (type === "message_delta" && rawField(data, "usage")) {
+        add(rawField(data, "usage"), paths);
       }
       return;
   }
 }
 
+/** Which counts a call's provider reported, from the raw usage fields it sent. */
+export function reportedCountsFrom(api: string, seen: ReadonlySet<string>): ReportedCounts {
+  const fields = REPORTED_FIELDS[api];
+  if (fields === undefined) {
+    return { input: false, cacheRead: false, output: false };
+  }
+  return {
+    input: fields.input.every((path) => seen.has(path)),
+    cacheRead: fields.cacheRead.some((path) => seen.has(path)),
+    output: fields.output.some((path) => seen.has(path)),
+  };
+}
+
 /**
  * Record which counts each model call's provider reported, keyed by the call's
- * final usage object. Pi hands every raw provider stream event to
- * `onProviderStreamEvent` before parsing it. The agent loop and compaction
- * summaries both call the agent's stream function, so wrapping it covers both,
- * and Pi passes the final usage object unchanged to `message_end` and
- * `compaction_end`. The record is stored before Pi emits either event. Pi's
- * cache warmer replays a request with its options but sends it through its own
- * model runtime, so the record is copied when the call ends and a warm-up's
- * usage entry has no record.
+ * final usage object. Pi hands every raw provider stream event, with the model
+ * that served it, to `onProviderStreamEvent` before parsing it. The agent loop
+ * and compaction summaries both call the agent's stream function, so wrapping
+ * it covers both, and Pi passes the final usage object unchanged to
+ * `message_end` and `compaction_end`. The record is stored before Pi emits
+ * either event. Pi's cache warmer replays a request with the same options, so
+ * a warm-up's raw events reach this observer too, but the warm-up runs outside
+ * the agent's stream function: its usage entry has no record and stays unknown.
+ * The record is copied when the call ends so a later warm-up cannot change it.
  */
-function recordReportedCounts(agent: AgentSession["agent"], reportedCounts: WeakMap<object, ReportedCounts>): void {
+function recordReportedCounts(agent: AgentSession["agent"], records: WeakMap<object, ReportedCounts>): void {
   const streamFunction = agent.streamFunction;
   agent.streamFunction = async (model, context, options) => {
-    const reported: ReportedCounts = { input: false, output: false };
+    const seen = new Set<string>();
+    let api: string = model.api;
     const response = await streamFunction(model, context, {
       ...options,
       onProviderStreamEvent: async (data, eventModel) => {
-        noteReportedCounts(reported, model.api, data);
+        api = eventModel?.api ?? model.api;
+        noteReportedFields(seen, api, data);
         await options?.onProviderStreamEvent?.(data, eventModel);
       },
     });
     void response.result().then(
       (message) => {
         if (typeof message.usage === "object" && message.usage !== null) {
-          reportedCounts.set(message.usage, { ...reported });
+          records.set(message.usage, reportedCountsFrom(api, seen));
         }
       },
       () => undefined,
