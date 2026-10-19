@@ -200,33 +200,70 @@ def test_openclaw_rejects_unrecognized_version_output(output: str):
 
 
 @pytest.mark.parametrize(
-    ("platform", "setpriv", "expected_prefix"),
+    ("platform", "setpriv"),
     [
-        pytest.param(
-            "linux",
-            "/usr/bin/setpriv",
-            ["/usr/bin/setpriv", "--pdeathsig", "SIGTERM", "--"],
-            id="linux-with-setpriv",
-        ),
-        pytest.param("linux", None, [], id="linux-without-setpriv"),
-        pytest.param("darwin", "/usr/bin/setpriv", [], id="non-linux"),
+        pytest.param("linux", None, id="linux-without-setpriv"),
+        pytest.param("darwin", "/usr/bin/setpriv", id="non-linux"),
     ],
 )
-def test_openclaw_gateway_command_uses_setpriv_on_linux_when_available(
+async def test_openclaw_gateway_runs_without_setpriv_where_it_is_absent(
     monkeypatch: pytest.MonkeyPatch,
     platform: str,
     setpriv: str | None,
-    expected_prefix: list[str],
 ):
     mock_which = MagicMock(return_value=setpriv)
     monkeypatch.setattr(adapter.sys, "platform", platform)
     monkeypatch.setattr(adapter.shutil, "which", mock_which)
 
+    assert await adapter._parent_death_prefix() == []
+    if platform == "linux":
+        mock_which.assert_called_once_with("setpriv")
+    else:
+        mock_which.assert_not_called()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX shell scripts stand in for setpriv"
+)
+@pytest.mark.parametrize(
+    ("script", "usable"),
+    [
+        pytest.param('shift 3\nexec "$@"\n', True, id="setpriv-runs"),
+        # An OpenShell sandbox forbids applying capabilities, so setpriv exits
+        # before running its command.
+        pytest.param(
+            "echo 'setpriv: activate capabilities: Operation not permitted' >&2\n"
+            "exit 1\n",
+            False,
+            id="setpriv-refused",
+        ),
+    ],
+)
+async def test_openclaw_gateway_uses_setpriv_on_linux_only_when_it_can_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    script: str,
+    usable: bool,
+):
+    setpriv = tmp_path / "setpriv"
+    setpriv.write_text("#!/bin/sh\n" + script, encoding="utf-8")
+    setpriv.chmod(0o755)
+    monkeypatch.setattr(adapter.sys, "platform", "linux")
+    monkeypatch.setattr(adapter.shutil, "which", MagicMock(return_value=str(setpriv)))
+
+    prefix = await adapter._parent_death_prefix()
+
+    assert prefix == ([str(setpriv), "--pdeathsig", "SIGTERM", "--"] if usable else [])
+
+
+def test_openclaw_gateway_command_runs_the_gateway_after_its_prefix():
     openclaw = Path("/usr/bin/openclaw")
-    command = adapter._gateway_command(openclaw, port=20_000)
+    prefix = ["/usr/bin/setpriv", "--pdeathsig", "SIGTERM", "--"]
+
+    command = adapter._gateway_command(openclaw, port=20_000, prefix=prefix)
 
     assert command == [
-        *expected_prefix,
+        *prefix,
         str(openclaw),
         "gateway",
         "run",
@@ -237,10 +274,6 @@ def test_openclaw_gateway_command_uses_setpriv_on_linux_when_available(
         "--auth",
         "token",
     ]
-    if platform == "linux":
-        mock_which.assert_called_once_with("setpriv")
-    else:
-        mock_which.assert_not_called()
 
 
 @pytest.mark.skipif(

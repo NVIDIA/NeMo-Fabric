@@ -619,12 +619,44 @@ async def _capture_stream(
         tail.append(line.decode(errors="replace").rstrip())
 
 
+async def _parent_death_prefix() -> list[str]:
+    """Return the ``setpriv`` prefix that signals the Gateway when the adapter dies.
+
+    The prefix is used only when ``setpriv`` can run here. ``setpriv`` applies
+    the capability state it reads, so a sandbox that forbids that, such as an
+    OpenShell sandbox, makes it exit before running anything, even though the
+    parent-death signal itself needs no capability. Without the prefix, the
+    Gateway runs as on a host without ``setpriv``.
+    """
+    if sys.platform != "linux":
+        return []
+    setpriv = shutil.which("setpriv")
+    if setpriv is None:
+        return []
+    prefix = [setpriv, "--pdeathsig", "SIGTERM", "--"]
+    try:
+        probe = await asyncio.create_subprocess_exec(
+            *prefix,
+            sys.executable,
+            "-c",
+            "",
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return []
+    return prefix if await probe.wait() == 0 else []
+
+
 def _gateway_command(
     command: Path,
     *,
     port: int,
+    prefix: list[str],
 ) -> list[str]:
-    gateway = [
+    return [
+        *prefix,
         str(command),
         "gateway",
         "run",
@@ -635,8 +667,6 @@ def _gateway_command(
         "--auth",
         "token",
     ]
-    setpriv = shutil.which("setpriv") if sys.platform == "linux" else None
-    return [setpriv, "--pdeathsig", "SIGTERM", "--", *gateway] if setpriv else gateway
 
 
 def _gateway_endpoint(value: Any) -> str:
@@ -860,6 +890,7 @@ class OpenClawRuntime:
             gateway_command = _gateway_command(
                 command,
                 port=port,
+                prefix=await _parent_death_prefix(),
             )
             self._process = await asyncio.create_subprocess_exec(
                 *gateway_command,
