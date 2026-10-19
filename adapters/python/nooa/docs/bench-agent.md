@@ -23,7 +23,13 @@ One NeMo Fabric invocation maps to one BenchAgent task:
 - `instructions.system` becomes `task_input.instructions`.
 - The native `response`, `success`, and structured `result` fields become the
   normalized NeMo Fabric result.
-- NOOA's task token accumulator becomes normalized usage.
+- With NOOA's completion client, NOOA's task token accumulator becomes
+  normalized usage.
+- With NOOA's Responses API client, such as with
+  `models.<role>.settings.client_type: responses`, the adapter sums the usage
+  that each Responses API call returns. `input_tokens` includes
+  `cached_input_tokens`. A counter that any call omits stays unknown, so a
+  call that returns no usage leaves the whole usage unknown.
 
 The adapter accepts exactly one model. Before each task, it closes the shell
 that `_run_evaluation()` replaces. During runtime shutdown, it closes the

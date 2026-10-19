@@ -17,6 +17,10 @@ class FixtureModel:
         return None
 
 
+class ResponsesClient:
+    """Stands in for NOOA's Responses API client type; the fixture never builds one."""
+
+
 def get_llm_client(
     name: str,
     *,

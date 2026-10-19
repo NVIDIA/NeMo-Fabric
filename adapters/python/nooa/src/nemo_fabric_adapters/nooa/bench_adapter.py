@@ -10,6 +10,7 @@ import asyncio
 import inspect
 import logging
 from collections.abc import Callable
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,11 @@ ADAPTER = "python"
 HARNESS = "nooa-bench"
 MODE = "bench_agent"
 LOGGER = logging.getLogger(__name__)
+_MAX_TOKEN_COUNT = (1 << 64) - 1
+# Per-invocation list of the ``usage`` value from each Responses API call.
+_responses_usage: ContextVar[list[Any] | None] = ContextVar(
+    "nooa_bench_responses_usage", default=None
+)
 
 
 def main() -> None:
@@ -148,6 +154,82 @@ def _usage(tokens: Any) -> AgentUsage | None:
     )
 
 
+def _token_count(usage: Any, *path: str) -> int | None:
+    value = usage
+    for key in path:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if not 0 <= value <= _MAX_TOKEN_COUNT:
+        return None
+    return value
+
+
+def _summed_token_count(usages: list[Any], *path: str) -> int | None:
+    """Sum one counter across calls; any call that omits it makes the sum unknown."""
+    total = 0
+    for usage in usages:
+        value = _token_count(usage, *path)
+        if value is None:
+            return None
+        total += value
+    return total if total <= _MAX_TOKEN_COUNT else None
+
+
+def _responses_api_usage(usages: list[Any]) -> AgentUsage | None:
+    """Sum OpenAI Responses API usage, whose input_tokens includes cached tokens."""
+    if not usages:
+        return None
+    input_tokens = _summed_token_count(usages, "input_tokens")
+    cached_input_tokens = _summed_token_count(
+        usages, "input_tokens_details", "cached_tokens"
+    )
+    output_tokens = _summed_token_count(usages, "output_tokens")
+    # Provider-reported, not derived, so it stays known when output_tokens is not.
+    total_tokens = _summed_token_count(usages, "total_tokens")
+    if (
+        input_tokens is None
+        and cached_input_tokens is None
+        and output_tokens is None
+        and total_tokens is None
+    ):
+        return None
+    return AgentUsage(
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        input_tokens_include_cache=True if input_tokens is not None else None,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+    )
+
+
+def _record_responses_usage(model: Any) -> None:
+    """Record the usage of each call made through a NOOA ``ResponsesClient``.
+
+    NOOA's task token accumulator counts only ``CompletionClient`` calls, so a
+    Responses API run would otherwise report zero tokens.
+    """
+    call = model.call
+    acall = model.acall
+
+    def record(response: Any) -> Any:
+        usages = _responses_usage.get()
+        if usages is not None:
+            usages.append(getattr(response, "usage", None))
+        return response
+
+    def recorded_call(*args: Any, **kwargs: Any) -> Any:
+        return record(call(*args, **kwargs))
+
+    async def recorded_acall(*args: Any, **kwargs: Any) -> Any:
+        return record(await acall(*args, **kwargs))
+
+    model.call = recorded_call
+    model.acall = recorded_acall
+
+
 def _success_output(native: dict[str, Any], usage: AgentUsage | None) -> AgentRunResult:
     response = native.get("response")
     structured = native.get("result")
@@ -201,6 +283,7 @@ class BenchRuntime:
         self._workspace: Path | None = None
         self._instruction: str | None = None
         self._telemetry: RelayTelemetry | None = None
+        self._uses_responses_api = False
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._bench_agent_factory is not None:
@@ -219,7 +302,12 @@ class BenchRuntime:
             base_dir = Path(common_utils.base_dir(payload))
             workspace = _workspace(payload)
             models = await build_models(config)
+            from nooa.unifiedllm import ResponsesClient
             from nooa_bench.bench_agent import BenchAgent
+
+            uses_responses_api = isinstance(models[role], ResponsesClient)
+            if uses_responses_api:
+                _record_responses_usage(models[role])
 
             bench_agent_factory = BenchAgent
             telemetry = RelayTelemetry(
@@ -255,6 +343,7 @@ class BenchRuntime:
         self._workspace = workspace
         self._instruction = _system_instruction(config)
         self._telemetry = telemetry
+        self._uses_responses_api = uses_responses_api
 
     async def invoke(
         self,
@@ -312,8 +401,17 @@ class BenchRuntime:
                 # previous one first so persistent Fabric runtimes do not leak it.
                 await _close_shell(agent)
                 start_task_tokens()
-                native = await agent._run_evaluation(task_input)
-                usage = _usage(get_task_tokens())
+                responses_usages: list[Any] = []
+                responses_token = _responses_usage.set(responses_usages)
+                try:
+                    native = await agent._run_evaluation(task_input)
+                finally:
+                    _responses_usage.reset(responses_token)
+                usage = (
+                    _responses_api_usage(responses_usages)
+                    if self._uses_responses_api
+                    else _usage(get_task_tokens())
+                )
                 if not isinstance(native, dict):
                     raise ValueError("BenchAgent result must be an object")
                 if native.get("success") is not True:
@@ -379,6 +477,7 @@ class BenchRuntime:
         self._workspace = None
         self._instruction = None
         self._telemetry = None
+        self._uses_responses_api = False
         primary: BaseException | None = None
         if telemetry is not None:
             try:
