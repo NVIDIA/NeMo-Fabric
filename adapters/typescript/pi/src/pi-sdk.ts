@@ -514,10 +514,13 @@ const observedFetch: typeof globalThis.fetch = async (input, init) => {
  * attempt that got no HTTP response, such as a connection error or a timeout
  * before headers, or that got any error status other than a rate limit (429),
  * such as a 408 or a 5xx, may have been billed. So may a Codex WebSocket
- * attempt that failed, which the fetch never sees: Pi records it on the final
- * message as a `provider_transport_failure` diagnostic before falling back to
- * HTTP (`@earendil-works/pi-ai` 1.0.3, `api/openai-codex-responses.js`). A call that ended in an error
- * reports all its counts as 0 only when its protocol sends requests through
+ * attempt that failed and made Pi fall back to HTTP, which the fetch never
+ * sees: Pi records it on the final message as a `provider_transport_failure`
+ * diagnostic. Pi retries `previous_response_not_found` and
+ * `websocket_connection_limit_reached` on the WebSocket without a diagnostic;
+ * the provider rejects both before the model runs, so the retried call keeps
+ * its counts (`@earendil-works/pi-ai` 1.0.3, `api/openai-codex-responses.js`).
+ * A call that ended in an error reports all its counts as 0 only when its protocol sends requests through
  * the observed fetch, the provider answered every attempt with a 429, no
  * attempt was accepted, no raw event arrived, and Pi's usage is all zeros.
  * Any other call keeps only the counts its raw events reported.

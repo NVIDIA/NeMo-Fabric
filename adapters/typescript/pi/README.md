@@ -248,14 +248,15 @@ stream event, so a call that Pi retries after rate limits keeps the result's
 protocol, including the Google protocols and Bedrock, or a Codex call sent over
 a WebSocket, leaves its counts unknown. When a Codex WebSocket attempt fails and
 Pi falls back to HTTP, Pi records the failure on the final message, and the
-call's counts stay unknown even when the fallback succeeds, because the
-provider may have received and billed the WebSocket request. An attempt that got any other error
-status, such as a request timeout (408) or a server error (5xx), or that got no
-HTTP response, such as a connection failure or a timeout before headers, leaves
-its call's counts unknown even when a later attempt succeeds, because the
-provider may have processed and billed the prompt. A call that fails after its
-stream started can have billed tokens that were never reported, so its counts
-stay unknown too.
+call's counts stay unknown even when the fallback succeeds, because the provider
+may have received and billed the WebSocket request. An attempt that got any
+other error status, such as a request timeout (408) or a server error (5xx), or
+that got no HTTP response, such as a connection failure or a timeout before
+headers, leaves its call's counts unknown even when a later attempt succeeds,
+because the provider may have processed and billed the prompt. A call that fails
+after its stream started can have billed tokens that were never reported, so the
+counts it had not reported yet stay unknown; input that the provider already
+reported, such as Anthropic's `message_start` usage, stays known.
 
 When a compaction cuts inside a turn, Pi summarizes the earlier history and the
 start of that turn in separate calls and reports only their combined usage. The
