@@ -912,8 +912,9 @@ def populate_context_from_result(
             "usage": mapping.get("usage"),
         },
     )
-    # Fabric usage is the only source of complete accounting: an unknown
-    # dimension clears any value an earlier pass left in the context.
+    # Fabric results supply Harbor's accounting fields; an unknown dimension
+    # clears any value an earlier pass left in the context. ATIF metrics stay
+    # separate as evidence with unverified coverage.
     input_tokens: int | None = None
     cached_input_tokens: int | None = None
     output_tokens: int | None = None

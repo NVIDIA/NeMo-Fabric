@@ -63,6 +63,8 @@ The task runner validates telemetry after the one-shot NeMo Fabric runtime shuts
 
 The integration projects normalized `RunResult.usage` into Harbor's `AgentContext` without requiring NeMo Relay or ATIF. Harbor input counts include cache: inclusive NeMo Fabric input is copied unchanged, while exclusive input is combined with cache only when both counts are known. If input semantics are unknown, Harbor input remains unknown unless the adapter explicitly reports zero cache tokens. Legacy results remain valid, but their input count needs explicit cache semantics to populate Harbor's inclusive count; the original values remain in result metadata. Unknown counts and costs remain `None` and reported zeros remain zero; estimates are not promoted to reported cost. When the runner exits without a NeMo Fabric result, the integration sets all four Harbor accounting fields to `None`. ATIF `final_metrics` never fill these fields, because their scope and cache conventions are not verified against the invocation. They are kept under `metadata.fabric.atif_final_metrics` with `source: atif` and `coverage: unverified`. The same collection path applies to unsuccessful results that contain usage.
 
+**Reporting limitation:** Native Harbor trial and job totals sum available values and skip unknown fields. A displayed total can therefore omit usage or cost from steps or trials with unknown values. Do not interpret these aggregates as complete benchmark usage or expenditure when any contributing value is unknown.
+
 ## Host Admission And Task Execution
 
 The `nemo-fabric[harbor]` extra installs a matching
