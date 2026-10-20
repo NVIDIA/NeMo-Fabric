@@ -751,8 +751,51 @@ def _result_failed(result: ResultMessage) -> bool:
     )
 
 
+# Error prefixes of the substitute results Claude Code 2.1.294 writes when it
+# refuses work before any query starts: a required sandbox is unavailable, or a
+# spare process receives a message before it is claimed.
+_PRE_QUERY_REFUSAL_PREFIXES = ("Sandbox required but unavailable", "not_claimed:")
+
+
+def _is_zero(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value == 0
+
+
+def _is_pre_query_refusal(result: ResultMessage) -> bool:
+    errors = result.errors or ()
+    return bool(errors) and all(
+        isinstance(error, str) and error.startswith(_PRE_QUERY_REFUSAL_PREFIXES)
+        for error in errors
+    )
+
+
+def _zero_usage_is_unknown(result: ResultMessage) -> bool:
+    """Return whether Claude Code's zero usage and cost hide this invocation's work.
+
+    Outside its agent loop, Claude Code writes a substitute result with no
+    terminal reason, zero turns, zero durations, zero cost, and zero-filled
+    usage. It writes one when a session crashes or an internal error ends the
+    session, even after billed model calls. Only a recognized pre-query refusal
+    reports a real zero. An absent assistant message does not show that no
+    model call ran, because Claude Code emits one only when a content block
+    ends. Results from Claude Code's agent loop carry a terminal reason, so
+    this never applies to them.
+    """
+    return (
+        result.subtype == "error_during_execution"
+        and result.is_error is True
+        and result.terminal_reason is None
+        and _is_zero(result.num_turns)
+        and _is_zero(result.duration_ms)
+        and _is_zero(result.duration_api_ms)
+        and not _is_pre_query_refusal(result)
+    )
+
+
 def normalize_result(messages: list[Message], result: ResultMessage) -> dict[str, Any]:
     failed = _result_failed(result)
+    # Unknown, not the zeros of Claude Code's substitute result.
+    usage_lost = _zero_usage_is_unknown(result)
     error = None
     if failed:
         metadata = {"subtype": result.subtype}
@@ -769,9 +812,9 @@ def normalize_result(messages: list[Message], result: ResultMessage) -> dict[str
         "adapter": "sdk",
         "response": result.result,
         "session_id": result.session_id,
-        "usage": _json_safe(result.usage or {}),
+        "usage": None if usage_lost else _json_safe(result.usage or {}),
         "model_usage": _json_safe(result.model_usage or {}),
-        "cost_usd": result.total_cost_usd,
+        "cost_usd": None if usage_lost else result.total_cost_usd,
         "duration_ms": result.duration_ms,
         "duration_api_ms": result.duration_api_ms,
         "num_turns": result.num_turns,
@@ -1269,13 +1312,15 @@ class ClaudeRuntime:
         totals is this invocation's cost. A missing, non-finite, or negative
         total leaves this invocation and the next one unknown, because the next
         total has no baseline. A decreasing total or a conversation reset leaves
-        this invocation unknown and makes its total the new baseline.
+        this invocation unknown and makes its total the new baseline. The zero
+        total of a substitute result with unknown usage counts as missing.
         """
 
         previous = self._cost_total
         total = result.total_cost_usd
         if (
-            not isinstance(total, (int, float))
+            _zero_usage_is_unknown(result)
+            or not isinstance(total, (int, float))
             or isinstance(total, bool)
             or not math.isfinite(total)
             or total < 0

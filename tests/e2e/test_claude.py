@@ -36,6 +36,7 @@ from nemo_fabric import (
 ROOT = Path(__file__).resolve().parents[2]
 MOCK_CLAUDE_CLI = ROOT / "tests" / "fixtures" / "claude" / "mock-claude-cli.py"
 SESSION_ID = "11111111-1111-4111-8111-111111111111"
+DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
 
 
 @pytest.fixture(name="use_current_python_for_adapter_discovery", autouse=True)
@@ -417,6 +418,92 @@ async def test_fabric_claude_accepts_real_relay_gateway_with_mock_claude(tmp_pat
     gateway_log_path = Path(result.output["relay_runtime"]["gateway_log_path"])
     assert gateway_log_path.is_file()
     assert os.environ["NEMO_RELAY_CONFIG_SCOPE"] == "project"
+
+
+async def invoke_mock_claude_turns(tmp_path, turns):
+    config = fabric_config(tmp_path, cli_path=MOCK_CLAUDE_CLI)
+    config.environment.env["MOCK_CLAUDE_CLI_TURNS"] = json.dumps(turns)
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        return [
+            await runtime.invoke(input=f"turn {index}") for index in range(len(turns))
+        ]
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the mock Claude CLI is not yet a Windows executable",
+)
+@pytest.mark.parametrize(
+    "turn", ["crash_after_answer", "crash_before_answer", "internal_error"]
+)
+async def test_claude_substitute_result_leaves_usage_unknown(tmp_path, turn):
+    (result,) = await invoke_mock_claude_turns(tmp_path, [turn])
+
+    assert result.status == "failed"
+    assert result.error.code == "claude_result_failed"
+    assert result.usage is None
+    assert result.output["usage"] is None
+    assert result.output["cost_usd"] is None
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the mock Claude CLI is not yet a Windows executable",
+)
+async def test_claude_pre_query_refusal_keeps_zero_usage(tmp_path):
+    (result,) = await invoke_mock_claude_turns(tmp_path, ["sandbox_unavailable"])
+
+    assert result.status == "failed"
+    assert result.output["events"] == []
+    assert result.usage.output_tokens == 0
+    assert result.usage.cost_usd == 0
+    assert result.usage.metadata[DETAILED_TOKEN_USAGE_KEY] == {
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "input_tokens_include_cache": False,
+        "output_tokens": 0,
+        "output_tokens_include_reasoning": True,
+    }
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the mock Claude CLI is not yet a Windows executable",
+)
+async def test_claude_failed_turn_keeps_reported_usage(tmp_path):
+    (result,) = await invoke_mock_claude_turns(tmp_path, ["max_turns"])
+
+    assert result.status == "failed"
+    assert result.output["subtype"] == "error_max_turns"
+    assert result.usage.output_tokens == 25
+    assert result.usage.cost_usd == 0.002
+    assert result.usage.metadata[DETAILED_TOKEN_USAGE_KEY] == {
+        "input_tokens": 12,
+        "cached_input_tokens": 3000,
+        "cache_write_input_tokens": 400,
+        "input_tokens_include_cache": False,
+        "output_tokens": 25,
+        "output_tokens_include_reasoning": True,
+    }
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the mock Claude CLI is not yet a Windows executable",
+)
+async def test_claude_session_crash_leaves_next_invocation_cost_unknown(tmp_path):
+    # The crash result's zero running cost total is not a baseline for the next one.
+    results = await invoke_mock_claude_turns(
+        tmp_path, ["success", "crash_after_answer", "success"]
+    )
+
+    assert [result.status for result in results] == ["succeeded", "failed", "succeeded"]
+    assert results[0].usage.output_tokens == results[2].usage.output_tokens == 2
+    assert [
+        None if result.usage is None else result.usage.to_mapping().get("cost_usd")
+        for result in results
+    ] == [0.001, None, None]
 
 
 @pytest.mark.skipif(

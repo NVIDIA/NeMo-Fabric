@@ -31,6 +31,7 @@ from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import SystemMessage
 from claude_agent_sdk import TextBlock
 from claude_agent_sdk._errors import MessageParseError
+from claude_agent_sdk._internal.message_parser import parse_message
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
@@ -1420,6 +1421,186 @@ async def test_claude_runtime_cost_starts_from_zero_for_each_client(
 
     assert await invocation_costs(claude_payload, 1) == [0.10]
     assert await invocation_costs(claude_payload, 1) == [0.10]
+
+
+# Claude Code 2.1.294 writes this result from emitSessionCrash, outside its agent
+# loop, with its zero-filled empty usage.
+CLAUDE_EMPTY_USAGE = {
+    "output_tokens_details": {"thinking_tokens": 0},
+    "input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 0,
+    "server_tool_use": {"web_search_requests": 0, "web_fetch_requests": 0},
+    "service_tier": "standard",
+    "cache_creation": {"ephemeral_1h_input_tokens": 0, "ephemeral_5m_input_tokens": 0},
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard",
+    "fallback_credit": None,
+}
+SESSION_CRASH_MARKER = (
+    "[session_crash] error_name=TypeError api_error_status=none cause_name=none"
+)
+
+
+def claude_fallback_result(**fields: Any) -> ResultMessage:
+    return parse_message(
+        {
+            "type": "result",
+            "subtype": "error_during_execution",
+            "duration_ms": 0,
+            "duration_api_ms": 0,
+            "is_error": True,
+            "num_turns": 0,
+            "stop_reason": None,
+            "session_id": "claude-session",
+            "total_cost_usd": 0,
+            "usage": CLAUDE_EMPTY_USAGE,
+            "modelUsage": {},
+            "permission_denials": [],
+            "errors": ["TypeError: boom", SESSION_CRASH_MARKER],
+            **fields,
+        }
+    )
+
+
+def claude_answer() -> Message:
+    return parse_message(
+        {
+            "type": "assistant",
+            "message": {
+                "id": "msg_1",
+                "role": "assistant",
+                "model": "claude-test-model",
+                "content": [{"type": "text", "text": "partial"}],
+                "usage": {
+                    "input_tokens": 12,
+                    "cache_creation_input_tokens": 400,
+                    "cache_read_input_tokens": 3000,
+                    "output_tokens": 1,
+                },
+            },
+            "session_id": "claude-session",
+        }
+    )
+
+
+SANDBOX_UNAVAILABLE_ERROR = (
+    "Sandbox required but unavailable: bubblewrap missing. "
+    "Set sandbox.failIfUnavailable=false to allow unsandboxed execution."
+)
+NOT_CLAIMED_ERROR = (
+    "not_claimed: this process was started with --await-claim and has not been "
+    "claimed; send claim_session before the first message"
+)
+
+
+@pytest.mark.parametrize(
+    ("answered", "fields"),
+    [
+        pytest.param(True, {}, id="crash-after-answer"),
+        pytest.param(False, {}, id="crash-before-answer"),
+        pytest.param(
+            False,
+            {"errors": ["TypeError: boom", 7, None, SESSION_CRASH_MARKER]},
+            id="crash-marker-among-non-string-errors",
+        ),
+        pytest.param(
+            False,
+            {"errors": ["An internal error ended the session (TypeError: boom)."]},
+            id="internal-error-before-answer",
+        ),
+        pytest.param(True, {"errors": ["TypeError: boom"]}, id="answer-without-marker"),
+        pytest.param(False, {"errors": None}, id="no-errors"),
+        pytest.param(False, {"errors": []}, id="empty-errors"),
+        pytest.param(
+            False,
+            {"errors": [SANDBOX_UNAVAILABLE_ERROR, SESSION_CRASH_MARKER]},
+            id="refusal-text-beside-crash-marker",
+        ),
+    ],
+)
+def test_substitute_result_leaves_usage_unknown(answered, fields):
+    messages = [claude_answer()] if answered else []
+
+    output = adapter.normalize_result(messages, claude_fallback_result(**fields))
+    result = adapter._agent_run_result(output)
+
+    assert output["usage"] is None
+    assert output["cost_usd"] is None
+    assert result.status is AgentRunStatus.FAILED
+    assert result.usage is None
+
+
+@pytest.mark.parametrize(
+    ("answered", "fields"),
+    [
+        pytest.param(
+            False,
+            {"errors": [SANDBOX_UNAVAILABLE_ERROR]},
+            id="sandbox-unavailable",
+        ),
+        pytest.param(False, {"errors": [NOT_CLAIMED_ERROR]}, id="not-claimed"),
+        # The remaining results carry the crash marker after an answer, but
+        # their shape says Claude Code's agent loop measured them.
+        pytest.param(
+            True,
+            {"terminal_reason": "turn_setup_failed", "duration_ms": 3},
+            id="agent-loop-setup-failure",
+        ),
+        pytest.param(True, {"duration_ms": 4}, id="measured-duration"),
+        pytest.param(True, {"duration_api_ms": 4}, id="measured-api-duration"),
+        pytest.param(True, {"num_turns": 1}, id="counted-turn"),
+        pytest.param(True, {"duration_ms": False}, id="bool-duration"),
+        pytest.param(True, {"subtype": "error_max_turns"}, id="max-turns"),
+        pytest.param(True, {"is_error": False}, id="not-error-flagged"),
+    ],
+)
+def test_pre_query_refusal_or_agent_loop_result_keeps_reported_zero_usage(
+    answered, fields
+):
+    messages = [claude_answer()] if answered else []
+
+    output = adapter.normalize_result(messages, claude_fallback_result(**fields))
+    result = adapter._agent_run_result(output)
+
+    assert output["usage"] == CLAUDE_EMPTY_USAGE
+    assert result.usage is not None
+    assert result.usage.output_tokens == 0
+    assert result.usage.extensions[DETAILED_TOKEN_USAGE_KEY]["input_tokens"] == 0
+
+
+async def test_claude_runtime_leaves_cost_unknown_for_session_crash(
+    claude_payload, monkeypatch
+):
+    install_scripted_client(
+        monkeypatch,
+        [
+            [claude_answer(), claude_fallback_result()],
+            [running_total_result(0.10)],
+            [claude_answer(), claude_fallback_result()],
+            [running_total_result(0.30)],
+            [running_total_result(0.45)],
+        ],
+    )
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(start_payload))
+    results = [
+        await runtime.invoke(*lifecycle_invocation(claude_payload)) for _ in range(5)
+    ]
+    await runtime.stop()
+
+    # A crash total is not a baseline, so the invocation after it is unknown too.
+    assert [result.usage and result.usage.cost_usd for result in results] == [
+        None,
+        None,
+        None,
+        None,
+        0.15,
+    ]
 
 
 async def test_claude_runtime_removes_mcp_config_after_failed_sdk_connect(

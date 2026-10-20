@@ -146,6 +146,17 @@ extension carries no input counters. Output is reported as `output_tokens` with
 `output_tokens_include_reasoning: true`, because Anthropic bills thinking as
 output tokens.
 
+When Claude Code's session crashes, or an internal error ends it, Claude Code
+reports a substitute result with zero usage and zero cost, even after billed
+model calls. The adapter reports that usage and cost as unknown: the result has
+no `usage`, and `output.usage` and `output.cost_usd` are null. The next
+invocation's cost is also unknown, because the substitute result's zero is not
+Claude Code's running cost total. A recognized pre-query refusal, such as an
+unavailable sandbox, retains zero usage. Absence of an assistant message alone
+does not establish that no model call occurred. A failed result from Claude
+Code's agent loop, such as reaching the turn or budget limit, keeps the usage
+Claude Code reports.
+
 Harbor accounting reads these counters before any ATIF trajectory. With the
 input counters present, Harbor sets `n_input_tokens` to input plus cache reads
 plus cache writes and `n_cache_tokens` to cache reads, from the same main-loop
