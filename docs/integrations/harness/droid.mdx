@@ -222,15 +222,16 @@ model in Droid's settings, selects the convention:
 | `claude-*`, the Factory-hosted `deepseek-*`, `glm-*`, `kimi-*`, `minimax-*`, `mistral-*`, `nemotron-*`, and `qwen*` models, and `anthropic` or `bedrock-converse` custom models | Excludes cache reads and cache writes | Input plus cache reads and cache writes |
 | `gpt-*`, `grok-*`, and `openai` or `generic-chat-completion-api` custom models | Excludes cache reads | Input plus cache reads |
 
-For these models, when Droid reports an input count, `input_tokens_include_cache`
-is `true` and `total_tokens` adds input and output. When a turn includes child
+For these models, when Droid reports an input count and the cache read count
+is known, `input_tokens_include_cache` is `true` and `total_tokens` adds input
+and output. The cache read count is known when it is positive, or when the
+provider reports cache reads on every response, as described below. When a turn includes child
 usage whose convention cannot be established, or crosses input conventions,
 the adapter preserves reported counters without asserting cache inclusion.
 Fallback turns preserve Droid's reported input and leave
-`input_tokens_include_cache` unset. They omit `total_tokens` when either
-recorded cache counter is positive. When both cache counters are zero and input
-and output are positive, the total is their sum. This applies in the following
-cases:
+`input_tokens_include_cache` and `total_tokens` unset, because Droid's input
+may leave out cache, including cache reads it recorded as 0. This applies in
+the following cases:
 
 - The model has no known convention, including Droid's `auto` and `auto-fast`
   router models.
@@ -259,9 +260,13 @@ every response. In Google's proto3 usage schema, an omitted
 `cachedContentTokenCount` decodes as zero. This does not establish that every
 model call contributed a complete usage report. For `claude-*`, `gemini-*`,
 and `gpt-*` models and `bedrock-converse` custom models, `cached_input_tokens`
-is therefore 0 when Droid reports no cache reads. For
-other models, a missing `cached_input_tokens` can mean zero cache reads or an
-unreported count. An exact aggregate cache-hit rate cannot be determined from
+is therefore 0 when Droid reports no cache reads. For other models, a missing
+`cached_input_tokens` can mean zero cache reads or an unreported count. When a
+`grok-*` model, a Factory-hosted model from the table, or an `anthropic`,
+`openai`, or `generic-chat-completion-api` custom model reports no cache reads,
+`input_tokens` is Droid's input count, and `input_tokens_include_cache` and
+`total_tokens` are unset, because unreported cache reads would belong in the
+input. An exact aggregate cache-hit rate cannot be determined from
 these results. Report cache-count coverage alongside any rate calculated from
 known counts.
 

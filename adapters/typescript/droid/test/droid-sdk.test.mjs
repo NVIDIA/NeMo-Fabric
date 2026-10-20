@@ -736,6 +736,39 @@ test("keeps the reported counters for Droid's router models", async (t) => {
   }
 });
 
+test("leaves inclusive input unknown when a 0 cache read may be an omission", async (t) => {
+  const uncachedTurn = { inputTokens: 20, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 0 };
+  // Factory-hosted endpoints are not shown to report cache reads on every
+  // response, so Droid's 0 may hide cache hits that belong in the input.
+  assert.deepEqual(await usageForModel(t, "glm-5", uncachedTurn), {
+    input_tokens: 20,
+    output_tokens: 5,
+    extensions: {
+      "nemo_fabric.detailed_token_usage.v1": { input_tokens: 20, output_tokens: 5, output_tokens_include_reasoning: true },
+    },
+  });
+  // Anthropic reports cache reads on every response, so its 0 is a real 0.
+  assert.deepEqual(
+    await usageForModel(t, "claude-sonnet-4-5-20250929", uncachedTurn),
+    inclusiveUsage({ input: 20, cached: 0, output: 5 }),
+  );
+  // A fallback turn derives no total either: its 0 cache reads are not established.
+  assert.deepEqual(
+    await usageForSession(t, {
+      model: "glm-5",
+      turns: [uncachedTurn],
+      childUsage: [{ inputTokens: 8, outputTokens: 2, cacheCreationTokens: 0, cacheReadTokens: 0, thinkingTokens: 0 }],
+    }),
+    [{
+      input_tokens: 20,
+      output_tokens: 5,
+      extensions: {
+        "nemo_fabric.detailed_token_usage.v1": { input_tokens: 20, output_tokens: 5, output_tokens_include_reasoning: true },
+      },
+    }],
+  );
+});
+
 test("keeps Droid input as reported when the provider convention is not established", async (t) => {
   const reported = (input, cached, written) => ({
     input_tokens: input,

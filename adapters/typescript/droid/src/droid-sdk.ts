@@ -676,20 +676,22 @@ function normalizeUsage(value: unknown, convention: DroidUsageConvention | undef
   // Droid stores a count the provider omitted as 0, so a 0 count is unknown.
   // Output includes reasoning on every provider path.
   const output = outputTokens > 0 ? outputTokens : undefined;
-  const inclusiveInput = inputIncludingCache(convention?.input, inputTokens, cacheReadTokens, cacheCreationTokens);
-  const cacheReadsKnown = cacheReadTokens > 0 || (inclusiveInput !== undefined && convention?.reportsCacheReads === true);
-  // Without an inclusive count, report Droid's own input count and leave its
-  // cache convention unset. A turn with cache counts then has no total.
-  const hasCache = cacheReadTokens > 0 || cacheCreationTokens > 0;
+  // A 0 cache read count is a real 0 only on paths that report cache reads on
+  // every response; elsewhere it may hide cache hits that belong in the input.
+  const cacheReadsKnown = cacheReadTokens > 0 || convention?.reportsCacheReads === true;
+  const inclusiveInput = cacheReadsKnown
+    ? inputIncludingCache(convention?.input, inputTokens, cacheReadTokens, cacheCreationTokens)
+    : undefined;
+  // Without an inclusive count, report Droid's own input count, leave its
+  // cache convention unset, and derive no total: the input may leave out cache.
   const input = inclusiveInput ?? (inputTokens > 0 ? inputTokens : undefined);
-  const totalKnown = inclusiveInput !== undefined || !hasCache;
-  const total = !totalKnown || input === undefined || output === undefined ? undefined : input + output;
+  const total = inclusiveInput === undefined || output === undefined ? undefined : inclusiveInput + output;
   if ((input !== undefined && !Number.isSafeInteger(input)) || (total !== undefined && !Number.isSafeInteger(total))) {
     throw new LifecycleError("droid_malformed_result", "Droid returned malformed usage metadata");
   }
   const inputUsage: JsonObject = {
     ...(input === undefined ? {} : { input_tokens: input }),
-    ...(cacheReadsKnown ? { cached_input_tokens: cacheReadTokens } : {}),
+    ...(cacheReadTokens > 0 || inclusiveInput !== undefined ? { cached_input_tokens: cacheReadTokens } : {}),
     ...(inclusiveInput === undefined ? {} : { input_tokens_include_cache: true }),
   };
   const detailed: JsonObject = {
