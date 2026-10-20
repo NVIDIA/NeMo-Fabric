@@ -238,17 +238,34 @@ details, the result leaves out `cached_input_tokens`. A wire protocol outside
 Pi's built-in ones reports no counts the adapter can check, so its calls leave
 the result without `usage`.
 
+With Pi's built-in wire protocols, a request that fails before the provider
+sends a successful response or any stream event, such as a rate limit (429), an
+overload, a server error, or a connection that fails before any response,
+counts as 0 tokens, so a call that Pi retries after such an error keeps the
+result's `usage` known. A call that fails after its stream started can have
+billed tokens that were never reported, so its counts stay unknown.
+
+When a compaction cuts inside a turn, Pi summarizes the earlier history and the
+start of that turn in separate calls and reports only their combined usage. The
+adapter counts each of those calls from its own report, after checking that the
+calls it saw are the ones the compaction needed and that they add up to the
+combined usage; otherwise the result has no `usage`.
+
+A tool result's `usage` counts each count it holds: its input needs `input`,
+`cacheRead`, and `cacheWrite`, its cache reads need `cacheRead`, and its output
+needs `output`. A count the tool left out, or that is not a non-negative
+safe integer, is left out of the result. A tool result without a `usage` field adds
+nothing and leaves the result's `usage` unchanged. An extension's `message_end`
+handler that replaces an assistant message's usage does not change which
+counts the provider reported.
+
 The result has no `usage` when Pi produced no assistant message, when a model
-call reported none of the counts, when a tool result's `usage` has a missing or
-invalid count, when an assistant message was aborted, when a compaction was
-aborted or reported no usage, or when Pi retried a compaction summary call,
-because Pi keeps no usage for the failed attempt. It also has no `usage` when
-Pi recorded a cache warm-up during the invocation: Pi replays a warm-up outside
-the agent's stream function, so the adapter cannot tie its raw report to the
-warm-up's usage entry. It also has no `usage` when a compaction cuts inside a
-turn, because Pi then summarizes the earlier history and the start of that turn
-in separate calls and reports only their combined usage. A tool result without
-a `usage` field adds nothing and leaves the result's `usage` unchanged.
+call reported none of the counts, when an assistant message was aborted, when a
+compaction was aborted or reported no usage, or when Pi retried a compaction
+summary call, because Pi keeps no usage for the failed attempt. It also has no
+`usage` when Pi recorded a cache warm-up during the invocation: Pi replays a
+warm-up outside the agent's stream function, so the adapter cannot tie its raw
+report to the warm-up's usage entry.
 
 ## Custom Tool Modules
 

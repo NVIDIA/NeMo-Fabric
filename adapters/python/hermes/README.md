@@ -115,24 +115,27 @@ runtime.
 ## Token Usage
 
 Hermes counts its main model's tokens per session, and the adapter keeps one
-session per runtime, so each result's `usage` is the change since the previous
-invocation: `input_tokens` with cache reads and cache writes included,
-`cached_input_tokens`, `output_tokens`, and `total_tokens`. Hermes records
-auxiliary calls, such as context-compression summaries, separately from these
-counters, so they are not included. A counter that Hermes does not report, or
-that went down, is left out for that invocation. After an invocation that
-raised, was cancelled, or timed out, or whose result held no counters, the
-adapter has no baseline. The next invocation then reports no token counters
-rather than a carried-over or whole-session total, and the one after it reports
-its own change again.
+session per runtime. The adapter reads the agent's session counters right
+before each turn runs and again after it, so each result's `usage` is that
+turn's change: `input_tokens` with cache reads and cache writes included,
+`cached_input_tokens`, `output_tokens`, and `total_tokens`. A failure result
+reports its own tokens too, and an invocation that raised or was cancelled
+never adds its tokens to the next one. A counter that is missing, that is not
+a non-negative integer below 2^64, or that went down because Hermes reset its
+session, is left out for that invocation. Hermes records auxiliary calls, such as
+context-compression summaries and session titles, separately from these
+counters, and it does not count the summary request it makes when a turn
+reaches its iteration limit, so those calls are not included.
 
 Hermes adds no tokens for a provider response that carried no usage, so an
-invocation with such a response has no `usage`. Hermes also skips usage
-recording for a response it rejects as invalid, a reply that hit the token
-limit, and a reply stopped by a content filter, so an invocation with such a
-response has no `usage` either. A streamed call that fails and is retried
-inside Hermes' API call, such as an empty stream, never reaches these checks,
-so its billed usage is not observed and the invocation can undercount. Hermes
+invocation with such a response has no `usage`. For a response it rejects as
+invalid, a reply that hit the output token limit, and a reply stopped by a
+content filter, Hermes returns before adding the response's usage to its
+counters. The adapter adds the counts that such a response reported itself,
+using the provider and API mode that served it, and counts it only once when
+Hermes records it after all. A streamed call that fails and is retried inside
+Hermes' API call, such as an empty stream, never reaches these checks, so its
+billed usage is not observed and the invocation can undercount. Hermes
 reads a count that a response's usage left out as 0, so the adapter checks each
 response's usage before Hermes normalizes it. A reported zero still counts as
 0. When a response left out its input count, the invocation's `usage` leaves
