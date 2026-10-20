@@ -14,14 +14,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import httpx
+import litellm
+import openai
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
+from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.mini_swe_agent import adapter
 from nemo_fabric_adapters.mini_swe_agent.agents import RelayRetainingDefaultAgent
 from nemo_fabric_adapters.mini_swe_agent.agents import RetainingDefaultAgent
 from nemo_fabric_adapters.mini_swe_agent.agents import _submitted_output
+from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from minisweagent.exceptions import Submitted
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -100,7 +105,10 @@ def mock_mini_fixture(monkeypatch):
     monkeypatch.setattr(
         "minisweagent.environments.local.LocalEnvironment", environment_factory
     )
-    monkeypatch.setattr("minisweagent.models.litellm_model.LitellmModel", model_factory)
+    monkeypatch.setattr(
+        "nemo_fabric_adapters.mini_swe_agent.agents.UsageRecordingLitellmModel",
+        model_factory,
+    )
     return {
         "environment_factory": environment_factory,
         "model": model,
@@ -390,6 +398,524 @@ async def test_mini_swe_agent_retains_history_between_invocations(
         "exit",
     ]
     assert agent.messages[4]["content"] == "Continue the task."
+
+
+def litellm_response(
+    usage: dict | None, command: str | None = "submit"
+) -> tuple[str, dict]:
+    """Build a provider response body for one scripted model call.
+
+    The usage keys pick the provider: ``input_tokens`` or ``output_tokens`` for
+    the Anthropic Messages API, ``inputTokens`` or ``outputTokens`` for Bedrock
+    Converse, and Chat Completions otherwise. ``command=None`` returns text
+    without a tool call, which fails mini-SWE-agent's tool-call parsing.
+    """
+
+    usage_keys = set(usage or {})
+    if usage_keys & {"input_tokens", "output_tokens"}:
+        content = (
+            [{"type": "tool_use", "id": "toolu_1", "name": "bash", "input": {}}]
+            if command
+            else [{"type": "text", "text": "Thinking."}]
+        )
+        if command:
+            content[0]["input"] = {"command": command}
+        return "anthropic", {
+            "id": "msg_mini",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-test",
+            "content": content,
+            "stop_reason": "tool_use" if command else "end_turn",
+            "stop_sequence": None,
+            "usage": usage,
+        }
+    if usage_keys & {"inputTokens", "outputTokens"}:
+        content = (
+            [{"toolUse": {"toolUseId": "t1", "name": "bash", "input": {}}}]
+            if command
+            else [{"text": "Thinking."}]
+        )
+        if command:
+            content[0]["toolUse"]["input"] = {"command": command}
+        return "bedrock", {
+            "output": {"message": {"role": "assistant", "content": content}},
+            "stopReason": "tool_use" if command else "end_turn",
+            "usage": usage,
+            "metrics": {"latencyMs": 1},
+        }
+    tool_calls = [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": "bash", "arguments": json.dumps({"command": command})},
+        }
+    ]
+    body = {
+        "object": "chat.completion",
+        "created": 1760000000,
+        "model": "test-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": None if command else "Thinking.",
+                    "tool_calls": tool_calls if command else None,
+                },
+                "finish_reason": "tool_calls" if command else "stop",
+            }
+        ],
+    }
+    if usage is not None:
+        body["usage"] = usage
+    return "openai", body
+
+
+@pytest.fixture(name="litellm_mini")
+def litellm_mini_fixture(monkeypatch: pytest.MonkeyPatch) -> list:
+    """Run the real LitellmModel and litellm.completion on scripted HTTP bodies.
+
+    Only the HTTP transport is faked, so LiteLLM's own provider conversion and
+    its ``logger_fn`` call run as they do against a real endpoint.
+    """
+
+    responses: list = []
+    environment = MagicMock()
+    environment.get_template_vars.return_value = {}
+
+    def execute(action):
+        if action["command"] == "submit":
+            raise Submitted(
+                {
+                    "role": "exit",
+                    "content": "done",
+                    "extra": {"exit_status": "Submitted", "submission": "done"},
+                }
+            )
+        return {"output": "ok", "returncode": 0, "exception_info": ""}
+
+    environment.execute.side_effect = execute
+    monkeypatch.setattr(
+        "minisweagent.environments.local.LocalEnvironment",
+        MagicMock(return_value=environment),
+    )
+    completion = litellm.completion
+    calls = iter(range(1, 1000))
+
+    def scripted_completion(**kwargs):
+        provider, body = responses.pop(0)
+        kwargs["api_key"] = "test-key"
+        transport = httpx.MockTransport(lambda _request: httpx.Response(200, json=body))
+        if provider == "openai":
+            body.setdefault("id", f"chatcmpl-mini-{next(calls)}")
+            kwargs["model"] = "openai/test-model"
+            kwargs["client"] = openai.OpenAI(
+                api_key="test-key",
+                base_url="https://example.test/v1",
+                http_client=httpx.Client(transport=transport),
+            )
+        else:
+            kwargs["model"] = (
+                "anthropic/claude-sonnet-4-5"
+                if provider == "anthropic"
+                else "bedrock/converse/anthropic.claude-sonnet-4-5"
+            )
+            kwargs["client"] = HTTPHandler(client=httpx.Client(transport=transport))
+            kwargs.update(
+                aws_access_key_id="test",
+                aws_secret_access_key="test",
+                aws_region_name="us-east-1",
+            )
+        return completion(**kwargs)
+
+    monkeypatch.setattr(litellm, "completion", scripted_completion)
+    monkeypatch.setattr(
+        litellm.cost_calculator, "completion_cost", lambda *_, **__: 0.01
+    )
+    return responses
+
+
+_OMIT = object()
+
+
+def _present(**counts: object) -> dict:
+    return {key: value for key, value in counts.items() if value is not _OMIT}
+
+
+def openai_usage(
+    prompt=_OMIT, completion=_OMIT, total=_OMIT, cached=_OMIT, **extra
+) -> dict:
+    """Chat Completions usage; an omitted argument leaves its field out."""
+
+    usage = _present(
+        prompt_tokens=prompt, completion_tokens=completion, total_tokens=total
+    )
+    if cached is not _OMIT:
+        usage["prompt_tokens_details"] = {"cached_tokens": cached}
+    return usage | extra
+
+
+def anthropic_usage(
+    uncached=_OMIT, output=_OMIT, read=_OMIT, write=_OMIT, **extra
+) -> dict:
+    """Anthropic Messages usage; an omitted argument leaves its field out."""
+
+    return (
+        _present(
+            input_tokens=uncached,
+            output_tokens=output,
+            cache_read_input_tokens=read,
+            cache_creation_input_tokens=write,
+        )
+        | extra
+    )
+
+
+def bedrock_usage(
+    uncached=_OMIT, output=_OMIT, total=_OMIT, read=_OMIT, write=_OMIT
+) -> dict:
+    """Bedrock Converse usage; an omitted argument leaves its field out."""
+
+    return _present(
+        inputTokens=uncached,
+        outputTokens=output,
+        totalTokens=total,
+        cacheReadInputTokens=read,
+        cacheWriteInputTokens=write,
+    )
+
+
+def expected_usage(input=None, cached=None, output=None, total=None) -> AgentUsage:
+    return AgentUsage(
+        input_tokens=input,
+        cached_input_tokens=cached,
+        input_tokens_include_cache=(
+            True if input is not None or cached is not None else None
+        ),
+        output_tokens=output,
+        total_tokens=total,
+    )
+
+
+OPENAI_CACHED_USAGE = {
+    **openai_usage(1200, 80, 1280),
+    "prompt_tokens_details": {"cached_tokens": 1024, "audio_tokens": 0},
+    "completion_tokens_details": {"reasoning_tokens": 64, "audio_tokens": 0},
+}
+ANTHROPIC_NO_CACHE = anthropic_usage(100, 20, read=0, write=0)
+
+
+@pytest.mark.parametrize(
+    ("responses", "expected"),
+    [
+        # OpenAI-compatible usage, read from LiteLLM's normalized counts.
+        pytest.param(
+            [
+                litellm_response(OPENAI_CACHED_USAGE, command="ls"),
+                litellm_response(openai_usage(1500, 40, 1540, cached=1280)),
+            ],
+            expected_usage(2700, 2304, 120, 2820),
+            id="openai-cached-two-calls",
+        ),
+        pytest.param(
+            [
+                litellm_response(openai_usage(1200, 80, 1280, cached=0), "ls"),
+                litellm_response(openai_usage(1400, 60, 1460, cached=1152), "ls"),
+                litellm_response(openai_usage(1600, 40, 1640, cached=1408)),
+            ],
+            expected_usage(4200, 2560, 180, 4380),
+            id="openai-first-call-without-cache-hit-keeps-counts",
+        ),
+        pytest.param(
+            [
+                litellm_response(openai_usage(100, 10, 110), command=None),
+                litellm_response(openai_usage(200, 20, 220)),
+            ],
+            expected_usage(300, output=30, total=330),
+            id="format-error-call-counted",
+        ),
+        pytest.param(
+            [litellm_response(openai_usage(1200))],
+            expected_usage(1200),
+            id="omitted-output-and-total-stay-unknown",
+        ),
+        pytest.param(
+            [litellm_response(openai_usage(100, 20))],
+            expected_usage(100, output=20, total=120),
+            id="zero-filled-total-derived-from-known-parts",
+        ),
+        pytest.param(
+            [litellm_response(openai_usage(1 << 64, 20))],
+            expected_usage(output=20),
+            id="input-above-contract-bound-is-unknown",
+        ),
+        pytest.param(
+            [litellm_response(openai_usage(100, 20, 1 << 64))],
+            expected_usage(100, output=20),
+            id="total-above-contract-bound-is-unknown",
+        ),
+        pytest.param(
+            [litellm_response(openai_usage(100, 20, -1))],
+            expected_usage(100, output=20),
+            id="negative-total-is-unknown",
+        ),
+        pytest.param(
+            [litellm_response(openai_usage(100, total=120))],
+            expected_usage(100, total=120),
+            id="reported-total-kept-without-output",
+        ),
+        pytest.param(
+            [
+                litellm_response(openai_usage(100, total=120), command="ls"),
+                litellm_response(openai_usage(200, 30, 230)),
+            ],
+            expected_usage(300, total=350),
+            id="reported-totals-summed-across-partial-calls",
+        ),
+        pytest.param(
+            [
+                litellm_response(openai_usage(100, 20, 120), command="ls"),
+                litellm_response(openai_usage(200)),
+            ],
+            expected_usage(300),
+            id="call-with-unknown-total-makes-total-unknown",
+        ),
+        pytest.param(
+            [
+                litellm_response(
+                    openai_usage(100, total=120, cache_read_input_tokens=None)
+                )
+            ],
+            expected_usage(100, total=120),
+            id="null-cache-key-keeps-reported-total",
+        ),
+        pytest.param(
+            [
+                litellm_response(OPENAI_CACHED_USAGE, command="ls"),
+                litellm_response(None),
+            ],
+            None,
+            id="call-without-usage-makes-counts-unknown",
+        ),
+        pytest.param(
+            [litellm_response(openai_usage(0, 0, 0))],
+            None,
+            id="zero-filled-counts-are-unknown",
+        ),
+        # Anthropic usage, read from the provider body LiteLLM passes to
+        # logger_fn before it zero-fills omitted counts.
+        pytest.param(
+            [litellm_response(anthropic_usage(50, 120, read=2000, write=300))],
+            expected_usage(2350, 2000, 120, 2470),
+            id="anthropic-cache-folded-into-input",
+        ),
+        pytest.param(
+            [
+                litellm_response(anthropic_usage(12, 90, read=0, write=1500), "ls"),
+                litellm_response(anthropic_usage(0, 70, read=1500, write=200), "ls"),
+                litellm_response(anthropic_usage(8, 50, read=1700, write=0)),
+            ],
+            expected_usage(4920, 3200, 210, 5130),
+            id="anthropic-first-call-without-cache-hit-keeps-counts",
+        ),
+        pytest.param(
+            [litellm_response(anthropic_usage(output=120, read=2000))],
+            expected_usage(cached=2000, output=120),
+            id="anthropic-omitted-input-with-cache-hit-stays-unknown",
+        ),
+        pytest.param(
+            [litellm_response(anthropic_usage(100, 20))],
+            expected_usage(output=20),
+            id="anthropic-omitted-cache-counts-stay-unknown",
+        ),
+        pytest.param(
+            [litellm_response(anthropic_usage(100, 20, read=None, write=None))],
+            expected_usage(output=20),
+            id="anthropic-null-cache-counts-stay-unknown",
+        ),
+        pytest.param(
+            [litellm_response(anthropic_usage(100, 20, read=-1))],
+            expected_usage(output=20),
+            id="anthropic-invalid-cache-part-leaves-input-unknown",
+        ),
+        pytest.param(
+            [litellm_response(anthropic_usage(100, read=0, write=0))],
+            expected_usage(100, 0),
+            id="anthropic-omitted-output-leaves-total-unknown",
+        ),
+        pytest.param(
+            [
+                litellm_response(
+                    {
+                        **ANTHROPIC_NO_CACHE,
+                        "iterations": [
+                            anthropic_usage(100, 20, read=0, write=0),
+                            anthropic_usage(30, 5, read=100, write=0),
+                        ],
+                    }
+                )
+            ],
+            expected_usage(230, 100, 25, 255),
+            id="anthropic-iterations-summed-with-presence-rules",
+        ),
+        pytest.param(
+            [
+                litellm_response(
+                    {
+                        **ANTHROPIC_NO_CACHE,
+                        "iterations": [
+                            anthropic_usage(100, 20, read=0, write=0),
+                            anthropic_usage(30, 5),
+                        ],
+                    }
+                )
+            ],
+            expected_usage(output=25),
+            id="anthropic-iteration-without-cache-counts-leaves-input-unknown",
+        ),
+        # Bedrock Converse usage, read from the provider body. Inclusive input is
+        # inputTokens plus cache reads and writes; totalTokens includes them.
+        pytest.param(
+            [litellm_response(bedrock_usage(100, 0, 100))],
+            expected_usage(100, output=0, total=100),
+            id="bedrock-reported-zero-output-and-total-kept",
+        ),
+        pytest.param(
+            [litellm_response(bedrock_usage(100, 20, -1))],
+            expected_usage(100, output=20),
+            id="bedrock-negative-total-is-unknown",
+        ),
+        pytest.param(
+            [litellm_response(bedrock_usage(100, 20, 1 << 64))],
+            expected_usage(100, output=20),
+            id="bedrock-overflowing-total-is-unknown",
+        ),
+        pytest.param(
+            [
+                litellm_response(bedrock_usage(1500, 90, 3090, write=1500), "ls"),
+                litellm_response(bedrock_usage(12, 50, 1762, read=1700, write=0)),
+            ],
+            expected_usage(4712, output=140, total=4852),
+            id="bedrock-cache-write-then-read-keeps-input-output-and-total",
+        ),
+    ],
+)
+async def test_mini_swe_agent_usage_sums_litellm_calls_with_unknown_counts_left_unset(
+    litellm_mini, mini_payload, responses, expected
+):
+    litellm_mini.extend(responses)
+    runtime = adapter.MiniSweAgentRuntime()
+    start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    await runtime.start(start)
+
+    result = await runtime.invoke(*invocation(mini_payload))
+
+    assert result.status == "succeeded"
+    assert result.usage == expected
+    assert result.output["usage"] == {"api_calls": len(responses)}
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
+        pytest.param(
+            anthropic_usage(0, 20, read=1500, write=0),
+            expected_usage(cached=1500, output=20),
+            id="cache-hit",
+        ),
+        pytest.param(
+            ANTHROPIC_NO_CACHE, expected_usage(output=20), id="explicit-zero-cache"
+        ),
+        pytest.param(
+            anthropic_usage(100, 20), expected_usage(output=20), id="missing-cache"
+        ),
+        pytest.param(
+            anthropic_usage(100, 20, read=None, write=None),
+            expected_usage(output=20),
+            id="null-cache",
+        ),
+    ],
+)
+async def test_mini_swe_agent_usage_without_provider_usage_keeps_unproven_counts_unknown(
+    litellm_mini, mini_payload, usage, expected
+):
+    litellm_mini.append(litellm_response(usage))
+    runtime = adapter.MiniSweAgentRuntime()
+    start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    await runtime.start(start)
+    await runtime.invoke(*invocation(mini_payload))
+
+    # LiteLLM's normalized usage alone cannot show whether a cache count was
+    # omitted, so inclusive input, its total, and a cached 0 stay unknown.
+    assert adapter._invocation_usage(runtime._agent.invocation_responses, 1, {}) == (
+        expected
+    )
+
+
+async def test_mini_swe_agent_failed_result_keeps_usage(litellm_mini, mini_payload):
+    litellm_mini.append(litellm_response(OPENAI_CACHED_USAGE, command="ls"))
+    mini_payload["config"]["runtime"]["max_turns"] = 1
+    runtime = adapter.MiniSweAgentRuntime()
+    start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    await runtime.start(start)
+
+    result = await runtime.invoke(*invocation(mini_payload))
+
+    assert result.status == "failed"
+    assert result.error.code == "mini_swe_agent_incomplete"
+    assert result.usage == expected_usage(1200, 1024, 80, 1280)
+
+
+async def test_mini_swe_agent_usage_counts_only_the_current_invocation(
+    litellm_mini, mini_payload
+):
+    litellm_mini.extend(
+        [
+            litellm_response(OPENAI_CACHED_USAGE),
+            litellm_response(openai_usage(1500, 40, 1540)),
+        ]
+    )
+    runtime = adapter.MiniSweAgentRuntime()
+    start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    await runtime.start(start)
+
+    await runtime.invoke(*invocation(mini_payload))
+    mini_payload["request"]["input"] = "Continue the task."
+    result = await runtime.invoke(*invocation(mini_payload))
+
+    assert result.usage == expected_usage(1500, output=40, total=1540)
+
+
+async def test_mini_swe_agent_usage_is_unknown_when_a_call_left_no_response(
+    mock_mini, mini_payload
+):
+    # The first call stores no LiteLLM response, as mini-SWE-agent 2.0.0 does
+    # for a call that fails tool-call parsing.
+    query_with_response = mock_mini["model"].query.side_effect
+    mock_mini["model"].query.side_effect = [
+        {"role": "assistant", "extra": {"actions": [{"command": "ls"}]}},
+        query_with_response([]),
+    ]
+    mock_mini["environment_factory"].return_value.execute.side_effect = [
+        {"output": "ok", "returncode": 0, "exception_info": ""},
+        Submitted(
+            {
+                "role": "exit",
+                "content": "done",
+                "extra": {"exit_status": "Submitted", "submission": "done"},
+            }
+        ),
+    ]
+    runtime = adapter.MiniSweAgentRuntime()
+    start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    await runtime.start(start)
+
+    result = await runtime.invoke(*invocation(mini_payload))
+
+    assert result.status == "succeeded"
+    assert result.output["usage"] == {"api_calls": 2}
+    assert result.usage is None
 
 
 async def test_relay_enabled_uses_instrumented_subclass_and_reports_artifacts(

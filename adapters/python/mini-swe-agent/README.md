@@ -78,7 +78,27 @@ async def main():
 result = asyncio.run(main())
 ```
 
-The result includes the submitted final text and API-call usage.
+The result includes the submitted final text, the API-call count, and token
+usage summed from the LiteLLM responses of the invocation's model calls.
+Input tokens include cached prompt tokens. A count that any call did not
+report stays unknown, and so does an invalid count.
+
+For OpenAI-compatible responses, LiteLLM records an omitted input, output or
+total count as 0, so such a 0 is unknown. A reported cached count of 0 is kept.
+For Anthropic and Bedrock responses, the adapter reads the provider's own usage
+from LiteLLM's per-call `logger_fn`, before LiteLLM fills omitted counts with
+0, so a count is known only when the provider reported it. Anthropic input is
+known when the uncached input and both cache counts are reported. Bedrock's
+cache counts are optional, so its cached count is unknown when Bedrock omits
+it. When the provider's raw usage cannot be captured, counts whose completeness
+cannot be established stay unknown. A total that the provider reported is kept even when input or output
+is unknown, and a missing total is the sum of known input and output. Cost is
+not reported, because mini-SWE-agent's cost is a LiteLLM price-table estimate.
+
+Usage covers stored model responses only. mini-SWE-agent retries a failed
+request inside one model call and stores no response for the failed attempts,
+so reported usage can be lower than the billed work. A failed result keeps the
+usage gathered before the failure. An invocation that raises returns no usage.
 
 ## Continue a Task Across Invocations
 
