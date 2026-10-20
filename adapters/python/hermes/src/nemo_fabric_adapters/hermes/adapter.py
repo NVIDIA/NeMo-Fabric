@@ -221,6 +221,11 @@ class HermesRuntime:
                         quiet_mode=True,
                         skip_context_files=True,
                         skip_memory=True,
+                        # Hermes' background skill review forks an agent after
+                        # the turn returns and records its tokens outside the
+                        # auxiliary client, so the invocation could not count
+                        # them.
+                        skip_background_review=True,
                         save_trajectories=bool(
                             self._settings.get("save_trajectories", False)
                         ),

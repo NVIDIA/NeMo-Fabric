@@ -1517,6 +1517,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         quiet_mode=True,
         skip_context_files=True,
         skip_memory=True,
+        skip_background_review=True,
         save_trajectories=False,
         max_tokens=768,
         request_overrides={"temperature": 0.2, "top_p": 0.85},
@@ -2546,6 +2547,59 @@ async def test_hermes_usage_is_unknown_when_a_compression_summary_request_fails(
     assert "failed summary" in scripted_provider.served
     assert turn.status == AgentRunStatus.SUCCEEDED
     assert turn.usage is None
+
+
+def _write_file_call(step: int) -> dict[str, object]:
+    return _chat_response(
+        "",
+        _usage(100, 1),
+        tool_calls=[
+            {
+                "id": f"call-{step}",
+                "type": "function",
+                "function": {
+                    "name": "write_file",
+                    "arguments": json.dumps(
+                        {"path": f"out-{step}.txt", "content": f"line {step}"}
+                    ),
+                },
+            }
+        ],
+    )
+
+
+async def test_hermes_runs_no_background_skill_review_after_a_turn(
+    scripted_provider: _ScriptedProvider, tmp_path: Path
+):
+    runtime, runtime_context = await _start_scripted_runtime(
+        scripted_provider, tmp_path
+    )
+    agent = runtime._agent
+    reviews: list[dict[str, object]] = []
+    spawn_review = agent._spawn_background_review
+
+    def record_review(**kwargs: object) -> None:
+        reviews.append(kwargs)
+        spawn_review(**kwargs)
+
+    agent._spawn_background_review = record_review
+    try:
+        # Ten tool iterations reach Hermes' default skill-review interval.
+        scripted_provider.main.extend(
+            [_write_file_call(step) for step in range(10)]
+            + [_chat_response("done", _usage(100, 1))]
+        )
+        turn = await _invoke(runtime, runtime_context, "Write the files")
+    finally:
+        await runtime.stop()
+
+    # The review fork would run after the turn returned, with its tokens
+    # outside the auxiliary client.
+    assert agent.skip_background_review is True
+    assert reviews == []
+    assert scripted_provider.served == ["main"] * 11
+    assert turn.usage is not None
+    assert (turn.usage.input_tokens, turn.usage.output_tokens) == (1100, 11)
 
 
 def _install_auxiliary_observer_fresh(monkeypatch) -> tuple[Any, list[tuple]]:
