@@ -5501,6 +5501,103 @@ for line in sys.stdin:
         }
     }
 
+    /// The `what_ran` a user gets from a normal benchmark config: two model
+    /// roles and three MCP servers on an adapter that accepts both, and no
+    /// `environment` section, so the provider defaults to `local`.
+    #[test]
+    fn local_host_what_ran_reports_a_realistic_config() {
+        use serde_json::json;
+        let (root, plan) = local_host_plan("success");
+        let descriptor_path = root.join("adapters/local-host/local-host.fabric-adapter.json");
+        let mut descriptor: Value =
+            serde_json::from_str(&fs::read_to_string(&descriptor_path).expect("read descriptor"))
+                .expect("descriptor JSON");
+        descriptor["config"] = json!({"accepts": ["models", "mcp"]});
+        fs::write(&descriptor_path, descriptor.to_string()).expect("write descriptor");
+        let mut config = serde_json::to_value(&plan.config).expect("config JSON");
+        config
+            .as_object_mut()
+            .expect("config")
+            .remove("environment");
+        config["models"] = json!({
+            "default": {"provider": "anthropic", "model": "anthropic/claude-sonnet-4-5"},
+            "summarizer": {"provider": "nvidia", "model": "nvidia/nemotron-nano-9b-v2"},
+        });
+        config["mcp"] = json!({"servers": {
+            "filesystem": {
+                "transport": "stdio",
+                "url": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/SECRET_ARGUMENT"],
+                "env": {"FS_TOKEN": "SECRET_ENVIRONMENT"},
+                "exposure": "harness_native"
+            },
+            "search": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.com/mcp?api_key=SECRET_QUERY",
+                "custom_headers": {"Authorization": "Bearer SECRET_HEADER"},
+                "exposure": "harness_native"
+            },
+            "events": {
+                "transport": "sse",
+                "url": "http://localhost:8931/sse",
+                "exposure": "harness_native"
+            }
+        }});
+        let config: crate::config::FabricConfig =
+            serde_json::from_value(config).expect("typed config");
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(&root))
+            .expect("resolve realistic plan");
+
+        let result = run_plan(&plan, RunRequest::text("provenance")).expect("result");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        let what_ran = serde_json::to_value(result.what_ran.expect("what_ran")).expect("JSON");
+        let configured = |value: &str| {
+            json!({"value": value, "source": "configured", "collected_by": "host_core",
+                   "method": "resolved_plan"})
+        };
+        let not_declared = json!({"state": "unsupported", "reason": "key_not_declared",
+            "source": "reported", "collected_by": "adapter", "method": "adapter_report"});
+        let model = |provider: &str, requested: &str| {
+            json!({"provider": provider, "requested": configured(requested),
+                   "served": not_declared})
+        };
+        let server = |transport: &str, endpoint: &str| {
+            json!({"origin": "plan", "transport": transport, "endpoint": configured(endpoint),
+                   "runtime": {"connected": not_declared, "protocol_version": not_declared,
+                       "server_name": not_declared, "server_version": not_declared,
+                       "tool_names": not_declared}})
+        };
+        assert_eq!(
+            what_ran,
+            json!({
+                "schema": "nemo.fabric.what_ran",
+                "version": "v1alpha1",
+                "fabric": {
+                    "core_version": {"value": crate::version(), "source": "observed",
+                        "collected_by": "host_core", "method": "crate_version"},
+                    "host_core_version": {"state": "not_applicable", "reason": "local_run",
+                        "source": "observed", "collected_by": "host_core",
+                        "method": "crate_version"}
+                },
+                "adapter": {"id": "acme.fabric.local-host", "package_version": not_declared},
+                "harness": {"name": not_declared, "version": not_declared},
+                "models": {
+                    "default": model("anthropic", "anthropic/claude-sonnet-4-5"),
+                    "summarizer": model("nvidia", "nvidia/nemotron-nano-9b-v2")
+                },
+                "mcp": {"servers": {
+                    "events": server("sse", "http://localhost:8931"),
+                    "filesystem": server("stdio", "npx"),
+                    "search": server("streamable-http", "https://mcp.example.com:443")
+                }},
+                "environment": {"provider": "local"}
+            })
+        );
+        assert!(!what_ran.to_string().contains("SECRET"), "{what_ran}");
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn local_host_what_ran_bounds_keep_the_status_and_error() {
         let model = |provider: &str| -> crate::config::ModelConfig {
