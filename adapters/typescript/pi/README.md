@@ -246,7 +246,10 @@ stream event, so a call that Pi retries after rate limits keeps the result's
 `mistral-conversations`, `openai-codex-responses`, `openai-completions`,
 `openai-responses` and `pi-messages` protocols use. A failed call of any other
 protocol, including the Google protocols and Bedrock, or a Codex call sent over
-a WebSocket, leaves its counts unknown. An attempt that got any other error
+a WebSocket, leaves its counts unknown. When a Codex WebSocket attempt fails and
+Pi falls back to HTTP, Pi records the failure on the final message, and the
+call's counts stay unknown even when the fallback succeeds, because the
+provider may have received and billed the WebSocket request. An attempt that got any other error
 status, such as a request timeout (408) or a server error (5xx), or that got no
 HTTP response, such as a connection failure or a timeout before headers, leaves
 its call's counts unknown even when a later attempt succeeds, because the
