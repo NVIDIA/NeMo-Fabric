@@ -177,12 +177,23 @@ def bench_dependencies_fixture(monkeypatch: pytest.MonkeyPatch):
     }
 
 
+@pytest.fixture(name="sync_responses_api_replies")
+def sync_responses_api_replies_fixture() -> list[Any]:
+    """Replies that the BenchAgent double requests through the synchronous ``call``."""
+    return []
+
+
 @pytest.fixture(name="responses_api_bench")
-def responses_api_bench_fixture(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+def responses_api_bench_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    sync_responses_api_replies: list[Any],
+) -> list[Any]:
     """Run a real NOOA ResponsesClient against queued Responses API replies.
 
     The BenchAgent double calls the real ``ResponsesClient`` directly, once per
-    queued reply. NOOA's task token accumulator is left in place, unpatched.
+    queued reply: ``acall`` for this fixture's queue, then ``call`` for
+    ``sync_responses_api_replies``. NOOA's task token accumulator is left in
+    place, unpatched.
     """
     pytest.importorskip("nooa.unifiedllm")
     import litellm
@@ -192,7 +203,11 @@ def responses_api_bench_fixture(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     async def aresponses(**_kwargs: Any) -> Any:
         return replies.pop(0)
 
+    def responses(**_kwargs: Any) -> Any:
+        return sync_responses_api_replies.pop(0)
+
     monkeypatch.setattr(litellm, "aresponses", aresponses)
+    monkeypatch.setattr(litellm, "responses", responses)
 
     class BenchAgentDouble:
         def __init__(self, llm: Any) -> None:
@@ -201,10 +216,11 @@ def responses_api_bench_fixture(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
             self.event_manager = object()
 
         async def _run_evaluation(self, task_input: dict[str, Any]) -> dict[str, Any]:
+            messages = [{"role": "user", "content": task_input["user_message"]}]
             while replies:
-                await self.llm.acall(
-                    [{"role": "user", "content": task_input["user_message"]}]
-                )
+                await self.llm.acall(messages)
+            while sync_responses_api_replies:
+                self.llm.call(messages)
             return {"response": "done", "success": True, "result": None}
 
     bench_module = types.ModuleType("nooa_bench.bench_agent")
@@ -263,7 +279,7 @@ def _usage_report(**counters: Any) -> Any:
     return ResponseAPIUsage(**counters)
 
 
-async def _invoke_responses_api_bench(tmp_path: Path) -> Any:
+async def _start_responses_api_bench(tmp_path: Path) -> Any:
     payload = _start_payload(tmp_path)
     payload["config"] = AgentConfig.from_mapping(
         {
@@ -279,6 +295,11 @@ async def _invoke_responses_api_bench(tmp_path: Path) -> Any:
     )
     runtime = bench_adapter.BenchRuntime()
     await runtime.start(payload)
+    return runtime
+
+
+async def _invoke_responses_api_bench(tmp_path: Path) -> Any:
+    runtime = await _start_responses_api_bench(tmp_path)
     try:
         return await runtime.invoke(
             AgentRunRequest.from_mapping({"input": "Fix the failing test."}),
@@ -325,6 +346,90 @@ async def test_bench_responses_api_usage_sums_every_call(
         "input_tokens_include_cache": True,
         "output_tokens": 50,
         "total_tokens": 300,
+    }
+
+
+async def test_bench_responses_api_usage_counts_sync_calls(
+    tmp_path: Path,
+    responses_api_bench: list[Any],
+    sync_responses_api_replies: list[Any],
+):
+    sync_responses_api_replies.append(
+        _responses_api_reply(
+            _usage_report(
+                input_tokens=80,
+                input_tokens_details={"cached_tokens": 30},
+                output_tokens=15,
+                total_tokens=95,
+            )
+        )
+    )
+
+    result = await _invoke_responses_api_bench(tmp_path)
+
+    assert not responses_api_bench
+    assert result.usage is not None
+    assert result.usage.to_mapping() == {
+        "input_tokens": 80,
+        "cached_input_tokens": 30,
+        "input_tokens_include_cache": True,
+        "output_tokens": 15,
+        "total_tokens": 95,
+    }
+
+
+async def test_bench_responses_api_usage_is_per_invocation_on_a_reused_runtime(
+    tmp_path: Path,
+    responses_api_bench: list[Any],
+):
+    runtime = await _start_responses_api_bench(tmp_path)
+    try:
+        responses_api_bench.append(
+            _responses_api_reply(
+                _usage_report(
+                    input_tokens=100,
+                    input_tokens_details={"cached_tokens": 40},
+                    output_tokens=20,
+                    total_tokens=120,
+                )
+            )
+        )
+        first = await runtime.invoke(
+            AgentRunRequest.from_mapping({"input": "Fix the first task."}),
+            _runtime_context(),
+        )
+        responses_api_bench.append(
+            _responses_api_reply(
+                _usage_report(
+                    input_tokens=7,
+                    input_tokens_details={"cached_tokens": 0},
+                    output_tokens=3,
+                    total_tokens=10,
+                )
+            )
+        )
+        second = await runtime.invoke(
+            AgentRunRequest.from_mapping({"input": "Fix the second task."}),
+            _runtime_context(invocation_id="invocation-2", request_id="request-2"),
+        )
+    finally:
+        await runtime.stop()
+
+    assert first.usage is not None
+    assert first.usage.to_mapping() == {
+        "input_tokens": 100,
+        "cached_input_tokens": 40,
+        "input_tokens_include_cache": True,
+        "output_tokens": 20,
+        "total_tokens": 120,
+    }
+    assert second.usage is not None
+    assert second.usage.to_mapping() == {
+        "input_tokens": 7,
+        "cached_input_tokens": 0,
+        "input_tokens_include_cache": True,
+        "output_tokens": 3,
+        "total_tokens": 10,
     }
 
 
