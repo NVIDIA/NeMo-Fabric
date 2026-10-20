@@ -1044,9 +1044,9 @@ MCP runtime facts yet.
 
 A reported fact whose key the adapter does not declare has state `unsupported`
 with reason `key_not_declared` and method `adapter_report`. A fact the adapter
-has no source for has reason `no_source`. A declared key that the result omits
-gives `unavailable` with reason `key_omitted`, and a fact the key omits gives
-`fact_omitted`. A malformed fact, or one that does not name source `reported`
+has no source for has state `unsupported` with reason `no_source`. A declared
+key that the result omits gives `unavailable` with reason `key_omitted`, and a
+fact the key omits gives `unavailable` with reason `fact_omitted`. A malformed fact, or one that does not name source `reported`
 and collector `adapter`, gives `collection_failed` with reason
 `invalid_report`. A key larger than 64 KiB of compact JSON gives
 `collection_failed` with reason `too_large`. None of these changes the run's
