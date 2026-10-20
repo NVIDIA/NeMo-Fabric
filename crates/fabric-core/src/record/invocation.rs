@@ -1407,4 +1407,42 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(folder);
     }
+
+    #[test]
+    fn warm_runtime_end_minus_start_cpu_is_each_invocation_own_cpu_time() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        // The snapshot's CPU time is cumulative since the host started, so a
+        // warm runtime's second invocation starts with the first one's CPU
+        // time already counted. Whole milliseconds keep the subtraction exact.
+        let host_cpu_ms = Arc::new(AtomicU64::new(1_000));
+        let read: ReadResources = {
+            let host_cpu_ms = Arc::clone(&host_cpu_ms);
+            Arc::new(move || {
+                let cpu_ms = host_cpu_ms.load(Ordering::SeqCst);
+                Ok(RuntimeResourceSnapshot {
+                    cpu_time_seconds: Duration::from_millis(cpu_ms).as_secs_f64(),
+                    ..snapshot()
+                })
+            })
+        };
+        let ticker = idle_ticker();
+        let (_, _, invocation) = record_test_fixture();
+        let cpu = |line: &Value| line["resources"]["cpu_time_seconds"].as_f64().expect("cpu");
+
+        let mut own_cpu = Vec::new();
+        for (name, burn_ms) in [("warm-cpu-1", 2_000), ("warm-cpu-2", 500)] {
+            let (folder, mut recorder) = start_recorder(name, &ticker, Arc::clone(&read));
+            host_cpu_ms.fetch_add(burn_ms, Ordering::SeqCst);
+            recorder.exchange_ended(recorder.read_exchange_end(Instant::now(), &read()));
+            recorder
+                .finish(Ok(succeeded_result(&invocation)))
+                .expect("result");
+            let lines = read_lines(&folder.join(RECORD_FILE_NAME));
+            let _ = std::fs::remove_dir_all(folder);
+            own_cpu.push(cpu(lines.last().expect("end line")) - cpu(&lines[0]));
+        }
+
+        // Not 3.0 and 3.5, the host's totals at each end.
+        assert_eq!(own_cpu, [2.0, 0.5]);
+    }
 }
