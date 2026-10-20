@@ -1664,18 +1664,22 @@ test("a retried compaction summary leaves the prompt's tokens unknown", () => {
   );
 });
 
-test("counts a request as 0 tokens only when the provider rejected it with an HTTP error status", () => {
+test("counts a failed request as 0 tokens only after rate limits", () => {
   const rejected = { stopReason: "error", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
-  const statusOnly = { accepted: false, streamed: false, rejectedStatus: true, unanswered: false };
   const none = { input: false, cacheRead: false, output: false };
-  const counts = (api, message, observation) => endedCallCounts(api, new Set(), message, { ...statusOnly, ...observation });
+  const counts = (api, message, observation) =>
+    endedCallCounts(api, new Set(), message, { accepted: false, streamed: false, statuses: [429], unanswered: false, ...observation });
 
   assert.deepEqual(counts("openai-completions", rejected, {}), allReported());
-  assert.deepEqual(counts("anthropic-messages", rejected, {}), allReported());
-  // No observed error status: a connection failure, or a protocol whose
-  // requests do not go through the observed fetch, may have billed the prompt.
-  assert.deepEqual(counts("openai-completions", rejected, { rejectedStatus: false }), none);
-  assert.deepEqual(counts("openai-completions", rejected, { unanswered: true }), none);
+  assert.deepEqual(counts("anthropic-messages", rejected, { statuses: [429, 429] }), allReported());
+  // A timeout, a server error, another client error, or an attempt without
+  // any response may have been billed.
+  for (const statuses of [[400], [408], [503], [504], [500], [429, 503]]) {
+    assert.deepEqual(counts("openai-completions", rejected, { statuses }), none, String(statuses));
+  }
+  assert.deepEqual(counts("openai-completions", rejected, { statuses: [], unanswered: true }), none);
+  assert.deepEqual(counts("openai-completions", rejected, { statuses: [] }), none);
+  // Protocols whose requests do not go through the observed fetch.
   assert.deepEqual(counts("google-generative-ai", rejected, {}), none);
   assert.deepEqual(counts("bedrock-converse-stream", rejected, {}), none);
   assert.deepEqual(counts("custom-api", rejected, {}), none);
@@ -1684,18 +1688,17 @@ test("counts a request as 0 tokens only when the provider rejected it with an HT
   assert.deepEqual(counts("openai-completions", rejected, { streamed: true }), none);
   assert.deepEqual(counts("openai-completions", { ...rejected, usage: { ...rejected.usage, input: 3 } }, {}), none);
   assert.deepEqual(counts("openai-completions", { ...rejected, stopReason: "aborted" }, {}), none);
-  // An attempt without a response leaves even a later successful attempt's
-  // counts unknown.
+  // A successful attempt keeps its reported counts after a rate limit, but not
+  // after an ambiguous attempt.
   const seen = new Set(["prompt_tokens", "completion_tokens"]);
-  assert.deepEqual(
-    endedCallCounts("openai-completions", seen, { stopReason: "stop", usage: rejected.usage }, {
-      accepted: true,
-      streamed: true,
-      rejectedStatus: false,
-      unanswered: true,
-    }),
-    none,
-  );
+  const succeeded = { stopReason: "stop", usage: rejected.usage };
+  const afterRetry = (observation) =>
+    endedCallCounts("openai-completions", seen, succeeded, { accepted: true, streamed: true, unanswered: false, ...observation });
+  assert.deepEqual(afterRetry({ statuses: [429, 200] }), { input: true, cacheRead: false, output: true });
+  for (const statuses of [[408, 200], [503, 200], [504, 200]]) {
+    assert.deepEqual(afterRetry({ statuses }), none, String(statuses));
+  }
+  assert.deepEqual(afterRetry({ statuses: [200], unanswered: true }), none);
 });
 
 /**
@@ -1905,6 +1908,24 @@ test(
     assert.deepEqual(retried.usage, { input: 50, output: 5 });
   },
 );
+
+for (const status of [408, 503, 504]) {
+  test(
+    `leaves a prompt's tokens unknown when a ${status} precedes a successful retry`,
+    { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+    async () => {
+      // The provider may have processed the prompt before answering with a
+      // timeout or a server error.
+      const [retried] = await promptsAgainstScriptedEndpoint(
+        [{ status }, { content: "after retry", usage: { prompt_tokens: 50, completion_tokens: 5 } }],
+        ["one"],
+      );
+
+      assert.equal(retried.text, "after retry");
+      assert.equal(retried.usage, undefined);
+    },
+  );
+}
 
 test(
   "leaves a prompt's tokens unknown when a connection fails before any HTTP response",

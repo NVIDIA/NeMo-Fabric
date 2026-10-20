@@ -453,11 +453,17 @@ export interface CallObservation {
   accepted: boolean;
   /** The provider sent at least one raw stream event. */
   streamed: boolean;
-  /** The provider answered an attempt with a 4xx or 5xx status. */
-  rejectedStatus: boolean;
+  /** The HTTP status of each attempt that got a response, in order. */
+  statuses: number[];
   /** An attempt failed before any HTTP response, such as a connection error. */
   unanswered: boolean;
 }
+
+// The one HTTP status after which a failed attempt is a known 0: a rate limit
+// rejects the request before the model runs. A timeout (408) or a server
+// error (5xx) can arrive after the provider processed the prompt, and other
+// 4xx statuses are not documented as unbilled for every provider.
+const UNBILLED_REJECTIONS = new Set([429]);
 
 // Built-in protocols that send their model request through the call's `fetch`
 // option (`@earendil-works/pi-ai` 1.0.3, `api/*.js`). The Google protocols
@@ -498,22 +504,20 @@ const observedFetch: typeof globalThis.fetch = async (input, init) => {
     attempts.observation.unanswered = true;
     throw error;
   }
-  attempts.observation.rejectedStatus ||= response.status >= 400;
+  attempts.observation.statuses.push(response.status);
   return response;
 };
 
 /**
- * Which counts an ended model call's provider reported. A call with an attempt
- * that failed before any HTTP response, such as a connection error or a
- * timeout before headers, reports none: the provider may have billed its
- * prompt. A call that ended in an error reports all its counts as 0 only when
- * its protocol sends requests through the observed fetch, the provider
- * answered every attempt with a 4xx or 5xx status, no attempt was accepted,
- * no raw event arrived, and Pi's usage is all zeros. Pi's built-in protocols
- * raise such a rejection, such as a rate limit (429), an overload or a server
- * error, before the first raw event (`@earendil-works/pi-ai` 1.0.3,
- * `api/*.js`), so such a call generated nothing. Any other call keeps only the
- * counts its raw events reported.
+ * Which counts an ended model call's provider reported. A call with an
+ * ambiguous attempt reports none, even when a later attempt succeeded: an
+ * attempt that got no HTTP response, such as a connection error or a timeout
+ * before headers, or that got any error status other than a rate limit (429),
+ * such as a 408 or a 5xx, may have been billed. A call that ended in an error
+ * reports all its counts as 0 only when its protocol sends requests through
+ * the observed fetch, the provider answered every attempt with a 429, no
+ * attempt was accepted, no raw event arrived, and Pi's usage is all zeros.
+ * Any other call keeps only the counts its raw events reported.
  */
 export function endedCallCounts(
   api: string,
@@ -521,14 +525,18 @@ export function endedCallCounts(
   message: { stopReason?: unknown; usage?: unknown },
   observation: CallObservation,
 ): ReportedCounts {
-  if (observation.unanswered) {
+  const ambiguous =
+    observation.unanswered ||
+    observation.statuses.some((status) => (status < 200 || status >= 300) && !UNBILLED_REJECTIONS.has(status));
+  if (ambiguous) {
     return NONE_REPORTED;
   }
   const counts = piCounts(message.usage);
   const rejected =
     FETCH_PROTOCOLS.has(api) &&
     message.stopReason === "error" &&
-    observation.rejectedStatus &&
+    observation.statuses.length > 0 &&
+    observation.statuses.every((status) => UNBILLED_REJECTIONS.has(status)) &&
     !observation.accepted &&
     !observation.streamed &&
     counts.input === 0 &&
@@ -546,9 +554,9 @@ export function endedCallCounts(
  * agent loop and compaction summaries both call the agent's stream function,
  * so wrapping it covers both, and Pi passes the final message to
  * `message_end` and its usage object unchanged to `compaction_end`. The record
- * is stored before Pi emits either event. A request the provider rejected
- * with an HTTP error status before generating reports all its counts as 0, and
- * a call with an attempt that got no HTTP response reports none. Pi's cache warmer replays a
+ * is stored before Pi emits either event. A request the provider rate-limited
+ * before generating reports all its counts as 0, and a call with an ambiguous
+ * attempt reports none (see `endedCallCounts`). Pi's cache warmer replays a
  * request with the same options, so a warm-up's raw events reach this
  * observer too, but the warm-up runs outside the agent's stream function: its
  * usage entry has no record and stays unknown. The record is copied when the
@@ -563,7 +571,7 @@ function recordReportedCounts(
   agent.streamFunction = async (model, context, options) => {
     const seen = new Set<string>();
     let api: string = model.api;
-    const observation: CallObservation = { accepted: false, streamed: false, rejectedStatus: false, unanswered: false };
+    const observation: CallObservation = { accepted: false, streamed: false, statuses: [], unanswered: false };
     const ownFetch = options?.fetch;
     const attempts: CallAttempts = {
       delegate: ownFetch === undefined || ownFetch === observedFetch ? globalThis.fetch : ownFetch,
