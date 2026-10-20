@@ -1661,29 +1661,47 @@ test("a retried compaction summary leaves the prompt's tokens unknown", () => {
   );
 });
 
-test("counts a rejected request as 0 tokens only for a built-in protocol", () => {
+test("counts a request as 0 tokens only when the provider rejected it with an HTTP error status", () => {
   const rejected = { stopReason: "error", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+  const statusOnly = { accepted: false, streamed: false, rejectedStatus: true, unanswered: false };
   const none = { input: false, cacheRead: false, output: false };
+  const counts = (api, message, observation) => endedCallCounts(api, new Set(), message, { ...statusOnly, ...observation });
 
-  assert.deepEqual(endedCallCounts("openai-completions", new Set(), rejected, false, false), allReported());
-  // A custom protocol may never report its HTTP response or raw events.
-  assert.deepEqual(endedCallCounts("custom-api", new Set(), rejected, false, false), none);
+  assert.deepEqual(counts("openai-completions", rejected, {}), allReported());
+  assert.deepEqual(counts("anthropic-messages", rejected, {}), allReported());
+  // No observed error status: a connection failure, or a protocol whose
+  // requests do not go through the observed fetch, may have billed the prompt.
+  assert.deepEqual(counts("openai-completions", rejected, { rejectedStatus: false }), none);
+  assert.deepEqual(counts("openai-completions", rejected, { unanswered: true }), none);
+  assert.deepEqual(counts("google-generative-ai", rejected, {}), none);
+  assert.deepEqual(counts("bedrock-converse-stream", rejected, {}), none);
+  assert.deepEqual(counts("custom-api", rejected, {}), none);
   // An accepted or streamed request, or one with counts, may have billed tokens.
-  assert.deepEqual(endedCallCounts("openai-completions", new Set(), rejected, true, false), none);
-  assert.deepEqual(endedCallCounts("openai-completions", new Set(), rejected, false, true), none);
+  assert.deepEqual(counts("openai-completions", rejected, { accepted: true }), none);
+  assert.deepEqual(counts("openai-completions", rejected, { streamed: true }), none);
+  assert.deepEqual(counts("openai-completions", { ...rejected, usage: { ...rejected.usage, input: 3 } }, {}), none);
+  assert.deepEqual(counts("openai-completions", { ...rejected, stopReason: "aborted" }, {}), none);
+  // An attempt without a response leaves even a later successful attempt's
+  // counts unknown.
+  const seen = new Set(["prompt_tokens", "completion_tokens"]);
   assert.deepEqual(
-    endedCallCounts("openai-completions", new Set(), { ...rejected, usage: { ...rejected.usage, input: 3 } }, false, false),
+    endedCallCounts("openai-completions", seen, { stopReason: "stop", usage: rejected.usage }, {
+      accepted: true,
+      streamed: true,
+      rejectedStatus: false,
+      unanswered: true,
+    }),
     none,
   );
-  assert.deepEqual(endedCallCounts("openai-completions", new Set(), { ...rejected, stopReason: "aborted" }, false, false), none);
 });
 
 /**
  * Run prompts through the real Pi SDK against a local chat-completions endpoint
  * that answers each request from `replies` in order. A reply's `usage` is sent
  * as the stream's final usage chunk; a reply without one sends no usage. A
- * reply with `status` rejects the request with that HTTP status, and one with
- * `dropStream` closes the connection after the first chunk.
+ * reply with `status` rejects the request with that HTTP status, one with
+ * `dropStream` closes the connection after the first chunk, and one with
+ * `closeBeforeHeaders` closes it before sending any response.
  * `modelExtensions` overrides the catalog entry, such as its context window,
  * and `extension` is the source of a Pi extension the session loads.
  */
@@ -1697,6 +1715,10 @@ async function promptsAgainstScriptedEndpoint(replies, prompts, modelExtensions 
   const provider = createServer(async (request, response) => {
     for await (const _chunk of request);
     const reply = replies[served++];
+    if (reply.closeBeforeHeaders) {
+      request.socket.destroy();
+      return;
+    }
     if (reply.status !== undefined) {
       response.writeHead(reply.status, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: { message: "rate limited", type: "rate_limit_error" } }));
@@ -1878,6 +1900,22 @@ test(
 
     assert.equal(retried.text, "after retry");
     assert.deepEqual(retried.usage, { input: 50, output: 5 });
+  },
+);
+
+test(
+  "leaves a prompt's tokens unknown when a connection fails before any HTTP response",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    // The provider may have received and billed the prompt before the
+    // connection failed, so the failed attempt is not a known 0.
+    const [retried] = await promptsAgainstScriptedEndpoint(
+      [{ closeBeforeHeaders: true }, { content: "after retry", usage: { prompt_tokens: 50, completion_tokens: 5 } }],
+      ["one"],
+    );
+
+    assert.equal(retried.text, "after retry");
+    assert.equal(retried.usage, undefined);
   },
 );
 

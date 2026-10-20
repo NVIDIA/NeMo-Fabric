@@ -5,6 +5,7 @@
 // into a controlled in-memory Pi session, including model credentials, skills,
 // extensions, custom tools, and workspace containment.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -85,6 +86,7 @@ export interface ReportedCounts {
 export type ReportedCountsLookup = (messageOrUsage: unknown) => ReportedCounts | undefined;
 
 const ALL_REPORTED: ReportedCounts = { input: true, cacheRead: true, output: true };
+const NONE_REPORTED: ReportedCounts = { input: false, cacheRead: false, output: false };
 
 /** Pi's four usage counts, each undefined unless it is a non-negative safe integer. */
 function piCounts(usage: unknown): Record<"input" | "cacheRead" | "cacheWrite" | "output", number | undefined> {
@@ -445,30 +447,90 @@ export function reportedCountsFrom(api: string, seen: ReadonlySet<string>): Repo
   };
 }
 
+/** What the adapter observed of one model call's HTTP attempts and stream. */
+export interface CallObservation {
+  /** The provider answered an attempt with a 2xx status (`onResponse`). */
+  accepted: boolean;
+  /** The provider sent at least one raw stream event. */
+  streamed: boolean;
+  /** The provider answered an attempt with a 4xx or 5xx status. */
+  rejectedStatus: boolean;
+  /** An attempt failed before any HTTP response, such as a connection error. */
+  unanswered: boolean;
+}
+
+// Built-in protocols that send their model request through the call's `fetch`
+// option (`@earendil-works/pi-ai` 1.0.3, `api/*.js`). The Google protocols
+// reject a custom fetch, Bedrock does not use one, and Codex may use a
+// WebSocket, which the fetch does not see.
+const FETCH_PROTOCOLS = new Set([
+  "anthropic-messages",
+  "azure-openai-responses",
+  "mistral-conversations",
+  "openai-codex-responses",
+  "openai-completions",
+  "openai-responses",
+  "pi-messages",
+]);
+
+interface CallAttempts {
+  delegate: typeof globalThis.fetch;
+  observation: CallObservation;
+}
+
+const callAttempts = new AsyncLocalStorage<CallAttempts>();
+
 /**
- * Which counts an ended model call's provider reported. A call that ended in
- * an error before the provider accepted the request, with no successful HTTP
- * response, no raw stream event and Pi's zero-filled usage, reports all its
- * counts as 0. Pi's built-in protocols call `onResponse` only after the
- * request succeeds and raise a rejection such as a rate limit (429), an
- * overload or a server error before the first raw event
- * (`@earendil-works/pi-ai` 1.0.3, `api/*.js`), so such a call generated
- * nothing. A protocol outside those may never call either hook, so its calls
- * keep only the counts their raw events reported.
+ * The fetch passed to every observed model call. It is one function, so Pi's
+ * clients cached per fetch, such as the Anthropic federation client, keep
+ * their token cache. It forwards to the call's own fetch and records each
+ * attempt's outcome on the call that made it.
+ */
+const observedFetch: typeof globalThis.fetch = async (input, init) => {
+  const attempts = callAttempts.getStore();
+  if (attempts === undefined) {
+    return globalThis.fetch(input, init);
+  }
+  let response: Response;
+  try {
+    response = await attempts.delegate(input, init);
+  } catch (error) {
+    attempts.observation.unanswered = true;
+    throw error;
+  }
+  attempts.observation.rejectedStatus ||= response.status >= 400;
+  return response;
+};
+
+/**
+ * Which counts an ended model call's provider reported. A call with an attempt
+ * that failed before any HTTP response, such as a connection error or a
+ * timeout before headers, reports none: the provider may have billed its
+ * prompt. A call that ended in an error reports all its counts as 0 only when
+ * its protocol sends requests through the observed fetch, the provider
+ * answered every attempt with a 4xx or 5xx status, no attempt was accepted,
+ * no raw event arrived, and Pi's usage is all zeros. Pi's built-in protocols
+ * raise such a rejection, such as a rate limit (429), an overload or a server
+ * error, before the first raw event (`@earendil-works/pi-ai` 1.0.3,
+ * `api/*.js`), so such a call generated nothing. Any other call keeps only the
+ * counts its raw events reported.
  */
 export function endedCallCounts(
   api: string,
   seen: ReadonlySet<string>,
   message: { stopReason?: unknown; usage?: unknown },
-  accepted: boolean,
-  streamed: boolean,
+  observation: CallObservation,
 ): ReportedCounts {
+  if (observation.unanswered) {
+    return NONE_REPORTED;
+  }
   const counts = piCounts(message.usage);
   const rejected =
-    REPORTED_FIELDS[api] !== undefined &&
+    FETCH_PROTOCOLS.has(api) &&
     message.stopReason === "error" &&
-    !accepted &&
-    !streamed &&
+    observation.rejectedStatus &&
+    !observation.accepted &&
+    !observation.streamed &&
     counts.input === 0 &&
     counts.cacheRead === 0 &&
     counts.cacheWrite === 0 &&
@@ -485,7 +547,8 @@ export function endedCallCounts(
  * so wrapping it covers both, and Pi passes the final message to
  * `message_end` and its usage object unchanged to `compaction_end`. The record
  * is stored before Pi emits either event. A request the provider rejected
- * before generating reports all its counts as 0. Pi's cache warmer replays a
+ * with an HTTP error status before generating reports all its counts as 0, and
+ * a call with an attempt that got no HTTP response reports none. Pi's cache warmer replays a
  * request with the same options, so a warm-up's raw events reach this
  * observer too, but the warm-up runs outside the agent's stream function: its
  * usage entry has no record and stays unknown. The record is copied when the
@@ -500,25 +563,32 @@ function recordReportedCounts(
   agent.streamFunction = async (model, context, options) => {
     const seen = new Set<string>();
     let api: string = model.api;
-    let accepted = false;
-    let streamed = false;
-    const response = await streamFunction(model, context, {
-      ...options,
-      onResponse: async (providerResponse, responseModel) => {
-        accepted ||= providerResponse.status >= 200 && providerResponse.status < 300;
-        await options?.onResponse?.(providerResponse, responseModel);
-      },
-      onProviderStreamEvent: async (data, eventModel) => {
-        streamed = true;
-        api = eventModel?.api ?? model.api;
-        noteReportedFields(seen, api, data);
-        await options?.onProviderStreamEvent?.(data, eventModel);
-      },
-    });
+    const observation: CallObservation = { accepted: false, streamed: false, rejectedStatus: false, unanswered: false };
+    const ownFetch = options?.fetch;
+    const attempts: CallAttempts = {
+      delegate: ownFetch === undefined || ownFetch === observedFetch ? globalThis.fetch : ownFetch,
+      observation,
+    };
+    const response = await callAttempts.run(attempts, () =>
+      streamFunction(model, context, {
+        ...options,
+        ...(FETCH_PROTOCOLS.has(model.api) ? { fetch: observedFetch } : {}),
+        onResponse: async (providerResponse, responseModel) => {
+          observation.accepted ||= providerResponse.status >= 200 && providerResponse.status < 300;
+          await options?.onResponse?.(providerResponse, responseModel);
+        },
+        onProviderStreamEvent: async (data, eventModel) => {
+          observation.streamed = true;
+          api = eventModel?.api ?? model.api;
+          noteReportedFields(seen, api, data);
+          await options?.onProviderStreamEvent?.(data, eventModel);
+        },
+      }),
+    );
     void response.result().then(
       (message) => {
         if (typeof message.usage === "object" && message.usage !== null) {
-          const counts = endedCallCounts(api, seen, message, accepted, streamed);
+          const counts = endedCallCounts(api, seen, message, observation);
           records.set(message, counts);
           records.set(message.usage, counts);
           onCallEnd(message.usage);
