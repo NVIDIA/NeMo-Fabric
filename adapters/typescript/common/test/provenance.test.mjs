@@ -107,3 +107,15 @@ test("the wrapper picks the served-model role from the start input", async () =>
     await rm(directory, {recursive: true, force: true});
   }
 });
+
+test("the report keeps the roles core keeps, in code point order", async () => {
+  // The vectors Rust core and the Python helper also read.
+  const vectors = JSON.parse(await readFile(new URL("../../../../tests/fixtures/what_ran/role-order.json", import.meta.url), "utf8"));
+  const packageVersion = {value: "1.2.3", source: "reported", collected_by: "adapter", method: "package_metadata"};
+  const notAttributed = missingFact("unavailable", "not_attributed", "harness_api");
+
+  const report = packageVersionReport(packageVersion, vectors.roles, {role: "\u{E000}", fact: notAttributed});
+
+  assert.deepEqual(Object.keys(report.models), vectors.kept);
+  assert.deepEqual(report.models["\u{E000}"], {served: notAttributed});
+});

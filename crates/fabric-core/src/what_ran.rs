@@ -1491,6 +1491,24 @@ mod tests {
     }
 
     #[test]
+    fn model_roles_past_the_cap_keep_the_code_point_order_the_helpers_share() {
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/what_ran/role-order.json"
+        ))
+        .expect("role order JSON");
+        let roles: Vec<String> = serde_json::from_value(vectors["roles"].clone()).expect("roles");
+        let expected: Vec<String> = serde_json::from_value(vectors["kept"].clone()).expect("kept");
+
+        let what_ran = collect(&plan_with_entries(&roles, &[]));
+
+        assert_eq!(map_keys(&what_ran["models"]), expected);
+        assert_eq!(
+            what_ran["models_truncated"],
+            json!({"reason": "entry_cap", "dropped": 1})
+        );
+    }
+
+    #[test]
     fn keys_longer_than_128_characters_are_dropped_without_taking_a_place() {
         let longest = "é".repeat(128);
         let too_long = "é".repeat(129);

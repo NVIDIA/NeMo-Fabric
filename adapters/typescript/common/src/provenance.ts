@@ -66,6 +66,23 @@ export function packageVersionFact(packageJson: URL): JsonObject {
 }
 
 /**
+ * Order two strings by Unicode code point, which is the UTF-8 byte order that
+ * NeMo Fabric core and the Python helper use. `Array.prototype.sort` compares
+ * UTF-16 code units, which puts a character above U+FFFF before one in
+ * U+E000 to U+FFFF.
+ */
+function compareCodePoints(left: string, right: string): number {
+  const leftPoints = Array.from(left, (char) => char.codePointAt(0) ?? 0);
+  const rightPoints = Array.from(right, (char) => char.codePointAt(0) ?? 0);
+  for (const [index, point] of leftPoints.entries()) {
+    const other = rightPoints[index];
+    if (other === undefined) return 1;
+    if (point !== other) return point - other;
+  }
+  return leftPoints.length - rightPoints.length;
+}
+
+/**
  * The report of an adapter that has a source only for its package version.
  * The harness name and version read `unsupported` with reason `no_source`, and
  * so does each role's served model, except the role that `servedModel` names,
@@ -78,7 +95,10 @@ export function packageVersionReport(
   servedModel?: ServedModelFact,
 ): JsonObject {
   const noSource = () => missingFact("unsupported", "no_source");
-  const roles = modelRoles.filter((role) => Array.from(role).length <= MAX_KEY_CHARS).sort().slice(0, MAX_MODEL_ROLES);
+  const roles = modelRoles
+    .filter((role) => Array.from(role).length <= MAX_KEY_CHARS)
+    .sort(compareCodePoints)
+    .slice(0, MAX_MODEL_ROLES);
   return {
     adapter: {package_version: packageVersion},
     harness: {name: noSource(), version: noSource()},

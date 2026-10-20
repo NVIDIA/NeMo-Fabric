@@ -114,6 +114,27 @@ def test_versions_report_keeps_16_roles_in_sorted_order_and_bounds_values():
     assert report["adapter"]["package_version"] == known("0.6.0")
 
 
+
+def test_versions_report_keeps_the_roles_core_keeps_in_code_point_order():
+    vectors = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "fixtures/what_ran/role-order.json"
+        ).read_text(encoding="utf-8")
+    )
+    override = missing("unavailable", "not_attributed", "harness_api")
+    served = {role: provenance.no_source_fact() for role in vectors["roles"]}
+    served["\ue000"] = override
+
+    report = provenance.versions_report(
+        package_version=provenance.known_fact("0.6.0", "package_metadata"),
+        harness_name=provenance.no_source_fact(),
+        harness_version=provenance.no_source_fact(),
+        served_models=served,
+    )
+
+    assert list(report["models"]) == vectors["kept"]
+    assert report["models"]["\ue000"] == {"served": override}
+
 def probe_threads() -> int:
     return sum(
         thread.name == "nemo-fabric-version-probe" for thread in threading.enumerate()
