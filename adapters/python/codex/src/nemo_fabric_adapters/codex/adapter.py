@@ -1114,7 +1114,7 @@ def versions_report(config: AgentConfig, harness_version: dict[str, Any]) -> dic
 
     return provenance.versions_report(
         package_version=provenance.package_version_fact(_PACKAGE_DISTRIBUTION),
-        harness_name=provenance.known_fact(_HARNESS_NAME, _METHOD_HARNESS_API),
+        harness_name=provenance.known_fact(_HARNESS_NAME, provenance.METHOD_ADAPTER_REPORT),
         harness_version=harness_version,
         served_models={role: provenance.no_source_fact() for role in config.models},
     )

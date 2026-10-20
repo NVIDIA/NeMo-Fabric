@@ -57,7 +57,7 @@ async def test_deepagents_persistent_host_with_mock_model(api_server, tmp_path):
     # Core read the adapter's versions report into what_ran.
     for result in (first, second):
         assert result.what_ran["harness"] == {
-            "name": _reported("deepagents"),
+            "name": {**_reported("deepagents"), "method": "adapter_report"},
             "version": _reported(importlib.metadata.version("deepagents")),
         }, results
         assert result.what_ran["adapter"]["package_version"] == _reported(

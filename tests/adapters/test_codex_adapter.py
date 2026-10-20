@@ -2165,3 +2165,22 @@ async def test_codex_cli_version_read_degrades_to_a_state(read, expected):
 
     assert await adapter.read_cli_version(thread, timeout=0.1) == expected
     assert time.monotonic() - started < 1
+
+
+def test_codex_versions_report_names_the_harness_as_an_adapter_report():
+    config = AgentConfig.from_mapping(
+        {"models": {"default": {"provider": "openai", "model": "gpt-test"}}}
+    )
+    harness_version = _version_fact("unavailable", "not_collected")
+
+    report = adapter.versions_report(config, harness_version)
+
+    assert report["harness"] == {
+        "name": {
+            "value": "codex",
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "adapter_report",
+        },
+        "version": harness_version,
+    }

@@ -433,7 +433,7 @@ class HermesRuntime:
                         _PACKAGE_DISTRIBUTION
                     ),
                     harness_name=provenance.known_fact(
-                        _HARNESS_NAME, _METHOD_HARNESS_API
+                        _HARNESS_NAME, provenance.METHOD_ADAPTER_REPORT
                     ),
                     harness_version=self._harness_version,
                     served_models={

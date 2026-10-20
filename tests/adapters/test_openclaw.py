@@ -293,7 +293,7 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
             "value": "openclaw",
             "source": "reported",
             "collected_by": "adapter",
-            "method": "harness_probe",
+            "method": "adapter_report",
         },
         "version": {
             "value": "2026.9.4",

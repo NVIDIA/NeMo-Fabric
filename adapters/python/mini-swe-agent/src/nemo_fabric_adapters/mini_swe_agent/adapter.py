@@ -197,7 +197,7 @@ class MiniSweAgentRuntime:
                         _PACKAGE_DISTRIBUTION
                     ),
                     harness_name=provenance.known_fact(
-                        _HARNESS_DISTRIBUTION, provenance.METHOD_PACKAGE_METADATA
+                        _HARNESS_DISTRIBUTION, provenance.METHOD_ADAPTER_REPORT
                     ),
                     harness_version=self._harness_version,
                     served_models={

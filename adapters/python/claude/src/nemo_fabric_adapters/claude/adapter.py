@@ -1292,7 +1292,9 @@ class ClaudeRuntime:
         served[_selected_model_role(config)] = served_model_fact(messages)
         return provenance.versions_report(
             package_version=self._package_version,
-            harness_name=provenance.known_fact(_HARNESS_NAME, _METHOD_INIT_MESSAGE),
+            harness_name=provenance.known_fact(
+                _HARNESS_NAME, provenance.METHOD_ADAPTER_REPORT
+            ),
             harness_version=self._harness_version,
             served_models=served,
         )

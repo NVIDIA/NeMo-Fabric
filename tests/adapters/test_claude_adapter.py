@@ -2187,7 +2187,7 @@ async def test_claude_reports_the_cli_version_from_its_init_message(
             "package_version": reported(package_version, "package_metadata")
         }
         assert report["harness"] == {
-            "name": reported("claude-code", "harness_init_message"),
+            "name": reported("claude-code", "adapter_report"),
             "version": reported("2.1.294", "harness_init_message"),
         }
 

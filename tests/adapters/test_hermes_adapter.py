@@ -1753,7 +1753,7 @@ async def test_hermes_reports_the_version_its_version_call_returns(
 
     report = result.extensions["nemo_fabric.versions.v1"]
     assert report["harness"] == {
-        "name": _reported("hermes-agent"),
+        "name": {**_reported("hermes-agent"), "method": "adapter_report"},
         "version": _reported(get_version_info().derived_version),
     }
     assert report["adapter"]["package_version"]["value"] == "0.6.0"

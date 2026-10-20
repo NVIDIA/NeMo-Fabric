@@ -95,7 +95,7 @@ async def test_mini_swe_agent_plans_diagnoses_and_runs(
     assert result.output["usage"]["api_calls"] == 1
     what_ran = result.what_ran
     assert what_ran["harness"] == {
-        "name": _reported("mini-swe-agent"),
+        "name": {**_reported("mini-swe-agent"), "method": "adapter_report"},
         "version": _reported(importlib.metadata.version("mini-swe-agent")),
     }
     assert what_ran["adapter"]["package_version"] == _reported(

@@ -1413,7 +1413,7 @@ class OpenClawRuntime:
             provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
                 package_version=provenance.package_version_fact(_PACKAGE_DISTRIBUTION),
                 harness_name=provenance.known_fact(
-                    _HARNESS_NAME, self._harness_version["method"]
+                    _HARNESS_NAME, provenance.METHOD_ADAPTER_REPORT
                 ),
                 harness_version=self._harness_version,
                 served_models={role: provenance.no_source_fact() for role in models},
