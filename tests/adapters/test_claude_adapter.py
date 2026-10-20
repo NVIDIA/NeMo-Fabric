@@ -2227,3 +2227,141 @@ async def test_claude_without_an_init_message_reads_the_version_as_not_collected
         "collected_by": "adapter",
         "method": "harness_init_message",
     }
+
+
+def wire_lines(name: str) -> list[dict[str, Any]]:
+    lines = (CLAUDE_STREAMS / name).read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines]
+
+
+def assistant_line(model: str, parent_tool_use_id: str | None = None) -> dict[str, Any]:
+    """Claude Code's wire shape of an assistant message, from the saved stream."""
+
+    [line] = [line for line in wire_lines("normal.jsonl") if line["type"] == "assistant"]
+    line["message"]["model"] = model
+    line["parent_tool_use_id"] = parent_tool_use_id
+    return line
+
+
+def parsed_stream(*middle: dict[str, Any]) -> list[Message]:
+    """The saved init and result lines around ``middle``, through the SDK parser."""
+
+    init, _, result = wire_lines("normal.jsonl")
+    return [parse_message(line) for line in (init, *middle, result)]
+
+
+def served_state(state: str, reason: str) -> dict[str, str]:
+    return {
+        "state": state,
+        "reason": reason,
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "harness_api",
+    }
+
+
+SERVED = "claude-served-snapshot-20991231"
+
+
+@pytest.mark.parametrize(
+    ("stream", "expected"),
+    [
+        pytest.param(
+            lambda: stream_messages("normal.jsonl"),
+            reported(SERVED, "harness_api"),
+            id="one-main-thread-model",
+        ),
+        pytest.param(
+            lambda: parsed_stream(
+                assistant_line("claude-a"), assistant_line("claude-b")
+            ),
+            served_state("unavailable", "not_attributed"),
+            id="two-main-thread-models",
+        ),
+        pytest.param(
+            lambda: parsed_stream(
+                assistant_line(SERVED),
+                assistant_line("claude-haiku-child", parent_tool_use_id="toolu_01"),
+            ),
+            reported(SERVED, "harness_api"),
+            id="main-and-child-models",
+        ),
+        pytest.param(
+            lambda: parsed_stream(
+                assistant_line(SERVED), assistant_line("<synthetic>")
+            ),
+            reported(SERVED, "harness_api"),
+            id="real-and-synthetic",
+        ),
+        pytest.param(
+            lambda: stream_messages("api-error.jsonl"),
+            served_state("unavailable", "empty_response"),
+            id="synthetic-only",
+        ),
+        pytest.param(
+            lambda: parsed_stream(),
+            served_state("unavailable", "empty_response"),
+            id="no-assistant-message",
+        ),
+    ],
+)
+async def test_claude_reports_the_main_thread_served_model(
+    claude_payload, monkeypatch, stream, expected
+):
+    [report] = await versions_reports(claude_payload, monkeypatch, [stream()])
+
+    assert report["models"] == {"default": {"served": expected}}
+
+
+async def test_claude_reports_the_served_model_under_a_sole_non_default_role(
+    claude_payload, monkeypatch
+):
+    claude_payload["config"]["models"] = {
+        "primary": claude_payload["config"]["models"].pop("default")
+    }
+
+    [report] = await versions_reports(
+        claude_payload, monkeypatch, [stream_messages("normal.jsonl")]
+    )
+
+    assert report["models"] == {"primary": {"served": reported(SERVED, "harness_api")}}
+
+
+async def test_claude_served_model_is_isolated_per_invocation(
+    claude_payload, monkeypatch
+):
+    reports = await versions_reports(
+        claude_payload,
+        monkeypatch,
+        [
+            parsed_stream(assistant_line("claude-a")),
+            parsed_stream(assistant_line("claude-b")),
+            stream_messages("api-error.jsonl"),
+        ],
+    )
+
+    assert [report["models"]["default"]["served"] for report in reports] == [
+        reported("claude-a", "harness_api"),
+        reported("claude-b", "harness_api"),
+        served_state("unavailable", "empty_response"),
+    ]
+
+
+async def test_claude_served_model_reads_collection_failed_when_the_stream_fails(
+    claude_payload, monkeypatch
+):
+    async def respond(_client: MagicMock) -> AsyncIterator[Message]:
+        yield parse_message(assistant_line(SERVED))
+        raise CLIConnectionError("stream closed")
+
+    install_fake_client(monkeypatch, respond)
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(start_payload))
+    result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    await runtime.stop()
+
+    assert result.extensions[VERSIONS_REPORT_KEY]["models"]["default"]["served"] == (
+        served_state("collection_failed", "no_result")
+    )

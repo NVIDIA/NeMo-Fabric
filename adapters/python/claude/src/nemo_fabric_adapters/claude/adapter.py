@@ -15,11 +15,13 @@ import shutil
 import subprocess
 from dataclasses import asdict
 from dataclasses import dataclass
+from dataclasses import field
 from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from claude_agent_sdk import AssistantMessage
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk import ClaudeSDKError
@@ -835,6 +837,50 @@ _DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
 _PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-claude"
 _HARNESS_NAME = "claude-code"
 _METHOD_INIT_MESSAGE = "harness_init_message"
+_METHOD_HARNESS_API = "harness_api"
+# Claude Code names its own API-error messages with this model.
+_SYNTHETIC_MODEL = "<synthetic>"
+
+
+@dataclass
+class InvocationMessages:
+    """One invocation's messages, and why collecting them failed, if it did."""
+
+    items: list[Message] = field(default_factory=list)
+    failure: str | None = None
+
+
+def served_model_fact(messages: InvocationMessages | None) -> dict[str, Any]:
+    """The model that served this invocation's main thread, as a fact.
+
+    Only assistant messages without a ``parent_tool_use_id`` count, so a
+    subagent's model never decides it, and Claude Code's ``<synthetic>``
+    API-error messages are skipped. One distinct model is reported. Two or
+    more read ``not_attributed``, and none reads ``empty_response``. A stream
+    that failed reads ``collection_failed``, and an invocation that never
+    queried Claude Code reads ``not_collected``.
+    """
+
+    if messages is None:
+        return provenance.missing_fact("unavailable", "not_collected", _METHOD_HARNESS_API)
+    if messages.failure is not None:
+        return provenance.missing_fact(
+            "collection_failed", messages.failure, _METHOD_HARNESS_API
+        )
+    models = {
+        message.model
+        for message in messages.items
+        if isinstance(message, AssistantMessage)
+        and message.parent_tool_use_id is None
+        and isinstance(message.model, str)
+        and message.model
+        and message.model != _SYNTHETIC_MODEL
+    }
+    if not models:
+        return provenance.missing_fact("unavailable", "empty_response", _METHOD_HARNESS_API)
+    if len(models) > 1:
+        return provenance.missing_fact("unavailable", "not_attributed", _METHOD_HARNESS_API)
+    return provenance.known_fact(models.pop(), _METHOD_HARNESS_API)
 
 
 def init_message_version(messages: list[Message]) -> dict[str, Any] | None:
@@ -1165,7 +1211,7 @@ class ClaudeRuntime:
                 "claude_runtime_mismatch",
                 "Claude invocation does not match the connected runtime",
             )
-        messages: list[Message] = []
+        messages: InvocationMessages | None = None
         if self._unusable:
             return _agent_run_result(
                 _failure(
@@ -1183,6 +1229,7 @@ class ClaudeRuntime:
         except ClaudeSDKError as error:
             output = sdk_failure(error)
         else:
+            messages = InvocationMessages()
             relay = self._relay
             atif_before = (
                 relay_artifacts.snapshot_atif_files(relay.plugin_config)
@@ -1230,18 +1277,24 @@ class ClaudeRuntime:
         return _agent_run_result(output, self._versions_report(agent_config, messages))
 
     def _versions_report(
-        self, config: AgentConfig, messages: list[Message]
+        self, config: AgentConfig, messages: InvocationMessages | None
     ) -> dict[str, Any]:
-        """Report this runtime's versions, refreshed from any init message."""
+        """Report this runtime's versions and this invocation's served model.
 
-        version = init_message_version(messages)
+        The harness version is refreshed from any init message. The served
+        model belongs to the role Claude Code runs; another role has no source.
+        """
+
+        version = init_message_version(messages.items if messages else [])
         if version is not None:
             self._harness_version = version
+        served = {role: provenance.no_source_fact() for role in config.models}
+        served[_selected_model_role(config)] = served_model_fact(messages)
         return provenance.versions_report(
             package_version=self._package_version,
             harness_name=provenance.known_fact(_HARNESS_NAME, _METHOD_INIT_MESSAGE),
             harness_version=self._harness_version,
-            served_models={role: provenance.no_source_fact() for role in config.models},
+            served_models=served,
         )
 
     async def _run_query(
@@ -1249,15 +1302,16 @@ class ClaudeRuntime:
         client: ClaudeSDKClient,
         prompt: str,
         remaining_timeout: float,
-        messages: list[Message] | None = None,
+        collected: InvocationMessages | None = None,
     ) -> dict[str, Any]:
         """Run one SDK query and normalize its terminal result.
 
         Every message other than the terminal result is appended to
-        ``messages``, so the caller can read this invocation's messages.
+        ``collected``, which also records why the stream failed, if it did.
         """
 
-        messages = [] if messages is None else messages
+        collected = InvocationMessages() if collected is None else collected
+        messages = collected.items
         result: ResultMessage | None = None
         deadline = asyncio.timeout(remaining_timeout)
         try:
@@ -1270,6 +1324,7 @@ class ClaudeRuntime:
                         messages.append(message)
         except (TimeoutError, ClaudeSDKError) as error:
             self._unusable = True
+            collected.failure = "timeout" if deadline.expired() else "no_result"
             await self._interrupt_failed_invocation()
             output = (
                 _failure("timeout", "Claude invocation timed out")
@@ -1287,6 +1342,7 @@ class ClaudeRuntime:
         else:
             if result is None:
                 self._unusable = True
+                collected.failure = "no_result"
                 output = _failure(
                     "claude_missing_result", "Claude returned no terminal result"
                 )
