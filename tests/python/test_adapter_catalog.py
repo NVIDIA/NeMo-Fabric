@@ -98,3 +98,50 @@ def test_every_bundled_descriptor_declares_the_versions_report(bundle):
         assert "nemo_fabric.versions.v1" not in run_result.get("required", []), (
             adapter_id
         )
+
+
+SKIPPED_DIRECTORIES = {"node_modules", "target", "build", "dist"}
+
+
+def _checked_in_descriptors(repo_root: Path):
+    for directory, subdirectories, filenames in os.walk(repo_root):
+        subdirectories[:] = [
+            name
+            for name in subdirectories
+            if not name.startswith(".") and name not in SKIPPED_DIRECTORIES
+        ]
+        for filename in filenames:
+            if filename.endswith(".fabric-adapter.json"):
+                yield Path(directory) / filename
+
+
+def test_every_copy_of_a_bundled_descriptor_declares_the_versions_report(
+    bundle, repo_root: Path
+):
+    # Bundled adapters always attach the versions report, and core fails a run
+    # whose descriptor does not declare it, so copies used by examples and the
+    # CLI presets must declare it too.
+    bundled_ids = set(bundle["adapters"])
+    bundled_modules = {
+        entry["descriptor"]["runner"]["module"]
+        for entry in bundle["adapters"].values()
+        if "module" in entry["descriptor"]["runner"]
+    }
+    sources = {
+        (repo_root / entry["source"]).resolve() for entry in bundle["adapters"].values()
+    }
+
+    copies = []
+    for path in _checked_in_descriptors(repo_root):
+        descriptor = json.loads(path.read_bytes())
+        if (
+            descriptor.get("adapter_id") in bundled_ids
+            or descriptor.get("runner", {}).get("module") in bundled_modules
+        ):
+            copies.append(path)
+            run_result = descriptor.get("extension_schemas", {}).get("run_result", {})
+            assert run_result.get("properties", {}).get("nemo_fabric.versions.v1") == {
+                "type": "object"
+            }, path
+
+    assert {path.resolve() for path in copies} - sources
