@@ -1937,19 +1937,21 @@ mod tests {
 
     #[test]
     fn string_values_longer_than_256_characters_end_with_a_digest_prefix() {
-        let exact = "é".repeat(256);
-        assert_eq!(bounded_text(&exact), exact);
+        // The vectors the Python and TypeScript helpers also read. Expected
+        // digests are the first 15 hex digits of `sha256sum` over the whole
+        // value's UTF-8 bytes.
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/what_ran/string-length.json"
+        ))
+        .expect("string length JSON");
+        let cases = vectors["cases"].as_array().expect("cases");
+        assert_eq!(cases.len(), 3);
+        for case in cases {
+            let text = case["text"].as_str().expect("text");
+            let bounded = bounded_text(text);
 
-        // Expected digests: the first 15 hex digits of `sha256sum` over the
-        // whole value's UTF-8 bytes.
-        for (long, prefix, digest) in [
-            (format!("{}a", "m".repeat(300)), "m", "96858eedeb3c8e6"),
-            ("é".repeat(300), "é", "7250b66610f8b7d"),
-        ] {
-            let bounded = bounded_text(&long);
-
-            assert_eq!(bounded, format!("{}~{digest}", prefix.repeat(240)));
-            assert_eq!(bounded.chars().count(), 256);
+            assert_eq!(bounded, case["expected"].as_str().expect("expected"));
+            assert_eq!(bounded.chars().count(), text.chars().count().min(256));
         }
     }
 

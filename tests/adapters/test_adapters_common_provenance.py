@@ -37,17 +37,22 @@ def missing(state: str, reason: str, method: str = "package_metadata") -> dict[s
     }
 
 
-# The same vectors as core's string length test in `what_ran.rs`.
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("é" * 256, "é" * 256),
-        ("m" * 300 + "a", "m" * 240 + "~96858eedeb3c8e6"),
-        ("é" * 300, "é" * 240 + "~7250b66610f8b7d"),
-    ],
-)
-def test_bounded_text_matches_core_string_length_rule(text, expected):
-    assert provenance.bounded_text(text) == expected
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/what_ran"
+
+
+def string_length_cases() -> list[dict[str, str]]:
+    """The string length vectors that core and the TypeScript helper also read."""
+
+    vectors = json.loads((FIXTURES / "string-length.json").read_text(encoding="utf-8"))
+    return vectors["cases"]
+
+
+def test_bounded_text_matches_core_string_length_rule():
+    cases = string_length_cases()
+
+    assert len(cases) == 3
+    for case in cases:
+        assert provenance.bounded_text(case["text"]) == case["expected"]
 
 
 def test_known_fact_replaces_a_lone_surrogate_so_the_result_stays_valid_json():
@@ -116,11 +121,7 @@ def test_versions_report_keeps_16_roles_in_sorted_order_and_bounds_values():
 
 
 def test_versions_report_keeps_the_roles_core_keeps_in_code_point_order():
-    vectors = json.loads(
-        (
-            Path(__file__).resolve().parents[1] / "fixtures/what_ran/role-order.json"
-        ).read_text(encoding="utf-8")
-    )
+    vectors = json.loads((FIXTURES / "role-order.json").read_text(encoding="utf-8"))
     override = missing("unavailable", "not_attributed", "harness_api")
     served = {role: provenance.no_source_fact() for role in vectors["roles"]}
     served["\ue000"] = override

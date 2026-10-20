@@ -19,11 +19,14 @@ import {
 
 const noSource = {state: "unsupported", reason: "no_source", source: "reported", collected_by: "adapter", method: "adapter_report"};
 
-// The same vectors as core's string length test in `what_ran.rs`.
-test("bounded text matches core's string length rule", () => {
-  assert.equal(boundedText("é".repeat(256)), "é".repeat(256));
-  assert.equal(boundedText(`${"m".repeat(300)}a`), `${"m".repeat(240)}~96858eedeb3c8e6`);
-  assert.equal(boundedText("é".repeat(300)), `${"é".repeat(240)}~7250b66610f8b7d`);
+const fixtures = new URL("../../../../tests/fixtures/what_ran/", import.meta.url);
+
+test("bounded text matches core's string length rule", async () => {
+  // The vectors Rust core and the Python helper also read.
+  const {cases} = JSON.parse(await readFile(new URL("string-length.json", fixtures), "utf8"));
+  assert.equal(cases.length, 3);
+  for (const {text, expected} of cases) assert.equal(boundedText(text), expected);
+  // JSON fixtures can't carry a lone surrogate into Rust, so this case stays here.
   assert.equal(boundedText("v\ud800"), "v?");
 });
 
@@ -110,7 +113,7 @@ test("the wrapper picks the served-model role from the start input", async () =>
 
 test("the report keeps the roles core keeps, in code point order", async () => {
   // The vectors Rust core and the Python helper also read.
-  const vectors = JSON.parse(await readFile(new URL("../../../../tests/fixtures/what_ran/role-order.json", import.meta.url), "utf8"));
+  const vectors = JSON.parse(await readFile(new URL("role-order.json", fixtures), "utf8"));
   const packageVersion = {value: "1.2.3", source: "reported", collected_by: "adapter", method: "package_metadata"};
   const notAttributed = missingFact("unavailable", "not_attributed", "harness_api");
 
