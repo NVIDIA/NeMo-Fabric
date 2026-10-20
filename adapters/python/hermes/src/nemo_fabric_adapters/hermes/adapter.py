@@ -453,8 +453,9 @@ class HermesRuntime:
                     self._uncounted_responses += 1
                 return
             usage = getattr(response, "usage", None)
-            # A response without usage is counted by the compressor hook.
-            if usage:
+            # A response without usage is counted by the compressor hook. An
+            # empty usage object is a report with every count left out.
+            if usage is not None:
                 for count in _omitted_counts(agent, usage):
                     self._unreported_counts[count] += 1
 

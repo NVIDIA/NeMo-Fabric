@@ -1813,6 +1813,27 @@ async def test_hermes_usage_with_partial_provider_report_leaves_omitted_count_un
     assert after_partial.usage.total_tokens == 440
 
 
+async def test_hermes_usage_with_empty_provider_usage_is_unknown():
+    # Hermes treats an empty usage object like a missing one; the adapter also
+    # counts it as a report with every count left out.
+    agent = _UsageRecordingAgent(
+        [[{}], [{"prompt_tokens": 400, "completion_tokens": 40}]]
+    )
+    runtime = _usage_recording_runtime(agent)
+    invocation = _usage_invocation()
+
+    empty = await runtime.invoke(*invocation)
+    after_empty = await runtime.invoke(*invocation)
+
+    assert agent.session_api_calls == 2
+    assert empty.usage is None
+    assert after_empty.usage is not None
+    assert (after_empty.usage.input_tokens, after_empty.usage.output_tokens) == (
+        400,
+        40,
+    )
+
+
 async def test_hermes_usage_reports_cache_counts_only_when_the_provider_sent_them():
     chat = _UsageRecordingAgent(
         [

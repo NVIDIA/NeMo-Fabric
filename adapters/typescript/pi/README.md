@@ -239,15 +239,16 @@ Pi's built-in ones reports no counts the adapter can check, so its calls leave
 the result without `usage`.
 
 The result has no `usage` when Pi produced no assistant message, when a model
-call reported none of the counts, when a tool result has no complete usage
-report, when an assistant message was aborted, when a compaction was aborted or
-reported no usage, or when Pi retried a compaction summary call, because Pi
-keeps no usage for the failed attempt. It also has no `usage` when Pi recorded
-a cache warm-up during the invocation: Pi replays a warm-up outside the agent's
-stream function, so the adapter cannot tie its raw report to the warm-up's
-usage entry. It also has no `usage` when a compaction cuts inside a turn,
-because Pi then summarizes the earlier history and the start of that turn in
-separate calls and reports only their combined usage.
+call reported none of the counts, when a tool result's `usage` has a missing or
+invalid count, when an assistant message was aborted, when a compaction was
+aborted or reported no usage, or when Pi retried a compaction summary call,
+because Pi keeps no usage for the failed attempt. It also has no `usage` when
+Pi recorded a cache warm-up during the invocation: Pi replays a warm-up outside
+the agent's stream function, so the adapter cannot tie its raw report to the
+warm-up's usage entry. It also has no `usage` when a compaction cuts inside a
+turn, because Pi then summarizes the earlier history and the start of that turn
+in separate calls and reports only their combined usage. A tool result without
+a `usage` field adds nothing and leaves the result's `usage` unchanged.
 
 ## Custom Tool Modules
 
