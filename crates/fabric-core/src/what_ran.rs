@@ -357,10 +357,11 @@ pub struct AdapterFacts {
     /// Version of the adapter package, as the adapter reports it.
     pub package_version: Fact<String>,
     /// Fingerprint `nemo.fabric.adapter_descriptor/v1` of the descriptor
-    /// contents as authored, `sha256:<hex>`, taken from the resolved plan,
-    /// so its source is `configured`. Core writes it whenever the
-    /// `adapter` section is present; readers accept its absence from cores
-    /// that predate it.
+    /// selected during plan resolution, as authored, `sha256:<hex>`. It is
+    /// copied from the resolved plan as a `configured` fact, and never
+    /// recomputed or validated at invocation, so it is not proof of what
+    /// executed. Core writes it whenever the `adapter` section is present;
+    /// readers accept its absence from cores that predate it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub descriptor_fingerprint: Option<Fact<String>>,
 }
@@ -814,11 +815,11 @@ fn core_version_fact() -> Fact<String> {
     )
 }
 
-/// The fingerprint plan resolution took of the adapter descriptor file.
+/// The fingerprint of the descriptor selected during plan resolution.
 ///
-/// The value comes from the resolved plan, so the fact is `configured`.
-/// Core cannot check it again here: the hash covers the authored file,
-/// which the plan does not keep.
+/// The value is copied from the resolved plan, so the fact is
+/// `configured`. Core does not recompute or validate it at invocation: the
+/// hash covers the authored file, which the plan does not keep.
 fn descriptor_fingerprint_fact(plan: &RunPlan) -> Fact<String> {
     let missing = |state, reason| {
         Fact::missing(

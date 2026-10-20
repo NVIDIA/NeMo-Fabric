@@ -21,7 +21,7 @@ Every invocation that reaches the adapter boundary returns a normalized
 | `telemetry` | References to NVIDIA NeMo Relay or other telemetry streams from the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
-| `what_ran` | What executed for this invocation: core version, adapter ID and descriptor fingerprint, requested models, configured MCP servers, and environment provider, each fact with its source, or `None` when the core predates it. |
+| `what_ran` | What executed for this invocation: core version, adapter ID and the fingerprint of the descriptor selected during plan resolution, requested models, configured MCP servers, and environment provider, each fact with its source, or `None` when the core predates it. |
 | `runtime_id`, `invocation_id`, `request_id` | Correlation IDs across runtimes, logs, telemetry, and artifacts. |
 
 Handle a result with this status-first pattern:

@@ -2674,7 +2674,7 @@
           "description": "Adapter-owned compatibility and capability metadata."
         },
         "descriptor_fingerprint": {
-          "description": "Fingerprint `nemo.fabric.adapter_descriptor/v1` of the first\nprovenance record's file, the one core runs the adapter from:\n`sha256:` and the lowercase hex SHA-256 of the RFC 8785 form of the\ndescriptor as authored, before core fills in defaults. Absent in\nplans from cores that predate it and in standalone inspection.",
+          "description": "Fingerprint `nemo.fabric.adapter_descriptor/v1` of the descriptor\nselected during plan resolution, the first provenance record's file:\n`sha256:` and the lowercase hex SHA-256 of the RFC 8785 form of the\ndescriptor as authored, before core fills in defaults. Core computes\nit once, at resolution, and never recomputes or checks it at\ninvocation. Absent in plans from cores that predate it and in\nstandalone inspection.",
           "type": [
             "string",
             "null"

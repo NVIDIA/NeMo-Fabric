@@ -426,11 +426,13 @@ pub struct ResolvedAdapterDescriptor {
     pub provenance: Vec<DescriptorProvenance>,
     /// Adapter-owned compatibility and capability metadata.
     pub descriptor: AdapterDescriptor,
-    /// Fingerprint `nemo.fabric.adapter_descriptor/v1` of the first
-    /// provenance record's file, the one core runs the adapter from:
+    /// Fingerprint `nemo.fabric.adapter_descriptor/v1` of the descriptor
+    /// selected during plan resolution, the first provenance record's file:
     /// `sha256:` and the lowercase hex SHA-256 of the RFC 8785 form of the
-    /// descriptor as authored, before core fills in defaults. Absent in
-    /// plans from cores that predate it and in standalone inspection.
+    /// descriptor as authored, before core fills in defaults. Core computes
+    /// it once, at resolution, and never recomputes or checks it at
+    /// invocation. Absent in plans from cores that predate it and in
+    /// standalone inspection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub descriptor_fingerprint: Option<String>,
 }

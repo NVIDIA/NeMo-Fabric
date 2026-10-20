@@ -26,7 +26,7 @@ Version of the adapter package, as the adapter reports it.
 
 ### `descriptor_fingerprint: Option<Fact<String>>`
 
-Fingerprint `nemo.fabric.adapter_descriptor/v1` of the descriptor contents as authored, `sha256:<hex>`, taken from the resolved plan, so its source is `configured`. Core writes it whenever the `adapter` section is present; readers accept its absence from cores that predate it.
+Fingerprint `nemo.fabric.adapter_descriptor/v1` of the descriptor selected during plan resolution, as authored, `sha256:<hex>`. It is copied from the resolved plan as a `configured` fact, and never recomputed or validated at invocation, so it is not proof of what executed. Core writes it whenever the `adapter` section is present; readers accept its absence from cores that predate it.
 
 ## Trait Implementations
 

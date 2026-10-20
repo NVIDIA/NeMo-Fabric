@@ -12,7 +12,7 @@
               "type": "null"
             }
           ],
-          "description": "Fingerprint `nemo.fabric.adapter_descriptor/v1` of the descriptor\ncontents as authored, `sha256:<hex>`, taken from the resolved plan,\nso its source is `configured`. Core writes it whenever the\n`adapter` section is present; readers accept its absence from cores\nthat predate it."
+          "description": "Fingerprint `nemo.fabric.adapter_descriptor/v1` of the descriptor\nselected during plan resolution, as authored, `sha256:<hex>`. It is\ncopied from the resolved plan as a `configured` fact, and never\nrecomputed or validated at invocation, so it is not proof of what\nexecuted. Core writes it whenever the `adapter` section is present;\nreaders accept its absence from cores that predate it."
         },
         "id": {
           "description": "Adapter ID from the plan, when an adapter was resolved.",

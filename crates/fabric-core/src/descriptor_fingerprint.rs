@@ -8,6 +8,11 @@
 //! before core fills in defaults. Hashing the authored form keeps the value
 //! stable when core starts serializing a new default field.
 //!
+//! Core computes the fingerprint once, when plan resolution selects the
+//! descriptor, and `what_ran` copies it from the resolved plan. It is never
+//! recomputed or checked at invocation, so it identifies the selected
+//! descriptor, not what executed.
+//!
 //! The bundled adapter catalog records its own `sha256`, computed by the
 //! catalog generator from Python's `json.dumps(sort_keys=True)`, which is
 //! not RFC 8785. The two produce the same bytes for a descriptor without
