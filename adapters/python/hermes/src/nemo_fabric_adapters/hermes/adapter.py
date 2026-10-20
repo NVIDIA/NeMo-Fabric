@@ -78,6 +78,9 @@ class HermesRuntime:
         # Context-compression summary calls, whose usage Hermes keeps out of
         # its session counters.
         self._compression_calls = 0
+        # Iteration-limit summary attempts started minus summary responses
+        # observed; an attempt whose request raised leaves it above zero.
+        self._unanswered_summary_attempts = 0
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -304,6 +307,7 @@ class HermesRuntime:
         unreported_before = dict(self._unreported_counts)
         skipped_before = dict(self._skipped_response_tokens)
         compression_calls_before = self._compression_calls
+        unanswered_summaries_before = self._unanswered_summary_attempts
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
 
@@ -400,11 +404,13 @@ class HermesRuntime:
                 for count, responses in self._unreported_counts.items()
                 if responses != unreported_before[count]
             )
-            # A compression summary call's tokens are not in the counters, so
-            # every count it adds to is an undercount.
+            # A compression summary call's tokens are not in the counters, and
+            # a summary request that raised before its response was observed
+            # may have been billed, so every count is an undercount.
             | (
                 frozenset(_REPORTED_COUNTS)
                 if self._compression_calls != compression_calls_before
+                or self._unanswered_summary_attempts != unanswered_summaries_before
                 else frozenset()
             ),
         )
@@ -492,6 +498,8 @@ class HermesRuntime:
             api_mode: Any,
         ) -> None:
             usage = getattr(response, "usage", None)
+            if handler == _ITERATION_SUMMARY_HANDLER:
+                self._unanswered_summary_attempts -= 1
             if handler == "record_response_usage":
                 # A response without usage is counted by the compressor hook.
                 # An empty usage object is a report with every count left out.
@@ -506,7 +514,11 @@ class HermesRuntime:
             if usage:
                 self._add_skipped_response_tokens(usage, provider, api_mode)
 
+        def count_summary_attempt() -> None:
+            self._unanswered_summary_attempts += 1
+
         _USAGE_OBSERVERS[agent] = count_unreported
+        _SUMMARY_ATTEMPT_OBSERVERS[agent] = count_summary_attempt
 
     def _add_skipped_response_tokens(
         self, usage: Any, provider: Any, api_mode: Any
@@ -752,6 +764,10 @@ _SESSION_TOKEN_KEYS = (
 _USAGE_OBSERVERS: weakref.WeakKeyDictionary[
     Any, Callable[[str, Any, Any, Any, Any], None]
 ] = weakref.WeakKeyDictionary()
+# Called before each iteration-limit summary request of the agent.
+_SUMMARY_ATTEMPT_OBSERVERS: weakref.WeakKeyDictionary[Any, Callable[[], None]] = (
+    weakref.WeakKeyDictionary()
+)
 # The functions ``agent.turn_response_check.check_api_response`` calls with
 # (agent, response, ...) for a provider response, by the module defining
 # each. record_response_usage folds the usage; on an invalid response, a
@@ -766,12 +782,16 @@ _RESPONSE_HANDLERS = {
 }
 
 
-def _observed_response_handler(name: str, handler: Callable[..., Any]) -> Any:
+def _observed_response_handler(
+    name: str, handler: Callable[..., Any], *, observe_first: bool = False
+) -> Any:
     """Wrap a Hermes response handler to show each call to the agent's observer.
 
     Hermes passes the response positionally to some handlers and by keyword
     to others, so the wrapper forwards the call unchanged and reads the
-    handler's ``response`` argument from its signature.
+    handler's ``response`` argument from its signature. With
+    ``observe_first``, the observer sees the response, with no outcome,
+    before the handler runs, so a handler that raises cannot hide its usage.
     """
     signature = inspect.signature(handler)
 
@@ -780,6 +800,12 @@ def _observed_response_handler(name: str, handler: Callable[..., Any]) -> Any:
         # route that served this response before the handler runs.
         provider = getattr(agent, "provider", None)
         api_mode = getattr(agent, "api_mode", None)
+        if observe_first:
+            observer = _USAGE_OBSERVERS.get(agent)
+            if observer is not None:
+                response = signature.bind(agent, *args, **kwargs).arguments["response"]
+                observer(name, response, None, provider, api_mode)
+            return handler(agent, *args, **kwargs)
         outcome = handler(agent, *args, **kwargs)
         observer = _USAGE_OBSERVERS.get(agent)
         if observer is not None:
@@ -829,41 +855,52 @@ def _install_usage_observer() -> None:
 
 
 # The function each of Hermes' iteration-limit summary attempts passes its
-# provider response to (agent/chat_completion_helpers.py), and the attempt
-# builders that call it.
+# provider response to (agent/chat_completion_helpers.py), the attempt
+# builders that call it, and where ``handle_max_iterations`` looks them up.
 _ITERATION_SUMMARY_HANDLER = "_summary_text"
 _ITERATION_SUMMARY_ATTEMPTS = (
     "_chat_summary_attempt",
     "_anthropic_summary_attempt",
     "_codex_summary_attempt",
 )
+_ITERATION_SUMMARY_BUILDERS = "_SUMMARY_ATTEMPT_BUILDERS"
+_ITERATION_SUMMARY_DEFAULT_BUILDER = "_chat_summary_attempt"
 
 
 def _observe_iteration_summary() -> None:
-    """Route Hermes' iteration-limit summary responses through the observers.
+    """Route Hermes' iteration-limit summary requests through the observers.
 
     When a turn reaches ``max_iterations``, ``handle_max_iterations`` makes an
     extra summary request and never adds its usage to the session counters.
     Every summary attempt hands its response to ``_summary_text``, a global of
     ``agent.chat_completion_helpers``, so the adapter wraps that function once
-    per process and counts the response like one Hermes skipped. Start fails
-    if an attempt no longer calls it by that name.
+    per process and counts the response like one Hermes skipped, before
+    Hermes normalizes it. Hermes picks each attempt's builder from
+    ``_SUMMARY_ATTEMPT_BUILDERS`` or the ``_chat_summary_attempt`` global, so
+    the adapter also wraps the builders' attempts to note each request before
+    it is sent: an attempt that raises before its response reaches
+    ``_summary_text`` leaves the invocation's counts unknown. Start fails if
+    Hermes no longer looks them up by those names.
     """
-    from agent import chat_completion_helpers
+    from agent import chat_completion_helpers as helpers
 
-    current = getattr(chat_completion_helpers, _ITERATION_SUMMARY_HANDLER, None)
+    current = getattr(helpers, _ITERATION_SUMMARY_HANDLER, None)
     if getattr(current, "nemo_fabric_observed", False):
         return
+    builders = getattr(helpers, _ITERATION_SUMMARY_BUILDERS, None)
+    handle_max_iterations = getattr(helpers, "handle_max_iterations", None)
+    attempts = {name: getattr(helpers, name, None) for name in _ITERATION_SUMMARY_ATTEMPTS}
     if (
         current is None
         or not all(
-            _inner_function_calls(
-                getattr(chat_completion_helpers, attempt, None),
-                _ITERATION_SUMMARY_HANDLER,
-            )
-            for attempt in _ITERATION_SUMMARY_ATTEMPTS
+            _inner_function_calls(attempt, _ITERATION_SUMMARY_HANDLER)
+            for attempt in attempts.values()
         )
         or "response" not in inspect.signature(current).parameters
+        or not isinstance(builders, dict)
+        or not all(builder in attempts.values() for builder in builders.values())
+        or not {_ITERATION_SUMMARY_BUILDERS, _ITERATION_SUMMARY_DEFAULT_BUILDER}
+        <= set(getattr(getattr(handle_max_iterations, "__code__", None), "co_names", ()))
     ):
         raise lifecycle.LifecycleError(
             "hermes_usage_accounting_unsupported",
@@ -871,10 +908,36 @@ def _observe_iteration_summary() -> None:
             "outside agent.chat_completion_helpers._summary_text",
         )
     setattr(
-        chat_completion_helpers,
+        helpers,
         _ITERATION_SUMMARY_HANDLER,
-        _observed_response_handler(_ITERATION_SUMMARY_HANDLER, current),
+        _observed_response_handler(
+            _ITERATION_SUMMARY_HANDLER, current, observe_first=True
+        ),
     )
+    for mode, builder in list(builders.items()):
+        builders[mode] = _counted_summary_attempts(builder)
+    setattr(
+        helpers,
+        _ITERATION_SUMMARY_DEFAULT_BUILDER,
+        _counted_summary_attempts(attempts[_ITERATION_SUMMARY_DEFAULT_BUILDER]),
+    )
+
+
+def _counted_summary_attempts(build: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a summary attempt builder so each attempt notes its request first."""
+
+    def build_counted(agent: Any, *args: Any, **kwargs: Any) -> Any:
+        attempt = build(agent, *args, **kwargs)
+
+        def counted_attempt(*attempt_args: Any, **attempt_kwargs: Any) -> Any:
+            note_attempt = _SUMMARY_ATTEMPT_OBSERVERS.get(agent)
+            if note_attempt is not None:
+                note_attempt()
+            return attempt(*attempt_args, **attempt_kwargs)
+
+        return counted_attempt
+
+    return build_counted
 
 
 def _inner_function_calls(function: Any, name: str) -> bool:

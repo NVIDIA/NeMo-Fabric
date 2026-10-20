@@ -321,6 +321,65 @@ async def test_hermes_makes_no_model_call_for_session_titles(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
+@pytest.mark.parametrize(
+    ("summary_reply", "expected_usage"),
+    [
+        # Hermes cannot read the text of a response without choices, but the
+        # response reported its usage.
+        (
+            {"usage": _chat_usage(600, 20), "no_choices": True},
+            {
+                "input_tokens": 640,
+                "input_tokens_include_cache": True,
+                "output_tokens": 532,
+                "total_tokens": 1172,
+                "metadata": {},
+            },
+        ),
+        # The request raised before any response reached Hermes' summary text.
+        ({"status_code": 400}, None),
+    ],
+    ids=["unreadable", "rejected"],
+)
+async def test_hermes_usage_accounts_for_a_failed_iteration_limit_summary(
+    code_review_agent_dir: Path,
+    api_server: str,
+    summary_reply: dict[str, object],
+    expected_usage: dict[str, object] | None,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = hermes_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.runtime.max_turns = 1
+
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as runtime:
+        await runtime.invoke(input="first")
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={
+                "replies": [
+                    {"finish_reason": "length", "usage": _chat_usage(40, 512)},
+                    summary_reply,
+                ]
+            },
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+        summarized = await runtime.invoke(input="second")
+        sent = requests.get(f"{api_server}/_requests", timeout=5).json()
+
+    # Hermes answers with its fallback text when the summary fails, without
+    # retrying it.
+    assert summarized["status"] == "succeeded", summarized.to_mapping()
+    assert len(sent) == 3, sent
+    assert summarized.to_mapping().get("usage") == expected_usage, (
+        summarized.to_mapping()
+    )
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
 async def test_hermes_usage_is_unknown_when_context_compression_runs(
     code_review_agent_dir: Path,
     api_server: str,

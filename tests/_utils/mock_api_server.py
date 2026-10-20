@@ -27,7 +27,8 @@ def mock_api_server(port: int) -> Iterator[str]:
     Use the /_scenario endpoint to configure a status code, ordered tool calls, or the
     chat-completion usage object and finish reason for subsequent requests. Its ordered
     ``replies`` override the usage or finish reason of the next chat completions, one
-    reply each, or make one invalid.
+    reply each, make one invalid, reject one with its ``status_code``, or send one
+    with ``no_choices`` (an empty ``choices`` list).
     Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
@@ -164,6 +165,17 @@ def mock_api_server(port: int) -> Iterator[str]:
     async def chat_completions(request: Request):
         payload = await request.json()
         app.state.requests.append(payload)
+        if app.state.replies and "status_code" in app.state.replies[0]:
+            rejected = app.state.replies.pop(0)
+            return JSONResponse(
+                status_code=int(rejected["status_code"]),
+                content={
+                    "error": {
+                        "message": f"configured status {rejected['status_code']}",
+                        "type": "invalid_request_error",
+                    }
+                },
+            )
         if app.state.status_code != 200:
             return JSONResponse(
                 status_code=app.state.status_code,
@@ -211,7 +223,9 @@ def mock_api_server(port: int) -> Iterator[str]:
                 "object": "chat.completion",
                 "created": 0,
                 "model": payload.get("model", "fabric-echo"),
-                "choices": [
+                "choices": []
+                if reply.get("no_choices", False)
+                else [
                     {
                         "index": 0,
                         "message": {"role": "assistant", "content": content},
