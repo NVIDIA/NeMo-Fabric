@@ -1142,14 +1142,26 @@ async def test_openclaw_stop_completes_cleanup_before_propagating_cancellation(
     runtime._log_tasks = [log_task]
     runtime._temp_dir = mock_temp_dir
 
+    # stop() awaits only mocks and in-process tasks here, and no timer has to
+    # fire, so each step finishes within a few event-loop turns. Counting turns
+    # instead of seconds keeps a garbage-collector pause on a slow runner from
+    # failing the test.
+    async def run_event_loop_until(condition):
+        for _ in range(100):
+            if condition():
+                return True
+            await asyncio.sleep(0)
+        return condition()
+
     stop_task = asyncio.create_task(runtime.stop())
-    await asyncio.wait_for(entered.wait(), timeout=1)
-    stop_task.cancel()
     try:
-        with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(asyncio.shield(stop_task), timeout=0.2)
+        assert await run_event_loop_until(entered.is_set)
+        stop_task.cancel()
+        assert await run_event_loop_until(stop_task.done)
+        assert stop_task.cancelled()
     finally:
         release.set()
+        stop_task.cancel()
         with suppress(asyncio.CancelledError):
             await stop_task
 
