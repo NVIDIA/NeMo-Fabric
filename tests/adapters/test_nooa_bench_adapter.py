@@ -170,6 +170,7 @@ def bench_dependencies_fixture(monkeypatch: pytest.MonkeyPatch):
         "initial_shells": mock_initial_shells,
         "model": mock_model,
         "relay_telemetry": mock_relay_telemetry,
+        "get_task_tokens": mock_get_task_tokens,
         "start_task_tokens": mock_start_task_tokens,
         "task_shell": mock_task_shells[0],
         "task_shells": mock_task_shells,
@@ -183,16 +184,24 @@ def sync_responses_api_replies_fixture() -> list[Any]:
     return []
 
 
+@pytest.fixture(name="failing_responses_api_tasks")
+def failing_responses_api_tasks_fixture() -> set[str]:
+    """User messages whose task the BenchAgent double reports as failed."""
+    return set()
+
+
 @pytest.fixture(name="responses_api_bench")
 def responses_api_bench_fixture(
     monkeypatch: pytest.MonkeyPatch,
     sync_responses_api_replies: list[Any],
+    failing_responses_api_tasks: set[str],
 ) -> list[Any]:
     """Run a real NOOA ResponsesClient against queued Responses API replies.
 
     The BenchAgent double calls the real ``ResponsesClient`` directly, once per
     queued reply: ``acall`` for this fixture's queue, then ``call`` for
-    ``sync_responses_api_replies``. NOOA's task token accumulator is left in
+    ``sync_responses_api_replies``. It reports failure for a user message in
+    ``failing_responses_api_tasks``. NOOA's task token accumulator is left in
     place, unpatched.
     """
     pytest.importorskip("nooa.unifiedllm")
@@ -221,7 +230,8 @@ def responses_api_bench_fixture(
                 await self.llm.acall(messages)
             while sync_responses_api_replies:
                 self.llm.call(messages)
-            return {"response": "done", "success": True, "result": None}
+            success = task_input["user_message"] not in failing_responses_api_tasks
+            return {"response": "done", "success": success, "result": None}
 
     bench_module = types.ModuleType("nooa_bench.bench_agent")
     bench_module.BenchAgent = BenchAgentDouble
@@ -523,6 +533,67 @@ async def test_bench_responses_api_partial_usage_keeps_omitted_counters_unknown(
     }
 
 
+async def test_bench_responses_api_failed_task_keeps_its_own_usage(
+    tmp_path: Path,
+    responses_api_bench: list[Any],
+    failing_responses_api_tasks: set[str],
+):
+    failing_responses_api_tasks.add("Fix the first task.")
+    runtime = await _start_responses_api_bench(tmp_path)
+    try:
+        responses_api_bench.append(
+            _responses_api_reply(
+                _usage_report(
+                    input_tokens=100,
+                    input_tokens_details={"cached_tokens": 40},
+                    output_tokens=20,
+                    total_tokens=120,
+                )
+            )
+        )
+        failed = await runtime.invoke(
+            AgentRunRequest.from_mapping({"input": "Fix the first task."}),
+            _runtime_context(),
+        )
+        responses_api_bench.append(
+            _responses_api_reply(
+                _usage_report(
+                    input_tokens=7,
+                    input_tokens_details={"cached_tokens": 0},
+                    output_tokens=3,
+                    total_tokens=10,
+                )
+            )
+        )
+        succeeded = await runtime.invoke(
+            AgentRunRequest.from_mapping({"input": "Fix the second task."}),
+            _runtime_context(invocation_id="invocation-2", request_id="request-2"),
+        )
+    finally:
+        await runtime.stop()
+
+    assert failed.status is AgentRunStatus.FAILED
+    assert failed.error is not None
+    assert failed.error.code == "nooa_bench_task_failed"
+    assert failed.usage is not None
+    assert failed.usage.to_mapping() == {
+        "input_tokens": 100,
+        "cached_input_tokens": 40,
+        "input_tokens_include_cache": True,
+        "output_tokens": 20,
+        "total_tokens": 120,
+    }
+    assert succeeded.status is AgentRunStatus.SUCCEEDED
+    assert succeeded.usage is not None
+    assert succeeded.usage.to_mapping() == {
+        "input_tokens": 7,
+        "cached_input_tokens": 0,
+        "input_tokens_include_cache": True,
+        "output_tokens": 3,
+        "total_tokens": 10,
+    }
+
+
 def test_bench_descriptor_is_a_closed_harness_adapter(tmp_path: Path):
     descriptor = json.loads(
         (NOOA_ROOT / "nooa-bench.fabric-adapter.json").read_text(encoding="utf-8")
@@ -776,3 +847,49 @@ def test_bench_persistent_host_runs_start_invoke_stop(tmp_path: Path):
         "total_tokens": 16,
     }
     assert (workspace / "bench-agent-result.txt").is_file()
+
+
+async def test_bench_runtime_failed_task_keeps_its_own_usage(
+    tmp_path: Path,
+    bench_dependencies: dict[str, MagicMock],
+):
+    os.environ["OPENAI_API_KEY"] = "test-key"
+    bench_dependencies["agents"][0]._run_evaluation.side_effect = None
+    bench_dependencies["agents"][0]._run_evaluation.return_value = {
+        "response": "",
+        "success": False,
+    }
+    bench_dependencies["get_task_tokens"].side_effect = [
+        {"n_input_tokens": 30, "n_output_tokens": 9},
+        {"n_input_tokens": 5, "n_output_tokens": 2},
+    ]
+    runtime = bench_adapter.BenchRuntime()
+    await runtime.start(_start_payload(tmp_path))
+
+    failed = await runtime.invoke(
+        AgentRunRequest.from_mapping({"input": "Fix the first task."}),
+        _runtime_context(),
+    )
+    succeeded = await runtime.invoke(
+        AgentRunRequest.from_mapping({"input": "Fix the second task."}),
+        _runtime_context(invocation_id="invocation-2", request_id="request-2"),
+    )
+    await runtime.stop()
+
+    assert bench_dependencies["start_task_tokens"].call_count == 2
+    assert failed.status is AgentRunStatus.FAILED
+    assert failed.error is not None
+    assert failed.error.code == "nooa_bench_task_failed"
+    assert failed.usage is not None
+    assert failed.usage.to_mapping() == {
+        "input_tokens": 30,
+        "output_tokens": 9,
+        "total_tokens": 39,
+    }
+    assert succeeded.status is AgentRunStatus.SUCCEEDED
+    assert succeeded.usage is not None
+    assert succeeded.usage.to_mapping() == {
+        "input_tokens": 5,
+        "output_tokens": 2,
+        "total_tokens": 7,
+    }

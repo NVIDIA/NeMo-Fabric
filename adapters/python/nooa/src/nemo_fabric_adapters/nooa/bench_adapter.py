@@ -119,7 +119,11 @@ async def _close_shell(agent: Any) -> None:
         await _await_if_needed(close())
 
 
-def _failure_output(code: str, message: str) -> AgentRunResult:
+def _failure_output(
+    code: str,
+    message: str,
+    usage: AgentUsage | None = None,
+) -> AgentRunResult:
     return AgentRunResult(
         status=AgentRunStatus.FAILED,
         output={
@@ -130,6 +134,7 @@ def _failure_output(code: str, message: str) -> AgentRunResult:
             "completed": False,
         },
         error=AgentRunError(code=code, message=message),
+        usage=usage,
     )
 
 
@@ -415,9 +420,11 @@ class BenchRuntime:
                 if not isinstance(native, dict):
                     raise ValueError("BenchAgent result must be an object")
                 if native.get("success") is not True:
+                    # A failed task still spent tokens; keep them for cost accounting.
                     return _failure_output(
                         "nooa_bench_task_failed",
                         "OO Agents BenchAgent reported task failure; inspect adapter stderr for details",
+                        usage,
                     )
                 return _success_output(native, usage)
             except asyncio.CancelledError:
