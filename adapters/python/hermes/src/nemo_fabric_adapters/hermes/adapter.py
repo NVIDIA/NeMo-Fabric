@@ -789,6 +789,64 @@ def _install_usage_observer() -> None:
         handlers[name] = current
     for name, handler in handlers.items():
         setattr(turn_response_check, name, _observed_response_handler(name, handler))
+    _observe_iteration_summary()
+
+
+# The function each of Hermes' iteration-limit summary attempts passes its
+# provider response to (agent/chat_completion_helpers.py), and the attempt
+# builders that call it.
+_ITERATION_SUMMARY_HANDLER = "_summary_text"
+_ITERATION_SUMMARY_ATTEMPTS = (
+    "_chat_summary_attempt",
+    "_anthropic_summary_attempt",
+    "_codex_summary_attempt",
+)
+
+
+def _observe_iteration_summary() -> None:
+    """Route Hermes' iteration-limit summary responses through the observers.
+
+    When a turn reaches ``max_iterations``, ``handle_max_iterations`` makes an
+    extra summary request and never adds its usage to the session counters.
+    Every summary attempt hands its response to ``_summary_text``, a global of
+    ``agent.chat_completion_helpers``, so the adapter wraps that function once
+    per process and counts the response like one Hermes skipped. Start fails
+    if an attempt no longer calls it by that name.
+    """
+    from agent import chat_completion_helpers
+
+    current = getattr(chat_completion_helpers, _ITERATION_SUMMARY_HANDLER, None)
+    if getattr(current, "nemo_fabric_observed", False):
+        return
+    if (
+        current is None
+        or not all(
+            _inner_function_calls(
+                getattr(chat_completion_helpers, attempt, None),
+                _ITERATION_SUMMARY_HANDLER,
+            )
+            for attempt in _ITERATION_SUMMARY_ATTEMPTS
+        )
+        or "response" not in inspect.signature(current).parameters
+    ):
+        raise lifecycle.LifecycleError(
+            "hermes_usage_accounting_unsupported",
+            "This Hermes version makes its iteration-limit summary request "
+            "outside agent.chat_completion_helpers._summary_text",
+        )
+    setattr(
+        chat_completion_helpers,
+        _ITERATION_SUMMARY_HANDLER,
+        _observed_response_handler(_ITERATION_SUMMARY_HANDLER, current),
+    )
+
+
+def _inner_function_calls(function: Any, name: str) -> bool:
+    """Return whether a function defined inside ``function`` calls global ``name``."""
+    code = getattr(function, "__code__", None)
+    return code is not None and any(
+        name in getattr(const, "co_names", ()) for const in code.co_consts
+    )
 
 
 _REPORTED_COUNTS = ("input", "cached", "output")
@@ -830,7 +888,8 @@ def _skips_usage_recording(handler: str, outcome: Any) -> bool:
     unless the handler's action is ``fallthrough``, and after a truncated
     response when the action is ``return``, ``break`` or ``continue``
     (``agent/turn_response_check.py``). Any other outcome falls through to
-    ``record_response_usage``, which adds the response's usage itself.
+    ``record_response_usage``, which adds the response's usage itself. An
+    iteration-limit summary response is never recorded.
     """
     action = getattr(outcome, "action", None)
     if handler == "recover_from_truncation":

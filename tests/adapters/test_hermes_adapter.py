@@ -31,6 +31,9 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
 if importlib.util.find_spec("run_agent") is not None:
+    # Load the Hermes module the adapter's usage observer wraps before tests
+    # replace the tools package with stubs.
+    import agent.chat_completion_helpers  # noqa: F401
     from hermes_state import SessionDB
     from run_agent import AIAgent
 

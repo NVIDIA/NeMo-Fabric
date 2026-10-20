@@ -245,6 +245,60 @@ async def test_hermes_usage_counts_responses_hermes_skips(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
+@pytest.mark.parametrize(
+    ("summary_usage", "expected_usage"),
+    [
+        (
+            _chat_usage(600, 20),
+            {
+                "input_tokens": 640,
+                "input_tokens_include_cache": True,
+                "output_tokens": 532,
+                "total_tokens": 1172,
+                "metadata": {},
+            },
+        ),
+        (None, None),
+    ],
+    ids=["reported", "omitted"],
+)
+async def test_hermes_usage_counts_the_iteration_limit_summary(
+    code_review_agent_dir: Path,
+    api_server: str,
+    summary_usage: dict[str, int] | None,
+    expected_usage: dict[str, object] | None,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = hermes_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+    # With one iteration, the truncated reply leaves no iteration for its
+    # continuation, so Hermes asks for a summary instead.
+    config.runtime.max_turns = 1
+
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as runtime:
+        await runtime.invoke(input="first")
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={
+                "replies": [
+                    {"finish_reason": "length", "usage": _chat_usage(40, 512)},
+                    {"usage": summary_usage},
+                ]
+            },
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+        summarized = await runtime.invoke(input="second")
+
+    assert summarized["status"] == "succeeded", summarized.to_mapping()
+    assert summarized.to_mapping().get("usage") == expected_usage, (
+        summarized.to_mapping()
+    )
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
 async def test_env_secrets_in_headers(
     code_review_agent_dir: Path,
     api_server: str,
