@@ -248,112 +248,20 @@ def test_detailed_usage_is_authoritative_per_dimension(
     }
 
 
-@pytest.mark.parametrize(
-    ("usage", "expected"),
-    [
-        ({"metadata": {"estimated_cost_usd": 9}}, (12, 3, 4, 0.25)),
-        ({"input_tokens": 20, "cached_input_tokens": 5}, (12, 5, 4, 0.25)),
-        ({"input_tokens": 20, "input_tokens_include_cache": False}, (12, 3, 4, 0.25)),
-        (
-            {
-                "input_tokens": 0,
-                "input_tokens_include_cache": True,
-                "cached_input_tokens": 0,
-                "output_tokens": 0,
-                "cost_usd": 0,
-            },
-            (0, 0, 0, 0),
-        ),
-    ],
-)
-def test_unknown_usage_preserves_existing_context(result_path, usage, expected):
-    from harbor.models.agent.context import AgentContext
-    from nemo_fabric.integrations.harbor.fabric_agent import (
-        populate_context_from_result,
-    )
-
-    document = json.loads(result_path.read_text())
-    document["usage"] = usage
-    result_path.write_text(json.dumps(document))
-    context = AgentContext(
-        n_input_tokens=12, n_cache_tokens=3, n_output_tokens=4, cost_usd=0.25
-    )
-
-    populate_context_from_result(context, result_path)
-    populate_context_from_result(context, result_path)
-
-    assert (
-        context.n_input_tokens,
-        context.n_cache_tokens,
-        context.n_output_tokens,
-        context.cost_usd,
-    ) == expected
+ATIF_FINAL_METRICS = {
+    "total_prompt_tokens": 12,
+    "total_completion_tokens": 4,
+    "total_cached_tokens": 3,
+    "total_cost_usd": 0.25,
+    "total_steps": None,
+    "extra": None,
+}
 
 
-@pytest.mark.parametrize(
-    ("usage", "expected"),
-    [
-        (
-            {"input_tokens": 0, "input_tokens_include_cache": True, "cost_usd": 0},
-            (0, 3, 4, 0),
-        ),
-        (
-            {
-                "input_tokens": 20,
-                "cached_input_tokens": 5,
-                "input_tokens_include_cache": True,
-                "output_tokens": 8,
-                "cost_usd": 1.25,
-            },
-            (20, 5, 8, 1.25),
-        ),
-        (None, (12, 3, 4, 0.25)),
-        pytest.param(
-            {
-                "input_tokens": 5,
-                "output_tokens": 90,
-                "metadata": {
-                    "nemo_fabric.detailed_token_usage.v1": {
-                        "input_tokens": 5,
-                        "cached_input_tokens": 3000,
-                        "cache_write_input_tokens": 400,
-                        "input_tokens_include_cache": False,
-                        "output_tokens": 90,
-                        "output_tokens_include_reasoning": True,
-                    }
-                },
-            },
-            (3405, 3000, 90, 0.25),
-            id="complete-detailed-input-takes-input-and-cache-from-result",
-        ),
-        pytest.param(
-            {
-                "input_tokens": 5,
-                "output_tokens": 90,
-                "metadata": {
-                    "nemo_fabric.detailed_token_usage.v1": {
-                        "output_tokens": 90,
-                        "output_tokens_include_reasoning": True,
-                    }
-                },
-            },
-            (12, 3, 90, 0.25),
-            id="output-only-detailed-takes-input-and-cache-from-atif",
-        ),
-    ],
-)
-def test_atif_only_fills_missing_accounting(result_path, tmp_path, usage, expected):
-    from harbor.models.agent.context import AgentContext
-    from nemo_fabric.integrations.harbor.fabric_agent import (
-        populate_context_from_result,
-        populate_context_from_trajectory,
-    )
-
-    document = json.loads(result_path.read_text())
-    document["usage"] = usage
-    result_path.write_text(json.dumps(document))
-    trajectory = tmp_path / "trajectory.json"
-    trajectory.write_text(
+@pytest.fixture(name="trajectory_path")
+def trajectory_path_fixture(tmp_path):
+    path = tmp_path / "trajectory.json"
+    path.write_text(
         json.dumps(
             {
                 "schema_version": "ATIF-v1.7",
@@ -369,10 +277,61 @@ def test_atif_only_fills_missing_accounting(result_path, tmp_path, usage, expect
             }
         )
     )
-    context = AgentContext()
+    return path
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
+        ({"metadata": {"estimated_cost_usd": 9}}, (None, None, None, None)),
+        ({"input_tokens": 20, "cached_input_tokens": 5}, (None, 5, None, None)),
+        (
+            {"input_tokens": 20, "input_tokens_include_cache": False},
+            (None, None, None, None),
+        ),
+        (
+            {
+                "input_tokens": 0,
+                "input_tokens_include_cache": True,
+                "cached_input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": 0,
+            },
+            (0, 0, 0, 0),
+        ),
+        pytest.param(None, (None, None, None, None), id="usage-null"),
+        pytest.param(
+            {
+                "input_tokens": 20,
+                "cached_input_tokens": 5,
+                "input_tokens_include_cache": True,
+                "output_tokens": 7,
+                "cost_usd": 1.0,
+                "metadata": {
+                    "nemo_fabric.detailed_token_usage.v1": {"reasoning_tokens": 4}
+                },
+            },
+            (20, 5, None, 1.0),
+            id="detailed-usage-makes-output-unavailable",
+        ),
+    ],
+)
+def test_fabric_usage_replaces_existing_context(result_path, usage, expected):
+    from harbor.models.agent.context import AgentContext
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+    )
+
+    document = json.loads(result_path.read_text())
+    document["usage"] = usage
+    result_path.write_text(json.dumps(document))
+    # Values an earlier ATIF fallback could have left behind.
+    context = AgentContext(
+        n_input_tokens=12, n_cache_tokens=3, n_output_tokens=4, cost_usd=0.25
+    )
+
     populate_context_from_result(context, result_path)
-    populate_context_from_trajectory(context, trajectory)
-    populate_context_from_trajectory(context, trajectory)
+    populate_context_from_result(context, result_path)
 
     assert (
         context.n_input_tokens,
@@ -380,3 +339,130 @@ def test_atif_only_fills_missing_accounting(result_path, tmp_path, usage, expect
         context.n_output_tokens,
         context.cost_usd,
     ) == expected
+
+
+@pytest.mark.parametrize("trajectory_first", [False, True])
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
+        (
+            {"input_tokens": 0, "input_tokens_include_cache": True, "cost_usd": 0},
+            (0, None, None, 0),
+        ),
+        (
+            {
+                "input_tokens": 20,
+                "cached_input_tokens": 5,
+                "input_tokens_include_cache": True,
+                "output_tokens": 8,
+                "cost_usd": 1.25,
+            },
+            (20, 5, 8, 1.25),
+        ),
+        (None, (None, None, None, None)),
+        pytest.param(
+            {
+                "input_tokens": 5,
+                "output_tokens": 90,
+                "metadata": {
+                    "nemo_fabric.detailed_token_usage.v1": {
+                        "input_tokens": 5,
+                        "cached_input_tokens": 3000,
+                        "cache_write_input_tokens": 400,
+                        "input_tokens_include_cache": False,
+                        "output_tokens": 90,
+                        "output_tokens_include_reasoning": True,
+                    }
+                },
+            },
+            (3405, 3000, 90, None),
+            id="complete-detailed-input-leaves-unreported-cost-unknown",
+        ),
+        pytest.param(
+            {
+                "input_tokens": 5,
+                "output_tokens": 90,
+                "metadata": {
+                    "nemo_fabric.detailed_token_usage.v1": {
+                        "output_tokens": 90,
+                        "output_tokens_include_reasoning": True,
+                    }
+                },
+            },
+            (None, None, 90, None),
+            id="output-only-detailed-leaves-input-and-cache-unknown",
+        ),
+    ],
+)
+def test_atif_never_fills_fabric_accounting(
+    result_path, trajectory_path, usage, expected, trajectory_first
+):
+    from harbor.models.agent.context import AgentContext
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+        populate_context_from_trajectory,
+    )
+
+    document = json.loads(result_path.read_text())
+    document["usage"] = usage
+    result_path.write_text(json.dumps(document))
+    context = AgentContext()
+    if trajectory_first:
+        populate_context_from_trajectory(context, trajectory_path)
+    populate_context_from_result(context, result_path)
+    populate_context_from_trajectory(context, trajectory_path)
+    populate_context_from_trajectory(context, trajectory_path)
+
+    assert (
+        context.n_input_tokens,
+        context.n_cache_tokens,
+        context.n_output_tokens,
+        context.cost_usd,
+    ) == expected
+    assert context.metadata["fabric"]["atif_final_metrics"] == {
+        "source": "atif",
+        "coverage": "unverified",
+        "final_metrics": ATIF_FINAL_METRICS,
+    }
+
+
+@pytest.mark.parametrize("runner_failure_document", [False, True])
+def test_no_fabric_result_keeps_atif_out_of_accounting(
+    result_path, trajectory_path, runner_failure_document
+):
+    from harbor.models.agent.context import AgentContext
+    from nemo_fabric.integrations.harbor.fabric_agent import FabricAgent
+
+    agent = FabricAgent(logs_dir=result_path.parent, fabric_adapter_id="acme.agent")
+    if runner_failure_document:
+        result_path.write_text(
+            json.dumps(
+                {
+                    "runner_error": {
+                        "stage": "start",
+                        "code": "configuration_failed",
+                        "message": "startup failure",
+                        "retryable": False,
+                    }
+                }
+            )
+        )
+        agent._result_path = result_path
+    context = AgentContext()
+
+    agent.populate_context_post_run(context)
+
+    assert (
+        context.n_input_tokens,
+        context.n_cache_tokens,
+        context.n_output_tokens,
+        context.cost_usd,
+    ) == (None, None, None, None)
+    fabric = context.metadata["fabric"]
+    assert fabric["atif_final_metrics"] == {
+        "source": "atif",
+        "coverage": "unverified",
+        "final_metrics": ATIF_FINAL_METRICS,
+    }
+    assert fabric["harbor_atif_validation"] == {"status": "succeeded", "error": None}
+    assert ("runner_error" in fabric) is runner_failure_document

@@ -904,6 +904,12 @@ def populate_context_from_result(
         "error": mapping.get("error"),
         "usage": mapping.get("usage"),
     }
+    # Fabric usage is the only source of complete accounting: an unknown
+    # dimension clears any value an earlier pass left in the context.
+    input_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: float | None = None
     if result.usage is not None:
         usage = result.usage
         detailed_usage = _detailed_token_usage(usage)
@@ -959,19 +965,16 @@ def populate_context_from_result(
             )
         else:
             output_tokens = usage.get("output_tokens")
-        if input_tokens is not None:
-            context.n_input_tokens = input_tokens
-        if cached_input_tokens is not None:
-            context.n_cache_tokens = cached_input_tokens
-        if output_tokens is not None:
-            context.n_output_tokens = output_tokens
-        if usage.get("cost_usd") is not None:
-            context.cost_usd = usage["cost_usd"]
+        cost_usd = usage.get("cost_usd")
+    context.n_input_tokens = input_tokens
+    context.n_cache_tokens = cached_input_tokens
+    context.n_output_tokens = output_tokens
+    context.cost_usd = cost_usd
     return result
 
 
 def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
-    """Validate canonical ATIF with Harbor and backfill usage fields when present."""
+    """Validate canonical ATIF with Harbor and keep its totals as separate evidence."""
 
     if not path.is_file():
         return
@@ -986,15 +989,23 @@ def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
     metrics = trajectory.final_metrics
     if metrics is None:
         return
-    # These are two views of one invocation, not additive accounting sources.
-    if context.n_input_tokens is None:
-        context.n_input_tokens = metrics.total_prompt_tokens
-    if context.n_cache_tokens is None:
-        context.n_cache_tokens = metrics.total_cached_tokens
-    if context.n_output_tokens is None:
-        context.n_output_tokens = metrics.total_completion_tokens
-    if context.cost_usd is None:
-        context.cost_usd = metrics.total_cost_usd
+    # ATIF totals can cover a different scope (for example subagents) and cache
+    # convention than the invocation, so they never fill Harbor's accounting.
+    _record_atif_final_metrics(context, metrics.model_dump(mode="json"))
+
+
+def _record_atif_final_metrics(
+    context: AgentContext, final_metrics: dict[str, Any]
+) -> None:
+    if context.metadata is None:
+        context.metadata = {}
+    fabric = context.metadata.setdefault("fabric", {})
+    if isinstance(fabric, dict):
+        fabric["atif_final_metrics"] = {
+            "source": "atif",
+            "coverage": "unverified",
+            "final_metrics": final_metrics,
+        }
 
 
 def _record_host_atif_validation(

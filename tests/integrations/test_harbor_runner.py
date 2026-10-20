@@ -707,10 +707,11 @@ def test_harbor_lifecycle_populates_context_after_run(tmp_path: Path):
     )
 
     assert context.metadata["fabric"]["status"] == "succeeded"
-    assert context.n_input_tokens == 12
-    assert context.n_cache_tokens == 3
-    assert context.n_output_tokens == 4
-    assert context.cost_usd == 0.25
+    assert context.metadata["fabric"]["atif_final_metrics"]["source"] == "atif"
+    assert context.n_input_tokens is None
+    assert context.n_cache_tokens is None
+    assert context.n_output_tokens is None
+    assert context.cost_usd is None
 
 
 def test_harbor_023_options_schema_and_preflight():
