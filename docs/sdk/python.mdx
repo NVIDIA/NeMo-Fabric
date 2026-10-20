@@ -1029,9 +1029,10 @@ carry `source`, `collected_by`, and `method`:
 An adapter reports its facts through the result keys `nemo_fabric.versions.v1`
 (package version, harness name and version, and served models) and
 `nemo_fabric.mcp.v1` (MCP `runtime` blocks) when its descriptor declares them.
-The Claude Code, Codex, Hermes Agent, OpenClaw, Deep Agents, and
-mini-SWE-agent adapters report their package version and their harness name
-and version. The Claude Code adapter also reports the served model of the role
+Every bundled adapter reports its package version. The Claude Code, Codex,
+Hermes Agent, OpenClaw, Deep Agents, and mini-SWE-agent adapters also report
+their harness name and version. The other adapters report those facts with
+state `unsupported` and reason `no_source`. The Claude Code adapter also reports the served model of the role
 it runs: the one model that this invocation's main-thread assistant messages
 name, skipping subagent messages and Claude Code's `<synthetic>` API-error
 messages. Two models give `unavailable` with reason `not_attributed`, and none

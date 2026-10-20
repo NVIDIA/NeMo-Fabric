@@ -46,3 +46,5 @@ contract. Published package manifests use the registry version instead.
 ## Model Endpoint Policy
 
 `insecureHttpModelHosts(settings, errorCode)` validates and normalizes the explicit `insecure_http_model_hosts` setting. `modelEndpointAllowed(url, hosts, allowPrivateHttp)` applies the shared HTTPS, loopback HTTP, and exact HTTP host policy used by OpenCode, Qwen, and Kilo. The optional private IPv4 argument preserves Kilo's existing opt-in. These utilities do not apply to MCP endpoints.
+
+`withPackageVersion(runtime, packageJson)` wraps a runtime so that each result carries the `nemo_fabric.versions.v1` extension with the adapter's package version, read synchronously from `packageJson` when the runtime starts. Declare that key as `{"type": "object"}` under `extension_schemas.run_result` in the adapter descriptor. The harness name and version and the served models read `unsupported` with reason `no_source`.

@@ -52,9 +52,10 @@ fact holds a `value`, or a `state` and `reason` when it has no value, plus
 `source`, `collected_by`, and `method`. Accept `collected_by`, `method`, and
 `reason` codes you do not recognize. Adapter-reported facts, such as the
 harness version and the served model, read state `unsupported` with reason
-`key_not_declared` when the adapter does not report them. The Claude Code,
-Codex, Hermes Agent, OpenClaw, Deep Agents, and mini-SWE-agent adapters report
-the harness version, and the Claude Code adapter reports the served model. A malformed `what_ran` reads as `None` without
+`key_not_declared` when the adapter does not report them. Every bundled
+adapter reports its package version. The Claude Code, Codex, Hermes Agent,
+OpenClaw, Deep Agents, and mini-SWE-agent adapters report the harness version,
+and the Claude Code adapter reports the served model. A malformed `what_ran` reads as `None` without
 failing the result. A `what_ran` over its 128 KiB budget can hold only
 `schema`, `version`, and `what_ran_truncated`, so check for that marker before
 reading a section. Refer to
