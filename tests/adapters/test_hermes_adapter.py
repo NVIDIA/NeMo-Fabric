@@ -1370,28 +1370,47 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         *first_messages,
         {"role": "assistant", "content": "second response"},
     ]
-    mock_ai_agent.run_conversation.side_effect = [
-        {
-            "response": "first response",
-            "completed": True,
-            "failed": False,
-            "messages": first_messages,
-            "input_tokens": 100,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 50,
-            "output_tokens": 20,
-        },
-        {
-            "response": "second response",
-            "completed": True,
-            "failed": False,
-            "messages": second_messages,
-            "input_tokens": 130,
-            "cache_read_tokens": 50,
-            "cache_write_tokens": 50,
-            "output_tokens": 35,
-        },
-    ]
+    turns = iter(
+        [
+            {
+                "response": "first response",
+                "completed": True,
+                "failed": False,
+                "messages": first_messages,
+                "input_tokens": 100,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 50,
+                "output_tokens": 20,
+            },
+            {
+                "response": "second response",
+                "completed": True,
+                "failed": False,
+                "messages": second_messages,
+                "input_tokens": 130,
+                "cache_read_tokens": 50,
+                "cache_write_tokens": 50,
+                "output_tokens": 35,
+            },
+        ]
+    )
+    session_counters = (
+        "input_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "output_tokens",
+    )
+    for counter in session_counters:
+        setattr(mock_ai_agent, f"session_{counter}", 0)
+
+    def run_conversation(*args, **kwargs):
+        # Hermes stamps its session counters into a finished turn's result.
+        result = next(turns)
+        for counter in session_counters:
+            setattr(mock_ai_agent, f"session_{counter}", result[counter])
+        return result
+
+    mock_ai_agent.run_conversation.side_effect = run_conversation
     mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
     monkeypatch.setattr(
         mock_ai_agent_type.__init__.__func__,
@@ -1537,102 +1556,66 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     )
 
 
-async def test_hermes_invoke_after_failed_or_counterless_turn_reports_no_usage(
-    started_hermes_runtime,
-):
-    runtime, mock_turn = started_hermes_runtime
-
-    def turn(**counters: int) -> tuple[dict[str, object], str]:
-        return (
-            {"final_response": "done", "completed": True, "messages": [], **counters},
-            "",
-        )
-
-    def totals(tokens: int) -> dict[str, int]:
-        return {
-            "input_tokens": tokens,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
-            "output_tokens": tokens,
-        }
-
-    mock_turn.side_effect = [
-        turn(**totals(100)),
-        turn(),
-        turn(**totals(300)),
-        RuntimeError("turn failed"),
-        turn(**totals(700)),
-        turn(**totals(800)),
-    ]
-    invocation = _invocation(
-        {
-            "runtime_context": _runtime_context(
-                runtime_id="runtime-incomplete"
-            ).to_mapping(),
-            "request": {"input": "next"},
-        }
-    )
-
-    first = await runtime.invoke(*invocation)
-    counterless = await runtime.invoke(*invocation)
-    after_counterless = await runtime.invoke(*invocation)
-    with pytest.raises(RuntimeError):
-        await runtime.invoke(*invocation)
-    after_failure = await runtime.invoke(*invocation)
-    recovered = await runtime.invoke(*invocation)
-
-    assert first.usage is not None
-    assert (first.usage.input_tokens, first.usage.output_tokens) == (100, 100)
-    # No baseline: never the session total or a carried-over change.
-    assert counterless.usage is None
-    assert after_counterless.usage is None
-    assert after_failure.usage is None
-    assert recovered.usage is not None
-    assert (recovered.usage.input_tokens, recovered.usage.output_tokens) == (100, 100)
-
-
 def test_invocation_usage_with_lower_or_missing_counters_leaves_them_unknown():
-    usage, totals = adapter._invocation_usage(
-        {
-            "input_tokens": 10,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
-            "output_tokens": 4,
-        },
-        {
-            "input_tokens": 50,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
-            "output_tokens": 1,
-        },
+    counters = {
+        "input_tokens": 10,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "output_tokens": 4,
+    }
+    usage = adapter._invocation_usage(
+        counters, {**counters, "input_tokens": 50, "output_tokens": 1}
     )
-    missing, _ = adapter._invocation_usage({"completed": True}, {})
-    no_baseline, _ = adapter._invocation_usage(
-        {
-            "input_tokens": 10,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
-            "output_tokens": 4,
-        },
-        {},
-    )
+    missing = adapter._invocation_usage({}, counters)
+    no_baseline = adapter._invocation_usage(counters, {})
 
     assert usage is not None
     assert usage.input_tokens is None
     assert usage.output_tokens == 3
-    assert totals["input_tokens"] == 10
     assert missing is None
     assert no_baseline is None
+
+
+def test_session_counters_keep_only_valid_counts():
+    agent = SimpleNamespace(
+        session_input_tokens=7,
+        session_cache_read_tokens=True,
+        session_cache_write_tokens=-1,
+        session_output_tokens="3",
+    )
+
+    assert adapter._session_counters(agent) == {"input_tokens": 7}
+
+
+# A turn step that ends the turn with a failure result carrying no session
+# counters, like Hermes' billing, content-policy and partial-turn results.
+_COUNTERLESS_FAILURE = "counterless failure"
+
+
+def _record_response(agent: Any, response: Any) -> None:
+    """Fold a provider response the way Hermes' turn loop does."""
+    from agent import turn_response_check
+
+    turn_response_check.record_response_usage(
+        agent,
+        response,
+        messages=[],
+        api_call_count=1,
+        api_duration=0.0,
+        compression_attempts=0,
+        max_compression_attempts=3,
+    )
 
 
 class _UsageRecordingAgent:
     """Hermes agent stand-in whose turns run scripted provider responses
     through Hermes' own usage accounting and context compressor, called the
-    way Hermes' turn loop calls it."""
+    way Hermes' turn loop calls it. A callable step runs against the agent and
+    may raise; ``_COUNTERLESS_FAILURE`` ends the turn with a failure result."""
 
     def __init__(
         self,
-        turns: list[list[dict[str, object] | Callable[[Any], None] | None]],
+        turns: list[list[dict[str, object] | Callable[[Any], None] | str | None]],
         api_mode: str = "chat_completions",
     ) -> None:
         from agent.context_compressor import ContextCompressor
@@ -1669,22 +1652,14 @@ class _UsageRecordingAgent:
         pass
 
     def run_conversation(self, user_message: str) -> dict[str, object]:
-        from agent import turn_response_check
-
         messages = [{"role": "user", "content": user_message}]
         for usage in self._turns.pop(0):
+            if usage == _COUNTERLESS_FAILURE:
+                return {"final_response": "", "failed": True, "messages": messages}
             if callable(usage):
                 usage(self)
                 continue
-            turn_response_check.record_response_usage(
-                self,
-                SimpleNamespace(usage=usage),
-                messages=messages,
-                api_call_count=1,
-                api_duration=0.0,
-                compression_attempts=0,
-                max_compression_attempts=3,
-            )
+            _record_response(self, SimpleNamespace(usage=usage))
         return {
             "final_response": "done",
             "completed": True,
@@ -1882,41 +1857,152 @@ async def test_hermes_usage_reports_cache_counts_only_when_the_provider_sent_the
     assert with_cache_fields.usage.total_tokens == 135
 
 
-@pytest.mark.parametrize(
-    ("action", "counted"), [("break", False), ("fallthrough", True)]
-)
-async def test_hermes_refused_response_before_a_fallback_reply(action, counted):
-    # Hermes hands a content-filter refusal to handle_content_policy_refusal;
-    # with a fallback configured it returns "break" and the fallback model
-    # answers, so the refused call is billed but never recorded.
-    refusal = adapter._observed_response_handler(
-        "handle_content_policy_refusal",
-        lambda agent, response, *args, **kwargs: SimpleNamespace(action=action),
-    )
+def _reported(prompt: int, completion: int) -> dict[str, int]:
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": prompt + completion,
+    }
 
-    def refused(agent: Any) -> None:
-        refused_usage = {"prompt_tokens": 40, "completion_tokens": 0}
-        refusal(agent, SimpleNamespace(usage=refused_usage), None)
+
+async def test_hermes_usage_after_failed_or_counterless_turn_is_each_turns_own():
+    def fail_turn(agent: Any) -> None:
+        raise RuntimeError("turn failed")
 
     agent = _UsageRecordingAgent(
         [
-            [refused, {"prompt_tokens": 50, "completion_tokens": 5}],
-            [{"prompt_tokens": 60, "completion_tokens": 6}],
+            [_reported(100, 10)],
+            # Hermes' early failure results carry no session counters.
+            [_reported(40, 4), _COUNTERLESS_FAILURE],
+            [_reported(50, 5)],
+            [_reported(70, 7), fail_turn],
+            [_reported(60, 6)],
         ]
     )
     runtime = _usage_recording_runtime(agent)
     invocation = _usage_invocation()
 
-    fallback = await runtime.invoke(*invocation)
-    after = await runtime.invoke(*invocation)
+    first = await runtime.invoke(*invocation)
+    counterless = await runtime.invoke(*invocation)
+    after_counterless = await runtime.invoke(*invocation)
+    with pytest.raises(RuntimeError):
+        await runtime.invoke(*invocation)
+    after_exception = await runtime.invoke(*invocation)
 
-    if counted:
-        assert fallback.usage is not None
-        assert fallback.usage.input_tokens == 50
-    else:
-        assert fallback.usage is None
-    assert after.usage is not None
-    assert (after.usage.input_tokens, after.usage.output_tokens) == (60, 6)
+    usages = [
+        (turn.usage.input_tokens, turn.usage.output_tokens, turn.usage.total_tokens)
+        for turn in (first, counterless, after_counterless, after_exception)
+        if turn.usage is not None
+    ]
+    # Each invocation reports its own tokens; the turn that raised never
+    # reaches the next invocation's usage.
+    assert usages == [(100, 10, 110), (40, 4, 44), (50, 5, 55), (60, 6, 66)]
+    assert counterless.status == AgentRunStatus.FAILED
+
+
+async def test_hermes_usage_after_session_counter_reset_is_unknown_for_that_turn():
+    def reset_session(agent: Any) -> None:
+        for counter in ("input_tokens", "cache_read_tokens", "output_tokens"):
+            setattr(agent, f"session_{counter}", 0)
+
+    agent = _UsageRecordingAgent(
+        [
+            [_reported(100, 10)],
+            [reset_session, _reported(30, 3)],
+            [_reported(20, 2)],
+        ]
+    )
+    runtime = _usage_recording_runtime(agent)
+    invocation = _usage_invocation()
+
+    await runtime.invoke(*invocation)
+    reset = await runtime.invoke(*invocation)
+    after_reset = await runtime.invoke(*invocation)
+
+    assert reset.usage is None
+    assert after_reset.usage is not None
+    assert (after_reset.usage.input_tokens, after_reset.usage.output_tokens) == (20, 2)
+
+
+@pytest.mark.parametrize(
+    ("handler", "action"),
+    [
+        ("handle_content_policy_refusal", "break"),
+        ("recover_from_truncation", "continue"),
+        ("recover_from_truncation", "fallthrough"),
+        ("retry_invalid_response", "continue"),
+        ("retry_invalid_response", "fallthrough"),
+    ],
+)
+async def test_hermes_skipped_response_usage_is_counted_once(handler, action):
+    # check_api_response returns after these handlers before recording the
+    # response's usage, unless the handler falls through to
+    # record_response_usage, which then counts it.
+    def positional_handler(agent: Any, response: Any, *args: Any) -> Any:
+        return SimpleNamespace(action=action)
+
+    def keyword_handler(agent: Any, *, response: Any, **kwargs: Any) -> Any:
+        return SimpleNamespace(action=action)
+
+    # Hermes passes retry_invalid_response the response by keyword.
+    observed = adapter._observed_response_handler(
+        handler,
+        keyword_handler if handler == "retry_invalid_response" else positional_handler,
+    )
+
+    def skipped(agent: Any) -> None:
+        response = SimpleNamespace(usage=_reported(40, 1))
+        if handler == "retry_invalid_response":
+            observed(agent, response=response, error_details=[])
+        else:
+            observed(agent, response, None)
+        if action == "fallthrough":
+            _record_response(agent, response)
+
+    agent = _UsageRecordingAgent([[skipped, _reported(50, 5)]])
+    runtime = _usage_recording_runtime(agent)
+
+    turn = await runtime.invoke(*_usage_invocation())
+
+    assert turn.usage is not None
+    assert (turn.usage.input_tokens, turn.usage.output_tokens) == (90, 6)
+
+
+async def test_hermes_skipped_response_uses_the_route_that_served_it():
+    # A refusal handler can switch the agent to a fallback provider before it
+    # returns; the refused response still has the first route's usage shape.
+    def refuse_and_fall_back(agent: Any, response: Any, *args: Any) -> Any:
+        agent.provider = "custom"
+        agent.api_mode = "chat_completions"
+        return SimpleNamespace(action="break")
+
+    observed = adapter._observed_response_handler(
+        "handle_content_policy_refusal", refuse_and_fall_back
+    )
+
+    def refused(agent: Any) -> None:
+        anthropic_usage = {
+            "input_tokens": 100,
+            "cache_read_input_tokens": 30,
+            "cache_creation_input_tokens": 0,
+            "output_tokens": 0,
+        }
+        observed(agent, SimpleNamespace(usage=anthropic_usage), None)
+
+    fallback_usage = {
+        **_reported(50, 5),
+        "prompt_tokens_details": {"cached_tokens": 0},
+    }
+    agent = _UsageRecordingAgent(
+        [[refused, fallback_usage]], api_mode="anthropic_messages"
+    )
+    runtime = _usage_recording_runtime(agent)
+
+    turn = await runtime.invoke(*_usage_invocation())
+
+    assert turn.usage is not None
+    assert (turn.usage.input_tokens, turn.usage.cached_input_tokens) == (180, 30)
+    assert turn.usage.output_tokens == 5
 
 
 async def test_hermes_stop_unregisters_the_agent_usage_observer():
@@ -2029,12 +2115,19 @@ async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch
     worker_started = threading.Event()
     worker_release = threading.Event()
     mock_agent = MagicMock()
+    mock_agent.session_input_tokens = 0
+    mock_agent.session_cache_read_tokens = 0
+    mock_agent.session_cache_write_tokens = 0
+    mock_agent.session_output_tokens = 0
     mock_session_db = MagicMock()
     calls = 0
 
     def run_turn(**_kwargs):
         nonlocal calls
         calls += 1
+        # Each turn bills calls * 100 input and calls * 10 output tokens.
+        mock_agent.session_input_tokens += calls * 100
+        mock_agent.session_output_tokens += calls * 10
         if calls == 1:
             worker_started.set()
             assert worker_release.wait(timeout=1)
@@ -2044,10 +2137,6 @@ async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch
                 "completed": True,
                 "failed": False,
                 "messages": [],
-                "input_tokens": calls * 100,
-                "cache_read_tokens": 0,
-                "cache_write_tokens": 0,
-                "output_tokens": calls * 10,
             },
             "",
         )
@@ -2084,8 +2173,10 @@ async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch
     result = await runtime.invoke(*_invocation(invocation))
 
     assert result.output["response"] == "turn-2"
-    # The cancelled turn left no baseline, so its tokens never reach this result.
-    assert result.usage is None
+    # The cancelled turn's tokens are in the counters before this turn starts,
+    # so this result reports only its own.
+    assert result.usage is not None
+    assert (result.usage.input_tokens, result.usage.output_tokens) == (200, 20)
     await runtime.stop()
 
 

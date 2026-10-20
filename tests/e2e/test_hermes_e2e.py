@@ -152,51 +152,96 @@ async def test_hermes_persistent_host_reports_usage_for_each_invocation(
     }, partial.to_mapping()
 
 
+def _chat_usage(prompt: int, completion: int) -> dict[str, int]:
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": prompt + completion,
+    }
+
+
 @pytest.mark.usefixtures("mock_nvidia_api_key")
 @pytest.mark.parametrize(
-    "scenario",
+    ("replies", "expected_status", "expected_usage"),
     [
-        # A reply cut off at max_tokens bills the whole budget.
-        {
-            "finish_reason": "length",
-            "usage": {
-                "prompt_tokens": 40,
-                "completion_tokens": 512,
-                "total_tokens": 552,
-            },
-        },
+        # A reply cut off at the 512-token default, then the continuation.
+        (
+            [
+                {"finish_reason": "length", "usage": _chat_usage(40, 512)},
+                {"usage": _chat_usage(600, 20)},
+            ],
+            "succeeded",
+            {"input_tokens": 640, "output_tokens": 532, "total_tokens": 1172},
+        ),
         # A router timeout reported as a completion that billed the prompt,
         # then a successful retry.
-        {
-            "invalid_responses": 1,
-            "usage": {"prompt_tokens": 40, "completion_tokens": 0, "total_tokens": 40},
-        },
+        (
+            [
+                {"invalid": True, "usage": _chat_usage(40, 0)},
+                {"usage": _chat_usage(50, 5)},
+            ],
+            "succeeded",
+            {"input_tokens": 90, "output_tokens": 5, "total_tokens": 95},
+        ),
+        # A content-filter refusal ends the turn without a fallback model.
+        (
+            [{"finish_reason": "content_filter", "usage": _chat_usage(30, 0)}],
+            "failed",
+            {"input_tokens": 30, "output_tokens": 0, "total_tokens": 30},
+        ),
+        # The truncated reply reports no completion count, so only output and
+        # the total stay unknown.
+        (
+            [
+                {"finish_reason": "length", "usage": {"prompt_tokens": 40}},
+                {"usage": _chat_usage(60, 6)},
+            ],
+            "succeeded",
+            {"input_tokens": 100},
+        ),
+        (
+            [
+                {"finish_reason": "length", "usage": _chat_usage(0, 0)},
+                {"usage": _chat_usage(0, 0)},
+            ],
+            "succeeded",
+            {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        ),
     ],
-    ids=["length", "invalid_then_retry"],
+    ids=["truncated", "invalid", "refused", "partial", "zeros"],
 )
-async def test_hermes_usage_is_unknown_when_hermes_skips_a_response(
+async def test_hermes_usage_counts_responses_hermes_skips(
     code_review_agent_dir: Path,
     api_server: str,
-    scenario: dict[str, object],
+    replies: list[dict[str, object]],
+    expected_status: str,
+    expected_usage: dict[str, int],
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     config = hermes_config()
     config.models["default"].base_url = f"{api_server}/v1"
+    # Leave Hermes room to continue or retry within its iteration budget.
+    config.runtime.max_turns = 5
 
     async with await Fabric().start_runtime(
         config, base_dir=code_review_agent_dir
     ) as runtime:
         counted = await runtime.invoke(input="first")
         scenario_response = requests.post(
-            f"{api_server}/_scenario", json=scenario, timeout=5
+            f"{api_server}/_scenario", json={"replies": replies}, timeout=5
         )
         scenario_response.raise_for_status()
         skipped = await runtime.invoke(input="second")
 
     assert counted.usage is not None, counted.to_mapping()
-    # Hermes returns on a truncated or invalid response before recording its
-    # usage, so the invocation's counters miss a billed call.
-    assert skipped.usage is None, skipped.to_mapping()
+    # Hermes returns on a truncated, invalid or refused response before adding
+    # its usage to the session counters; the adapter adds the reported counts.
+    assert skipped["status"] == expected_status, skipped.to_mapping()
+    assert skipped.to_mapping()["usage"] == {
+        **expected_usage,
+        "input_tokens_include_cache": True,
+        "metadata": {},
+    }, skipped.to_mapping()
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")

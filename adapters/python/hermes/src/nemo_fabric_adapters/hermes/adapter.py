@@ -69,12 +69,12 @@ class HermesRuntime:
         self._relay_plugin_config: dict[str, Any] | None = None
         self._relay_plugin_config_path: Path | None = None
         self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
-        # Hermes reports session totals; each invocation reports the change
-        # from this baseline. A counter missing from it has no baseline.
-        self._session_token_totals: dict[str, int] = _fresh_session_totals()
         self._uncounted_responses = 0
         # Provider responses whose usage left out a count, by count.
         self._unreported_counts = dict.fromkeys(_REPORTED_COUNTS, 0)
+        # Tokens of provider responses Hermes returned on before adding them to
+        # its session counters, in the counters' buckets.
+        self._skipped_response_tokens = dict.fromkeys(_SESSION_TOKEN_KEYS, 0)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -226,7 +226,6 @@ class HermesRuntime:
                         session_db=self._session_db,
                     )
                 )
-                self._session_token_totals = _fresh_session_totals()
                 self._observe_usage_reports(self._agent)
             self._agent_config = agent_config
             self._started = True
@@ -295,12 +294,12 @@ class HermesRuntime:
                 "hermes_invocation_in_progress",
                 "Hermes runtime already has an active invocation",
             )
-        # Until this invocation's result arrives the baseline is unknown, so a
-        # failed, cancelled or timed-out invocation never hands its tokens to
-        # the next one.
-        previous_totals, self._session_token_totals = self._session_token_totals, {}
+        # No worker is running here, so the agent's session counters hold every
+        # earlier invocation's tokens, including a failed or cancelled one's.
+        previous_totals = _session_counters(self._agent)
         uncounted_before = self._uncounted_responses
         unreported_before = dict(self._unreported_counts)
+        skipped_before = dict(self._skipped_response_tokens)
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
 
@@ -385,9 +384,13 @@ class HermesRuntime:
                     code="hermes_reported_failure",
                     message="Hermes did not complete the invocation",
                 )
-        usage, self._session_token_totals = _invocation_usage(
-            result,
+        usage = _invocation_usage(
+            _session_counters(self._agent),
             previous_totals,
+            skipped={
+                key: tokens - skipped_before[key]
+                for key, tokens in self._skipped_response_tokens.items()
+            },
             unreported=frozenset(
                 count
                 for count, responses in self._unreported_counts.items()
@@ -395,9 +398,8 @@ class HermesRuntime:
             ),
         )
         if self._uncounted_responses != uncounted_before:
-            # A provider response without usage, or one Hermes returned on
-            # before recording its usage, added no tokens, so the change in
-            # the counters is an undercount, not this invocation's.
+            # Hermes counted a provider response without usage as 0 tokens,
+            # so the change in the counters is an undercount.
             usage = None
         return AgentRunResult(
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
@@ -439,27 +441,51 @@ class HermesRuntime:
         omitted count from a reported zero, and Hermes passes the raw usage to
         no per-agent hook. The adapter therefore registers the agent with
         process-wide wrappers around the functions Hermes' turn loop calls for
-        each response; see ``_install_usage_observer``. An invalid, refused or
-        truncated response that Hermes never records counts as a response
-        without usage.
+        each response; see ``_install_usage_observer``. Hermes returns on an
+        invalid, refused or truncated response before adding its usage to the
+        session counters, so the adapter adds that response's reported counts
+        itself.
         """
         _install_usage_observer()
 
-        def count_unreported(handler: str, response: Any, outcome: Any) -> None:
-            if handler != "record_response_usage":
-                # Hermes returns on an invalid, refused or truncated response
-                # before recording its usage, unless the handler falls through.
-                if getattr(outcome, "action", None) != "fallthrough":
-                    self._uncounted_responses += 1
-                return
+        def count_unreported(
+            handler: str,
+            response: Any,
+            outcome: Any,
+            provider: Any,
+            api_mode: Any,
+        ) -> None:
             usage = getattr(response, "usage", None)
-            # A response without usage is counted by the compressor hook. An
-            # empty usage object is a report with every count left out.
-            if usage is not None:
-                for count in _omitted_counts(agent, usage):
-                    self._unreported_counts[count] += 1
+            if handler == "record_response_usage":
+                # A response without usage is counted by the compressor hook.
+                # An empty usage object is a report with every count left out.
+                if usage is not None:
+                    for count in _omitted_counts(usage, provider, api_mode):
+                        self._unreported_counts[count] += 1
+                return
+            if not _skips_usage_recording(handler, outcome):
+                return
+            for count in _omitted_counts(usage, provider, api_mode):
+                self._unreported_counts[count] += 1
+            if usage:
+                self._add_skipped_response_tokens(usage, provider, api_mode)
 
         _USAGE_OBSERVERS[agent] = count_unreported
+
+    def _add_skipped_response_tokens(
+        self, usage: Any, provider: Any, api_mode: Any
+    ) -> None:
+        """Add a response's usage to the tokens Hermes left out of its counters.
+
+        Hermes' own normalization splits the usage into its counters' buckets.
+        It fills an omitted field with 0; every count that needs an omitted
+        field is already marked unreported.
+        """
+        from agent.usage_pricing import normalize_usage
+
+        canonical = normalize_usage(usage, provider=provider, api_mode=api_mode)
+        for key in _SESSION_TOKEN_KEYS:
+            self._skipped_response_tokens[key] += getattr(canonical, key)
 
     async def _authenticate_mcp_servers(self) -> None:
         if self._mcp_authentication_checked:
@@ -684,16 +710,18 @@ _SESSION_TOKEN_KEYS = (
 
 
 # Response observers by Hermes agent, called with each response Hermes'
-# turn loop handles. Delegated subagents are never registered: their tokens
-# never reach the registered agent's counters.
-_USAGE_OBSERVERS: weakref.WeakKeyDictionary[Any, Callable[[str, Any, Any], None]] = (
-    weakref.WeakKeyDictionary()
-)
+# turn loop handles, the handler's outcome, and the provider and API mode
+# that served the response. Delegated subagents are never registered: their
+# tokens never reach the registered agent's counters.
+_USAGE_OBSERVERS: weakref.WeakKeyDictionary[
+    Any, Callable[[str, Any, Any, Any, Any], None]
+] = weakref.WeakKeyDictionary()
 # The functions ``agent.turn_response_check.check_api_response`` calls with
 # (agent, response, ...) for a provider response, by the module defining
 # each. record_response_usage folds the usage; on an invalid response, a
 # content-filter refusal or a reply cut off at the token limit, Hermes calls
-# one of the other three and returns before recording the usage.
+# one of the other three and usually returns before recording the usage (see
+# _skips_usage_recording).
 _RESPONSE_HANDLERS = {
     "record_response_usage": "agent.turn_usage",
     "retry_invalid_response": "agent.turn_response_check",
@@ -703,13 +731,24 @@ _RESPONSE_HANDLERS = {
 
 
 def _observed_response_handler(name: str, handler: Callable[..., Any]) -> Any:
-    """Wrap a Hermes response handler to show each call to the agent's observer."""
+    """Wrap a Hermes response handler to show each call to the agent's observer.
 
-    def observed(agent: Any, response: Any, *args: Any, **kwargs: Any) -> Any:
-        outcome = handler(agent, response, *args, **kwargs)
+    Hermes passes the response positionally to some handlers and by keyword
+    to others, so the wrapper forwards the call unchanged and reads the
+    handler's ``response`` argument from its signature.
+    """
+    signature = inspect.signature(handler)
+
+    def observed(agent: Any, *args: Any, **kwargs: Any) -> Any:
+        # A handler can switch the agent to a fallback provider, so read the
+        # route that served this response before the handler runs.
+        provider = getattr(agent, "provider", None)
+        api_mode = getattr(agent, "api_mode", None)
+        outcome = handler(agent, *args, **kwargs)
         observer = _USAGE_OBSERVERS.get(agent)
         if observer is not None:
-            observer(name, response, outcome)
+            response = signature.bind(agent, *args, **kwargs).arguments["response"]
+            observer(name, response, outcome, provider, api_mode)
         return outcome
 
     observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
@@ -740,6 +779,7 @@ def _install_usage_observer() -> None:
             current is None
             or name not in called
             or current is not getattr(importlib.import_module(module), name, None)
+            or "response" not in inspect.signature(current).parameters
         ):
             raise lifecycle.LifecycleError(
                 "hermes_usage_accounting_unsupported",
@@ -782,10 +822,28 @@ _CHAT_FIELDS = {
 }
 
 
-def _omitted_counts(agent: Any, usage: Any) -> list[str]:
+def _skips_usage_recording(handler: str, outcome: Any) -> bool:
+    """Return whether ``check_api_response`` returns after ``handler`` without
+    recording the response's usage.
+
+    It returns after a content-filter refusal, after an invalid response
+    unless the handler's action is ``fallthrough``, and after a truncated
+    response when the action is ``return``, ``break`` or ``continue``
+    (``agent/turn_response_check.py``). Any other outcome falls through to
+    ``record_response_usage``, which adds the response's usage itself.
+    """
+    action = getattr(outcome, "action", None)
+    if handler == "recover_from_truncation":
+        return action in ("return", "break", "continue")
+    if handler == "retry_invalid_response":
+        return action != "fallthrough"
+    return True
+
+
+def _omitted_counts(usage: Any, provider: Any, api_mode: Any) -> list[str]:
     """Return the counts that the provider's raw ``usage`` left out."""
-    mode = str(getattr(agent, "api_mode", None) or "").strip().lower()
-    provider = str(getattr(agent, "provider", None) or "").strip().lower()
+    mode = str(api_mode or "").strip().lower()
+    provider = str(provider or "").strip().lower()
     if mode == "anthropic_messages" or provider == "anthropic":
         fields = _ANTHROPIC_FIELDS
     elif mode == "codex_responses":
@@ -812,38 +870,43 @@ def _is_reported_count(usage: Any, path: str) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
-def _fresh_session_totals() -> dict[str, int]:
-    """Return the baseline of a new Hermes agent, whose counters start at 0."""
-    return dict.fromkeys(_SESSION_TOKEN_KEYS, 0)
+def _session_counters(agent: Any) -> dict[str, int]:
+    """Return the agent's session token counters that hold a valid count.
 
-
-def _invocation_usage(
-    result: dict[str, Any],
-    previous_totals: dict[str, int],
-    *,
-    unreported: frozenset[str] = frozenset(),
-) -> tuple[AgentUsage | None, dict[str, int]]:
-    """Return this invocation's usage and the session totals to keep as baseline.
-
-    Hermes keeps one session across a runtime's invocations, so each counter is
-    the change since ``previous_totals``. A counter that is missing from the
-    result or from ``previous_totals`` (no baseline: the previous invocation
-    failed or its result held no counters), or that went down, is unknown for
-    this invocation. The usage therefore never holds a whole-session total or
-    another invocation's tokens. ``unreported`` names the counts ("input",
-    "cached", "output") that a provider response of this invocation left out
-    and Hermes counted as 0. Those counts are unknown, and so is the total when
-    input or output is.
+    Hermes stamps exactly these attributes into a finished turn's result, but
+    its early failure results carry none, so the adapter reads the agent.
     """
-    totals = {
+    return {
         key: value
         for key in _SESSION_TOKEN_KEYS
-        if isinstance((value := result.get(key)), int)
+        if isinstance((value := getattr(agent, f"session_{key}", None)), int)
         and not isinstance(value, bool)
         and 0 <= value <= (1 << 64) - 1
     }
+
+
+def _invocation_usage(
+    totals: dict[str, int],
+    previous_totals: dict[str, int],
+    *,
+    skipped: dict[str, int] | None = None,
+    unreported: frozenset[str] = frozenset(),
+) -> AgentUsage | None:
+    """Return this invocation's usage from the agent's session counters.
+
+    Hermes keeps one session across a runtime's invocations, so each counter is
+    the change from ``previous_totals``, read before the turn, to ``totals``,
+    read after it, plus the ``skipped`` tokens of responses Hermes left out of
+    its counters. A counter that is missing from either reading, or that went
+    down (Hermes reset its session), is unknown for this invocation, so the
+    usage never holds a whole-session total. ``unreported`` names the counts
+    ("input", "cached", "output") that a provider response of this invocation
+    left out and Hermes counted as 0. Those counts are unknown, and so is the
+    total when input or output is.
+    """
+    skipped = skipped or {}
     change = {
-        key: value - previous_totals[key]
+        key: value - previous_totals[key] + skipped.get(key, 0)
         for key, value in totals.items()
         if key in previous_totals and value >= previous_totals[key]
     }
@@ -864,7 +927,7 @@ def _invocation_usage(
         fields["output_tokens"] = change["output_tokens"]
     if "input_tokens" in fields and "output_tokens" in fields:
         fields["total_tokens"] = fields["input_tokens"] + fields["output_tokens"]
-    return (AgentUsage(**fields) if fields else None), totals
+    return AgentUsage(**fields) if fields else None
 
 
 def filter_supported_kwargs(callable_obj: Any, **kwargs: Any) -> dict[str, Any]:

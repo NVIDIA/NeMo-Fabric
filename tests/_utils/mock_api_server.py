@@ -25,8 +25,9 @@ def mock_api_server(port: int) -> Iterator[str]:
 
     Use the /_requests endpoint to inspect captured chat-completion payloads after a test action.
     Use the /_scenario endpoint to configure a status code, ordered tool calls, or the
-    chat-completion usage object, finish reason and number of leading invalid responses
-    for subsequent requests.
+    chat-completion usage object and finish reason for subsequent requests. Its ordered
+    ``replies`` override the usage or finish reason of the next chat completions, one
+    reply each, or make one invalid.
     Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
@@ -46,7 +47,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.mcp_authorization_headers = []
         app.state.usage = dict(_ZERO_USAGE)
         app.state.finish_reason = "stop"
-        app.state.invalid_responses = 0
+        app.state.replies = []
 
     reset_state()
 
@@ -87,7 +88,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.tool_call_index = 0
         app.state.usage = payload.get("usage", dict(_ZERO_USAGE))
         app.state.finish_reason = payload.get("finish_reason", "stop")
-        app.state.invalid_responses = int(payload.get("invalid_responses", 0))
+        app.state.replies = list(payload.get("replies", []))
         return {
             "status_code": app.state.status_code,
             "tool_call": tool_call,
@@ -191,16 +192,16 @@ def mock_api_server(port: int) -> Iterator[str]:
         ]
         latest = user_messages[-1].get("content", "") if user_messages else ""
         content = f"echo user_count={len(user_messages)} latest={latest}"
-        if app.state.invalid_responses > 0:
+        reply = app.state.replies.pop(0) if app.state.replies else {}
+        usage = reply.get("usage", app.state.usage)
+        finish_reason = reply.get("finish_reason", app.state.finish_reason)
+        if reply.get("invalid", False):
             # A router timeout reported as a successful completion, which
             # OpenAI-compatible clients such as Hermes reject as invalid.
-            app.state.invalid_responses -= 1
             content = _ROUTER_TIMEOUT_TEXT
         if payload.get("stream") is True:
             return StreamingResponse(
-                _stream_chat_completion(
-                    payload, content, app.state.usage, app.state.finish_reason
-                ),
+                _stream_chat_completion(payload, content, usage, finish_reason),
                 media_type="text/event-stream",
             )
 
@@ -214,10 +215,10 @@ def mock_api_server(port: int) -> Iterator[str]:
                     {
                         "index": 0,
                         "message": {"role": "assistant", "content": content},
-                        "finish_reason": app.state.finish_reason,
+                        "finish_reason": finish_reason,
                     }
                 ],
-                "usage": app.state.usage,
+                "usage": usage,
             }
         )
 
