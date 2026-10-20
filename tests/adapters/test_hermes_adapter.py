@@ -2549,7 +2549,7 @@ async def test_hermes_usage_is_unknown_when_a_compression_summary_request_fails(
     assert turn.usage is None
 
 
-def _write_file_call(step: int) -> dict[str, object]:
+def _write_file_call(step: int, directory: Path) -> dict[str, object]:
     return _chat_response(
         "",
         _usage(100, 1),
@@ -2560,7 +2560,7 @@ def _write_file_call(step: int) -> dict[str, object]:
                 "function": {
                     "name": "write_file",
                     "arguments": json.dumps(
-                        {"path": f"out-{step}.txt", "content": f"line {step}"}
+                        {"path": str(directory / f"out-{step}.txt"), "content": "x"}
                     ),
                 },
             }
@@ -2586,7 +2586,7 @@ async def test_hermes_runs_no_background_skill_review_after_a_turn(
     try:
         # Ten tool iterations reach Hermes' default skill-review interval.
         scripted_provider.main.extend(
-            [_write_file_call(step) for step in range(10)]
+            [_write_file_call(step, tmp_path) for step in range(10)]
             + [_chat_response("done", _usage(100, 1))]
         )
         turn = await _invoke(runtime, runtime_context, "Write the files")
