@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.metadata
 import importlib.util
 import inspect
 import json
@@ -1756,7 +1757,9 @@ async def test_hermes_reports_the_version_its_version_call_returns(
         "name": {**_reported("hermes-agent"), "method": "adapter_report"},
         "version": _reported(get_version_info().derived_version),
     }
-    assert report["adapter"]["package_version"]["value"] == "0.6.0"
+    assert report["adapter"]["package_version"]["value"] == importlib.metadata.version(
+        "nemo-fabric-adapters-hermes"
+    )
 
 
 def _raise_runtime_error() -> str:
