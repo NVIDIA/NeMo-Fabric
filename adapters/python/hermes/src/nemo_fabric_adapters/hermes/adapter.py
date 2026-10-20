@@ -207,6 +207,7 @@ class HermesRuntime:
                     )
                     if value is not None
                 }
+                _require_background_review_switch(AIAgent)
                 self._agent = AIAgent(
                     **filter_supported_kwargs(
                         AIAgent,
@@ -1582,6 +1583,20 @@ def _invocation_usage(
         if _is_count(total_tokens):
             fields["total_tokens"] = total_tokens
     return AgentUsage(**fields) if fields else None
+
+
+def _require_background_review_switch(agent_type: Any) -> None:
+    """Fail start when Hermes' agent cannot skip its background review.
+
+    ``filter_supported_kwargs`` drops an unsupported keyword silently, which
+    would let the review run and leave invocations without usage.
+    """
+    parameters = inspect.signature(agent_type.__init__).parameters
+    if "skip_background_review" not in parameters:
+        raise lifecycle.LifecycleError(
+            "hermes_usage_accounting_unsupported",
+            "This Hermes version cannot skip its background review",
+        )
 
 
 def filter_supported_kwargs(callable_obj: Any, **kwargs: Any) -> dict[str, Any]:

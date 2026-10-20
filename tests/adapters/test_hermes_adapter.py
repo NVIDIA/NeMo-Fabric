@@ -3117,3 +3117,15 @@ def test_background_review_observer_rejects_a_moved_spawn_point(monkeypatch):
         adapter._observe_background_reviews(SimpleNamespace())
 
     assert raised.value.code == "hermes_usage_accounting_unsupported"
+
+
+def test_hermes_start_requires_the_background_review_switch():
+    class AgentWithoutSwitch:
+        def __init__(self, model: str, skip_memory: bool = False) -> None:
+            pass
+
+    adapter._require_background_review_switch(AIAgent)
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        adapter._require_background_review_switch(AgentWithoutSwitch)
+
+    assert raised.value.code == "hermes_usage_accounting_unsupported"
