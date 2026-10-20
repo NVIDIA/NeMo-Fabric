@@ -815,6 +815,98 @@ async def test_invoke_checks_each_response_separately(
     assert result.usage.to_mapping() == expected
 
 
+def _completion_log(response_id: str, usage: dict) -> str:
+    return json.dumps({"response": {"id": response_id, "usage": usage}})
+
+
+# LiteLLM declares cached_tokens as optional, so a null count is unreported.
+# The Responses API carries cache reads in input_tokens_details instead.
+@pytest.mark.parametrize(
+    ("usage", "reported"),
+    [
+        ({"prompt_tokens_details": {"cached_tokens": 0}}, True),
+        ({"prompt_tokens_details": {"cached_tokens": None}}, False),
+        ({"prompt_tokens_details": {"audio_tokens": 0}}, False),
+        (
+            {"prompt_tokens_details": {}, "input_tokens_details": {"cached_tokens": 4}},
+            True,
+        ),
+        (
+            {
+                "prompt_tokens_details": {"text_tokens": 10},
+                "input_tokens_details": {"cached_tokens": 4},
+            },
+            True,
+        ),
+        ({"input_tokens_details": {"cached_tokens": None}}, False),
+    ],
+    ids=[
+        "zero",
+        "null",
+        "sibling-detail-only",
+        "empty-prompt-details-with-input-details",
+        "prompt-details-without-cache-with-input-details",
+        "null-input-details",
+    ],
+)
+def test_completion_log_reports_cache_reads_only_when_counted(
+    usage: dict, reported: bool
+):
+    reports = adapter._CacheReadReports()
+
+    reports.record("test-model.json", _completion_log("resp-1", usage))
+
+    assert reports.reported == [("resp-1", reported)]
+
+
+def test_completion_log_ignores_failed_request_logs():
+    reports = adapter._CacheReadReports()
+    cached = {"prompt_tokens_details": {"cached_tokens": 3}}
+
+    reports.record("test-model.json", _completion_log("resp-1", cached))
+    reports.record("test-model-error.json", json.dumps({"error": "boom"}))
+    reports.record("test-model.json", _completion_log("resp-2", cached))
+
+    assert reports.reported == [("resp-1", True), ("resp-2", True)]
+
+
+async def test_failed_invocation_reports_usage_from_its_own_responses(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    runtime = adapter.OpenHandsRuntime()
+    await runtime.start(_start_payload(openhands_payload))
+    # The first invocation logs a response without cache details.
+    mock_openhands["usage_log"].clear()
+    await runtime.invoke(*_invocation(openhands_payload, "first"))
+    mock_openhands["usage_log"]["cached_tokens"] = 3
+    telemetry = mock_openhands["telemetry"]
+
+    async def arun():
+        telemetry.completion_log(
+            "test-model.json",
+            _completion_log("resp-1", {"prompt_tokens_details": {"cached_tokens": 3}}),
+        )
+        raise RuntimeError("model call failed after a response")
+
+    mock_openhands["conversation"].arun = AsyncMock(side_effect=arun)
+
+    result = await runtime.invoke(*_invocation(openhands_payload, "second"))
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.error.code == "openhands_invocation_failed"
+    # Only the second invocation's report counts, so cache reads are known.
+    assert result.usage.to_mapping() == {
+        "input_tokens": 11,
+        "cached_input_tokens": 3,
+        "input_tokens_include_cache": True,
+        "output_tokens": 5,
+        "total_tokens": 16,
+    }
+
+
 async def test_invoke_without_model_response_reports_unknown_usage(
     openhands_payload: dict,
     mock_openhands: dict,

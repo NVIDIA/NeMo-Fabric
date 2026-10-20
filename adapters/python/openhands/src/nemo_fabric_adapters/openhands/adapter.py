@@ -348,16 +348,15 @@ class _CacheReadReports:
             return
         response = json.loads(log_data).get("response") or {}
         usage = response.get("usage") or {}
-        details = (
-            usage.get("prompt_tokens_details")
-            or usage.get("input_tokens_details")
-            or {}
+        # Chat Completions report cache reads in prompt_tokens_details and the
+        # Responses API in input_tokens_details. LiteLLM declares the count
+        # optional, so a null count is unreported.
+        counted = any(
+            (usage.get(key) or {}).get("cached_tokens") is not None
+            for key in ("prompt_tokens_details", "input_tokens_details")
         )
         self.reported.append(
-            (
-                str(response.get("id", "")),
-                self._omitted_means_zero or "cached_tokens" in details,
-            )
+            (str(response.get("id", "")), self._omitted_means_zero or counted)
         )
 
 
