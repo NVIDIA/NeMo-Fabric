@@ -243,7 +243,7 @@ unknown, because the provider may have done work without reporting usage.
 OpenAI SDK retries happen inside one LangChain call, so a 5xx the SDK retries
 to success is not visible to the adapter, and only the final response's
 reported usage counts. Usage replayed from a configured LangChain model cache
-would be counted as reported; Fabric configures no such cache.
+would be counted as reported; NeMo Fabric configures no such cache.
 
 When a response carries OpenAI-shaped usage in
 `response_metadata.token_usage`, as `ChatOpenAI` responses without streaming
