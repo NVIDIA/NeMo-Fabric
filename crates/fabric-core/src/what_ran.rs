@@ -2059,7 +2059,7 @@ mod tests {
 
     #[test]
     fn an_undeclared_report_key_stays_in_the_extensions_and_reads_key_not_declared() {
-        let plan = plan_with_secrets();
+        let plan = plan_declaring(&[]);
         let extensions = json!({VERSIONS_REPORT_KEY: versions_report()});
 
         let (what_ran, kept) = ingest(&plan, extensions.clone());
@@ -2077,7 +2077,7 @@ mod tests {
 
     #[test]
     fn a_report_key_declared_only_through_a_reference_is_not_declared() {
-        let mut plan = plan_with_secrets();
+        let mut plan = plan_declaring(&[]);
         let schema = json!({"type": "object", "allOf": [{"properties": {
             VERSIONS_REPORT_KEY: {"type": "object"}}}]});
         plan.adapter_descriptor

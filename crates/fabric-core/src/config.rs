@@ -6865,6 +6865,10 @@ mod tests {
     fn invocation_extensions_are_fail_closed_and_schema_validated() {
         let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        // Start from a descriptor that declares no result extension schema.
+        descriptor
+            .extension_schemas
+            .remove(&AdapterExtensionPoint::RunResult);
         let request = AgentRunRequest {
             input: serde_json::json!("review"),
             relay_session_root: None,

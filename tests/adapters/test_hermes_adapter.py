@@ -1657,3 +1657,158 @@ def test_main_serves_persistent_runtime(monkeypatch):
         adapter.HermesRuntime,
         config_loader=AgentConfig.from_mapping,
     )
+
+
+def _reported(value: str) -> dict[str, str]:
+    return {
+        "value": value,
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "harness_api",
+    }
+
+
+def _version_state(state: str, reason: str) -> dict[str, str]:
+    return {
+        "state": state,
+        "reason": reason,
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "harness_api",
+    }
+
+
+async def test_hermes_reports_the_version_its_version_call_returns(
+    monkeypatch, tmp_path: Path
+):
+    from hermes_cli.version_info import get_version_info
+
+    mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=MagicMock(spec=AIAgent))
+    monkeypatch.setattr(
+        mock_ai_agent_type.__init__.__func__,
+        "__signature__",
+        inspect.signature(AIAgent.__init__),
+        raising=False,
+    )
+    hermes_config = ModuleType("hermes_cli.config")
+    hermes_config.load_config = lambda: {}  # type: ignore[attr-defined]
+    hermes_plugins = ModuleType("hermes_cli.plugins")
+    hermes_plugins.discover_plugins = lambda force=False: None  # type: ignore[attr-defined]
+    hermes_state = ModuleType("hermes_state")
+    hermes_state.SessionDB = MagicMock(spec=SessionDB)  # type: ignore[attr-defined]
+    run_agent = ModuleType("run_agent")
+    run_agent.AIAgent = mock_ai_agent_type  # type: ignore[attr-defined]
+    # Hermes's own version call stays real.
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", hermes_config)
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
+    monkeypatch.setitem(sys.modules, "hermes_state", hermes_state)
+    monkeypatch.setitem(sys.modules, "run_agent", run_agent)
+    monkeypatch.setenv("TEST_API_KEY", "secret")
+    mock_turn = MagicMock(
+        return_value=(
+            {"final_response": "done", "completed": True, "messages": []},
+            "",
+        )
+    )
+    monkeypatch.setattr(adapter, "_invoke_hermes_turn", mock_turn)
+    monkeypatch.setattr(
+        configuration, "resolve_hermes_toolsets", lambda *_args: None
+    )
+    runtime_context = _runtime_context(
+        runtime_id="runtime-version",
+        workspace=str(tmp_path),
+        artifact_root=str(tmp_path / "artifacts"),
+    )
+    payload = {
+        "agent_name": "hermes-version",
+        "base_dir": str(tmp_path),
+        "runtime_context": runtime_context.to_mapping(),
+        "config": _agent_config(
+            {
+                "harness": {"settings": {}},
+                "models": {
+                    "default": {
+                        "provider": "test-provider",
+                        "model": "test-model",
+                        "api_key_env": "TEST_API_KEY",
+                    }
+                },
+            }
+        ),
+    }
+
+    runtime = adapter.HermesRuntime()
+    await runtime.start(payload)
+    try:
+        result = await runtime.invoke(
+            *_invocation(
+                {
+                    "runtime_context": runtime_context.to_mapping(),
+                    "request": {"input": "complete the task"},
+                }
+            )
+        )
+    finally:
+        await runtime.stop()
+
+    report = result.extensions["nemo_fabric.versions.v1"]
+    assert report["harness"] == {
+        "name": _reported("hermes-agent"),
+        "version": _reported(get_version_info().display_version),
+    }
+    assert report["adapter"]["package_version"]["value"] == "0.6.0"
+
+
+def _raise_import_error() -> str:
+    raise ImportError("hermes_cli.version_info")
+
+
+def _raise_runtime_error() -> str:
+    raise RuntimeError("malformed install stamp")
+
+
+@pytest.mark.parametrize(
+    ("version_call", "expected"),
+    [
+        pytest.param(lambda: "0.21.6+3", _reported("0.21.6+3"), id="version"),
+        pytest.param(
+            lambda: "unknown",
+            _version_state("unavailable", "empty_response"),
+            id="unknown",
+        ),
+        pytest.param(
+            _raise_import_error,
+            _version_state("unsupported", "no_source"),
+            id="no-version-call",
+        ),
+        pytest.param(
+            _raise_runtime_error,
+            _version_state("collection_failed", "no_result"),
+            id="raised",
+        ),
+    ],
+)
+async def test_hermes_version_probe_maps_each_outcome(version_call, expected):
+    probe = adapter.provenance.BlockingProbe()
+
+    assert await adapter.probe_hermes_version(probe, version_call) == expected
+
+
+async def test_hermes_version_probe_times_out_and_starts_no_second_call():
+    release = threading.Event()
+    calls: list[str] = []
+
+    def blocking() -> str:
+        calls.append("called")
+        release.wait()
+        return "0.21.6"
+
+    probe = adapter.provenance.BlockingProbe()
+    try:
+        first = await adapter.probe_hermes_version(probe, blocking, timeout=0.1)
+        second = await adapter.probe_hermes_version(probe, blocking, timeout=0.1)
+    finally:
+        release.set()
+
+    assert first == second == _version_state("collection_failed", "timeout")
+    assert calls == ["called"]

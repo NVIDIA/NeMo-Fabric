@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.metadata
 import sys
 import warnings
 from pathlib import Path
@@ -92,6 +93,32 @@ async def test_mini_swe_agent_plans_diagnoses_and_runs(
     assert result.status == "succeeded", result.to_mapping()
     assert result.output["output"] == "done\n"
     assert result.output["usage"]["api_calls"] == 1
+    what_ran = result.what_ran
+    assert what_ran["harness"] == {
+        "name": _reported("mini-swe-agent"),
+        "version": _reported(importlib.metadata.version("mini-swe-agent")),
+    }
+    assert what_ran["adapter"]["package_version"] == _reported(
+        importlib.metadata.version("nemo-fabric-adapters-mini-swe-agent")
+    )
+    assert what_ran["models"]["default"]["served"] == {
+        "state": "unsupported",
+        "reason": "no_source",
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "adapter_report",
+    }
+    assert what_ran["models"]["default"]["requested"]["value"] == "gpt-4o-mini"
+    assert "adapter" not in result.metadata
+
+
+def _reported(value: str) -> dict[str, str]:
+    return {
+        "value": value,
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "package_metadata",
+    }
 
 
 @pytest.mark.usefixtures("nemo_relay")

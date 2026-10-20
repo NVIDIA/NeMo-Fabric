@@ -30,6 +30,7 @@ from claude_agent_sdk import ConversationResetMessage
 from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
+from claude_agent_sdk import SystemMessage
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapter_contract.codec import ContractValidationError
@@ -43,6 +44,7 @@ from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
@@ -209,16 +211,21 @@ def _settings(config: AgentConfig) -> dict[str, Any]:
     return config.harness.settings if config.harness is not None else {}
 
 
+def _selected_model_role(config: AgentConfig) -> str:
+    """The model role Claude Code runs: ``default``, or the sole configured role."""
+
+    if "default" in config.models:
+        return "default"
+    if len(config.models) == 1:
+        return next(iter(config.models))
+    raise AdapterConfigError(
+        "claude_invalid_configuration",
+        "Claude requires a default model or exactly one model",
+    )
+
+
 def _selected_model_config(config: AgentConfig) -> AgentModelConfig:
-    model = config.models.get("default")
-    if model is None and len(config.models) == 1:
-        model = next(iter(config.models.values()))
-    if model is None:
-        raise AdapterConfigError(
-            "claude_invalid_configuration",
-            "Claude requires a default model or exactly one model",
-        )
-    return model
+    return config.models[_selected_model_role(config)]
 
 
 def _resolve_path(base_dir: str, value: str | Path) -> Path:
@@ -825,6 +832,27 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
 
 
 _DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-claude"
+_HARNESS_NAME = "claude-code"
+_METHOD_INIT_MESSAGE = "harness_init_message"
+
+
+def init_message_version(messages: list[Message]) -> dict[str, Any] | None:
+    """The Claude Code version the latest init message names, as a fact.
+
+    ``None`` when no init message arrived. An init message without a version
+    reads ``unavailable`` with reason ``empty_response``.
+    """
+
+    for message in reversed(messages):
+        if isinstance(message, SystemMessage) and message.subtype == "init":
+            version = message.data.get("claude_code_version")
+            if isinstance(version, str) and version:
+                return provenance.known_fact(version, _METHOD_INIT_MESSAGE)
+            return provenance.missing_fact(
+                "unavailable", "empty_response", _METHOD_INIT_MESSAGE
+            )
+    return None
 # Claude Code's result usage keys and the detailed input counters they fill.
 # Anthropic's input_tokens excludes cache reads and cache writes, and its
 # output_tokens includes thinking, which Anthropic bills as output.
@@ -871,7 +899,9 @@ def _detailed_token_usage(usage: dict[str, Any]) -> dict[str, int | bool]:
     return counters
 
 
-def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
+def _agent_run_result(
+    output: dict[str, Any], versions: dict[str, Any] | None = None
+) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
     reported_error = normalized.pop("error", None)
@@ -914,6 +944,7 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
         output=normalized,
         error=error,
         usage=agent_usage,
+        extensions={provenance.VERSIONS_REPORT_KEY: versions} if versions else {},
     )
 
 
@@ -1068,6 +1099,10 @@ class ClaudeRuntime:
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_config_path: Path | None = None
         self._unusable = False
+        self._package_version = provenance.package_version_fact(_PACKAGE_DISTRIBUTION)
+        self._harness_version = provenance.missing_fact(
+            "unavailable", "not_collected", _METHOD_INIT_MESSAGE
+        )
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1130,12 +1165,14 @@ class ClaudeRuntime:
                 "claude_runtime_mismatch",
                 "Claude invocation does not match the connected runtime",
             )
+        messages: list[Message] = []
         if self._unusable:
             return _agent_run_result(
                 _failure(
                     "claude_runtime_unavailable",
                     "Claude runtime cannot accept another invocation after a runtime failure",
-                )
+                ),
+                self._versions_report(agent_config, messages),
             )
 
         invocation_deadline = lifecycle.invocation_deadline(runtime_context)
@@ -1157,6 +1194,7 @@ class ClaudeRuntime:
                 client,
                 prompt,
                 _remaining_timeout(invocation_deadline),
+                messages,
             )
             if (
                 output.get("completed")
@@ -1183,22 +1221,43 @@ class ClaudeRuntime:
                             ),
                             relay,
                             artifacts=[],
-                        )
+                        ),
+                        self._versions_report(agent_config, messages),
                     )
 
         if self._relay is not None:
             output = _relay_output(output, self._relay)
-        return _agent_run_result(output)
+        return _agent_run_result(output, self._versions_report(agent_config, messages))
+
+    def _versions_report(
+        self, config: AgentConfig, messages: list[Message]
+    ) -> dict[str, Any]:
+        """Report this runtime's versions, refreshed from any init message."""
+
+        version = init_message_version(messages)
+        if version is not None:
+            self._harness_version = version
+        return provenance.versions_report(
+            package_version=self._package_version,
+            harness_name=provenance.known_fact(_HARNESS_NAME, _METHOD_INIT_MESSAGE),
+            harness_version=self._harness_version,
+            served_models={role: provenance.no_source_fact() for role in config.models},
+        )
 
     async def _run_query(
         self,
         client: ClaudeSDKClient,
         prompt: str,
         remaining_timeout: float,
+        messages: list[Message] | None = None,
     ) -> dict[str, Any]:
-        """Run one SDK query and normalize its terminal result."""
+        """Run one SDK query and normalize its terminal result.
 
-        messages: list[Message] = []
+        Every message other than the terminal result is appended to
+        ``messages``, so the caller can read this invocation's messages.
+        """
+
+        messages = [] if messages is None else messages
         result: ResultMessage | None = None
         deadline = asyncio.timeout(remaining_timeout)
         try:

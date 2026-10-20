@@ -32,6 +32,7 @@ from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import openai_chat
+from nemo_fabric_adapters.common import provenance
 from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openclaw import _windows_job
 
@@ -50,6 +51,12 @@ SUPPORTED_OPENCLAW_VERSIONS = frozenset({"2026.9.4"})
 MAX_PORT_ATTEMPTS = 20
 MAX_DERIVED_PORT_OFFSET = 110
 MAX_TCP_PORT = 65_535
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-openclaw"
+_HARNESS_NAME = "openclaw"
+# The local gateway's version comes from `openclaw --version`; an attached
+# gateway's from its own startup endpoint.
+_METHOD_VERSION_PROBE = "harness_probe"
+_METHOD_GATEWAY_API = "harness_api"
 
 
 logger = logging.getLogger(__name__)
@@ -759,6 +766,9 @@ class OpenClawRuntime:
         self._previous_signal_handlers: dict[int, Any] = {}
         self._signal_handler: Any = None
         self._windows_job: int | None = None
+        self._harness_version = provenance.missing_fact(
+            "unavailable", "not_collected", _METHOD_VERSION_PROBE
+        )
 
     async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         config: contract.AgentConfig = payload["config"]
@@ -806,6 +816,7 @@ class OpenClawRuntime:
             command, "--version", env=child_env, timeout=startup_timeout
         )
         version = _validate_openclaw_version(version_output)
+        self._harness_version = provenance.known_fact(version, _METHOD_VERSION_PROBE)
 
         port = _select_port(settings)
 
@@ -1029,7 +1040,7 @@ class OpenClawRuntime:
         )
         client = self._client_for(settings, token)
         try:
-            await self._probe_gateway(client, gateway_url, agent_id)
+            version = await self._probe_gateway(client, gateway_url, agent_id)
         except BaseException:
             await client.aclose()
             raise
@@ -1038,6 +1049,7 @@ class OpenClawRuntime:
         self._context = context
         self._gateway_url = gateway_url
         self._agent_id = agent_id
+        self._harness_version = provenance.known_fact(version, _METHOD_GATEWAY_API)
 
     async def _attach_service(
         self,
@@ -1120,6 +1132,9 @@ class OpenClawRuntime:
         self._context = context
         self._gateway_url = gateway_url
         self._agent_id = agent_id
+        self._harness_version = provenance.known_fact(
+            openclaw_version, _METHOD_GATEWAY_API
+        )
         return self._service_info(
             gateway_url,
             agent_id,
@@ -1370,6 +1385,7 @@ class OpenClawRuntime:
                     retryable=error.response.status_code >= 500
                     or error.response.status_code == 429,
                 ),
+                extensions=self._versions_extensions(),
             )
         except httpx.RequestError as error:
             raise lifecycle.LifecycleError(
@@ -1386,7 +1402,23 @@ class OpenClawRuntime:
             status=contract.AgentRunStatus.SUCCEEDED,
             output={"response": text},
             usage=usage,
+            extensions=self._versions_extensions(),
         )
+
+    def _versions_extensions(self) -> dict[str, Any]:
+        """The versions report, with the gateway version read at startup."""
+
+        models = self._config.models if self._config is not None else {}
+        return {
+            provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
+                package_version=provenance.package_version_fact(_PACKAGE_DISTRIBUTION),
+                harness_name=provenance.known_fact(
+                    _HARNESS_NAME, self._harness_version["method"]
+                ),
+                harness_version=self._harness_version,
+                served_models={role: provenance.no_source_fact() for role in models},
+            )
+        }
 
     async def stop(self) -> None:
         cancellation: asyncio.CancelledError | None = None

@@ -12,6 +12,7 @@ from typing import Any
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 from nemo_fabric_adapters.common import utils as common_utils
 
 SYSTEM_TEMPLATE = "{{system_instruction}}"
@@ -25,6 +26,9 @@ on the following lines. The command output after the first line is submitted as
 your final response, so include it in the same command.
 """
 _UNREADABLE = object()
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-mini-swe-agent"
+_HARNESS_DISTRIBUTION = "mini-swe-agent"
+_HARNESS_MODULE = "minisweagent"
 
 
 def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
@@ -46,6 +50,10 @@ class MiniSweAgentRuntime:
         self._relay_plugin = self._relay_scope = self._relay_scope_type = None
         self._relay_plugin_config: dict[str, Any] | None = None
         self._telemetry_quarantine: str | None = None
+        self._model_roles: list[str] = []
+        self._harness_version = provenance.missing_fact(
+            "unavailable", "not_collected", provenance.METHOD_PACKAGE_METADATA
+        )
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
@@ -61,6 +69,10 @@ class MiniSweAgentRuntime:
         )
         from nemo_fabric_adapters.mini_swe_agent.agents import RetainingDefaultAgent
 
+        self._model_roles = list(config.models)
+        self._harness_version = provenance.loaded_module_version_fact(
+            _HARNESS_DISTRIBUTION, _HARNESS_MODULE
+        )
         runtime_context = contract.RuntimeContext.from_mapping(
             payload.get("runtime_context")
         )
@@ -179,6 +191,20 @@ class MiniSweAgentRuntime:
             ),
             output=output,
             error=error,
+            extensions={
+                provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
+                    package_version=provenance.package_version_fact(
+                        _PACKAGE_DISTRIBUTION
+                    ),
+                    harness_name=provenance.known_fact(
+                        _HARNESS_DISTRIBUTION, provenance.METHOD_PACKAGE_METADATA
+                    ),
+                    harness_version=self._harness_version,
+                    served_models={
+                        role: provenance.no_source_fact() for role in self._model_roles
+                    },
+                )
+            },
         )
 
     async def _run_agent(self, task: str) -> dict[str, Any]:
