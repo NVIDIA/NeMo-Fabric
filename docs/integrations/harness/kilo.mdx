@@ -138,9 +138,9 @@ counted as 0.
 
 Kilo Code 7.7.12 records an omitted input, output, reasoning, or cache count as
 0 before the adapter sees it. The adapter therefore treats a call's input or
-output that adds up to 0 as unknown. Kilo zero-fills missing cache details, so a
-zero cache-read count remains unknown unless its presence can be established for
-that call. When any model call leaves a field unknown, or the field's sum is
+output that adds up to 0 as unknown. Kilo Code zero-fills missing cache details, so
+a cache read of 0 is unknown, and `cached_input_tokens` is reported only when
+every counted call has a nonzero cache read. When any model call leaves a field unknown, or the field's sum is
 larger than JavaScript can represent exactly, the result omits that field. The
 result has no usage when a finished model call reported neither input nor
 output, or when an assistant message of the invocation never finished. It also
