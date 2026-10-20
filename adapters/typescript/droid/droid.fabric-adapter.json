@@ -55,8 +55,18 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "cache_read_tokens": {"type": "integer", "minimum": 0},
-        "cache_write_tokens": {"type": "integer", "minimum": 0},
+        "nemo_fabric.detailed_token_usage.v1": {
+          "type": "object",
+          "properties": {
+            "input_tokens": {"type": "integer", "minimum": 0},
+            "cached_input_tokens": {"type": "integer", "minimum": 0},
+            "cache_write_input_tokens": {"type": "integer", "minimum": 0},
+            "input_tokens_include_cache": {"type": "boolean"},
+            "output_tokens": {"type": "integer", "minimum": 0},
+            "output_tokens_include_reasoning": {"type": "boolean"}
+          },
+          "additionalProperties": false
+        },
         "thinking_tokens": {"type": "integer", "minimum": 0},
         "factory_credits": {"type": "number", "minimum": 0}
       },

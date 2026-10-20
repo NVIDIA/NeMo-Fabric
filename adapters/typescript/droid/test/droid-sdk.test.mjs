@@ -66,13 +66,41 @@ function fakeSdk(options = {}) {
     create: [], createEnvironment: [], stream: [], close: 0, listTools: 0, updateSettings: [], listMcpTools: 0, listSkills: 0,
   };
   const results = [...(options.results ?? [result(), result({ text: "second", turnCount: 2 })])];
+  const observers = new Set();
+  let turn = 0;
   const session = {
     id: "droid-session-1",
+    settings: { modelId: options.modelId },
     async *stream(prompt) {
       calls.stream.push(prompt);
       if (options.streamError) throw options.streamError;
+      const index = turn++;
       yield { type: "assistant", text: "intermediate" };
+      options.duringTurn?.(index, session);
+      // Droid's SDK delivers the turn's completion notification before the result.
+      const notification = {
+        type: "agent_turn_completed",
+        reason: "completed",
+        turnId: `turn-${index}`,
+        tokenUsage: results[0]?.tokenUsage,
+        ...(options.childUsage?.[index] === undefined ? {} : { childTokenUsage: options.childUsage[index] }),
+      };
+      for (const observer of observers) {
+        observer({ jsonrpc: "2.0", method: "droid.session_notification", params: { sessionId: session.id, notification } });
+      }
       yield results.shift();
+    },
+    onNotification(callback) {
+      observers.add(callback);
+      return () => observers.delete(callback);
+    },
+    // Droid's SDK applies settings_updated to session.settings and passes it to observers.
+    changeModel(modelId) {
+      session.settings.modelId = modelId;
+      const notification = { type: "settings_updated", settings: { modelId } };
+      for (const observer of observers) {
+        observer({ jsonrpc: "2.0", method: "droid.session_notification", params: { sessionId: session.id, notification } });
+      }
     },
     async close() { calls.close += 1; },
     async listTools() {
@@ -98,6 +126,8 @@ function fakeSdk(options = {}) {
   };
   return {
     calls,
+    observers,
+    session,
     loader: async () => ({
       async createSession(value) {
         calls.create.push(value);
@@ -127,11 +157,16 @@ test("maps model, credential, append instructions, and an exact built-in tool po
   assert.deepEqual(sdk.calls.stream, ["one", "two"]);
   assert.deepEqual(first.usage, {
     input_tokens: 4,
+    cached_input_tokens: 2,
     output_tokens: 3,
-    total_tokens: 7,
     extensions: {
-      cache_read_tokens: 2,
-      cache_write_tokens: 1,
+      "nemo_fabric.detailed_token_usage.v1": {
+        input_tokens: 4,
+        cached_input_tokens: 2,
+        cache_write_input_tokens: 1,
+        output_tokens: 3,
+        output_tokens_include_reasoning: true,
+      },
       thinking_tokens: 5,
       factory_credits: 0.25,
     },
@@ -417,11 +452,16 @@ test("normalizes interrupted and failed terminal results", async () => {
     errorMessage: "provider failed",
     usage: {
       input_tokens: 4,
+      cached_input_tokens: 2,
       output_tokens: 3,
-      total_tokens: 7,
       extensions: {
-        cache_read_tokens: 2,
-        cache_write_tokens: 1,
+        "nemo_fabric.detailed_token_usage.v1": {
+          input_tokens: 4,
+          cached_input_tokens: 2,
+          cache_write_input_tokens: 1,
+          output_tokens: 3,
+          output_tokens_include_reasoning: true,
+        },
         thinking_tokens: 5,
         factory_credits: 0.25,
       },
@@ -433,6 +473,341 @@ test("normalizes interrupted and failed terminal results", async () => {
       turn_count: 1,
     },
   });
+  await handle.stop();
+});
+
+async function usageForModel(t, model, tokenUsage, customModel) {
+  const configured = input({ tools: undefined });
+  configured.config.models.default.model = model;
+  if (customModel !== undefined) {
+    const home = await mkdtemp(join(tmpdir(), "droid-usage-home-"));
+    t.after(() => rm(home, { recursive: true, force: true }));
+    await mkdir(join(home, ".factory"), { recursive: true });
+    await writeFile(join(home, ".factory", "settings.json"), JSON.stringify({ customModels: [customModel] }));
+    configured.runtimeContext.environment.env.FACTORY_HOME_OVERRIDE = home;
+  }
+  const sdk = fakeSdk({ results: [result({ tokenUsage: { thinkingTokens: 0, ...tokenUsage } })] });
+  const handle = await new DroidSdkSessionFactory(sdk.loader, 10_000, {}).create(configured);
+  try {
+    return (await handle.prompt("one")).usage;
+  } finally {
+    await handle.stop();
+  }
+}
+
+function inclusiveUsage({ input, cached, written, output }) {
+  const cache = {
+    ...(cached === undefined ? {} : { cached_input_tokens: cached }),
+  };
+  return {
+    input_tokens: input,
+    ...cache,
+    input_tokens_include_cache: true,
+    output_tokens: output,
+    total_tokens: input + output,
+    extensions: {
+      "nemo_fabric.detailed_token_usage.v1": {
+        input_tokens: input,
+        ...cache,
+        ...(written === undefined ? {} : { cache_write_input_tokens: written }),
+        input_tokens_include_cache: true,
+        output_tokens: output,
+        output_tokens_include_reasoning: true,
+      },
+    },
+  };
+}
+
+const chatModel = {
+  model: "nvidia/nemotron-3-super-120b-a12b",
+  baseUrl: "https://integrate.api.nvidia.com/v1",
+  provider: "generic-chat-completion-api",
+};
+
+test("normalizes input to include cache on each established Droid provider path", async (t) => {
+  // Gemini: Droid persists promptTokenCount, which already includes the cache reads.
+  assert.deepEqual(
+    await usageForModel(t, "gemini-3-pro-preview", { inputTokens: 100, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 80 }),
+    inclusiveUsage({ input: 100, cached: 80, output: 5 }),
+  );
+  assert.deepEqual(
+    await usageForModel(t, "gemini-3-pro-preview", { inputTokens: 100, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 0 }),
+    inclusiveUsage({ input: 100, cached: 0, output: 5 }),
+  );
+  // Anthropic Messages: input excludes cache reads and writes.
+  assert.deepEqual(
+    await usageForModel(t, "claude-sonnet-4-5-20250929", { inputTokens: 10, outputTokens: 5, cacheCreationTokens: 20, cacheReadTokens: 80 }),
+    inclusiveUsage({ input: 110, cached: 80, written: 20, output: 5 }),
+  );
+  // OpenAI Responses: Droid subtracts the cache reads from input_tokens.
+  assert.deepEqual(
+    await usageForModel(t, "gpt-5.1", { inputTokens: 20, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 80 }),
+    inclusiveUsage({ input: 100, cached: 80, output: 5 }),
+  );
+  // Factory-hosted model on the Chat Completions handler: Droid subtracts the cache reads.
+  assert.deepEqual(
+    await usageForModel(t, "glm-5", { inputTokens: 20, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 80 }),
+    inclusiveUsage({ input: 100, cached: 80, output: 5 }),
+  );
+  // Custom Chat Completions model: Droid subtracts the cache reads.
+  assert.deepEqual(
+    await usageForModel(t, "custom:nvidia/nemotron-3-super-120b-a12b", { inputTokens: 20, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 80 }, chatModel),
+    inclusiveUsage({ input: 100, cached: 80, output: 5 }),
+  );
+  // Custom Bedrock Converse model: input excludes cache reads and writes.
+  assert.deepEqual(
+    await usageForModel(
+      t,
+      "custom:anthropic.claude-sonnet-4-5",
+      { inputTokens: 10, outputTokens: 5, cacheCreationTokens: 20, cacheReadTokens: 80 },
+      { model: "anthropic.claude-sonnet-4-5", provider: "bedrock-converse" },
+    ),
+    inclusiveUsage({ input: 110, cached: 80, written: 20, output: 5 }),
+  );
+});
+
+async function usageForRun(model, turns) {
+  const configured = input({ tools: undefined });
+  configured.config.models.default.model = model;
+  const sdk = fakeSdk({ results: turns.map((tokenUsage) => result({ tokenUsage: { thinkingTokens: 0, ...tokenUsage } })) });
+  const handle = await new DroidSdkSessionFactory(sdk.loader, 10_000, {}).create(configured);
+  try {
+    const usage = [];
+    for (const [index] of turns.entries()) usage.push((await handle.prompt(`turn ${index}`)).usage);
+    return usage;
+  } finally {
+    await handle.stop();
+  }
+}
+
+test("keeps every count known across a normal cached Claude and Gemini run", async () => {
+  // First turn writes the prompt cache, later turns read it.
+  assert.deepEqual(
+    await usageForRun("claude-sonnet-4-5-20250929", [
+      { inputTokens: 5_000, outputTokens: 200, cacheCreationTokens: 4_000, cacheReadTokens: 0 },
+      { inputTokens: 300, outputTokens: 150, cacheCreationTokens: 500, cacheReadTokens: 9_000 },
+    ]),
+    [
+      inclusiveUsage({ input: 9_000, cached: 0, written: 4_000, output: 200 }),
+      inclusiveUsage({ input: 9_800, cached: 9_000, written: 500, output: 150 }),
+    ],
+  );
+  assert.deepEqual(
+    await usageForRun("gemini-3-pro-preview", [
+      { inputTokens: 6_000, outputTokens: 120, cacheCreationTokens: 0, cacheReadTokens: 0 },
+      { inputTokens: 6_400, outputTokens: 90, cacheCreationTokens: 0, cacheReadTokens: 5_800 },
+    ]),
+    [
+      inclusiveUsage({ input: 6_000, cached: 0, output: 120 }),
+      inclusiveUsage({ input: 6_400, cached: 5_800, output: 90 }),
+    ],
+  );
+});
+
+async function usageForSession(t, { model, droidDefinition, turns, beforeTurn, ...sdkOptions }) {
+  const root = await mkdtemp(join(tmpdir(), "droid-usage-session-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const home = join(root, "home");
+  const workspace = join(root, "workspace");
+  await mkdir(join(home, ".factory"), { recursive: true });
+  await mkdir(workspace, { recursive: true });
+  if (droidDefinition !== undefined) {
+    await mkdir(join(workspace, ".factory", "droids"), { recursive: true });
+    await writeFile(join(workspace, ".factory", "droids", "reviewer.md"), droidDefinition);
+  }
+  const configured = input({ tools: undefined });
+  configured.config.models.default.model = model;
+  configured.runtimeContext.environment.workspace = workspace;
+  configured.runtimeContext.environment.env.FACTORY_HOME_OVERRIDE = home;
+  const sdk = fakeSdk({
+    ...sdkOptions,
+    results: turns.map((tokenUsage) => result({ tokenUsage: { thinkingTokens: 0, ...tokenUsage } })),
+  });
+  const handle = await new DroidSdkSessionFactory(sdk.loader, 10_000, {}).create(configured);
+  try {
+    const usage = [];
+    for (const [index] of turns.entries()) {
+      beforeTurn?.(index, sdk.session);
+      usage.push((await handle.prompt(`turn ${index}`)).usage);
+    }
+    return usage;
+  } finally {
+    await handle.stop();
+  }
+}
+
+function reportedUsage({ input, cached, written, output }) {
+  return {
+    input_tokens: input,
+    cached_input_tokens: cached,
+    output_tokens: output,
+    extensions: {
+      "nemo_fabric.detailed_token_usage.v1": {
+        input_tokens: input,
+        cached_input_tokens: cached,
+        ...(written === undefined ? {} : { cache_write_input_tokens: written }),
+        output_tokens: output,
+        output_tokens_include_reasoning: true,
+      },
+    },
+  };
+}
+
+// Droid sums a turn's parent and child usage: parent Claude 10 uncached plus 20
+// cached, child Gemini 100 inclusive with 80 cached, outputs 3 and 5.
+const MIXED_TURN = { inputTokens: 110, outputTokens: 8, cacheCreationTokens: 0, cacheReadTokens: 100 };
+const GEMINI_CHILD = { inputTokens: 100, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 80, thinkingTokens: 0 };
+
+test("keeps the reported counters of a turn with subagent usage", async (t) => {
+  // Droid definitions can name a child model in YAML forms a simple scan misses;
+  // the adapter does not read them and keeps every turn with child usage raw.
+  for (const droidDefinition of [
+    '---\nname: worker\ndescription: Worker\n"model": gemini-3-pro-preview\n---\nWork.\n',
+    "---\n  name: worker\n  description: Worker\n  model: gemini-3-pro-preview\n---\nWork.\n",
+  ]) {
+    assert.deepEqual(
+      await usageForSession(t, {
+        model: "claude-sonnet-4-5-20250929",
+        droidDefinition,
+        turns: [MIXED_TURN],
+        childUsage: [GEMINI_CHILD],
+      }),
+      [reportedUsage({ input: 110, cached: 100, output: 8 })],
+    );
+  }
+  // A subagent on the session's own model is kept raw too: the result does not
+  // say which model the child used.
+  assert.deepEqual(
+    await usageForSession(t, {
+      model: "claude-sonnet-4-5-20250929",
+      turns: [{ inputTokens: 40, outputTokens: 8, cacheCreationTokens: 0, cacheReadTokens: 60 }],
+      childUsage: [{ inputTokens: 30, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 40, thinkingTokens: 0 }],
+    }),
+    [reportedUsage({ input: 40, cached: 60, output: 8 })],
+  );
+  // A turn without child usage normalizes as usual.
+  assert.deepEqual(
+    await usageForSession(t, {
+      model: "claude-sonnet-4-5-20250929",
+      turns: [{ inputTokens: 10, outputTokens: 3, cacheCreationTokens: 0, cacheReadTokens: 20 }],
+      childUsage: [{ inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, thinkingTokens: 0 }],
+    }),
+    [inclusiveUsage({ input: 30, cached: 20, output: 3 })],
+  );
+});
+
+test("follows the session's effective model and model changes", async (t) => {
+  const googleTurn = { inputTokens: 100, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 80 };
+  const claudeTurn = { inputTokens: 10, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 20 };
+  // Droid reports Gemini as the session model although Claude was configured.
+  assert.deepEqual(
+    await usageForSession(t, { model: "claude-sonnet-4-5-20250929", modelId: "gemini-3-pro-preview", turns: [googleTurn] }),
+    [inclusiveUsage({ input: 100, cached: 80, output: 5 })],
+  );
+  // The model changes between turns, then from Claude to Gemini and back within one turn.
+  assert.deepEqual(
+    await usageForSession(t, {
+      model: "claude-sonnet-4-5-20250929",
+      turns: [claudeTurn, googleTurn, MIXED_TURN],
+      beforeTurn(index, session) {
+        if (index === 1) session.changeModel("gemini-3-pro-preview");
+        if (index === 2) session.changeModel("claude-sonnet-4-5-20250929");
+      },
+      duringTurn(index, session) {
+        if (index !== 2) return;
+        session.changeModel("gemini-3-pro-preview");
+        session.changeModel("claude-sonnet-4-5-20250929");
+      },
+    }),
+    [
+      inclusiveUsage({ input: 30, cached: 20, output: 5 }),
+      inclusiveUsage({ input: 100, cached: 80, output: 5 }),
+      reportedUsage({ input: 110, cached: 100, output: 8 }),
+    ],
+  );
+});
+
+test("keeps the reported counters for Droid's router models", async (t) => {
+  for (const model of ["auto", "auto-fast"]) {
+    assert.deepEqual(
+      await usageForSession(t, { model, turns: [{ inputTokens: 100, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 80 }] }),
+      [reportedUsage({ input: 100, cached: 80, output: 5 })],
+    );
+  }
+});
+
+test("keeps Droid input as reported when the provider convention is not established", async (t) => {
+  const reported = (input, cached, written) => ({
+    input_tokens: input,
+    cached_input_tokens: cached,
+    output_tokens: 5,
+    extensions: {
+      "nemo_fabric.detailed_token_usage.v1": {
+        input_tokens: input,
+        cached_input_tokens: cached,
+        ...(written === undefined ? {} : { cache_write_input_tokens: written }),
+        output_tokens: 5,
+        output_tokens_include_reasoning: true,
+      },
+    },
+  });
+  // Responses cache writes are a nonstandard field Droid does not subtract.
+  assert.deepEqual(
+    await usageForModel(t, "gpt-5.1", { inputTokens: 20, outputTokens: 5, cacheCreationTokens: 10, cacheReadTokens: 80 }),
+    reported(20, 80, 10),
+  );
+  // Droid can route a Gemini model configured as Chat Completions to its Gemini handler.
+  assert.deepEqual(
+    await usageForModel(
+      t,
+      "custom:google/gemini-3-pro",
+      { inputTokens: 100, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 80 },
+      { ...chatModel, model: "google/gemini-3-pro" },
+    ),
+    reported(100, 80),
+  );
+  // Without a matching settings entry, the custom model's provider is unknown.
+  assert.deepEqual(
+    await usageForModel(t, "custom:nvidia/nemotron-3-super-120b-a12b", { inputTokens: 100, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 80 }),
+    reported(100, 80),
+  );
+  // Droid selects the model for auto.
+  assert.deepEqual(
+    await usageForModel(t, "auto", { inputTokens: 100, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 80 }),
+    reported(100, 80),
+  );
+});
+
+test("leaves token counts that Droid filled with zero unknown", async () => {
+  const zeroUsage = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, thinkingTokens: 0 };
+  const sdk = fakeSdk({ results: [
+    result({ tokenUsage: { ...zeroUsage, inputTokens: 9 } }),
+    result({ tokenUsage: { ...zeroUsage, outputTokens: 2, cacheReadTokens: 6 } }),
+    result({ tokenUsage: { ...zeroUsage, thinkingTokens: 3, factoryCredits: 0.5 } }),
+    result({ tokenUsage: { ...zeroUsage, factoryCredits: 0 } }),
+  ] });
+  const handle = await new DroidSdkSessionFactory(sdk.loader).create(input({ tools: undefined }));
+  assert.deepEqual((await handle.prompt("one")).usage, {
+    input_tokens: 9,
+    extensions: {
+      "nemo_fabric.detailed_token_usage.v1": { input_tokens: 9 },
+    },
+  });
+  assert.deepEqual((await handle.prompt("two")).usage, {
+    cached_input_tokens: 6,
+    output_tokens: 2,
+    extensions: {
+      "nemo_fabric.detailed_token_usage.v1": {
+        cached_input_tokens: 6,
+        output_tokens: 2,
+        output_tokens_include_reasoning: true,
+      },
+    },
+  });
+  assert.deepEqual((await handle.prompt("three")).usage, {
+    extensions: { thinking_tokens: 3, factory_credits: 0.5 },
+  });
+  assert.equal((await handle.prompt("four")).usage, undefined);
   await handle.stop();
 });
 

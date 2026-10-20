@@ -200,8 +200,71 @@ invocation streams one prompt through the same session, and runtime shutdown
 closes the session and its CLI subprocess. Independent runtimes do not share
 session history.
 
-Successful results include normalized response text and token usage. Usage
-extensions preserve cache, thinking-token, and Factory-credit metadata.
+Successful results include normalized response text and token usage for the
+invocation. `cached_input_tokens` holds the cache reads, and `output_tokens`
+includes reasoning tokens. The `nemo_fabric.detailed_token_usage.v1` usage
+extension adds the cache writes as `cache_write_input_tokens`. Usage extensions
+also keep Droid's `thinking_tokens` count and its Factory credits as
+`factory_credits`. Droid estimates thinking tokens from the length of the
+thinking text for Anthropic, Google, and Amazon Bedrock models, so
+`thinking_tokens` is not a provider count.
+
+In Droid CLI 0.233.0, the input count follows the cache convention of the
+provider handler that serves the session's model. The adapter reads the
+session's current model from the Droid SDK, so a model that Droid resolved
+differently from the configuration, or a model change between invocations,
+selects its own convention. The model ID, or the `provider` of a `custom:`
+model in Droid's settings, selects the convention:
+
+| Model | Droid's input count | `input_tokens` |
+| --- | --- | --- |
+| `gemini-*` | Includes cache reads | Droid's input count |
+| `claude-*`, the Factory-hosted `deepseek-*`, `glm-*`, `kimi-*`, `minimax-*`, `mistral-*`, `nemotron-*`, and `qwen*` models, and `anthropic` or `bedrock-converse` custom models | Excludes cache reads and cache writes | Input plus cache reads and cache writes |
+| `gpt-*`, `grok-*`, and `openai` or `generic-chat-completion-api` custom models | Excludes cache reads | Input plus cache reads |
+
+For these models, when Droid reports an input count, `input_tokens_include_cache`
+is `true` and `total_tokens` adds input and output. When a turn includes child
+usage whose convention cannot be established, or crosses input conventions,
+the adapter preserves reported counters without asserting cache inclusion.
+Fallback turns preserve Droid's reported input and leave
+`input_tokens_include_cache` unset. They omit `total_tokens` when either
+recorded cache counter is positive. When both cache counters are zero and input
+and output are positive, the total is their sum. This applies in the following
+cases:
+
+- The model has no known convention, including Droid's `auto` and `auto-fast`
+  router models.
+- A `generic-chat-completion-api` custom model's model, base model, or base URL
+  names Gemini or Google, because Droid can send it to its Gemini handler.
+- An OpenAI Responses invocation reports cache writes, because Droid does not
+  subtract those writes.
+- The session switches during the invocation to a model with a different
+  convention, even if it switches back.
+- The invocation includes usage from a Task subagent. Droid adds subagent
+  usage to the invocation's counts, and its result does not say which model
+  each subagent used.
+
+Droid records a count that the provider omits as 0, so the adapter treats a 0
+count as unknown and leaves it out, along with a total built from it. The
+exception is a 0 cache read count for the models listed below. Droid also uses
+0 for missing Factory credits, so 0 credits are left out too. When every count
+and the Factory credits are 0, the result has no usage.
+
+Droid zero-fills counts before aggregating model calls. A positive turn total
+can therefore omit usage from another call. The adapter cannot establish
+completeness from the terminal counters.
+
+Anthropic, OpenAI Responses, and Bedrock Converse report a cache read count on
+every response. In Google's proto3 usage schema, an omitted
+`cachedContentTokenCount` decodes as zero. This does not establish that every
+model call contributed a complete usage report. For `claude-*`, `gemini-*`,
+and `gpt-*` models and `bedrock-converse` custom models, `cached_input_tokens`
+is therefore 0 when Droid reports no cache reads. For
+other models, a missing `cached_input_tokens` can mean zero cache reads or an
+unreported count. An exact aggregate cache-hit rate cannot be determined from
+these results. Report cache-count coverage alongside any rate calculated from
+known counts.
+
 Result extensions preserve the Droid session ID, finish reason, duration, and
 turn count.
 
