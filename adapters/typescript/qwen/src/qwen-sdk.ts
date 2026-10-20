@@ -87,9 +87,83 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
   }
 }
 
+interface UsageCounters {
+  input?: number;
+  cachedInput?: number;
+  output?: number;
+  total?: number;
+  totalDerived: boolean;
+}
+
+function count(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function usageCounters(usage: SDKResultMessage["usage"]): UsageCounters {
+  const input = count(usage.input_tokens);
+  const output = count(usage.output_tokens);
+  const reportedTotal = count(usage.total_tokens);
+  // Qwen Code omits total_tokens while its running total is still 0.
+  const total = reportedTotal ?? (input === undefined || output === undefined ? undefined : count(input + output));
+  return { input, cachedInput: count(usage.cache_read_input_tokens), output, total, totalDerived: reportedTotal === undefined };
+}
+
+function growth(current: number | undefined, previous: number | undefined): number | undefined {
+  return current === undefined || previous === undefined ? undefined : current - previous;
+}
+
+function usageSince(current: UsageCounters, previous: UsageCounters): AgentUsage | undefined {
+  const grown = [
+    growth(current.input, previous.input),
+    growth(current.cachedInput, previous.cachedInput),
+    growth(current.output, previous.output),
+    growth(current.total, previous.total),
+  ];
+  // Qwen Code resets all of its counters together, so one counter going down
+  // means no part of this invocation's usage can be measured.
+  if (grown.some((part) => part !== undefined && part < 0)) return undefined;
+  // Qwen Code records a count the provider omitted as 0, and its result does
+  // not show whether the model was called: slash commands such as /compress
+  // report zero turns and API duration although they can call the model. So a
+  // counter that did not grow is unknown.
+  const [input, cachedInput, output, grownTotal] = grown.map((part) => (part === 0 ? undefined : part));
+  const total = current.totalDerived && (input === undefined || output === undefined) ? undefined : grownTotal;
+  if (input === undefined && output === undefined && total === undefined) return undefined;
+  return {
+    // Qwen Code counts prompt tokens with their cache reads included.
+    ...(input === undefined ? {} : { input_tokens: input, input_tokens_include_cache: true }),
+    ...(cachedInput === undefined ? {} : { cached_input_tokens: cachedInput }),
+    ...(output === undefined ? {} : { output_tokens: output }),
+    ...(total === undefined ? {} : { total_tokens: total }),
+  };
+}
+
+type UsageResult = Pick<SDKResultMessage, "session_id" | "usage">;
+
+/** Turns Qwen Code's cumulative result usage into usage for each invocation. */
+export class QwenUsageTracker {
+  private previousUsage: UsageCounters = { input: 0, cachedInput: 0, output: 0, total: 0, totalDerived: false };
+  private previousSessionId?: string;
+
+  next(result: UsageResult): AgentUsage | undefined {
+    const current = usageCounters(result.usage);
+    const previous = this.previousUsage;
+    // Qwen Code resets its counters on /clear and replays a resumed session's
+    // history into them, so after a new session ID the difference does not
+    // describe this invocation.
+    const sessionChanged = this.previousSessionId !== undefined && this.previousSessionId !== result.session_id;
+    this.previousUsage = current;
+    this.previousSessionId = result.session_id;
+    if (sessionChanged) return undefined;
+    return usageSince(current, previous);
+  }
+}
+
 class QwenSdkSession implements QwenSession {
   private closed = false;
-  private previousUsage = { input: 0, output: 0, total: 0 };
+  // SDK result usage is cumulative for the live query. Fabric usage belongs
+  // to one invocation, so report the difference since the previous result.
+  private readonly usage = new QwenUsageTracker();
 
   constructor(
     private readonly query: Query,
@@ -97,23 +171,6 @@ class QwenSdkSession implements QwenSession {
     private readonly directory: string,
     private readonly diagnostics: QwenDiagnostics,
   ) {}
-
-  private turnUsage(result: SDKResultMessage): AgentUsage {
-    // SDK result usage is cumulative for the live query. Fabric usage belongs
-    // to one invocation, so report the delta since the previous result.
-    const current = {
-      input: result.usage.input_tokens,
-      output: result.usage.output_tokens,
-      total: result.usage.total_tokens ?? result.usage.input_tokens + result.usage.output_tokens,
-    };
-    const previous = this.previousUsage;
-    this.previousUsage = current;
-    return {
-      input_tokens: Math.max(0, current.input - previous.input),
-      output_tokens: Math.max(0, current.output - previous.output),
-      total_tokens: Math.max(0, current.total - previous.total),
-    };
-  }
 
   async prompt(input: string): Promise<QwenTurn> {
     if (this.closed || this.query.isClosed()) throw new LifecycleError("qwen_session_closed", "Qwen session is closed");
@@ -128,7 +185,7 @@ class QwenSdkSession implements QwenSession {
       if (next.done) throw new LifecycleError("qwen_session_ended", "Qwen session ended before a result");
       if (next.value.type !== "result") continue;
       const result = next.value;
-      const turnUsage = this.turnUsage(result);
+      const turnUsage = this.usage.next(result);
       if (this.diagnostics.hasMcpFailure()) {
         return { error: "error_mcp_unavailable", usage: turnUsage };
       }

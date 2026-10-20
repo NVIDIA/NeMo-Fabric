@@ -106,7 +106,10 @@ async def test_qwen_doctor_and_run_against_local_provider(
     assert "user_count=1" in first["output"]["response"]
     assert "second" in second["output"]["response"]
     assert "user_count=2" in second["output"]["response"]
-    assert second["usage"]["input_tokens"] >= 0
+    # The mock provider reports 0 tokens by default. Qwen Code records an
+    # omitted count as 0 too, so the adapter cannot measure this usage.
+    assert first.get("usage") is None
+    assert second.get("usage") is None
 
     captured = requests.get(f"{api_server}/_requests", timeout=5).json()
     evidence = [
@@ -120,6 +123,55 @@ async def test_qwen_doctor_and_run_against_local_provider(
         for payload in captured
     ]
     assert "echo:hello" in json.dumps(evidence), json.dumps(evidence, indent=2)
+
+
+async def test_qwen_reports_usage_for_each_invocation(api_server: str, tmp_path: Path):
+    config = qwen_config(
+        api_server,
+        tmp_path,
+        McpServerConfig(
+            transport="stdio",
+            url="node",
+            args=[str(ROOT / "adapters/typescript/qwen/test/fixtures/mcp-server.mjs")],
+        ),
+    )
+    scenario = requests.post(
+        f"{api_server}/_scenario",
+        json={
+            "usage": {
+                "prompt_tokens": 11,
+                "completion_tokens": 3,
+                "total_tokens": 14,
+                "prompt_tokens_details": {"cached_tokens": 4},
+            }
+        },
+        timeout=5,
+    )
+    scenario.raise_for_status()
+
+    def request_count() -> int:
+        return len(requests.get(f"{api_server}/_requests", timeout=5).json())
+
+    results = []
+    async with await Fabric().start_runtime(config, base_dir=ROOT) as runtime:
+        for prompt in ("first", "second"):
+            before = request_count()
+            result = await runtime.invoke(input=prompt)
+            results.append((result, request_count() - before))
+
+    for result, calls in results:
+        assert result["status"] == "succeeded", result.get("error")
+        assert calls >= 1
+        # Qwen Code's memory extraction can add model calls to an invocation,
+        # so the expected counts scale with the requests the provider served.
+        assert result["usage"] == {
+            "input_tokens": 11 * calls,
+            "input_tokens_include_cache": True,
+            "cached_input_tokens": 4 * calls,
+            "output_tokens": 3 * calls,
+            "total_tokens": 14 * calls,
+            "metadata": {},
+        }
 
 
 async def test_qwen_reports_an_unavailable_configured_mcp_server(

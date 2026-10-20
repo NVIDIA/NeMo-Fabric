@@ -94,8 +94,18 @@ every explicitly configured server.
 
 The adapter accepts plain-text input and returns the terminal assistant text in
 `output.response`. Qwen Code reports cumulative usage for a live query, so the
-adapter returns the per-invocation difference. Create a new runtime to change
-the selected model, workspace, system instructions, skills, MCP servers, tool
+adapter returns the per-invocation difference. Input counts include cache
+reads. Cache reads are reported when the cumulative cache counter grows. Zero
+growth remains unknown because Qwen cannot distinguish a reported zero from an
+omitted cache count. An input, output, or total count that did not grow is also
+unknown, because Qwen Code records a count the provider omitted as 0 and its
+result does not show whether the model was called. For example, `/compress`
+can call the model, but Qwen reports zero turns and zero API duration for it.
+The invocation that runs `/clear` returns no usage, because Qwen Code resets
+its counters. Qwen's cumulative results do not identify individual responses
+with missing usage. If some calls report tokens and others do not, positive
+deltas can undercount the invocation. Create a new runtime to change the
+selected model, workspace, system instructions, skills, MCP servers, tool
 policy, or permission mode.
 
 The adapter gives the child process isolated temporary Qwen home and runtime
