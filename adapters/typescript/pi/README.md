@@ -226,8 +226,8 @@ Pi fills a count that the provider did not report with 0, so the adapter reads
 the provider's raw stream events for each assistant message and compaction
 summary call and keeps only the counts the provider reported. A reported zero
 counts as 0, including a report of all zeros. When a call left out its input
-count, the result leaves out `input_tokens`, `cached_input_tokens`, and
-`total_tokens`. Anthropic Messages usage reports input without the cache, so
+count, the result leaves out `input_tokens` and `total_tokens`, and keeps
+`cached_input_tokens` when every call reported its cache reads. Anthropic Messages usage reports input without the cache, so
 its input count also needs both cache fields. Bedrock Converse also reports
 input without the cache, but its API documents the cache fields as optional, so
 its input count needs only `inputTokens` rather than going unknown on every
@@ -239,19 +239,20 @@ Pi's built-in ones reports no counts the adapter can check, so its calls leave
 the result without `usage`.
 
 A failed call counts as 0 tokens only when the provider answered each of its
-attempts with a 4xx or 5xx HTTP status, such as a rate limit (429), an overload
-or a server error, before sending a successful response or any stream event.
-A call that Pi retries after such an error keeps the result's `usage` known.
-The adapter reads that status through the request's `fetch`, which the
-`anthropic-messages`, `azure-openai-responses`, `mistral-conversations`,
-`openai-codex-responses`, `openai-completions`, `openai-responses` and
-`pi-messages` protocols use. A failed call of any other protocol, including the
-Google protocols and Bedrock, or a Codex call sent over a WebSocket, leaves its
-counts unknown. A call with an attempt that got no HTTP response, such as a
-connection failure or a timeout before headers, leaves its counts unknown even
-when a later attempt succeeds, because the provider may have billed the prompt.
-A call that fails after its stream started can have billed tokens that were
-never reported, so its counts stay unknown too.
+attempts with a rate limit (429) before sending a successful response or any
+stream event, so a call that Pi retries after rate limits keeps the result's
+`usage` known. The adapter reads each attempt's status through the request's
+`fetch`, which the `anthropic-messages`, `azure-openai-responses`,
+`mistral-conversations`, `openai-codex-responses`, `openai-completions`,
+`openai-responses` and `pi-messages` protocols use. A failed call of any other
+protocol, including the Google protocols and Bedrock, or a Codex call sent over
+a WebSocket, leaves its counts unknown. An attempt that got any other error
+status, such as a request timeout (408) or a server error (5xx), or that got no
+HTTP response, such as a connection failure or a timeout before headers, leaves
+its call's counts unknown even when a later attempt succeeds, because the
+provider may have processed and billed the prompt. A call that fails after its
+stream started can have billed tokens that were never reported, so its counts
+stay unknown too.
 
 When a compaction cuts inside a turn, Pi summarizes the earlier history and the
 start of that turn in separate calls and reports only their combined usage. The
@@ -262,7 +263,8 @@ combined usage; otherwise the result has no `usage`.
 A tool result's `usage` counts each count it holds: its input needs `input`,
 `cacheRead`, and `cacheWrite`, its cache reads need `cacheRead`, and its output
 needs `output`. A count the tool left out, or that is not a non-negative
-safe integer, is left out of the result. A tool result without a `usage` field adds
+safe integer, is left out of the result, and the other counts stay, so a
+report without `cacheWrite` keeps its cache reads and output. A tool result without a `usage` field adds
 nothing and leaves the result's `usage` unchanged. An extension's `message_end`
 handler that replaces an assistant message's usage does not change which
 counts the provider reported.

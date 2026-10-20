@@ -124,13 +124,17 @@ never adds its tokens to the next one. A counter that is missing, that is not
 a non-negative integer below 2^64, or that went down because Hermes reset its
 session, is left out for that invocation. Hermes records auxiliary calls, such as
 context-compression summaries and session titles, separately from these
-counters. Session title calls are not included. An invocation in which Hermes
+counters. The adapter sets `auxiliary.title_generation.model_upgrade_enabled` to
+false, so Hermes keeps its locally derived session title and makes no title
+model call; with Relay enabled, title generation is off entirely. An invocation in which Hermes
 ran a context-compression summary call, or in which a plugin context engine
 compressed, has no `usage`, because the compression calls' tokens are missing
 from the counters. Hermes also leaves out of its counters the summary request it
 makes when a turn reaches its iteration limit. The adapter adds the counts that
-this summary response reported, and an invocation whose summary response
-carried no usage has no `usage`.
+this summary response reported, before Hermes reads its text, so they count
+even when Hermes cannot read the response and answers with its fallback text.
+An invocation whose summary response carried no usage, or whose summary
+request failed before any response, has no `usage`.
 
 Hermes adds no tokens for a provider response that carried no usage, so an
 invocation with such a response has no `usage`. For a response it rejects as
@@ -144,7 +148,8 @@ billed usage is not observed and the invocation can undercount. Hermes
 reads a count that a response's usage left out as 0, so the adapter checks each
 response's usage before Hermes normalizes it. A reported zero still counts as
 0. When a response left out its input count, the invocation's `usage` leaves
-out `input_tokens`, `cached_input_tokens`, and `total_tokens`. Anthropic
+out `input_tokens` and `total_tokens`, and keeps `cached_input_tokens` when the
+cache-read count is known. Anthropic
 Messages usage reports input without the cache, so its input count also needs
 both cache fields. When a response left out its output count, the `usage`
 leaves out `output_tokens` and `total_tokens`. When a response sent no cache
@@ -156,8 +161,9 @@ Anthropic transport when a stream omits usage, fill missing counts with 0
 before the adapter sees them. Hermes' Codex app-server runtime records usage
 outside this path. Hermes passes a response's raw usage to no per-agent hook,
 so the adapter wraps `record_response_usage` and the three handlers for
-invalid, truncated, and refused responses in `agent.turn_response_check` once
-per process. The runtime fails to start if the installed Hermes no longer calls
+invalid, truncated, and refused responses in `agent.turn_response_check`, and
+the iteration-limit summary's `_summary_text` and attempt builders in
+`agent.chat_completion_helpers`, once per process. The runtime fails to start if the installed Hermes no longer calls
 them by those names.
 
 ## Execution Model
