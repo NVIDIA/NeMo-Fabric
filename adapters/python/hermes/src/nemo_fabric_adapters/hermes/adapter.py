@@ -48,13 +48,15 @@ hermes_mcp_server_config = configuration.hermes_mcp_server_config
 def hermes_version() -> str:
     """The running Hermes Agent's version from its version call.
 
-    ``get_version_info()`` can run several ``git`` commands, so callers run it
-    through a :class:`provenance.BlockingProbe`.
+    Returns the same ``derived_version`` that ``hermes --version`` prints, which
+    keeps the commit and dirty marker of a source checkout. ``get_version_info()``
+    can run several ``git`` commands, so callers run it through a
+    :class:`provenance.BlockingProbe`.
     """
 
     from hermes_cli.version_info import get_version_info
 
-    return get_version_info().display_version
+    return get_version_info().derived_version
 
 
 async def probe_hermes_version(

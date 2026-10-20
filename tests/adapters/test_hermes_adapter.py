@@ -1754,7 +1754,7 @@ async def test_hermes_reports_the_version_its_version_call_returns(
     report = result.extensions["nemo_fabric.versions.v1"]
     assert report["harness"] == {
         "name": _reported("hermes-agent"),
-        "version": _reported(get_version_info().display_version),
+        "version": _reported(get_version_info().derived_version),
     }
     assert report["adapter"]["package_version"]["value"] == "0.6.0"
 
@@ -1812,3 +1812,13 @@ async def test_hermes_version_probe_times_out_and_starts_no_second_call():
 
     assert first == second == _version_state("collection_failed", "timeout")
     assert calls == ["called"]
+
+
+def test_hermes_version_keeps_the_commit_and_dirty_marker(monkeypatch):
+    version_info = ModuleType("hermes_cli.version_info")
+    version_info.get_version_info = lambda: MagicMock(  # type: ignore[attr-defined]
+        derived_version="0.21.6+3.gabc1234.dirty", display_version="0.21.6+3"
+    )
+    monkeypatch.setitem(sys.modules, "hermes_cli.version_info", version_info)
+
+    assert adapter.hermes_version() == "0.21.6+3.gabc1234.dirty"
