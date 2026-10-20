@@ -1576,6 +1576,20 @@ def test_invocation_usage_with_lower_or_missing_counters_leaves_them_unknown():
     assert no_baseline is None
 
 
+def test_invocation_usage_above_the_contract_bound_is_unknown():
+    zero = dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
+    near_max = {**zero, "input_tokens": (1 << 64) - 2, "output_tokens": 3}
+
+    usage = adapter._invocation_usage(
+        near_max, zero, skipped={"input_tokens": 5, "output_tokens": 1}
+    )
+
+    assert usage is not None
+    assert usage.input_tokens is None
+    assert usage.total_tokens is None
+    assert usage.output_tokens == 4
+
+
 def test_session_counters_keep_only_valid_counts():
     agent = SimpleNamespace(
         session_input_tokens=7,

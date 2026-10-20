@@ -867,7 +867,16 @@ def _is_reported_count(usage: Any, path: str) -> bool:
         value = (
             value.get(field) if isinstance(value, dict) else getattr(value, field, None)
         )
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    return _is_count(value)
+
+
+# The largest count AgentUsage accepts.
+_MAX_COUNT = (1 << 64) - 1
+
+
+def _is_count(value: Any) -> bool:
+    """Return whether ``value`` is a token count AgentUsage can hold."""
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= _MAX_COUNT
 
 
 def _session_counters(agent: Any) -> dict[str, int]:
@@ -879,9 +888,7 @@ def _session_counters(agent: Any) -> dict[str, int]:
     return {
         key: value
         for key in _SESSION_TOKEN_KEYS
-        if isinstance((value := getattr(agent, f"session_{key}", None)), int)
-        and not isinstance(value, bool)
-        and 0 <= value <= (1 << 64) - 1
+        if _is_count(value := getattr(agent, f"session_{key}", None))
     }
 
 
@@ -902,7 +909,8 @@ def _invocation_usage(
     usage never holds a whole-session total. ``unreported`` names the counts
     ("input", "cached", "output") that a provider response of this invocation
     left out and Hermes counted as 0. Those counts are unknown, and so is the
-    total when input or output is.
+    total when input or output is. A count above what AgentUsage holds is
+    unknown too.
     """
     skipped = skipped or {}
     change = {
@@ -915,18 +923,26 @@ def _invocation_usage(
         key in change
         for key in ("input_tokens", "cache_read_tokens", "cache_write_tokens")
     ):
-        fields["input_tokens"] = (
+        input_tokens = (
             change["input_tokens"]
             + change["cache_read_tokens"]
             + change["cache_write_tokens"]
         )
-        if "cached" not in unreported:
-            fields["cached_input_tokens"] = change["cache_read_tokens"]
-        fields["input_tokens_include_cache"] = True
-    if "output" not in unreported and "output_tokens" in change:
+        if _is_count(input_tokens):
+            fields["input_tokens"] = input_tokens
+            if "cached" not in unreported:
+                fields["cached_input_tokens"] = change["cache_read_tokens"]
+            fields["input_tokens_include_cache"] = True
+    if (
+        "output" not in unreported
+        and "output_tokens" in change
+        and _is_count(change["output_tokens"])
+    ):
         fields["output_tokens"] = change["output_tokens"]
     if "input_tokens" in fields and "output_tokens" in fields:
-        fields["total_tokens"] = fields["input_tokens"] + fields["output_tokens"]
+        total_tokens = fields["input_tokens"] + fields["output_tokens"]
+        if _is_count(total_tokens):
+            fields["total_tokens"] = total_tokens
     return AgentUsage(**fields) if fields else None
 
 
