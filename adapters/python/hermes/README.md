@@ -176,8 +176,11 @@ agent that records its tokens outside the auxiliary client. The adapter wraps
 and `_notify_aux_dispatch`,
 `agent.anthropic_adapter.create_anthropic_message`, and the Anthropic
 auxiliary client's `create` once per process, and the agent's
-`_spawn_background_review` when it starts the agent. The runtime fails to
-start if the installed Hermes no longer calls them by those names.
+`_spawn_background_review` when it starts the agent. Startup checks that
+Hermes still reaches these functions by those names, that its auxiliary
+accounting context and mixture-of-agents exclusions exist, and that its agent
+accepts `skip_background_review`. These checks do not detect every internal
+Hermes change.
 
 Hermes adds no tokens for a provider response that carried no usage, so an
 invocation with such a response has no `usage`. For a response it rejects as
