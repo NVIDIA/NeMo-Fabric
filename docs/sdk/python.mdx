@@ -1088,11 +1088,11 @@ result lists it as the `record` artifact with kind `run_record`:
 record = next(a for a in result.artifacts.artifacts if a.kind == "run_record")
 ```
 
-The file holds a start line, a sample line about every 10 seconds until the
-adapter host answers or the timeout fires when the start line has
-`sample_interval_ms`, and an end line. Every line carries `schema`
-(`nemo.fabric.run_record`), `version` (`v1alpha1`), `kind`, `runtime_id`,
-`invocation_id`, `request_id`, and `time`.
+The file holds a start line, sample lines, and an end line. Sample lines are
+written only when the start line has `sample_interval_ms`; then one is written
+about every 10 seconds until the adapter host answers or the timeout fires.
+Every line carries `schema` (`nemo.fabric.run_record`), `version` (`v1alpha1`),
+`kind`, `runtime_id`, `invocation_id`, `request_id`, and `time`.
 
 - The `start` line is written before the request is sent. It holds the agent
   name, harness, adapter ID, each configured model's provider and model name,
