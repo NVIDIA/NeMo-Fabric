@@ -67,6 +67,74 @@ async def test_deepagents_persistent_host_with_mock_model(api_server, tmp_path, 
             assert request["reasoning_effort"] == effort
 
 
+@pytest.mark.usefixtures("mock_nvidia_api_key")
+@pytest.mark.parametrize(
+    "subagent_model",
+    [None, "gpt-4o"],
+    ids=["inherits-parent-model", "overrides-model"],
+)
+async def test_deepagents_delegated_requests_use_model_reasoning_effort(
+    api_server, tmp_path, subagent_model
+):
+    pytest.importorskip("deepagents")
+    from examples.code_review_agent import deepagents_config
+    from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
+
+    os.environ["OPENAI_API_KEY"] = "sk-test"
+    os.environ["OPENAI_BASE_URL"] = f"{api_server}/v1"
+    subagent = {
+        "name": "worker",
+        "description": "Handle the delegated test request.",
+        "system_prompt": "Reply briefly to the delegated request.",
+    }
+    if subagent_model is not None:
+        subagent["model"] = subagent_model
+    config = deepagents_config()
+    config.models["default"].model = "parent-model"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.harness.settings = {
+        "reasoning_effort": "low",
+        "deepagents": {"subagents": [subagent]},
+    }
+    config.environment = EnvironmentConfig(provider="local", workspace=tmp_path)
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts=tmp_path / "artifacts",
+    )
+    scenario = requests.post(
+        f"{api_server}/_scenario",
+        json={
+            "tool_call": {
+                "name": "task",
+                "arguments": {
+                    "subagent_type": "worker",
+                    "description": "delegated reasoning check",
+                },
+            }
+        },
+        timeout=5,
+    )
+    scenario.raise_for_status()
+
+    result = await Fabric().run(config, base_dir=tmp_path, input="Delegate to worker.")
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    captured = requests.get(f"{api_server}/_requests", timeout=5)
+    captured.raise_for_status()
+    parent_first, delegated, parent_last = captured.json()
+    for request in (parent_first, parent_last):
+        assert request["model"] == "parent-model"
+        assert request["reasoning_effort"] == "low"
+    assert delegated["messages"][-1]["content"] == "delegated reasoning check"
+    if subagent_model is None:
+        assert delegated["model"] == "parent-model"
+        assert delegated["reasoning_effort"] == "low"
+    else:
+        assert delegated["model"] == subagent_model
+        assert "reasoning_effort" not in delegated
+
+
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
 @pytest.mark.parametrize(
     ("session_root", "uuid_request_ids"),
