@@ -299,6 +299,28 @@ async def test_hermes_usage_counts_the_iteration_limit_summary(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
+async def test_hermes_makes_no_model_call_for_session_titles(
+    code_review_agent_dir: Path,
+    api_server: str,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = hermes_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as runtime:
+        first = await runtime.invoke(input="first")
+        second = await runtime.invoke(input="second")
+        sent = requests.get(f"{api_server}/_requests", timeout=5).json()
+
+    # A title call's tokens would bypass the session counters, so each
+    # invocation makes only its own turn's request.
+    assert (first["status"], second["status"]) == ("succeeded", "succeeded")
+    assert len(sent) == 2, [request["messages"][0]["content"][:60] for request in sent]
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
 async def test_hermes_usage_is_unknown_when_context_compression_runs(
     code_review_agent_dir: Path,
     api_server: str,

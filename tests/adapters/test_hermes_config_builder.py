@@ -40,6 +40,27 @@ def test_build_hermes_config_omits_unset_values_without_hermes_agent():
         "default": "nvidia/test-model",
     }
     assert config["agent"] == {}
+    # The model title call's tokens bypass the counters the adapter reports.
+    assert config["auxiliary"] == {
+        "title_generation": {"model_upgrade_enabled": False}
+    }
+
+
+def test_build_hermes_config_with_relay_disables_titles():
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {}},
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+        }
+    )
+
+    config = configuration.build_hermes_config(
+        config, workspace=".", relay_enabled=True
+    )
+
+    assert config["auxiliary"] == {
+        "title_generation": {"enabled": False, "model_upgrade_enabled": False}
+    }
 
 
 def test_write_hermes_config_round_trips_without_pyyaml(
