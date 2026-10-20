@@ -1046,6 +1046,14 @@ When the descriptor does not declare a report key, ingestion leaves the
 corresponding facts `unsupported` with reason `key_not_declared`.
 Result-extension validation runs first: if the schema rejects an emitted
 undeclared key, the run fails before ingestion and no `RunResult` is returned.
+
+If you maintain an external descriptor copy for a bundled adapter, update its
+`run_result` extension schema before upgrading the adapter implementation. Add
+`"nemo_fabric.versions.v1": {"type": "object"}` under `properties`, preserving
+existing properties and requirements, and do not add the key to `required`.
+Without a schema that accepts the report, invocation fails during
+result-extension validation.
+
 A fact the adapter has no source for has state `unsupported` with reason
 `no_source`. A declared key that the result omits gives `unavailable` with
 reason `key_omitted`, and a fact the key omits gives `unavailable` with reason

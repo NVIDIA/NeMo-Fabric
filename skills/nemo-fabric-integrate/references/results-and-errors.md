@@ -55,7 +55,7 @@ harness version and the served model, read state `unsupported` with reason
 `key_not_declared` when the adapter descriptor does not declare their report
 key. When the descriptor declares the key, a result that omits the key reads
 `unavailable` with reason `key_omitted`, and a key that omits the fact reads
-`unavailable` with reason `fact_omitted`. Every bundled
+`unavailable` with reason `fact_omitted`. If you maintain an external descriptor copy for a bundled adapter, update its `run_result` extension schema before upgrading the adapter implementation. Add `"nemo_fabric.versions.v1": {"type": "object"}` under `properties`, preserving existing properties and requirements, and do not add the key to `required`. Without a schema that accepts the report, invocation fails during result-extension validation. Every bundled
 adapter reports its package version. The Claude Code, Codex, Hermes Agent,
 OpenClaw, Deep Agents, and mini-SWE-agent adapters report the harness version,
 and the Claude Code adapter reports the served model. The Cline adapter reports
