@@ -65,6 +65,8 @@ INSTALL_ENV_NAMES = {
 HARBOR_ARTIFACT_ROOT = "/logs/agent/fabric-artifacts"
 HARBOR_DEFAULT_WORKSPACE = "/testbed"
 _DETAILED_TOKEN_USAGE_V1_KEY = "nemo_fabric.detailed_token_usage.v1"
+# Evidence the bridge records from Harbor's ATIF, kept when result metadata is replaced.
+_ATIF_EVIDENCE_KEYS = ("atif_final_metrics", "harbor_atif_validation")
 
 try:
     from harbor.agents.base import BaseAgent
@@ -884,26 +886,25 @@ def populate_context_from_result(
     document = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(document, dict) and "runner_error" in document:
         failure = FabricRunnerFailure.model_validate(document)
-        if context.metadata is None:
-            context.metadata = {}
-        context.metadata["fabric"] = failure.model_dump()
+        _replace_result_metadata(context, failure.model_dump())
         return failure
     result = RunResult.from_mapping(document)
     mapping = result.to_mapping()
-    if context.metadata is None:
-        context.metadata = {}
-    context.metadata["fabric"] = {
-        "status": mapping["status"],
-        "runtime_id": mapping["runtime_id"],
-        "invocation_id": mapping["invocation_id"],
-        "request_id": mapping["request_id"],
-        "harness": mapping["harness"],
-        "adapter_id": mapping.get("adapter_id"),
-        "artifacts": mapping["artifacts"],
-        "telemetry": mapping["telemetry"],
-        "error": mapping.get("error"),
-        "usage": mapping.get("usage"),
-    }
+    _replace_result_metadata(
+        context,
+        {
+            "status": mapping["status"],
+            "runtime_id": mapping["runtime_id"],
+            "invocation_id": mapping["invocation_id"],
+            "request_id": mapping["request_id"],
+            "harness": mapping["harness"],
+            "adapter_id": mapping.get("adapter_id"),
+            "artifacts": mapping["artifacts"],
+            "telemetry": mapping["telemetry"],
+            "error": mapping.get("error"),
+            "usage": mapping.get("usage"),
+        },
+    )
     # Fabric usage is the only source of complete accounting: an unknown
     # dimension clears any value an earlier pass left in the context.
     input_tokens: int | None = None
@@ -971,6 +972,20 @@ def populate_context_from_result(
     context.n_output_tokens = output_tokens
     context.cost_usd = cost_usd
     return result
+
+
+def _replace_result_metadata(context: AgentContext, fields: dict[str, Any]) -> None:
+    """Replace one pass's result fields while keeping the bridge's ATIF evidence."""
+
+    if context.metadata is None:
+        context.metadata = {}
+    previous = context.metadata.get("fabric")
+    evidence = (
+        {key: previous[key] for key in _ATIF_EVIDENCE_KEYS if key in previous}
+        if isinstance(previous, dict)
+        else {}
+    )
+    context.metadata["fabric"] = {**fields, **evidence}
 
 
 def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:

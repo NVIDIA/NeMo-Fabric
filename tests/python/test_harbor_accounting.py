@@ -280,6 +280,24 @@ def trajectory_path_fixture(tmp_path):
     return path
 
 
+@pytest.fixture(name="failure_path")
+def failure_path_fixture(tmp_path):
+    path = tmp_path / "failure.json"
+    path.write_text(
+        json.dumps(
+            {
+                "runner_error": {
+                    "stage": "start",
+                    "code": "configuration_failed",
+                    "message": "startup failure",
+                    "retryable": False,
+                }
+            }
+        )
+    )
+    return path
+
+
 @pytest.mark.parametrize(
     ("usage", "expected"),
     [
@@ -426,28 +444,59 @@ def test_atif_never_fills_fabric_accounting(
     }
 
 
+@pytest.mark.parametrize(
+    "passes",
+    [
+        ("trajectory", "result"),
+        ("result", "trajectory", "result"),
+        ("trajectory", "failure"),
+        ("failure", "trajectory", "result"),
+        ("result", "trajectory", "failure"),
+    ],
+)
+def test_result_pass_keeps_atif_evidence(
+    result_path, failure_path, trajectory_path, passes
+):
+    from harbor.models.agent.context import AgentContext
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+        populate_context_from_trajectory,
+    )
+
+    paths = {"result": result_path, "failure": failure_path}
+    context = AgentContext()
+    for name in passes:
+        if name == "trajectory":
+            populate_context_from_trajectory(context, trajectory_path)
+        else:
+            populate_context_from_result(context, paths[name])
+
+    fabric = context.metadata["fabric"]
+    assert fabric["atif_final_metrics"] == {
+        "source": "atif",
+        "coverage": "unverified",
+        "final_metrics": ATIF_FINAL_METRICS,
+    }
+    assert fabric["harbor_atif_validation"] == {"status": "succeeded", "error": None}
+    # Only the last pass's result fields remain.
+    if passes[-1] == "result":
+        assert fabric["invocation_id"] == "invocation-1"
+        assert "runner_error" not in fabric
+    else:
+        assert fabric["runner_error"]["code"] == "configuration_failed"
+        assert "invocation_id" not in fabric
+
+
 @pytest.mark.parametrize("runner_failure_document", [False, True])
 def test_no_fabric_result_keeps_atif_out_of_accounting(
-    result_path, trajectory_path, runner_failure_document
+    failure_path, trajectory_path, runner_failure_document
 ):
     from harbor.models.agent.context import AgentContext
     from nemo_fabric.integrations.harbor.fabric_agent import FabricAgent
 
-    agent = FabricAgent(logs_dir=result_path.parent, fabric_adapter_id="acme.agent")
+    agent = FabricAgent(logs_dir=failure_path.parent, fabric_adapter_id="acme.agent")
     if runner_failure_document:
-        result_path.write_text(
-            json.dumps(
-                {
-                    "runner_error": {
-                        "stage": "start",
-                        "code": "configuration_failed",
-                        "message": "startup failure",
-                        "retryable": False,
-                    }
-                }
-            )
-        )
-        agent._result_path = result_path
+        agent._result_path = failure_path
     context = AgentContext()
 
     agent.populate_context_post_run(context)
