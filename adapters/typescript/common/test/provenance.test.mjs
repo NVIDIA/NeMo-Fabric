@@ -11,7 +11,9 @@ import { pathToFileURL } from "node:url";
 import {
   VERSIONS_REPORT_KEY,
   boundedText,
+  missingFact,
   packageVersionFact,
+  packageVersionReport,
   withPackageVersion,
 } from "../dist/index.js";
 
@@ -66,6 +68,41 @@ test("the wrapper adds the versions report and keeps the result", async () => {
       harness: {name: noSource, version: noSource},
       models: {default: {served: noSource}, judge: {served: noSource}},
     });
+  } finally {
+    await rm(directory, {recursive: true, force: true});
+  }
+});
+
+test("a served-model override reaches only the role it names", () => {
+  const packageVersion = {value: "1.2.3", source: "reported", collected_by: "adapter", method: "package_metadata"};
+  const notAttributed = missingFact("unavailable", "not_attributed", "harness_api");
+
+  assert.deepEqual(packageVersionReport(packageVersion, ["judge", "default"], {role: "default", fact: notAttributed}).models, {
+    default: {served: notAttributed},
+    judge: {served: noSource},
+  });
+  // A role that is not configured adds no entry.
+  assert.deepEqual(packageVersionReport(packageVersion, ["default"], {role: "absent", fact: notAttributed}).models, {
+    default: {served: noSource},
+  });
+});
+
+test("the wrapper picks the served-model role from the start input", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "fabric-provenance-"));
+  try {
+    const packageJson = pathToFileURL(join(directory, "package.json"));
+    await writeFile(packageJson, JSON.stringify({name: "adapter", version: "1.2.3"}));
+    const notAttributed = missingFact("unavailable", "not_attributed", "harness_api");
+    const runtime = withPackageVersion({
+      async start() {},
+      async invoke() { return {status: "succeeded", output: "done"}; },
+      async stop() {},
+    }, packageJson, (input) => ({role: Object.keys(input.config.models)[0], fact: notAttributed}));
+
+    await runtime.start({agentName: "agent", baseDir: directory, config: {models: {primary: {}}}, runtimeContext: {}});
+    const result = await runtime.invoke({input: "hi"}, {});
+
+    assert.deepEqual(result.extensions[VERSIONS_REPORT_KEY].models, {primary: {served: notAttributed}});
   } finally {
     await rm(directory, {recursive: true, force: true});
   }

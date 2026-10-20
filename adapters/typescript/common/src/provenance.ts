@@ -36,8 +36,15 @@ export function boundedText(text: string): string {
   return `${chars.slice(0, TRUNCATED_PREFIX_CHARS).join("")}~${digest.slice(0, TRUNCATED_DIGEST_HEX_DIGITS)}`;
 }
 
-function missingFact(state: string, reason: string, method = "adapter_report"): JsonObject {
+/** A reported fact without a value. */
+export function missingFact(state: string, reason: string, method = "adapter_report"): JsonObject {
   return {state, reason, source: "reported", collected_by: "adapter", method};
+}
+
+/** The served-model fact an adapter reports for one model role. */
+export interface ServedModelFact {
+  role: string;
+  fact: JsonObject;
 }
 
 /**
@@ -60,30 +67,46 @@ export function packageVersionFact(packageJson: URL): JsonObject {
 
 /**
  * The report of an adapter that has a source only for its package version.
- * The harness name and version and each role's served model read
- * `unsupported` with reason `no_source`. Like core, it keeps at most 16 roles
- * in sorted order and skips a role longer than 128 characters.
+ * The harness name and version read `unsupported` with reason `no_source`, and
+ * so does each role's served model, except the role that `servedModel` names,
+ * which gets its fact. Like core, it keeps at most 16 roles in sorted order
+ * and skips a role longer than 128 characters.
  */
-export function packageVersionReport(packageVersion: JsonObject, modelRoles: readonly string[]): JsonObject {
+export function packageVersionReport(
+  packageVersion: JsonObject,
+  modelRoles: readonly string[],
+  servedModel?: ServedModelFact,
+): JsonObject {
   const noSource = () => missingFact("unsupported", "no_source");
   const roles = modelRoles.filter((role) => Array.from(role).length <= MAX_KEY_CHARS).sort().slice(0, MAX_MODEL_ROLES);
   return {
     adapter: {package_version: packageVersion},
     harness: {name: noSource(), version: noSource()},
-    models: Object.fromEntries(roles.map((role) => [role, {served: noSource()}])),
+    models: Object.fromEntries(
+      roles.map((role) => [role, {served: role === servedModel?.role ? {...servedModel.fact} : noSource()}]),
+    ),
   };
 }
 
 /**
  * Wrap `runtime` so each result reports the adapter package version read from
- * `packageJson` when the runtime starts. Results and errors are otherwise
- * unchanged.
+ * `packageJson` when the runtime starts. `servedModel`, when given, picks the
+ * served-model fact of one role from the start input. Results and errors are
+ * otherwise unchanged.
  */
-export function withPackageVersion(runtime: AdapterRuntime, packageJson: URL): AdapterRuntime {
+export function withPackageVersion(
+  runtime: AdapterRuntime,
+  packageJson: URL,
+  servedModel?: (input: AdapterStartInput) => ServedModelFact | undefined,
+): AdapterRuntime {
   let report: JsonObject | undefined;
   return {
     async start(input: AdapterStartInput): Promise<void> {
-      report = packageVersionReport(packageVersionFact(packageJson), Object.keys(input.config.models ?? {}));
+      report = packageVersionReport(
+        packageVersionFact(packageJson),
+        Object.keys(input.config.models ?? {}),
+        servedModel?.(input),
+      );
       await runtime.start(input);
     },
     async invoke(request: AgentRunRequest, context: RuntimeContext): Promise<AgentRunResult> {

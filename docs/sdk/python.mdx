@@ -1036,7 +1036,10 @@ state `unsupported` and reason `no_source`. The Claude Code adapter also reports
 it runs: the one model that this invocation's main-thread assistant messages
 name, skipping subagent messages and Claude Code's `<synthetic>` API-error
 messages. Two models give `unavailable` with reason `not_attributed`, and none
-gives `unavailable` with reason `empty_response`. No bundled adapter reports
+gives `unavailable` with reason `empty_response`. The Cline adapter reports the
+served model of the role it runs as `unavailable` with reason `not_attributed`,
+because nothing yet shows that the model its SDK names served this invocation.
+No bundled adapter reports
 MCP runtime facts yet.
 
 A reported fact whose key the adapter does not declare has state `unsupported`

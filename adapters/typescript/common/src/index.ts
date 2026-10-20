@@ -19,7 +19,9 @@ export { insecureHttpModelHosts, modelEndpointAllowed } from "./model-endpoint.j
 export {
   VERSIONS_REPORT_KEY,
   boundedText,
+  missingFact,
   packageVersionFact,
   packageVersionReport,
   withPackageVersion,
+  type ServedModelFact,
 } from "./provenance.js";
