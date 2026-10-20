@@ -586,15 +586,20 @@ function hasTransportFailure(diagnostics: unknown): boolean {
  * is stored before Pi emits either event. A request the provider rate-limited
  * before generating reports all its counts as 0, and a call with an ambiguous
  * attempt reports none (see `endedCallCounts`). Pi's cache warmer replays a
- * request with the same options, so a warm-up's raw events reach this
- * observer too, but the warm-up runs outside the agent's stream function: its
- * usage entry has no record and stays unknown. The record is copied when the
- * call ends so a later warm-up cannot change it.
+ * request with the same options outside the agent's stream function, so a
+ * warm-up's raw events reach this observer too, but its usage entry has no
+ * record and stays unknown. Every built-in protocol passes each call's request
+ * body to `onPayload` once, before sending it (`@earendil-works/pi-ai` 1.0.3,
+ * `api/*.js`), so a later `onPayload` on the same options is a warm-up
+ * attempt, and `onWarmUp` is called before it is sent, including one that
+ * fails or that Pi aborts and discards when the agent settles. The record is
+ * copied when the call ends so a later warm-up cannot change it.
  */
 export function recordReportedCounts(
   agent: AgentSession["agent"],
   records: WeakMap<object, ReportedCounts>,
   onCallEnd: (usage: object) => void,
+  onWarmUp: () => void = () => undefined,
 ): void {
   const streamFunction = agent.streamFunction;
   agent.streamFunction = async (model, context, options) => {
@@ -606,10 +611,18 @@ export function recordReportedCounts(
       delegate: ownFetch === undefined || ownFetch === observedFetch ? globalThis.fetch : ownFetch,
       observation,
     };
+    let payloads = 0;
     const response = await callAttempts.run(attempts, () =>
       streamFunction(model, context, {
         ...options,
         ...(FETCH_PROTOCOLS.has(model.api) ? { fetch: observedFetch } : {}),
+        onPayload: async (payload, payloadModel) => {
+          payloads += 1;
+          if (payloads > 1) {
+            onWarmUp();
+          }
+          return options?.onPayload?.(payload, payloadModel);
+        },
         onResponse: async (providerResponse, responseModel) => {
           observation.accepted ||= providerResponse.status >= 200 && providerResponse.status < 300;
           await options?.onResponse?.(providerResponse, responseModel);
@@ -1453,6 +1466,9 @@ class PiSdkSessionHandle implements PiSessionHandle {
   private readonly runtimeDir: string;
   private readonly compactionListeners: Set<(event: unknown) => void>;
   private readonly reportedCounts = new WeakMap<object, ReportedCounts>();
+  // Cache warm-up attempts, and how many of them a prompt has accounted for.
+  private warmUpAttempts = 0;
+  private warmUpAttemptsCounted = 0;
   // The model calls that ended since the current compaction was prepared.
   private compaction: { expected: number; calls: object[] } | undefined;
 
@@ -1468,9 +1484,16 @@ class PiSdkSessionHandle implements PiSessionHandle {
     this.runtimeDir = runtimeDir;
     this.compactionListeners = compactionListeners;
     this.relay = relay;
-    recordReportedCounts(session.agent, this.reportedCounts, (usage) => {
-      this.compaction?.calls.push(usage);
-    });
+    recordReportedCounts(
+      session.agent,
+      this.reportedCounts,
+      (usage) => {
+        this.compaction?.calls.push(usage);
+      },
+      () => {
+        this.warmUpAttempts += 1;
+      },
+    );
     this.unsubscribeTurnCounter = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         this.cumulativeTurnCount += 1;
@@ -1521,6 +1544,11 @@ class PiSdkSessionHandle implements PiSessionHandle {
       this.compaction = undefined;
       unsubscribe();
     }
+    // A warm-up's tokens reach no usage entry the adapter can check, and a
+    // failed or discarded one reaches none at all, so a prompt with a warm-up
+    // attempt since the previous prompt has unknown tokens.
+    const warmedUp = this.warmUpAttempts !== this.warmUpAttemptsCounted;
+    this.warmUpAttemptsCounted = this.warmUpAttempts;
     return {
       accepted,
       turnStarted,
@@ -1529,7 +1557,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
       stopReason: finalAssistant?.stopReason,
       errorMessage: finalAssistant?.errorMessage,
       shutdownRequested: this.state.shutdownRequested,
-      usage: finalAssistant === undefined ? undefined : usage,
+      usage: finalAssistant === undefined || warmedUp ? undefined : usage,
     };
   }
 
