@@ -142,12 +142,11 @@ response without usage, or one whose usage left out a count, leaves the
 affected counts unknown. An auxiliary request that raised, including a
 response the client could not parse, may have been billed, so the invocation
 has no `usage`. So does a request that returned no response, and one that
-Hermes dispatched to the provider more than once, such as a streamed request
-it retried without streaming. The adapter observes each provider dispatch of
-Hermes' auxiliary client. Hermes builds its auxiliary OpenAI and Anthropic
-clients with the SDKs' own retries off (`max_retries=0`), so a dispatch is one
-provider request. Retries inside a provider SDK configured otherwise, or
-inside a gateway, happen below every Hermes function and are not observed.
+had more than one observed dispatch, such as a streamed request Hermes retried
+without streaming. The adapter counts Hermes' auxiliary dispatch
+notifications. Hermes disables SDK retries for its OpenAI and Anthropic
+auxiliary clients. Native transport shim, SDK and gateway retries below that
+boundary are not observed.
 The same holds for a request still running, or a response
 Hermes has not recorded yet, when the invocation returns, and that usage is
 never added to a later invocation.
