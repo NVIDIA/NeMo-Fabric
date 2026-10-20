@@ -119,6 +119,20 @@ closes the conversation and removes the adapter-owned temporary profile state.
 Create a new runtime to change the model, workspace, tools, MCP servers, or
 skills.
 
+Usage counts the tokens OpenHands records for the invocation's model calls. A
+token counter is reported only when every model response supplies enough
+information to determine it. Cache reads are known when every response reported
+a cache-read count, including 0. For native Gemini models using LiteLLM's
+`gemini` or `vertex_ai` providers, an omitted cache-read count means zero.
+OpenAI-compatible proxy routes keep it unknown. Input and output are known when
+every response reported them above 0, because LiteLLM stores an omitted count as
+zero. A count above the uint64 maximum is unknown. Cache reads above a
+response's own input, or above the summed input, are unknown. Usage is unknown
+when a model response reported neither prompt nor completion tokens. Failed
+model attempts that OpenHands retries are not counted. OpenHands combines a
+LiteLLM proxy cost header or a locally calculated cost into one counter without
+recording which one it used, so the adapter does not report `cost_usd`.
+
 ## Run the Code Review Example
 
 Set `NVIDIA_API_KEY`. For a source checkout, also point NeMo Fabric at the Python

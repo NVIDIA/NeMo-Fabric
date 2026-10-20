@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -106,11 +107,23 @@ def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
     return model
 
 
+def _wire_model(model: contract.AgentModelConfig) -> str:
+    """Return the LiteLLM model name, prefixed with its provider."""
+    return model.model if "/" in model.model else f"{model.provider}/{model.model}"
+
+
+def _omits_zero_cache_reads(wire_model: str) -> bool:
+    """Whether the model's API leaves out a cache-read count of 0.
+
+    Gemini usage counters are proto3 ``int32`` fields without presence, and
+    proto3 JSON omits such a field when its value is 0.
+    """
+    provider, _, name = wire_model.partition("/")
+    return provider in {"gemini", "vertex_ai"} and name.startswith("gemini")
+
+
 def _llm(api: OpenHandsApi, model: contract.AgentModelConfig) -> Any:
-    wire_model = (
-        model.model if "/" in model.model else f"{model.provider}/{model.model}"
-    )
-    kwargs: dict[str, Any] = {"model": wire_model, "usage_id": "agent"}
+    kwargs: dict[str, Any] = {"model": _wire_model(model), "usage_id": "agent"}
     if model.api_key_env is not None:
         api_key = os.environ.get(model.api_key_env)
         if not api_key:
@@ -311,18 +324,119 @@ def _mcp_servers(api: OpenHandsApi, config: contract.AgentConfig) -> dict[str, A
     return result
 
 
-def _usage(api_llm: Any, baseline: Any) -> contract.AgentUsage | None:
-    metrics = api_llm.metrics.diff(baseline)
-    tokens = metrics.accumulated_token_usage
-    if tokens is None:
+_UINT64_MAX = (1 << 64) - 1
+
+
+class _CacheReadReports:
+    """Record, per model response, whether the provider reported cache reads.
+
+    OpenHands stores an omitted cache-read count as 0 in its usage records,
+    but its completion log carries the LiteLLM response, whose
+    ``cached_tokens`` field is present only when the provider reported it.
+    For an API that omits a count of 0, an absent field is a reported 0.
+    Each entry is ``(response_id, reported)``, matching the ``response_id``
+    of the OpenHands usage record for the same response.
+    """
+
+    def __init__(self, omitted_means_zero: bool = False) -> None:
+        self.reported: list[tuple[str, bool]] = []
+        self._omitted_means_zero = omitted_means_zero
+
+    def record(self, filename: str, log_data: str) -> None:
+        # OpenHands logs failed requests through the same callback.
+        if filename.endswith("-error.json"):
+            return
+        response = json.loads(log_data).get("response") or {}
+        usage = response.get("usage") or {}
+        details = (
+            usage.get("prompt_tokens_details")
+            or usage.get("input_tokens_details")
+            or {}
+        )
+        self.reported.append(
+            (
+                str(response.get("id", "")),
+                self._omitted_means_zero or "cached_tokens" in details,
+            )
+        )
+
+
+def _bounded(count: int) -> int | None:
+    """Return a count the contract can carry, or unknown past uint64."""
+    return count if count <= _UINT64_MAX else None
+
+
+def _sum_if_all_positive(counts: list[int]) -> int | None:
+    """Return the sum of per-response counts, or unknown if any count is 0.
+
+    LiteLLM stores an omitted prompt or completion count as 0, so a 0 cannot
+    be told apart from a reported zero.
+    """
+    if not counts or any(count <= 0 for count in counts):
         return None
-    input_tokens = int(tokens.prompt_tokens)
-    output_tokens = int(tokens.completion_tokens)
+    return _bounded(sum(counts))
+
+
+def _cached_input_tokens(
+    records: list[Any],
+    cache_read_reports: list[tuple[str, bool]],
+    input_tokens: int | None,
+) -> int | None:
+    """Sum cache reads when every response reported them, else unknown.
+
+    The reports must name the same responses, in order, as the usage records.
+    A mismatch means the completion log missed a response, for example after
+    OpenHands replaced the telemetry that holds the callback.
+    """
+    if [response_id for response_id, _ in cache_read_reports] != [
+        r.response_id for r in records
+    ] or not all(reported for _, reported in cache_read_reports):
+        return None
+    # Cache reads are part of input, so a count above the response's own
+    # reported input, or above the summed input, is inconsistent.
+    if any(0 < int(r.prompt_tokens) < int(r.cache_read_tokens) for r in records):
+        return None
+    cached = _bounded(sum(int(r.cache_read_tokens) for r in records))
+    if cached is None or (input_tokens is not None and cached > input_tokens):
+        return None
+    return cached
+
+
+def _usage(
+    api_llm: Any, baseline: Any, cache_read_reports: list[tuple[str, bool]]
+) -> contract.AgentUsage | None:
+    """Return the tokens OpenHands recorded for this invocation, or unknown.
+
+    OpenHands records a latency for every model response but token usage only
+    for responses with a positive prompt or completion count, so fewer usage
+    records than responses means usage is incomplete. Input and output are
+    known only when every usage record has them above 0. Cache reads are known
+    only when every response reported them, which may be 0. LiteLLM's
+    ``prompt_tokens`` includes cache reads and writes. OpenHands cost mixes a
+    LiteLLM proxy cost header with LiteLLM's price-table estimate, so it is
+    not reported.
+    """
+    metrics = api_llm.metrics.diff(baseline)
+    records = metrics.token_usages
+    if not records or len(records) != len(metrics.response_latencies):
+        return None
+    input_tokens = _sum_if_all_positive([int(r.prompt_tokens) for r in records])
+    output_tokens = _sum_if_all_positive([int(r.completion_tokens) for r in records])
+    cached_input_tokens = _cached_input_tokens(
+        records, cache_read_reports, input_tokens
+    )
+    if input_tokens is None and output_tokens is None and cached_input_tokens is None:
+        return None
     return contract.AgentUsage(
         input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        input_tokens_include_cache=True if input_tokens is not None else None,
         output_tokens=output_tokens,
-        total_tokens=input_tokens + output_tokens,
-        cost_usd=float(metrics.accumulated_cost),
+        total_tokens=(
+            _bounded(input_tokens + output_tokens)
+            if input_tokens is not None and output_tokens is not None
+            else None
+        ),
     )
 
 
@@ -333,6 +447,7 @@ class OpenHandsRuntime:
         self._conversation: Any = None
         self._profile_store_temp: tempfile.TemporaryDirectory[str] | None = None
         self._runtime_id: str | None = None
+        self._cache_read_reports = _CacheReadReports()
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
@@ -344,7 +459,8 @@ class OpenHandsRuntime:
             supported_modes={"replace", "append"},
         )
         api = _load_openhands_api()
-        llm = _llm(api, _selected_model(config))
+        model = _selected_model(config)
+        llm = _llm(api, model)
         agent_context = api.AgentContext(
             skills=_skills(api, config, base_dir),
             system_message_suffix=(
@@ -391,6 +507,17 @@ class OpenHandsRuntime:
         except BaseException:
             profile_store_temp.cleanup()
             raise
+        # The completion log is the only per-response record that keeps the
+        # provider's cache fields. With a callback and no log directory,
+        # OpenHands hands each log to the callback and writes no file. If
+        # OpenHands replaces this telemetry, responses go unlogged and cache
+        # reads become unknown rather than wrong.
+        cache_read_reports = _CacheReadReports(
+            omitted_means_zero=_omits_zero_cache_reads(_wire_model(model))
+        )
+        llm.telemetry.set_log_completions_callback(cache_read_reports.record)
+        llm.telemetry.log_enabled = True
+        self._cache_read_reports = cache_read_reports
         self._api = api
         self._llm_instance = llm
         self._conversation = conversation
@@ -419,6 +546,8 @@ class OpenHandsRuntime:
         conversation = self._conversation
         event_count = len(conversation.state.events)
         baseline = self._llm_instance.metrics.deep_copy()
+        reports = self._cache_read_reports.reported
+        first_report = len(reports)
         try:
             conversation.send_message(common_utils.normalize_user_input(request.input))
             await conversation.arun()
@@ -430,13 +559,13 @@ class OpenHandsRuntime:
                     code="openhands_invocation_failed",
                     message="OpenHands could not complete the invocation.",
                 ),
-                usage=_usage(self._llm_instance, baseline),
+                usage=_usage(self._llm_instance, baseline, reports[first_report:]),
             )
 
         status = conversation.state.execution_status
         new_events = conversation.state.events[event_count:]
         response = self._api.get_agent_final_response(new_events)
-        usage = _usage(self._llm_instance, baseline)
+        usage = _usage(self._llm_instance, baseline, reports[first_report:])
         if status != self._api.ConversationExecutionStatus.FINISHED:
             return contract.AgentRunResult(
                 status=contract.AgentRunStatus.FAILED,

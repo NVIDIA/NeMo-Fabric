@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from types import SimpleNamespace
@@ -93,15 +94,30 @@ def openhands_payload_fixture(tmp_path: Path) -> dict:
 @pytest.fixture(name="mock_openhands")
 def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
     calls: dict[str, object] = {}
-    usage = SimpleNamespace(prompt_tokens=11, completion_tokens=5)
+    # Shaped like OpenHands Metrics.diff(): summed counters plus one record per
+    # model response and per response that reported usage.
+    usage = SimpleNamespace(
+        prompt_tokens=11,
+        completion_tokens=5,
+        cache_read_tokens=3,
+        cache_write_tokens=0,
+        reasoning_tokens=2,
+        response_id="resp-1",
+    )
     metrics_delta = SimpleNamespace(
         accumulated_token_usage=usage,
         accumulated_cost=0.25,
+        token_usages=[usage],
+        response_latencies=[SimpleNamespace(latency=0.5)],
     )
     metrics = MagicMock()
     metrics.deep_copy.return_value = object()
     metrics.diff.return_value = metrics_delta
-    llm = SimpleNamespace(metrics=metrics)
+    telemetry = SimpleNamespace(log_enabled=False, completion_log=None)
+    telemetry.set_log_completions_callback = lambda callback: setattr(
+        telemetry, "completion_log", callback
+    )
+    llm = SimpleNamespace(metrics=metrics, telemetry=telemetry)
 
     llm_factory = MagicMock(return_value=llm)
     tool_factory = MagicMock(side_effect=lambda **kwargs: kwargs)
@@ -115,8 +131,21 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
     state = SimpleNamespace(events=[], execution_status=MockStatus.FINISHED)
     conversation = SimpleNamespace(state=state)
     replies = iter(["first response", "second response"])
+    usage_log = {"cached_tokens": 3}
 
     async def arun():
+        # OpenHands logs each model response, here with cache details.
+        telemetry.completion_log(
+            "test-model.json",
+            json.dumps(
+                {
+                    "response": {
+                        "id": "resp-1",
+                        "usage": {"prompt_tokens_details": usage_log},
+                    }
+                }
+            ),
+        )
         state.events.append(next(replies))
         state.execution_status = MockStatus.FINISHED
 
@@ -151,6 +180,9 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
             "default_condenser": default_condenser,
             "llm_factory": llm_factory,
             "mcp_server_factory": mcp_server_factory,
+            "metrics": metrics,
+            "telemetry": telemetry,
+            "usage_log": usage_log,
             "skill_type": skill_type,
             "tool_factory": tool_factory,
         }
@@ -345,20 +377,130 @@ async def test_start_rejects_unknown_condenser_setting(
     mock_openhands["agent_factory"].assert_not_called()
 
 
+def _litellm_usage(
+    prompt: int | None, completion: int | None, cached: int | None = None
+) -> dict:
+    """Build a LiteLLM usage mapping that omits the counters given as None."""
+    usage: dict = {"total_tokens": (prompt or 0) + (completion or 0)}
+    if prompt is not None:
+        usage["prompt_tokens"] = prompt
+    if completion is not None:
+        usage["completion_tokens"] = completion
+    if cached is not None:
+        usage["prompt_tokens_details"] = {"cached_tokens": cached}
+    return usage
+
+
+def _cache_hits_after_first_call(call: int) -> dict:
+    # A conversation's first request finds nothing cached.
+    return _litellm_usage(10, 1, cached=0 if call == 1 else 8)
+
+
+ALL_COUNTS = ("input", "cached", "output")
+
+
 # Event limit: the system prompt, the user message, and 40 think action and
 # observation pairs exceed the 80-event limit, so the condenser runs before the
 # 41st agent call. Context window error: the rejected 11th call triggers the
-# condensation, and the 12th call finishes.
+# condensation, and the 12th call finishes. The other cases change only the
+# usage that the agent and summary responses report. ``known`` lists the
+# counters the adapter must report, as the sum of what the responses sent;
+# None means usage is unknown.
 @pytest.mark.parametrize(
-    ("context_error_at_call", "expected_agent_calls"),
-    [(None, 41), (11, 12)],
-    ids=["event-limit", "context-window-error"],
+    (
+        "context_error_at_call",
+        "expected_agent_calls",
+        "agent_usage",
+        "summary_usage",
+        "known",
+    ),
+    [
+        (
+            None,
+            41,
+            lambda call: _litellm_usage(10, 1, cached=8),
+            _litellm_usage(1000, 100, cached=600),
+            ALL_COUNTS,
+        ),
+        (
+            11,
+            12,
+            lambda call: _litellm_usage(10, 1, cached=8),
+            _litellm_usage(1000, 100, cached=600),
+            ALL_COUNTS,
+        ),
+        (
+            None,
+            41,
+            _cache_hits_after_first_call,
+            _litellm_usage(1000, 100, cached=0),
+            ALL_COUNTS,
+        ),
+        (
+            None,
+            41,
+            lambda call: _litellm_usage(10, 1, cached=8),
+            _litellm_usage(1000, 100),
+            ("input", "output"),
+        ),
+        (
+            None,
+            41,
+            lambda call: _litellm_usage(10, 1),
+            _litellm_usage(1000, 100),
+            ("input", "output"),
+        ),
+        (
+            None,
+            41,
+            lambda call: _litellm_usage(10, None, cached=8),
+            _litellm_usage(1000, None, cached=600),
+            ("input", "cached"),
+        ),
+        (
+            None,
+            41,
+            lambda call: _litellm_usage(None, 1),
+            _litellm_usage(None, 100),
+            ("output",),
+        ),
+        (
+            None,
+            41,
+            lambda call: _litellm_usage(10, 1, cached=8),
+            _litellm_usage(1000, None, cached=600),
+            ("input", "cached"),
+        ),
+        (None, 41, lambda call: _litellm_usage(10, 1, cached=8), None, None),
+        (
+            None,
+            41,
+            lambda call: _litellm_usage(10, 1, cached=8),
+            _litellm_usage(0, 0),
+            None,
+        ),
+    ],
+    ids=[
+        "event-limit",
+        "context-window-error",
+        "cache-hits-after-first-call",
+        "summary-without-cache-details",
+        "no-cache-details",
+        "prompt-only",
+        "completion-only",
+        "complete-then-prompt-only",
+        "summary-without-usage",
+        "summary-with-zero-usage",
+    ],
 )
 async def test_invoke_condenses_history_and_counts_summary_usage(
     openhands_payload: dict,
     monkeypatch: pytest.MonkeyPatch,
     context_error_at_call: int | None,
     expected_agent_calls: int,
+    agent_usage: Callable[[int], dict],
+    summary_usage: dict | None,
+    known: tuple[str, ...] | None,
 ):
     pytest.importorskip("openhands.sdk")
     pytest.importorskip("openhands.tools")
@@ -368,6 +510,7 @@ async def test_invoke_condenses_history_and_counts_summary_usage(
     from openhands.sdk.llm import llm as openhands_llm
 
     calls = {"agent": 0, "summary": 0}
+    sent = {"input": 0, "cached": 0, "output": 0}
 
     def respond(**kwargs) -> ModelResponse:
         # Agent steps send tools; the condenser's summary request does not.
@@ -396,19 +539,21 @@ async def test_invoke_condenses_history_and_counts_summary_usage(
                     }
                 ],
             }
-            prompt_tokens, completion_tokens = 10, 1
+            usage = agent_usage(calls["agent"])
         else:
             calls["summary"] += 1
             message = {"role": "assistant", "content": "Summary of earlier steps."}
-            prompt_tokens, completion_tokens = 1000, 100
+            usage = summary_usage
+        if usage is not None:
+            sent["input"] += usage.get("prompt_tokens", 0)
+            sent["output"] += usage.get("completion_tokens", 0)
+            sent["cached"] += usage.get("prompt_tokens_details", {}).get(
+                "cached_tokens", 0
+            )
         return ModelResponse(
             model="test-model",
             choices=[{"index": 0, "finish_reason": "stop", "message": message}],
-            usage={
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-            },
+            **({"usage": usage} if usage is not None else {}),
         )
 
     monkeypatch.setattr(
@@ -437,10 +582,23 @@ async def test_invoke_condenses_history_and_counts_summary_usage(
     assert calls["summary"] == 1
     assert calls["agent"] == expected_agent_calls
     assert sum(isinstance(event, Condensation) for event in events) == 1
-    # A rejected request reports no usage; every other call counts once.
-    answered_calls = calls["agent"] - (context_error_at_call is not None)
-    assert result.usage.input_tokens == 10 * answered_calls + 1000
-    assert result.usage.output_tokens == answered_calls + 100
+    if known is None:
+        assert result.usage is None
+        return
+    expected = {name: sent[name] if name in known else None for name in sent}
+    assert result.usage.input_tokens == expected["input"]
+    assert result.usage.cached_input_tokens == expected["cached"]
+    assert result.usage.input_tokens_include_cache is (
+        True if "input" in known else None
+    )
+    assert result.usage.output_tokens == expected["output"]
+    assert result.usage.total_tokens == (
+        expected["input"] + expected["output"]
+        if "input" in known and "output" in known
+        else None
+    )
+    # LiteLLM cannot price the test model, and OpenHands costs are estimates.
+    assert result.usage.cost_usd is None
 
 
 async def test_replace_instruction_uses_exact_system_prompt(
@@ -497,9 +655,10 @@ async def test_repeated_invocation_returns_only_current_turn_and_usage(
     assert second.usage is not None
     assert second.usage.to_mapping() == {
         "input_tokens": 11,
+        "cached_input_tokens": 3,
+        "input_tokens_include_cache": True,
         "output_tokens": 5,
         "total_tokens": 16,
-        "cost_usd": 0.25,
     }
     assert mock_openhands["conversation"].send_message.call_args_list[0].args == (
         "first",
@@ -507,6 +666,182 @@ async def test_repeated_invocation_returns_only_current_turn_and_usage(
     assert mock_openhands["conversation"].send_message.call_args_list[1].args == (
         "second",
     )
+
+
+# Gemini's API leaves out a cache-read count of 0, so for Gemini an absent
+# count is a reported 0. Other providers send it when they report cache reads.
+@pytest.mark.parametrize(
+    ("provider", "model", "expected_cached"),
+    [
+        ("nvidia", "nvidia/test-model", None),
+        ("gemini", "gemini-2.5-flash", 3),
+        ("vertex_ai", "gemini-2.5-pro", 3),
+    ],
+    ids=["openai-compatible", "gemini", "vertex-ai-gemini"],
+)
+async def test_invoke_without_cache_details_depends_on_provider(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    model: str,
+    expected_cached: int | None,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    openhands_payload["config"]["models"]["default"].update(
+        provider=provider, model=model
+    )
+    mock_openhands["usage_log"].clear()
+    runtime = adapter.OpenHandsRuntime()
+    await runtime.start(_start_payload(openhands_payload))
+
+    result = await runtime.invoke(*_invocation(openhands_payload, "review"))
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert result.usage.input_tokens == 11
+    assert result.usage.cached_input_tokens == expected_cached
+
+
+# Each case replaces the one usage record the mocked OpenHands metrics hold.
+@pytest.mark.parametrize(
+    ("record", "expected"),
+    [
+        (
+            {"prompt_tokens": 1 << 64},
+            {"output_tokens": 5, "input_tokens": None, "total_tokens": None},
+        ),
+        (
+            {"prompt_tokens": (1 << 64) - 1},
+            {"input_tokens": (1 << 64) - 1, "total_tokens": None},
+        ),
+        ({"cache_read_tokens": 12}, {"input_tokens": 11, "cached_input_tokens": None}),
+        ({"response_id": "other"}, {"input_tokens": 11, "cached_input_tokens": None}),
+    ],
+    ids=[
+        "input-past-uint64",
+        "total-past-uint64",
+        "cache-reads-above-input",
+        "cache-report-for-another-response",
+    ],
+)
+async def test_invoke_leaves_inconsistent_counts_unknown(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    record: dict,
+    expected: dict,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    delta = mock_openhands["metrics"].diff.return_value
+    usage = SimpleNamespace(**{**vars(delta.token_usages[0]), **record})
+    delta.token_usages = [usage]
+    runtime = adapter.OpenHandsRuntime()
+    await runtime.start(_start_payload(openhands_payload))
+
+    result = await runtime.invoke(*_invocation(openhands_payload, "review"))
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    usage_mapping = result.usage.to_mapping()
+    for name, value in expected.items():
+        assert usage_mapping.get(name) == value
+
+
+# Each response is (prompt, completion, cache reads), and every response
+# reports its cache-read count. Different responses leave different counters
+# incomplete, and a single response can report more cache reads than input.
+@pytest.mark.parametrize(
+    ("responses", "expected"),
+    [
+        (
+            [(10, 0, 2), (0, 4, 0)],
+            {"cached_input_tokens": 2},
+        ),
+        (
+            [(10, 0, 20), (100, 3, 0)],
+            {"input_tokens": 110, "input_tokens_include_cache": True},
+        ),
+    ],
+    ids=["only-cache-reads-complete", "one-response-caches-more-than-input"],
+)
+async def test_invoke_checks_each_response_separately(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    responses: list[tuple[int, int, int]],
+    expected: dict,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    records = [
+        SimpleNamespace(
+            prompt_tokens=prompt,
+            completion_tokens=completion,
+            cache_read_tokens=cached,
+            response_id=f"resp-{index}",
+        )
+        for index, (prompt, completion, cached) in enumerate(responses)
+    ]
+    delta = mock_openhands["metrics"].diff.return_value
+    delta.token_usages = records
+    delta.response_latencies = [SimpleNamespace(latency=0.5) for _ in records]
+    telemetry = mock_openhands["telemetry"]
+    state = mock_openhands["conversation"].state
+
+    async def arun():
+        for record in records:
+            telemetry.completion_log(
+                "test-model.json",
+                json.dumps(
+                    {
+                        "response": {
+                            "id": record.response_id,
+                            "usage": {
+                                "prompt_tokens_details": {
+                                    "cached_tokens": record.cache_read_tokens
+                                }
+                            },
+                        }
+                    }
+                ),
+            )
+        state.events.append("done")
+
+    mock_openhands["conversation"].arun = AsyncMock(side_effect=arun)
+    runtime = adapter.OpenHandsRuntime()
+    await runtime.start(_start_payload(openhands_payload))
+
+    result = await runtime.invoke(*_invocation(openhands_payload, "review"))
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert result.usage.to_mapping() == expected
+
+
+async def test_invoke_without_model_response_reports_unknown_usage(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    # OpenHands Metrics.diff() starts every counter at 0.
+    usage = SimpleNamespace(
+        prompt_tokens=0,
+        completion_tokens=0,
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+        reasoning_tokens=0,
+    )
+    mock_openhands["metrics"].diff.return_value = SimpleNamespace(
+        accumulated_token_usage=usage,
+        accumulated_cost=0.0,
+        token_usages=[],
+        response_latencies=[],
+    )
+    runtime = adapter.OpenHandsRuntime()
+    await runtime.start(_start_payload(openhands_payload))
+
+    result = await runtime.invoke(*_invocation(openhands_payload, "review"))
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert result.usage is None
 
 
 async def test_nonfinished_conversation_returns_failed_result(

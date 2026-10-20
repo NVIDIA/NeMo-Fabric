@@ -124,3 +124,37 @@ Each invocation returns only the final response and usage for that turn. `stop`
 closes the conversation and removes the adapter-owned temporary profile state.
 Create a new runtime to change the model, workspace, tools, MCP servers, or
 skills.
+
+## Token Usage
+
+Each result's `usage` sums the tokens OpenHands records for the model calls
+made during the invocation, including summarization calls. It holds
+`input_tokens` with cache reads and cache writes included, `cached_input_tokens`
+for cache reads, `output_tokens`, and `total_tokens`. A token counter is
+reported only when every model response in the invocation supplies enough
+information to determine it. Missing or ambiguous counters remain unknown.
+
+- `cached_input_tokens` is known when every response reported a cache-read
+  count, including 0. The adapter reads this from the OpenHands completion
+  log callback, which keeps the provider's cache fields. OpenHands writes no
+  log file because the adapter sets no log directory. For native Gemini models
+  using LiteLLM's `gemini` or `vertex_ai` providers, an omitted cache-read
+  count means zero. OpenAI-compatible proxy routes keep it unknown.
+- `input_tokens` and `output_tokens` are known when every response reported
+  them above 0. LiteLLM stores an omitted prompt or completion count as 0, so
+  OpenHands does not retain enough information to tell an omitted counter from
+  a reported zero.
+- `total_tokens` is known when both input and output are known.
+- A count above the uint64 maximum is unknown. Cache reads above a response's
+  own input, or above the summed input, are unknown.
+- `usage` is unknown when no model call finished, or when a model response
+  reported neither prompt nor completion tokens. An explicit 0/0 response also
+  leaves usage unknown.
+
+A model attempt that fails with a server error, timeout, or connection error
+records no usage in OpenHands. When OpenHands retries such an attempt, `usage`
+can undercount the tokens the provider processed.
+
+OpenHands combines a LiteLLM proxy cost header or a locally calculated cost
+into the same counter and does not record which one each cost came from, so
+`cost_usd` remains unknown.
