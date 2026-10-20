@@ -1464,6 +1464,26 @@ test("sums each call's own usage report", () => {
   assert.equal(addUsage(undefined, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }), undefined);
 });
 
+test("a count whose sum is not a safe integer is unknown, and the others stay known", () => {
+  const max = Number.MAX_SAFE_INTEGER;
+
+  // Input counts cache reads and writes, so its own sum can overflow.
+  assert.deepEqual(addUsage(NO_TOKENS, { input: max, cacheRead: 2, cacheWrite: 0, output: 1 }), {
+    cacheRead: 2,
+    output: 1,
+  });
+  // A running total that reaches the largest safe integer stays exact.
+  assert.deepEqual(addUsage({ input: max - 1, cacheRead: 0, output: max }, { input: 1, cacheRead: 0, cacheWrite: 0, output: 1 }), {
+    input: max,
+    cacheRead: 0,
+  });
+  // Only the cache reads overflow here; input and output stay known.
+  assert.deepEqual(addUsage({ input: 1, cacheRead: max, output: 1 }, { input: 0, cacheRead: 1, cacheWrite: 0, output: 1 }), {
+    input: 2,
+    output: 2,
+  });
+});
+
 // A tool result that reports usage, as a custom tool can.
 const toolResult = (usage) => ({ type: "message_end", message: { role: "toolResult", usage } });
 
@@ -1944,6 +1964,120 @@ test(
     assert.equal(retried.usage, undefined);
   },
 );
+
+/**
+ * Run one model call through the adapter's recorder while Pi's own cache
+ * warmer keeps its prompt cache entry warm, against a local endpoint that
+ * answers the call and, by `warmUp`, fails ("fail"), answers ("answer") or
+ * holds ("hold") each one-token warm-up request. With `settleFirst`, the
+ * agent settles before the first refresh is due. Returns how many warm-up
+ * attempts the recorder noted and how many the endpoint received.
+ */
+async function warmedCall({ warmUp, settleFirst = false }) {
+  const received = { call: 0, warmUp: 0 };
+  const held = [];
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    const payload = JSON.parse(body);
+    const isWarmUp = (payload.max_completion_tokens ?? payload.max_tokens) === 1;
+    received[isWarmUp ? "warmUp" : "call"] += 1;
+    if (isWarmUp && warmUp === "fail") {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "overloaded", type: "server_error" } }));
+      return;
+    }
+    if (isWarmUp && warmUp === "hold") {
+      held.push(response);
+      return;
+    }
+    const common = { id: "chatcmpl-warm", object: "chat.completion.chunk", created: 0, model: "m" };
+    const chunk = (fields) => `data: ${JSON.stringify({ ...common, ...fields })}\n\n`;
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end(
+      chunk({ choices: [{ index: 0, delta: { role: "assistant", content: "done" }, finish_reason: null }] }) +
+        chunk({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }) +
+        chunk({ choices: [], usage: { prompt_tokens: 100_000, completion_tokens: 1 } }) +
+        "data: [DONE]\n\n",
+    );
+  });
+  const baseUrl = await listen(server);
+  const { CacheWarmer } = await import(
+    new URL("../node_modules/@earendil-works/pi-coding-agent/dist/core/cache-warmer.js", import.meta.url)
+  );
+  const { streamSimple } = await import("@earendil-works/pi-ai/api/openai-completions");
+  // The warmer prices a refresh from the branch's last prompt size.
+  const sessionManager = {
+    getBranch: () => [{ type: "message", message: { role: "assistant", usage: { input: 100_000, cacheRead: 0, cacheWrite: 0 } } }],
+    appendUsage: (kind, provider, model, usage) => ({ type: "usage", kind, usage }),
+  };
+  const warmer = new CacheWarmer({ streamSimple }, sessionManager, () => "streaming");
+  const agent = {
+    streamFunction: (model, context, options) => {
+      warmer.start({ model, context, options }, () => true);
+      return streamSimple(model, context, options);
+    },
+  };
+  let warmUps = 0;
+  recordReportedCounts(agent, new WeakMap(), () => undefined, () => {
+    warmUps += 1;
+  });
+  // An 11-second prompt cache lifetime schedules the first refresh after 1 second.
+  const model = {
+    id: "m",
+    name: "m",
+    api: "openai-completions",
+    provider: "test",
+    baseUrl: `${baseUrl}/v1`,
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+    contextWindow: 200_000,
+    maxTokens: 1_000,
+    promptCache: { short: 11 },
+  };
+  try {
+    const response = await agent.streamFunction(
+      model,
+      { messages: [{ role: "user", content: "one", timestamp: 0 }] },
+      { apiKey: "test", cacheRetention: "short" },
+    );
+    await response.result();
+    if (settleFirst) {
+      warmer.onAgentSettled();
+    }
+    const deadline = Date.now() + 3_000;
+    while (!settleFirst && received.warmUp === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    // The agent settles: Pi aborts an outstanding warm-up and discards it.
+    warmer.onAgentSettled();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return { warmUps, received };
+  } finally {
+    warmer.cancel();
+    for (const response of held) {
+      response.destroy();
+    }
+    await close(server);
+  }
+}
+
+for (const warmUp of ["fail", "hold", "answer"]) {
+  test(`notes a cache warm-up attempt that Pi's warmer ${warmUp === "hold" ? "aborts" : warmUp === "fail" ? "fails" : "completes"}`, async () => {
+    const { warmUps, received } = await warmedCall({ warmUp });
+
+    assert.deepEqual(received, { call: 1, warmUp: 1 });
+    assert.equal(warmUps, 1);
+  });
+}
+
+test("notes no warm-up when the agent settles before the refresh is due", async () => {
+  const { warmUps, received } = await warmedCall({ warmUp: "answer", settleFirst: true });
+
+  assert.deepEqual(received, { call: 1, warmUp: 0 });
+  assert.equal(warmUps, 0);
+});
 
 /** One unmasked WebSocket text frame, as a server sends it. */
 function webSocketTextFrame(text) {

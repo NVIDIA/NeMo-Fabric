@@ -277,9 +277,18 @@ The result has no `usage` when Pi produced no assistant message, when a model
 call reported none of the counts, when an assistant message was aborted, when a
 compaction was aborted or reported no usage, or when Pi retried a compaction
 summary call, because Pi keeps no usage for the failed attempt. It also has no
-`usage` when Pi recorded a cache warm-up during the invocation: Pi replays a
-warm-up outside the agent's stream function, so the adapter cannot tie its raw
-report to the warm-up's usage entry.
+`usage` when Pi attempted a cache warm-up since the previous invocation. Pi
+replays a warm-up outside the agent's stream function, so the adapter cannot tie
+its raw report to the warm-up's usage entry, and a warm-up that fails, or that
+Pi aborts and discards when the agent settles, writes no usage entry at all. The
+adapter notes every warm-up attempt before it is sent: each built-in protocol
+passes a call's request body to `onPayload` once, so a later `onPayload` on the
+same request options is a warm-up. Pi's model catalog gives a prompt cache
+lifetime only to Anthropic models, and in its default `streaming` mode Pi warms
+only while a step outlasts nine tenths of that lifetime, such as a tool that
+runs longer than 270 seconds. A count whose sum over the invocation's calls is
+not a safe integer is left out, and so is a total that would not be one; the
+other counts stay.
 
 ## Custom Tool Modules
 

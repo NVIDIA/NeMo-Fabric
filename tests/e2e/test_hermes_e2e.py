@@ -26,6 +26,7 @@ from nemo_fabric import (
     RelayAtofConfig,
     RelayAtofFileSinkConfig,
     RelayObservabilityConfig,
+    ToolsConfig,
 )
 
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
@@ -296,6 +297,61 @@ async def test_hermes_usage_counts_the_iteration_limit_summary(
     assert summarized.to_mapping().get("usage") == expected_usage, (
         summarized.to_mapping()
     )
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
+async def test_hermes_usage_is_unknown_for_an_invocation_that_delegates(
+    code_review_agent_dir: Path,
+    api_server: str,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = hermes_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+    # Delegation is one of Hermes' default toolsets.
+    config.tools = ToolsConfig(enabled=["delegation"])
+    config.runtime.max_turns = 5
+
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as runtime:
+        await runtime.invoke(input="first")
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={
+                "tool_calls": [
+                    {
+                        "name": "delegate_task",
+                        "arguments": {"goal": "count files"},
+                        "usage": _chat_usage(0, 0),
+                    }
+                ],
+                "usage": _chat_usage(10, 2),
+            },
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+        delegated = await runtime.invoke(input="delegate")
+        following = await runtime.invoke(input="after")
+        sent = requests.get(f"{api_server}/_requests", timeout=5).json()
+
+    # Hermes runs the subagent in the background, so its tokens can be spent
+    # after the delegating invocation returns and never reach its counters.
+    assert delegated["status"] == "succeeded", delegated.to_mapping()
+    assert any(
+        "count files" in str(message.get("content"))
+        for request in sent
+        for message in request["messages"]
+        if message.get("role") == "user"
+    ), sent
+    assert delegated.usage is None, delegated.to_mapping()
+    # The next invocation reports only its own turn, not the subagent's.
+    assert following.to_mapping().get("usage") == {
+        "input_tokens": 10,
+        "input_tokens_include_cache": True,
+        "output_tokens": 2,
+        "total_tokens": 12,
+        "metadata": {},
+    }, following.to_mapping()
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")

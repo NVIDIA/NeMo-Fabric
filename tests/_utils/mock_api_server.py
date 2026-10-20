@@ -28,7 +28,8 @@ def mock_api_server(port: int) -> Iterator[str]:
     chat-completion usage object and finish reason for subsequent requests. Its ordered
     ``replies`` override the usage or finish reason of the next chat completions, one
     reply each, make one invalid, reject one with its ``status_code``, or send one
-    with ``no_choices`` (an empty ``choices`` list).
+    with ``no_choices`` (an empty ``choices`` list). A tool call with ``usage`` streams
+    that usage.
     Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
@@ -441,6 +442,18 @@ def _stream_tool_call_completion(
             ],
         },
     ]
+    if "usage" in tool_call:
+        # A tool call scripted with ``usage`` ends with that usage chunk.
+        chunks.append(
+            {
+                "id": "chatcmpl-fabric-tool-test",
+                "object": "chat.completion.chunk",
+                "created": 0,
+                "model": model,
+                "choices": [],
+                "usage": tool_call["usage"],
+            }
+        )
 
     for chunk in chunks:
         yield f"data: {json.dumps(chunk)}\n\n"

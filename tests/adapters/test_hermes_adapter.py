@@ -2054,16 +2054,159 @@ async def test_hermes_skipped_response_uses_the_route_that_served_it():
     assert turn.usage.output_tokens == 5
 
 
+def _bedrock_response(usage: dict[str, int]) -> Any:
+    from agent import bedrock_adapter
+
+    return bedrock_adapter.normalize_converse_response(
+        {"output": {"message": {"content": [{"text": "done"}]}}, "usage": usage}
+    )
+
+
+def _bedrock_streamed_response(usage: dict[str, int] | None) -> Any:
+    from agent import bedrock_adapter
+
+    events: list[dict[str, Any]] = [
+        {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "done"}}},
+        {"messageStop": {"stopReason": "end_turn"}},
+    ]
+    if usage is not None:
+        events.append({"metadata": {"usage": usage}})
+    return bedrock_adapter.stream_converse_with_callbacks({"stream": events})
+
+
+def _gemini_response(usage: dict[str, int]) -> Any:
+    from agent import gemini_native_adapter
+
+    return gemini_native_adapter.translate_gemini_response(
+        {
+            "candidates": [
+                {"content": {"parts": [{"text": "done"}]}, "finishReason": "STOP"}
+            ],
+            "usageMetadata": usage,
+        },
+        "gemini-test",
+    )
+
+
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [
+        # Bedrock fills an omitted count with 0 before Hermes sees it.
+        (
+            lambda: _bedrock_response({"inputTokens": 100}),
+            {"input_tokens": 100, "cached_input_tokens": None, "output_tokens": None},
+        ),
+        (
+            lambda: _bedrock_response(
+                {"inputTokens": 100, "outputTokens": 5, "cacheReadInputTokens": 20}
+            ),
+            {"input_tokens": 120, "cached_input_tokens": 20, "output_tokens": 5},
+        ),
+        # A stream that ends without its metadata event reports no count.
+        (
+            lambda: _bedrock_streamed_response(None),
+            {"input_tokens": None, "cached_input_tokens": None, "output_tokens": None},
+        ),
+        (
+            lambda: _bedrock_streamed_response({"inputTokens": 30, "outputTokens": 3}),
+            {"input_tokens": 30, "cached_input_tokens": None, "output_tokens": 3},
+        ),
+        (
+            lambda: _gemini_response({"promptTokenCount": 40}),
+            {"input_tokens": 40, "cached_input_tokens": None, "output_tokens": None},
+        ),
+        (
+            lambda: _gemini_response(
+                {
+                    "promptTokenCount": 40,
+                    "cachedContentTokenCount": 10,
+                    "candidatesTokenCount": 4,
+                    "thoughtsTokenCount": 2,
+                }
+            ),
+            {"input_tokens": 40, "cached_input_tokens": 10, "output_tokens": 6},
+        ),
+    ],
+    ids=[
+        "bedrock-input-only",
+        "bedrock-complete",
+        "bedrock-stream-without-metadata",
+        "bedrock-stream",
+        "gemini-input-only",
+        "gemini-complete",
+    ],
+)
+async def test_hermes_usage_keeps_native_transport_omissions_unknown(
+    response: Callable[[], Any], expected: dict[str, int | None]
+):
+    agent = _UsageRecordingAgent(
+        [[lambda agent: _record_response(agent, response())]]
+    )
+    runtime = _usage_recording_runtime(agent)
+    request, context = _usage_invocation()
+
+    result = await runtime.invoke(request, context)
+
+    usage = result.usage
+    if not any(expected.values()):
+        assert usage is None
+        return
+    assert usage is not None
+    assert {
+        "input_tokens": usage.input_tokens,
+        "cached_input_tokens": usage.cached_input_tokens,
+        "output_tokens": usage.output_tokens,
+    } == expected
+
+
 async def test_hermes_stop_unregisters_the_agent_usage_observer():
     agent = _UsageRecordingAgent([])
     runtime = _usage_recording_runtime(agent)
     assert agent in adapter._USAGE_OBSERVERS
     assert agent in adapter._SUMMARY_ATTEMPT_OBSERVERS
+    assert agent in adapter._DELEGATION_OBSERVERS
 
     await runtime.stop()
 
     assert agent not in adapter._USAGE_OBSERVERS
     assert agent not in adapter._SUMMARY_ATTEMPT_OBSERVERS
+    assert agent not in adapter._DELEGATION_OBSERVERS
+
+
+def test_hermes_subagent_builder_notes_only_the_observed_parent():
+    class Agent:
+        pass
+
+    noted: list[str] = []
+    parent, subagent = Agent(), Agent()
+    adapter._DELEGATION_OBSERVERS[parent] = lambda: noted.append("parent")
+
+    def build_child_agent(task_index: int, goal: str, parent_agent: object) -> str:
+        return f"child of {parent_agent is parent}"
+
+    build = adapter._observed_subagent_builder(build_child_agent)
+
+    try:
+        assert build(0, "goal", parent_agent=parent) == "child of True"
+        # A subagent's own subagent belongs to its parent's delegated work.
+        assert build(0, "goal", parent_agent=subagent) == "child of False"
+    finally:
+        adapter._DELEGATION_OBSERVERS.pop(parent, None)
+
+    assert noted == ["parent"]
+
+
+def test_hermes_usage_observer_rejects_an_unknown_subagent_builder(monkeypatch):
+    from tools import delegate_tool
+
+    monkeypatch.setattr(
+        delegate_tool, "_build_child_agent", lambda *args, **kwargs: None
+    )
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        adapter._observe_delegation()
+
+    assert raised.value.code == "hermes_usage_accounting_unsupported"
 
 
 @pytest.mark.parametrize("drift", ["replaced", "not_called"])

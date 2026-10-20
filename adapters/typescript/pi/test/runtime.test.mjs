@@ -584,6 +584,31 @@ test("reports the invocation's tokens with cache reads and writes inside the inp
   });
 });
 
+test("leaves out a total that is not a safe integer", async () => {
+  const usage = { input: Number.MAX_SAFE_INTEGER, cacheRead: 0, output: 2 };
+  const runtime = new PiAdapterRuntime({
+    async create() {
+      return {
+        async prompt() {
+          return { accepted: true, turnStarted: true, turnCount: 1, text: "ok", stopReason: "stop", usage };
+        },
+        async stop() {},
+      };
+    },
+  });
+
+  await runtime.start(startInput());
+  const result = await runtime.invoke({ input: "one" }, context);
+  await runtime.stop();
+
+  assert.deepEqual(result.usage, {
+    input_tokens: Number.MAX_SAFE_INTEGER,
+    cached_input_tokens: 0,
+    input_tokens_include_cache: true,
+    output_tokens: 2,
+  });
+});
+
 test("reports only the token counts the prompt's provider reported", async () => {
   const outcomes = [{ input: 130, cacheRead: 30 }, { output: 5 }, { input: 70, output: 7 }, { cacheRead: 12, output: 3 }, { cacheRead: 4 }];
   const runtime = new PiAdapterRuntime({
