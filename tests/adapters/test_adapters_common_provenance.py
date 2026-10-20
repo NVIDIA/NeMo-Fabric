@@ -154,7 +154,9 @@ async def test_blocking_probe_bounds_a_function_that_never_returns():
         ticker.cancel()
         release.set()
 
-    assert 0.2 <= elapsed < 1
+    # Windows' monotonic clock ticks about every 15.6 ms, so the measured wait
+    # can read slightly under the 0.2 s timeout.
+    assert 0.15 <= elapsed < 1
     # The event loop kept running while the function blocked its thread.
     assert ticks >= 5
     while probe_threads():
