@@ -548,6 +548,9 @@ export function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel
     }
     return value;
   };
+  if (Array.isArray(meta.input) && meta.input.some((item) => item !== "text" && item !== "image")) {
+    fail("model extensions.input must contain only 'text' or 'image' values");
+  }
   const suppliedInput = Array.isArray(meta.input)
     ? (meta.input.filter((item) => item === "text" || item === "image") as ("text" | "image")[])
     : undefined;

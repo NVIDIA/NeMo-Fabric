@@ -114,6 +114,18 @@ test("buildCatalogModel overrides only the explicitly supplied fields of a known
   assert.equal(entry.contextWindow, NATIVE_MODEL.contextWindow);
 });
 
+for (const input of [["audio"], ["text", "audio"]]) {
+  test(`buildCatalogModel rejects unsupported input modalities for a known model: ${input.join(", ")}`, () => {
+    assert.throws(
+      () => buildCatalogModel(
+        { provider: "openai", model: "gpt-4.1-mini", api_key_env: "K", extensions: { input } },
+        NATIVE_MODEL,
+      ),
+      (error) => error.code === "pi_model_extensions_invalid" && error.message.includes("input"),
+    );
+  });
+}
+
 test("buildCatalogModel requires context_window and max_tokens for an unknown model", () => {
   // No base (Pi does not know the model) and only api/base_url supplied: context_window and
   // max_tokens have no usable Pi default, so a complete definition is required rather than
@@ -143,7 +155,7 @@ test("buildCatalogModel accepts a complete unknown-model definition and invents 
         api: "openai-completions",
         context_window: 32_000,
         max_tokens: 4_096,
-        input: ["text"],
+        input: ["text", "image"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       },
     },
@@ -155,7 +167,7 @@ test("buildCatalogModel accepts a complete unknown-model definition and invents 
   assert.equal(entry.maxTokens, 4_096);
   assert.deepEqual(entry.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
   assert.equal(entry.reasoning, undefined);
-  assert.deepEqual(entry.input, ["text"]);
+  assert.deepEqual(entry.input, ["text", "image"]);
 });
 
 test("maps normalized MCP servers and tool filters to native Pi MCP configuration", () => {
@@ -1168,6 +1180,7 @@ for (const [description, missingFields, extensions] of [
   ["missing input", ["input"], { ...GATEWAY_EXTENSIONS, input: undefined }],
   ["missing cost", ["cost"], { ...GATEWAY_EXTENSIONS, cost: undefined }],
   ["empty input", ["input"], { ...GATEWAY_EXTENSIONS, input: [] }],
+  ["unsupported input modality", ["input"], { ...GATEWAY_EXTENSIONS, input: ["text", "audio"] }],
 ]) {
   test(`rejects an unknown gateway model with ${description}`, async () => {
     const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-minimal-")));
