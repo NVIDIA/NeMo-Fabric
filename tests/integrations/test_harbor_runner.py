@@ -707,7 +707,16 @@ def test_harbor_lifecycle_populates_context_after_run(tmp_path: Path):
     )
 
     assert context.metadata["fabric"]["status"] == "succeeded"
-    assert context.metadata["fabric"]["atif_final_metrics"]["source"] == "atif"
+    assert context.metadata["fabric"]["atif_final_metrics"] == {
+        "source": "atif",
+        "coverage": "unverified",
+        "final_metrics": {
+            "total_prompt_tokens": 12,
+            "total_cached_tokens": 3,
+            "total_completion_tokens": 4,
+            "total_cost_usd": 0.25,
+        },
+    }
     assert context.n_input_tokens is None
     assert context.n_cache_tokens is None
     assert context.n_output_tokens is None
