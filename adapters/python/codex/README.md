@@ -20,7 +20,7 @@ The following table shows which components each installation provides:
 | `pip install "nemo-fabric-adapters-codex[harness]"` | No | Yes | Yes | Yes |
 | `pip install nemo-fabric-adapters-codex` | No | Yes | No | No |
 
-For an environment-managed SDK, use `openai-codex==0.144.4`. For split runtime
+For an environment-managed SDK, use `openai-codex==0.154.0`. For split runtime
 and adapter environments, configure `ADAPTER_PYTHON` and use matching NeMo
 Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
