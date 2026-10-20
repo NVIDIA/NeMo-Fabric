@@ -2721,7 +2721,7 @@ def provider_failure(kind: str) -> Any:
             ),
             id="400-rejection",
         ),
-        # The provider may have done work without reporting usage.
+        # The provider may have billed the call without reporting usage.
         pytest.param("408", None, id="408-request-timeout"),
         pytest.param("503", None, id="503-server-error"),
         pytest.param("timeout", None, id="read-timeout"),

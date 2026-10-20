@@ -242,7 +242,7 @@ rejects with a 4xx status (other than 408) contributes no usage, so an
 invocation that made no model call, or whose every call was rejected, reports 0
 tokens and 0 cost. A 5xx response, timeout, cancellation or unfinished call
 leaves the invocation's counts and cost unknown, because the provider may have
-done work without reporting usage. OpenAI SDK retries happen inside one
+billed the call without reporting usage. OpenAI SDK retries happen inside one
 LangChain call, so a 5xx the SDK retries to success is not visible to the
 adapter, and only the final response's reported usage counts. Usage replayed
 from a configured LangChain model cache would be counted as reported; NeMo

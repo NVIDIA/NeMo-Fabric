@@ -1012,8 +1012,8 @@ class ModelCallUsage(BaseCallbackHandler):
     record when it ends. A request the provider rejects with a 4xx status (other
     than 408) contributes no usage and is dropped. A 5xx response, timeout,
     cancellation or unfinished call stays unreported and makes the invocation's
-    counts and cost unknown, because the provider may have done work without
-    reporting usage.
+    counts and cost unknown, because the provider may have billed the call
+    without reporting usage.
     """
 
     run_inline = True
