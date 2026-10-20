@@ -30,6 +30,11 @@ API_PATHS = {
     "anthropic-messages": "/messages",
 }
 FABRIC_REQUEST_ID_METADATA = "nemo_fabric_request_id"
+_ANTHROPIC_INPUT_COUNTS = (
+    "input_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
 
 
 def _api_url(base_url: str, api_type: str) -> str:
@@ -305,12 +310,19 @@ class RemoteAgentRuntime:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "response.completed":
-                    completed = value["response"]
-                    usage = completed.get("usage", {})
+                    completed = _event_object(value["response"], "response")
+                    usage = _usage_object(completed.get("usage"))
+                    input_details = _usage_object(usage.get("input_tokens_details"))
+                    input_tokens = usage.get("input_tokens")
                     return _response_text(completed), _usage(
-                        usage.get("input_tokens"),
+                        input_tokens,
                         usage.get("output_tokens"),
                         usage.get("total_tokens"),
+                        cached_input_tokens=input_details.get("cached_tokens"),
+                        # Responses input_tokens already counts cached tokens.
+                        input_tokens_include_cache=(
+                            True if input_tokens is not None else None
+                        ),
                     )
         raise RuntimeError("remote agent response ended without completion")
 
@@ -365,22 +377,29 @@ class RemoteAgentRuntime:
         if metadata is not None:
             payload["metadata"] = metadata
         text = ""
-        input_tokens = output_tokens = None
+        counts: dict[str, Any] = {}
         async with self._client.stream(
             "POST", self._endpoint, json=payload
         ) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "message_start":
-                    input_tokens = value["message"]["usage"].get("input_tokens")
+                    message = _event_object(value["message"], "message")
+                    usage = _usage_object(message.get("usage"))
+                    for key in _ANTHROPIC_INPUT_COUNTS:
+                        counts[key] = usage.get(key)
                 elif event == "content_block_delta":
                     delta = value["delta"]
                     if delta["type"] == "text_delta":
                         text += delta["text"]
                 elif event == "message_delta":
-                    output_tokens = value["usage"].get("output_tokens")
+                    # message_delta counts are cumulative and replace earlier ones.
+                    usage = _usage_object(value.get("usage"))
+                    for key in (*_ANTHROPIC_INPUT_COUNTS, "output_tokens"):
+                        if usage.get(key) is not None:
+                            counts[key] = usage[key]
                 elif event == "message_stop":
-                    return text, _usage(input_tokens, output_tokens, None)
+                    return text, _anthropic_usage(counts)
         raise RuntimeError("remote agent response ended without completion")
 
     def _result_error(self, status_code: int) -> contract.AgentRunResult:
@@ -395,15 +414,70 @@ class RemoteAgentRuntime:
         )
 
 
+def _event_object(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise TypeError(f"remote agent {name} must be an object")
+    return value
+
+
+def _usage_object(value: Any) -> dict[str, Any]:
+    """Return a usage object, treating a null object as nothing reported."""
+
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise TypeError("remote agent usage must be an object")
+    return value
+
+
+def _anthropic_usage(counts: dict[str, Any]) -> contract.AgentUsage | None:
+    # Anthropic's input_tokens excludes the cache reads and cache writes it
+    # reports separately, so each reported cache count is added back. The
+    # Anthropic API always sends both cache fields. vLLM's /v1/messages omits
+    # them by default and then reports the full prompt in input_tokens; it
+    # subtracts a cache count only when it sends that field. A missing cache
+    # field therefore adds nothing.
+    input_tokens = _anthropic_input_count(counts, "input_tokens")
+    output_tokens = counts.get("output_tokens")
+    cache_reads = _anthropic_input_count(counts, "cache_read_input_tokens")
+    if input_tokens is None:
+        return _usage(None, output_tokens, None, cached_input_tokens=cache_reads)
+    cache_writes = _anthropic_input_count(counts, "cache_creation_input_tokens")
+    return _usage(
+        input_tokens + (cache_reads or 0) + (cache_writes or 0),
+        output_tokens,
+        None,
+        cached_input_tokens=cache_reads,
+        input_tokens_include_cache=True,
+    )
+
+
+def _anthropic_input_count(counts: dict[str, Any], key: str) -> int | None:
+    # These counts are summed, so a bad value must fail here: the sum would
+    # otherwise hide it from the contract's own count validation.
+    value = counts.get(key)
+    if value is not None and (
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+    ):
+        raise ValueError(f"remote agent usage {key} must be a non-negative integer")
+    return value
+
+
 def _usage(
     input_tokens: int | None,
     output_tokens: int | None,
     total_tokens: int | None,
+    *,
+    cached_input_tokens: int | None = None,
+    input_tokens_include_cache: bool | None = None,
 ) -> contract.AgentUsage | None:
-    if input_tokens is None and output_tokens is None and total_tokens is None:
+    counts = (input_tokens, cached_input_tokens, output_tokens, total_tokens)
+    if all(count is None for count in counts):
         return None
     return contract.AgentUsage(
         input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        input_tokens_include_cache=input_tokens_include_cache,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
     )

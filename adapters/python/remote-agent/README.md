@@ -42,6 +42,30 @@ Anthropic Messages, the legacy `models.default.settings.max_tokens` key remains
 accepted; `models.default.max_tokens` takes precedence. The adapter otherwise
 uses `4096`.
 
+## Token Usage
+
+The result's `usage` carries the token counts that the remote endpoint reports
+for the invocation. A count the endpoint omits stays unknown, and a reported
+zero stays `0`. A `"usage": null` object means the endpoint reported no usage.
+
+- OpenAI Responses and Chat Completions include cached prompt tokens in their
+  input count. The adapter reports that input with
+  `input_tokens_include_cache: true`, and reports
+  `input_tokens_details.cached_tokens` or `prompt_tokens_details.cached_tokens`
+  as `cached_input_tokens`.
+- Anthropic Messages reports cache reads and cache writes separately from
+  `input_tokens`. The adapter adds each reported cache count to
+  `input_tokens`, reports cache reads as `cached_input_tokens`, and sets
+  `input_tokens_include_cache: true`. A missing cache field adds nothing: the
+  Anthropic API always sends both, and vLLM's `/v1/messages` omits them by
+  default and then reports the full prompt in `input_tokens`. Without
+  `input_tokens`, input stays unknown, and the reported cache reads and
+  output are kept. Counts in a `message_delta` event
+  replace those from `message_start`, because Anthropic reports them
+  cumulatively.
+- `total_tokens` is the endpoint's reported total. Anthropic Messages reports
+  no total, so it stays unknown.
+
 ## Relay-Backed Streaming
 
 The adapter supports `Runtime.invoke_stream()` when the independently deployed
