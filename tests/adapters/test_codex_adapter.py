@@ -1565,17 +1565,8 @@ async def invoke_turns(payload, mock_codex, *turns):
     return results
 
 
-@pytest.mark.parametrize(
-    ("failure", "code"),
-    [
-        ([turn_completed(error="model request failed")], "codex_turn_failed"),
-        ([TimeoutError("SDK request timed out")], "codex_timed_out"),
-        ([TransportClosedError("closed")], "codex_connection_failed"),
-    ],
-    ids=["failed-turn", "sdk-timeout", "connection-closed"],
-)
-async def test_failed_invocation_keeps_usage_codex_reported_before_failure(
-    codex_payload, mock_codex, failure, code
+async def test_failed_turn_keeps_usage_codex_reported_before_turn_completed(
+    codex_payload, mock_codex
 ):
     _, failed = await invoke_turns(
         codex_payload,
@@ -1583,12 +1574,15 @@ async def test_failed_invocation_keeps_usage_codex_reported_before_failure(
         ("Inspect.", turn_events(usage=token_usage(10, 3, cached_input_tokens=2))),
         (
             "Continue.",
-            [usage_event(token_usage(40, 8, cached_input_tokens=6)), *failure],
+            [
+                usage_event(token_usage(40, 8, cached_input_tokens=6)),
+                turn_completed(error="model request failed"),
+            ],
         ),
     )
 
     assert failed.status is AgentRunStatus.FAILED
-    assert failed.error.code == code
+    assert failed.error.code == "codex_turn_failed"
     assert failed.usage.to_mapping() == {
         "input_tokens": 30,
         "cached_input_tokens": 4,
@@ -1597,6 +1591,42 @@ async def test_failed_invocation_keeps_usage_codex_reported_before_failure(
         "total_tokens": 35,
     }
     assert failed.output["usage"]["total"]["inputTokens"] == 40
+    assert "usage_complete" not in failed.output
+
+
+@pytest.mark.parametrize(
+    ("failure", "code"),
+    [
+        (TimeoutError("SDK request timed out"), "codex_timed_out"),
+        (TransportClosedError("closed"), "codex_connection_failed"),
+        (None, "codex_turn_failed"),
+    ],
+    ids=["sdk-timeout", "connection-closed", "stream-ended-before-turn-completed"],
+)
+async def test_turn_without_turn_completed_reports_unknown_usage(
+    codex_payload, mock_codex, failure, code
+):
+    """A response may still have been running, so the last snapshot is not complete."""
+    unsettled = [usage_event(token_usage(40, 8, cached_input_tokens=6))]
+    if failure is not None:
+        unsettled.append(failure)
+    first, failed, after = await invoke_turns(
+        codex_payload,
+        mock_codex,
+        ("Inspect.", turn_events(usage=token_usage(10, 3, cached_input_tokens=2))),
+        ("Continue.", unsettled),
+        ("Again.", turn_events(usage=token_usage(60, 10, cached_input_tokens=6))),
+    )
+
+    assert first.usage.input_tokens == 10
+    assert failed.status is AgentRunStatus.FAILED
+    assert failed.error.code == code
+    assert failed.usage is None
+    assert failed.output["usage"]["total"]["inputTokens"] == 40
+    assert "usage_complete" not in failed.output
+    # The interrupted turn's usage never reaches a later invocation.
+    assert after.error.code == "codex_runtime_unavailable"
+    assert after.usage is None
 
 
 async def test_context_window_overflow_reports_usage_before_codex_fills_the_window(

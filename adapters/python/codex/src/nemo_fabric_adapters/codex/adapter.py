@@ -42,6 +42,7 @@ from openai_codex.generated.v2_all import (
     SkillsExtraRootsSetResponse,
     ThreadTokenUsage,
     ThreadTokenUsageUpdatedNotification,
+    TurnCompletedNotification,
 )
 
 # Private: the collector AsyncTurnHandle.run uses; recheck it on every openai-codex bump.
@@ -1091,6 +1092,7 @@ def _agent_run_result(
 ) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
+    usage_complete = normalized.pop("usage_complete", True)
     reported_error = normalized.pop("error", None)
     error = None
     if failed:
@@ -1107,7 +1109,9 @@ def _agent_run_result(
         if cumulative_totals is None
         else cumulative_totals
     )
-    agent_usage = _normalize_usage(normalized.get("usage"), baseline)
+    agent_usage = _normalize_usage(
+        normalized.get("usage") if usage_complete else None, baseline
+    )
     return AgentRunResult(
         status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
         output=normalized,
@@ -1168,6 +1172,8 @@ class _TurnUsage:
     """Last thread token usage Codex reported for the running turn."""
 
     snapshot: ThreadTokenUsage | None = None
+    # Codex ends every response of a turn before it sends turn/completed.
+    turn_completed: bool = False
 
 
 def _fills_context_window(usage: ThreadTokenUsage) -> bool:
@@ -1197,6 +1203,11 @@ async def _turn_notifications(
                 and not _fills_context_window(payload.token_usage)
             ):
                 usage.snapshot = payload.token_usage
+            elif (
+                isinstance(payload, TurnCompletedNotification)
+                and payload.turn.id == handle.id
+            ):
+                usage.turn_completed = True
             yield event
     finally:
         await stream.aclose()
@@ -1298,11 +1309,12 @@ async def _invoke_thread(
         raise
     except (CodexError, RuntimeError, OSError) as error:
         failure = sdk_failure(error)
-    # Usage covers the snapshots Codex sent before the failure. Codex sends a response's
-    # usage after its tool calls finish, so on a timeout the last response is not
-    # counted if it was still streaming or its tools were still running.
     if usage.snapshot is not None:
         failure["usage"] = _json_safe(usage.snapshot)
+        # Codex sends a response's usage after its tool calls finish. Without
+        # turn/completed, a response may still have been running, so the last
+        # snapshot is not the invocation's complete total.
+        failure["usage_complete"] = usage.turn_completed
     return failure, False
 
 
