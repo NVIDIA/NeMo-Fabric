@@ -1102,10 +1102,11 @@ roles. A map that lost entries has a marker next to it, `models_truncated` or
 `byte_budget`) and the `dropped` count. Each map has one marker: when more than
 one rule dropped entries, `reason` names the last rule applied, in that order,
 and `dropped` counts every dropped entry. When the adapter's report drops
-servers to fit its own size limit, `mcp.servers_truncated` also counts the ones
-only the harness reported, because those disappear; a plan server the report
-drops keeps its entry, and its runtime facts read `unavailable` with reason
-`fact_omitted`. `dropped` is a JSON integer. The Rust core and the Python SDK
+servers to fit its own size limit, its `servers_truncated` marker counts only
+the servers the harness reported outside the plan, because those disappear, and
+`mcp.servers_truncated` adds that count. A plan server the report drops keeps
+its entry, and its runtime facts read `unavailable` with reason `fact_omitted`.
+`dropped` is a JSON integer. The Rust core and the Python SDK
 reject `1.0`, although a JSON Schema validator may accept it. If `what_ran` is
 still too large with no MCP server and no model role left, it holds only
 `schema`, `version`, and `what_ran_truncated` with
