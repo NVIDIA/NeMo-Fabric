@@ -17,6 +17,7 @@ import {
   PiSdkSessionFactory,
   reportedCountsFrom,
   resolveCustomTools,
+  summaryCallCount,
   selectPiMcpServers,
   withCustomBaseUrl,
 } from "../dist/pi-sdk.js";
@@ -1452,13 +1453,35 @@ const unseen = () => undefined;
 // A prompt's running total before any call, with input counting the cache.
 const NO_TOKENS = { input: 0, cacheRead: 0, output: 0 };
 
-test("sums each assistant message's usage and drops an incomplete one", () => {
+test("sums each call's own usage report", () => {
   const first = addUsage(NO_TOKENS, { input: 10, output: 2, cacheRead: 5, cacheWrite: 1, totalTokens: 18 });
   const second = addUsage(first, { input: 3, output: 4, cacheRead: 0, cacheWrite: 0, reasoning: 2 });
 
   assert.deepEqual(second, { input: 19, cacheRead: 5, output: 6 });
-  assert.equal(addUsage(second, { input: 1, output: 1 }), undefined);
   assert.equal(addUsage(undefined, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }), undefined);
+});
+
+// A tool result that reports usage, as a custom tool can.
+const toolResult = (usage) => ({ type: "message_end", message: { role: "toolResult", usage } });
+
+test("a tool usage report without a cache count keeps its output known", () => {
+  const total = addEventUsage(NO_TOKENS, toolResult({ input: 10, cacheRead: 2, output: 3 }), allReported);
+
+  // Input counts cache writes, so without cacheWrite the input, the cache
+  // reads inside it and the total are unknown.
+  assert.deepEqual(total, { output: 3 });
+});
+
+test("a tool usage report with only an output count adds that count", () => {
+  const total = addEventUsage({ input: 40, cacheRead: 0, output: 1 }, toolResult({ output: 4 }), allReported);
+
+  assert.deepEqual(total, { output: 5 });
+});
+
+test("a tool result without usage leaves the prompt's tokens unchanged", () => {
+  const total = { input: 40, cacheRead: 0, output: 1 };
+
+  assert.deepEqual(addEventUsage(total, { type: "message_end", message: { role: "toolResult" } }, unseen), total);
 });
 
 test("counts the tokens Pi bills outside assistant messages", () => {
@@ -1596,12 +1619,30 @@ test("reads which counts each wire protocol's raw usage reports", () => {
   });
 });
 
-test("a split-turn compaction leaves the prompt's tokens unknown", () => {
-  const prepared = (preparation) => ({ type: "session_before_compact", preparation });
+test("a split-turn compaction counts its summary calls only when they add up", () => {
+  const call = (tokens) => ({ input: tokens, output: 1, cacheRead: 0, cacheWrite: 0 });
+  const history = call(20);
+  const prefix = call(30);
+  const combined = { input: 50, output: 2, cacheRead: 0, cacheWrite: 0 };
+  const ended = { type: "compaction_end", aborted: false, result: { summary: "s", usage: combined } };
+  // Only the summary calls have records; Pi reports their combined usage.
+  const recorded = (key) => (key === history || key === prefix ? allReported() : undefined);
+  const split = { isSplitTurn: true, messagesToSummarize: [{}], turnPrefixMessages: [{}] };
 
-  assert.deepEqual(addEventUsage(NO_TOKENS, prepared({ isSplitTurn: false }), allReported), NO_TOKENS);
-  assert.equal(addEventUsage(NO_TOKENS, prepared({ isSplitTurn: true }), allReported), undefined);
-  assert.equal(addEventUsage(NO_TOKENS, prepared(undefined), allReported), undefined);
+  assert.equal(summaryCallCount(split), 2);
+  assert.equal(summaryCallCount({ ...split, messagesToSummarize: [] }), 1);
+  assert.equal(summaryCallCount({ isSplitTurn: false, messagesToSummarize: [{}], turnPrefixMessages: [] }), 1);
+  assert.equal(summaryCallCount(undefined), undefined);
+  assert.deepEqual(addEventUsage(NO_TOKENS, ended, recorded, { expected: 2, calls: [history, prefix] }), {
+    input: 50,
+    cacheRead: 0,
+    output: 2,
+  });
+  // A summary call the session did not see, or calls that do not add up to the
+  // combined usage, leave the prompt's tokens unknown.
+  assert.equal(addEventUsage(NO_TOKENS, ended, recorded, { expected: 2, calls: [prefix] }), undefined);
+  assert.equal(addEventUsage(NO_TOKENS, ended, recorded, { expected: 2, calls: [history, call(29)] }), undefined);
+  assert.equal(addEventUsage(NO_TOKENS, ended, recorded), undefined);
 });
 
 test("a retried compaction summary leaves the prompt's tokens unknown", () => {
@@ -1622,22 +1663,39 @@ test("a retried compaction summary leaves the prompt's tokens unknown", () => {
 /**
  * Run prompts through the real Pi SDK against a local chat-completions endpoint
  * that answers each request from `replies` in order. A reply's `usage` is sent
- * as the stream's final usage chunk; a reply without one sends no usage.
- * `modelExtensions` overrides the catalog entry, such as its context window.
+ * as the stream's final usage chunk; a reply without one sends no usage. A
+ * reply with `status` rejects the request with that HTTP status, and one with
+ * `dropStream` closes the connection after the first chunk.
+ * `modelExtensions` overrides the catalog entry, such as its context window,
+ * and `extension` is the source of a Pi extension the session loads.
  */
-async function promptsAgainstScriptedEndpoint(replies, prompts, modelExtensions = undefined) {
+async function promptsAgainstScriptedEndpoint(replies, prompts, modelExtensions = undefined, extension = undefined) {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-usage-")));
   await writeFile(join(workspace, "note.txt"), "nonce\n", "utf8");
+  if (extension !== undefined) {
+    await writeFile(join(workspace, "usage-extension.js"), extension, "utf8");
+  }
   let served = 0;
   const provider = createServer(async (request, response) => {
     for await (const _chunk of request);
     const reply = replies[served++];
+    if (reply.status !== undefined) {
+      response.writeHead(reply.status, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "rate limited", type: "rate_limit_error" } }));
+      return;
+    }
     const common = { id: `chatcmpl-usage-${served}`, object: "chat.completion.chunk", created: 0, model: "openai/gpt-oss-20b" };
     const chunk = (fields) => `data: ${JSON.stringify({ ...common, ...fields })}\n\n`;
     const delta = reply.readNote
       ? { role: "assistant", tool_calls: [{ index: 0, id: `call-${served}`, type: "function", function: { name: "read", arguments: JSON.stringify({ path: "note.txt" }) } }] }
       : { role: "assistant", content: reply.content };
     response.writeHead(200, { "content-type": "text/event-stream" });
+    if (reply.dropStream) {
+      response.write(chunk({ choices: [{ index: 0, delta, finish_reason: null }] }));
+      // Let the client read the first chunk before the connection drops.
+      setTimeout(() => response.destroy(), 100);
+      return;
+    }
     response.end(
       chunk({ choices: [{ index: 0, delta, finish_reason: null }] }) +
         chunk({ choices: [{ index: 0, delta: {}, finish_reason: reply.readNote ? "tool_calls" : "stop" }] }) +
@@ -1652,6 +1710,7 @@ async function promptsAgainstScriptedEndpoint(replies, prompts, modelExtensions 
       agentName: "pi-usage-test",
       baseDir: workspace,
       config: {
+        ...(extension === undefined ? {} : { harness: { settings: { extensions: ["usage-extension.js"] } } }),
         models: {
           default: {
             api_key_env: "TEST_API_KEY",
@@ -1765,26 +1824,78 @@ test(
   },
 );
 
-test(
-  "leaves a prompt's tokens unknown after a split-turn compaction",
-  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-  async () => {
+for (const [name, historyUsage, expected] of [
+  ["counts both summary calls of a split-turn compaction", { prompt_tokens: 20, completion_tokens: 1 }, { input: 90_240, output: 12 }],
+  ["leaves input unknown when a split-turn summary call omits it", { completion_tokens: 1 }, { output: 12 }],
+]) {
+  test(name, { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" }, async () => {
     // The second prompt's final reply reports a context above the compaction
     // threshold and is longer than Pi's 20,000 recent tokens, so Pi cuts inside
-    // that turn and summarizes the history and the turn prefix in two calls.
-    // The history summary reports no usage; the turn-prefix summary does.
+    // that turn and summarizes the history and the turn prefix in two calls,
+    // then reports only their combined usage.
     const [, compacted] = await promptsAgainstScriptedEndpoint(
       [
         { content: "first", usage: { prompt_tokens: 100, completion_tokens: 5 } },
         { readNote: true, usage: { prompt_tokens: 200, completion_tokens: 5 } },
         { content: "x".repeat(100_000), usage: { prompt_tokens: 90_000, completion_tokens: 5 } },
-        { content: "history summary" },
+        { content: "history summary", usage: historyUsage },
         { content: "turn prefix summary", usage: { prompt_tokens: 20, completion_tokens: 1 } },
       ],
       ["one", "read the note"],
       { context_window: 100_000, max_tokens: 1_000 },
     );
 
-    assert.equal(compacted.usage, undefined);
+    assert.deepEqual(compacted.usage, expected);
+  });
+}
+
+test(
+  "counts a rate-limited request as 0 tokens when Pi's retry succeeds",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    const [retried] = await promptsAgainstScriptedEndpoint(
+      [{ status: 429 }, { content: "after retry", usage: { prompt_tokens: 50, completion_tokens: 5 } }],
+      ["one"],
+    );
+
+    assert.equal(retried.text, "after retry");
+    assert.deepEqual(retried.usage, { input: 50, output: 5 });
+  },
+);
+
+test(
+  "leaves a prompt's tokens unknown when a stream fails after it started",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    // The provider accepted the request and streamed, so it may have billed
+    // tokens that the dropped stream never reported.
+    const [dropped] = await promptsAgainstScriptedEndpoint(
+      [{ content: "partial", dropStream: true }, { content: "after retry", usage: { prompt_tokens: 50, completion_tokens: 5 } }],
+      ["one"],
+    );
+
+    assert.equal(dropped.text, "after retry");
+    assert.equal(dropped.usage, undefined);
+  },
+);
+
+test(
+  "keeps usage known when an extension replaces an assistant message's usage object",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    const extension = `export default function (pi) {
+  pi.on("message_end", (event) =>
+    event.message.role === "assistant" ? { message: { ...event.message, usage: { ...event.message.usage } } } : undefined,
+  );
+}
+`;
+    const [replaced] = await promptsAgainstScriptedEndpoint(
+      [{ content: "done", usage: { prompt_tokens: 50, completion_tokens: 5 } }],
+      ["one"],
+      undefined,
+      extension,
+    );
+
+    assert.deepEqual(replaced.usage, { input: 50, output: 5 });
   },
 );
