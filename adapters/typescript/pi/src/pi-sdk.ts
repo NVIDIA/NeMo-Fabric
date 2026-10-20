@@ -99,21 +99,32 @@ function piCounts(usage: unknown): Record<"input" | "cacheRead" | "cacheWrite" |
 }
 
 /**
+ * The sum of token counts, or undefined when it is not a safe integer: a
+ * larger sum loses precision, so the count it would report is unknown.
+ */
+function safeSum(...counts: number[]): number | undefined {
+  const sum = counts.reduce((partial, count) => partial + count, 0);
+  return Number.isSafeInteger(sum) ? sum : undefined;
+}
+
+/**
  * One call's counts from Pi's usage, with input counting its cache reads and
  * writes, and which of them the usage holds. Input needs Pi's `input`,
  * `cacheRead` and `cacheWrite`, cache reads need `cacheRead`, and output needs
  * `output`; a missing field adds 0 to `counts` and leaves the counts that need
- * it unreported. Undefined when the usage is not an object.
+ * it unreported, and so does an input whose sum is not a safe integer.
+ * Undefined when the usage is not an object.
  */
 function callCounts(usage: unknown): { counts: Required<PiTokenUsage>; present: ReportedCounts } | undefined {
   if (typeof usage !== "object" || usage === null) {
     return undefined;
   }
   const { input, cacheRead, cacheWrite, output } = piCounts(usage);
+  const inclusiveInput = safeSum(input ?? 0, cacheRead ?? 0, cacheWrite ?? 0);
   return {
-    counts: { input: (input ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0), cacheRead: cacheRead ?? 0, output: output ?? 0 },
+    counts: { input: inclusiveInput ?? 0, cacheRead: cacheRead ?? 0, output: output ?? 0 },
     present: {
-      input: input !== undefined && cacheRead !== undefined && cacheWrite !== undefined,
+      input: input !== undefined && cacheRead !== undefined && cacheWrite !== undefined && inclusiveInput !== undefined,
       cacheRead: cacheRead !== undefined,
       output: output !== undefined,
     },
@@ -122,19 +133,17 @@ function callCounts(usage: unknown): { counts: Required<PiTokenUsage>; present: 
 
 /**
  * Add a call's counts to a prompt's running total. Each count stays known only
- * while every call reported it, independently of the others. The total is
- * unknown once no count is known.
+ * while every call reported it and its sum stays a safe integer, independently
+ * of the others. The total is unknown once no count is known.
  */
 function sumCounts(total: PiTokenUsage, call: Required<PiTokenUsage>, reported: ReportedCounts): PiTokenUsage | undefined {
   const sum: PiTokenUsage = {};
-  if (reported.input && total.input !== undefined) {
-    sum.input = total.input + call.input;
-  }
-  if (reported.cacheRead && total.cacheRead !== undefined) {
-    sum.cacheRead = total.cacheRead + call.cacheRead;
-  }
-  if (reported.output && total.output !== undefined) {
-    sum.output = total.output + call.output;
+  for (const name of ["input", "cacheRead", "output"] as const) {
+    const running = total[name];
+    const count = reported[name] && running !== undefined ? safeSum(running, call[name]) : undefined;
+    if (count !== undefined) {
+      sum[name] = count;
+    }
   }
   return sum.input === undefined && sum.cacheRead === undefined && sum.output === undefined ? undefined : sum;
 }
@@ -219,7 +228,7 @@ function addSummaryCallsUsage(
   const addsUp = names.every((name) => {
     const sum = compaction.calls.reduce<number | undefined>((partial, call) => {
       const count = piCounts(call)[name];
-      return partial === undefined || count === undefined ? undefined : partial + count;
+      return partial === undefined || count === undefined ? undefined : safeSum(partial, count);
     }, 0);
     return sum !== undefined && sum === expected[name];
   });

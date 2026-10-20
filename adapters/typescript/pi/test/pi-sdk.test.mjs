@@ -1464,6 +1464,26 @@ test("sums each call's own usage report", () => {
   assert.equal(addUsage(undefined, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }), undefined);
 });
 
+test("a count whose sum is not a safe integer is unknown, and the others stay known", () => {
+  const max = Number.MAX_SAFE_INTEGER;
+
+  // Input counts cache reads and writes, so its own sum can overflow.
+  assert.deepEqual(addUsage(NO_TOKENS, { input: max, cacheRead: 2, cacheWrite: 0, output: 1 }), {
+    cacheRead: 2,
+    output: 1,
+  });
+  // A running total that reaches the largest safe integer stays exact.
+  assert.deepEqual(addUsage({ input: max - 1, cacheRead: 0, output: max }, { input: 1, cacheRead: 0, cacheWrite: 0, output: 1 }), {
+    input: max,
+    cacheRead: 0,
+  });
+  // Only the cache reads overflow here; input and output stay known.
+  assert.deepEqual(addUsage({ input: 1, cacheRead: max, output: 1 }, { input: 0, cacheRead: 1, cacheWrite: 0, output: 1 }), {
+    input: 2,
+    output: 2,
+  });
+});
+
 // A tool result that reports usage, as a custom tool can.
 const toolResult = (usage) => ({ type: "message_end", message: { role: "toolResult", usage } });
 
