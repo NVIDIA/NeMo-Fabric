@@ -1578,6 +1578,13 @@
         "adapter_kind": "python",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "service_health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": true,
           "streaming": false,
           "updates": false
@@ -1756,7 +1763,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.6.0"
       },
-      "sha256": "5ab8b29595214e214214b051b60bc314dc65f07add60a73283f434a62e3f7402",
+      "sha256": "1cdda4f0a3ef0c46831ba76d40a111d18b2809c16286d02aa079dee7622d2e50",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

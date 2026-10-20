@@ -47,9 +47,27 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        if self.path == "/readyz":
+        if self.path == "/healthz":
+            body = json.dumps({"ok": True, "status": "live"}).encode()
             self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == "/readyz":
+            ready = True
+            if state_path := os.environ.get("FAKE_OPENCLAW_HEALTH_STATE"):
+                with open(state_path, encoding="utf-8") as stream:
+                    ready = json.load(stream)["ready"]
+            body = json.dumps(
+                {"ready": ready, "failing": [] if ready else ["telegram"]}
+            ).encode()
+            self.send_response(200 if ready else 503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         if self.path == "/startupz":
             body = json.dumps(

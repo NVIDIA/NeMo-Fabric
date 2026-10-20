@@ -9,12 +9,21 @@ from nemo_fabric_adapter_contract.models import AdapterCheckRequest, AdapterChec
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 
 
-def test_check_probe_contract_round_trips_required_nulls():
+@pytest.mark.parametrize(
+    "source",
+    [
+        "fabric.adapter.liveness",
+        "fabric.adapter.liveness",
+        "fabric.adapter.interface",
+        "fabric.adapter.readiness",
+    ],
+)
+def test_check_probe_contract_round_trips_required_nulls(source):
     result = {
         "outcome": "passed",
         "reason_code": None,
         "activity": "busy",
-        "source": "fabric.adapter.liveness",
+        "source": source,
         "observed_at": "2026-10-19T12:00:00Z",
     }
     assert AdapterCheckResult.from_mapping(result).to_mapping() == result

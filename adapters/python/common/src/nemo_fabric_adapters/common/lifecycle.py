@@ -26,6 +26,7 @@ from typing import TextIO
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import RuntimeContext
+from nemo_fabric_adapters.common import health as health_transport
 
 
 def invocation_deadline(context: RuntimeContext) -> float:
@@ -403,6 +404,9 @@ class _HostState:
     runtime: AdapterRuntime | None = None
     runtime_id: str | None = None
     failed: bool = False
+    generation: int = 0
+    stopping: bool = False
+    health: health_transport._HealthServer | None = None
 
     def clear(self) -> None:
         self.runtime = None
@@ -578,12 +582,46 @@ async def _handle_start(
     candidate = runtime_factory()
     try:
         output = await _adapter_call("start", lambda: candidate.start(payload))
-    except LifecycleError:
+        state.runtime = candidate
+        state.runtime_id = message_runtime_id
+        state.failed = False
+        check = getattr(candidate, "check", None)
+        directory = os.environ.get("FABRIC_HOME")
+        if directory is not None and callable(check):
+
+            async def observe(level: str) -> dict[str, Any]:
+                generation = state.generation
+                if state.stopping or state.runtime is not candidate:
+                    return health_transport.unobserved_health("observation_changed")
+                if state.failed and level != "live":
+                    return {
+                        **health_transport.unobserved_health("endpoint_unavailable"),
+                        "outcome": "failed",
+                    }
+                result = await check(level)
+                if (
+                    state.generation != generation
+                    or state.stopping
+                    or state.runtime is not candidate
+                ):
+                    return health_transport.unobserved_health("observation_changed")
+                return result
+
+            try:
+                state.health = await health_transport.serve_health(
+                    message_runtime_id, directory, observe
+                )
+            except Exception:
+                raise LifecycleError(
+                    "lifecycle_health_unavailable",
+                    "Adapter health channel could not start",
+                ) from None
+    except BaseException:
+        if state.health is not None:
+            await state.health.close()
+        state.clear()
         await _stop_after_eof(candidate)
         raise
-    state.runtime = candidate
-    state.runtime_id = message_runtime_id
-    state.failed = False
     return _response("start", output=output)
 
 
@@ -679,6 +717,8 @@ async def _handle_stop(
     state: _HostState,
     runtime: AdapterRuntime,
 ) -> dict[str, Any]:
+    state.generation += 1
+    state.stopping = True
     try:
         await _adapter_call("stop", runtime.stop)
     finally:
@@ -801,8 +841,14 @@ async def _serve(
             if should_stop:
                 break
     finally:
-        if state.runtime is not None:
-            await _stop_after_eof(state.runtime)
+        state.generation += 1
+        state.stopping = True
+        try:
+            if state.health is not None:
+                await state.health.close()
+        finally:
+            if state.runtime is not None:
+                await _stop_after_eof(state.runtime)
 
 
 def serve(

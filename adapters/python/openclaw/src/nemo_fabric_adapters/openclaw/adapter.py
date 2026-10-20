@@ -22,6 +22,8 @@ import sys
 import tempfile
 import threading
 from collections import deque
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -799,6 +801,113 @@ class OpenClawRuntime:
         self._previous_signal_handlers: dict[int, Any] = {}
         self._signal_handler: Any = None
         self._windows_job: int | None = None
+
+    async def check(self, level: str) -> dict[str, Any]:
+        """Observe the Gateway without invoking an agent or changing its lifecycle.
+
+        Gateway readiness follows native ``/readyz``, including configured
+        channels. The health-channel caller supplies the shared deadline.
+        """
+        result: dict[str, Any] = {
+            "outcome": "unknown",
+            "reason_code": "probe_error",
+            "activity": "unknown",
+            "source": "fabric.adapter",
+            "observed_at": None,
+        }
+        endpoints = {
+            "live": ("/healthz", "fabric.adapter.openclaw.gateway"),
+            "active": ("/v1/models", "fabric.adapter.openclaw.interface"),
+            "ready": ("/readyz", "fabric.adapter.openclaw.readiness"),
+        }
+        if level not in endpoints:
+            return {
+                **result,
+                "outcome": "unsupported",
+                "reason_code": "unsupported_level",
+            }
+        if self._stopping:
+            return {**result, "reason_code": "observation_changed"}
+        client, gateway_url = self._client, self._gateway_url
+        if client is None or client.is_closed or gateway_url is None:
+            return {**result, "reason_code": "runtime_unavailable"}
+        path, source = endpoints[level]
+
+        def observed(outcome: str, reason: str | None) -> dict[str, Any]:
+            return {
+                **result,
+                "outcome": outcome,
+                "reason_code": reason,
+                "source": source,
+                "observed_at": datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+            }
+
+        if self._process is not None and self._process.returncode is not None:
+            return observed("failed", "agent_exited")
+
+        def unique(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("duplicate Gateway health field")
+                value[key] = item
+            return value
+
+        try:
+            async with client.stream(
+                "GET",
+                f"{gateway_url}{path}",
+                follow_redirects=False,
+                headers={"Accept-Encoding": "identity"},
+            ) as response:
+                status = response.status_code
+                if status != 200 and not (level == "ready" and status == 503):
+                    return observed("failed", "endpoint_unavailable")
+                if (
+                    response.headers.get("content-encoding", "identity").lower()
+                    != "identity"
+                ):
+                    return result
+                body = bytearray()
+                async for chunk in response.aiter_raw(chunk_size=16 * 1024 + 1):
+                    body.extend(chunk)
+                    if len(body) > 16 * 1024:
+                        return result
+                data = json.loads(body, object_pairs_hook=unique)
+        except httpx.TimeoutException:
+            return {**result, "reason_code": "probe_timeout"}
+        except (httpx.HTTPError, ValueError):
+            return result
+        if (
+            self._stopping
+            or self._client is not client
+            or self._gateway_url != gateway_url
+        ):
+            return {**result, "reason_code": "observation_changed"}
+        if not isinstance(data, dict):
+            return result
+        if level == "live":
+            valid = data.get("ok") is True and data.get("status") == "live"
+        elif level == "active":
+            models = data.get("data")
+            valid = (
+                data.get("object") == "list"
+                and isinstance(models, list)
+                and all(
+                    isinstance(model, dict)
+                    and isinstance(model.get("id"), str)
+                    and bool(model["id"])
+                    and model.get("object") == "model"
+                    for model in models
+                )
+            )
+        else:
+            if status == 503 and data.get("ready") is False:
+                return observed("failed", "health_failed")
+            valid = status == 200 and data.get("ready") is True
+        return observed("passed", None) if valid else result
 
     async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         config: contract.AgentConfig = payload["config"]

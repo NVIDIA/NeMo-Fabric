@@ -44,6 +44,11 @@
           "type": "string"
         },
         {
+          "const": "service_unavailable",
+          "description": "No matching active service binding exists.",
+          "type": "string"
+        },
+        {
           "const": "agent_exited",
           "description": "The owned process exited.",
           "type": "string"

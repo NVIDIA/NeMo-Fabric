@@ -84,6 +84,7 @@ export type CheckReason =
   | "server_stopping"
   | "capabilities_unverified"
   | "runtime_unavailable"
+  | "service_unavailable"
   | "agent_exited"
   | "session_closed"
   | "endpoint_unavailable"

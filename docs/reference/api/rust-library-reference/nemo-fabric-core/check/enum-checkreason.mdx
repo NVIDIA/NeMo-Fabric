@@ -14,6 +14,7 @@ pub enum CheckReason {
     ServerStopping,
     CapabilitiesUnverified,
     RuntimeUnavailable,
+    ServiceUnavailable,
     AgentExited,
     SessionClosed,
     EndpointUnavailable,
@@ -48,6 +49,12 @@ Advertised capability evidence is unavailable.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "RuntimeUnavailable"}} /></pre>
 
 No matching runtime binding exists.
+
+### `ServiceUnavailable`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ServiceUnavailable"}} /></pre>
+
+No matching active service binding exists.
 
 ### `AgentExited`
 

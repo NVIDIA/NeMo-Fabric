@@ -86,6 +86,36 @@ OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gate
 
 Relay telemetry and native OpenTelemetry are not supported.
 
+## Gateway Health
+
+Use `Fabric.check()` with a prepared or attached service handle to observe the Gateway before starting any NeMo Fabric runtimes. Gateway checks use the local SDK and the existing Gateway; no additional deployed service is required.
+
+| Level | Native observation |
+|---|---|
+| `live` | `GET /healthz` returns the expected liveness response. |
+| `active` | Authenticated `GET /v1/models` returns a valid model inventory. A particular agent is not required by the probe. |
+| `ready` | `GET /readyz` reports native Gateway readiness, including configured channel health. |
+
+Requesting `ready` evaluates `live`, `active`, and `ready` in order under one deadline, stopping at the first nonpassing result. A configured channel failure can fail Gateway readiness while the first two levels pass. Native readiness follows OpenClaw's channel policies and can use cached observations; a passing result does not prove message delivery, model-provider access, or selected-agent execution. Checks do not invoke models, execute tools, send test messages, or restart the Gateway.
+
+Check an owned Gateway with the following code, or pass the handle returned by `attach_service()`:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+async with await fabric.prepare_service(config, base_dir=base_dir) as service:
+    report = await fabric.check(
+        service=service.handle,
+        request=CheckRequest(
+            scope="service", service_id=service.service_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+```
+
+Checks can run while connected runtimes are invoking. Timeouts return `unknown/probe_timeout` and leave invocations running. Release during a check returns `unknown/observation_changed`; checks after release return `unknown/service_unavailable`. Releasing an attached service leaves the caller-owned Gateway running. The reserved `operational` level is unsupported and sends no probe. OpenClaw runtime-scoped agent checks remain unsupported in this implementation.
+
 ## Use a NeMo Fabric-Owned Service
 
 `prepare_service()` maps the normalized `FabricConfig` to `openclaw.json`,

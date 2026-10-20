@@ -27,7 +27,7 @@ pub use check::{
     AdapterCheckRequest, AdapterCheckResult, CheckLevel, CheckObservation, CheckOutcome,
     CheckReason, CheckReport, CheckRequest, CheckRuntimeState, CheckScope, CheckSource, CheckStage,
     CheckVersion, RuntimeActivity, RuntimeObservation, ServerObservation, ServerState,
-    check_environment,
+    check_environment, check_service,
 };
 pub use config::{
     AdapterConfigField, AdapterConfigSupport, AdapterDescriptor, AdapterInspection, AdapterKind,
