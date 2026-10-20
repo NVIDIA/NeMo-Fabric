@@ -2763,6 +2763,34 @@ async def test_rejected_only_model_call_reports_zero_usage(
     )
 
 
+async def test_agent_protocol_subagent_makes_usage_unknown(
+    tmp_path, make_payload, openai_endpoint
+):
+    # An Agent Protocol subagent runs its model calls on a remote server, which
+    # the adapter cannot count, so local sums would undercount the invocation.
+    payload = make_payload(tmp_path)
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "subagents": [
+            {
+                "name": "researcher",
+                "description": "Researches on a remote server.",
+                "graph_id": "research_agent",
+                "url": "https://agents.example.test",
+            }
+        ]
+    }
+    openai_endpoint["replies"].append(
+        chat_completion(
+            {"prompt_tokens": 120, "completion_tokens": 8, "total_tokens": 128}
+        )
+    )
+
+    (result,) = await run_invocations(payload, 1)
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert result.usage is None
+
+
 def test_aggregate_usage_without_model_calls_is_zero():
     assert adapter._aggregate_usage([]) == {
         "prompt_tokens": 0,

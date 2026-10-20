@@ -234,17 +234,19 @@ runtime start before an invocation is accepted.
 Usage sums every chat-model call that runs in the adapter process for the
 invocation: the main agent, declarative subagents, and Deep Agents
 summarization. Agent Protocol subagents (entries with `graph_id`) run in their
-remote service, and their tokens are not included. A token count or cost is
-reported only when every counted call reported it; otherwise it stays unknown.
-This also holds for a failed invocation. A request the provider rejects with a
-4xx status (other than 408) contributes no usage, so an invocation that made no
-model call, or whose every call was rejected, reports 0 tokens and 0 cost. A
-5xx response, timeout, cancellation or unfinished call leaves the invocation's
-counts and cost unknown, because the provider may have done work without
-reporting usage. OpenAI SDK retries happen inside one LangChain call, so a 5xx
-the SDK retries to success is not visible to the adapter, and only the final
-response's reported usage counts. Usage replayed from a configured LangChain
-model cache would be counted as reported; NeMo Fabric configures no such cache.
+remote service, where the adapter cannot count their calls, so a runtime
+configured with one reports unknown token counts and cost. A token count or
+cost is reported only when every counted call reported it; otherwise it stays
+unknown. This also holds for a failed invocation. A request the provider
+rejects with a 4xx status (other than 408) contributes no usage, so an
+invocation that made no model call, or whose every call was rejected, reports 0
+tokens and 0 cost. A 5xx response, timeout, cancellation or unfinished call
+leaves the invocation's counts and cost unknown, because the provider may have
+done work without reporting usage. OpenAI SDK retries happen inside one
+LangChain call, so a 5xx the SDK retries to success is not visible to the
+adapter, and only the final response's reported usage counts. Usage replayed
+from a configured LangChain model cache would be counted as reported; NeMo
+Fabric configures no such cache.
 
 When a response carries OpenAI-shaped usage in
 `response_metadata.token_usage`, as `ChatOpenAI` responses without streaming

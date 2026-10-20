@@ -541,6 +541,18 @@ def _validated_deepagents_settings(extra: Any) -> dict[str, Any]:
     return dict(extra)
 
 
+def _has_agent_protocol_subagent(subagents: Any) -> bool:
+    """Whether ``create_deep_agent`` runs a subagent on an Agent Protocol server.
+
+    Deep Agents routes a subagent spec with ``graph_id`` to its async subagent
+    middleware, which starts and updates tasks on a remote server.
+    """
+    return isinstance(subagents, list) and any(
+        isinstance(subagent, dict) and "graph_id" in subagent
+        for subagent in subagents
+    )
+
+
 def _gate_subagent(
     subagent: dict[str, Any], enabled: set[str] | None, blocked: set[str]
 ) -> dict[str, Any]:
@@ -612,6 +624,7 @@ class DeepAgentsRuntime:
         self._callback_handler_type: Any = None
         self._telemetry_quarantine: str | None = None
         self._telemetry_quarantine_cause: str | None = None
+        self._has_remote_subagent = False
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -661,6 +674,9 @@ class DeepAgentsRuntime:
                 base_dir,
                 model,
                 settings,
+            )
+            self._has_remote_subagent = _has_agent_protocol_subagent(
+                agent_kwargs.get("subagents")
             )
             self._checkpointer = await open_checkpointer(
                 checkpointer_path(runtime_context, base_dir, runtime_id)
@@ -765,7 +781,14 @@ class DeepAgentsRuntime:
         failed = bool(output.pop("failed", False))
         reported_error = output.pop("error", None)
         raw_usage = output.get("usage")
-        usage = raw_usage if isinstance(raw_usage, dict) else {}
+        # An Agent Protocol subagent's model calls run on its remote server and
+        # never reach this process, so the local sums may undercount the
+        # invocation and its counts and cost stay unknown.
+        usage = (
+            raw_usage
+            if isinstance(raw_usage, dict) and not self._has_remote_subagent
+            else {}
+        )
         token_fields = {
             "input_tokens": usage.get("prompt_tokens"),
             "output_tokens": usage.get("completion_tokens"),
