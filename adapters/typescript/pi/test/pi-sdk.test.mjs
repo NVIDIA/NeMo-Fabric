@@ -6,6 +6,7 @@ import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 
 import {
@@ -16,6 +17,7 @@ import {
   endedCallCounts,
   modelAwareCompactionReserveTokens,
   PiSdkSessionFactory,
+  recordReportedCounts,
   reportedCountsFrom,
   resolveCustomTools,
   summaryCallCount,
@@ -1942,6 +1944,153 @@ test(
     assert.equal(retried.usage, undefined);
   },
 );
+
+/** One unmasked WebSocket text frame, as a server sends it. */
+function webSocketTextFrame(text) {
+  const payload = Buffer.from(text);
+  let header;
+  if (payload.length < 126) {
+    header = Buffer.from([0x81, payload.length]);
+  } else if (payload.length < 65_536) {
+    header = Buffer.from([0x81, 126, payload.length >> 8, payload.length & 0xff]);
+  } else {
+    header = Buffer.alloc(10);
+    header[0] = 0x81;
+    header[1] = 127;
+    header.writeBigUInt64BE(BigInt(payload.length), 2);
+  }
+  return Buffer.concat([header, payload]);
+}
+
+/** The Responses events of a completed reply that reports `usage`. */
+function codexReplyEvents(usage) {
+  const part = { type: "output_text", text: "done", annotations: [] };
+  const item = { id: "msg_usage", type: "message", role: "assistant", status: "completed", content: [part] };
+  const response = { id: "resp_usage", object: "response", created_at: 0, status: "completed", model: "gpt-test", output: [item], usage };
+  return [
+    { type: "response.created", response: { ...response, status: "in_progress", output: [] } },
+    { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
+    { type: "response.content_part.added", item_id: item.id, output_index: 0, content_index: 0, part: { ...part, text: "" } },
+    { type: "response.output_text.delta", item_id: item.id, output_index: 0, content_index: 0, delta: "done" },
+    { type: "response.output_text.done", item_id: item.id, output_index: 0, content_index: 0, text: "done" },
+    { type: "response.content_part.done", item_id: item.id, output_index: 0, content_index: 0, part },
+    { type: "response.output_item.done", output_index: 0, item },
+    { type: "response.completed", response },
+  ];
+}
+
+/**
+ * Run one model call through Pi's Codex transport, wrapped by the adapter's
+ * recorder, against a local endpoint. `webSocket` is "reply" to answer the
+ * WebSocket request or "drop" to close the connection after receiving it
+ * and before any event; `http` is the HTTP fallback's status, with 200
+ * replying over server-sent events. Returns the counts the adapter recorded
+ * for the call and the requests each transport received.
+ */
+async function codexCallCounts({ webSocket, http }) {
+  const usage = { input_tokens: 50, input_tokens_details: { cached_tokens: 0 }, output_tokens: 5, total_tokens: 55 };
+  const received = { webSocket: 0, http: 0 };
+  const sockets = new Set();
+  const server = createServer(async (request, response) => {
+    for await (const _chunk of request);
+    received.http += 1;
+    if (http !== 200) {
+      response.writeHead(http, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "rate limited", type: "rate_limit_error" } }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end(codexReplyEvents(usage).map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""));
+  });
+  server.on("upgrade", (request, socket) => {
+    sockets.add(socket);
+    const accept = createHash("sha1")
+      .update(`${request.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+      .digest("base64");
+    socket.write(
+      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    );
+    // The first client frame is Pi's response.create request.
+    socket.once("data", () => {
+      received.webSocket += 1;
+      if (webSocket === "drop") {
+        socket.destroy();
+        return;
+      }
+      for (const event of codexReplyEvents(usage)) {
+        socket.write(webSocketTextFrame(JSON.stringify(event)));
+      }
+    });
+  });
+  const baseUrl = await listen(server);
+  const sessionId = randomUUID();
+  const { closeOpenAICodexWebSocketSessions, stream } = await import("@earendil-works/pi-ai/api/openai-codex-responses");
+  try {
+    const records = new WeakMap();
+    const agent = { streamFunction: stream };
+    recordReportedCounts(agent, records, () => undefined);
+    const claims = Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "account" } })).toString("base64url");
+    const model = {
+      id: "gpt-test",
+      name: "gpt-test",
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      baseUrl,
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 100_000,
+      maxTokens: 1_000,
+    };
+    const response = await agent.streamFunction(
+      model,
+      { messages: [{ role: "user", content: "one", timestamp: 0 }] },
+      { apiKey: `header.${claims}.signature`, sessionId, transport: "auto" },
+    );
+    const message = await response.result();
+    await new Promise((resolve) => setImmediate(resolve));
+    return { counts: records.get(message), message, received };
+  } finally {
+    // Pi keeps a session's WebSocket open for reuse until an idle timer ends.
+    closeOpenAICodexWebSocketSessions(sessionId);
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+    await close(server);
+  }
+}
+
+test(
+  "keeps a Codex WebSocket reply's counts known",
+  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+  async () => {
+    const { counts, message, received } = await codexCallCounts({ webSocket: "reply", http: 200 });
+
+    assert.deepEqual(received, { webSocket: 1, http: 0 });
+    assert.equal(message.stopReason, "stop");
+    assert.deepEqual(counts, { input: true, cacheRead: true, output: true });
+  },
+);
+
+for (const [name, http, stopReason] of [
+  ["a successful HTTP fallback", 200, "stop"],
+  ["a rate-limited HTTP fallback", 429, "error"],
+]) {
+  test(
+    `leaves a Codex call's counts unknown when its WebSocket request failed before ${name}`,
+    { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
+    async () => {
+      // The provider received the WebSocket request and may have billed it,
+      // but the fetch only sees the HTTP fallback.
+      const { counts, message, received } = await codexCallCounts({ webSocket: "drop", http });
+
+      assert.deepEqual(received, { webSocket: 1, http: 1 });
+      assert.equal(message.stopReason, stopReason);
+      assert.ok(message.diagnostics.some((diagnostic) => diagnostic.type === "provider_transport_failure"));
+      assert.deepEqual(counts, { input: false, cacheRead: false, output: false });
+    },
+  );
+}
 
 test(
   "leaves a prompt's tokens unknown when a stream fails after it started",

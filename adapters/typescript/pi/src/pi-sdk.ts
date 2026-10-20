@@ -513,7 +513,10 @@ const observedFetch: typeof globalThis.fetch = async (input, init) => {
  * ambiguous attempt reports none, even when a later attempt succeeded: an
  * attempt that got no HTTP response, such as a connection error or a timeout
  * before headers, or that got any error status other than a rate limit (429),
- * such as a 408 or a 5xx, may have been billed. A call that ended in an error
+ * such as a 408 or a 5xx, may have been billed. So may a Codex WebSocket
+ * attempt that failed, which the fetch never sees: Pi records it on the final
+ * message as a `provider_transport_failure` diagnostic before falling back to
+ * HTTP (`@earendil-works/pi-ai` 1.0.3, `api/openai-codex-responses.js`). A call that ended in an error
  * reports all its counts as 0 only when its protocol sends requests through
  * the observed fetch, the provider answered every attempt with a 429, no
  * attempt was accepted, no raw event arrived, and Pi's usage is all zeros.
@@ -522,11 +525,12 @@ const observedFetch: typeof globalThis.fetch = async (input, init) => {
 export function endedCallCounts(
   api: string,
   seen: ReadonlySet<string>,
-  message: { stopReason?: unknown; usage?: unknown },
+  message: { stopReason?: unknown; usage?: unknown; diagnostics?: unknown },
   observation: CallObservation,
 ): ReportedCounts {
   const ambiguous =
     observation.unanswered ||
+    hasTransportFailure(message.diagnostics) ||
     observation.statuses.some((status) => (status < 200 || status >= 300) && !UNBILLED_REJECTIONS.has(status));
   if (ambiguous) {
     return NONE_REPORTED;
@@ -546,6 +550,19 @@ export function endedCallCounts(
   return rejected ? ALL_REPORTED : reportedCountsFrom(api, seen);
 }
 
+/** Whether a message's diagnostics record a failed transport attempt. */
+function hasTransportFailure(diagnostics: unknown): boolean {
+  return (
+    Array.isArray(diagnostics) &&
+    diagnostics.some(
+      (diagnostic) =>
+        typeof diagnostic === "object" &&
+        diagnostic !== null &&
+        (diagnostic as { type?: unknown }).type === "provider_transport_failure",
+    )
+  );
+}
+
 /**
  * Record which counts each model call's provider reported, keyed by the call's
  * final assistant message and its usage object, and pass each ended call's
@@ -562,7 +579,7 @@ export function endedCallCounts(
  * usage entry has no record and stays unknown. The record is copied when the
  * call ends so a later warm-up cannot change it.
  */
-function recordReportedCounts(
+export function recordReportedCounts(
   agent: AgentSession["agent"],
   records: WeakMap<object, ReportedCounts>,
   onCallEnd: (usage: object) => void,
