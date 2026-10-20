@@ -1116,12 +1116,12 @@ fn apply_versions_report(what_ran: &mut WhatRan, report: &Report<'_>) {
 /// Fill each plan server's `runtime` block, and add a `harness` entry for
 /// each reported server the plan does not configure.
 ///
-/// The report's `servers_truncated` marker counts only the harness-only
-/// servers the adapter's helper dropped from the report: servers outside
-/// the `mcp.servers` of the adapter's start configuration, which would
-/// otherwise disappear from `what_ran`. A plan server the helper dropped
-/// keeps its entry, with runtime facts that read `fact_omitted`, and is not
-/// counted. Core adds the marker's count to its own. A malformed marker
+/// When a helper drops server entries to keep `nemo_fabric.mcp.v1` under
+/// 64 KiB, the report's `servers_truncated` counts only dropped names absent
+/// from the full capability plan supplied at lifecycle start. Core adds that
+/// count to `what_ran.mcp.servers_truncated`. A dropped plan server keeps its
+/// entry, with runtime facts marked `unavailable` for reason `fact_omitted`.
+/// A malformed marker
 /// makes the whole `servers` report read `invalid_report`, as a malformed
 /// `tool_names_truncated` does for `tool_names`.
 fn apply_mcp_report(what_ran: &mut WhatRan, plan: &RunPlan, report: &Report<'_>) {

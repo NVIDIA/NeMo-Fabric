@@ -1101,11 +1101,12 @@ roles. A map that lost entries has a marker next to it, `models_truncated` or
 `mcp.servers_truncated`, with the `reason` (`key_too_long`, `entry_cap`, or
 `byte_budget`) and the `dropped` count. Each map has one marker: when more than
 one rule dropped entries, `reason` names the last rule applied, in that order,
-and `dropped` counts every dropped entry. When the adapter's report drops
-servers to fit its own size limit, its `servers_truncated` marker counts only
-the servers the harness reported outside the plan, because those disappear, and
-`mcp.servers_truncated` adds that count. A plan server the report drops keeps
-its entry, and its runtime facts read `unavailable` with reason `fact_omitted`.
+and `dropped` counts every dropped entry. When an adapter drops server entries
+to keep `nemo_fabric.mcp.v1` under 64 KiB, the report's `servers_truncated`
+counts only dropped names absent from the full capability plan supplied at
+lifecycle start. NeMo Fabric adds that count to
+`what_ran.mcp.servers_truncated`. A dropped plan server keeps its entry, with
+runtime facts marked `unavailable` for reason `fact_omitted`.
 `dropped` is a JSON integer. The Rust core and the Python SDK
 reject `1.0`, although a JSON Schema validator may accept it. If `what_ran` is
 still too large with no MCP server and no model role left, it holds only
