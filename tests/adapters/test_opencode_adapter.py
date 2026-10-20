@@ -143,6 +143,14 @@ def test_opencode_descriptor_declares_the_minimum_supported_surface():
             },
             "additionalProperties": False,
         },
+        "extension_schemas": {
+            "run_result": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"nemo_fabric.versions.v1": {"type": "object"}},
+                "additionalProperties": False,
+            }
+        },
         "capabilities": {
             "streaming": False,
             "cancellation": False,

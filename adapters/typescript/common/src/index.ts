@@ -15,3 +15,11 @@ export {
 } from "./lifecycle.js";
 
 export { insecureHttpModelHosts, modelEndpointAllowed } from "./model-endpoint.js";
+
+export {
+  VERSIONS_REPORT_KEY,
+  boundedText,
+  packageVersionFact,
+  packageVersionReport,
+  withPackageVersion,
+} from "./provenance.js";

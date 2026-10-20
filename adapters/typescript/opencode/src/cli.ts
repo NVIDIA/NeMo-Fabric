@@ -8,7 +8,7 @@
 
 import { createRequire } from "node:module";
 
-import { serve } from "nemo-fabric-adapters-common";
+import { serve, withPackageVersion } from "nemo-fabric-adapters-common";
 
 import { assertSupportedBunVersion } from "./bun-version.js";
 
@@ -30,5 +30,5 @@ await serve(async () => {
     import("./opencode-sdk.js"),
     import("./runtime.js"),
   ]);
-  return new OpenCodeAdapterRuntime(new OpenCodeSdkSessionFactory());
+  return withPackageVersion(new OpenCodeAdapterRuntime(new OpenCodeSdkSessionFactory()), new URL("../package.json", import.meta.url));
 });

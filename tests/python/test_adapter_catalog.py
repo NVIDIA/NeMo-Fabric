@@ -84,3 +84,17 @@ def test_invalid_resources_fail_clearly(
     monkeypatch.setattr(catalog, "files", Mock(return_value=resource))
     with pytest.raises(error):
         catalog.get_adapter_descriptor("not.a.bundled.id")
+
+
+def test_every_bundled_descriptor_declares_the_versions_report(bundle):
+    adapters = bundle["adapters"]
+
+    assert adapters
+    for adapter_id, entry in adapters.items():
+        run_result = entry["descriptor"]["extension_schemas"]["run_result"]
+        assert run_result["properties"]["nemo_fabric.versions.v1"] == {
+            "type": "object"
+        }, adapter_id
+        assert "nemo_fabric.versions.v1" not in run_result.get("required", []), (
+            adapter_id
+        )
