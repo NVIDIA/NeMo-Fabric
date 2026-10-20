@@ -1292,11 +1292,11 @@ def _aggregate_usage(calls: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Sum model-call usage; a count is known only when every call reported it.
 
     One call without a count makes the invocation's sum for that count a
-    partial value, so it stays unknown rather than under-reported.
+    partial value, so it stays unknown rather than under-reported. Without a
+    call, because none started or the provider rejected every one, the
+    invocation spent nothing, so every count and the cost are 0.
     """
 
-    if not calls:
-        return None
     totals: dict[str, Any] = {}
     for source, target in (
         ("input_tokens", "prompt_tokens"),

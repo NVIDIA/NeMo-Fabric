@@ -2744,6 +2744,35 @@ async def test_failed_model_call_usage_follows_provider_response(
     assert result.usage == expected
 
 
+async def test_rejected_only_model_call_reports_zero_usage(
+    tmp_path, make_payload, openai_endpoint
+):
+    # The provider rejected the only model call, so the invocation spent nothing.
+    openai_endpoint["replies"].append(provider_failure("400"))
+
+    (result,) = await run_invocations(make_payload(tmp_path), 1)
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.usage == AgentUsage(
+        input_tokens=0,
+        cached_input_tokens=0,
+        output_tokens=0,
+        total_tokens=0,
+        input_tokens_include_cache=True,
+        cost_usd=0.0,
+    )
+
+
+def test_aggregate_usage_without_model_calls_is_zero():
+    assert adapter._aggregate_usage([]) == {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "cached_tokens": 0,
+        "cost": 0.0,
+    }
+
+
 @pytest.mark.parametrize(
     ("failure", "expected"),
     [
