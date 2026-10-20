@@ -11,6 +11,8 @@ import inspect
 import logging
 from collections.abc import Callable
 from contextvars import ContextVar
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 from typing import Any
 
@@ -33,9 +35,20 @@ HARNESS = "nooa-bench"
 MODE = "bench_agent"
 LOGGER = logging.getLogger(__name__)
 _MAX_TOKEN_COUNT = (1 << 64) - 1
-# Per-invocation list of the ``usage`` value from each Responses API call.
-_responses_usage: ContextVar[list[Any] | None] = ContextVar(
-    "nooa_bench_responses_usage", default=None
+
+
+@dataclass
+class _ModelCalls:
+    """Model calls made during one invocation."""
+
+    # Set when the first model call starts, before any response arrives.
+    started: bool = False
+    # The ``usage`` value from each returned call; read for the Responses API.
+    usages: list[Any] = field(default_factory=list)
+
+
+_model_calls: ContextVar[_ModelCalls | None] = ContextVar(
+    "nooa_bench_model_calls", default=None
 )
 
 
@@ -210,26 +223,35 @@ def _responses_api_usage(usages: list[Any]) -> AgentUsage | None:
     )
 
 
-def _record_responses_usage(model: Any) -> None:
-    """Record the usage of each call made through a NOOA ``ResponsesClient``.
+def _record_model_calls(model: Any) -> None:
+    """Record each call made through a NOOA model client.
 
-    NOOA's task token accumulator counts only ``CompletionClient`` calls, so a
-    Responses API run would otherwise report zero tokens.
+    The record shows whether a model call started, so a failed invocation keeps
+    usage only after one did. NOOA's task token accumulator counts only
+    ``CompletionClient`` calls, so a Responses API run also needs the usage
+    each call returns.
     """
     call = model.call
     acall = model.acall
 
-    def record(response: Any) -> Any:
-        usages = _responses_usage.get()
-        if usages is not None:
-            usages.append(getattr(response, "usage", None))
+    def start() -> _ModelCalls | None:
+        calls = _model_calls.get()
+        if calls is not None:
+            calls.started = True
+        return calls
+
+    def record(calls: _ModelCalls | None, response: Any) -> Any:
+        if calls is not None:
+            calls.usages.append(getattr(response, "usage", None))
         return response
 
     def recorded_call(*args: Any, **kwargs: Any) -> Any:
-        return record(call(*args, **kwargs))
+        calls = start()
+        return record(calls, call(*args, **kwargs))
 
     async def recorded_acall(*args: Any, **kwargs: Any) -> Any:
-        return record(await acall(*args, **kwargs))
+        calls = start()
+        return record(calls, await acall(*args, **kwargs))
 
     model.call = recorded_call
     model.acall = recorded_acall
@@ -311,8 +333,7 @@ class BenchRuntime:
             from nooa_bench.bench_agent import BenchAgent
 
             uses_responses_api = isinstance(models[role], ResponsesClient)
-            if uses_responses_api:
-                _record_responses_usage(models[role])
+            _record_model_calls(models[role])
 
             bench_agent_factory = BenchAgent
             telemetry = RelayTelemetry(
@@ -398,25 +419,20 @@ class BenchRuntime:
             }
             if self._instruction is not None:
                 task_input["instructions"] = self._instruction
+            calls = _ModelCalls()
             try:
-                from nooa.runtime.token_usage import get_task_tokens
                 from nooa.runtime.token_usage import start_task_tokens
 
                 # BenchAgent creates a replacement shell for each task. Close the
                 # previous one first so persistent Fabric runtimes do not leak it.
                 await _close_shell(agent)
                 start_task_tokens()
-                responses_usages: list[Any] = []
-                responses_token = _responses_usage.set(responses_usages)
+                calls_token = _model_calls.set(calls)
                 try:
                     native = await agent._run_evaluation(task_input)
                 finally:
-                    _responses_usage.reset(responses_token)
-                usage = (
-                    _responses_api_usage(responses_usages)
-                    if self._uses_responses_api
-                    else _usage(get_task_tokens())
-                )
+                    _model_calls.reset(calls_token)
+                usage = self._collected_usage(calls)
                 if not isinstance(native, dict):
                     raise ValueError("BenchAgent result must be an object")
                 if native.get("success") is not True:
@@ -437,6 +453,7 @@ class BenchRuntime:
                 return _failure_output(
                     "nooa_bench_invoke_failed",
                     "OO Agents BenchAgent invocation failed; inspect adapter stderr for details",
+                    self._usage_after_error(calls),
                 )
 
         try:
@@ -473,6 +490,28 @@ class BenchRuntime:
             assert isinstance(relay_invocation.result, AgentRunResult)
             result = relay_invocation.result
         return _with_telemetry(result, relay_invocation.report)
+
+    def _collected_usage(self, calls: _ModelCalls) -> AgentUsage | None:
+        if self._uses_responses_api:
+            return _responses_api_usage(calls.usages)
+        from nooa.runtime.token_usage import get_task_tokens
+
+        return _usage(get_task_tokens())
+
+    def _usage_after_error(self, calls: _ModelCalls) -> AgentUsage | None:
+        """Return the usage collected before an invocation error, if a model call started."""
+        if not calls.started:
+            return None
+        try:
+            return self._collected_usage(calls)
+        except Exception as error:
+            # Keep the original failure result; its usage just stays unknown.
+            LOGGER.error(
+                "OO Agents BenchAgent usage collection failed after an invocation error "
+                "(error_type=%s)",
+                type(error).__name__,
+            )
+            return None
 
     async def stop(self) -> None:
         models = self._models

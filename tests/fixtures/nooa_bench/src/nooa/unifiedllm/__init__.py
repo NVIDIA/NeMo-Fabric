@@ -13,6 +13,13 @@ class FixtureModel:
         self.name = name
         self.settings = settings
 
+    # The adapter wraps NOOA's model-call methods; the fixture BenchAgent never calls them.
+    def call(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    async def acall(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
     async def aclose(self) -> None:
         return None
 

@@ -31,7 +31,9 @@ One NeMo Fabric invocation maps to one BenchAgent task:
   `cached_input_tokens`. A counter that any call omits stays unknown, so a
   call that returns no usage leaves the whole usage unknown.
 - When NOOA reports that the task failed, the failed result still carries the
-  usage of the model calls that the task made.
+  usage of the model calls that the task made. When the task raises after a
+  model call starts, the failed result also carries that usage. A task that
+  fails before any model call has no usage.
 
 The adapter accepts exactly one model. Before each task, it closes the shell
 that `_run_evaluation()` replaces. During runtime shutdown, it closes the

@@ -93,6 +93,7 @@ def _runtime_context(
 def bench_dependencies_fixture(monkeypatch: pytest.MonkeyPatch):
     mock_model = MagicMock(name="model")
     mock_model.aclose = AsyncMock()
+    mock_model.acall = AsyncMock()
     mock_get_llm_client = MagicMock(return_value=mock_model)
     unifiedllm = types.ModuleType("nooa.unifiedllm")
     unifiedllm.get_llm_client = mock_get_llm_client
@@ -190,18 +191,26 @@ def failing_responses_api_tasks_fixture() -> set[str]:
     return set()
 
 
+@pytest.fixture(name="raising_responses_api_tasks")
+def raising_responses_api_tasks_fixture() -> set[str]:
+    """User messages whose task the BenchAgent double raises on after its calls."""
+    return set()
+
+
 @pytest.fixture(name="responses_api_bench")
 def responses_api_bench_fixture(
     monkeypatch: pytest.MonkeyPatch,
     sync_responses_api_replies: list[Any],
     failing_responses_api_tasks: set[str],
+    raising_responses_api_tasks: set[str],
 ) -> list[Any]:
     """Run a real NOOA ResponsesClient against queued Responses API replies.
 
     The BenchAgent double calls the real ``ResponsesClient`` directly, once per
     queued reply: ``acall`` for this fixture's queue, then ``call`` for
     ``sync_responses_api_replies``. It reports failure for a user message in
-    ``failing_responses_api_tasks``. NOOA's task token accumulator is left in
+    ``failing_responses_api_tasks`` and raises for one in
+    ``raising_responses_api_tasks``. NOOA's task token accumulator is left in
     place, unpatched.
     """
     pytest.importorskip("nooa.unifiedllm")
@@ -230,6 +239,8 @@ def responses_api_bench_fixture(
                 await self.llm.acall(messages)
             while sync_responses_api_replies:
                 self.llm.call(messages)
+            if task_input["user_message"] in raising_responses_api_tasks:
+                raise RuntimeError("BenchAgent double failed after its model calls")
             success = task_input["user_message"] not in failing_responses_api_tasks
             return {"response": "done", "success": success, "result": None}
 
@@ -594,6 +605,38 @@ async def test_bench_responses_api_failed_task_keeps_its_own_usage(
     }
 
 
+async def test_bench_responses_api_invoke_error_keeps_collected_usage(
+    tmp_path: Path,
+    responses_api_bench: list[Any],
+    raising_responses_api_tasks: set[str],
+):
+    raising_responses_api_tasks.add("Fix the failing test.")
+    responses_api_bench.append(
+        _responses_api_reply(
+            _usage_report(
+                input_tokens=100,
+                input_tokens_details={"cached_tokens": 40},
+                output_tokens=20,
+                total_tokens=120,
+            )
+        )
+    )
+
+    result = await _invoke_responses_api_bench(tmp_path)
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.error is not None
+    assert result.error.code == "nooa_bench_invoke_failed"
+    assert result.usage is not None
+    assert result.usage.to_mapping() == {
+        "input_tokens": 100,
+        "cached_input_tokens": 40,
+        "input_tokens_include_cache": True,
+        "output_tokens": 20,
+        "total_tokens": 120,
+    }
+
+
 def test_bench_descriptor_is_a_closed_harness_adapter(tmp_path: Path):
     descriptor = json.loads(
         (NOOA_ROOT / "nooa-bench.fabric-adapter.json").read_text(encoding="utf-8")
@@ -893,3 +936,63 @@ async def test_bench_runtime_failed_task_keeps_its_own_usage(
         "output_tokens": 2,
         "total_tokens": 7,
     }
+
+
+@pytest.mark.parametrize("native_result", [RuntimeError("model error"), "not a dict"])
+async def test_bench_runtime_invoke_error_after_model_call_keeps_usage(
+    tmp_path: Path,
+    bench_dependencies: dict[str, MagicMock],
+    native_result: Any,
+):
+    os.environ["OPENAI_API_KEY"] = "test-key"
+    model = bench_dependencies["model"]
+
+    async def run_evaluation(_task_input: dict[str, Any]) -> Any:
+        # The BenchAgent receives this model as ``llm``.
+        await model.acall([{"role": "user", "content": "Fix it."}])
+        if isinstance(native_result, Exception):
+            raise native_result
+        return native_result
+
+    bench_dependencies["agent"]._run_evaluation.side_effect = run_evaluation
+    runtime = bench_adapter.BenchRuntime()
+    await runtime.start(_start_payload(tmp_path))
+
+    result = await runtime.invoke(
+        AgentRunRequest.from_mapping({"input": "Fix it."}),
+        _runtime_context(),
+    )
+    await runtime.stop()
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.error is not None
+    assert result.error.code == "nooa_bench_invoke_failed"
+    assert result.usage is not None
+    assert result.usage.to_mapping() == {
+        "input_tokens": 12,
+        "output_tokens": 4,
+        "total_tokens": 16,
+    }
+
+
+async def test_bench_runtime_invoke_error_before_model_call_has_no_usage(
+    tmp_path: Path,
+    bench_dependencies: dict[str, MagicMock],
+):
+    os.environ["OPENAI_API_KEY"] = "test-key"
+    bench_dependencies["agent"]._run_evaluation.side_effect = RuntimeError(
+        "shell setup failed"
+    )
+    runtime = bench_adapter.BenchRuntime()
+    await runtime.start(_start_payload(tmp_path))
+
+    result = await runtime.invoke(
+        AgentRunRequest.from_mapping({"input": "Fix it."}),
+        _runtime_context(),
+    )
+    await runtime.stop()
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.error is not None
+    assert result.error.code == "nooa_bench_invoke_failed"
+    assert result.usage is None
