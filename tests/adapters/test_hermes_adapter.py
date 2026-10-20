@@ -1759,10 +1759,6 @@ async def test_hermes_reports_the_version_its_version_call_returns(
     assert report["adapter"]["package_version"]["value"] == "0.6.0"
 
 
-def _raise_import_error() -> str:
-    raise ImportError("hermes_cli.version_info")
-
-
 def _raise_runtime_error() -> str:
     raise RuntimeError("malformed install stamp")
 
@@ -1777,11 +1773,6 @@ def _raise_runtime_error() -> str:
             id="unknown",
         ),
         pytest.param(
-            _raise_import_error,
-            _version_state("unsupported", "no_source"),
-            id="no-version-call",
-        ),
-        pytest.param(
             _raise_runtime_error,
             _version_state("collection_failed", "no_result"),
             id="raised",
@@ -1792,6 +1783,47 @@ async def test_hermes_version_probe_maps_each_outcome(version_call, expected):
     probe = adapter.provenance.BlockingProbe()
 
     assert await adapter.probe_hermes_version(probe, version_call) == expected
+
+
+def _version_module_raising_import_error() -> ModuleType:
+    version_info = ModuleType("hermes_cli.version_info")
+
+    def get_version_info() -> object:
+        raise ImportError("a module the version call needs")
+
+    version_info.get_version_info = get_version_info  # type: ignore[attr-defined]
+    return version_info
+
+
+@pytest.mark.parametrize(
+    ("version_module", "expected"),
+    [
+        # None in sys.modules makes the import itself raise ImportError.
+        pytest.param(
+            None,
+            {
+                "state": "unsupported",
+                "reason": "no_source",
+                "source": "reported",
+                "collected_by": "adapter",
+                "method": "adapter_report",
+            },
+            id="no-version-call",
+        ),
+        pytest.param(
+            _version_module_raising_import_error(),
+            _version_state("collection_failed", "no_result"),
+            id="import-error-inside-the-call",
+        ),
+    ],
+)
+async def test_hermes_version_probe_reads_no_source_only_without_a_version_call(
+    monkeypatch, version_module, expected
+):
+    monkeypatch.setitem(sys.modules, "hermes_cli.version_info", version_module)
+    probe = adapter.provenance.BlockingProbe()
+
+    assert await adapter.probe_hermes_version(probe) == expected
 
 
 async def test_hermes_version_probe_times_out_and_starts_no_second_call():

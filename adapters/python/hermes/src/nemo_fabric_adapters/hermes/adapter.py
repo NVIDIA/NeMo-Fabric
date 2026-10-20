@@ -45,16 +45,25 @@ _METHOD_HARNESS_API = "harness_api"
 hermes_mcp_server_config = configuration.hermes_mcp_server_config
 
 
+class HermesVersionCallMissingError(Exception):
+    """The installed Hermes Agent predates its version call."""
+
+
 def hermes_version() -> str:
     """The running Hermes Agent's version from its version call.
 
     Returns the same ``derived_version`` that ``hermes --version`` prints, which
     keeps the commit and dirty marker of a source checkout. ``get_version_info()``
     can run several ``git`` commands, so callers run it through a
-    :class:`provenance.BlockingProbe`.
+    :class:`provenance.BlockingProbe`. Raises
+    :class:`HermesVersionCallMissingError` only when the version call itself
+    can't be imported; an error raised inside the call propagates unchanged.
     """
 
-    from hermes_cli.version_info import get_version_info
+    try:
+        from hermes_cli.version_info import get_version_info
+    except ImportError as error:
+        raise HermesVersionCallMissingError from error
 
     return get_version_info().derived_version
 
@@ -70,9 +79,8 @@ async def probe_hermes_version(
         version = await probe.call(version_call, timeout=timeout)
     except TimeoutError:
         return provenance.missing_fact("collection_failed", "timeout", _METHOD_HARNESS_API)
-    except ImportError:
-        # A Hermes Agent older than its version call.
-        return provenance.missing_fact("unsupported", "no_source", _METHOD_HARNESS_API)
+    except HermesVersionCallMissingError:
+        return provenance.no_source_fact()
     except Exception:
         # Provenance never fails a run, whatever Hermes's version call raises.
         LOGGER.exception("Hermes version call failed")
