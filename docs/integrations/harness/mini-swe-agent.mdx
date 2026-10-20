@@ -122,8 +122,11 @@ not reported, because mini-SWE-agent's cost is a LiteLLM price-table estimate.
 
 Usage covers stored model responses only. mini-SWE-agent retries a failed
 request inside one model call and stores no response for the failed attempts,
-so reported usage can be lower than the billed work. A failed result keeps the
-usage gathered before the failure. An invocation that raises returns no usage.
+so reported usage can be lower than the billed work. If any model call stores
+no response, as mini-SWE-agent releases before 2.3.1 do when tool-call parsing
+fails, every token count for the invocation is unknown. A failed result keeps
+the usage gathered before the failure. An invocation that raises returns no
+usage.
 
 ## Continue a Task Across Invocations
 
