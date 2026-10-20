@@ -85,8 +85,10 @@ The adapter accepts plain-text input and returns the final response in
 `output.response`. It uses the Fabric workspace while disabling ambient OpenCode
 project configuration, user configuration, and instruction discovery.
 
-Streaming, Relay, tool policy, subagents, provider-specific model settings, and
-`max_tokens` are not supported.
+Streaming, Relay, tool policy, NeMo Fabric subagent configuration,
+provider-specific model settings, and `max_tokens` are not supported. The model
+can still call OpenCode's built-in `subagent` tool, and the Token Usage section
+describes how the adapter counts that usage.
 
 One Bun adapter process owns one embedded OpenCode host and session for each
 NeMo Fabric runtime. Ordered invocations reuse that session. Stopping the
@@ -102,7 +104,7 @@ returns no patch artifact.
 Each result's `usage` is the growth of OpenCode's session token counters
 during the invocation. A subagent runs in a child session with its own
 counters, so the adapter adds the growth of every subagent session below the
-Fabric session. The counters include every model call these sessions record,
+NeMo Fabric session. The counters include every model call these sessions record,
 including context compaction. The adapter gives the session a fixed title, so
 OpenCode makes no title-generation call.
 
@@ -127,7 +129,7 @@ result has no `usage` in these cases:
 
 - A model call or compaction failed and OpenCode recorded no usage for it.
 - A subagent session that the invocation started was still running when it
-  ended, or the Fabric session was already running when it started.
+  ended, or the NeMo Fabric session was already running when it started.
 - The invocation continued a subagent that was still running from earlier
   work, or made a model call after the completion notice of a subagent that
   existed before the invocation.

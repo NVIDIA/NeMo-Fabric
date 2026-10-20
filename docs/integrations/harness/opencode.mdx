@@ -160,8 +160,10 @@ supply. These rules are not a filesystem sandbox and do not prevent shell tools
 from reading files in the workspace.
 
 The adapter accepts plain-text input and returns the final response in
-`output.response`. Streaming, Relay, tool policy, subagents,
-provider-specific model settings, and `max_tokens` are not supported.
+`output.response`. Streaming, Relay, tool policy, NeMo Fabric subagent
+configuration, provider-specific model settings, and `max_tokens` are not
+supported. The model can still call OpenCode's built-in `subagent` tool, and
+the adapter counts that usage as described below.
 
 ## Understand the Runtime Lifecycle
 
@@ -173,7 +175,7 @@ and closes the embedded host.
 
 Each result's `usage` is the growth of OpenCode's session token counters
 during the invocation, including context compaction calls. The adapter adds
-the growth of every subagent session below the Fabric session, because a
+the growth of every subagent session below the NeMo Fabric session, because a
 subagent runs in a child session with its own counters. `input_tokens`
 includes cache reads and cache writes, with `input_tokens_include_cache` set to
 `true` and the cache reads in `cached_input_tokens`. `output_tokens` includes
@@ -192,7 +194,7 @@ Counter growth from earlier background work is excluded. Usage remains unknown
 when a delayed completion or resumed child prevents reliable attribution. A
 result has no `usage` when a model call or compaction failed without recorded
 usage, when a subagent session that the invocation started was still running
-when it ended, when the Fabric session was already running when it started,
+when it ended, when the NeMo Fabric session was already running when it started,
 when the invocation continued a subagent that was still running from earlier
 work, when it made a model call after the completion notice of a subagent that
 existed before the invocation, or when the counters or message history cannot
