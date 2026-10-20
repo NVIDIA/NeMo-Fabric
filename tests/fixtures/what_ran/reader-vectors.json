@@ -29,7 +29,7 @@
       },
       "descriptor_fingerprint": {
         "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-        "source": "observed",
+        "source": "configured",
         "collected_by": "host_core",
         "method": "nemo.fabric.adapter_descriptor/v1"
       }

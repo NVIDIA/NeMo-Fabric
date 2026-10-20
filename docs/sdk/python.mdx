@@ -1020,7 +1020,7 @@ carry `source`, `collected_by`, and `method`:
 | Part | Facts |
 | --- | --- |
 | `fabric` | `core_version` of the core that ran the adapter. `host_core_version` is `not_applicable` with reason `local_run` in a local run, and the host core's version in an OpenShell run. |
-| `adapter` | `id` from the plan, the reported `package_version`, and `descriptor_fingerprint`: `sha256:` and the SHA-256 of the descriptor's RFC 8785 canonical JSON as authored, before NeMo Fabric fills in defaults, with method `nemo.fabric.adapter_descriptor/v1`. It reads `not_applicable` with reason `no_adapter` when the plan has no adapter, and `unavailable` with reason `not_in_plan` when the plan carries no fingerprint, such as a plan from an older core. |
+| `adapter` | `id` from the plan, the reported `package_version`, and `descriptor_fingerprint`: `sha256:` and the SHA-256 of the descriptor's RFC 8785 canonical JSON as authored, before NeMo Fabric fills in defaults, with source `configured`, because it comes from the resolved plan, and method `nemo.fabric.adapter_descriptor/v1`. It reads `not_applicable` with reason `no_adapter` when the plan has no adapter, and `unavailable` with reason `not_in_plan` when the plan carries no fingerprint, such as a plan from an older core. |
 | `harness` | The reported `name` and `version` of the harness program. |
 | `models.<role>` | `provider` and the `requested` model from the plan, and the reported `served` model. |
 | `mcp.servers.<name>` | `origin`, `transport`, the configured `endpoint`, and a `runtime` block with the reported `connected`, `protocol_version`, `server_name`, `server_version`, and `tool_names`. |

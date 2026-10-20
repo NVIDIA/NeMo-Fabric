@@ -357,7 +357,8 @@ pub struct AdapterFacts {
     /// Version of the adapter package, as the adapter reports it.
     pub package_version: Fact<String>,
     /// Fingerprint `nemo.fabric.adapter_descriptor/v1` of the descriptor
-    /// contents as authored, `sha256:<hex>`. Core writes it whenever the
+    /// contents as authored, `sha256:<hex>`, taken from the resolved plan,
+    /// so its source is `configured`. Core writes it whenever the
     /// `adapter` section is present; readers accept its absence from cores
     /// that predate it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -814,12 +815,16 @@ fn core_version_fact() -> Fact<String> {
 }
 
 /// The fingerprint plan resolution took of the adapter descriptor file.
+///
+/// The value comes from the resolved plan, so the fact is `configured`.
+/// Core cannot check it again here: the hash covers the authored file,
+/// which the plan does not keep.
 fn descriptor_fingerprint_fact(plan: &RunPlan) -> Fact<String> {
     let missing = |state, reason| {
         Fact::missing(
             state,
             reason,
-            FactSource::Observed,
+            FactSource::Configured,
             HOST_CORE,
             METHOD_ADAPTER_DESCRIPTOR,
         )
@@ -830,7 +835,7 @@ fn descriptor_fingerprint_fact(plan: &RunPlan) -> Fact<String> {
     match &adapter.descriptor_fingerprint {
         Some(fingerprint) => Fact::text(
             fingerprint,
-            FactSource::Observed,
+            FactSource::Configured,
             HOST_CORE,
             METHOD_ADAPTER_DESCRIPTOR,
         ),
@@ -1100,7 +1105,7 @@ mod tests {
                 "adapter": {
                     "id": "nvidia.fabric.claude",
                     "package_version": not_declared,
-                    "descriptor_fingerprint": {"value": fingerprint, "source": "observed",
+                    "descriptor_fingerprint": {"value": fingerprint, "source": "configured",
                         "collected_by": "host_core",
                         "method": "nemo.fabric.adapter_descriptor/v1"}
                 },
@@ -1431,7 +1436,7 @@ mod tests {
             serde_json::to_value(descriptor_fingerprint_fact(plan)).expect("fact JSON")
         };
         let missing = |state: &str, reason: &str| {
-            json!({"state": state, "reason": reason, "source": "observed",
+            json!({"state": state, "reason": reason, "source": "configured",
                    "collected_by": "host_core",
                    "method": "nemo.fabric.adapter_descriptor/v1"})
         };

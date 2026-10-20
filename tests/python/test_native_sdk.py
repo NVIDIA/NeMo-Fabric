@@ -427,6 +427,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert fingerprint["value"].startswith("sha256:")
     assert len(fingerprint["value"]) == len("sha256:") + 64
     assert fingerprint["method"] == "nemo.fabric.adapter_descriptor/v1"
+    assert fingerprint["source"] == "configured"
     assert result.output["native_mcp_servers"] == ["github"]
     assert any(artifact.name == "stdout" for artifact in result.artifacts.artifacts)
     assert first["status"] == "succeeded"
