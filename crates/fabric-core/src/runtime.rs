@@ -1923,7 +1923,7 @@ fn run_local_host_invocation_with_timeout(
         request_id: request.request_id.clone(),
         runtime_id: runtime.runtime_id.clone(),
     };
-    let what_ran = crate::what_ran::collect_before_request(
+    let mut what_ran = crate::what_ran::collect_before_request(
         plan,
         adapter_id(plan),
         &runtime.environment.provider,
@@ -2034,15 +2034,16 @@ fn run_local_host_invocation_with_timeout(
         fabric_invocation,
     ) = exchange_result?;
 
-    let agent_result: AgentRunResult = serde_json::from_value(adapter_output).map_err(|error| {
-        lifecycle_error(
-            operation,
-            &runtime.runtime_id,
-            "invalid_agent_run_result",
-            format!("adapter returned an invalid AgentRunResult: {error}"),
-            &stderr,
-        )
-    })?;
+    let mut agent_result: AgentRunResult =
+        serde_json::from_value(adapter_output).map_err(|error| {
+            lifecycle_error(
+                operation,
+                &runtime.runtime_id,
+                "invalid_agent_run_result",
+                format!("adapter returned an invalid AgentRunResult: {error}"),
+                &stderr,
+            )
+        })?;
     agent_result.validate().map_err(|error| {
         lifecycle_error(
             operation,
@@ -2053,6 +2054,7 @@ fn run_local_host_invocation_with_timeout(
         )
     })?;
     validate_agent_run_result_extensions(&agent_result, plan.adapter_descriptor.as_ref())?;
+    crate::what_ran::ingest_adapter_reports(&mut what_ran, plan, &mut agent_result.extensions);
     if !agent_result.artifacts.is_empty() && artifacts.root.is_none() {
         return Err(lifecycle_error(
             operation,
@@ -4156,6 +4158,25 @@ for line in sys.stdin:
                     "extensions": {"source": "fake-host"},
                 },
             }
+        elif MODE == "versions_report":
+            fact = lambda value, method: {
+                "value": value, "source": "reported", "collected_by": "adapter",
+                "method": method,
+            }
+            result = {
+                "status": "succeeded",
+                "output": output,
+                "extensions": {
+                    "trace_id": "trace-1",
+                    "nemo_fabric.versions.v1": {
+                        "adapter": {"package_version": fact("1.2.3", "package_metadata")},
+                        "harness": {
+                            "name": fact("fake-harness", "harness_api"),
+                            "version": fact("4.5.6", "harness_api"),
+                        },
+                    },
+                },
+            }
         elif MODE == "typed_result":
             result = {
                 "status": "succeeded",
@@ -5595,6 +5616,43 @@ for line in sys.stdin:
             })
         );
         assert!(!what_ran.to_string().contains("SECRET"), "{what_ran}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// An adapter that declares the versions key and reports it gets its
+    /// facts into `what_ran`, and the key leaves `metadata.adapter`.
+    #[test]
+    fn local_host_what_ran_ingests_a_declared_versions_report() {
+        use serde_json::json;
+        let (root, plan) = local_host_plan("versions_report");
+        let descriptor_path = root.join("adapters/local-host/local-host.fabric-adapter.json");
+        let mut descriptor: Value =
+            serde_json::from_str(&fs::read_to_string(&descriptor_path).expect("read descriptor"))
+                .expect("descriptor JSON");
+        descriptor["extension_schemas"]["run_result"]["properties"]["nemo_fabric.versions.v1"] =
+            json!({"type": "object"});
+        fs::write(&descriptor_path, descriptor.to_string()).expect("write descriptor");
+        let plan = resolve_run_plan_from_config(plan.config, ResolveContext::new(&root))
+            .expect("resolve plan");
+
+        let result = run_plan(&plan, RunRequest::text("provenance")).expect("result");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        assert_eq!(result.metadata["adapter"], json!({"trace_id": "trace-1"}));
+        let what_ran = serde_json::to_value(result.what_ran.expect("what_ran")).expect("JSON");
+        let reported = |value: &str, method: &str| {
+            json!({"value": value, "source": "reported", "collected_by": "adapter",
+                   "method": method})
+        };
+        assert_eq!(
+            what_ran["adapter"]["package_version"],
+            reported("1.2.3", "package_metadata")
+        );
+        assert_eq!(
+            what_ran["harness"],
+            json!({"name": reported("fake-harness", "harness_api"),
+                   "version": reported("4.5.6", "harness_api")})
+        );
         let _ = fs::remove_dir_all(root);
     }
 

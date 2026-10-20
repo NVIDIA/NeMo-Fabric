@@ -2040,10 +2040,12 @@ def _is_mcp_server_entry(server: Any) -> bool:
         "server_version": _is_text,
         "tool_names": _is_text_list,
     }
+    runtime = server.get("runtime")
     return (
         isinstance(origin, str)
         and transport_ok
-        and _has_facts(server.get("runtime"), runtime_facts)
+        and _has_facts(runtime, runtime_facts)
+        and _has_valid_marker(runtime, "tool_names_truncated")
     )
 
 

@@ -447,6 +447,24 @@
           }
         }
       ]
+    },
+    {
+      "name": "tool names marker inside an MCP runtime block",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "runtime",
+            "tool_names_truncated"
+          ],
+          "value": {
+            "reason": "entry_cap",
+            "dropped": 1
+          }
+        }
+      ]
     }
   ],
   "invalid": [
@@ -1014,6 +1032,39 @@
           "path": [
             "mcp",
             "servers_truncated"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "tool names marker with a zero dropped count",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "runtime",
+            "tool_names_truncated"
+          ],
+          "value": {
+            "reason": "entry_cap",
+            "dropped": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "null tool_names_truncated",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "runtime",
+            "tool_names_truncated"
           ],
           "value": null
         }

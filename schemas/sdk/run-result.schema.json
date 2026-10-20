@@ -524,7 +524,11 @@
         },
         "tool_names": {
           "$ref": "#/$defs/Fact_for_Array_of_string",
-          "description": "Raw tool names the server lists, each bounded by the string length\nrule."
+          "description": "Raw tool names the server lists, each bounded by the string length\nrule. At most 64 names, in sorted order."
+        },
+        "tool_names_truncated": {
+          "$ref": "#/$defs/TruncatedEntries",
+          "description": "Tool names dropped from `tool_names`, by the adapter's helper or by\ncore. Absent when none was dropped, never `null`."
         }
       },
       "required": [

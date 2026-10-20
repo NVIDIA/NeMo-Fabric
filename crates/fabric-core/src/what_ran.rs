@@ -25,6 +25,12 @@
 //! it is replaced by a minimal one that holds only the schema name, the
 //! version and the `what_ran_truncated` marker.
 //!
+//! An adapter reports its own facts through the report keys
+//! [`VERSIONS_REPORT_KEY`] and [`MCP_REPORT_KEY`] in its result's
+//! extensions, once its descriptor declares them. A reported list keeps at
+//! most 64 elements in sorted order, counted in a marker beside it, such as
+//! `tool_names_truncated`.
+//!
 //! `what_ran` is evidence. It never decides which runs are compared.
 //!
 //! Compatibility rules for readers:
@@ -50,6 +56,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::adapter_contract::AdapterExtensionPoint;
 use crate::config::{McpServerPlan, McpTransport, ModelConfig, RunPlan};
 use crate::endpoint::{endpoint_identity, executable_name};
 
@@ -437,8 +444,17 @@ pub struct McpRuntimeFacts {
     /// Version the server reports for itself.
     pub server_version: Fact<String>,
     /// Raw tool names the server lists, each bounded by the string length
-    /// rule.
+    /// rule. At most 64 names, in sorted order.
     pub tool_names: Fact<Vec<String>>,
+    /// Tool names dropped from `tool_names`, by the adapter's helper or by
+    /// core. Absent when none was dropped, never `null`.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "TruncatedEntries")]
+    pub tool_names_truncated: Option<TruncatedEntries>,
 }
 
 /// Environment facts.
@@ -530,13 +546,7 @@ impl<T> Fact<T> {
 
     /// An adapter-reported fact while core reads no adapter report key.
     fn report_key_not_declared() -> Self {
-        Self::missing(
-            FactState::Unsupported,
-            REASON_KEY_NOT_DECLARED,
-            FactSource::Reported,
-            ADAPTER,
-            METHOD_ADAPTER_REPORT,
-        )
+        reported_missing(FactState::Unsupported, REASON_KEY_NOT_DECLARED)
     }
 }
 
@@ -672,8 +682,9 @@ impl WhatRan {
 /// servers and environment provider. The model and MCP server maps follow
 /// the entry caps and the byte budget, and collection never fails.
 ///
-/// Core reads no adapter report key yet, so every adapter-reported fact
-/// reads `unsupported` with reason `key_not_declared`. The collecting core
+/// Every adapter-reported fact reads `unsupported` with reason
+/// `key_not_declared` until [`ingest_adapter_reports`] reads the report keys
+/// the result carries. The collecting core
 /// runs the adapter in a local environment, so `host_core_version` reads
 /// `not_applicable`. A host that relays the result from a task core calls
 /// [`attribute_to_task_core`].
@@ -821,6 +832,7 @@ fn mcp_server_facts(server: &McpServerPlan) -> McpServerFacts {
             server_name: Fact::report_key_not_declared(),
             server_version: Fact::report_key_not_declared(),
             tool_names: Fact::report_key_not_declared(),
+            tool_names_truncated: None,
         },
     }
 }
@@ -884,6 +896,280 @@ pub(crate) fn attribute_to_task_core(what_ran: &mut WhatRan, environment_provide
     }
     what_ran.apply_entry_caps();
     what_ran.apply_byte_budget();
+}
+
+/// Report key for the adapter package version, the harness name and version,
+/// and the served model of each role.
+pub const VERSIONS_REPORT_KEY: &str = "nemo_fabric.versions.v1";
+/// Report key for the `runtime` block of each MCP server, and for servers
+/// the harness reports that the plan does not configure.
+pub const MCP_REPORT_KEY: &str = "nemo_fabric.mcp.v1";
+
+/// Largest compact JSON of one report key, in bytes.
+const MAX_REPORT_BYTES: usize = 64 * 1024;
+/// Most elements a list fact keeps.
+const MAX_LIST_ENTRIES: usize = 64;
+const ORIGIN_HARNESS: &str = "harness";
+const REASON_KEY_OMITTED: &str = "key_omitted";
+const REASON_FACT_OMITTED: &str = "fact_omitted";
+const REASON_INVALID_REPORT: &str = "invalid_report";
+const REASON_TOO_LARGE: &str = "too_large";
+
+/// Move the adapter's declared report keys from a result's extensions into
+/// `what_ran`.
+///
+/// Core calls this after the descriptor's extension schema accepted
+/// `extensions`, so ingestion never rejects a result. A key is declared
+/// only when the descriptor's `run_result` extension schema names it
+/// literally under `properties`; the facts of an undeclared key keep
+/// `unsupported` with reason `key_not_declared`, and the key stays in the
+/// extensions. A declared key that is absent reads `unavailable` with
+/// reason `key_omitted`, and one that is not an object reads
+/// `collection_failed` with reason `invalid_report` and stays in the
+/// extensions. A declared object is removed from the extensions. Past
+/// 64 KiB of compact JSON, every fact of that key reads `collection_failed`
+/// with reason `too_large`.
+///
+/// Inside a report, a key may hold only adapter-owned facts, each with
+/// source `reported` and collector `adapter`: the adapter package version,
+/// the harness name and version, each plan role's served model, each MCP
+/// server's `runtime` block with its `tool_names_truncated` marker, and a
+/// `harness` server's transport. A malformed or forged fact reads
+/// `collection_failed` with reason `invalid_report`, and an omitted one
+/// reads `unavailable` with reason `fact_omitted`. Core ignores every other
+/// property, so a report never changes a fact core owns. The string length
+/// rule, the 64-entry cap on `tool_names`, the entry caps and the byte
+/// budget then apply to the result.
+pub(crate) fn ingest_adapter_reports(
+    what_ran: &mut WhatRan,
+    plan: &RunPlan,
+    extensions: &mut BTreeMap<String, Value>,
+) {
+    let run_result_schema = plan.adapter_descriptor.as_ref().and_then(|adapter| {
+        adapter
+            .descriptor
+            .extension_schemas
+            .get(&AdapterExtensionPoint::RunResult)
+    });
+    for key in [VERSIONS_REPORT_KEY, MCP_REPORT_KEY] {
+        if !declares_report_key(run_result_schema, key) {
+            continue;
+        }
+        let removed = match extensions.get(key) {
+            Some(Value::Object(_)) => extensions.remove(key),
+            _ => None,
+        };
+        let report = match &removed {
+            Some(Value::Object(object)) if compact_json_len(object) > MAX_REPORT_BYTES => {
+                Report::missing(FactState::CollectionFailed, REASON_TOO_LARGE)
+            }
+            Some(Value::Object(object)) => Report::Object(object),
+            _ if extensions.contains_key(key) => {
+                Report::missing(FactState::CollectionFailed, REASON_INVALID_REPORT)
+            }
+            _ => Report::missing(FactState::Unavailable, REASON_KEY_OMITTED),
+        };
+        if key == VERSIONS_REPORT_KEY {
+            apply_versions_report(what_ran, &report);
+        } else {
+            apply_mcp_report(what_ran, plan, &report);
+        }
+    }
+    what_ran.apply_entry_caps();
+    what_ran.apply_byte_budget();
+}
+
+fn compact_json_len(object: &serde_json::Map<String, Value>) -> usize {
+    serde_json::to_vec(object)
+        .expect("a JSON object is always serializable")
+        .len()
+}
+
+/// Whether a `run_result` extension schema names `key` literally under
+/// `properties`. Core never resolves `$ref`, `allOf` or patterns.
+fn declares_report_key(schema: Option<&serde_json::Map<String, Value>>, key: &str) -> bool {
+    schema
+        .and_then(|schema| schema.get("properties"))
+        .and_then(Value::as_object)
+        .is_some_and(|properties| properties.contains_key(key))
+}
+
+/// One object of an adapter report, or the state every fact under it reads
+/// when the object is missing or malformed.
+enum Report<'a> {
+    Object(&'a serde_json::Map<String, Value>),
+    Missing(MissingFact),
+}
+
+impl<'a> Report<'a> {
+    fn missing(state: FactState, reason: &str) -> Self {
+        match reported_missing::<()>(state, reason) {
+            Fact::Missing(missing) => Self::Missing(missing),
+            Fact::Known(_) => unreachable!("reported_missing builds a missing fact"),
+        }
+    }
+
+    /// The object under `key`: `fact_omitted` when absent, `invalid_report`
+    /// when not an object.
+    fn child(&self, key: &str) -> Report<'a> {
+        match self {
+            Self::Object(object) => match object.get(key) {
+                Some(Value::Object(child)) => Report::Object(child),
+                Some(_) => Report::missing(FactState::CollectionFailed, REASON_INVALID_REPORT),
+                None => Report::missing(FactState::Unavailable, REASON_FACT_OMITTED),
+            },
+            Self::Missing(missing) => Report::Missing(missing.clone()),
+        }
+    }
+
+    /// The reported fact under `key`, kept only when it decodes and names
+    /// source `reported` and collector `adapter`.
+    fn fact<T: DeserializeOwned>(&self, key: &str) -> Fact<T> {
+        let value = match self {
+            Self::Missing(missing) => return Fact::Missing(missing.clone()),
+            Self::Object(object) => object.get(key),
+        };
+        match value.map(Fact::<T>::deserialize) {
+            None => reported_missing(FactState::Unavailable, REASON_FACT_OMITTED),
+            Some(Ok(fact))
+                if fact.origin().source == FactSource::Reported
+                    && fact.origin().collected_by == ADAPTER =>
+            {
+                fact
+            }
+            Some(_) => reported_missing(FactState::CollectionFailed, REASON_INVALID_REPORT),
+        }
+    }
+}
+
+/// A reported fact without a value, collected by the adapter's report.
+fn reported_missing<T>(state: FactState, reason: &str) -> Fact<T> {
+    Fact::missing(
+        state,
+        reason,
+        FactSource::Reported,
+        ADAPTER,
+        METHOD_ADAPTER_REPORT,
+    )
+}
+
+fn apply_versions_report(what_ran: &mut WhatRan, report: &Report<'_>) {
+    if let Some(adapter) = what_ran.adapter.as_mut() {
+        adapter.package_version = bounded_string(report.child("adapter").fact("package_version"));
+    }
+    if let Some(harness) = what_ran.harness.as_mut() {
+        let reported = report.child("harness");
+        harness.name = bounded_string(reported.fact("name"));
+        harness.version = bounded_string(reported.fact("version"));
+    }
+    let models = report.child("models");
+    for (role, model) in what_ran.models.iter_mut().flatten() {
+        model.served = bounded_string(models.child(role).fact("served"));
+    }
+}
+
+/// Fill each plan server's `runtime` block, and add a `harness` entry for
+/// each reported server the plan does not configure.
+fn apply_mcp_report(what_ran: &mut WhatRan, plan: &RunPlan, report: &Report<'_>) {
+    let Some(mcp) = what_ran.mcp.as_mut() else {
+        return;
+    };
+    let servers = report.child("servers");
+    for (name, server) in &mut mcp.servers {
+        server.runtime = runtime_facts(&servers.child(name).child("runtime"));
+    }
+    let Report::Object(reported) = servers else {
+        return;
+    };
+    let plan_servers = &plan.capability_plan.mcp_servers;
+    for (name, entry) in reported {
+        if plan_servers.contains_key(name) {
+            continue;
+        }
+        let entry_report = servers.child(name);
+        mcp.servers.insert(
+            name.clone(),
+            McpServerFacts {
+                origin: ORIGIN_HARNESS.to_string(),
+                transport: entry
+                    .get("transport")
+                    .and_then(Value::as_str)
+                    .map(str::to_lowercase),
+                endpoint: Fact::missing(
+                    FactState::NotApplicable,
+                    REASON_NOT_CONFIGURED,
+                    FactSource::Configured,
+                    HOST_CORE,
+                    METHOD_RESOLVED_PLAN,
+                ),
+                runtime: runtime_facts(&entry_report.child("runtime")),
+            },
+        );
+    }
+}
+
+/// One server's `runtime` block from its report. `tool_names` keeps at most
+/// 64 names in sorted order, and its marker adds core's drops to the
+/// helper's.
+fn runtime_facts(report: &Report<'_>) -> McpRuntimeFacts {
+    let (mut tool_names, core_marker) = bounded_list(report.fact("tool_names"));
+    let mut helper_marker = None;
+    if let (Fact::Known(_), Report::Object(object)) = (&tool_names, report)
+        && let Some(marker) = object.get("tool_names_truncated")
+    {
+        match TruncatedEntries::deserialize(marker) {
+            Ok(marker) => helper_marker = Some(marker),
+            Err(_) => {
+                tool_names = reported_missing(FactState::CollectionFailed, REASON_INVALID_REPORT);
+            }
+        }
+    }
+    let tool_names_truncated = match tool_names {
+        Fact::Known(_) => merged_marker(helper_marker, core_marker),
+        Fact::Missing(_) => None,
+    };
+    McpRuntimeFacts {
+        connected: report.fact("connected"),
+        protocol_version: bounded_string(report.fact("protocol_version")),
+        server_name: bounded_string(report.fact("server_name")),
+        server_version: bounded_string(report.fact("server_version")),
+        tool_names,
+        tool_names_truncated,
+    }
+}
+
+/// `fact` with the string length rule applied to its value.
+fn bounded_string(fact: Fact<String>) -> Fact<String> {
+    match fact {
+        Fact::Known(known) => Fact::Known(KnownFact {
+            value: bounded_text(&known.value),
+            origin: known.origin,
+        }),
+        missing => missing,
+    }
+}
+
+/// `fact` with each element bounded by the string length rule, sorted by
+/// code point, and cut to 64 elements, with a marker that counts the cut.
+fn bounded_list(fact: Fact<Vec<String>>) -> (Fact<Vec<String>>, Option<TruncatedEntries>) {
+    let Fact::Known(known) = fact else {
+        return (fact, None);
+    };
+    let mut value: Vec<String> = known.value.iter().map(|item| bounded_text(item)).collect();
+    value.sort();
+    let dropped = value.len().saturating_sub(MAX_LIST_ENTRIES);
+    value.truncate(MAX_LIST_ENTRIES);
+    let marker = (dropped > 0).then(|| TruncatedEntries {
+        reason: REASON_ENTRY_CAP.to_string(),
+        dropped: dropped as u64,
+    });
+    (
+        Fact::Known(KnownFact {
+            value,
+            origin: known.origin,
+        }),
+        marker,
+    )
 }
 
 /// `text` whole when it has at most 256 characters. A longer string keeps
@@ -1676,6 +1962,456 @@ mod tests {
                 .origin()
                 .collected_by,
             "acme.collector"
+        );
+    }
+
+    /// The secrets plan with a descriptor that declares `keys` in its
+    /// `run_result` extension schema.
+    fn plan_declaring(keys: &[&str]) -> RunPlan {
+        let mut plan = plan_with_secrets();
+        let properties: serde_json::Map<String, Value> = keys
+            .iter()
+            .map(|key| (key.to_string(), json!({"type": "object"})))
+            .collect();
+        let schema = json!({"type": "object", "properties": properties});
+        plan.adapter_descriptor
+            .as_mut()
+            .expect("adapter descriptor")
+            .descriptor
+            .extension_schemas
+            .insert(
+                AdapterExtensionPoint::RunResult,
+                schema.as_object().expect("schema object").clone(),
+            );
+        plan
+    }
+
+    fn reported(value: Value, method: &str) -> Value {
+        json!({"value": value, "source": "reported", "collected_by": "adapter",
+               "method": method})
+    }
+
+    fn report_state(state: &str, reason: &str) -> Value {
+        json!({"state": state, "reason": reason, "source": "reported",
+               "collected_by": "adapter", "method": "adapter_report"})
+    }
+
+    /// Ingest `extensions` into the facts collected for `plan`, and return
+    /// `what_ran` with the extensions core leaves on the result.
+    fn ingest(plan: &RunPlan, extensions: Value) -> (Value, Value) {
+        let adapter_id = plan
+            .adapter_descriptor
+            .as_ref()
+            .map(|adapter| adapter.descriptor.adapter_id.clone());
+        let mut what_ran = collect_before_request(plan, adapter_id, "local");
+        let mut extensions: BTreeMap<String, Value> =
+            serde_json::from_value(extensions).expect("extensions map");
+        ingest_adapter_reports(&mut what_ran, plan, &mut extensions);
+        let what_ran = serde_json::to_value(what_ran).expect("serialize what_ran");
+        assert!(what_ran_validator().is_valid(&what_ran), "{what_ran}");
+        (
+            what_ran,
+            serde_json::to_value(extensions).expect("extensions JSON"),
+        )
+    }
+
+    fn versions_report() -> Value {
+        json!({
+            "adapter": {"package_version": reported(json!("0.6.0"), "package_metadata")},
+            "harness": {
+                "name": reported(json!("claude-code"), "harness_init_message"),
+                "version": reported(json!("2.1.294"), "harness_init_message")
+            },
+            "models": {"default": {"served": reported(json!("claude-sonnet-4-5-20250929"),
+                                                      "harness_api")}}
+        })
+    }
+
+    #[test]
+    fn a_declared_versions_report_fills_the_adapter_facts_and_leaves_the_extensions() {
+        let plan = plan_declaring(&[VERSIONS_REPORT_KEY]);
+
+        let (what_ran, extensions) = ingest(
+            &plan,
+            json!({VERSIONS_REPORT_KEY: versions_report(), "trace_id": "trace-1"}),
+        );
+
+        assert_eq!(
+            what_ran["adapter"]["package_version"],
+            reported(json!("0.6.0"), "package_metadata")
+        );
+        assert_eq!(
+            what_ran["harness"],
+            json!({"name": reported(json!("claude-code"), "harness_init_message"),
+                   "version": reported(json!("2.1.294"), "harness_init_message")})
+        );
+        assert_eq!(
+            what_ran["models"]["default"]["served"],
+            reported(json!("claude-sonnet-4-5-20250929"), "harness_api")
+        );
+        assert_eq!(extensions, json!({"trace_id": "trace-1"}));
+        // The MCP key is not declared, so its facts keep `key_not_declared`.
+        assert_eq!(
+            what_ran["mcp"]["servers"]["github"]["runtime"]["connected"],
+            not_declared()
+        );
+    }
+
+    #[test]
+    fn an_undeclared_report_key_stays_in_the_extensions_and_reads_key_not_declared() {
+        let plan = plan_with_secrets();
+        let extensions = json!({VERSIONS_REPORT_KEY: versions_report()});
+
+        let (what_ran, kept) = ingest(&plan, extensions.clone());
+
+        assert_eq!(kept, extensions);
+        for fact in [
+            &what_ran["adapter"]["package_version"],
+            &what_ran["harness"]["name"],
+            &what_ran["harness"]["version"],
+            &what_ran["models"]["default"]["served"],
+        ] {
+            assert_eq!(fact, &not_declared());
+        }
+    }
+
+    #[test]
+    fn a_report_key_declared_only_through_a_reference_is_not_declared() {
+        let mut plan = plan_with_secrets();
+        let schema = json!({"type": "object", "allOf": [{"properties": {
+            VERSIONS_REPORT_KEY: {"type": "object"}}}]});
+        plan.adapter_descriptor
+            .as_mut()
+            .expect("adapter descriptor")
+            .descriptor
+            .extension_schemas
+            .insert(
+                AdapterExtensionPoint::RunResult,
+                schema.as_object().expect("schema").clone(),
+            );
+
+        let (what_ran, kept) = ingest(&plan, json!({VERSIONS_REPORT_KEY: versions_report()}));
+
+        assert_eq!(what_ran["harness"]["version"], not_declared());
+        assert_eq!(kept, json!({VERSIONS_REPORT_KEY: versions_report()}));
+    }
+
+    #[test]
+    fn an_omitted_non_object_or_oversized_report_key_marks_every_fact_of_that_key() {
+        let plan = plan_declaring(&[VERSIONS_REPORT_KEY, MCP_REPORT_KEY]);
+        let oversized = json!({"harness": {"version": reported(
+            json!("v".repeat(MAX_REPORT_BYTES)), "harness_api")}});
+        for (extensions, state, reason, kept) in [
+            (json!({}), "unavailable", "key_omitted", json!({})),
+            (
+                json!({VERSIONS_REPORT_KEY: "0.6.0", MCP_REPORT_KEY: []}),
+                "collection_failed",
+                "invalid_report",
+                json!({VERSIONS_REPORT_KEY: "0.6.0", MCP_REPORT_KEY: []}),
+            ),
+            (
+                json!({VERSIONS_REPORT_KEY: oversized, MCP_REPORT_KEY: {"servers": {
+                    "github": {"runtime": {"server_name": reported(
+                        json!("s".repeat(MAX_REPORT_BYTES)), "harness_status")}}}}}),
+                "collection_failed",
+                "too_large",
+                json!({}),
+            ),
+        ] {
+            let (what_ran, extensions) = ingest(&plan, extensions);
+
+            let expected = report_state(state, reason);
+            assert_eq!(extensions, kept, "{reason}");
+            for fact in [
+                &what_ran["adapter"]["package_version"],
+                &what_ran["harness"]["name"],
+                &what_ran["harness"]["version"],
+                &what_ran["models"]["default"]["served"],
+            ] {
+                assert_eq!(fact, &expected, "{reason}");
+            }
+            for server in what_ran["mcp"]["servers"]
+                .as_object()
+                .expect("servers")
+                .values()
+            {
+                for fact in server["runtime"].as_object().expect("runtime").values() {
+                    assert_eq!(fact, &expected, "{reason}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_report_at_64_kib_is_read_and_one_byte_more_is_too_large() {
+        let plan = plan_declaring(&[VERSIONS_REPORT_KEY]);
+        let with_padding = |padding: usize| {
+            let mut report = versions_report();
+            report["padding"] = json!("");
+            let base = serde_json::to_vec(&report).expect("JSON").len();
+            report["padding"] = json!("p".repeat(padding - base));
+            report
+        };
+
+        let (at_limit, _) = ingest(
+            &plan,
+            json!({VERSIONS_REPORT_KEY: with_padding(MAX_REPORT_BYTES)}),
+        );
+        let (past_limit, _) = ingest(
+            &plan,
+            json!({VERSIONS_REPORT_KEY: with_padding(MAX_REPORT_BYTES + 1)}),
+        );
+
+        assert_eq!(
+            at_limit["harness"]["version"],
+            reported(json!("2.1.294"), "harness_init_message")
+        );
+        assert_eq!(
+            past_limit["harness"]["version"],
+            report_state("collection_failed", "too_large")
+        );
+    }
+
+    #[test]
+    fn the_origin_rule_rejects_forged_or_malformed_facts_and_keeps_the_rest_of_the_report() {
+        let plan = plan_declaring(&[VERSIONS_REPORT_KEY]);
+        let forged = json!({"value": "9.9.9", "source": "observed", "collected_by": "adapter",
+                            "method": "harness_api"});
+        let other_collector = json!({"value": "9.9.9", "source": "reported",
+                                     "collected_by": "task_core", "method": "harness_api"});
+        let report = json!({
+            "fabric": {"core_version": reported(json!("0.0.0-forged"), "crate_version")},
+            "adapter": {"id": "forged.adapter",
+                        "package_version": {"value": "0.6.0", "state": "unavailable",
+                            "reason": "both", "source": "reported", "collected_by": "adapter",
+                            "method": "package_metadata"}},
+            "harness": {"name": forged, "version": other_collector},
+            "models": {
+                "default": {"served": reported(json!(42), "harness_api"),
+                            "requested": reported(json!("forged"), "harness_api"),
+                            "provider": "forged"},
+                "unplanned": {"served": reported(json!("other"), "harness_api")}
+            }
+        });
+
+        let (what_ran, _) = ingest(&plan, json!({VERSIONS_REPORT_KEY: report}));
+
+        let invalid = report_state("collection_failed", "invalid_report");
+        assert_eq!(what_ran["adapter"]["package_version"], invalid);
+        assert_eq!(what_ran["harness"]["name"], invalid);
+        assert_eq!(what_ran["harness"]["version"], invalid);
+        assert_eq!(what_ran["models"]["default"]["served"], invalid);
+        // Facts core owns keep core's values, and roles stay the plan's.
+        assert_eq!(
+            what_ran["fabric"]["core_version"]["value"],
+            crate::version()
+        );
+        assert_eq!(what_ran["adapter"]["id"], "nvidia.fabric.claude");
+        assert_eq!(
+            what_ran["models"]["default"]["requested"],
+            configured("claude-sonnet-4-5")
+        );
+        assert_eq!(what_ran["models"]["default"]["provider"], "anthropic");
+        assert_eq!(map_keys(&what_ran["models"]), ["default"]);
+    }
+
+    #[test]
+    fn omitted_facts_read_fact_omitted_and_a_reported_state_is_kept() {
+        let plan = plan_declaring(&[VERSIONS_REPORT_KEY]);
+        let no_source = json!({"state": "unsupported", "reason": "no_source",
+            "source": "reported", "collected_by": "adapter", "method": "adapter_report"});
+        let report = json!({
+            "harness": {"name": no_source, "version": no_source},
+            "models": "not an object"
+        });
+
+        let (what_ran, _) = ingest(&plan, json!({VERSIONS_REPORT_KEY: report}));
+
+        assert_eq!(
+            what_ran["adapter"]["package_version"],
+            report_state("unavailable", "fact_omitted")
+        );
+        assert_eq!(what_ran["harness"]["name"], no_source);
+        assert_eq!(
+            what_ran["models"]["default"]["served"],
+            report_state("collection_failed", "invalid_report")
+        );
+    }
+
+    #[test]
+    fn reported_strings_follow_the_length_rule() {
+        let plan = plan_declaring(&[VERSIONS_REPORT_KEY]);
+        let long = format!("{}a", "m".repeat(300));
+        let mut report = versions_report();
+        report["harness"]["version"] = reported(json!(long), "harness_api");
+
+        let (what_ran, _) = ingest(&plan, json!({VERSIONS_REPORT_KEY: report}));
+
+        assert_eq!(
+            what_ran["harness"]["version"]["value"],
+            format!("{}~96858eedeb3c8e6", "m".repeat(240))
+        );
+    }
+
+    fn tool_names(count: usize) -> Vec<String> {
+        // Reverse order, so core's sort decides which names stay.
+        (0..count)
+            .rev()
+            .map(|index| format!("tool-{index:02}"))
+            .collect()
+    }
+
+    #[test]
+    fn mcp_runtime_facts_fill_plan_servers_and_cap_tool_names_at_64() {
+        let plan = plan_declaring(&[MCP_REPORT_KEY]);
+        let runtime = |names: Vec<String>, marker: Option<Value>| {
+            let mut runtime = json!({
+                "connected": reported(json!(true), "harness_status"),
+                "protocol_version": reported(json!("2025-06-18"), "mcp_initialize"),
+                "server_name": reported(json!("github-mcp"), "harness_status"),
+                "server_version": reported(json!("1.2.3"), "harness_status"),
+                "tool_names": reported(json!(names), "harness_status")
+            });
+            if let Some(marker) = marker {
+                runtime["tool_names_truncated"] = marker;
+            }
+            runtime
+        };
+        let report = json!({"servers": {
+            "github": {"transport": "stdio", "endpoint": configured("forged"),
+                       "runtime": runtime(tool_names(65), None)},
+            "events": {"runtime": runtime(tool_names(70),
+                       Some(json!({"reason": "byte_budget", "dropped": 3})))},
+            "files": {"runtime": runtime(tool_names(64), None)}
+        }});
+
+        let (what_ran, extensions) = ingest(&plan, json!({MCP_REPORT_KEY: report}));
+
+        assert_eq!(extensions, json!({}));
+        let servers = &what_ran["mcp"]["servers"];
+        let github = &servers["github"];
+        let kept: Vec<String> = tool_names(64).into_iter().rev().collect();
+        assert_eq!(github["runtime"]["tool_names"]["value"], json!(kept));
+        assert_eq!(
+            github["runtime"]["tool_names_truncated"],
+            json!({"reason": "entry_cap", "dropped": 1})
+        );
+        assert_eq!(
+            servers["events"]["runtime"]["tool_names_truncated"],
+            json!({"reason": "entry_cap", "dropped": 9})
+        );
+        assert!(servers["files"]["runtime"]["tool_names_truncated"].is_null());
+        // A plan entry keeps its own origin, transport and endpoint.
+        assert_eq!(github["origin"], "plan");
+        assert_eq!(github["transport"], "streamable-http");
+        assert_eq!(
+            github["endpoint"],
+            configured("https://api.githubcopilot.com:443")
+        );
+        assert_eq!(
+            github["runtime"]["connected"],
+            reported(json!(true), "harness_status")
+        );
+    }
+
+    #[test]
+    fn mcp_report_adds_harness_entries_and_marks_omitted_plan_servers() {
+        let plan = plan_declaring(&[MCP_REPORT_KEY]);
+        let not_collected = json!({"state": "unavailable", "reason": "not_collected",
+            "source": "reported", "collected_by": "adapter",
+            "method": "harness_startup_status"});
+        let long_name = "h".repeat(129);
+        let report = json!({"servers": {
+            "plugin-docs": {"transport": "STDIO", "runtime": {
+                "connected": reported(json!(true), "harness_startup_status"),
+                "protocol_version": not_collected,
+                "server_name": not_collected,
+                "server_version": not_collected,
+                "tool_names": not_collected,
+                "tool_names_truncated": {"reason": "entry_cap", "dropped": 2}
+            }},
+            "broken": "not an object",
+            long_name: {"runtime": {}}
+        }});
+
+        let (what_ran, _) = ingest(&plan, json!({MCP_REPORT_KEY: report}));
+
+        let servers = &what_ran["mcp"]["servers"];
+        assert_eq!(
+            map_keys(servers),
+            ["broken", "events", "files", "github", "plugin-docs"]
+        );
+        let harness_entry = &servers["plugin-docs"];
+        assert_eq!(harness_entry["origin"], "harness");
+        assert_eq!(harness_entry["transport"], "stdio");
+        assert_eq!(
+            harness_entry["endpoint"],
+            json!({"state": "not_applicable", "reason": "not_configured",
+                   "source": "configured", "collected_by": "host_core",
+                   "method": "resolved_plan"})
+        );
+        assert_eq!(harness_entry["runtime"]["server_name"], not_collected);
+        // A marker beside a list without a value is dropped.
+        assert!(harness_entry["runtime"]["tool_names_truncated"].is_null());
+        let invalid = report_state("collection_failed", "invalid_report");
+        assert_eq!(servers["broken"]["runtime"]["connected"], invalid);
+        assert!(servers["broken"].get("transport").is_none());
+        assert_eq!(
+            servers["github"]["runtime"]["connected"],
+            report_state("unavailable", "fact_omitted")
+        );
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "key_too_long", "dropped": 1})
+        );
+    }
+
+    #[test]
+    fn a_malformed_helper_marker_invalidates_tool_names() {
+        let plan = plan_declaring(&[MCP_REPORT_KEY]);
+        let report = json!({"servers": {"github": {"runtime": {
+            "tool_names": reported(json!(["a"]), "harness_status"),
+            "tool_names_truncated": {"reason": "entry_cap", "dropped": 0}
+        }}}});
+
+        let (what_ran, _) = ingest(&plan, json!({MCP_REPORT_KEY: report}));
+
+        let runtime = &what_ran["mcp"]["servers"]["github"]["runtime"];
+        assert_eq!(
+            runtime["tool_names"],
+            report_state("collection_failed", "invalid_report")
+        );
+        assert!(runtime["tool_names_truncated"].is_null());
+    }
+
+    #[test]
+    fn a_plan_server_dropped_by_the_entry_cap_never_returns_as_a_harness_entry() {
+        let names = numbered_keys("server", 33);
+        let mut plan = plan_declaring(&[MCP_REPORT_KEY]);
+        let template = plan.capability_plan.mcp_servers["events"].clone();
+        plan.capability_plan.mcp_servers = names
+            .iter()
+            .map(|name| (name.clone(), template.clone()))
+            .collect();
+        let servers: serde_json::Map<String, Value> = names
+            .iter()
+            .map(|name| {
+                (
+                    name.clone(),
+                    json!({"runtime": {
+                    "connected": reported(json!(true), "harness_status")}}),
+                )
+            })
+            .collect();
+
+        let (what_ran, _) = ingest(&plan, json!({MCP_REPORT_KEY: {"servers": servers}}));
+
+        let servers = what_ran["mcp"]["servers"].as_object().expect("servers");
+        assert_eq!(servers.len(), 32);
+        assert!(servers.values().all(|server| server["origin"] == "plan"));
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "entry_cap", "dropped": 1})
         );
     }
 }
