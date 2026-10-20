@@ -1042,15 +1042,18 @@ because nothing yet shows that the model its SDK names served this invocation.
 No bundled adapter reports
 MCP runtime facts yet.
 
-A reported fact whose key the adapter does not declare has state `unsupported`
-with reason `key_not_declared` and method `adapter_report`. A fact the adapter
-has no source for has state `unsupported` with reason `no_source`. A declared
-key that the result omits gives `unavailable` with reason `key_omitted`, and a
-fact the key omits gives `unavailable` with reason `fact_omitted`. A malformed fact, or one that does not name source `reported`
+When the descriptor does not declare a report key, ingestion leaves the
+corresponding facts `unsupported` with reason `key_not_declared`.
+Result-extension validation runs first: if the schema rejects an emitted
+undeclared key, the run fails before ingestion and no `RunResult` is returned.
+A fact the adapter has no source for has state `unsupported` with reason
+`no_source`. A declared key that the result omits gives `unavailable` with
+reason `key_omitted`, and a fact the key omits gives `unavailable` with reason
+`fact_omitted`. A malformed fact, or one that does not name source `reported`
 and collector `adapter`, gives `collection_failed` with reason
 `invalid_report`. A key larger than 64 KiB of compact JSON gives
-`collection_failed` with reason `too_large`. None of these changes the run's
-status or error.
+`collection_failed` with reason `too_large`. These ingestion outcomes do not
+change a returned run's status or error.
 
 An MCP entry has `origin` `plan` for a server the plan configures. An entry
 with `origin` `harness` describes a server the harness reports but the plan
