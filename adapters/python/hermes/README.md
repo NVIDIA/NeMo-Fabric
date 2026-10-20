@@ -137,15 +137,18 @@ left out a count, leaves the affected counts unknown. Usage that arrives after
 the invocation returned is dropped, never added to a later invocation.
 Mixture-of-agents calls are already in the session counters and are not
 counted twice. Calls made by delegated subagents are not included, like their
-main calls. Hermes' Anthropic auxiliary client drops the cache counts before
-the adapter sees the usage, so with the `anthropic` provider an invocation
-that makes an auxiliary call has no `usage`. A plugin context engine may call
-a model outside the auxiliary client, so an invocation in which one compressed
-has no `usage`. The adapter sets `auxiliary.title_generation.model_upgrade_enabled`
-to false, so Hermes keeps its locally derived session title and makes no title
-model call; with Relay enabled, title generation is off entirely. The adapter
-wraps `agent.aux_accounting.record_aux_usage` once per process, and the runtime
-fails to start if the installed Hermes no longer calls it by that name.
+main calls. Hermes' Anthropic auxiliary client drops the cache counts when it
+converts a response, so the adapter reads the raw Anthropic usage before the
+conversion. If Relay rewrites that response, its counts stay unknown. A
+plugin context engine may call a model outside the auxiliary client, so an
+invocation in which one compressed has no `usage`. The adapter sets
+`auxiliary.title_generation.model_upgrade_enabled` to false, so Hermes keeps its
+locally derived session title and makes no title model call; with Relay
+enabled, title generation is off entirely. The adapter wraps
+`agent.aux_accounting.record_aux_usage`,
+`agent.anthropic_adapter.create_anthropic_message`, and the Anthropic
+auxiliary client's `create` once per process, and the runtime fails to start
+if the installed Hermes no longer calls them by those names.
 
 Hermes adds no tokens for a provider response that carried no usage, so an
 invocation with such a response has no `usage`. For a response it rejects as

@@ -1072,6 +1072,9 @@ class _AuxiliaryCalls:
         self._closed = False
         self._tokens = dict.fromkeys(_SESSION_TOKEN_KEYS, 0)
         self._unreported: set[str] = set()
+        # Raw usage of Anthropic auxiliary responses, by the converted
+        # response Hermes passes on, kept until that response is recorded.
+        self._anthropic_usage: dict[int, tuple[Any, Any]] = {}
 
     def owns_session(self, session_db: Any) -> bool:
         """Return whether Hermes bills the call to this runtime's session.
@@ -1086,16 +1089,24 @@ class _AuxiliaryCalls:
         """Add an auxiliary response's reported counts.
 
         Hermes normalizes auxiliary usage by provider alone, so the counts
-        follow the same usage shape. A response without usage, like one that
-        left out a count, leaves those counts unknown.
+        follow the same usage shape. For a response from Hermes' Anthropic
+        auxiliary client, the counts come from the raw Anthropic usage the
+        adapter captured before Hermes converted it. A response without
+        usage, like one that left out a count, leaves those counts unknown.
         """
+        with self._lock:
+            captured = self._anthropic_usage.pop(id(response), None)
+        api_mode = None
         usage = getattr(response, "usage", None)
+        if captured is not None and captured[0] is response:
+            usage = captured[1]
+            provider, api_mode = "anthropic", "anthropic_messages"
         if usage is None:
             omitted = list(_REPORTED_COUNTS)
             tokens = None
         else:
-            omitted = _omitted_counts(usage, provider, None)
-            tokens = _counter_tokens(usage, provider, None) if usage else None
+            omitted = _omitted_counts(usage, provider, api_mode)
+            tokens = _counter_tokens(usage, provider, api_mode) if usage else None
         with self._lock:
             if self._closed:
                 LOGGER.warning(
@@ -1105,6 +1116,12 @@ class _AuxiliaryCalls:
             self._unreported.update(omitted)
             for key, value in (tokens or {}).items():
                 self._tokens[key] += value
+
+    def add_anthropic_usage(self, response: Any, usage: Any) -> None:
+        """Keep the raw usage of a converted Anthropic auxiliary response."""
+        with self._lock:
+            if not self._closed:
+                self._anthropic_usage[id(response)] = (response, usage)
 
     def mark_unaccounted(self) -> None:
         """Leave every count unknown for a call the adapter could not read."""
@@ -1116,6 +1133,7 @@ class _AuxiliaryCalls:
         """Return the calls' tokens and unknown counts, and drop later usage."""
         with self._lock:
             self._closed = True
+            self._anthropic_usage.clear()
             return dict(self._tokens), frozenset(self._unreported)
 
 
@@ -1151,6 +1169,89 @@ def _observed_record_aux_usage(record_aux_usage: Callable[..., Any]) -> Any:
     return observed
 
 
+# The raw usages of the Anthropic messages that Hermes' Anthropic auxiliary
+# client receives in this context, while it converts one response.
+_ANTHROPIC_AUX_CAPTURE: contextvars.ContextVar[list[Any] | None] = (
+    contextvars.ContextVar("nemo_fabric_hermes_anthropic_aux_capture", default=None)
+)
+
+
+def _observed_anthropic_aux_create(create: Callable[..., Any]) -> Any:
+    """Wrap the Anthropic auxiliary adapter's ``create`` to keep the raw usage.
+
+    The adapter converts the Anthropic message into an OpenAI-shaped response
+    whose usage leaves out the cache counts and fills missing counts with 0.
+    Only ``create_anthropic_message``, which the adapter calls, sees the raw
+    message. A response that later reaches the observer as another object,
+    such as one Relay rewrote, falls back to the converted usage, whose
+    Anthropic counts are unknown.
+    """
+
+    def observed(self: Any, *args: Any, **kwargs: Any) -> Any:
+        captured: list[Any] = []
+        capture = _ANTHROPIC_AUX_CAPTURE.set(captured)
+        try:
+            response = create(self, *args, **kwargs)
+        finally:
+            _ANTHROPIC_AUX_CAPTURE.reset(capture)
+        calls = _AUXILIARY_CALLS.get()
+        if calls is not None and len(captured) == 1:
+            calls.add_anthropic_usage(response, captured[0])
+        return response
+
+    observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
+    return observed
+
+
+def _observed_create_anthropic_message(create_message: Callable[..., Any]) -> Any:
+    """Wrap ``create_anthropic_message`` to hand each raw usage to the
+    Anthropic auxiliary call that made it. Main-loop calls are unchanged."""
+
+    def observed(*args: Any, **kwargs: Any) -> Any:
+        message = create_message(*args, **kwargs)
+        captured = _ANTHROPIC_AUX_CAPTURE.get()
+        if captured is not None:
+            captured.append(getattr(message, "usage", None))
+        return message
+
+    observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
+    return observed
+
+
+def _install_anthropic_usage_capture() -> None:
+    """Route Hermes' Anthropic auxiliary client through the capture wrappers.
+
+    ``_AnthropicCompletionsAdapter.create`` looks up
+    ``agent.anthropic_adapter.create_anthropic_message`` when called. If
+    Hermes no longer calls it by that name, start fails rather than counting
+    the converted usage.
+    """
+    from agent import anthropic_adapter
+    from agent import auxiliary_client
+
+    adapter_type = getattr(auxiliary_client, "_AnthropicCompletionsAdapter", None)
+    create = getattr(adapter_type, "create", None)
+    create_message = getattr(anthropic_adapter, "create_anthropic_message", None)
+    if getattr(create, "nemo_fabric_observed", False):
+        return
+    called = getattr(getattr(create, "__code__", None), "co_names", ())
+    if not (
+        callable(create_message)
+        and "create_anthropic_message" in called
+        and "agent.anthropic_adapter" in called
+    ):
+        raise lifecycle.LifecycleError(
+            "hermes_usage_accounting_unsupported",
+            "This Hermes version calls Anthropic auxiliary models outside "
+            "agent.anthropic_adapter.create_anthropic_message",
+        )
+    if not getattr(create_message, "nemo_fabric_observed", False):
+        anthropic_adapter.create_anthropic_message = _observed_create_anthropic_message(
+            create_message
+        )
+    adapter_type.create = _observed_anthropic_aux_create(create)
+
+
 def _install_auxiliary_usage_observer() -> None:
     """Route Hermes' auxiliary usage recorder through the observer.
 
@@ -1181,6 +1282,7 @@ def _install_auxiliary_usage_observer() -> None:
             "This Hermes version records auxiliary usage outside "
             "agent.aux_accounting.record_aux_usage",
         )
+    _install_anthropic_usage_capture()
     aux_accounting.record_aux_usage = _observed_record_aux_usage(current)
 
 

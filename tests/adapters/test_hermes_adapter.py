@@ -2610,3 +2610,136 @@ def test_auxiliary_usage_observer_rejects_unknown_call_site(monkeypatch, drift):
         adapter._install_auxiliary_usage_observer()
 
     assert raised.value.code == "hermes_usage_accounting_unsupported"
+
+
+def _anthropic_aux_client(usage: Any) -> Any:
+    """Hermes' Anthropic auxiliary client over a scripted Anthropic SDK client."""
+    from agent import auxiliary_client
+
+    message = SimpleNamespace(
+        id="msg-scripted",
+        type="message",
+        role="assistant",
+        model="claude-test",
+        content=[SimpleNamespace(type="text", text="summary")],
+        stop_reason="end_turn",
+        stop_sequence=None,
+        usage=usage,
+    )
+    sdk = SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: message))
+    return auxiliary_client.AnthropicAuxiliaryClient(
+        sdk, "claude-test", api_key="test", base_url="https://api.anthropic.com"
+    )
+
+
+_ANTHROPIC_REQUEST = {
+    "model": "claude-test",
+    "messages": [{"role": "user", "content": "summarize"}],
+    "max_tokens": 64,
+}
+
+
+@pytest.mark.parametrize("relay_route", [False, True])
+@pytest.mark.parametrize(
+    ("usage", "tokens", "unknown"),
+    [
+        (
+            SimpleNamespace(
+                input_tokens=100,
+                output_tokens=20,
+                cache_read_input_tokens=30,
+                cache_creation_input_tokens=5,
+            ),
+            (100, 30, 5, 20),
+            set(),
+        ),
+        (
+            SimpleNamespace(
+                input_tokens=100, output_tokens=0, cache_read_input_tokens=30
+            ),
+            (100, 30, 0, 0),
+            {"input"},
+        ),
+    ],
+)
+def test_anthropic_auxiliary_usage_comes_from_the_raw_anthropic_message(
+    monkeypatch, relay_route, usage, tokens, unknown
+):
+    from agent import auxiliary_client
+
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    owner = adapter._AUXILIARY_CALLS.set(calls)
+    session = aux_accounting._accounting.set((session_db, "session"))
+    # With a Relay auxiliary route, Hermes runs the call through
+    # run_with_aux_hooks and relay_llm.execute.
+    route = auxiliary_client._RELAY_AUX_CALL_CONTEXT.set(
+        {
+            "task": "compression",
+            "request_id": "request-1",
+            "provider": "anthropic",
+            "model": "claude-test",
+        }
+        if relay_route
+        else None
+    )
+    try:
+        response = auxiliary_client._relay_sync_completion(
+            _anthropic_aux_client(usage),
+            dict(_ANTHROPIC_REQUEST),
+            provider="anthropic",
+            api_mode="anthropic_messages",
+        )
+        auxiliary_client._validate_llm_response(
+            response, "compression", provider="anthropic"
+        )
+    finally:
+        auxiliary_client._RELAY_AUX_CALL_CONTEXT.reset(route)
+        aux_accounting._accounting.reset(session)
+        adapter._AUXILIARY_CALLS.reset(owner)
+
+    counted, unreported = calls.close()
+
+    # Hermes' converted usage reports 100 input tokens with no cache counts.
+    assert response.usage.prompt_tokens == 100
+    assert tuple(counted[key] for key in adapter._SESSION_TOKEN_KEYS) == tokens
+    assert unreported == frozenset(unknown)
+
+
+def test_anthropic_auxiliary_response_seen_as_another_object_is_unknown(
+    monkeypatch,
+):
+    from agent import anthropic_adapter
+    from agent import auxiliary_client
+
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    usage = SimpleNamespace(
+        input_tokens=100,
+        output_tokens=20,
+        cache_read_input_tokens=30,
+        cache_creation_input_tokens=5,
+    )
+    client = _anthropic_aux_client(usage)
+    owner = adapter._AUXILIARY_CALLS.set(calls)
+    session = aux_accounting._accounting.set((session_db, "session"))
+    try:
+        response = client.chat.completions.create(**_ANTHROPIC_REQUEST)
+        # A managed Relay attempt that rewrote the response returns a copy.
+        auxiliary_client._validate_llm_response(
+            SimpleNamespace(**vars(response)), "compression", provider="anthropic"
+        )
+        # A main-loop Anthropic call is not an auxiliary call.
+        anthropic_adapter.create_anthropic_message(
+            client._real_client, dict(_ANTHROPIC_REQUEST)
+        )
+    finally:
+        aux_accounting._accounting.reset(session)
+        adapter._AUXILIARY_CALLS.reset(owner)
+
+    counted, unreported = calls.close()
+
+    assert counted == dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
+    assert unreported == frozenset({"input", "cached", "output"})
