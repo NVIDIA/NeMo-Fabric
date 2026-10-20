@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct CheckReport &#123;\n    pub schema_version: <a href=\"enum-checkversion.mdx\">CheckVersion</a>,\n    pub scope: <a href=\"enum-checkscope.mdx\">CheckScope</a>,\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub requested_level: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-checklevel.mdx\">CheckLevel</a>&gt;,\n    pub outcome: <a href=\"enum-checkoutcome.mdx\">CheckOutcome</a>,\n    pub reason_code: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-checkreason.mdx\">CheckReason</a>&gt;,\n    pub completed_at: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub elapsed_ms: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.f64.html\">f64</a>,\n    pub server: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-serverobservation.mdx\">ServerObservation</a>&gt;,\n    pub runtime: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-runtimeobservation.mdx\">RuntimeObservation</a>&gt;,\n    pub checks: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-checkobservation.mdx\">CheckObservation</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct CheckReport &#123;\n    pub schema_version: <a href=\"enum-checkversion.mdx\">CheckVersion</a>,\n    pub scope: <a href=\"enum-checkscope.mdx\">CheckScope</a>,\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub service_id: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub requested_level: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-checklevel.mdx\">CheckLevel</a>&gt;,\n    pub outcome: <a href=\"enum-checkoutcome.mdx\">CheckOutcome</a>,\n    pub reason_code: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-checkreason.mdx\">CheckReason</a>&gt;,\n    pub completed_at: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub elapsed_ms: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.f64.html\">f64</a>,\n    pub server: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-serverobservation.mdx\">ServerObservation</a>&gt;,\n    pub runtime: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-runtimeobservation.mdx\">RuntimeObservation</a>&gt;,\n    pub checks: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-checkobservation.mdx\">CheckObservation</a>&gt;,\n&#125;"}} /></pre>
 
 Health check report.
 
@@ -25,7 +25,11 @@ Scope requested by the caller.
 
 ### `runtime_id: Option<String>`
 
-Selected runtime ID, or null for server scope.
+Selected runtime ID, or null for server and service scopes.
+
+### `service_id: Option<String>`
+
+Selected service ID; omitted for server and runtime reports.
 
 ### `requested_level: Option<CheckLevel>`
 
@@ -49,7 +53,7 @@ Elapsed time across all routing and probes.
 
 ### `server: Option<ServerObservation>`
 
-Server evidence, absent for runtime scope.
+Server evidence, absent for runtime and service scopes.
 
 ### `runtime: Option<RuntimeObservation>`
 

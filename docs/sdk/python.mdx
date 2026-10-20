@@ -273,6 +273,28 @@ stop at the runtime server; runtime requests select the owned agent and use the
 local SDK health path inside the sandbox. Health uses an independent provider
 worker during remote invocations.
 
+### Gateway Service Health
+
+Check a prepared or attached OpenClaw Gateway with `Fabric.check(service=..., request=...)`. Service checks use the exact process-local `ServiceHandle` and do not require an environment or an attached runtime:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+async with await fabric.prepare_service(config) as service:
+    report = await fabric.check(
+        service=service.handle,
+        request=CheckRequest(
+            scope="service", service_id=service.service_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+```
+
+For OpenClaw, `live` validates `/healthz`, `active` validates an authenticated `/v1/models` response, and `ready` follows native `/readyz`, including configured channel health. A failed channel can fail Gateway readiness while `live` and `active` pass. These observations do not prove selected-agent execution, model-provider access, or message delivery. Refer to the [OpenClaw Gateway health guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/python/openclaw/README.md#gateway-health).
+
+Service checks evaluate earlier levels in order under the same three-second default deadline. They can run during invocations and never repair, restart, or release the Gateway. Reports have `scope="service"`, the selected `service_id`, and null runtime evidence. Release during a check invalidates evidence with `unknown/observation_changed`; a released or unavailable binding returns `unknown/service_unavailable`. Service hosting and checks remain local SDK capabilities; the sandbox command bridge continues to support server and runtime checks.
+
 ### Sandbox Command Bridge
 
 `fabric-agent-ctl check` checks server responsiveness with a three-second default deadline. Use `--timeout-seconds SECONDS` to set another positive, finite budget. Server checks work before a runtime exists and during an invocation. Completed checks return a `fabric.check/v1alpha1` report in `result`, with `changed: false`; passed health exits 0, while failed, unknown, or unsupported health exits 1. Use `fabric-agent-ctl check --agent researcher --runtime-id R1 --ready` to check one runtime and return a runtime-scoped report. Runtime checks require both target flags and default to `--live`; `--active` and `--ready` are mutually exclusive alternatives. OpenShell SDK requests map to these named commands. Each layer forwards the remaining deadline, and failed health evidence stays in the typed SDK report.

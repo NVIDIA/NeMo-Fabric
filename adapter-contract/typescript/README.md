@@ -11,6 +11,8 @@ Schemas maintained in the NeMo Fabric repository.
 
 `AdapterCheckRequest` and `AdapterCheckResult` describe health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source IDs.
 
+Evidence sources include Pi session, interface, and setup observations, plus OpenClaw Gateway liveness, authenticated interface, and native readiness observations. Gateway readiness includes configured channel health. A service host uses its service ID as the internal probe's `runtime_id`; service and agent-runtime targets remain distinct in the northbound SDK.
+
 ## Install
 
 Install the package from the public npm registry:

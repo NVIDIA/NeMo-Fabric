@@ -1,7 +1,7 @@
 ---
 title: "Function check_environment"
 sidebar-title: "check_environment"
-description: "Check server or runtime health in the selected environment."
+description: "Check server or runtime health through a supplied environment."
 position: 27
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -11,6 +11,6 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn check_environment(\n    environment: &amp;<a href=\"../runtime/struct-environmenthandle.mdx\">EnvironmentHandle</a>,\n    request: &amp;<a href=\"enum-checkrequest.mdx\">CheckRequest</a>,\n) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"struct-checkreport.mdx\">CheckReport</a>&gt;"}} /></pre>
 
-Check server or runtime health in the selected environment.
+Check server or runtime health through a supplied environment.
 
-Local runtimes use their authenticated adapter health channel. OpenShell server and runtime checks execute `fabric-agent-ctl check` in the sandbox. Local server checks and other providers return `unsupported_scope`. Timeouts and ownership changes return `unknown` health evidence.
+Local runtime checks use the adapter health channel. OpenShell checks use the sandbox command bridge. Local server checks return `unsupported_scope`. Use [`check_service`](fn-check-service.mdx) for registered local services. Timeouts and ownership changes return `unknown` health evidence.

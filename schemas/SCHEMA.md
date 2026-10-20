@@ -120,7 +120,7 @@ descriptor schema.
 
 ### Runtime Lifecycle
 
-- `sdk/check-request` and `check-report`: server or runtime target selection, the shared deadline, and ordered health evidence. Runtime checks default to `live`. All health reports use `fabric.check/v1alpha1`.
+- `sdk/check-request` and `check-report`: server, runtime, or registered service target selection, the shared deadline, and ordered health evidence. Runtime and service checks default to `live`. Service requests require `service_id`, and service reports include that ID with null runtime evidence. The `service_id` field is omitted from server and runtime reports. All health reports use `fabric.check/v1alpha1`.
 - `sdk/environment-handle`: prepared execution environment context.
 - `sdk/environment-reference`: provider-specific identity of an existing caller-owned environment.
 - `sdk/runtime-handle`: active harness runtime identity and opaque adapter binding.

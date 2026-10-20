@@ -28,7 +28,7 @@ An adapter descriptor opts into the southbound configuration with
 `config.input=agent_config`. Python adapters using the optional common
 lifecycle host pass `AgentConfig.from_mapping` as the `config_loader`.
 
-`AdapterCheckRequest` and `AdapterCheckResult` define health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source identifiers.
+`AdapterCheckRequest` and `AdapterCheckResult` define health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source identifiers. The common Python lifecycle host publishes an authenticated health channel for adapters with an asynchronous `check(level)` method returning an `AdapterCheckResult` mapping. The host applies the remaining deadline and invalidates observations during shutdown. A service host uses its service ID in the probe's `runtime_id` field.
 
 ## Install
 

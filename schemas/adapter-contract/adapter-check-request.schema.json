@@ -1,7 +1,7 @@
 {
   "$defs": {
     "CheckLevel": {
-      "description": "Agent health level.",
+      "description": "Runtime or service health level.",
       "oneOf": [
         {
           "const": "live",
@@ -15,7 +15,7 @@
         },
         {
           "const": "ready",
-          "description": "Observe required local model, tool, and connection setup.",
+          "description": "Observe the selected target's required native setup and connections.",
           "type": "string"
         }
       ]
@@ -30,7 +30,7 @@
       "description": "One native level to observe."
     },
     "runtime_id": {
-      "description": "Exact runtime selected by the core.",
+      "description": "Exact adapter host selected by the core, including service host IDs.",
       "minLength": 1,
       "pattern": "\\S",
       "type": "string"
