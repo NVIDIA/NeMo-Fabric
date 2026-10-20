@@ -2058,11 +2058,49 @@ async def test_hermes_stop_unregisters_the_agent_usage_observer():
     runtime = _usage_recording_runtime(agent)
     assert agent in adapter._USAGE_OBSERVERS
     assert agent in adapter._SUMMARY_ATTEMPT_OBSERVERS
+    assert agent in adapter._DELEGATION_OBSERVERS
 
     await runtime.stop()
 
     assert agent not in adapter._USAGE_OBSERVERS
     assert agent not in adapter._SUMMARY_ATTEMPT_OBSERVERS
+    assert agent not in adapter._DELEGATION_OBSERVERS
+
+
+def test_hermes_subagent_builder_notes_only_the_observed_parent():
+    class Agent:
+        pass
+
+    noted: list[str] = []
+    parent, subagent = Agent(), Agent()
+    adapter._DELEGATION_OBSERVERS[parent] = lambda: noted.append("parent")
+
+    def build_child_agent(task_index: int, goal: str, parent_agent: object) -> str:
+        return f"child of {parent_agent is parent}"
+
+    build = adapter._observed_subagent_builder(build_child_agent)
+
+    try:
+        assert build(0, "goal", parent_agent=parent) == "child of True"
+        # A subagent's own subagent belongs to its parent's delegated work.
+        assert build(0, "goal", parent_agent=subagent) == "child of False"
+    finally:
+        adapter._DELEGATION_OBSERVERS.pop(parent, None)
+
+    assert noted == ["parent"]
+
+
+def test_hermes_usage_observer_rejects_an_unknown_subagent_builder(monkeypatch):
+    from tools import delegate_tool
+
+    monkeypatch.setattr(
+        delegate_tool, "_build_child_agent", lambda *args, **kwargs: None
+    )
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        adapter._observe_delegation()
+
+    assert raised.value.code == "hermes_usage_accounting_unsupported"
 
 
 @pytest.mark.parametrize("drift", ["replaced", "not_called"])

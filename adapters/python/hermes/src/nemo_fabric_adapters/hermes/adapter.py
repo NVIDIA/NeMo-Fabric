@@ -81,6 +81,8 @@ class HermesRuntime:
         # Iteration-limit summary attempts started minus summary responses
         # observed; an attempt whose request raised leaves it above zero.
         self._unanswered_summary_attempts = 0
+        # Subagents the agent built for delegated work; see _observe_delegation.
+        self._delegated_subagents = 0
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -308,6 +310,7 @@ class HermesRuntime:
         skipped_before = dict(self._skipped_response_tokens)
         compression_calls_before = self._compression_calls
         unanswered_summaries_before = self._unanswered_summary_attempts
+        delegated_before = self._delegated_subagents
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
 
@@ -404,13 +407,16 @@ class HermesRuntime:
                 for count, responses in self._unreported_counts.items()
                 if responses != unreported_before[count]
             )
-            # A compression summary call's tokens are not in the counters, and
-            # a summary request that raised before its response was observed
-            # may have been billed, so every count is an undercount.
+            # A compression summary call's tokens are not in the counters, a
+            # summary request that raised before its response was observed may
+            # have been billed, and a subagent's tokens go to its own counters,
+            # possibly after this invocation returns, so every count is an
+            # undercount.
             | (
                 frozenset(_REPORTED_COUNTS)
                 if self._compression_calls != compression_calls_before
                 or self._unanswered_summary_attempts != unanswered_summaries_before
+                or self._delegated_subagents != delegated_before
                 else frozenset()
             ),
         )
@@ -518,7 +524,11 @@ class HermesRuntime:
             self._unanswered_summary_attempts += 1
 
         _USAGE_OBSERVERS[agent] = count_unreported
+        def count_delegated_subagent() -> None:
+            self._delegated_subagents += 1
+
         _SUMMARY_ATTEMPT_OBSERVERS[agent] = count_summary_attempt
+        _DELEGATION_OBSERVERS[agent] = count_delegated_subagent
 
     def _add_skipped_response_tokens(
         self, usage: Any, provider: Any, api_mode: Any
@@ -653,6 +663,7 @@ class HermesRuntime:
         if agent is not None:
             _USAGE_OBSERVERS.pop(agent, None)
             _SUMMARY_ATTEMPT_OBSERVERS.pop(agent, None)
+            _DELEGATION_OBSERVERS.pop(agent, None)
         had_mcp_servers = bool(self._hermes_config.get("mcp_servers"))
         had_relay_plugin = self._relay_plugin_config_path is not None
         self._agent = None
@@ -769,6 +780,10 @@ _USAGE_OBSERVERS: weakref.WeakKeyDictionary[
 _SUMMARY_ATTEMPT_OBSERVERS: weakref.WeakKeyDictionary[Any, Callable[[], None]] = (
     weakref.WeakKeyDictionary()
 )
+# Called when the agent builds a subagent for delegated work.
+_DELEGATION_OBSERVERS: weakref.WeakKeyDictionary[Any, Callable[[], None]] = (
+    weakref.WeakKeyDictionary()
+)
 # The functions ``agent.turn_response_check.check_api_response`` calls with
 # (agent, response, ...) for a provider response, by the module defining
 # each. record_response_usage folds the usage; on an invalid response, a
@@ -853,6 +868,7 @@ def _install_usage_observer() -> None:
     for name, handler in handlers.items():
         setattr(turn_response_check, name, _observed_response_handler(name, handler))
     _observe_iteration_summary()
+    _observe_delegation()
 
 
 # The function each of Hermes' iteration-limit summary attempts passes its
@@ -939,6 +955,60 @@ def _counted_summary_attempts(build: Callable[..., Any]) -> Callable[..., Any]:
         return counted_attempt
 
     return build_counted
+
+
+def _observe_delegation() -> None:
+    """Note each subagent an observed agent builds for delegated work.
+
+    A subagent is its own ``AIAgent`` with its own session counters, and
+    Hermes runs a top-level delegation in the background, so its calls can
+    finish after the delegating invocation returns. Every subagent is built
+    by ``tools.delegate_tool._build_child_agent``, which
+    ``_build_child_preserving_parent_tools`` looks up at each call, so the
+    adapter wraps it once per process. An invocation whose agent built a
+    subagent has unknown counts; a subagent's own subagents belong to that
+    delegated work. Start fails if Hermes no longer builds subagents there.
+    """
+    from tools import delegate_tool, delegate_tool_results
+
+    current = getattr(delegate_tool, _DELEGATION_BUILDER, None)
+    if getattr(current, "nemo_fabric_observed", False):
+        return
+    builder_caller = getattr(
+        delegate_tool_results, "_build_child_preserving_parent_tools", None
+    )
+    if (
+        current is None
+        or "parent_agent" not in inspect.signature(current).parameters
+        or _DELEGATION_BUILDER
+        not in getattr(getattr(builder_caller, "__code__", None), "co_names", ())
+    ):
+        raise lifecycle.LifecycleError(
+            "hermes_usage_accounting_unsupported",
+            "This Hermes version builds subagents outside "
+            "tools.delegate_tool._build_child_agent",
+        )
+    setattr(delegate_tool, _DELEGATION_BUILDER, _observed_subagent_builder(current))
+
+
+def _observed_subagent_builder(build: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a subagent builder to note the build to its parent's observer."""
+    signature = inspect.signature(build)
+
+    def observed_build(*args: Any, **kwargs: Any) -> Any:
+        parent = signature.bind(*args, **kwargs).arguments.get("parent_agent")
+        note_delegation = (
+            _DELEGATION_OBSERVERS.get(parent) if parent is not None else None
+        )
+        if note_delegation is not None:
+            note_delegation()
+        return build(*args, **kwargs)
+
+    observed_build.nemo_fabric_observed = True  # type: ignore[attr-defined]
+    return observed_build
+
+
+_DELEGATION_BUILDER = "_build_child_agent"
 
 
 def _inner_function_calls(function: Any, name: str) -> bool:
