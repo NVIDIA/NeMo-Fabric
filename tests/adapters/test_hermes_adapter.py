@@ -3548,3 +3548,58 @@ def test_native_gemini_auxiliary_usage_follows_the_raw_usage_check(metadata, unk
     assert tokens["input_tokens"] + tokens["cache_read_tokens"] == 120
     assert tokens["output_tokens"] == 8
     assert unreported == frozenset(unknown)
+
+
+def test_anthropic_usage_read_when_the_invocation_returns_is_recorded_safely(
+    monkeypatch,
+):
+    aux_accounting, recorded = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    client = _anthropic_aux_client(
+        SimpleNamespace(
+            input_tokens=100,
+            output_tokens=20,
+            cache_read_input_tokens=30,
+            cache_creation_input_tokens=5,
+        )
+    )
+    reading = threading.Event()
+    release = threading.Event()
+    omitted_counts = adapter._omitted_counts
+    errors: list[BaseException] = []
+
+    def read_slowly(*args: Any) -> list[str]:
+        reading.set()
+        release.wait(timeout=10)
+        return omitted_counts(*args)
+
+    monkeypatch.setattr(adapter, "_omitted_counts", read_slowly)
+
+    def create_and_record() -> None:
+        converted = client.chat.completions.create(**_ANTHROPIC_REQUEST)
+        try:
+            aux_accounting.record_aux_usage(
+                converted, "compression", provider="anthropic"
+            )
+        except BaseException as error:
+            errors.append(error)
+
+    worker = threading.Thread(
+        target=_owned_context(aux_accounting, calls, session_db),
+        args=(create_and_record,),
+    )
+    worker.start()
+    try:
+        # The invocation returns while Hermes' recorder reads the raw usage.
+        assert reading.wait(timeout=10)
+        tokens, unreported = calls.close()
+    finally:
+        release.set()
+        worker.join(timeout=10)
+
+    assert errors == []
+    # Hermes' own recorder still ran after the adapter's late recording.
+    assert len(recorded) == 1
+    assert tokens == dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
+    assert unreported == frozenset({"input", "cached", "output"})

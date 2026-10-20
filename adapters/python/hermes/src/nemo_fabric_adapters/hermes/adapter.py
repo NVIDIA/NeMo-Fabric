@@ -1377,10 +1377,13 @@ class _AuxiliaryCalls:
                 LOGGER.exception("Could not read Hermes auxiliary usage")
                 omitted, tokens = list(_REPORTED_COUNTS), None
         with self._lock:
+            # close() may have cleared both maps meanwhile, so remove only the
+            # entries that still name this response.
             if self._unrecorded_responses.get(id(response)) is response:
-                del self._unrecorded_responses[id(response)]
-            if captured is not None and captured[0] is response:
-                del self._anthropic_usage[id(response)]
+                self._unrecorded_responses.pop(id(response))
+            current = self._anthropic_usage.get(id(response))
+            if current is not None and current[0] is response:
+                self._anthropic_usage.pop(id(response))
             if not counted:
                 return
             if self._closed:
