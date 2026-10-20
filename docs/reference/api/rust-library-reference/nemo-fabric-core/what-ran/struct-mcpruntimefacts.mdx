@@ -10,7 +10,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct McpRuntimeFacts &#123;\n    pub connected: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>&gt;,\n    pub protocol_version: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub server_name: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub server_version: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub tool_names: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct McpRuntimeFacts &#123;\n    pub connected: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>&gt;,\n    pub protocol_version: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub server_name: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub server_version: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub tool_names: <a href=\"enum-fact.mdx\">Fact</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;&gt;,\n    pub tool_names_truncated: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-truncatedentries.mdx\">TruncatedEntries</a>&gt;,\n&#125;"}} /></pre>
 
 What the harness learned about one MCP server when it connected.
 
@@ -34,7 +34,11 @@ Version the server reports for itself.
 
 ### `tool_names: Fact<Vec<String>>`
 
-Raw tool names the server lists, each bounded by the string length rule.
+Raw tool names the server lists, each bounded by the string length rule. At most 64 names, in sorted order.
+
+### `tool_names_truncated: Option<TruncatedEntries>`
+
+Tool names dropped from `tool_names`, by the adapter's helper or by core. Absent when none was dropped, never `null`.
 
 ## Trait Implementations
 
