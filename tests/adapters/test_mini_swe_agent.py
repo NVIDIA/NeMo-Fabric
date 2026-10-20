@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -536,6 +537,13 @@ def litellm_mini_fixture(monkeypatch: pytest.MonkeyPatch) -> list:
     return responses
 
 
+# LiteLLM signs Bedrock requests with botocore. The lockfile installs boto3
+# only on Python 3.12 and later, so the Bedrock cases run there.
+_REQUIRES_BOTO3 = pytest.mark.skipif(
+    importlib.util.find_spec("boto3") is None,
+    reason="LiteLLM's Bedrock provider needs boto3",
+)
+
 _OMIT = object()
 
 
@@ -780,16 +788,19 @@ ANTHROPIC_NO_CACHE = anthropic_usage(100, 20, read=0, write=0)
             [litellm_response(bedrock_usage(100, 0, 100))],
             expected_usage(100, output=0, total=100),
             id="bedrock-reported-zero-output-and-total-kept",
+            marks=_REQUIRES_BOTO3,
         ),
         pytest.param(
             [litellm_response(bedrock_usage(100, 20, -1))],
             expected_usage(100, output=20),
             id="bedrock-negative-total-is-unknown",
+            marks=_REQUIRES_BOTO3,
         ),
         pytest.param(
             [litellm_response(bedrock_usage(100, 20, 1 << 64))],
             expected_usage(100, output=20),
             id="bedrock-overflowing-total-is-unknown",
+            marks=_REQUIRES_BOTO3,
         ),
         pytest.param(
             [
@@ -798,6 +809,7 @@ ANTHROPIC_NO_CACHE = anthropic_usage(100, 20, read=0, write=0)
             ],
             expected_usage(4712, output=140, total=4852),
             id="bedrock-cache-write-then-read-keeps-input-output-and-total",
+            marks=_REQUIRES_BOTO3,
         ),
     ],
 )
