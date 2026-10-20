@@ -14,6 +14,7 @@ import os
 from collections.abc import Awaitable
 from collections.abc import Callable
 from collections.abc import Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -24,6 +25,7 @@ from nemo_fabric_adapter_contract.models import AgentRunError
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
+from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
@@ -37,6 +39,8 @@ HARNESS = "nooa"
 MODE = "interactive_agent"
 WORKFLOW_FACTORY_KIND = "interactive_agent_factory"
 _TERMINAL_REASONS = frozenset({"DONE", "NEED_INPUT", "GET_USER_INPUT"})
+_MAX_TOKEN_COUNT = (1 << 64) - 1
+_USAGE_COUNTS = ("input_tokens", "cached_input_tokens", "output_tokens", "total_tokens")
 
 LOGGER = logging.getLogger(__name__)
 
@@ -491,6 +495,200 @@ def _success_output(
     )
 
 
+def _token_count(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 0 <= value <= _MAX_TOKEN_COUNT else None
+
+
+def _cached_tokens(details: Any) -> int | None:
+    if not isinstance(details, dict):
+        return None
+    return _token_count(details.get("cached_tokens"))
+
+
+def _responses_api_call_usage(usage: Any) -> dict[str, int | None]:
+    """Read the Responses API usage that NOOA's ``ResponsesClient`` returns."""
+    if not isinstance(usage, dict):
+        return dict.fromkeys(_USAGE_COUNTS)
+    return {
+        "input_tokens": _token_count(usage.get("input_tokens")),
+        "cached_input_tokens": _cached_tokens(usage.get("input_tokens_details")),
+        "output_tokens": _token_count(usage.get("output_tokens")),
+        "total_tokens": _token_count(usage.get("total_tokens")),
+    }
+
+
+def _completion_call_usage(usage: Any) -> dict[str, int | None]:
+    """Read the Chat Completions usage that NOOA's ``CompletionClient`` returns."""
+    if not isinstance(usage, dict):
+        return dict.fromkeys(_USAGE_COUNTS)
+    # LiteLLM zero-fills missing prompt, completion and total counts, so the
+    # adapter cannot distinguish those missing counts from reported zeros.
+    # Those zeros remain unknown; explicit cached-token zeros are preserved.
+    return {
+        "input_tokens": _token_count(usage.get("prompt_tokens")) or None,
+        "cached_input_tokens": _cached_tokens(usage.get("prompt_tokens_details")),
+        "output_tokens": _token_count(usage.get("completion_tokens")) or None,
+        "total_tokens": _token_count(usage.get("total_tokens")) or None,
+    }
+
+
+def _invocation_usage(calls: list[dict[str, int | None]]) -> AgentUsage | None:
+    """Sum the model calls of one invocation; a count any call omits stays unknown."""
+    if not calls:
+        return None
+    totals: dict[str, int | None] = {}
+    for name in _USAGE_COUNTS:
+        values = [call[name] for call in calls]
+        total = None if None in values else sum(values)
+        totals[name] = _token_count(total)
+    if all(value is None for value in totals.values()):
+        return None
+    return AgentUsage(
+        **totals,
+        # Both NOOA client APIs count cached tokens inside the input tokens.
+        input_tokens_include_cache=True if totals["input_tokens"] is not None else None,
+    )
+
+
+class _InvocationUsage:
+    """Model calls owned by one invocation.
+
+    The owner is bound in a ContextVar for the invocation, so tasks that the
+    invocation's turns create, such as NOOA's history summarizer, report to it.
+    A call that returns after the owner closes is dropped, never charged to a
+    later invocation.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, int | None]] = []
+        self.in_flight = 0
+        self.closed = False
+
+
+_INVOCATION_USAGE: ContextVar[_InvocationUsage | None] = ContextVar(
+    "nooa_invocation_usage", default=None
+)
+# Bounds how long an invocation waits for a history summary that its last turn
+# started. The wait also ends at Fabric's invocation deadline when that is sooner.
+_SUMMARIZER_WAIT_SECONDS = 120.0
+
+
+def _owned_summarizer_tasks(
+    agent: Any, owner: _InvocationUsage
+) -> list[asyncio.Task[Any]]:
+    """Return the running history summaries that ``owner``'s turns started.
+
+    NOOA's summarizer runs each summary in an ``asyncio.Task`` on the agent's
+    model client, so the task's context holds the invocation that started it.
+    """
+    tasks = []
+    for summarizer in getattr(agent, "_summarizers", None) or []:
+        task = getattr(summarizer, "_pending_task", None)
+        if (
+            isinstance(task, asyncio.Task)
+            and not task.done()
+            and task.get_context().get(_INVOCATION_USAGE) is owner
+        ):
+            tasks.append(task)
+    return tasks
+
+
+def _running_jobs(agent: Any) -> list[Any]:
+    """Return the agent's running queue jobs (``QueueManager.running_handles``)."""
+    running_handles = getattr(
+        getattr(agent, "queue_manager", None), "running_handles", None
+    )
+    if not callable(running_handles):
+        return []
+    jobs = running_handles()
+    return list(jobs) if isinstance(jobs, list) else []
+
+
+def _has_new_running_job(agent: Any, jobs_before: list[Any]) -> bool:
+    """Return whether a queue job started during the invocation is still running.
+
+    A job that ``QueueManager.spawn`` started during the invocation runs in a
+    task that copies the invocation's context, so it can still make model calls
+    for the invocation, including its first one.
+    """
+    return any(
+        all(job is not earlier for earlier in jobs_before)
+        for job in _running_jobs(agent)
+    )
+
+
+async def _close_invocation_usage(
+    agent: Any,
+    owner: _InvocationUsage,
+    deadline: float,
+    jobs_before: list[Any],
+) -> AgentUsage | None:
+    """Wait for a running history summary, then close the invocation's usage.
+
+    Usage is unknown when work that the invocation started could still make a
+    model call: a call in flight, an unfinished summary, or a running queue job.
+    The adapter never waits for queue jobs, and it never cancels owned work.
+    """
+    summaries: list[asyncio.Task[Any]] = []
+    try:
+        if _has_new_running_job(agent, jobs_before):
+            return None
+        summaries = _owned_summarizer_tasks(agent, owner)
+        if summaries:
+            remaining = deadline - asyncio.get_running_loop().time()
+            await asyncio.wait(
+                summaries,
+                timeout=max(0.0, min(_SUMMARIZER_WAIT_SECONDS, remaining)),
+            )
+    finally:
+        owner.closed = True
+    if (
+        owner.in_flight
+        or any(not task.done() for task in summaries)
+        or _has_new_running_job(agent, jobs_before)
+    ):
+        return None
+    return _invocation_usage(owner.calls)
+
+
+def _record_model_usage(model: Any, *, responses_api: bool) -> None:
+    """Report each call of one NOOA model client to the invocation that owns it."""
+    call = model.call
+    acall = model.acall
+    call_usage = _responses_api_call_usage if responses_api else _completion_call_usage
+
+    def recorded_call(*args: Any, **kwargs: Any) -> Any:
+        owner = _INVOCATION_USAGE.get()
+        if owner is None:
+            return call(*args, **kwargs)
+        owner.in_flight += 1
+        try:
+            response = call(*args, **kwargs)
+        finally:
+            owner.in_flight -= 1
+        if not owner.closed:
+            owner.calls.append(call_usage(getattr(response, "usage", None)))
+        return response
+
+    async def recorded_acall(*args: Any, **kwargs: Any) -> Any:
+        owner = _INVOCATION_USAGE.get()
+        if owner is None:
+            return await acall(*args, **kwargs)
+        owner.in_flight += 1
+        try:
+            response = await acall(*args, **kwargs)
+        finally:
+            owner.in_flight -= 1
+        if not owner.closed:
+            owner.calls.append(call_usage(getattr(response, "usage", None)))
+        return response
+
+    model.call = recorded_call
+    model.acall = recorded_acall
+
+
 def _with_telemetry(
     result: AgentRunResult,
     report: RelayReport | None,
@@ -537,6 +735,16 @@ class NooaRuntime:
         telemetry: RelayTelemetry | None = None
         try:
             models = await build_models(config)
+            if models:
+                # build_models gets every client from NOOA's get_llm_client,
+                # which returns a ResponsesClient or a CompletionClient.
+                from nooa.unifiedllm import ResponsesClient
+
+                for model in models.values():
+                    _record_model_usage(
+                        model,
+                        responses_api=isinstance(model, ResponsesClient),
+                    )
             context = _build_context(payload, config, models)
             telemetry = RelayTelemetry(
                 agent_name=common_utils.agent_name(payload),
@@ -647,11 +855,22 @@ class NooaRuntime:
 
             return _success_output(messages, reason, explanation)
 
-        relay_invocation = await telemetry.invoke(
-            agent=agent,
-            runtime_context=runtime_context,
-            call=invoke_target,
-        )
+        deadline = lifecycle.invocation_deadline(runtime_context)
+        jobs_before = _running_jobs(agent)
+        owner = _InvocationUsage()
+        token = _INVOCATION_USAGE.set(owner)
+        try:
+            relay_invocation = await telemetry.invoke(
+                agent=agent,
+                runtime_context=runtime_context,
+                call=invoke_target,
+            )
+        except BaseException:
+            owner.closed = True
+            raise
+        finally:
+            _INVOCATION_USAGE.reset(token)
+        usage = await _close_invocation_usage(agent, owner, deadline, jobs_before)
         if not relay_invocation.called:
             result = _failure_output(
                 "nooa_telemetry_setup_failed",
@@ -660,6 +879,7 @@ class NooaRuntime:
         else:
             assert isinstance(relay_invocation.result, AgentRunResult)
             result = relay_invocation.result
+        result.usage = usage
         return _with_telemetry(result, relay_invocation.report)
 
     async def stop(self) -> None:

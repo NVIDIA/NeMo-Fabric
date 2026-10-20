@@ -5,12 +5,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
 import subprocess
 import sys
 import types
+from collections.abc import Awaitable
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from contextlib import contextmanager
 from pathlib import Path
@@ -78,23 +81,25 @@ def _invocation(
     *,
     runtime_id: str = "runtime-1",
     request_id: str = "request-1",
+    deadline_millis: int | None = None,
 ) -> tuple[AgentRunRequest, RuntimeContext]:
+    context: dict[str, Any] = {
+        "runtime_id": runtime_id,
+        "invocation_id": f"invocation-{request_id}",
+        "request_id": request_id,
+        "environment": {
+            "environment_id": "environment-1",
+            "provider": "test",
+            "control_location": "in_env_control",
+            "ownership": "caller_owned",
+        },
+        "artifacts": {},
+    }
+    if deadline_millis is not None:
+        context["deadline_millis"] = deadline_millis
     return (
         AgentRunRequest.from_mapping({"input": value}),
-        RuntimeContext.from_mapping(
-            {
-                "runtime_id": runtime_id,
-                "invocation_id": f"invocation-{request_id}",
-                "request_id": request_id,
-                "environment": {
-                    "environment_id": "environment-1",
-                    "provider": "test",
-                    "control_location": "in_env_control",
-                    "ownership": "caller_owned",
-                },
-                "artifacts": {},
-            }
-        ),
+        RuntimeContext.from_mapping(context),
     )
 
 
@@ -1216,6 +1221,7 @@ async def test_coding_agent_target_runs_with_normalized_model_and_skills(
     modules["nooa"].Context = mock_context
     modules["nooa.skill"].TextSkill = mock_text_skill
     modules["nooa.unifiedllm"].get_llm_client = mock_get_llm_client
+    modules["nooa.unifiedllm"].ResponsesClient = type("ResponsesClient", (), {})
     modules["nooa_cli.coding"].CodingAgent = mock_coding_agent
 
     skill_path = tmp_path / "skills" / "code-review"
@@ -1354,6 +1360,7 @@ async def test_arc_solver_target_runs_custom_queue_to_harness_completion(
     modules["solver_agent"].MdArcSolverAgent = mock_solver
     modules["nooa"].Context = mock_context
     modules["nooa.unifiedllm"].get_llm_client = mock_get_llm_client
+    modules["nooa.unifiedllm"].ResponsesClient = type("ResponsesClient", (), {})
 
     skill_path = tmp_path / "skills" / "grid-game-solver"
     skill_path.mkdir(parents=True)
@@ -1422,6 +1429,878 @@ async def test_arc_solver_target_runs_custom_queue_to_harness_completion(
     assert agent.handle.await_count == 3
     agent.close.assert_awaited_once_with()
     mock_llm.aclose.assert_awaited_once_with()
+
+
+class _HeldReply:
+    """A model reply that a test releases once the call is in flight."""
+
+    def __init__(self) -> None:
+        self.requested = asyncio.Event()
+        self.reply: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+
+
+@pytest.fixture(name="model_replies")
+def model_replies_fixture(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Queue what NOOA's real model clients receive from LiteLLM, in call order.
+
+    An exception in the queue is raised, and a ``_HeldReply`` holds its call in
+    flight until the test releases it.
+    """
+    pytest.importorskip("nooa.unifiedllm")
+    import litellm
+
+    replies: list[Any] = []
+
+    def next_reply() -> Any:
+        reply = replies.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
+
+    async def async_reply(**_kwargs: Any) -> Any:
+        reply = next_reply()
+        if isinstance(reply, _HeldReply):
+            reply.requested.set()
+            return await reply.reply
+        return reply
+
+    def sync_reply(**_kwargs: Any) -> Any:
+        return next_reply()
+
+    monkeypatch.setattr(litellm, "acompletion", async_reply)
+    monkeypatch.setattr(litellm, "aresponses", async_reply)
+    monkeypatch.setattr(litellm, "completion", sync_reply)
+    monkeypatch.setattr(litellm, "responses", sync_reply)
+    os.environ["OPENAI_API_KEY"] = "test-key"
+    return replies
+
+
+def _chat_completion_reply(usage: dict[str, Any] | None, content: str = "done") -> Any:
+    """Build a reply the way LiteLLM converts a Chat Completions body."""
+    import litellm
+    from litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response import (
+        convert_to_model_response_object,
+    )
+
+    body: dict[str, Any] = {
+        "id": "chatcmpl-1",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "fixture-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+    if usage is not None:
+        body["usage"] = usage
+    return convert_to_model_response_object(
+        response_object=body, model_response_object=litellm.ModelResponse()
+    )
+
+
+def _responses_api_reply(usage: Any) -> Any:
+    """Build a Responses API reply; a usage mapping goes through LiteLLM's model."""
+    from litellm.types.llms.openai import ResponseAPIUsage
+    from litellm.types.llms.openai import ResponsesAPIResponse
+
+    reply = ResponsesAPIResponse(
+        id="resp-1",
+        created_at=0,
+        model="fixture-model",
+        object="response",
+        status="completed",
+        output=[
+            {
+                "type": "message",
+                "id": "msg-1",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": "done", "annotations": []}],
+            }
+        ],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+    if isinstance(usage, dict):
+        usage = ResponseAPIUsage(**usage)
+    return reply.model_copy(update={"usage": usage})
+
+
+def _model_reply(client_type: str, **counts: int) -> Any:
+    """Build one reply with input, cached, output, and total counts for a client type."""
+    if client_type == "responses":
+        return _responses_api_reply(
+            {
+                "input_tokens": counts["input"],
+                "input_tokens_details": {"cached_tokens": counts["cached"]},
+                "output_tokens": counts["output"],
+                "total_tokens": counts["total"],
+            }
+        )
+    return _chat_completion_reply(
+        {
+            "prompt_tokens": counts["input"],
+            "prompt_tokens_details": {"cached_tokens": counts["cached"]},
+            "completion_tokens": counts["output"],
+            "total_tokens": counts["total"],
+        }
+    )
+
+
+_FULL_USAGE = {
+    "input_tokens": 100,
+    "cached_input_tokens": 40,
+    "input_tokens_include_cache": True,
+    "output_tokens": 20,
+    "total_tokens": 120,
+}
+_MESSAGES = [{"role": "user", "content": "Fix the failing test."}]
+
+
+def _model_start_payload(tmp_path: Path, client_type: str) -> dict[str, Any]:
+    payload = _start_payload(tmp_path)
+    payload["config"] = AgentConfig.from_mapping(
+        {
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "openai/fixture-model",
+                    "base_url": "https://model.example.test/v1",
+                    "settings": {"client_type": client_type},
+                }
+            },
+            "workflow": _workflow(),
+        }
+    )
+    return payload
+
+
+def _install_model_target(
+    install_target: Any,
+    turn: Callable[[Any], Awaitable[None]],
+) -> None:
+    """Install a target whose every turn runs ``turn`` with the adapter-built model."""
+    agent, _channels, _handlers = _agent_double()
+
+    def create_agent(context: adapter.InteractiveAgentBuildContext) -> Any:
+        model = context.models["default"]
+
+        async def handle(_notification: dict[str, list[Any]]):
+            await turn(model)
+            return SimpleNamespace(kind="DONE", explanation="turn complete")
+
+        agent.handle.side_effect = handle
+        return agent
+
+    install_target(create_agent)
+
+
+async def _invoke_once(
+    tmp_path: Path,
+    install_target: Any,
+    client_type: str,
+    turn: Callable[[Any], Awaitable[None]],
+) -> Any:
+    _install_model_target(install_target, turn)
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_model_start_payload(tmp_path, client_type))
+    try:
+        return await runtime.invoke(*_invocation("Fix the failing test."))
+    finally:
+        await runtime.stop()
+
+
+async def _call_until_empty(replies: list[Any], model: Any) -> None:
+    while replies:
+        await model.acall(_MESSAGES)
+
+
+@pytest.mark.parametrize("client_type", ["completion", "responses"])
+async def test_model_usage_sums_every_call_of_the_invocation(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+    client_type: str,
+):
+    model_replies.extend(
+        [
+            _model_reply(client_type, input=100, cached=40, output=20, total=120),
+            _model_reply(client_type, input=150, cached=90, output=30, total=180),
+        ]
+    )
+
+    async def turn(model: Any) -> None:
+        await model.acall(_MESSAGES)
+        model.call(_MESSAGES)
+
+    result = await _invoke_once(tmp_path, install_target, client_type, turn)
+
+    assert not model_replies
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert result.usage is not None
+    assert result.usage.to_mapping() == {
+        "input_tokens": 250,
+        "cached_input_tokens": 130,
+        "input_tokens_include_cache": True,
+        "output_tokens": 50,
+        "total_tokens": 300,
+    }
+
+
+def _construct_responses_usage(**counts: Any) -> Any:
+    from litellm.types.llms.openai import ResponseAPIUsage
+
+    return ResponseAPIUsage.model_construct(**counts)
+
+
+@pytest.mark.parametrize(
+    ("client_type", "make_reply", "expected"),
+    [
+        pytest.param(
+            "completion",
+            lambda: _chat_completion_reply(
+                {"completion_tokens": 20, "total_tokens": 120}
+            ),
+            {"output_tokens": 20, "total_tokens": 120},
+            id="completion-prompt-absent-zero-filled",
+        ),
+        pytest.param(
+            "completion",
+            lambda: _chat_completion_reply(
+                {"prompt_tokens": 0, "completion_tokens": 20, "total_tokens": 20}
+            ),
+            {"output_tokens": 20, "total_tokens": 20},
+            id="completion-prompt-zero",
+        ),
+        pytest.param(
+            "completion",
+            lambda: _chat_completion_reply(
+                {"prompt_tokens": -1, "completion_tokens": 20, "total_tokens": 120}
+            ),
+            {"output_tokens": 20, "total_tokens": 120},
+            id="completion-prompt-negative",
+        ),
+        pytest.param(
+            "completion",
+            lambda: _chat_completion_reply({"prompt_tokens": 60}),
+            {"input_tokens": 60, "input_tokens_include_cache": True},
+            id="completion-output-and-total-zero-filled",
+        ),
+        pytest.param(
+            "completion",
+            lambda: _chat_completion_reply(
+                {
+                    "prompt_tokens": 60,
+                    "prompt_tokens_details": {"cached_tokens": 0},
+                    "completion_tokens": 5,
+                    "total_tokens": 65,
+                }
+            ),
+            {
+                "input_tokens": 60,
+                "cached_input_tokens": 0,
+                "input_tokens_include_cache": True,
+                "output_tokens": 5,
+                "total_tokens": 65,
+            },
+            id="completion-explicit-cached-zero",
+        ),
+        pytest.param(
+            "completion",
+            lambda: _chat_completion_reply(
+                {
+                    "prompt_tokens": 60,
+                    "prompt_tokens_details": {"cached_tokens": None},
+                    "completion_tokens": 5,
+                    "total_tokens": 65,
+                }
+            ),
+            {
+                "input_tokens": 60,
+                "input_tokens_include_cache": True,
+                "output_tokens": 5,
+                "total_tokens": 65,
+            },
+            id="completion-cached-null",
+        ),
+        pytest.param(
+            "completion",
+            lambda: _chat_completion_reply(
+                {"prompt_tokens": 60, "completion_tokens": 5, "total_tokens": 1 << 64}
+            ),
+            {
+                "input_tokens": 60,
+                "input_tokens_include_cache": True,
+                "output_tokens": 5,
+            },
+            id="completion-total-past-uint64",
+        ),
+        pytest.param(
+            "responses",
+            lambda: _responses_api_reply(
+                _construct_responses_usage(output_tokens=5, total_tokens=5)
+            ),
+            {"output_tokens": 5, "total_tokens": 5},
+            id="responses-input-absent-defensive",
+        ),
+        pytest.param(
+            "responses",
+            lambda: _responses_api_reply(
+                {"input_tokens": 60, "output_tokens": 0, "total_tokens": 60}
+            ),
+            {
+                "input_tokens": 60,
+                "input_tokens_include_cache": True,
+                "output_tokens": 0,
+                "total_tokens": 60,
+            },
+            id="responses-explicit-output-zero",
+        ),
+        pytest.param(
+            "responses",
+            lambda: _responses_api_reply(
+                {"input_tokens": -1, "output_tokens": 5, "total_tokens": 5}
+            ),
+            {"output_tokens": 5, "total_tokens": 5},
+            id="responses-input-negative",
+        ),
+        pytest.param(
+            "responses",
+            lambda: _responses_api_reply(
+                {
+                    "input_tokens": 60,
+                    "input_tokens_details": {"cached_tokens": 1 << 64},
+                    "output_tokens": 5,
+                    "total_tokens": (1 << 64) - 1,
+                }
+            ),
+            {
+                "input_tokens": 60,
+                "input_tokens_include_cache": True,
+                "output_tokens": 5,
+                "total_tokens": (1 << 64) - 1,
+            },
+            id="responses-cached-past-uint64-total-at-max",
+        ),
+    ],
+)
+async def test_model_usage_keeps_only_reported_counts(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+    client_type: str,
+    make_reply: Callable[[], Any],
+    expected: dict[str, Any],
+):
+    model_replies.append(make_reply())
+
+    result = await _invoke_once(
+        tmp_path,
+        install_target,
+        client_type,
+        lambda model: _call_until_empty(model_replies, model),
+    )
+
+    assert not model_replies
+    assert result.usage is not None
+    assert result.usage.to_mapping() == expected
+
+
+@pytest.mark.parametrize(
+    ("client_type", "reply_without_usage"),
+    [
+        ("completion", lambda: _chat_completion_reply(None)),
+        ("responses", lambda: _responses_api_reply(None)),
+    ],
+)
+async def test_model_call_without_usage_leaves_usage_unknown(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+    client_type: str,
+    reply_without_usage: Callable[[], Any],
+):
+    model_replies.extend(
+        [
+            _model_reply(client_type, input=100, cached=40, output=20, total=120),
+            reply_without_usage(),
+        ]
+    )
+
+    result = await _invoke_once(
+        tmp_path,
+        install_target,
+        client_type,
+        lambda model: _call_until_empty(model_replies, model),
+    )
+
+    assert not model_replies
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert result.usage is None
+
+
+@pytest.mark.parametrize("client_type", ["completion", "responses"])
+async def test_model_usage_sums_partial_reports_per_count(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+    client_type: str,
+):
+    partial = (
+        _responses_api_reply(
+            _construct_responses_usage(output_tokens=5, total_tokens=5)
+        )
+        if client_type == "responses"
+        else _chat_completion_reply({"completion_tokens": 5, "total_tokens": 5})
+    )
+    model_replies.extend(
+        [_model_reply(client_type, input=100, cached=40, output=20, total=120), partial]
+    )
+
+    result = await _invoke_once(
+        tmp_path,
+        install_target,
+        client_type,
+        lambda model: _call_until_empty(model_replies, model),
+    )
+
+    assert result.usage is not None
+    assert result.usage.to_mapping() == {"output_tokens": 25, "total_tokens": 125}
+
+
+async def test_model_call_that_raises_is_not_counted(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+):
+    model_replies.extend(
+        [
+            RuntimeError("provider unavailable"),
+            _model_reply("completion", input=100, cached=40, output=20, total=120),
+        ]
+    )
+
+    async def turn(model: Any) -> None:
+        with pytest.raises(RuntimeError, match="provider unavailable"):
+            await model.acall(_MESSAGES)
+        await model.acall(_MESSAGES)
+
+    result = await _invoke_once(tmp_path, install_target, "completion", turn)
+
+    assert result.usage is not None
+    assert result.usage.to_mapping() == _FULL_USAGE
+
+
+def _usage_report(input_tokens: int, output_tokens: int) -> dict[str, int]:
+    return {
+        "prompt_tokens": input_tokens,
+        "completion_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+
+
+def _known_usage(input_tokens: int, output_tokens: int) -> dict[str, Any]:
+    return {
+        "input_tokens": input_tokens,
+        "input_tokens_include_cache": True,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+
+
+def _answer(input_tokens: int, output_tokens: int, value: str) -> Any:
+    """A Chat Completions reply that NOOA's PredictStrategy parses as ``value``."""
+    return _chat_completion_reply(
+        _usage_report(input_tokens, output_tokens), json.dumps({"value": value})
+    )
+
+
+def _install_predicting_target(
+    install_target: Any,
+    *,
+    summarize: bool,
+    after_answer: Callable[[Any], None] | None = None,
+) -> None:
+    """Install a real NOOA InteractiveAgent whose turns make one PredictStrategy call.
+
+    With ``summarize``, it also installs NOOA's history summarizer. CodingAgent
+    installs ``SummarizationConfig()``; the 500-token threshold stands in for a
+    long session, so a 1000-token turn starts a summary at its ``AfterTurn``.
+    ``after_answer`` runs with the agent after each turn's call.
+    """
+    pytest.importorskip("nooa.interactive")
+    from nooa import strategy
+    from nooa.interactive import InteractiveAgent
+    from nooa.interactive import RespondReason
+    from nooa.interactive import RespondResult
+    from nooa.interactive import SummarizationConfig
+    from nooa.interactive import install_summarizer
+    from nooa.strategies import PredictStrategy
+
+    class PredictingAgent(InteractiveAgent):
+        @strategy(PredictStrategy())
+        async def answer(self, question: str) -> str:
+            """Answer the question in one word."""
+            ...
+
+        async def handle(self, notification: dict[str, list[Any]]) -> Any:
+            await self.answer(str(notification.get("user_messages", [])))
+            if after_answer is not None:
+                after_answer(self)
+            return RespondResult(kind=RespondReason.DONE, explanation="answered")
+
+    def create_agent(context: adapter.InteractiveAgentBuildContext) -> Any:
+        agent = PredictingAgent(llm=context.models["default"])
+        agent.queue_manager.queue("background")
+        if summarize:
+            install_summarizer(
+                SummarizationConfig(max_tokens=500, preserve_recent=0), agent
+            )
+        return agent
+
+    install_target(create_agent)
+
+
+def _summary_task(runtime: adapter.NooaRuntime) -> asyncio.Task[Any]:
+    assert runtime._target is not None
+    task = runtime._target.agent._summarizers[0]._pending_task
+    assert isinstance(task, asyncio.Task)
+    return task
+
+
+async def test_summary_started_on_last_turn_counts_toward_its_invocation(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+):
+    summary = _HeldReply()
+    model_replies.extend([_answer(1000, 10, "one"), summary, _answer(300, 3, "two")])
+    _install_predicting_target(install_target, summarize=True)
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_model_start_payload(tmp_path, "completion"))
+    try:
+        first = asyncio.create_task(
+            runtime.invoke(*_invocation("one", request_id="one"))
+        )
+        await summary.requested.wait()
+        await _drain_ready_callbacks()
+        assert not first.done()
+        summary.reply.set_result(_answer(7000, 70, "summary of the history"))
+        first_result = await first
+        second_result = await runtime.invoke(*_invocation("two", request_id="two"))
+    finally:
+        await runtime.stop()
+
+    assert not model_replies
+    assert first_result.usage is not None
+    assert first_result.usage.to_mapping() == _known_usage(8000, 80)
+    assert second_result.usage is not None
+    assert second_result.usage.to_mapping() == _known_usage(300, 3)
+
+
+@pytest.mark.parametrize("finishes", ["between_invocations", "during_next_invocation"])
+async def test_summary_still_running_after_the_wait_leaves_usage_unknown(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+    monkeypatch: pytest.MonkeyPatch,
+    finishes: str,
+):
+    monkeypatch.setattr(adapter, "_SUMMARIZER_WAIT_SECONDS", 0.0)
+    summary = _HeldReply()
+    next_answer = _HeldReply()
+    model_replies.extend([_answer(1000, 10, "one"), summary, next_answer])
+    _install_predicting_target(install_target, summarize=True)
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_model_start_payload(tmp_path, "completion"))
+    try:
+        first_result = await runtime.invoke(*_invocation("one", request_id="one"))
+        summary_task = _summary_task(runtime)
+        assert summary.requested.is_set()
+        assert not summary_task.done()
+        if finishes == "between_invocations":
+            summary.reply.set_result(_answer(7000, 70, "summary of the history"))
+            await summary_task
+        second = asyncio.create_task(
+            runtime.invoke(*_invocation("two", request_id="two"))
+        )
+        await next_answer.requested.wait()
+        if finishes == "during_next_invocation":
+            summary.reply.set_result(_answer(7000, 70, "summary of the history"))
+            await summary_task
+        next_answer.reply.set_result(_answer(300, 3, "two"))
+        second_result = await second
+    finally:
+        await runtime.stop()
+
+    assert first_result.usage is None
+    assert second_result.usage is not None
+    assert second_result.usage.to_mapping() == _known_usage(300, 3)
+
+
+async def _drain_ready_callbacks() -> None:
+    """Let every ready callback on the loop run, without waiting on a clock."""
+    for _ in range(100):
+        await asyncio.sleep(0)
+
+
+async def test_summary_wait_ends_at_the_invocation_deadline(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+):
+    summary = _HeldReply()
+    model_replies.extend([_answer(1000, 10, "one"), summary])
+    _install_predicting_target(install_target, summarize=True)
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_model_start_payload(tmp_path, "completion"))
+    first = asyncio.create_task(
+        runtime.invoke(*_invocation("one", request_id="one", deadline_millis=1))
+    )
+    try:
+        await summary.requested.wait()
+        await _drain_ready_callbacks()
+        assert first.done()
+        first_result = first.result()
+        summary_task = _summary_task(runtime)
+        assert not summary_task.done()
+    finally:
+        if not summary.reply.done():
+            summary.reply.set_result(_answer(7000, 70, "summary of the history"))
+        await first
+        await runtime.stop()
+
+    assert first_result.usage is None
+
+
+async def test_queue_job_still_running_at_return_leaves_usage_unknown(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+):
+    release_job = asyncio.Event()
+    job_called = asyncio.Event()
+    jobs: list[Any] = []
+
+    async def job(agent: Any) -> None:
+        await release_job.wait()
+        await agent.llm.acall(_MESSAGES)
+        job_called.set()
+
+    def spawn_once(agent: Any) -> None:
+        if not jobs:
+            jobs.append(agent.queue_manager.spawn(job(agent), channel="background"))
+
+    model_replies.extend(
+        [
+            _answer(1000, 10, "one"),
+            _answer(7000, 70, "job"),
+            _answer(300, 3, "two"),
+        ]
+    )
+    _install_predicting_target(install_target, summarize=False, after_answer=spawn_once)
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_model_start_payload(tmp_path, "completion"))
+    try:
+        first = await runtime.invoke(*_invocation("one", request_id="one"))
+        assert jobs[0].state == "running"
+        release_job.set()
+        await job_called.wait()
+        second = await runtime.invoke(*_invocation("two", request_id="two"))
+    finally:
+        await runtime.stop()
+
+    assert not model_replies
+    assert first.usage is None
+    assert second.usage is not None
+    assert second.usage.to_mapping() == _known_usage(300, 3)
+
+
+async def test_cancelled_invocation_closes_its_usage_without_cancelling_the_summary(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+):
+    summary = _HeldReply()
+    model_replies.extend([_answer(1000, 10, "one"), summary])
+    _install_predicting_target(install_target, summarize=True)
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_model_start_payload(tmp_path, "completion"))
+    try:
+        first = asyncio.create_task(
+            runtime.invoke(*_invocation("one", request_id="one"))
+        )
+        await summary.requested.wait()
+        await _drain_ready_callbacks()
+        assert not first.done()
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        summary_task = _summary_task(runtime)
+        owner = summary_task.get_context().get(adapter._INVOCATION_USAGE)
+        assert owner is not None
+        assert owner.closed
+        assert not summary_task.done()
+        summary.reply.set_result(_answer(7000, 70, "summary of the history"))
+        await summary_task
+    finally:
+        await runtime.stop()
+
+    assert len(owner.calls) == 1
+
+
+@pytest.mark.parametrize("finishes", ["between_invocations", "during_next_invocation"])
+async def test_call_returning_after_its_invocation_is_dropped(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+    finishes: str,
+):
+    late = _HeldReply()
+    jobs: list[asyncio.Task[Any]] = []
+
+    async def turn(model: Any) -> None:
+        if not jobs:
+            await model.acall(_MESSAGES)
+            jobs.append(asyncio.create_task(model.acall(_MESSAGES)))
+            await late.requested.wait()
+            return
+        if finishes == "during_next_invocation":
+            late.reply.set_result(_answer(7000, 70, "late"))
+            await jobs[0]
+        await model.acall(_MESSAGES)
+
+    model_replies.extend([_answer(1000, 10, "one"), late, _answer(300, 3, "two")])
+    _install_model_target(install_target, turn)
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_model_start_payload(tmp_path, "completion"))
+    try:
+        first = await runtime.invoke(*_invocation("one", request_id="one"))
+        if finishes == "between_invocations":
+            late.reply.set_result(_answer(7000, 70, "late"))
+            await jobs[0]
+        second = await runtime.invoke(*_invocation("two", request_id="two"))
+    finally:
+        await runtime.stop()
+
+    assert jobs[0].done()
+    assert first.usage is None
+    assert second.usage is not None
+    assert second.usage.to_mapping() == _known_usage(300, 3)
+
+
+@pytest.mark.parametrize("relay", ["disabled", "enabled"])
+async def test_relay_does_not_change_model_usage(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+    relay: str,
+):
+    model_replies.extend([_answer(1000, 10, "one"), _answer(2000, 20, "two")])
+    _install_predicting_target(install_target, summarize=False)
+    if relay == "enabled":
+        pytest.importorskip("nemo_relay", reason="nemo-relay extra is required")
+        runtime_context = _relay_context(tmp_path)
+        config_path = Path(runtime_context.telemetry.config_path)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "relay": {
+                        "config": {
+                            "version": 1,
+                            "components": [
+                                {
+                                    "kind": "observability",
+                                    "enabled": True,
+                                    "config": {
+                                        "version": 4,
+                                        "atif": {
+                                            "enabled": True,
+                                            "output_directory": str(tmp_path / "relay"),
+                                            "filename_template": (
+                                                "trajectory-{session_id}.atif.json"
+                                            ),
+                                        },
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(config_path)
+    else:
+        runtime_context = _invocation()[1]
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_model_start_payload(tmp_path, "completion"))
+    try:
+        results = [
+            await runtime.invoke(
+                AgentRunRequest.from_mapping({"input": text}), runtime_context
+            )
+            for text in ("one", "two")
+        ]
+    finally:
+        await runtime.stop()
+
+    if relay == "enabled":
+        assert results[0].output["telemetry"]["enabled"] is True
+        assert "error" not in results[0].output["telemetry"]
+    assert [result.usage.to_mapping() for result in results] == [
+        _known_usage(1000, 10),
+        _known_usage(2000, 20),
+    ]
+
+
+async def test_failed_invocation_keeps_model_usage_and_the_next_one_starts_fresh(
+    tmp_path: Path,
+    install_target,
+    model_replies: list[Any],
+):
+    model_replies.extend(
+        [
+            _model_reply("responses", input=100, cached=40, output=20, total=120),
+            _model_reply("responses", input=7, cached=0, output=3, total=10),
+        ]
+    )
+    turns: list[str] = []
+
+    async def turn(model: Any) -> None:
+        await model.acall(_MESSAGES)
+        turns.append("called")
+        if len(turns) == 1:
+            raise RuntimeError("tool crashed")
+
+    _install_model_target(install_target, turn)
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_model_start_payload(tmp_path, "responses"))
+    try:
+        failed = await runtime.invoke(*_invocation("one", request_id="one"))
+        succeeded = await runtime.invoke(*_invocation("two", request_id="two"))
+    finally:
+        await runtime.stop()
+
+    assert failed.status is AgentRunStatus.FAILED
+    assert failed.error is not None
+    assert failed.error.code == "nooa_target_invoke_failed"
+    assert failed.usage is not None
+    assert failed.usage.to_mapping() == _FULL_USAGE
+    assert succeeded.status is AgentRunStatus.SUCCEEDED
+    assert succeeded.usage is not None
+    assert succeeded.usage.to_mapping() == {
+        "input_tokens": 7,
+        "cached_input_tokens": 0,
+        "input_tokens_include_cache": True,
+        "output_tokens": 3,
+        "total_tokens": 10,
+    }
 
 
 def _relay_context(tmp_path: Path) -> RuntimeContext:
