@@ -487,6 +487,30 @@ def test_result_pass_keeps_atif_evidence(
         assert "invocation_id" not in fabric
 
 
+@pytest.mark.parametrize("last_pass", ["result", "failure"])
+def test_result_pass_keeps_telemetry_validation(
+    result_path, failure_path, tmp_path, last_pass
+):
+    from harbor.models.agent.context import AgentContext
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+        populate_context_from_telemetry_summary,
+    )
+
+    summary = {"status": "succeeded", "atof": {"records": 7}}
+    summary_path = tmp_path / "telemetry-validation.json"
+    summary_path.write_text(json.dumps(summary))
+    context = AgentContext()
+    populate_context_from_result(context, result_path)
+    populate_context_from_telemetry_summary(context, summary_path)
+
+    populate_context_from_result(
+        context, {"result": result_path, "failure": failure_path}[last_pass]
+    )
+
+    assert context.metadata["fabric"]["telemetry_validation"] == summary
+
+
 @pytest.mark.parametrize("prepopulated", [False, True])
 @pytest.mark.parametrize("runner_failure_document", [False, True])
 def test_no_fabric_result_keeps_atif_out_of_accounting(

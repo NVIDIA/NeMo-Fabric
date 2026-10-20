@@ -65,8 +65,12 @@ INSTALL_ENV_NAMES = {
 HARBOR_ARTIFACT_ROOT = "/logs/agent/fabric-artifacts"
 HARBOR_DEFAULT_WORKSPACE = "/testbed"
 _DETAILED_TOKEN_USAGE_V1_KEY = "nemo_fabric.detailed_token_usage.v1"
-# Evidence the bridge records from Harbor's ATIF, kept when result metadata is replaced.
-_ATIF_EVIDENCE_KEYS = ("atif_final_metrics", "harbor_atif_validation")
+# Evidence the bridge records beside the result, kept when result metadata is replaced.
+_BRIDGE_EVIDENCE_KEYS = (
+    "atif_final_metrics",
+    "harbor_atif_validation",
+    "telemetry_validation",
+)
 
 try:
     from harbor.agents.base import BaseAgent
@@ -978,13 +982,13 @@ def populate_context_from_result(
 
 
 def _replace_result_metadata(context: AgentContext, fields: dict[str, Any]) -> None:
-    """Replace one pass's result fields while keeping the bridge's ATIF evidence."""
+    """Replace one pass's result fields while keeping the bridge's own evidence."""
 
     if context.metadata is None:
         context.metadata = {}
     previous = context.metadata.get("fabric")
     evidence = (
-        {key: previous[key] for key in _ATIF_EVIDENCE_KEYS if key in previous}
+        {key: previous[key] for key in _BRIDGE_EVIDENCE_KEYS if key in previous}
         if isinstance(previous, dict)
         else {}
     )
