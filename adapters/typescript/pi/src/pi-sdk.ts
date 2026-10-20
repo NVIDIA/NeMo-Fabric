@@ -446,24 +446,34 @@ export function reportedCountsFrom(api: string, seen: ReadonlySet<string>): Repo
 }
 
 /**
- * Whether a model call ended in an error before the provider accepted the
- * request: no successful HTTP response and no raw stream event, with Pi's
- * zero-filled usage. Pi's protocols call `onResponse` only after the request
- * succeeds and raise a rejection such as a rate limit (429), an overload or a
- * server error before the first raw event (`@earendil-works/pi-ai` 1.0.3,
- * `api/*.js`), so such a call generated nothing and reports 0 tokens.
+ * Which counts an ended model call's provider reported. A call that ended in
+ * an error before the provider accepted the request, with no successful HTTP
+ * response, no raw stream event and Pi's zero-filled usage, reports all its
+ * counts as 0. Pi's built-in protocols call `onResponse` only after the
+ * request succeeds and raise a rejection such as a rate limit (429), an
+ * overload or a server error before the first raw event
+ * (`@earendil-works/pi-ai` 1.0.3, `api/*.js`), so such a call generated
+ * nothing. A protocol outside those may never call either hook, so its calls
+ * keep only the counts their raw events reported.
  */
-function rejectedBeforeGeneration(message: { stopReason?: unknown; usage?: unknown }, accepted: boolean, streamed: boolean): boolean {
+export function endedCallCounts(
+  api: string,
+  seen: ReadonlySet<string>,
+  message: { stopReason?: unknown; usage?: unknown },
+  accepted: boolean,
+  streamed: boolean,
+): ReportedCounts {
   const counts = piCounts(message.usage);
-  return (
+  const rejected =
+    REPORTED_FIELDS[api] !== undefined &&
     message.stopReason === "error" &&
     !accepted &&
     !streamed &&
     counts.input === 0 &&
     counts.cacheRead === 0 &&
     counts.cacheWrite === 0 &&
-    counts.output === 0
-  );
+    counts.output === 0;
+  return rejected ? ALL_REPORTED : reportedCountsFrom(api, seen);
 }
 
 /**
@@ -508,9 +518,7 @@ function recordReportedCounts(
     void response.result().then(
       (message) => {
         if (typeof message.usage === "object" && message.usage !== null) {
-          const counts = rejectedBeforeGeneration(message, accepted, streamed)
-            ? ALL_REPORTED
-            : reportedCountsFrom(api, seen);
+          const counts = endedCallCounts(api, seen, message, accepted, streamed);
           records.set(message, counts);
           records.set(message.usage, counts);
           onCallEnd(message.usage);

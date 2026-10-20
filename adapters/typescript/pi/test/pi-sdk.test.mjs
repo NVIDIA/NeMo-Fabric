@@ -13,6 +13,7 @@ import {
   addUsage,
   noteReportedFields,
   buildCatalogModel,
+  endedCallCounts,
   modelAwareCompactionReserveTokens,
   PiSdkSessionFactory,
   reportedCountsFrom,
@@ -1658,6 +1659,23 @@ test("a retried compaction summary leaves the prompt's tokens unknown", () => {
     events.reduce((sum, event) => addEventUsage(sum, event, allReported), NO_TOKENS),
     undefined,
   );
+});
+
+test("counts a rejected request as 0 tokens only for a built-in protocol", () => {
+  const rejected = { stopReason: "error", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+  const none = { input: false, cacheRead: false, output: false };
+
+  assert.deepEqual(endedCallCounts("openai-completions", new Set(), rejected, false, false), allReported());
+  // A custom protocol may never report its HTTP response or raw events.
+  assert.deepEqual(endedCallCounts("custom-api", new Set(), rejected, false, false), none);
+  // An accepted or streamed request, or one with counts, may have billed tokens.
+  assert.deepEqual(endedCallCounts("openai-completions", new Set(), rejected, true, false), none);
+  assert.deepEqual(endedCallCounts("openai-completions", new Set(), rejected, false, true), none);
+  assert.deepEqual(
+    endedCallCounts("openai-completions", new Set(), { ...rejected, usage: { ...rejected.usage, input: 3 } }, false, false),
+    none,
+  );
+  assert.deepEqual(endedCallCounts("openai-completions", new Set(), { ...rejected, stopReason: "aborted" }, false, false), none);
 });
 
 /**
