@@ -2598,7 +2598,9 @@ async def test_hermes_runs_no_background_skill_review_after_a_turn(
     assert agent.skip_background_review is True
     assert reviews == []
     assert scripted_provider.served == ["main"] * 11
+    # With no review, the invocation's usage stays known.
     assert turn.usage is not None
+    assert turn.usage.input_tokens is not None
     assert (turn.usage.input_tokens, turn.usage.output_tokens) == (1100, 11)
 
 
