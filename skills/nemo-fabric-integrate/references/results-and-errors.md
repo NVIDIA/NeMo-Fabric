@@ -21,7 +21,7 @@ Every invocation that reaches the adapter boundary returns a normalized
 | `telemetry` | References to NVIDIA NeMo Relay or other telemetry streams from the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
-| `what_ran` | What executed for this invocation: core version, adapter ID, requested models, configured MCP servers, and environment provider, each fact with its source, or `None` when the core predates it. |
+| `what_ran` | What executed for this invocation: core version, adapter ID and package version, harness name and version, requested and served models, configured MCP servers, and environment provider, each fact with its source, or `None` when the core predates it. |
 | `runtime_id`, `invocation_id`, `request_id` | Correlation IDs across runtimes, logs, telemetry, and artifacts. |
 
 Handle a result with this status-first pattern:
@@ -51,8 +51,10 @@ Read `what_ran` as evidence of what executed, never as a grouping key. Each
 fact holds a `value`, or a `state` and `reason` when it has no value, plus
 `source`, `collected_by`, and `method`. Accept `collected_by`, `method`, and
 `reason` codes you do not recognize. Adapter-reported facts, such as the
-harness version and the served model, currently read state `unsupported` with
-reason `key_not_declared`. A malformed `what_ran` reads as `None` without
+harness version and the served model, read state `unsupported` with reason
+`key_not_declared` when the adapter does not report them. The Claude Code,
+Codex, Hermes Agent, OpenClaw, Deep Agents, and mini-SWE-agent adapters report
+the harness version, and the Claude Code adapter reports the served model. A malformed `what_ran` reads as `None` without
 failing the result. A `what_ran` over its 128 KiB budget can hold only
 `schema`, `version`, and `what_ran_truncated`, so check for that marker before
 reading a section. Refer to

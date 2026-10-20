@@ -1026,12 +1026,31 @@ carry `source`, `collected_by`, and `method`:
 | `mcp.servers.<name>` | `origin`, `transport`, the configured `endpoint`, and a `runtime` block with the reported `connected`, `protocol_version`, `server_name`, `server_version`, and `tool_names`. |
 | `environment` | The environment `provider`, such as `local` or `openshell`. |
 
-NeMo Fabric reads no adapter-reported facts yet, so every reported fact has
-state `unsupported` with reason `key_not_declared` and method
-`adapter_report`.
+An adapter reports its facts through the result keys `nemo_fabric.versions.v1`
+(package version, harness name and version, and served models) and
+`nemo_fabric.mcp.v1` (MCP `runtime` blocks) when its descriptor declares them.
+The Claude Code, Codex, Hermes Agent, OpenClaw, Deep Agents, and
+mini-SWE-agent adapters report their package version and their harness name
+and version. The Claude Code adapter also reports the served model of the role
+it runs: the one model that this invocation's main-thread assistant messages
+name, skipping subagent messages and Claude Code's `<synthetic>` API-error
+messages. Two models give `unavailable` with reason `not_attributed`, and none
+gives `unavailable` with reason `empty_response`. No bundled adapter reports
+MCP runtime facts yet.
 
-Today every MCP entry has `origin` `plan`. An entry with `origin` `harness`
-describes a server the harness reports but the plan does not configure. It has
+A reported fact whose key the adapter does not declare has state `unsupported`
+with reason `key_not_declared` and method `adapter_report`. A fact the adapter
+has no source for has reason `no_source`. A declared key that the result omits
+gives `unavailable` with reason `key_omitted`, and a fact the key omits gives
+`fact_omitted`. A malformed fact, or one that does not name source `reported`
+and collector `adapter`, gives `collection_failed` with reason
+`invalid_report`. A key larger than 64 KiB of compact JSON gives
+`collection_failed` with reason `too_large`. None of these changes the run's
+status or error.
+
+An MCP entry has `origin` `plan` for a server the plan configures. An entry
+with `origin` `harness` describes a server the harness reports but the plan
+does not configure. It has
 the same shape, except that `endpoint` has state `not_applicable` with reason
 `not_configured`. A `plan` entry always has `transport`. An entry of any other
 origin can leave it out.
@@ -1053,7 +1072,9 @@ URL or executable has state `unavailable` with reason `not_configured`.
 
 A string value longer than 256 characters keeps its first 240 characters, then
 `~`, then the first 15 hex digits of its SHA-256. The rule applies to each
-element of a list value too.
+element of a list value too. `tool_names` keeps at most 64 names in sorted
+order, and a `tool_names_truncated` marker in the `runtime` block counts the
+names the adapter or NeMo Fabric dropped.
 
 `models` keeps at most 16 roles and `mcp.servers` at most 32 servers, taken in
 sorted key order. An entry whose key is longer than 128 characters is dropped.
