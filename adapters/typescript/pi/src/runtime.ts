@@ -64,17 +64,18 @@ function failed(code: string, message: string): AgentRunResult {
 
 /**
  * The invocation's usage, with input counting its cache reads and writes. A
- * count that a call left unreported stays absent, and so does the total unless
- * both input and output are known.
+ * count that a call left unreported stays absent, cache reads are kept even
+ * when input is unknown, and the total is absent unless both input and output
+ * are known.
  */
 function agentUsage(usage: PiTokenUsage | undefined): AgentUsage | undefined {
-  if (usage === undefined || (usage.input === undefined && usage.output === undefined)) {
+  if (usage === undefined || (usage.input === undefined && usage.cacheRead === undefined && usage.output === undefined)) {
     return undefined;
   }
   const { input, cacheRead, output } = usage;
   return {
     ...(input === undefined ? {} : { input_tokens: input, input_tokens_include_cache: true }),
-    ...(input === undefined || cacheRead === undefined ? {} : { cached_input_tokens: cacheRead }),
+    ...(cacheRead === undefined ? {} : { cached_input_tokens: cacheRead }),
     ...(output === undefined ? {} : { output_tokens: output }),
     ...(input === undefined || output === undefined ? {} : { total_tokens: input + output }),
   };

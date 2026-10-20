@@ -585,7 +585,7 @@ test("reports the invocation's tokens with cache reads and writes inside the inp
 });
 
 test("reports only the token counts the prompt's provider reported", async () => {
-  const outcomes = [{ input: 130, cacheRead: 30 }, { output: 5 }, { input: 70, output: 7 }];
+  const outcomes = [{ input: 130, cacheRead: 30 }, { output: 5 }, { input: 70, output: 7 }, { cacheRead: 12, output: 3 }, { cacheRead: 4 }];
   const runtime = new PiAdapterRuntime({
     async create() {
       let turnCount = 0;
@@ -604,6 +604,8 @@ test("reports only the token counts the prompt's provider reported", async () =>
   const inputOnly = await runtime.invoke({ input: "one" }, context);
   const outputOnly = await runtime.invoke({ input: "two" }, context);
   const noCacheDetail = await runtime.invoke({ input: "three" }, context);
+  const noInput = await runtime.invoke({ input: "four" }, context);
+  const cacheOnly = await runtime.invoke({ input: "five" }, context);
   await runtime.stop();
 
   assert.deepEqual(inputOnly.usage, {
@@ -618,4 +620,7 @@ test("reports only the token counts the prompt's provider reported", async () =>
     output_tokens: 7,
     total_tokens: 77,
   });
+  // Cache reads stay known when the input that includes them is not.
+  assert.deepEqual(noInput.usage, { cached_input_tokens: 12, output_tokens: 3 });
+  assert.deepEqual(cacheOnly.usage, { cached_input_tokens: 4 });
 });

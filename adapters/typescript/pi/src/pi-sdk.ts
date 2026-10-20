@@ -122,21 +122,21 @@ function callCounts(usage: unknown): { counts: Required<PiTokenUsage>; present: 
 
 /**
  * Add a call's counts to a prompt's running total. Each count stays known only
- * while every call reported it; the cache reads also need the input. The total
- * is unknown once neither input nor output is known.
+ * while every call reported it, independently of the others. The total is
+ * unknown once no count is known.
  */
 function sumCounts(total: PiTokenUsage, call: Required<PiTokenUsage>, reported: ReportedCounts): PiTokenUsage | undefined {
   const sum: PiTokenUsage = {};
   if (reported.input && total.input !== undefined) {
     sum.input = total.input + call.input;
-    if (reported.cacheRead && total.cacheRead !== undefined) {
-      sum.cacheRead = total.cacheRead + call.cacheRead;
-    }
+  }
+  if (reported.cacheRead && total.cacheRead !== undefined) {
+    sum.cacheRead = total.cacheRead + call.cacheRead;
   }
   if (reported.output && total.output !== undefined) {
     sum.output = total.output + call.output;
   }
-  return sum.input === undefined && sum.output === undefined ? undefined : sum;
+  return sum.input === undefined && sum.cacheRead === undefined && sum.output === undefined ? undefined : sum;
 }
 
 /**

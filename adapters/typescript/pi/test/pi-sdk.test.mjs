@@ -1465,12 +1465,14 @@ test("sums each call's own usage report", () => {
 // A tool result that reports usage, as a custom tool can.
 const toolResult = (usage) => ({ type: "message_end", message: { role: "toolResult", usage } });
 
-test("a tool usage report without a cache count keeps its output known", () => {
+test("a tool usage report without a cache count keeps its other counts known", () => {
   const total = addEventUsage(NO_TOKENS, toolResult({ input: 10, cacheRead: 2, output: 3 }), allReported);
 
-  // Input counts cache writes, so without cacheWrite the input, the cache
-  // reads inside it and the total are unknown.
-  assert.deepEqual(total, { output: 3 });
+  // Input counts cache writes, so without cacheWrite the input and the total
+  // are unknown; the cache reads and output stay known.
+  assert.deepEqual(total, { cacheRead: 2, output: 3 });
+  // A report with only cache reads keeps them.
+  assert.deepEqual(addEventUsage(NO_TOKENS, toolResult({ cacheRead: 4 }), allReported), { cacheRead: 4 });
 });
 
 test("a tool usage report with only an output count adds that count", () => {
@@ -1548,7 +1550,8 @@ test("a model call's counts are known only as far as its provider reported them"
     input: 0,
     output: 0,
   });
-  assert.equal(addEventUsage(NO_TOKENS, assistant, reported({ cacheRead: true })), undefined);
+  // Cache reads stay known without the input that includes them.
+  assert.deepEqual(addEventUsage(NO_TOKENS, assistant, reported({ cacheRead: true })), { cacheRead: 0 });
   // A tool reports its own usage, so a zero there is a measured zero.
   assert.deepEqual(
     addEventUsage(NO_TOKENS, { type: "message_end", message: { role: "toolResult", usage: zeroFilled } }, unseen),
