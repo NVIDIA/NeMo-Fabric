@@ -13,6 +13,7 @@ import threading
 import sys
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from nemo_fabric.runtime_server.protocol import (
     CALL_SECONDS,
@@ -35,6 +36,19 @@ if sys.platform != "win32":
     import fcntl
 else:
     fcntl = None
+
+
+def _sandbox_lifecycle_id() -> str | None:
+    try:
+        boot_id = UUID(Path("/proc/sys/kernel/random/boot_id").read_text().strip())
+        # The parenthesized process name can itself contain spaces and parentheses.
+        fields = Path("/proc/1/stat").read_text().rsplit(")", 1)[1].split()
+        start_time = int(fields[19])  # /proc/PID/stat field 22, after name and PID.
+        if start_time >= 0:
+            return f"{boot_id}:{start_time}"
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
 
 
 async def read_message(reader: asyncio.StreamReader, limit: int) -> dict[str, Any]:
@@ -165,8 +179,28 @@ async def serve(
         os.fchmod(lock, 0o600)
         if not stat.S_ISREG(os.fstat(lock).st_mode):
             raise OSError("host lock is not a regular file")
+        lifecycle_id = _sandbox_lifecycle_id()
         if marker.exists() or marker.is_symlink():
-            raise ProtocolError("cleanup_unconfirmed", "transport")
+            try:
+                marker_fd = os.open(marker, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(marker_fd, encoding="ascii") as previous:
+                    if not stat.S_ISREG(os.fstat(previous.fileno()).st_mode):
+                        raise ValueError("ownership marker is not a regular file")
+                    previous_id = previous.read(65)
+                boot_id, start_time = previous_id.split(":")
+                if (
+                    lifecycle_id is None
+                    or len(previous_id) > 64
+                    or not start_time.isdecimal()
+                    or previous_id != f"{UUID(boot_id)}:{int(start_time)}"
+                    or previous_id == lifecycle_id
+                ):
+                    raise ValueError("previous sandbox cleanup is unconfirmed")
+            except (OSError, ValueError) as error:
+                raise ProtocolError("cleanup_unconfirmed", "transport") from error
+            # The marker directory belongs exclusively to this sandbox. A new
+            # boot or namespace init process means its previous processes exited.
+            marker.unlink()
         for relative in ("tmp", "workspace", "artifacts"):
             (host.directory / relative).mkdir(mode=0o700, parents=True, exist_ok=True)
         if socket_path.exists() or socket_path.is_symlink():
@@ -185,8 +219,10 @@ async def serve(
         marker_fd = os.open(
             marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
         )
-        owned_marker = os.fstat(marker_fd)
-        os.close(marker_fd)
+        with os.fdopen(marker_fd, "w", encoding="ascii") as ownership:
+            ownership.write(lifecycle_id or "")
+            ownership.flush()
+            owned_marker = os.fstat(ownership.fileno())
         if stop_event is None:
             for sig in (signal.SIGINT, signal.SIGTERM):
                 loop.add_signal_handler(sig, request_stop)
