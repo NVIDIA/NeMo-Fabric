@@ -548,8 +548,7 @@ def _has_agent_protocol_subagent(subagents: Any) -> bool:
     middleware, which starts and updates tasks on a remote server.
     """
     return isinstance(subagents, list) and any(
-        isinstance(subagent, dict) and "graph_id" in subagent
-        for subagent in subagents
+        isinstance(subagent, dict) and "graph_id" in subagent for subagent in subagents
     )
 
 
