@@ -74,7 +74,42 @@ authentication and per-server tool filters are unsupported.
 ### Runtime Behavior
 
 The adapter accepts plain-text input and returns the terminal assistant text in
-`output.response`. Ordered invocations reuse one warm Kilo Code session and its
+`output.response`.
+
+Usage sums the model calls that Kilo Code recorded for the invocation's prompt,
+including in-turn compaction and the calls of foreground `task` subagents in
+their child sessions. Kilo Code 7.7.12 can run a subagent in the background when
+the model asks for it. An invocation that starts a background subagent reports
+no usage, because the subagent and Kilo Code's reply to its result can run after
+the invocation returns. That reply is never counted toward a later invocation.
+The adapter sets the session title so that Kilo Code does not make an unrecorded
+model call to generate one.
+
+`input_tokens` includes cache reads and cache writes, `cached_input_tokens`
+holds the cache reads, and `output_tokens` includes reasoning tokens.
+`total_tokens` is `input_tokens` plus `output_tokens`, so it is unknown when
+either of them is unknown. The adapter does not use Kilo Code's own total,
+because Kilo Code 7.7.12 computes it as input plus output with an omitted side
+counted as 0.
+
+Kilo Code 7.7.12 records an omitted input, output, reasoning, or cache count as
+0 before the adapter sees it. The adapter therefore treats a call's input or
+output that adds up to 0 as unknown. Kilo zero-fills missing cache details, so a
+zero cache-read count remains unknown unless its presence can be established for
+that call. When any model call leaves a field unknown, or the field's sum is
+larger than JavaScript can represent exactly, the result omits that field. The
+result has no usage when a finished model call reported neither input nor
+output, or when an assistant message of the invocation never finished. It also
+has no usage when a subagent's child session cannot be read or starts its own
+subagent, or when a new model call cannot be traced to a prompt. Kilo Code does
+not record an attempt that it retries before the call finishes, so those tokens
+are not counted.
+
+Kilo Code computes most cost figures from its model catalog's rates, and its
+messages do not say which costs a provider reported, so the adapter does not
+report them as `cost_usd`.
+
+Ordered invocations reuse one warm Kilo Code session and its
 conversation history. A prompt has a 30-minute deadline; on timeout the adapter
 asks Kilo Code to abort the prompt and reports `kilo_prompt_timeout`.
 

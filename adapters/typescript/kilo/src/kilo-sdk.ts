@@ -26,6 +26,7 @@ interface KiloClient {
   };
   session: {
     create(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
+    messages(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
     prompt(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
     abort(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<unknown>;
     delete(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<unknown>;
@@ -40,6 +41,11 @@ type PortFactory = () => Promise<number>;
 const START_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 5_000;
 const PROMPT_TIMEOUT_MS = 30 * 60_000;
+const LIST_TIMEOUT_MS = 30_000;
+// Kilo Code generates a title with a separate model call for a session that
+// still has its default title, and that call never appears in the session's
+// messages. An explicit title skips it.
+const SESSION_TITLE = "NeMo Fabric";
 const ENVIRONMENT_VARIABLE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/gu;
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
 const INHERITED_ENVIRONMENT_NAMES = new Set([
@@ -322,20 +328,304 @@ export async function startKiloServer(workspace: string, environment: NodeJS.Pro
   });
 }
 
+/** The terminal text and error state of the last assistant message that a Kilo Code prompt returns. */
 export function extractPromptOutcome(data: unknown): KiloPromptOutcome {
   if (!isRecord(data)) return {};
   const info = isRecord(data.info) ? data.info : {};
-  const tokens = isRecord(info.tokens) ? info.tokens : {};
-  const usage: AgentUsage = {};
-  const inputTokens = typeof tokens.input === "number" ? tokens.input : undefined;
-  const outputTokens = typeof tokens.output === "number" ? tokens.output : undefined;
-  if (inputTokens !== undefined) usage.input_tokens = inputTokens;
-  if (outputTokens !== undefined) usage.output_tokens = outputTokens;
-  if (typeof tokens.total === "number") usage.total_tokens = tokens.total;
-  else if (inputTokens !== undefined && outputTokens !== undefined) usage.total_tokens = inputTokens + outputTokens;
-  if (typeof info.cost === "number") usage.cost_usd = info.cost;
   const text = Array.isArray(data.parts) ? data.parts.filter(isRecord).filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("") : "";
-  return { ...(text.length === 0 ? {} : {text}), ...(info.error === undefined ? {} : {error: true}), ...(Object.keys(usage).length === 0 ? {} : {usage}) };
+  return { ...(text.length === 0 ? {} : {text}), ...(info.error === undefined ? {} : {error: true}) };
+}
+
+/** Token counts of one or more model calls; a count is absent when any call left it unknown. */
+interface CallUsage { input?: number; cacheRead?: number; output?: number }
+
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+/** A sum of two counts, unknown when either is unknown or the sum is not a safe integer. */
+function addCount(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined || right === undefined) return undefined;
+  const sum = left + right;
+  return Number.isSafeInteger(sum) ? sum : undefined;
+}
+
+/** A count that Kilo Code may have zero-filled: 0 cannot be told apart from an omitted count. */
+function reportedCount(value: number | undefined): number | undefined {
+  return value === 0 ? undefined : value;
+}
+
+/**
+ * One model call's counts from its Kilo Code step-finish tokens. Kilo Code
+ * reports input without cache reads and writes and output without reasoning,
+ * so both are added back. Kilo Code writes 0 for any count the provider
+ * omitted, so a call's input or output that adds up to 0 is unknown, and so
+ * is a 0 cache read: Kilo Code zero-fills missing cache details, and nothing
+ * in the step shows whether that call reported its cache reads.
+ */
+function stepUsage(tokens: unknown): CallUsage {
+  const counts = isRecord(tokens) ? tokens : {};
+  const cache = isRecord(counts.cache) ? counts.cache : {};
+  const cacheRead = tokenCount(cache.read);
+  const input = reportedCount(addCount(addCount(tokenCount(counts.input), cacheRead), tokenCount(cache.write)));
+  const output = reportedCount(addCount(tokenCount(counts.output), tokenCount(counts.reasoning)));
+  return {input, cacheRead: reportedCount(cacheRead), output};
+}
+
+type Message = Record<string, unknown>;
+
+function messageInfo(message: Message): Record<string, unknown> {
+  return isRecord(message.info) ? message.info : {};
+}
+
+function messageId(message: unknown): string | undefined {
+  const id = isRecord(message) ? messageInfo(message).id : undefined;
+  return typeof id === "string" ? id : undefined;
+}
+
+function messageParts(message: Message): Message[] {
+  return Array.isArray(message.parts) ? message.parts.filter(isRecord) : [];
+}
+
+/** Whether Kilo Code finished processing an assistant message, normally or with an error. */
+function assistantDone(info: Record<string, unknown>): boolean {
+  return (isRecord(info.time) && info.time.completed !== undefined) || info.error !== undefined;
+}
+
+/** A `task` tool call: its status, the child session it runs in, when it started, and whether it runs in the background. */
+interface TaskCall { status?: string; sessionId?: string; start?: number; background: boolean }
+
+function taskCalls(message: Message): TaskCall[] {
+  return messageParts(message).filter((part) => part.type === "tool" && part.tool === "task").map((part) => {
+    const state = isRecord(part.state) ? part.state : {};
+    const metadata = isRecord(state.metadata) ? state.metadata : {};
+    const input = isRecord(state.input) ? state.input : {};
+    const time = isRecord(state.time) ? state.time : {};
+    return {
+      ...(typeof state.status === "string" ? {status: state.status} : {}),
+      ...(typeof metadata.sessionId === "string" ? {sessionId: metadata.sessionId} : {}),
+      ...(typeof time.start === "number" ? {start: time.start} : {}),
+      background: metadata.background === true || input.background === true,
+    };
+  });
+}
+
+/**
+ * The child session whose result a user message delivers, when Kilo Code's
+ * task tool added it for a finished background subagent. Kilo Code marks its
+ * text part as synthetic with `metadata.background` and renders the child
+ * session ID as `<task id="...">`.
+ */
+function backgroundResultSession(message: Message): string | undefined {
+  if (messageInfo(message).role !== "user") return undefined;
+  for (const part of messageParts(message)) {
+    if (part.type !== "text" || part.synthetic !== true || !isRecord(part.metadata) || part.metadata.background !== true) continue;
+    const match = typeof part.text === "string" ? /<task id="([^"]+)"/u.exec(part.text) : null;
+    return match?.[1] ?? "";
+  }
+  return undefined;
+}
+
+const AMBIGUOUS = Symbol("ambiguous");
+type Owner = string | typeof AMBIGUOUS;
+
+interface Turn { owner: Owner; adapterPrompt: boolean }
+
+/**
+ * Ownership of a session's messages: the adapter prompt whose turn produced
+ * each one. This is the single place that decides which invocation a model
+ * call belongs to.
+ *
+ * Kilo Code runs one turn at a time per session and sets each assistant
+ * message's `parentID` to the user message of its turn. A user message is
+ * owned by the adapter prompt it is (`prompts`), or, for a background
+ * subagent's result, by the owner of the `task` call that started that
+ * subagent. Kilo Code also adds user messages inside a running turn for
+ * compaction and its follow-ups. Such a message belongs to the turn that was
+ * running, which is the latest assistant message's turn or a turn whose
+ * prompt or background result has no assistant message yet. When those
+ * candidates share an owner, the message has that owner. When all of them
+ * come from adapter prompts, it belongs to the newest prompt, because the
+ * adapter submits a prompt only after its previous prompt returned. Any
+ * other case, such as a background result waiting before a newer prompt, is
+ * ambiguous.
+ */
+/** The turn running when Kilo Code added a user message of its own, from the latest assistant message's turn and the turns not started yet. */
+function runningTurn(latestAssistant: Turn | undefined, openRoots: Turn[]): Turn {
+  const candidates = [...(latestAssistant === undefined ? [] : [latestAssistant]), ...openRoots];
+  const newest = candidates.at(-1);
+  if (newest === undefined || newest.owner === AMBIGUOUS) return {owner: AMBIGUOUS, adapterPrompt: false};
+  if (candidates.every((turn) => turn.owner === newest.owner) || candidates.every((turn) => turn.adapterPrompt)) return newest;
+  return {owner: AMBIGUOUS, adapterPrompt: false};
+}
+
+function sessionOwners(messages: Message[], prompts: ReadonlySet<string>): Map<string, Owner> {
+  const users = new Map<string, Turn>();
+  const tasks = new Map<string, Owner>();
+  let latestAssistant: Turn | undefined;
+  // Prompts and background results whose turn has no assistant message yet.
+  let openRoots: Turn[] = [];
+  for (const message of messages) {
+    const info = messageInfo(message);
+    const id = messageId(message);
+    if (info.role === "user" && id !== undefined) {
+      let turn: Turn;
+      const delivered = backgroundResultSession(message);
+      if (prompts.has(id)) {
+        turn = {owner: id, adapterPrompt: true};
+        openRoots.push(turn);
+      } else if (delivered !== undefined) {
+        turn = {owner: tasks.get(delivered) ?? AMBIGUOUS, adapterPrompt: false};
+        openRoots.push(turn);
+      } else {
+        turn = runningTurn(latestAssistant, openRoots);
+      }
+      users.set(id, turn);
+    } else if (info.role === "assistant") {
+      const turn = typeof info.parentID === "string" ? users.get(info.parentID) : undefined;
+      latestAssistant = turn ?? {owner: AMBIGUOUS, adapterPrompt: false};
+      openRoots = openRoots.filter((root) => root !== turn);
+      for (const task of taskCalls(message)) {
+        if (task.sessionId !== undefined) tasks.set(task.sessionId, latestAssistant.owner);
+      }
+    }
+  }
+  return new Map([...users].map(([id, turn]) => [id, turn.owner]));
+}
+
+/** The assistant messages of `prompt`'s turn, or undefined when a message after the prompt cannot be attributed. */
+function ownedAssistants(messages: Message[], prompt: string, prompts: ReadonlySet<string>): Message[] | undefined {
+  const owners = sessionOwners(messages, prompts);
+  const promptIndex = messages.findIndex((message) => messageId(message) === prompt);
+  if (promptIndex < 0) return undefined;
+  const owned: Message[] = [];
+  // The prompt's work starts at its message, so only later messages can be its own.
+  for (const message of messages.slice(promptIndex + 1)) {
+    const info = messageInfo(message);
+    if (info.role === "user" && owners.get(messageId(message) ?? "") === AMBIGUOUS) return undefined;
+    if (info.role !== "assistant") continue;
+    const owner = typeof info.parentID === "string" ? owners.get(info.parentID) : undefined;
+    if (owner === undefined || owner === AMBIGUOUS) return undefined;
+    if (owner === prompt) owned.push(message);
+  }
+  return owned;
+}
+
+/**
+ * The adapter's prompt among the messages after `lastMessageIdBefore`, the
+ * newest message before the prompt (undefined when the session was empty):
+ * the first user message with a text part that Kilo Code did not add itself.
+ * Kilo Code marks the text of background results, compaction replays and
+ * compaction follow-ups as synthetic.
+ */
+export function findPrompt(messages: unknown, lastMessageIdBefore: string | undefined): string | undefined {
+  if (!Array.isArray(messages)) return undefined;
+  const start = lastMessageIdBefore === undefined ? 0 : messages.findIndex((message) => messageId(message) === lastMessageIdBefore) + 1;
+  if (start === 0 && lastMessageIdBefore !== undefined) return undefined;
+  const prompt = messages.slice(start).filter(isRecord).find((message) => messageInfo(message).role === "user" && messageParts(message).some((part) => part.type === "text" && part.synthetic !== true));
+  return prompt === undefined ? undefined : messageId(prompt);
+}
+
+/** The foreground `task` calls of `prompt`'s turn whose child sessions hold model calls to add. */
+export function ownedChildSessions(messages: unknown, prompt: string, prompts: ReadonlySet<string>): string[] {
+  if (!Array.isArray(messages)) return [];
+  const owned = ownedAssistants(messages.filter(isRecord), prompt, prompts) ?? [];
+  return [...new Set(owned.flatMap(taskCalls).filter((task) => !task.background).flatMap((task) => task.sessionId === undefined ? [] : [task.sessionId]))];
+}
+
+/**
+ * The step-finish tokens of a turn's finished assistant messages, or
+ * undefined when one of them is still running or finished without a
+ * step-finish part, because Kilo Code keeps no counts for a call it did not
+ * finish.
+ */
+function finishedSteps(assistants: Message[]): unknown[] | undefined {
+  const steps: unknown[] = [];
+  for (const message of assistants) {
+    const parts = messageParts(message).filter((part) => part.type === "step-finish");
+    if (!assistantDone(messageInfo(message)) || parts.length === 0) return undefined;
+    steps.push(...parts.map((part) => part.tokens));
+  }
+  return steps;
+}
+
+/**
+ * The model calls a foreground `task` call made in its child session: the
+ * assistant messages created from the call's start until the next `task` call
+ * that resumed the same session. Undefined when the child could not be read,
+ * when another `task` call on the session started at the same time, so the
+ * windows cannot be told apart, when a message has no creation time, or when
+ * the child started its own subagent, which Kilo Code 7.7.12 allows only with
+ * a raised subagent depth.
+ */
+function childSteps(task: TaskCall, resumes: number[], children: ReadonlyMap<string, unknown[]>): unknown[] | undefined {
+  if (task.sessionId === undefined || task.start === undefined) return undefined;
+  const child = children.get(task.sessionId);
+  if (child === undefined) return undefined;
+  const start = task.start;
+  if (resumes.filter((value) => value === start).length > 1) return undefined;
+  const end = Math.min(...resumes.filter((value) => value > start), Number.POSITIVE_INFINITY);
+  const window: Message[] = [];
+  for (const message of child.filter(isRecord)) {
+    const time = messageInfo(message).time;
+    const created = isRecord(time) && typeof time.created === "number" ? time.created : undefined;
+    if (created === undefined) return undefined;
+    if (created >= start && created < end && messageInfo(message).role === "assistant") window.push(message);
+  }
+  if (window.some((message) => taskCalls(message).length > 0)) return undefined;
+  return finishedSteps(window);
+}
+
+/**
+ * The usage of the model calls that `prompt`'s turn made, from the adapter's
+ * session messages, oldest first, and the child sessions of its foreground
+ * subagents. `prompts` holds every prompt the adapter submitted in the
+ * session. Usage is undefined when a call cannot be attributed, when an owned
+ * call is unfinished or reported neither input nor output, and when the turn
+ * started a background subagent, because the subagent and Kilo Code's reply
+ * to its result can run after the prompt returns. That reply belongs to this
+ * prompt, so no later prompt counts it.
+ *
+ * Cached input is known only when every counted call reported a nonzero
+ * cache read. Kilo Code computes most message costs from its model catalog and does not
+ * mark the ones a provider reported, so the usage has no `cost_usd`.
+ */
+export function extractInvocationUsage(messages: unknown, prompt: string, prompts: ReadonlySet<string>, children: ReadonlyMap<string, unknown[]> = new Map()): AgentUsage | undefined {
+  if (!Array.isArray(messages)) return undefined;
+  const records = messages.filter(isRecord);
+  const owned = ownedAssistants(records, prompt, prompts);
+  if (owned === undefined || owned.length === 0) return undefined;
+  const steps = finishedSteps(owned);
+  if (steps === undefined) return undefined;
+  const resumes = new Map<string, number[]>();
+  for (const task of records.flatMap(taskCalls)) {
+    if (task.sessionId !== undefined && task.start !== undefined) resumes.set(task.sessionId, [...(resumes.get(task.sessionId) ?? []), task.start]);
+  }
+  for (const task of owned.flatMap(taskCalls)) {
+    // A task call that failed before Kilo Code created its child session made no subagent calls.
+    if (task.sessionId === undefined && task.status === "error") continue;
+    if (task.background) return undefined;
+    const child = childSteps(task, resumes.get(task.sessionId ?? "") ?? [], children);
+    if (child === undefined) return undefined;
+    steps.push(...child);
+  }
+  let sum: CallUsage = {input: 0, cacheRead: 0, output: 0};
+  for (const tokens of steps) {
+    const call = stepUsage(tokens);
+    if (call.input === undefined && call.output === undefined) return undefined;
+    sum = {input: addCount(sum.input, call.input), cacheRead: addCount(sum.cacheRead, call.cacheRead), output: addCount(sum.output, call.output)};
+  }
+  const cachedInput = sum.input !== undefined ? sum.cacheRead : undefined;
+  // Kilo Code's step total is the AI SDK's input plus output with an omitted
+  // side counted as 0, not a provider total, so the total is derived here.
+  const total = addCount(sum.input, sum.output);
+  const usage: AgentUsage = {
+    ...(sum.input === undefined ? {} : {input_tokens: sum.input, input_tokens_include_cache: true}),
+    ...(cachedInput === undefined ? {} : {cached_input_tokens: cachedInput}),
+    ...(sum.output === undefined ? {} : {output_tokens: sum.output}),
+    ...(total === undefined ? {} : {total_tokens: total}),
+  };
+  return Object.keys(usage).length === 0 ? undefined : usage;
 }
 
 async function loadClientFactory(): Promise<ClientFactory> {
@@ -359,13 +649,43 @@ async function resolveKiloExecutable(): Promise<string> {
 
 class KiloSdkSessionHandle implements KiloSessionHandle {
   private stopped = false;
+  /** The IDs of the user messages of the adapter's prompts, in this session. */
+  private readonly prompts = new Set<string>();
   constructor(readonly id: string, private readonly workspace: string, private readonly model: ReturnType<typeof selectModel>, private readonly client: KiloClient, private readonly server: KiloServer, private readonly profile: string, private readonly promptTimeoutMs: number) {}
   private async abortPrompt(): Promise<void> {
     try {
       await this.client.session.abort({sessionID: this.id, directory: this.workspace}, {throwOnError: true, signal: AbortSignal.timeout(STOP_TIMEOUT_MS)});
     } catch { /* Preserve the timeout failure. */ }
   }
+  /** A session's messages, oldest first, or the newest `limit` of them; undefined when listing fails. */
+  private async listMessages(sessionID: string, limit?: number): Promise<unknown[] | undefined> {
+    try {
+      const {data} = await this.client.session.messages({sessionID, directory: this.workspace, ...(limit === undefined ? {} : {limit})}, {throwOnError: true, signal: AbortSignal.timeout(LIST_TIMEOUT_MS)});
+      return Array.isArray(data) ? data : undefined;
+    } catch {
+      return undefined;
+    }
+  }
   async prompt(text: string): Promise<KiloPromptOutcome> {
+    const before = await this.listMessages(this.id, 1);
+    const outcome = await this.sendPrompt(text);
+    if (before === undefined) return outcome;
+    const lastId = messageId(before[0]);
+    if (before.length > 0 && lastId === undefined) return outcome;
+    const messages = await this.listMessages(this.id);
+    const prompt = findPrompt(messages, lastId);
+    if (prompt === undefined) return outcome;
+    this.prompts.add(prompt);
+    const children = new Map<string, unknown[]>();
+    for (const sessionID of ownedChildSessions(messages, prompt, this.prompts)) {
+      const child = await this.listMessages(sessionID);
+      if (child === undefined) return outcome;
+      children.set(sessionID, child);
+    }
+    const usage = extractInvocationUsage(messages, prompt, this.prompts, children);
+    return usage === undefined ? outcome : {...outcome, usage};
+  }
+  private async sendPrompt(text: string): Promise<KiloPromptOutcome> {
     const controller = new AbortController();
     let timedOut = false;
     let abortPromise: Promise<void> | undefined;
@@ -419,7 +739,7 @@ export class KiloSdkSessionFactory implements KiloSessionFactory {
       server = await this.serverFactory(workspace, childEnvironment(input, profile, configured.content, model.apiKeyEnv, configured.credential), executable);
       const client = clientFactory({baseUrl: server.url, directory: workspace});
       await verifySkills(client, workspace, skills);
-      const created = await client.session.create({directory: workspace, agent: "build", model: {providerID: model.provider, id: model.model}}, {throwOnError: true});
+      const created = await client.session.create({directory: workspace, title: SESSION_TITLE, agent: "build", model: {providerID: model.provider, id: model.model}}, {throwOnError: true});
       if (!isRecord(created.data) || typeof created.data.id !== "string") throw new Error("missing session id");
       await verifyMcp(client, workspace, mcpNames);
       return new KiloSdkSessionHandle(created.data.id, workspace, model, client, server, profile, this.promptTimeoutMs);
