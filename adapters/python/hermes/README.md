@@ -124,8 +124,13 @@ never adds its tokens to the next one. A counter that is missing, that is not
 a non-negative integer below 2^64, or that went down because Hermes reset its
 session, is left out for that invocation. Hermes records auxiliary calls, such as
 context-compression summaries and session titles, separately from these
-counters, and it does not count the summary request it makes when a turn
-reaches its iteration limit, so those calls are not included.
+counters. Session title calls are not included. An invocation in which Hermes
+ran a context-compression summary call, or in which a plugin context engine
+compressed, has no `usage`, because the compression calls' tokens are missing
+from the counters. Hermes also leaves out of its counters the summary request it
+makes when a turn reaches its iteration limit. The adapter adds the counts that
+this summary response reported, and an invocation whose summary response
+carried no usage has no `usage`.
 
 Hermes adds no tokens for a provider response that carried no usage, so an
 invocation with such a response has no `usage`. For a response it rejects as

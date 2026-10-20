@@ -238,12 +238,20 @@ details, the result leaves out `cached_input_tokens`. A wire protocol outside
 Pi's built-in ones reports no counts the adapter can check, so its calls leave
 the result without `usage`.
 
-With Pi's built-in wire protocols, a request that fails before the provider
-sends a successful response or any stream event, such as a rate limit (429), an
-overload, a server error, or a connection that fails before any response,
-counts as 0 tokens, so a call that Pi retries after such an error keeps the
-result's `usage` known. A call that fails after its stream started can have
-billed tokens that were never reported, so its counts stay unknown.
+A failed call counts as 0 tokens only when the provider answered each of its
+attempts with a 4xx or 5xx HTTP status, such as a rate limit (429), an overload
+or a server error, before sending a successful response or any stream event.
+A call that Pi retries after such an error keeps the result's `usage` known.
+The adapter reads that status through the request's `fetch`, which the
+`anthropic-messages`, `azure-openai-responses`, `mistral-conversations`,
+`openai-codex-responses`, `openai-completions`, `openai-responses` and
+`pi-messages` protocols use. A failed call of any other protocol, including the
+Google protocols and Bedrock, or a Codex call sent over a WebSocket, leaves its
+counts unknown. A call with an attempt that got no HTTP response, such as a
+connection failure or a timeout before headers, leaves its counts unknown even
+when a later attempt succeeds, because the provider may have billed the prompt.
+A call that fails after its stream started can have billed tokens that were
+never reported, so its counts stay unknown too.
 
 When a compaction cuts inside a turn, Pi summarizes the earlier history and the
 start of that turn in separate calls and reports only their combined usage. The
