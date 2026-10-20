@@ -75,6 +75,9 @@ class HermesRuntime:
         # Tokens of provider responses Hermes returned on before adding them to
         # its session counters, in the counters' buckets.
         self._skipped_response_tokens = dict.fromkeys(_SESSION_TOKEN_KEYS, 0)
+        # Context-compression summary calls, whose usage Hermes keeps out of
+        # its session counters.
+        self._compression_calls = 0
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -300,6 +303,7 @@ class HermesRuntime:
         uncounted_before = self._uncounted_responses
         unreported_before = dict(self._unreported_counts)
         skipped_before = dict(self._skipped_response_tokens)
+        compression_calls_before = self._compression_calls
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
 
@@ -395,6 +399,13 @@ class HermesRuntime:
                 count
                 for count, responses in self._unreported_counts.items()
                 if responses != unreported_before[count]
+            )
+            # A compression summary call's tokens are not in the counters, so
+            # every count it adds to is an undercount.
+            | (
+                frozenset(_REPORTED_COUNTS)
+                if self._compression_calls != compression_calls_before
+                else frozenset()
             ),
         )
         if self._uncounted_responses != uncounted_before:
@@ -412,6 +423,7 @@ class HermesRuntime:
         """Count the agent's provider responses that left usage unreported."""
         self._count_usage_less_responses(agent)
         self._count_unreported_counts(agent)
+        self._count_compression_calls(agent)
 
     def _count_usage_less_responses(self, agent: Any) -> None:
         """Count the agent's provider responses that carried no usage.
@@ -433,6 +445,30 @@ class HermesRuntime:
                 note_usage_less_response()
 
         compressor.note_usage_less_response = count_and_note
+
+    def _count_compression_calls(self, agent: Any) -> None:
+        """Count the context-compression summary calls of the agent it owns.
+
+        Hermes sends each compression summary through the auxiliary client and
+        records its usage outside the session counters
+        (``agent/aux_accounting.py``). The built-in ``ContextCompressor``
+        issues every summary call through its ``_call_summary_llm`` method
+        (``agent/context_compressor.py``); a plugin context engine is counted
+        at its ``compress`` method, since its calls cannot be seen.
+        """
+        compressor = agent.context_compressor
+        name = (
+            "_call_summary_llm"
+            if callable(getattr(compressor, "_call_summary_llm", None))
+            else "compress"
+        )
+        summarize = getattr(compressor, name)
+
+        def count_and_summarize(*args: Any, **kwargs: Any) -> Any:
+            self._compression_calls += 1
+            return summarize(*args, **kwargs)
+
+        setattr(compressor, name, count_and_summarize)
 
     def _count_unreported_counts(self, agent: Any) -> None:
         """Count the agent's provider responses whose usage left out a count.

@@ -299,6 +299,45 @@ async def test_hermes_usage_counts_the_iteration_limit_summary(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
+async def test_hermes_usage_is_unknown_when_context_compression_runs(
+    code_review_agent_dir: Path,
+    api_server: str,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = hermes_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.runtime.max_turns = 5
+
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as runtime:
+        # Build enough history for Hermes to have turns to summarize.
+        for turn in range(6):
+            await runtime.invoke(input=f"turn {turn}")
+        # A prompt above the compression threshold makes Hermes compress
+        # before its next request.
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={"replies": [{"usage": _chat_usage(120_000, 5)}]},
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+        large = await runtime.invoke(input="large")
+        requests.post(f"{api_server}/_reset", timeout=5).raise_for_status()
+        compressed = await runtime.invoke(input="after")
+        sent = requests.get(f"{api_server}/_requests", timeout=5).json()
+
+    assert large.usage is not None, large.to_mapping()
+    assert (large.usage.input_tokens, large.usage.output_tokens) == (120_000, 5)
+    assert sent[0]["messages"][0]["content"].startswith(
+        "You are a summarization agent"
+    ), sent
+    # Hermes keeps the compression summary call out of its session counters.
+    assert compressed["status"] == "succeeded", compressed.to_mapping()
+    assert compressed.usage is None, compressed.to_mapping()
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
 async def test_env_secrets_in_headers(
     code_review_agent_dir: Path,
     api_server: str,
