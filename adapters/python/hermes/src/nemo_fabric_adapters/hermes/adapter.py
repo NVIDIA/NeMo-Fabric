@@ -448,6 +448,7 @@ class HermesRuntime:
         self._count_unreported_counts(agent)
         self._count_plugin_compressions(agent)
         _install_auxiliary_usage_observer()
+        _observe_background_reviews(agent)
 
     def _count_usage_less_responses(self, agent: Any) -> None:
         """Count the agent's provider responses that carried no usage.
@@ -1439,6 +1440,41 @@ def _install_request_tracking() -> None:
         current = getattr(auxiliary_client, name)
         if not getattr(current, "nemo_fabric_observed", False):
             setattr(auxiliary_client, name, wrap(current))
+
+
+def _observe_background_reviews(agent: Any) -> None:
+    """Leave the invocation's counts unknown when its turn starts a review.
+
+    After a turn, Hermes' ``finalize_turn`` calls the agent's
+    ``_spawn_background_review``, which forks an agent that runs after the
+    invocation returns and records its tokens directly in the session
+    database, outside the auxiliary client. If Hermes no longer starts the
+    review through that method, start fails rather than missing it.
+    """
+    from agent import turn_finalizer
+    from run_agent import AIAgent
+
+    if not (
+        callable(getattr(AIAgent, "_spawn_background_review", None))
+        and "_spawn_background_review"
+        in _global_names(getattr(turn_finalizer, "finalize_turn", None))
+    ):
+        raise lifecycle.LifecycleError(
+            "hermes_usage_accounting_unsupported",
+            "This Hermes version starts background reviews outside "
+            "AIAgent._spawn_background_review",
+        )
+    spawn_review = getattr(agent, "_spawn_background_review", None)
+    if spawn_review is None:
+        return
+
+    def mark_and_spawn(*args: Any, **kwargs: Any) -> Any:
+        calls = _AUXILIARY_CALLS.get()
+        if calls is not None:
+            calls.mark_unaccounted()
+        return spawn_review(*args, **kwargs)
+
+    agent._spawn_background_review = mark_and_spawn
 
 
 def _install_auxiliary_usage_observer() -> None:

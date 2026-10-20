@@ -147,7 +147,10 @@ conversion. If that response reaches Hermes' usage recorder as another
 object, such as one a Relay execution intercept replaced, the invocation has
 no `usage`. Hermes' Codex Responses, Gemini, Bedrock and Copilot ACP auxiliary
 clients fill omitted counts with 0 when they convert the usage, so a response
-from one of them leaves every count unknown. A plugin context engine may call
+from one of them leaves every count unknown. When a turn starts Hermes'
+background memory or skill review, the review forks an agent that runs after
+the invocation returns and records its tokens outside the auxiliary client,
+so the invocation has no `usage`. A plugin context engine may call
 a model outside the auxiliary client, so an invocation in which one compressed
 has no `usage`. The adapter sets
 `auxiliary.title_generation.model_upgrade_enabled` to false, so Hermes keeps its
@@ -159,8 +162,9 @@ tokens outside the auxiliary client. The adapter wraps
 `agent.aux_accounting.record_aux_usage`, the auxiliary client's
 `_relay_sync_completion` and `_relay_async_completion`,
 `agent.anthropic_adapter.create_anthropic_message`, and the Anthropic
-auxiliary client's `create` once per process, and the runtime fails to start
-if the installed Hermes no longer calls them by those names.
+auxiliary client's `create` once per process, and the agent's
+`_spawn_background_review` when it starts the agent. The runtime fails to
+start if the installed Hermes no longer calls them by those names.
 
 Hermes adds no tokens for a provider response that carried no usage, so an
 invocation with such a response has no `usage`. For a response it rejects as

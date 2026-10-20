@@ -3058,3 +3058,62 @@ def test_auxiliary_request_sent_after_the_invocation_returned_is_logged(
         )
 
     assert "after its invocation returned" in caplog.text
+
+
+async def test_hermes_usage_is_unknown_when_a_background_review_starts(
+    scripted_provider: _ScriptedProvider, tmp_path: Path, monkeypatch
+):
+    from run_agent import AIAgent
+
+    reviews: list[dict[str, object]] = []
+    # Record the review instead of forking an agent.
+    monkeypatch.setattr(
+        AIAgent,
+        "_spawn_background_review_now",
+        lambda self, **kwargs: reviews.append(kwargs),
+    )
+    runtime, runtime_context = await _start_scripted_runtime(
+        scripted_provider, tmp_path
+    )
+    # Without a skip setting, ten tool iterations start a review.
+    runtime._agent.skip_background_review = False
+    writes = [
+        _chat_response(
+            "",
+            _usage(100, 1),
+            tool_calls=[
+                {
+                    "id": f"call-{step}",
+                    "type": "function",
+                    "function": {
+                        "name": "write_file",
+                        "arguments": json.dumps(
+                            {"path": str(tmp_path / f"{step}.txt"), "content": "x"}
+                        ),
+                    },
+                }
+            ],
+        )
+        for step in range(10)
+    ]
+    try:
+        scripted_provider.main.extend(writes + [_chat_response("done", _usage(100, 1))])
+        turn = await _invoke(runtime, runtime_context, "Write the files")
+    finally:
+        await runtime.stop()
+
+    assert len(reviews) == 1
+    assert scripted_provider.served == ["main"] * 11
+    assert turn.status == AgentRunStatus.SUCCEEDED
+    assert turn.usage is None
+
+
+def test_background_review_observer_rejects_a_moved_spawn_point(monkeypatch):
+    from agent import turn_finalizer
+
+    monkeypatch.setattr(turn_finalizer, "finalize_turn", lambda *args: None)
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        adapter._observe_background_reviews(SimpleNamespace())
+
+    assert raised.value.code == "hermes_usage_accounting_unsupported"
