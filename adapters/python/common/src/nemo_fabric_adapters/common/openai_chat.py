@@ -149,8 +149,10 @@ def _usage(usage: dict[str, Any]) -> contract.AgentUsage | None:
     input_tokens = usage.get("prompt_tokens")
     output_tokens = usage.get("completion_tokens")
     total_tokens = usage.get("total_tokens")
-    prompt_details = usage.get("prompt_tokens_details") or {}
-    if not isinstance(prompt_details, dict):
+    prompt_details = usage.get("prompt_tokens_details")
+    if prompt_details is None:
+        prompt_details = {}
+    elif not isinstance(prompt_details, dict):
         raise TypeError("Chat Completions prompt_tokens_details must be an object")
     cached_input_tokens = prompt_details.get("cached_tokens")
     counts = (input_tokens, cached_input_tokens, output_tokens, total_tokens)
