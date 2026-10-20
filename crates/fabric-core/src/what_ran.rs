@@ -977,8 +977,9 @@ const REASON_TOO_LARGE: &str = "too_large";
 /// Inside a report, a key may hold only adapter-owned facts, each with
 /// source `reported` and collector `adapter`: the adapter package version,
 /// the harness name and version, each plan role's served model, each MCP
-/// server's `runtime` block with its `tool_names_truncated` marker, and a
-/// `harness` server's transport. A malformed or forged fact reads
+/// server's `runtime` block with its `tool_names_truncated` marker, a
+/// `harness` server's transport, and the `servers_truncated` marker beside
+/// `servers`, whose count core adds to its own only for `harness` entries. A malformed or forged fact reads
 /// `collection_failed` with reason `invalid_report`, and an omitted one
 /// reads `unavailable` with reason `fact_omitted`. Core ignores every other
 /// property, so a report never changes a fact core owns. The string length
@@ -1114,18 +1115,53 @@ fn apply_versions_report(what_ran: &mut WhatRan, report: &Report<'_>) {
 
 /// Fill each plan server's `runtime` block, and add a `harness` entry for
 /// each reported server the plan does not configure.
+///
+/// The report's `servers_truncated` marker counts servers the adapter's
+/// helper dropped from the report. A plan server the helper dropped keeps
+/// its entry, with facts that read `fact_omitted`, so core adds to its own
+/// marker only the count left after the plan servers the report omits:
+/// the `harness` entries that disappear from `what_ran`. A malformed marker
+/// makes the whole `servers` report read `invalid_report`, as a malformed
+/// `tool_names_truncated` does for `tool_names`.
 fn apply_mcp_report(what_ran: &mut WhatRan, plan: &RunPlan, report: &Report<'_>) {
     let Some(mcp) = what_ran.mcp.as_mut() else {
         return;
     };
-    let servers = report.child("servers");
+    let mut servers = report.child("servers");
+    let mut helper_marker = None;
+    if let (Report::Object(_), Report::Object(object)) = (&servers, report)
+        && let Some(marker) = object.get("servers_truncated")
+    {
+        match TruncatedEntries::deserialize(marker) {
+            Ok(marker) => helper_marker = Some(marker),
+            Err(_) => {
+                servers = Report::missing(FactState::CollectionFailed, REASON_INVALID_REPORT);
+            }
+        }
+    }
+    let plan_servers = &plan.capability_plan.mcp_servers;
+    if let (Some(marker), Report::Object(reported)) = (helper_marker, &servers) {
+        let plan_servers_omitted = plan_servers
+            .keys()
+            .filter(|name| !reported.contains_key(*name))
+            .count() as u64;
+        let harness_dropped = marker.dropped.saturating_sub(plan_servers_omitted);
+        if harness_dropped > 0 {
+            mcp.servers_truncated = merged_marker(
+                mcp.servers_truncated.take(),
+                Some(TruncatedEntries {
+                    reason: marker.reason,
+                    dropped: harness_dropped,
+                }),
+            );
+        }
+    }
     for (name, server) in &mut mcp.servers {
         server.runtime = runtime_facts(&servers.child(name).child("runtime"));
     }
     let Report::Object(reported) = servers else {
         return;
     };
-    let plan_servers = &plan.capability_plan.mcp_servers;
     for (name, entry) in reported {
         if plan_servers.contains_key(name) {
             continue;
@@ -2599,5 +2635,92 @@ mod tests {
             json!({"reason": "byte_budget", "dropped": harness_names.len() - harness_kept})
         );
         assert_eq!(map_keys(&what_ran["models"]).len(), 16);
+    }
+
+    fn connected_runtime() -> Value {
+        json!({"runtime": {"connected": reported(json!(true), "harness_status")}})
+    }
+
+    #[test]
+    fn a_helper_servers_marker_adds_its_harness_drops_to_core_marker() {
+        let plan = plan_declaring(&[MCP_REPORT_KEY]);
+        // Every plan server is reported, so all three helper drops were
+        // harness entries.
+        let report = json!({
+            "servers": {"events": connected_runtime(), "files": connected_runtime(),
+                        "github": connected_runtime(), "plugin-docs": connected_runtime()},
+            "servers_truncated": {"reason": "byte_budget", "dropped": 3}
+        });
+
+        let (what_ran, _) = ingest(&plan, json!({MCP_REPORT_KEY: report}));
+
+        assert_eq!(
+            map_keys(&what_ran["mcp"]["servers"]),
+            ["events", "files", "github", "plugin-docs"]
+        );
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "byte_budget", "dropped": 3})
+        );
+    }
+
+    #[test]
+    fn a_helper_servers_marker_never_counts_plan_servers_the_report_omits() {
+        let plan = plan_declaring(&[MCP_REPORT_KEY]);
+        // The helper dropped `github`, a plan server that keeps its entry,
+        // and two harness entries.
+        let report = json!({
+            "servers": {"events": connected_runtime(), "files": connected_runtime()},
+            "servers_truncated": {"reason": "byte_budget", "dropped": 3}
+        });
+
+        let (what_ran, _) = ingest(&plan, json!({MCP_REPORT_KEY: report}));
+
+        assert_eq!(
+            what_ran["mcp"]["servers"]["github"]["runtime"]["connected"],
+            report_state("unavailable", "fact_omitted")
+        );
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "byte_budget", "dropped": 2})
+        );
+
+        // A marker that counts only omitted plan servers adds nothing.
+        let report = json!({
+            "servers": {"events": connected_runtime(), "files": connected_runtime()},
+            "servers_truncated": {"reason": "byte_budget", "dropped": 1}
+        });
+        let (what_ran, _) = ingest(&plan, json!({MCP_REPORT_KEY: report}));
+        assert!(what_ran["mcp"].get("servers_truncated").is_none());
+    }
+
+    #[test]
+    fn a_malformed_helper_servers_marker_invalidates_the_servers_report() {
+        let plan = plan_declaring(&[MCP_REPORT_KEY]);
+        for marker in [
+            json!({"reason": "byte_budget", "dropped": 0}),
+            json!({"reason": "byte_budget"}),
+            json!("three"),
+            Value::Null,
+        ] {
+            let report = json!({
+                "servers": {"events": connected_runtime(), "plugin-docs": connected_runtime()},
+                "servers_truncated": marker
+            });
+
+            let (what_ran, _) = ingest(&plan, json!({MCP_REPORT_KEY: report}));
+
+            let servers = &what_ran["mcp"]["servers"];
+            assert_eq!(map_keys(servers), ["events", "files", "github"], "{marker}");
+            assert_eq!(
+                servers["events"]["runtime"]["connected"],
+                report_state("collection_failed", "invalid_report"),
+                "{marker}"
+            );
+            assert!(
+                what_ran["mcp"].get("servers_truncated").is_none(),
+                "{marker}"
+            );
+        }
     }
 }
