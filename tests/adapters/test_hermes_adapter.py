@@ -578,6 +578,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             "cwd": "/workspace/repo",
             "timeout": 90,
         },
+        "auxiliary": {"title_generation": {"model_upgrade_enabled": False}},
         "skills": {"external_dirs": ["skills/review"]},
         "mcp_servers": {
             "github": {
@@ -1079,7 +1080,7 @@ async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
     assert runtime._mcp_authentication_checked is False
 
 
-def test_build_hermes_config_disables_session_title_generation_only_for_relay():
+def test_build_hermes_config_disables_model_titles_and_relay_titles():
     agent_config = _agent_config(
         {
             "harness": {"settings": {}},
@@ -1092,8 +1093,14 @@ def test_build_hermes_config_disables_session_title_generation_only_for_relay():
         agent_config, workspace=".", relay_enabled=True
     )
 
-    assert "auxiliary" not in ordinary_config
-    assert relay_config["auxiliary"] == {"title_generation": {"enabled": False}}
+    # The model title call's tokens bypass the counters the adapter reports,
+    # so Hermes keeps its locally derived title; Relay runs have no titles.
+    assert ordinary_config["auxiliary"] == {
+        "title_generation": {"model_upgrade_enabled": False}
+    }
+    assert relay_config["auxiliary"] == {
+        "title_generation": {"enabled": False, "model_upgrade_enabled": False}
+    }
 
 
 def test_write_hermes_config_writes_file(tmp_path: Path):
