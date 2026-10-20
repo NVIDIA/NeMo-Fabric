@@ -5620,22 +5620,41 @@ for line in sys.stdin:
     }
 
     /// An adapter that declares the versions key and reports it gets its
-    /// facts into `what_ran`, and the key leaves `metadata.adapter`.
+    /// facts into `what_ran`, and the key leaves `metadata.adapter`. The
+    /// existing result-extension check runs first: a descriptor with no
+    /// `run_result` schema, or one that rejects the key, fails the
+    /// invocation, and one that accepts the key without naming it leaves
+    /// the facts `key_not_declared`.
     #[test]
     fn local_host_what_ran_ingests_a_declared_versions_report() {
         use serde_json::json;
         let (root, plan) = local_host_plan("versions_report");
         let descriptor_path = root.join("adapters/local-host/local-host.fabric-adapter.json");
-        let mut descriptor: Value =
+        let original: Value =
             serde_json::from_str(&fs::read_to_string(&descriptor_path).expect("read descriptor"))
                 .expect("descriptor JSON");
-        descriptor["extension_schemas"]["run_result"]["properties"]["nemo_fabric.versions.v1"] =
-            json!({"type": "object"});
-        fs::write(&descriptor_path, descriptor.to_string()).expect("write descriptor");
-        let plan = resolve_run_plan_from_config(plan.config, ResolveContext::new(&root))
-            .expect("resolve plan");
+        // Run the same emitted report under the given `run_result` schema.
+        let run_with = |run_result: Option<Value>| {
+            let mut descriptor = original.clone();
+            let schemas = descriptor["extension_schemas"]
+                .as_object_mut()
+                .expect("extension schemas");
+            match run_result {
+                Some(schema) => schemas.insert("run_result".to_string(), schema),
+                None => schemas.remove("run_result"),
+            };
+            fs::write(&descriptor_path, descriptor.to_string()).expect("write descriptor");
+            let plan =
+                resolve_run_plan_from_config(plan.config.clone(), ResolveContext::new(&root))
+                    .expect("resolve plan");
+            run_plan(&plan, RunRequest::text("provenance"))
+        };
+        let declared = json!({"type": "object", "properties": {
+            "trace_id": {"type": "string"},
+            "nemo_fabric.versions.v1": {"type": "object"}
+        }, "additionalProperties": false});
 
-        let result = run_plan(&plan, RunRequest::text("provenance")).expect("result");
+        let result = run_with(Some(declared)).expect("result");
 
         assert_eq!(result.status, RunStatus::Succeeded);
         assert_eq!(result.metadata["adapter"], json!({"trace_id": "trace-1"}));
@@ -5652,6 +5671,53 @@ for line in sys.stdin:
             what_ran["harness"],
             json!({"name": reported("fake-harness", "harness_api"),
                    "version": reported("4.5.6", "harness_api")})
+        );
+
+        // No `run_result` schema, and one that rejects the undeclared key,
+        // both fail the invocation before ingestion.
+        let error = run_with(None).expect_err("no run_result schema");
+        assert!(
+            matches!(
+                &error,
+                FabricError::AdapterCompatibility { field, reason, .. }
+                    if field == "result.extensions"
+                        && reason
+                            == "the adapter descriptor does not declare an extension schema for run_result"
+            ),
+            "{error:?}"
+        );
+        let rejecting = json!({"type": "object", "properties": {"trace_id": {"type": "string"}},
+                               "additionalProperties": false});
+        let error = run_with(Some(rejecting)).expect_err("rejecting run_result schema");
+        assert!(
+            matches!(
+                &error,
+                FabricError::InvalidAdapterExtension { extension_path, reason, .. }
+                    if extension_path == "result.extensions.nemo_fabric.versions.v1"
+                        && reason == "is not declared by the adapter extension schema"
+            ),
+            "{error:?}"
+        );
+
+        // A schema that accepts the key without naming it keeps the run and
+        // the key in `metadata.adapter`, and ingestion leaves the facts
+        // `key_not_declared`.
+        let permissive = json!({"type": "object", "properties": {"trace_id": {"type": "string"}}});
+
+        let result = run_with(Some(permissive)).expect("result");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        assert_eq!(
+            result.metadata["adapter"]["nemo_fabric.versions.v1"]["harness"]["version"],
+            reported("4.5.6", "harness_api")
+        );
+        let what_ran = serde_json::to_value(result.what_ran.expect("what_ran")).expect("JSON");
+        let not_declared = json!({"state": "unsupported", "reason": "key_not_declared",
+            "source": "reported", "collected_by": "adapter", "method": "adapter_report"});
+        assert_eq!(what_ran["adapter"]["package_version"], not_declared);
+        assert_eq!(
+            what_ran["harness"],
+            json!({"name": not_declared, "version": not_declared})
         );
         let _ = fs::remove_dir_all(root);
     }
