@@ -130,22 +130,30 @@ answers with its fallback text. An invocation whose summary response carried no
 usage, or whose summary request failed before any response, has no `usage`.
 
 Hermes keeps auxiliary model calls, such as context-compression summaries and
-vision analysis, out of these counters. The adapter adds each auxiliary
-response's usage to the invocation whose turn made the call, using the same
-rules as a main-loop response. A response without usage, or one whose usage
-left out a count, leaves the affected counts unknown. Usage that arrives after
-the invocation returned is dropped, never added to a later invocation.
+vision analysis, out of these counters. The adapter adds the usage of each
+auxiliary response that Hermes' auxiliary client returns to the invocation
+whose turn made the call, using the same rules as a main-loop response. A
+response without usage, or one whose usage left out a count, leaves the
+affected counts unknown. An auxiliary request that raised, including a
+response the client could not parse, may have been billed, so the invocation
+has no `usage`. The same holds for a request still running when the
+invocation returns, and its usage is never added to a later invocation.
 Mixture-of-agents calls are already in the session counters and are not
 counted twice. Calls made by delegated subagents are not included, like their
 main calls. Hermes' Anthropic auxiliary client drops the cache counts when it
 converts a response, so the adapter reads the raw Anthropic usage before the
-conversion. If Relay rewrites that response, its counts stay unknown. A
-plugin context engine may call a model outside the auxiliary client, so an
-invocation in which one compressed has no `usage`. The adapter sets
+conversion. If that response reaches Hermes' usage recorder as another
+object, such as one a managed Relay attempt rewrote, the invocation has no
+`usage`. Hermes' Codex Responses, Gemini, Bedrock and Copilot ACP auxiliary
+clients fill omitted counts with 0 when they convert the usage, so a response
+from one of them leaves every count unknown. A plugin context engine may call
+a model outside the auxiliary client, so an invocation in which one compressed
+has no `usage`. The adapter sets
 `auxiliary.title_generation.model_upgrade_enabled` to false, so Hermes keeps its
 locally derived session title and makes no title model call; with Relay
 enabled, title generation is off entirely. The adapter wraps
-`agent.aux_accounting.record_aux_usage`,
+`agent.aux_accounting.record_aux_usage`, the auxiliary client's
+`_relay_sync_completion` and `_relay_async_completion`,
 `agent.anthropic_adapter.create_anthropic_message`, and the Anthropic
 auxiliary client's `create` once per process, and the runtime fails to start
 if the installed Hermes no longer calls them by those names.

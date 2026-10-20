@@ -2306,6 +2306,8 @@ class _ScriptedProvider:
 
     Hermes' main turn loop sends its tools, a session title call asks for a
     JSON response format, and the compression summary call sends neither.
+    When ``failed_summary`` holds a status and body, every summary call gets
+    that answer instead.
     """
 
     def __init__(self) -> None:
@@ -2314,6 +2316,7 @@ class _ScriptedProvider:
 
         self.main: list[dict[str, object]] = []
         self.summaries: list[dict[str, object]] = []
+        self.failed_summary: tuple[int, bytes] | None = None
         self.served: list[str] = []
         provider = self
 
@@ -2337,6 +2340,15 @@ class _ScriptedProvider:
                 elif body.get("tools"):
                     kind = "main"
                     response = provider.main.pop(0)
+                elif provider.failed_summary is not None:
+                    status, payload = provider.failed_summary
+                    self.send_response(status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    provider.served.append("failed summary")
+                    return
                 else:
                     kind = "summary"
                     response = provider.summaries.pop(0)
@@ -2499,6 +2511,43 @@ async def test_hermes_usage_leaves_counts_omitted_by_compression_unknown(
     assert turn.usage.total_tokens is None
 
 
+@pytest.mark.parametrize(
+    "failed_summary",
+    [
+        # The provider answered, but the client cannot parse the body.
+        (200, b'{"id": "scripted", "choices": [ {"message": '),
+        # The request raised.
+        (400, b'{"error": {"message": "upstream reset", "type": "bad_request"}}'),
+    ],
+    ids=["unparseable", "rejected"],
+)
+async def test_hermes_usage_is_unknown_when_a_compression_summary_request_fails(
+    scripted_provider: _ScriptedProvider, tmp_path: Path, failed_summary
+):
+    runtime, runtime_context = await _start_scripted_runtime(
+        scripted_provider, tmp_path
+    )
+    try:
+        scripted_provider.main.extend(
+            [
+                _tool_call_over_compression_threshold(runtime),
+                _chat_response("done", _usage(500, 9)),
+            ]
+        )
+        scripted_provider.failed_summary = failed_summary
+        runtime._conversation_history = list(_LONG_HISTORY)
+
+        turn = await _invoke(runtime, runtime_context, "Fix the parser bug")
+    finally:
+        await runtime.stop()
+
+    # A failed summary request may have been billed, so the counts the
+    # invocation reports would be an undercount.
+    assert "failed summary" in scripted_provider.served
+    assert turn.status == AgentRunStatus.SUCCEEDED
+    assert turn.usage is None
+
+
 def _install_auxiliary_observer_fresh(monkeypatch) -> tuple[Any, list[tuple]]:
     """Install the auxiliary observer over a recording stand-in for Hermes'
     recorder, and return the stand-in's calls."""
@@ -2566,6 +2615,12 @@ def test_auxiliary_usage_counts_only_the_runtime_session_and_not_moa(monkeypatch
                 "prompt_tokens_details": {"cached_tokens": 0},
             },
             set(),
+        ),
+        # Hermes' converting clients build this shape and fill omitted
+        # counts with 0.
+        (
+            SimpleNamespace(prompt_tokens=10, completion_tokens=2, total_tokens=12),
+            {"input", "cached", "output"},
         ),
     ],
 )
@@ -2707,8 +2762,9 @@ def test_anthropic_auxiliary_usage_comes_from_the_raw_anthropic_message(
     assert unreported == frozenset(unknown)
 
 
+@pytest.mark.parametrize("provider", ["anthropic", "minimax", None])
 def test_anthropic_auxiliary_response_seen_as_another_object_is_unknown(
-    monkeypatch,
+    monkeypatch, provider
 ):
     from agent import anthropic_adapter
     from agent import auxiliary_client
@@ -2729,7 +2785,7 @@ def test_anthropic_auxiliary_response_seen_as_another_object_is_unknown(
         response = client.chat.completions.create(**_ANTHROPIC_REQUEST)
         # A managed Relay attempt that rewrote the response returns a copy.
         auxiliary_client._validate_llm_response(
-            SimpleNamespace(**vars(response)), "compression", provider="anthropic"
+            SimpleNamespace(**vars(response)), "compression", provider=provider
         )
         # A main-loop Anthropic call is not an auxiliary call.
         anthropic_adapter.create_anthropic_message(
@@ -2743,3 +2799,140 @@ def test_anthropic_auxiliary_response_seen_as_another_object_is_unknown(
 
     assert counted == dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
     assert unreported == frozenset({"input", "cached", "output"})
+
+
+def _owned_context(aux_accounting: Any, calls: Any, session_db: object) -> Callable:
+    """Run a function as an auxiliary call of ``calls``' invocation."""
+
+    def run(function: Callable[[], Any]) -> Any:
+        owner = adapter._AUXILIARY_CALLS.set(calls)
+        session = aux_accounting._accounting.set((session_db, "session"))
+        try:
+            return function()
+        finally:
+            aux_accounting._accounting.reset(session)
+            adapter._AUXILIARY_CALLS.reset(owner)
+
+    return run
+
+
+def test_auxiliary_request_that_raised_leaves_counts_unknown(monkeypatch):
+    from agent import auxiliary_client
+
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+
+    def refuse(**kwargs):
+        raise RuntimeError("connection reset after the provider ran")
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=refuse))
+    )
+    with pytest.raises(RuntimeError):
+        _owned_context(aux_accounting, calls, session_db)(
+            lambda: auxiliary_client._relay_sync_completion(
+                client, dict(_ANTHROPIC_REQUEST), provider="nvidia"
+            )
+        )
+
+    assert calls.close()[1] == frozenset({"input", "cached", "output"})
+
+
+def test_async_auxiliary_request_that_raised_leaves_counts_unknown(monkeypatch):
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+
+    async def refuse(*args, **kwargs):
+        raise TimeoutError("no response")
+
+    request = adapter._observed_async_relay_completion(refuse)
+    with pytest.raises(TimeoutError):
+        _owned_context(aux_accounting, calls, session_db)(
+            lambda: asyncio.run(request())
+        )
+
+    assert calls.close()[1] == frozenset({"input", "cached", "output"})
+
+
+def test_auxiliary_request_in_flight_when_the_invocation_returns_is_unknown(
+    monkeypatch,
+):
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    sent = threading.Event()
+    release = threading.Event()
+
+    def slow_request(*args, **kwargs):
+        sent.set()
+        release.wait(timeout=10)
+        return SimpleNamespace(usage=_usage(10, 2))
+
+    request = adapter._observed_relay_completion(slow_request)
+    worker = threading.Thread(
+        target=_owned_context(aux_accounting, calls, session_db), args=(request,)
+    )
+    worker.start()
+    try:
+        assert sent.wait(timeout=10)
+        tokens, unreported = calls.close()
+    finally:
+        release.set()
+        worker.join(timeout=10)
+
+    assert tokens == dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
+    assert unreported == frozenset({"input", "cached", "output"})
+
+
+@pytest.mark.parametrize("call", ["mixture_of_agents", "subagent"])
+def test_anthropic_capture_of_an_uncounted_call_is_forgotten(monkeypatch, call):
+    from agent import auxiliary_client
+
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    usage = SimpleNamespace(
+        input_tokens=100,
+        output_tokens=20,
+        cache_read_input_tokens=30,
+        cache_creation_input_tokens=5,
+    )
+    client = _anthropic_aux_client(usage)
+    # A subagent bills its own session database handle.
+    billed_db = session_db if call == "mixture_of_agents" else object()
+    task = "moa_reference" if call == "mixture_of_agents" else "compression"
+
+    def make_call() -> None:
+        response = client.chat.completions.create(**_ANTHROPIC_REQUEST)
+        auxiliary_client._validate_llm_response(response, task, provider="anthropic")
+
+    _owned_context(aux_accounting, calls, billed_db)(make_call)
+
+    assert calls.close() == (dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0), frozenset())
+
+
+@pytest.mark.parametrize("site", ["anthropic_create", "request_caller"])
+def test_auxiliary_usage_observer_rejects_moved_request_paths(monkeypatch, site):
+    from agent import aux_accounting
+    from agent import auxiliary_client
+
+    monkeypatch.setattr(
+        aux_accounting, "record_aux_usage", lambda *args, **kwargs: None
+    )
+    if site == "anthropic_create":
+        monkeypatch.setattr(
+            auxiliary_client._AnthropicCompletionsAdapter,
+            "create",
+            lambda self, **kwargs: None,
+        )
+    else:
+        monkeypatch.setattr(
+            auxiliary_client, "_retry_same_provider_sync", lambda **kwargs: None
+        )
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        adapter._install_auxiliary_usage_observer()
+
+    assert raised.value.code == "hermes_usage_accounting_unsupported"

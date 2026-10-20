@@ -19,6 +19,7 @@ import sys
 import threading
 import weakref
 from collections.abc import Callable
+from types import SimpleNamespace
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -1043,6 +1044,10 @@ def _is_count(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= _MAX_COUNT
 
 
+# No Anthropic usage was captured for a response.
+_NOT_CAPTURED = object()
+
+
 def _counter_tokens(usage: Any, provider: Any, api_mode: Any) -> dict[str, int]:
     """Return a response's usage in the session counters' buckets.
 
@@ -1061,7 +1066,9 @@ class _AuxiliaryCalls:
     Hermes sends context-compression summaries, vision analysis and its other
     auxiliary requests through its auxiliary client, which records their
     usage in the session database but never adds it to the agent's session
-    counters. Usage belongs to the invocation whose turn made the call. Once
+    counters. Usage belongs to the invocation whose turn made the call. A
+    request that raised, or that is still in flight when the invocation
+    returns, may have been billed, so it leaves every count unknown. Once
     the invocation returns, its calls are closed: usage that arrives later
     is dropped, never moved to the next invocation.
     """
@@ -1075,6 +1082,8 @@ class _AuxiliaryCalls:
         # Raw usage of Anthropic auxiliary responses, by the converted
         # response Hermes passes on, kept until that response is recorded.
         self._anthropic_usage: dict[int, tuple[Any, Any]] = {}
+        # Auxiliary requests sent and not yet returned or raised.
+        self._requests_in_flight = 0
 
     def owns_session(self, session_db: Any) -> bool:
         """Return whether Hermes bills the call to this runtime's session.
@@ -1085,23 +1094,28 @@ class _AuxiliaryCalls:
         """
         return session_db is not None and session_db is self._session_db
 
-    def add_response(self, response: Any, provider: Any) -> None:
+    def add_response(
+        self, response: Any, provider: Any, anthropic_usage: Any = _NOT_CAPTURED
+    ) -> None:
         """Add an auxiliary response's reported counts.
 
         Hermes normalizes auxiliary usage by provider alone, so the counts
         follow the same usage shape. For a response from Hermes' Anthropic
-        auxiliary client, the counts come from the raw Anthropic usage the
-        adapter captured before Hermes converted it. A response without
+        auxiliary client, ``anthropic_usage`` is the raw Anthropic usage the
+        adapter captured before Hermes converted it. Hermes' other converting
+        clients (Anthropic, Codex Responses, Gemini, Bedrock and Copilot ACP)
+        build the usage as a ``SimpleNamespace`` and fill an omitted count
+        with 0, so such usage leaves every count unknown. A response without
         usage, like one that left out a count, leaves those counts unknown.
         """
-        with self._lock:
-            captured = self._anthropic_usage.pop(id(response), None)
         api_mode = None
         usage = getattr(response, "usage", None)
-        if captured is not None and captured[0] is response:
-            usage = captured[1]
+        if anthropic_usage is not _NOT_CAPTURED:
+            usage = anthropic_usage
             provider, api_mode = "anthropic", "anthropic_messages"
-        if usage is None:
+        if usage is None or (
+            anthropic_usage is _NOT_CAPTURED and type(usage) is SimpleNamespace
+        ):
             omitted = list(_REPORTED_COUNTS)
             tokens = None
         else:
@@ -1117,6 +1131,14 @@ class _AuxiliaryCalls:
             for key, value in (tokens or {}).items():
                 self._tokens[key] += value
 
+    def take_anthropic_usage(self, response: Any) -> Any:
+        """Return and forget the raw usage captured for ``response``."""
+        with self._lock:
+            captured = self._anthropic_usage.pop(id(response), None)
+        if captured is None or captured[0] is not response:
+            return _NOT_CAPTURED
+        return captured[1]
+
     def add_anthropic_usage(self, response: Any, usage: Any) -> None:
         """Keep the raw usage of a converted Anthropic auxiliary response."""
         with self._lock:
@@ -1129,10 +1151,27 @@ class _AuxiliaryCalls:
             if not self._closed:
                 self._unreported.update(_REPORTED_COUNTS)
 
+    def start_request(self) -> None:
+        """Note an auxiliary request sent to the provider."""
+        with self._lock:
+            self._requests_in_flight += 1
+
+    def finish_request(self) -> None:
+        """Note that an auxiliary request returned or raised."""
+        with self._lock:
+            self._requests_in_flight -= 1
+
     def close(self) -> tuple[dict[str, int], frozenset[str]]:
-        """Return the calls' tokens and unknown counts, and drop later usage."""
+        """Return the calls' tokens and unknown counts, and drop later usage.
+
+        A request still in flight, or a captured Anthropic usage whose
+        response was never recorded, means the counts miss work this
+        invocation started, so every count is unknown.
+        """
         with self._lock:
             self._closed = True
+            if self._requests_in_flight or self._anthropic_usage:
+                self._unreported.update(_REPORTED_COUNTS)
             self._anthropic_usage.clear()
             return dict(self._tokens), frozenset(self._unreported)
 
@@ -1143,6 +1182,64 @@ _AUXILIARY_CALLS: contextvars.ContextVar[_AuxiliaryCalls | None] = (
 )
 
 
+def _owned_auxiliary_calls() -> _AuxiliaryCalls | None:
+    """Return the invocation that owns an auxiliary call made in this context.
+
+    The call is owned when an invocation's turn runs in this context and
+    Hermes bills the call to that runtime's session.
+    """
+    from agent import aux_accounting
+
+    calls = _AUXILIARY_CALLS.get()
+    session = aux_accounting._accounting.get()
+    if calls is None or session is None or not calls.owns_session(session[0]):
+        return None
+    return calls
+
+
+def _observed_relay_completion(completion: Callable[..., Any]) -> Any:
+    """Wrap Hermes' synchronous auxiliary request function to track each
+    request. A request that raised may have been billed, so it leaves every
+    count unknown, and a request still running when the invocation returns
+    does too."""
+
+    def observed(*args: Any, **kwargs: Any) -> Any:
+        calls = _owned_auxiliary_calls()
+        if calls is None:
+            return completion(*args, **kwargs)
+        calls.start_request()
+        try:
+            return completion(*args, **kwargs)
+        except BaseException:
+            calls.mark_unaccounted()
+            raise
+        finally:
+            calls.finish_request()
+
+    observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
+    return observed
+
+
+def _observed_async_relay_completion(completion: Callable[..., Any]) -> Any:
+    """Async twin of ``_observed_relay_completion``."""
+
+    async def observed(*args: Any, **kwargs: Any) -> Any:
+        calls = _owned_auxiliary_calls()
+        if calls is None:
+            return await completion(*args, **kwargs)
+        calls.start_request()
+        try:
+            return await completion(*args, **kwargs)
+        except BaseException:
+            calls.mark_unaccounted()
+            raise
+        finally:
+            calls.finish_request()
+
+    observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
+    return observed
+
+
 def _observed_record_aux_usage(record_aux_usage: Callable[..., Any]) -> Any:
     """Wrap Hermes' auxiliary usage recorder to show each response to its turn's
     invocation before Hermes normalizes the usage."""
@@ -1150,19 +1247,23 @@ def _observed_record_aux_usage(record_aux_usage: Callable[..., Any]) -> Any:
 
     def observed(response: Any, task: Any, *args: Any, **kwargs: Any) -> Any:
         calls = _AUXILIARY_CALLS.get()
-        session = aux_accounting._accounting.get()
-        # MoA advisor and aggregator usage is already in the session counters.
-        if (
-            calls is not None
-            and task not in aux_accounting._EXCLUDED_TASKS
-            and session is not None
-            and calls.owns_session(session[0])
-        ):
-            try:
-                calls.add_response(response, kwargs.get("provider"))
-            except Exception:
-                LOGGER.exception("Could not read Hermes auxiliary usage")
-                calls.mark_unaccounted()
+        if calls is not None:
+            # Forget a captured Anthropic usage even for a call the adapter
+            # does not count, so it never reads as an unrecorded response.
+            anthropic_usage = calls.take_anthropic_usage(response)
+            # MoA advisor and aggregator usage is already in the session
+            # counters.
+            if (
+                task not in aux_accounting._EXCLUDED_TASKS
+                and _owned_auxiliary_calls() is calls
+            ):
+                try:
+                    calls.add_response(
+                        response, kwargs.get("provider"), anthropic_usage
+                    )
+                except Exception:
+                    LOGGER.exception("Could not read Hermes auxiliary usage")
+                    calls.mark_unaccounted()
         return record_aux_usage(response, task, *args, **kwargs)
 
     observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
@@ -1183,8 +1284,8 @@ def _observed_anthropic_aux_create(create: Callable[..., Any]) -> Any:
     whose usage leaves out the cache counts and fills missing counts with 0.
     Only ``create_anthropic_message``, which the adapter calls, sees the raw
     message. A response that later reaches the observer as another object,
-    such as one Relay rewrote, falls back to the converted usage, whose
-    Anthropic counts are unknown.
+    such as one a managed Relay attempt rewrote, leaves its capture
+    unrecorded, so the invocation's counts are unknown.
     """
 
     def observed(self: Any, *args: Any, **kwargs: Any) -> Any:
@@ -1194,9 +1295,12 @@ def _observed_anthropic_aux_create(create: Callable[..., Any]) -> Any:
             response = create(self, *args, **kwargs)
         finally:
             _ANTHROPIC_AUX_CAPTURE.reset(capture)
-        calls = _AUXILIARY_CALLS.get()
-        if calls is not None and len(captured) == 1:
-            calls.add_anthropic_usage(response, captured[0])
+        calls = _owned_auxiliary_calls()
+        if calls is not None:
+            if len(captured) == 1:
+                calls.add_anthropic_usage(response, captured[0])
+            else:
+                calls.mark_unaccounted()
         return response
 
     observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
@@ -1252,6 +1356,59 @@ def _install_anthropic_usage_capture() -> None:
     adapter_type.create = _observed_anthropic_aux_create(create)
 
 
+# Hermes' functions that send an auxiliary request and validate its response,
+# by the request function each one looks up as a module global.
+_AUXILIARY_REQUEST_CALLERS = {
+    "_retry_same_provider_sync": "_relay_sync_completion",
+    "_retry_same_provider_async": "_relay_async_completion",
+    "_call_fallback_candidate_sync": "_relay_sync_completion",
+    "_call_fallback_candidate_async": "_relay_async_completion",
+    "_call_llm_impl": "_relay_sync_completion",
+    "_async_call_llm_impl": "_relay_async_completion",
+}
+
+
+def _global_names(function: Any) -> set[str]:
+    """Return the global names a function and its nested functions look up."""
+    names: set[str] = set()
+    pending = [getattr(function, "__code__", None)]
+    while pending:
+        code = pending.pop()
+        if code is None:
+            continue
+        names.update(code.co_names)
+        pending.extend(
+            const for const in code.co_consts if isinstance(const, type(code))
+        )
+    return names
+
+
+def _install_request_tracking() -> None:
+    """Route Hermes' auxiliary request functions through the request tracker.
+
+    Each auxiliary request goes through ``_relay_sync_completion`` or
+    ``_relay_async_completion``, looked up as a module global by the callers
+    in ``_AUXILIARY_REQUEST_CALLERS``. If Hermes no longer sends requests
+    through those names, start fails rather than missing failed requests.
+    """
+    from agent import auxiliary_client
+
+    for caller, request in _AUXILIARY_REQUEST_CALLERS.items():
+        if request not in _global_names(getattr(auxiliary_client, caller, None)):
+            raise lifecycle.LifecycleError(
+                "hermes_usage_accounting_unsupported",
+                f"This Hermes version sends auxiliary requests outside "
+                f"agent.auxiliary_client.{request}",
+            )
+    for name, wrap in (
+        ("_relay_sync_completion", _observed_relay_completion),
+        ("_relay_async_completion", _observed_async_relay_completion),
+    ):
+        current = getattr(auxiliary_client, name)
+        if not getattr(current, "nemo_fabric_observed", False):
+            setattr(auxiliary_client, name, wrap(current))
+
+
 def _install_auxiliary_usage_observer() -> None:
     """Route Hermes' auxiliary usage recorder through the observer.
 
@@ -1283,6 +1440,7 @@ def _install_auxiliary_usage_observer() -> None:
             "agent.aux_accounting.record_aux_usage",
         )
     _install_anthropic_usage_capture()
+    _install_request_tracking()
     aux_accounting.record_aux_usage = _observed_record_aux_usage(current)
 
 
