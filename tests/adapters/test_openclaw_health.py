@@ -12,6 +12,8 @@ import httpx
 import pytest
 import pytest_asyncio
 
+from nemo_fabric_adapter_contract.models import AgentConfig, RuntimeContext
+from nemo_fabric_adapters.common.lifecycle import LifecycleError
 from nemo_fabric_adapters.openclaw.adapter import OpenClawRuntime
 
 
@@ -36,6 +38,7 @@ async def gateway_health_fixture():
         return httpx.Response(status, stream=httpx.ByteStream(encoded))
 
     runtime = OpenClawRuntime()
+    runtime._service_host = True
     runtime._gateway_url = "http://gateway.test"
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(respond),
@@ -43,6 +46,234 @@ async def gateway_health_fixture():
     ) as client:
         runtime._client = client
         yield runtime, responses, requests
+
+
+@pytest_asyncio.fixture(name="runtime_health", loop_scope="function")
+async def runtime_health_fixture(gateway_health, tmp_path):
+    runtime, responses, requests = gateway_health
+    runtime._service_host = False
+    runtime._config = AgentConfig.from_mapping(
+        {"models": {"default": {"provider": "test", "model": "test-model"}}}
+    )
+    runtime._context = RuntimeContext.from_mapping(
+        {
+            "runtime_id": "runtime-health-test",
+            "invocation_id": "invocation-health-test",
+            "request_id": "request-health-test",
+            "environment": {
+                "environment_id": "environment-health-test",
+                "provider": "local",
+                "control_location": "external_control",
+                "ownership": "caller_owned",
+                "workspace": str(tmp_path),
+                "env": {},
+            },
+            "artifacts": {},
+        }
+    )
+    runtime._agent_id = "researcher"
+    responses["/startupz"] = (200, {"ok": True, "status": "started"})
+    responses["/v1/models"] = (
+        200,
+        {
+            "object": "list",
+            "data": [{"id": "openclaw/researcher", "object": "model"}],
+        },
+    )
+    responses["/v1/chat/completions"] = httpx.Response(405, headers={"Allow": "POST"})
+    yield runtime, responses, requests
+
+
+@pytest.mark.parametrize(
+    ("level", "paths"),
+    [
+        ("live", ["/healthz"]),
+        ("active", ["/startupz", "/v1/models", "/v1/chat/completions"]),
+        ("ready", ["/readyz"]),
+    ],
+)
+async def test_runtime_health_observes_the_selected_agent_without_invoking(
+    runtime_health, level, paths
+):
+    runtime, _, requests = runtime_health
+    result = await runtime.check(level)
+    assert result["outcome"] == "passed"
+    assert result["activity"] == "idle"
+    assert result["observed_at"] is not None
+    assert [request.url.path for request in requests] == paths
+    assert all(request.method == "GET" for request in requests)
+
+
+@pytest.mark.parametrize("models", [[], [{"id": "openclaw/other", "object": "model"}]])
+async def test_runtime_active_requires_the_selected_agent_registration(
+    runtime_health, models
+):
+    runtime, responses, requests = runtime_health
+    responses["/v1/models"] = (200, {"object": "list", "data": models})
+    result = await runtime.check("active")
+    assert result["outcome"] == "failed"
+    assert result["reason_code"] == "endpoint_unavailable"
+    assert [request.url.path for request in requests] == ["/startupz", "/v1/models"]
+    runtime._service_host = True
+    assert (await runtime.check("active"))["outcome"] == "passed"
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "outcome"),
+    [
+        (503, {"ok": False, "status": "starting"}, "failed"),
+        (200, {"ok": False, "status": "started"}, "unknown"),
+        (200, {"ok": True, "status": "starting"}, "unknown"),
+        (200, {"ok": 1, "status": "started"}, "unknown"),
+        (200, b'{"ok":false,"ok":true,"status":"started"}', "unknown"),
+    ],
+)
+async def test_runtime_active_stops_when_startup_is_unavailable_or_invalid(
+    runtime_health, status, body, outcome
+):
+    runtime, responses, requests = runtime_health
+    responses["/startupz"] = (status, body)
+    result = await runtime.check("active")
+    assert result["outcome"] == outcome
+    assert [request.url.path for request in requests] == ["/startupz"]
+
+
+@pytest.mark.parametrize(
+    ("status", "allow", "outcome"),
+    [
+        (404, None, "failed"),
+        (200, None, "failed"),
+        (405, None, "unknown"),
+        (405, "GET", "unknown"),
+    ],
+)
+async def test_runtime_active_requires_the_chat_endpoint_even_when_models_are_available(
+    runtime_health, status, allow, outcome
+):
+    runtime, responses, requests = runtime_health
+    responses["/v1/chat/completions"] = httpx.Response(
+        status, headers={} if allow is None else {"Allow": allow}
+    )
+    result = await runtime.check("active")
+    assert result["outcome"] == outcome
+    assert [request.url.path for request in requests] == [
+        "/startupz",
+        "/v1/models",
+        "/v1/chat/completions",
+    ]
+    assert all(request.method == "GET" for request in requests)
+
+
+async def test_runtime_active_rejects_an_interface_disabled_after_an_invocation_failure(
+    runtime_health,
+):
+    runtime, _, requests = runtime_health
+    runtime._gateway_failure = LifecycleError("test_failure", "TEST_ONLY_PRIVATE")
+    assert (await runtime.check("live"))["outcome"] == "passed"
+    requests.clear()
+    result = await runtime.check("active")
+    assert result["outcome"] == "failed"
+    assert result["reason_code"] == "endpoint_unavailable"
+    assert requests == []
+    assert "TEST_ONLY_PRIVATE" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("field", ["_context", "_config"])
+async def test_runtime_health_requires_an_initialized_runtime(runtime_health, field):
+    runtime, _, requests = runtime_health
+    setattr(runtime, field, None)
+    result = await runtime.check("live")
+    assert result["outcome"] == "unknown"
+    assert result["reason_code"] == "runtime_unavailable"
+    assert requests == []
+
+
+async def test_runtime_health_reports_stopped_activity_after_owned_process_exit(
+    runtime_health,
+):
+    runtime, _, requests = runtime_health
+    runtime._process = MagicMock(spec=asyncio.subprocess.Process)
+    runtime._process.returncode = 1
+    result = await runtime.check("live")
+    assert result["outcome"] == "failed"
+    assert result["reason_code"] == "agent_exited"
+    assert result["activity"] == "stopped"
+    assert requests == []
+
+
+@pytest.mark.parametrize("error", [httpx.RemoteProtocolError, httpx.ReadTimeout])
+@pytest.mark.parametrize("changed_context", [False, True])
+async def test_runtime_health_preserves_process_exit_during_transport_failure(
+    runtime_health, error, changed_context
+):
+    runtime, _, _ = runtime_health
+    runtime._process = MagicMock(spec=asyncio.subprocess.Process)
+    runtime._process.returncode = None
+
+    async def exit_during_request(request):
+        runtime._process.returncode = 1
+        if changed_context:
+            runtime._context = None
+        raise error("TEST_ONLY_PRIVATE", request=request)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(exit_during_request)
+    ) as client:
+        runtime._client = client
+        result = await runtime.check("live")
+    if changed_context:
+        assert result["outcome"] == "unknown"
+        assert result["reason_code"] == "observation_changed"
+        assert result["activity"] == "unknown"
+        assert result["observed_at"] is None
+    else:
+        assert result["outcome"] == "failed"
+        assert result["reason_code"] == "agent_exited"
+        assert result["activity"] == "stopped"
+        assert result["observed_at"] is not None
+    assert "TEST_ONLY_PRIVATE" not in json.dumps(result)
+
+
+async def test_runtime_health_invalidates_a_changed_native_session(runtime_health):
+    runtime, _, _ = runtime_health
+
+    async def replace_context(request):
+        runtime._context = None
+        return httpx.Response(
+            200, stream=httpx.ByteStream(b'{"ok":true,"status":"live"}')
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(replace_context)
+    ) as client:
+        runtime._client = client
+        result = await runtime.check("live")
+    assert result["outcome"] == "unknown"
+    assert result["reason_code"] == "observation_changed"
+
+
+async def test_runtime_health_does_not_pass_if_the_interface_fails_during_the_probe(
+    runtime_health,
+):
+    runtime, responses, _ = runtime_health
+
+    async def fail_interface(request):
+        runtime._gateway_failure = LifecycleError("test_failure", "TEST_ONLY_PRIVATE")
+        value = responses[request.url.path]
+        if isinstance(value, httpx.Response):
+            return value
+        status, body = value
+        return httpx.Response(
+            status, stream=httpx.ByteStream(json.dumps(body).encode())
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(fail_interface)
+    ) as client:
+        runtime._client = client
+        result = await runtime.check("active")
+    assert result["outcome"] == "failed"
+    assert result["reason_code"] == "endpoint_unavailable"
 
 
 @pytest.mark.parametrize(
