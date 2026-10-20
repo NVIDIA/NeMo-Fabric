@@ -11,10 +11,12 @@ surface and invokes the installed Hermes runtime.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import inspect
 import logging
 import os
 import sys
+import threading
 import weakref
 from collections.abc import Callable
 from contextlib import redirect_stdout
@@ -75,9 +77,9 @@ class HermesRuntime:
         # Tokens of provider responses Hermes returned on before adding them to
         # its session counters, in the counters' buckets.
         self._skipped_response_tokens = dict.fromkeys(_SESSION_TOKEN_KEYS, 0)
-        # Context-compression summary calls, whose usage Hermes keeps out of
-        # its session counters.
-        self._compression_calls = 0
+        # Compressions by a plugin context engine, whose model calls the
+        # adapter cannot see.
+        self._plugin_compressions = 0
         # Iteration-limit summary attempts started minus summary responses
         # observed; an attempt whose request raised leaves it above zero.
         self._unanswered_summary_attempts = 0
@@ -272,9 +274,14 @@ class HermesRuntime:
 
         await self._authenticate_mcp_servers()
 
+        auxiliary_calls = _AuxiliaryCalls(self._session_db)
+
         def run_hermes_turn() -> tuple[dict[str, Any], str]:
             if self._relay_plugin_config is not None:
                 common_utils.reject_ambient_relay_plugin_config()
+            # Hermes copies this context into the threads it starts for the
+            # turn, so its auxiliary calls find the invocation that made them.
+            owner = _AUXILIARY_CALLS.set(auxiliary_calls)
             try:
                 return _invoke_hermes_turn(
                     agent=self._agent,
@@ -284,6 +291,7 @@ class HermesRuntime:
                     task_id=runtime_context.request_id,
                 )
             finally:
+                _AUXILIARY_CALLS.reset(owner)
                 if self._relay_plugin_config is not None:
                     # Hermes writes TOML-configured ATIF at its session-finalization
                     # boundary for every supported Relay version. Fabric defines
@@ -306,7 +314,7 @@ class HermesRuntime:
         uncounted_before = self._uncounted_responses
         unreported_before = dict(self._unreported_counts)
         skipped_before = dict(self._skipped_response_tokens)
-        compression_calls_before = self._compression_calls
+        plugin_compressions_before = self._plugin_compressions
         unanswered_summaries_before = self._unanswered_summary_attempts
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
@@ -392,24 +400,27 @@ class HermesRuntime:
                     code="hermes_reported_failure",
                     message="Hermes did not complete the invocation",
                 )
+        auxiliary_tokens, auxiliary_unreported = auxiliary_calls.close()
         usage = _invocation_usage(
             _session_counters(self._agent),
             previous_totals,
             skipped={
-                key: tokens - skipped_before[key]
+                key: tokens - skipped_before[key] + auxiliary_tokens[key]
                 for key, tokens in self._skipped_response_tokens.items()
             },
-            unreported=frozenset(
+            unreported=auxiliary_unreported
+            | frozenset(
                 count
                 for count, responses in self._unreported_counts.items()
                 if responses != unreported_before[count]
             )
-            # A compression summary call's tokens are not in the counters, and
-            # a summary request that raised before its response was observed
-            # may have been billed, so every count is an undercount.
+            # A plugin context engine's compression calls may bypass the
+            # auxiliary client, and a summary request that raised before its
+            # response was observed may have been billed, so every count they
+            # add to is unknown.
             | (
                 frozenset(_REPORTED_COUNTS)
-                if self._compression_calls != compression_calls_before
+                if self._plugin_compressions != plugin_compressions_before
                 or self._unanswered_summary_attempts != unanswered_summaries_before
                 else frozenset()
             ),
@@ -429,7 +440,8 @@ class HermesRuntime:
         """Count the agent's provider responses that left usage unreported."""
         self._count_usage_less_responses(agent)
         self._count_unreported_counts(agent)
-        self._count_compression_calls(agent)
+        self._count_plugin_compressions(agent)
+        _install_auxiliary_usage_observer()
 
     def _count_usage_less_responses(self, agent: Any) -> None:
         """Count the agent's provider responses that carried no usage.
@@ -452,29 +464,25 @@ class HermesRuntime:
 
         compressor.note_usage_less_response = count_and_note
 
-    def _count_compression_calls(self, agent: Any) -> None:
-        """Count the context-compression summary calls of the agent it owns.
+    def _count_plugin_compressions(self, agent: Any) -> None:
+        """Count the compressions of a plugin context engine on the agent.
 
-        Hermes sends each compression summary through the auxiliary client and
-        records its usage outside the session counters
-        (``agent/aux_accounting.py``). The built-in ``ContextCompressor``
-        issues every summary call through its ``_call_summary_llm`` method
-        (``agent/context_compressor.py``); a plugin context engine is counted
-        at its ``compress`` method, since its calls cannot be seen.
+        The built-in ``ContextCompressor`` sends every summary call through
+        Hermes' auxiliary client, whose usage the auxiliary observer counts.
+        A plugin context engine has no ``_call_summary_llm`` method and may
+        call a model another way, so the adapter counts its ``compress``
+        calls instead.
         """
         compressor = agent.context_compressor
-        name = (
-            "_call_summary_llm"
-            if callable(getattr(compressor, "_call_summary_llm", None))
-            else "compress"
-        )
-        summarize = getattr(compressor, name)
+        if callable(getattr(compressor, "_call_summary_llm", None)):
+            return
+        compress = compressor.compress
 
-        def count_and_summarize(*args: Any, **kwargs: Any) -> Any:
-            self._compression_calls += 1
-            return summarize(*args, **kwargs)
+        def count_and_compress(*args: Any, **kwargs: Any) -> Any:
+            self._plugin_compressions += 1
+            return compress(*args, **kwargs)
 
-        setattr(compressor, name, count_and_summarize)
+        compressor.compress = count_and_compress
 
     def _count_unreported_counts(self, agent: Any) -> None:
         """Count the agent's provider responses whose usage left out a count.
@@ -529,11 +537,8 @@ class HermesRuntime:
         It fills an omitted field with 0; every count that needs an omitted
         field is already marked unreported.
         """
-        from agent.usage_pricing import normalize_usage
-
-        canonical = normalize_usage(usage, provider=provider, api_mode=api_mode)
-        for key in _SESSION_TOKEN_KEYS:
-            self._skipped_response_tokens[key] += getattr(canonical, key)
+        for key, tokens in _counter_tokens(usage, provider, api_mode).items():
+            self._skipped_response_tokens[key] += tokens
 
     async def _authenticate_mcp_servers(self) -> None:
         if self._mcp_authentication_checked:
@@ -1036,6 +1041,147 @@ _MAX_COUNT = (1 << 64) - 1
 def _is_count(value: Any) -> bool:
     """Return whether ``value`` is a token count AgentUsage can hold."""
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= _MAX_COUNT
+
+
+def _counter_tokens(usage: Any, provider: Any, api_mode: Any) -> dict[str, int]:
+    """Return a response's usage in the session counters' buckets.
+
+    Hermes' own normalization fills an omitted field with 0; callers mark
+    every count that needs an omitted field as unreported.
+    """
+    from agent.usage_pricing import normalize_usage
+
+    canonical = normalize_usage(usage, provider=provider, api_mode=api_mode)
+    return {key: getattr(canonical, key) for key in _SESSION_TOKEN_KEYS}
+
+
+class _AuxiliaryCalls:
+    """The auxiliary model calls that one invocation's turn made.
+
+    Hermes sends context-compression summaries, vision analysis and its other
+    auxiliary requests through its auxiliary client, which records their
+    usage in the session database but never adds it to the agent's session
+    counters. Usage belongs to the invocation whose turn made the call. Once
+    the invocation returns, its calls are closed: usage that arrives later
+    is dropped, never moved to the next invocation.
+    """
+
+    def __init__(self, session_db: Any) -> None:
+        self._session_db = session_db
+        self._lock = threading.Lock()
+        self._closed = False
+        self._tokens = dict.fromkeys(_SESSION_TOKEN_KEYS, 0)
+        self._unreported: set[str] = set()
+
+    def owns_session(self, session_db: Any) -> bool:
+        """Return whether Hermes bills the call to this runtime's session.
+
+        A delegated subagent bills its own session database handle, and the
+        adapter leaves subagents' tokens out, as their main calls never reach
+        the runtime agent's counters.
+        """
+        return session_db is not None and session_db is self._session_db
+
+    def add_response(self, response: Any, provider: Any) -> None:
+        """Add an auxiliary response's reported counts.
+
+        Hermes normalizes auxiliary usage by provider alone, so the counts
+        follow the same usage shape. A response without usage, like one that
+        left out a count, leaves those counts unknown.
+        """
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            omitted = list(_REPORTED_COUNTS)
+            tokens = None
+        else:
+            omitted = _omitted_counts(usage, provider, None)
+            tokens = _counter_tokens(usage, provider, None) if usage else None
+        with self._lock:
+            if self._closed:
+                LOGGER.warning(
+                    "Hermes auxiliary usage arrived after its invocation returned"
+                )
+                return
+            self._unreported.update(omitted)
+            for key, value in (tokens or {}).items():
+                self._tokens[key] += value
+
+    def mark_unaccounted(self) -> None:
+        """Leave every count unknown for a call the adapter could not read."""
+        with self._lock:
+            if not self._closed:
+                self._unreported.update(_REPORTED_COUNTS)
+
+    def close(self) -> tuple[dict[str, int], frozenset[str]]:
+        """Return the calls' tokens and unknown counts, and drop later usage."""
+        with self._lock:
+            self._closed = True
+            return dict(self._tokens), frozenset(self._unreported)
+
+
+# The invocation whose Hermes turn runs in this context.
+_AUXILIARY_CALLS: contextvars.ContextVar[_AuxiliaryCalls | None] = (
+    contextvars.ContextVar("nemo_fabric_hermes_auxiliary_calls", default=None)
+)
+
+
+def _observed_record_aux_usage(record_aux_usage: Callable[..., Any]) -> Any:
+    """Wrap Hermes' auxiliary usage recorder to show each response to its turn's
+    invocation before Hermes normalizes the usage."""
+    from agent import aux_accounting
+
+    def observed(response: Any, task: Any, *args: Any, **kwargs: Any) -> Any:
+        calls = _AUXILIARY_CALLS.get()
+        session = aux_accounting._accounting.get()
+        # MoA advisor and aggregator usage is already in the session counters.
+        if (
+            calls is not None
+            and task not in aux_accounting._EXCLUDED_TASKS
+            and session is not None
+            and calls.owns_session(session[0])
+        ):
+            try:
+                calls.add_response(response, kwargs.get("provider"))
+            except Exception:
+                LOGGER.exception("Could not read Hermes auxiliary usage")
+                calls.mark_unaccounted()
+        return record_aux_usage(response, task, *args, **kwargs)
+
+    observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
+    return observed
+
+
+def _install_auxiliary_usage_observer() -> None:
+    """Route Hermes' auxiliary usage recorder through the observer.
+
+    Every auxiliary response passes ``_validate_llm_response``, which looks up
+    ``agent.aux_accounting.record_aux_usage`` when called and passes it the raw
+    response before Hermes normalizes the usage. The wrapper replaces that
+    module attribute once per process and always delegates to Hermes'
+    function. If Hermes no longer reaches it through that name, start fails
+    rather than reporting auxiliary calls as absent.
+    """
+    from agent import aux_accounting
+    from agent import auxiliary_client
+
+    current = aux_accounting.record_aux_usage
+    if getattr(current, "nemo_fabric_observed", False):
+        return
+    called = auxiliary_client._validate_llm_response.__code__.co_names
+    if not (
+        isinstance(getattr(aux_accounting, "_EXCLUDED_TASKS", None), frozenset)
+        and isinstance(
+            getattr(aux_accounting, "_accounting", None), contextvars.ContextVar
+        )
+        and "record_aux_usage" in called
+        and "agent.aux_accounting" in called
+    ):
+        raise lifecycle.LifecycleError(
+            "hermes_usage_accounting_unsupported",
+            "This Hermes version records auxiliary usage outside "
+            "agent.aux_accounting.record_aux_usage",
+        )
+    aux_accounting.record_aux_usage = _observed_record_aux_usage(current)
 
 
 def _session_counters(agent: Any) -> dict[str, int]:

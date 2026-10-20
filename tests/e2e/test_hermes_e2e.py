@@ -380,7 +380,7 @@ async def test_hermes_usage_accounts_for_a_failed_iteration_limit_summary(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
-async def test_hermes_usage_is_unknown_when_context_compression_runs(
+async def test_hermes_usage_counts_the_context_compression_call(
     code_review_agent_dir: Path,
     api_server: str,
 ):
@@ -405,6 +405,12 @@ async def test_hermes_usage_is_unknown_when_context_compression_runs(
         scenario_response.raise_for_status()
         large = await runtime.invoke(input="large")
         requests.post(f"{api_server}/_reset", timeout=5).raise_for_status()
+        # The compression summary call is the next request.
+        requests.post(
+            f"{api_server}/_scenario",
+            json={"replies": [{"usage": _chat_usage(2_000, 50)}]},
+            timeout=5,
+        ).raise_for_status()
         compressed = await runtime.invoke(input="after")
         sent = requests.get(f"{api_server}/_requests", timeout=5).json()
 
@@ -413,9 +419,15 @@ async def test_hermes_usage_is_unknown_when_context_compression_runs(
     assert sent[0]["messages"][0]["content"].startswith(
         "You are a summarization agent"
     ), sent
-    # Hermes keeps the compression summary call out of its session counters.
+    # Hermes keeps the compression summary call out of its session counters,
+    # and the adapter adds it; the turn's main calls report 0 tokens.
     assert compressed["status"] == "succeeded", compressed.to_mapping()
-    assert compressed.usage is None, compressed.to_mapping()
+    assert compressed.usage is not None, compressed.to_mapping()
+    assert (compressed.usage.input_tokens, compressed.usage.output_tokens) == (
+        2_000,
+        50,
+    )
+    assert compressed.usage.total_tokens == 2_050
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")

@@ -122,19 +122,30 @@ turn's change: `input_tokens` with cache reads and cache writes included,
 reports its own tokens too, and an invocation that raised or was cancelled
 never adds its tokens to the next one. A counter that is missing, that is not
 a non-negative integer below 2^64, or that went down because Hermes reset its
-session, is left out for that invocation. Hermes records auxiliary calls, such as
-context-compression summaries and session titles, separately from these
-counters. The adapter sets `auxiliary.title_generation.model_upgrade_enabled` to
-false, so Hermes keeps its locally derived session title and makes no title
-model call; with Relay enabled, title generation is off entirely. An invocation in which Hermes
-ran a context-compression summary call, or in which a plugin context engine
-compressed, has no `usage`, because the compression calls' tokens are missing
-from the counters. Hermes also leaves out of its counters the summary request it
-makes when a turn reaches its iteration limit. The adapter adds the counts that
-this summary response reported, before Hermes reads its text, so they count
-even when Hermes cannot read the response and answers with its fallback text.
-An invocation whose summary response carried no usage, or whose summary
-request failed before any response, has no `usage`.
+session, is left out for that invocation. Hermes also leaves out of its
+counters the summary request it makes when a turn reaches its iteration limit.
+The adapter adds the counts that this summary response reported, before Hermes
+reads its text, so they count even when Hermes cannot read the response and
+answers with its fallback text. An invocation whose summary response carried no
+usage, or whose summary request failed before any response, has no `usage`.
+
+Hermes keeps auxiliary model calls, such as context-compression summaries and
+vision analysis, out of these counters. The adapter adds each auxiliary
+response's usage to the invocation whose turn made the call, using the same
+rules as a main-loop response. A response without usage, or one whose usage
+left out a count, leaves the affected counts unknown. Usage that arrives after
+the invocation returned is dropped, never added to a later invocation.
+Mixture-of-agents calls are already in the session counters and are not
+counted twice. Calls made by delegated subagents are not included, like their
+main calls. Hermes' Anthropic auxiliary client drops the cache counts before
+the adapter sees the usage, so with the `anthropic` provider an invocation
+that makes an auxiliary call has no `usage`. A plugin context engine may call
+a model outside the auxiliary client, so an invocation in which one compressed
+has no `usage`. The adapter sets `auxiliary.title_generation.model_upgrade_enabled`
+to false, so Hermes keeps its locally derived session title and makes no title
+model call; with Relay enabled, title generation is off entirely. The adapter
+wraps `agent.aux_accounting.record_aux_usage` once per process, and the runtime
+fails to start if the installed Hermes no longer calls it by that name.
 
 Hermes adds no tokens for a provider response that carried no usage, so an
 invocation with such a response has no `usage`. For a response it rejects as

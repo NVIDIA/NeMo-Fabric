@@ -2240,3 +2240,373 @@ def test_main_serves_persistent_runtime(monkeypatch):
         adapter.HermesRuntime,
         config_loader=AgentConfig.from_mapping,
     )
+
+
+def _chat_response(
+    content: str,
+    usage: dict[str, int] | None,
+    tool_calls: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    message: dict[str, object] = {"role": "assistant", "content": content}
+    if tool_calls:
+        message["tool_calls"] = tool_calls
+    response: dict[str, object] = {
+        "id": "scripted",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "test-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": message,
+                "finish_reason": "tool_calls" if tool_calls else "stop",
+            }
+        ],
+    }
+    if usage is not None:
+        response["usage"] = usage
+    return response
+
+
+def _stream_events(response: dict[str, object]) -> bytes:
+    """Return a chat completion as the server-sent events of a stream."""
+    choice = response["choices"][0]  # type: ignore[index]
+    message = choice["message"]
+    delta = {"role": "assistant", "content": message["content"]}
+    if "tool_calls" in message:
+        delta["tool_calls"] = [
+            {**call, "index": index} for index, call in enumerate(message["tool_calls"])
+        ]
+    header = {"id": "scripted", "object": "chat.completion.chunk", "created": 0}
+    chunks = [
+        {**header, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+        {
+            **header,
+            "choices": [
+                {"index": 0, "delta": {}, "finish_reason": choice["finish_reason"]}
+            ],
+        },
+    ]
+    if "usage" in response:
+        chunks.append({**header, "choices": [], "usage": response["usage"]})
+    events = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks)
+    return f"{events}data: [DONE]\n\n".encode()
+
+
+def _usage(prompt: int, completion: int | None = None) -> dict[str, int]:
+    usage = {"prompt_tokens": prompt}
+    if completion is not None:
+        usage["completion_tokens"] = completion
+        usage["total_tokens"] = prompt + completion
+    return usage
+
+
+class _ScriptedProvider:
+    """An OpenAI-compatible endpoint that answers Hermes' requests from scripts.
+
+    Hermes' main turn loop sends its tools, a session title call asks for a
+    JSON response format, and the compression summary call sends neither.
+    """
+
+    def __init__(self) -> None:
+        from http.server import BaseHTTPRequestHandler
+        from http.server import ThreadingHTTPServer
+
+        self.main: list[dict[str, object]] = []
+        self.summaries: list[dict[str, object]] = []
+        self.served: list[str] = []
+        provider = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args: object) -> None:
+                pass
+
+            def do_GET(self) -> None:
+                self.send_response(404)
+                self.end_headers()
+
+            def do_POST(self) -> None:
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if not self.path.endswith("/chat/completions"):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                if "response_format" in body:
+                    kind = "title"
+                    response = _chat_response('{"title": "Scripted"}', _usage(30, 5))
+                elif body.get("tools"):
+                    kind = "main"
+                    response = provider.main.pop(0)
+                else:
+                    kind = "summary"
+                    response = provider.summaries.pop(0)
+                if body.get("stream"):
+                    payload = _stream_events(response)
+                    content_type = "text/event-stream"
+                else:
+                    payload = json.dumps(response).encode()
+                    content_type = "application/json"
+                self.send_response(200)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                provider.served.append(kind)
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        self.base_url = f"http://127.0.0.1:{self._server.server_port}/v1"
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+
+@pytest.fixture(name="scripted_provider")
+def scripted_provider_fixture():
+    provider = _ScriptedProvider()
+    yield provider
+    provider.close()
+
+
+async def _start_scripted_runtime(
+    provider: _ScriptedProvider, tmp_path: Path
+) -> tuple[adapter.HermesRuntime, RuntimeContext]:
+    os.environ["NVIDIA_API_KEY"] = "scripted-test-key"
+    runtime_context = _runtime_context(
+        runtime_id="runtime-aux",
+        workspace=str(tmp_path),
+        artifact_root=str(tmp_path / "artifacts"),
+    )
+    runtime = adapter.HermesRuntime()
+    await runtime.start(
+        {
+            "config": _agent_config(
+                {
+                    "models": {
+                        "default": {
+                            "provider": "nvidia",
+                            "model": "test-model",
+                            "base_url": provider.base_url,
+                        }
+                    }
+                }
+            ),
+            "runtime_context": runtime_context.to_mapping(),
+            "base_dir": str(tmp_path),
+        }
+    )
+    return runtime, runtime_context
+
+
+def _tool_call_over_compression_threshold(runtime: adapter.HermesRuntime) -> dict:
+    """A main response whose prompt count makes Hermes compress before the next."""
+    prompt = runtime._agent.context_compressor.threshold_tokens + 10
+    return _chat_response(
+        "",
+        _usage(prompt, 7),
+        tool_calls=[
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {"name": "todo", "arguments": "{}"},
+            }
+        ],
+    )
+
+
+# Enough earlier exchanges for Hermes' compressor to summarize some of them.
+_LONG_HISTORY = [
+    message
+    for step in range(30)
+    for message in (
+        {"role": "user", "content": f"step {step}: " + "detail " * 400},
+        {"role": "assistant", "content": f"did step {step}: " + "result " * 400},
+    )
+]
+
+
+async def _invoke(
+    runtime: adapter.HermesRuntime, runtime_context: RuntimeContext, text: str
+) -> Any:
+    return await runtime.invoke(AgentRunRequest(input=text), runtime_context)
+
+
+async def test_hermes_usage_counts_compression_summary_calls(
+    scripted_provider: _ScriptedProvider, tmp_path: Path
+):
+    runtime, runtime_context = await _start_scripted_runtime(
+        scripted_provider, tmp_path
+    )
+    try:
+        threshold_call = _tool_call_over_compression_threshold(runtime)
+        prompt = threshold_call["usage"]["prompt_tokens"]  # type: ignore[index]
+        scripted_provider.main.extend(
+            [threshold_call, _chat_response("done", _usage(500, 9))]
+        )
+        scripted_provider.summaries.append(
+            _chat_response("summary of earlier steps", _usage(1000, 100))
+        )
+        runtime._conversation_history = list(_LONG_HISTORY)
+
+        compressed = await _invoke(runtime, runtime_context, "Fix the parser bug")
+
+        scripted_provider.main.append(_chat_response("again", _usage(40, 4)))
+        plain = await _invoke(runtime, runtime_context, "Thanks")
+    finally:
+        await runtime.stop()
+
+    assert scripted_provider.served == ["main", "summary", "main", "main"]
+    assert compressed.status == AgentRunStatus.SUCCEEDED
+    assert compressed.usage is not None
+    # The main calls and the compression summary call.
+    assert compressed.usage.input_tokens == prompt + 500 + 1000
+    assert compressed.usage.output_tokens == 7 + 9 + 100
+    assert compressed.usage.total_tokens == prompt + 500 + 1000 + 116
+    # A turn without auxiliary calls reports its main calls only.
+    assert plain.usage is not None
+    assert (plain.usage.input_tokens, plain.usage.output_tokens) == (40, 4)
+    assert plain.usage.total_tokens == 44
+
+
+async def test_hermes_usage_leaves_counts_omitted_by_compression_unknown(
+    scripted_provider: _ScriptedProvider, tmp_path: Path
+):
+    runtime, runtime_context = await _start_scripted_runtime(
+        scripted_provider, tmp_path
+    )
+    try:
+        threshold_call = _tool_call_over_compression_threshold(runtime)
+        prompt = threshold_call["usage"]["prompt_tokens"]  # type: ignore[index]
+        scripted_provider.main.extend(
+            [threshold_call, _chat_response("done", _usage(500, 9))]
+        )
+        # The summary call reports its input count and leaves out its output.
+        scripted_provider.summaries.append(
+            _chat_response("summary of earlier steps", _usage(1000))
+        )
+        runtime._conversation_history = list(_LONG_HISTORY)
+
+        turn = await _invoke(runtime, runtime_context, "Fix the parser bug")
+    finally:
+        await runtime.stop()
+
+    assert scripted_provider.served == ["main", "summary", "main"]
+    assert turn.usage is not None
+    assert turn.usage.input_tokens == prompt + 500 + 1000
+    assert turn.usage.output_tokens is None
+    assert turn.usage.total_tokens is None
+
+
+def _install_auxiliary_observer_fresh(monkeypatch) -> tuple[Any, list[tuple]]:
+    """Install the auxiliary observer over a recording stand-in for Hermes'
+    recorder, and return the stand-in's calls."""
+    from agent import aux_accounting
+
+    recorded: list[tuple] = []
+
+    def record_aux_usage(response, task, *, provider=None, base_url=None):
+        recorded.append((response, task, provider))
+
+    monkeypatch.setattr(aux_accounting, "record_aux_usage", record_aux_usage)
+    adapter._install_auxiliary_usage_observer()
+    return aux_accounting, recorded
+
+
+def test_auxiliary_usage_counts_only_the_runtime_session_and_not_moa(monkeypatch):
+    aux_accounting, recorded = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    response = SimpleNamespace(usage=_usage(10, 2))
+
+    def record(task: str, db: object) -> None:
+        owner = adapter._AUXILIARY_CALLS.set(calls)
+        session = aux_accounting._accounting.set((db, "session"))
+        try:
+            aux_accounting.record_aux_usage(response, task, provider="nvidia")
+        finally:
+            aux_accounting._accounting.reset(session)
+            adapter._AUXILIARY_CALLS.reset(owner)
+
+    record("compression", session_db)
+    # MoA usage is already in the session counters, and a delegated
+    # subagent bills its own session database handle.
+    record("moa_reference", session_db)
+    record("compression", object())
+    # Outside an invocation the call belongs to no invocation.
+    aux_accounting.record_aux_usage(response, "compression", provider="nvidia")
+    tokens, unreported = calls.close()
+
+    assert len(recorded) == 4
+    assert tokens == {
+        "input_tokens": 10,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "output_tokens": 2,
+    }
+    # The chat usage sent no cache details.
+    assert unreported == frozenset({"cached"})
+
+
+@pytest.mark.parametrize(
+    ("usage", "unknown"),
+    [
+        (None, {"input", "cached", "output"}),
+        ({}, {"input", "cached", "output"}),
+        ({"prompt_tokens": "10", "completion_tokens": 2}, {"input", "cached"}),
+        (
+            {"prompt_tokens": -1, "completion_tokens": True},
+            {"input", "cached", "output"},
+        ),
+        (
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 0,
+                "prompt_tokens_details": {"cached_tokens": 0},
+            },
+            set(),
+        ),
+    ],
+)
+def test_auxiliary_calls_leave_unreported_counts_unknown(usage, unknown):
+    calls = adapter._AuxiliaryCalls(object())
+
+    calls.add_response(SimpleNamespace(usage=usage), "nvidia")
+
+    assert calls.close()[1] == frozenset(unknown)
+
+
+def test_auxiliary_calls_drop_usage_that_arrives_after_the_invocation():
+    calls = adapter._AuxiliaryCalls(object())
+
+    tokens, unreported = calls.close()
+    calls.add_response(SimpleNamespace(usage=_usage(10, 2)), "nvidia")
+    calls.mark_unaccounted()
+
+    assert tokens == dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
+    assert unreported == frozenset()
+    assert calls.close() == (tokens, unreported)
+
+
+@pytest.mark.parametrize("drift", ["not_called", "no_excluded_tasks"])
+def test_auxiliary_usage_observer_rejects_unknown_call_site(monkeypatch, drift):
+    from agent import aux_accounting
+    from agent import auxiliary_client
+
+    monkeypatch.setattr(
+        aux_accounting, "record_aux_usage", lambda *args, **kwargs: None
+    )
+    if drift == "not_called":
+        monkeypatch.setattr(
+            auxiliary_client,
+            "_validate_llm_response",
+            lambda response, task=None: response,
+        )
+    else:
+        monkeypatch.setattr(aux_accounting, "_EXCLUDED_TASKS", None)
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        adapter._install_auxiliary_usage_observer()
+
+    assert raised.value.code == "hermes_usage_accounting_unsupported"
