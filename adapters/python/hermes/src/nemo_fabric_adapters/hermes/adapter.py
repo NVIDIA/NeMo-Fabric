@@ -869,6 +869,7 @@ def _install_usage_observer() -> None:
         setattr(turn_response_check, name, _observed_response_handler(name, handler))
     _observe_iteration_summary()
     _observe_delegation()
+    _observe_native_usage()
 
 
 # The function each of Hermes' iteration-limit summary attempts passes its
@@ -1010,6 +1011,165 @@ def _observed_subagent_builder(build: Callable[..., Any]) -> Callable[..., Any]:
 
 _DELEGATION_BUILDER = "_build_child_agent"
 
+# The attribute that holds the counts a native transport's raw usage reported,
+# set on the usage object it builds before Hermes reads it. The leading
+# underscore keeps it out of Hermes' Relay payloads (agent/relay_llm.py
+# _jsonable skips private attributes).
+_NATIVE_REPORTED_COUNTS = "_nemo_fabric_reported_counts"
+# The raw usage fields of Hermes' native Bedrock Converse and Gemini
+# transports, by the count each reports, in the shape of _CHAT_FIELDS. Bedrock
+# documents its cache fields as optional, so its input needs only inputTokens;
+# Gemini's output is visible and thinking tokens, either of which it reports.
+_BEDROCK_FIELDS = {
+    "input": (("inputTokens",),),
+    "cached": (("cacheReadInputTokens",),),
+    "output": (("outputTokens",),),
+}
+_GEMINI_FIELDS = {
+    "input": (("promptTokenCount",),),
+    "cached": (("cachedContentTokenCount",),),
+    "output": (("candidatesTokenCount",), ("thoughtsTokenCount",)),
+}
+
+
+def _observe_native_usage() -> None:
+    """Record which counts a native transport's raw usage reported.
+
+    Hermes' Bedrock Converse and Gemini transports build an OpenAI-shaped
+    usage object and fill every count the provider left out with 0
+    (``agent/bedrock_adapter.py``, ``agent/gemini_native_adapter.py``), so the
+    observer cannot tell an omitted count from a reported zero. The adapter
+    wraps the functions that read the raw usage once per process and records
+    the reported counts on the usage object they return; the streamed
+    Bedrock path reads them from the stream's metadata event, and a stream
+    without one reports no count. A transport whose module cannot be
+    imported cannot serve a turn, so it is left as it is.
+    """
+    try:
+        from agent import bedrock_adapter
+    except ImportError:
+        bedrock_adapter = None
+    try:
+        from agent import gemini_native_adapter
+    except ImportError:
+        gemini_native_adapter = None
+    if bedrock_adapter is not None:
+        _wrap_native_usage(
+            bedrock_adapter,
+            "normalize_converse_response",
+            lambda args, kwargs: _raw_usage(_first_argument(args, kwargs, "response")),
+            _BEDROCK_FIELDS,
+        )
+        _wrap_bedrock_stream(bedrock_adapter)
+    if gemini_native_adapter is not None:
+        _wrap_native_usage(
+            gemini_native_adapter,
+            "_usage_from_metadata",
+            lambda args, kwargs: _first_argument(args, kwargs, "usage_meta"),
+            _GEMINI_FIELDS,
+            annotate_result=True,
+        )
+
+
+def _first_argument(args: tuple[Any, ...], kwargs: dict[str, Any], name: str) -> Any:
+    return args[0] if args else kwargs.get(name)
+
+
+def _raw_usage(response: Any) -> Any:
+    return response.get("usage") if isinstance(response, dict) else None
+
+
+def _native_reported_counts(raw: Any, fields: dict[str, Any]) -> frozenset[str]:
+    """Return the counts that a native transport's raw ``usage`` reported."""
+    if not isinstance(raw, dict):
+        return frozenset()
+    return frozenset(
+        count
+        for count, alternatives in fields.items()
+        if any(
+            all(_is_reported_count(raw, path) for path in alternative)
+            for alternative in alternatives
+        )
+    )
+
+
+def _annotate_usage(usage: Any, reported: frozenset[str]) -> None:
+    if usage is not None:
+        setattr(usage, _NATIVE_REPORTED_COUNTS, reported)
+
+
+def _wrap_native_usage(
+    module: Any,
+    name: str,
+    raw_usage: Callable[[tuple[Any, ...], dict[str, Any]], Any],
+    fields: dict[str, Any],
+    *,
+    annotate_result: bool = False,
+) -> None:
+    """Wrap ``module.name`` to record its raw usage's reported counts.
+
+    The wrapped function returns a response with ``usage``, or with
+    ``annotate_result`` the usage object itself.
+    """
+    current = getattr(module, name, None)
+    if getattr(current, "nemo_fabric_observed", False):
+        return
+    if not callable(current):
+        raise lifecycle.LifecycleError(
+            "hermes_usage_accounting_unsupported",
+            f"This Hermes version reads native usage outside {module.__name__}.{name}",
+        )
+
+    def observed(*args: Any, **kwargs: Any) -> Any:
+        reported = _native_reported_counts(raw_usage(args, kwargs), fields)
+        result = current(*args, **kwargs)
+        _annotate_usage(
+            result if annotate_result else getattr(result, "usage", None), reported
+        )
+        return result
+
+    observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
+    setattr(module, name, observed)
+
+
+def _wrap_bedrock_stream(bedrock_adapter: Any) -> None:
+    """Wrap Bedrock's ConverseStream reader to record its metadata usage."""
+    name = "stream_converse_with_callbacks"
+    current = getattr(bedrock_adapter, name, None)
+    if getattr(current, "nemo_fabric_observed", False):
+        return
+    if not callable(current):
+        raise lifecycle.LifecycleError(
+            "hermes_usage_accounting_unsupported",
+            f"This Hermes version reads native usage outside "
+            f"agent.bedrock_adapter.{name}",
+        )
+
+    def observed(event_stream: Any, *args: Any, **kwargs: Any) -> Any:
+        if not isinstance(event_stream, dict):
+            return current(event_stream, *args, **kwargs)
+        raw: dict[str, Any] = {}
+
+        def events() -> Any:
+            for event in event_stream.get("stream", []):
+                metadata = event.get("metadata") if isinstance(event, dict) else None
+                if isinstance(metadata, dict):
+                    usage = metadata.get("usage")
+                    raw.clear()
+                    if isinstance(usage, dict):
+                        raw.update(usage)
+                yield event
+
+        result = current({**event_stream, "stream": events()}, *args, **kwargs)
+        _annotate_usage(
+            getattr(result, "usage", None),
+            _native_reported_counts(raw, _BEDROCK_FIELDS),
+        )
+        return result
+
+    observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
+    setattr(bedrock_adapter, name, observed)
+
 
 def _inner_function_calls(function: Any, name: str) -> bool:
     """Return whether a function defined inside ``function`` calls global ``name``."""
@@ -1071,6 +1231,9 @@ def _skips_usage_recording(handler: str, outcome: Any) -> bool:
 
 def _omitted_counts(usage: Any, provider: Any, api_mode: Any) -> list[str]:
     """Return the counts that the provider's raw ``usage`` left out."""
+    reported = getattr(usage, _NATIVE_REPORTED_COUNTS, None)
+    if isinstance(reported, frozenset):
+        return [count for count in _REPORTED_COUNTS if count not in reported]
     mode = str(api_mode or "").strip().lower()
     provider = str(provider or "").strip().lower()
     if mode == "anthropic_messages" or provider == "anthropic":
