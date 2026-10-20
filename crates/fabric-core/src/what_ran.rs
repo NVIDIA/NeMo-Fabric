@@ -1341,6 +1341,143 @@ mod tests {
         assert_eq!(what_ran["mcp"], json!({"servers": {}}));
     }
 
+    /// Every adapter-reported fact in `what_ran`, by its JSON path.
+    fn reported_facts(value: &Value, path: &str) -> Vec<(String, Value)> {
+        match value {
+            Value::Object(map) if map.get("source") == Some(&json!("reported")) => {
+                vec![(path.to_string(), value.clone())]
+            }
+            Value::Object(map) => map
+                .iter()
+                .flat_map(|(key, value)| reported_facts(value, &format!("{path}.{key}")))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_plan_from_each_bundled_descriptor_collects_plan_facts_and_undeclared_adapter_facts() {
+        let catalog_path = repository_root().join(
+            "sdk/python/nemo-fabric-adapter-catalog/src/nemo_fabric_adapter_catalog/catalog.json",
+        );
+        let catalog: Value =
+            serde_json::from_str(&std::fs::read_to_string(catalog_path).expect("read catalog"))
+                .expect("catalog JSON");
+        let adapters = catalog["adapters"].as_object().expect("catalog adapters");
+        assert_eq!(adapters.len(), 16);
+        let validator = what_ran_validator();
+        for (adapter_id, entry) in adapters {
+            let descriptor = &entry["descriptor"];
+            let mut config = config_for(adapter_id);
+            for setting in descriptor["settings_schema"]["required"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
+                let setting = setting.as_str().expect("setting name");
+                config["harness"]["settings"][setting] = json!("https://agent.example.com");
+            }
+            let accepts = |field: &str| {
+                descriptor["config"]["accepts"]
+                    .as_array()
+                    .is_some_and(|accepts| accepts.contains(&json!(field)))
+            };
+            // A model each adapter's model schema accepts: its fixed provider
+            // if it has one, and every connection field the schema names.
+            let model_fields = &descriptor["model_schema"]["properties"];
+            let provider = model_fields["provider"]["const"]
+                .as_str()
+                .unwrap_or("nvidia");
+            config["models"] =
+                json!({"default": {"provider": provider, "model": "nvidia/nemotron"}});
+            for (field, value) in [
+                ("base_url", "https://inference.example.com/v1"),
+                ("api_key_env", "MODEL_API_KEY"),
+            ] {
+                if model_fields.get(field).is_some() {
+                    config["models"]["default"][field] = json!(value);
+                }
+            }
+            let accepts_mcp = accepts("mcp");
+            if accepts_mcp {
+                config["mcp"] = json!({"servers": {
+                    "events": {"transport": "sse", "url": "http://localhost:8931/sse",
+                               "exposure": "harness_native"},
+                    "filesystem": {"transport": "stdio", "url": "npx",
+                                   "args": ["-y", "@scope/server-filesystem"],
+                                   "exposure": "harness_native"},
+                    "search": {"transport": "streamable-http", "url": "https://mcp.example.com/mcp",
+                               "exposure": "harness_native"}
+                }});
+            }
+
+            // Core discovers the repository's adapters as its bundled set.
+            let config: FabricConfig = serde_json::from_value(config).expect("typed config");
+            let plan = crate::config::resolve_run_plan_from_config(
+                config,
+                ResolveContext::new(repository_root()),
+            )
+            .unwrap_or_else(|error| panic!("{adapter_id}: {error}"));
+            let what_ran = collect(&plan);
+
+            assert!(validator.is_valid(&what_ran), "{adapter_id}: {what_ran}");
+            assert_eq!(what_ran["adapter"]["id"], json!(adapter_id));
+            assert_eq!(
+                what_ran["fabric"]["core_version"]["value"],
+                crate::version()
+            );
+            assert_eq!(
+                what_ran["models"]["default"]["requested"],
+                configured("nvidia/nemotron")
+            );
+            let servers = if accepts_mcp { 3 } else { 0 };
+            assert_eq!(
+                map_keys(&what_ran["mcp"]["servers"]).len(),
+                servers,
+                "{adapter_id}"
+            );
+            // package version, harness name and version, served, 5 per server.
+            let reported = reported_facts(&what_ran, "what_ran");
+            assert_eq!(reported.len(), 4 + 5 * servers, "{adapter_id}");
+            for (path, fact) in reported {
+                assert_eq!(fact, not_declared(), "{adapter_id} {path}");
+            }
+            for marker in [
+                &what_ran["models_truncated"],
+                &what_ran["mcp"]["servers_truncated"],
+                &what_ran["what_ran_truncated"],
+            ] {
+                assert!(marker.is_null(), "{adapter_id}: {what_ran}");
+            }
+            assert!(json_len(&what_ran) <= 128 * 1024, "{adapter_id}");
+        }
+    }
+
+    #[test]
+    fn both_entry_caps_with_the_longest_keys_and_values_fit_the_byte_budget() {
+        let longest_key = |prefix: &str, index: usize| {
+            let key = format!("{prefix}-{index:02}-");
+            format!("{key}{}", "k".repeat(128 - key.len()))
+        };
+        let roles: Vec<String> = (0..16).map(|index| longest_key("role", index)).collect();
+        let servers: Vec<String> = (0..32).map(|index| longest_key("server", index)).collect();
+        let mut plan = plan_with_entries(&roles, &servers);
+        for model in plan.config.models.values_mut() {
+            model.model = "m".repeat(256);
+        }
+
+        let what_ran = collect(&plan);
+
+        assert_eq!(map_keys(&what_ran["models"]), roles);
+        assert_eq!(map_keys(&what_ran["mcp"]["servers"]), servers);
+        assert!(what_ran.get("models_truncated").is_none(), "{what_ran}");
+        assert!(
+            what_ran["mcp"].get("servers_truncated").is_none(),
+            "{what_ran}"
+        );
+        assert!(json_len(&what_ran) <= 128 * 1024, "{}", json_len(&what_ran));
+    }
+
     #[test]
     fn stdio_executable_with_whitespace_reads_unparsed_and_keeps_no_secret() {
         let mut config = config_for("nvidia.fabric.claude");
@@ -1383,6 +1520,19 @@ mod tests {
             (
                 McpTransport::Stdio,
                 "TOKEN=prefix/SECRET",
+                "collection_failed",
+                "executable_unparsed",
+            ),
+            // Placeholders a harness expands later, not a file name.
+            (
+                McpTransport::Stdio,
+                "$MCP_COMMAND",
+                "collection_failed",
+                "executable_unparsed",
+            ),
+            (
+                McpTransport::Stdio,
+                "/opt/mcp/server-{env:MCP_VARIANT}",
                 "collection_failed",
                 "executable_unparsed",
             ),
