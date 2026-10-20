@@ -20,13 +20,13 @@ const CLINE_HARNESS_INSTALL_COMMAND = "npm install @cline/sdk@0.0.83";
 const CLINE_PLUGIN_NAME = "nvidia.fabric.cline";
 const AGENT_PLUGIN_MANIFEST_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 const AGENT_PLUGIN_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
+const DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1";
 
 interface ClineUsage {
   inputTokens?: number;
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
-  totalCost?: number;
 }
 
 interface ClineResult {
@@ -368,6 +368,13 @@ async function validateRuntimePlugin(
   }
 }
 
+// Cline turns both a count the provider reported as 0 and a count it omitted
+// into 0, and its result for an aborted interactive turn reports all zeros
+// whatever the model calls used, so a count of 0 is unknown.
+function reportedCount(value: number | undefined): number | undefined {
+  return value === 0 ? undefined : value;
+}
+
 function normalizeUsage(usage: ClineUsage | undefined): AgentUsage | undefined {
   if (usage === undefined) {
     return undefined;
@@ -380,24 +387,42 @@ function normalizeUsage(usage: ClineUsage | undefined): AgentUsage | undefined {
       throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
     }
   }
-  if (usage.totalCost !== undefined && (!Number.isFinite(usage.totalCost) || usage.totalCost < 0)) {
-    throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
-  }
-  const input = usage.inputTokens;
-  const output = usage.outputTokens;
+  const cachedInput = reportedCount(usage.cacheReadTokens);
+  const cacheWrite = reportedCount(usage.cacheWriteTokens);
+  const reportedInput = reportedCount(usage.inputTokens);
+  // Cline's input includes cache reads and writes. A total below their
+  // reported sum is inconsistent, so leave input unknown.
+  const input =
+    reportedInput !== undefined && (cachedInput ?? 0) + (cacheWrite ?? 0) > reportedInput ? undefined : reportedInput;
+  const output = reportedCount(usage.outputTokens);
   if (input !== undefined && output !== undefined && !Number.isSafeInteger(input + output)) {
     throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
   }
-  const extensions: JsonObject = {
-    ...(usage.cacheReadTokens === undefined ? {} : { cache_read_tokens: usage.cacheReadTokens }),
-    ...(usage.cacheWriteTokens === undefined ? {} : { cache_write_tokens: usage.cacheWriteTokens }),
-  };
-  return {
+  if (input === undefined && output === undefined && cachedInput === undefined && cacheWrite === undefined) {
+    return undefined;
+  }
+  // Cline counts input and output as the AI SDK does: input includes cache
+  // reads and writes, and output includes reasoning. Each positive counter is
+  // kept on its own, and the inclusion flag needs a known input total. Cache
+  // writes have no AgentUsage field, so they go in the detailed usage object,
+  // which repeats the counters it makes authoritative.
+  const inputUsage: JsonObject = {
     ...(input === undefined ? {} : { input_tokens: input }),
+    ...(cachedInput === undefined ? {} : { cached_input_tokens: cachedInput }),
+    ...(input === undefined ? {} : { input_tokens_include_cache: true }),
+  };
+  const detailed: JsonObject = {
+    ...inputUsage,
+    ...(cacheWrite === undefined ? {} : { cache_write_input_tokens: cacheWrite }),
+    ...(output === undefined ? {} : { output_tokens: output, output_tokens_include_reasoning: true }),
+  };
+  // Cline's totalCost falls back to a catalog-price estimate when the provider
+  // reports no cost, so it is not reported as cost_usd.
+  return {
+    ...inputUsage,
     ...(output === undefined ? {} : { output_tokens: output }),
     ...(input === undefined || output === undefined ? {} : { total_tokens: input + output }),
-    ...(usage.totalCost === undefined ? {} : { cost_usd: usage.totalCost }),
-    ...(Object.keys(extensions).length === 0 ? {} : { extensions }),
+    extensions: { [DETAILED_TOKEN_USAGE_KEY]: detailed },
   };
 }
 

@@ -274,13 +274,33 @@
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
-              "cache_read_tokens": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "cache_write_tokens": {
-                "minimum": 0,
-                "type": "integer"
+              "nemo_fabric.detailed_token_usage.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "cache_write_input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "cached_input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens_include_cache": {
+                    "type": "boolean"
+                  },
+                  "output_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "output_tokens_include_reasoning": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
               }
             },
             "type": "object"
@@ -336,7 +356,7 @@
         "name": "nemo-fabric-adapters-cline",
         "version": "0.6.0"
       },
-      "sha256": "4c695e93660eafc004482c1b1e5ac951c33dad22bdb3752791f184e02735e684",
+      "sha256": "92c9f94a8ceb24b35149ac71491e299b85dbd038ae7a98797bdb7a84080b1bb1",
       "source": "adapters/typescript/cline/cline.fabric-adapter.json"
     },
     "nvidia.fabric.codex": {

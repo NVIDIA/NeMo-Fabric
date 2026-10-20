@@ -138,5 +138,25 @@ Successful results include normalized response text and usage when Cline
 reports it. Adapter-owned result metadata includes the Cline session ID, finish
 reason, iteration count, and selected model when available.
 
+Usage covers the model calls of one invocation. Cline's input counts include
+cache reads and cache writes, so the adapter reports cache reads as
+`cached_input_tokens` and, when the input count is known, sets
+`input_tokens_include_cache: true`. `output_tokens` includes reasoning tokens.
+The `nemo_fabric.detailed_token_usage.v1` usage extension repeats these counts,
+adds cache writes as `cache_write_input_tokens`, and sets
+`output_tokens_include_reasoning: true`. Cline turns both a reported 0 and a
+count the provider omitted into 0, so a count of 0 is unknown, and so is a
+total built from it. Positive cache counts remain available when the input
+count is unknown. Cline sums usage before returning it. If one model call
+omits a counter and another reports it, the adapter cannot detect that the
+positive aggregate is incomplete. The exception is an input count below the
+cache counts it includes, which the adapter leaves unknown. When the provider
+reports no cost, Cline estimates one from catalog prices, so the adapter does
+not report `cost_usd`.
+
+The adapter-specific `cache_read_tokens` and `cache_write_tokens` usage
+extension keys are replaced by `cached_input_tokens` and the detailed
+extension's `cache_write_input_tokens`.
+
 The initial adapter does not support NeMo Relay telemetry, native streaming,
 Relay-backed streaming, or adapter-specific `harness.settings`.
