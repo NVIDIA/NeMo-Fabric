@@ -55,17 +55,19 @@ needs an artifact root, the `local` environment provider, and a `process` or
 `python` adapter. Once the start line is written, the result lists the file as
 the artifact with kind `run_record`; if creating the record fails, the result
 has a `record_write_failed` event and no such artifact. The file has a `start`
-line, written before the request, and an `end` line with status, elapsed time,
-error code, numeric usage, and artifact names. It holds no prompts, output, or
-error messages. The start line does keep the values of seven allowlisted
-`RunRequest.context` keys (task identity and the Harbor trial link): strings
-cut to 256 characters and integers as they are, so don't put prompt text in
-those keys. A record without an end line has an unknown outcome; do not count
-it as failed. Recording is synchronous and best-effort: when the invocation
-returns a result, a failed record write adds a `record_write_failed` event to
-it, and its status, output, error, and usage stay the same; when the invocation
-raises, the error stays the same error. Slow storage delays the invocation. The
-format is the `v1alpha1` [run record line schema](https://github.com/NVIDIA/NeM
+line, written before the request, and an `end` line with status and elapsed
+time, plus the error code, numeric usage, and artifact names when present. It
+holds no prompts, output, or error messages. The start line does keep the
+values of seven allowlisted `RunRequest.context` keys (task identity and the
+Harbor trial link): strings cut to 256 characters and integers that fit a
+signed 64-bit value (any other value is recorded by key name only), so don't
+put prompt text in those keys. A record without an end line has an unknown
+outcome; do not count it as failed. Recording is synchronous and best-effort:
+when the invocation returns a result, a failed record write adds a
+`record_write_failed` event to it, and its status, output, error, and usage
+stay the same; when the invocation raises, the error stays the same error. Slow
+storage delays the invocation. The format is the `v1alpha1` [run record line
+schema](https://github.com/NVIDIA/NeM
 o-Fabric/blob/main/schemas/sdk/run-record-line.schema.json) and may change
 until a reader ships.
 
