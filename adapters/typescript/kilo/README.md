@@ -98,8 +98,10 @@ output that adds up to 0 as unknown. Kilo Code zero-fills missing cache details,
 a cache read of 0 is unknown, and `cached_input_tokens` is reported only when
 every counted call has a nonzero cache read. When any model call leaves a field unknown, or the field's sum is
 larger than JavaScript can represent exactly, the result omits that field. The
-result has no usage when a finished model call reported neither input nor
-output, or when an assistant message of the invocation never finished. It also
+result has no usage when a counted model call reported neither input nor output,
+or when an assistant message of the invocation has no step-finish part or is
+still running, meaning it has neither a completion time nor an error. A message
+that ended with an error still counts the step-finish parts it recorded. It also
 has no usage when a subagent's child session cannot be read or starts its own
 subagent, or when a new model call cannot be traced to a prompt. Kilo Code does
 not record an attempt that it retries before the call finishes, so those tokens
