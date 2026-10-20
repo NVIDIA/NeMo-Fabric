@@ -136,15 +136,16 @@ whose turn made the call, using the same rules as a main-loop response. A
 response without usage, or one whose usage left out a count, leaves the
 affected counts unknown. An auxiliary request that raised, including a
 response the client could not parse, may have been billed, so the invocation
-has no `usage`. The same holds for a request still running when the
-invocation returns, and its usage is never added to a later invocation.
+has no `usage`. The same holds for a request still running, or a response
+Hermes has not recorded yet, when the invocation returns, and that usage is
+never added to a later invocation.
 Mixture-of-agents calls are already in the session counters and are not
 counted twice. Calls made by delegated subagents are not included, like their
 main calls. Hermes' Anthropic auxiliary client drops the cache counts when it
 converts a response, so the adapter reads the raw Anthropic usage before the
 conversion. If that response reaches Hermes' usage recorder as another
-object, such as one a managed Relay attempt rewrote, the invocation has no
-`usage`. Hermes' Codex Responses, Gemini, Bedrock and Copilot ACP auxiliary
+object, such as one a Relay execution intercept replaced, the invocation has
+no `usage`. Hermes' Codex Responses, Gemini, Bedrock and Copilot ACP auxiliary
 clients fill omitted counts with 0 when they convert the usage, so a response
 from one of them leaves every count unknown. A plugin context engine may call
 a model outside the auxiliary client, so an invocation in which one compressed

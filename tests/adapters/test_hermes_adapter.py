@@ -2990,3 +2990,71 @@ def test_auxiliary_usage_observer_rejects_moved_request_paths(monkeypatch, site)
         adapter._install_auxiliary_usage_observer()
 
     assert raised.value.code == "hermes_usage_accounting_unsupported"
+
+
+def _completion(prompt: int, completion: int) -> Any:
+    """An OpenAI SDK chat completion, as an auxiliary request returns it."""
+    from openai.types.chat import ChatCompletion
+
+    return ChatCompletion.model_validate(
+        _chat_response("summary", _usage(prompt, completion))
+    )
+
+
+def test_auxiliary_response_unrecorded_when_the_invocation_returns_is_unknown(
+    monkeypatch,
+):
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    response = _completion(1000, 100)
+    run = _owned_context(aux_accounting, calls, session_db)
+
+    # A detached worker's request returned, and the invocation returns
+    # before Hermes records the response.
+    returned = run(adapter._observed_relay_completion(lambda: response))
+    tokens, unreported = calls.close()
+    run(
+        lambda: aux_accounting.record_aux_usage(
+            returned, "compression", provider="nvidia"
+        )
+    )
+
+    assert tokens == dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
+    assert unreported == frozenset({"input", "cached", "output"})
+
+
+@pytest.mark.parametrize("task", ["compression", "moa_reference"])
+def test_auxiliary_response_recorded_before_return_is_resolved(monkeypatch, task):
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    run = _owned_context(aux_accounting, calls, session_db)
+
+    def request_and_record() -> None:
+        response = adapter._observed_relay_completion(lambda: _completion(40, 4))()
+        aux_accounting.record_aux_usage(response, task, provider="nvidia")
+
+    run(request_and_record)
+    tokens, unreported = calls.close()
+
+    # Mixture-of-agents usage is already in the session counters.
+    counted = (40, 4) if task == "compression" else (0, 0)
+    assert (tokens["input_tokens"], tokens["output_tokens"]) == counted
+    assert unreported == frozenset({"cached"} if task == "compression" else ())
+
+
+def test_auxiliary_request_sent_after_the_invocation_returned_is_logged(
+    monkeypatch, caplog
+):
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    calls.close()
+
+    with caplog.at_level("WARNING", logger=adapter.LOGGER.name):
+        _owned_context(aux_accounting, calls, session_db)(
+            adapter._observed_relay_completion(lambda: _completion(5, 1))
+        )
+
+    assert "after its invocation returned" in caplog.text
