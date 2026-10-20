@@ -1350,9 +1350,11 @@ class _AuxiliaryCalls:
         follow the same usage shape. For a response from Hermes' Anthropic
         auxiliary client, the counts come from the raw Anthropic usage the
         adapter captured before Hermes converted it. Hermes' converting clients
-        (uncaptured Anthropic, Codex Responses, Gemini, Bedrock and Copilot
-        ACP) build the usage as a ``SimpleNamespace`` and fill an omitted count
-        with 0, so such usage leaves every count unknown. A response without
+        (uncaptured Anthropic, Codex Responses and Copilot ACP) build the
+        usage as a ``SimpleNamespace`` and fill an omitted count with 0, so
+        such usage leaves every count unknown. The native Bedrock and Gemini
+        usage carries the counts its raw usage reported, which decide the
+        omitted counts as for a main-loop response. A response without
         usage, like one that left out a count, leaves those counts unknown.
 
         The response stays unresolved while its usage is read, and its counts
@@ -1400,8 +1402,13 @@ class _AuxiliaryCalls:
         if anthropic_usage is not _NOT_CAPTURED:
             usage = anthropic_usage
             provider, api_mode = "anthropic", "anthropic_messages"
+        # The native Bedrock and Gemini readers annotate the usage they build
+        # with the counts their raw usage reported.
+        annotated = isinstance(getattr(usage, _NATIVE_REPORTED_COUNTS, None), frozenset)
         if usage is None or (
-            anthropic_usage is _NOT_CAPTURED and type(usage) is SimpleNamespace
+            anthropic_usage is _NOT_CAPTURED
+            and type(usage) is SimpleNamespace
+            and not annotated
         ):
             return list(_REPORTED_COUNTS), None
         omitted = _omitted_counts(usage, provider, api_mode)

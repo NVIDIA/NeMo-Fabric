@@ -3452,3 +3452,99 @@ def test_request_tracking_rejects_an_unobserved_dispatch(monkeypatch):
         adapter._install_request_tracking()
 
     assert raised.value.code == "hermes_usage_accounting_unsupported"
+
+
+def test_subagent_auxiliary_calls_are_not_attributed_to_the_parent(
+    monkeypatch, tmp_path: Path
+):
+    from hermes_state_registry import release_or_close
+    from tools import delegate_tool
+
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    parent_db = SessionDB(db_path=tmp_path / "state.db")
+    # Hermes opens a dedicated session database handle for each subagent.
+    child_db = delegate_tool._open_child_session_db(
+        SimpleNamespace(_session_db=parent_db)
+    )
+    calls = adapter._AuxiliaryCalls(parent_db)
+    anthropic_client = _anthropic_aux_client(
+        SimpleNamespace(
+            input_tokens=100,
+            output_tokens=20,
+            cache_read_input_tokens=30,
+            cache_creation_input_tokens=5,
+        )
+    )
+
+    def refuse() -> Any:
+        raise RuntimeError("connection reset")
+
+    def subagent_calls() -> None:
+        from agent import auxiliary_client
+
+        response = adapter._observed_relay_completion(lambda: _completion(40, 4))()
+        aux_accounting.record_aux_usage(response, "compression", provider="nvidia")
+        with pytest.raises(RuntimeError):
+            adapter._observed_relay_completion(refuse)()
+        converted = anthropic_client.chat.completions.create(**_ANTHROPIC_REQUEST)
+        auxiliary_client._validate_llm_response(
+            converted, "compression", provider="anthropic"
+        )
+
+    try:
+        assert child_db is not None and child_db is not parent_db
+        # The subagent runs in a copy of the parent's context, so it sees the
+        # parent invocation, while Hermes bills its calls to its own handle.
+        _owned_context(aux_accounting, calls, child_db)(subagent_calls)
+    finally:
+        if child_db is not None:
+            release_or_close(child_db)
+        parent_db.close()
+
+    assert calls.close() == (dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0), frozenset())
+
+
+async def test_hermes_stop_unregisters_every_per_agent_observer():
+    agent = _UsageRecordingAgent([])
+    runtime = _usage_recording_runtime(agent)
+    registries = (
+        adapter._USAGE_OBSERVERS,
+        adapter._SUMMARY_ATTEMPT_OBSERVERS,
+        adapter._DELEGATION_OBSERVERS,
+    )
+    assert all(agent in registry for registry in registries)
+
+    await runtime.stop()
+
+    assert not any(agent in registry for registry in registries)
+
+
+@pytest.mark.parametrize(
+    ("metadata", "unknown"),
+    [
+        (
+            {
+                "promptTokenCount": 120,
+                "candidatesTokenCount": 8,
+                "cachedContentTokenCount": 20,
+                "totalTokenCount": 128,
+            },
+            set(),
+        ),
+        # Gemini left out its cached count.
+        ({"promptTokenCount": 120, "candidatesTokenCount": 8}, {"cached"}),
+    ],
+)
+def test_native_gemini_auxiliary_usage_follows_the_raw_usage_check(metadata, unknown):
+    from agent import gemini_native_adapter
+
+    adapter._observe_native_usage()
+    usage = gemini_native_adapter._usage_from_metadata(metadata)
+    calls = adapter._AuxiliaryCalls(object())
+
+    calls.add_response(SimpleNamespace(usage=usage), "gemini")
+    tokens, unreported = calls.close()
+
+    assert tokens["input_tokens"] + tokens["cache_read_tokens"] == 120
+    assert tokens["output_tokens"] == 8
+    assert unreported == frozenset(unknown)

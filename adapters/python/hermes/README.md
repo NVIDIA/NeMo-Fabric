@@ -152,14 +152,17 @@ The same holds for a request still running, or a response
 Hermes has not recorded yet, when the invocation returns, and that usage is
 never added to a later invocation.
 Mixture-of-agents calls are already in the session counters and are not
-counted twice. Calls made by delegated subagents are not included, like their
-main calls. Hermes' Anthropic auxiliary client drops the cache counts when it
+counted twice. An invocation that delegates has no `usage`, because a
+background subagent's main and auxiliary calls can finish after the
+invocation returns; the adapter never adds a subagent's auxiliary calls to
+the parent. Hermes' Anthropic auxiliary client drops the cache counts when it
 converts a response, so the adapter reads the raw Anthropic usage before the
 conversion. If that response reaches Hermes' usage recorder as another
 object, such as one a Relay execution intercept replaced, the invocation has
-no `usage`. Hermes' Codex Responses, Gemini, Bedrock and Copilot ACP auxiliary
-clients fill omitted counts with 0 when they convert the usage, so a response
-from one of them leaves every count unknown. A plugin context engine may call
+no `usage`. Hermes' Codex Responses and Copilot ACP auxiliary clients fill
+omitted counts with 0 when they convert the usage, so a response from one of
+them leaves every count unknown. Auxiliary calls on the native Bedrock and
+Gemini transports follow the same raw-usage check as main-loop calls. A plugin context engine may call
 a model outside the auxiliary client, so an invocation in which one compressed
 has no `usage`. The adapter sets
 `auxiliary.title_generation.model_upgrade_enabled` to false, so Hermes keeps its
