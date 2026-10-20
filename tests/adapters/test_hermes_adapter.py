@@ -3129,3 +3129,47 @@ def test_hermes_start_requires_the_background_review_switch():
         adapter._require_background_review_switch(AgentWithoutSwitch)
 
     assert raised.value.code == "hermes_usage_accounting_unsupported"
+
+
+def test_auxiliary_response_in_a_gateway_envelope_is_counted(monkeypatch):
+    from agent import auxiliary_client
+    from openai.types.chat import ChatCompletion
+
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    # Some gateways wrap the completion in a data/success envelope.
+    envelope = ChatCompletion.model_construct(
+        choices=None,
+        data=_chat_response("summary", _usage(1000, 100)),
+        success=True,
+    )
+
+    def request_and_validate() -> Any:
+        returned = adapter._observed_relay_completion(lambda: envelope)()
+        return auxiliary_client._validate_llm_response(
+            returned, "compression", provider="nvidia"
+        )
+
+    validated = _owned_context(aux_accounting, calls, session_db)(request_and_validate)
+    tokens, unreported = calls.close()
+
+    # Hermes records the unwrapped completion, not the envelope.
+    assert validated is not envelope
+    assert (tokens["input_tokens"], tokens["output_tokens"]) == (1000, 100)
+    assert unreported == frozenset({"cached"})
+
+
+def test_request_tracking_rejects_a_moved_envelope_unwrap(monkeypatch):
+    from agent import auxiliary_client
+
+    monkeypatch.setattr(
+        auxiliary_client,
+        "_validate_llm_response",
+        lambda response, task=None, **kwargs: response,
+    )
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        adapter._install_request_tracking()
+
+    assert raised.value.code == "hermes_usage_accounting_unsupported"

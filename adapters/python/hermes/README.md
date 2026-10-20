@@ -160,7 +160,8 @@ enabled, title generation is off entirely. The adapter also sets
 That review forks an agent after the turn returns and records the fork's
 tokens outside the auxiliary client. The adapter wraps
 `agent.aux_accounting.record_aux_usage`, the auxiliary client's
-`_relay_sync_completion` and `_relay_async_completion`,
+`_relay_sync_completion`, `_relay_async_completion` and
+`_unwrap_data_envelope`,
 `agent.anthropic_adapter.create_anthropic_message`, and the Anthropic
 auxiliary client's `create` once per process, and the agent's
 `_spawn_background_review` when it starts the agent. The runtime fails to

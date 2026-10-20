@@ -1180,6 +1180,13 @@ class _AuxiliaryCalls:
             if response is not None:
                 self._unrecorded_responses[id(response)] = response
 
+    def replace_unrecorded_response(self, response: Any, replacement: Any) -> None:
+        """Track ``replacement`` in place of the returned ``response``."""
+        with self._lock:
+            if self._unrecorded_responses.get(id(response)) is response:
+                del self._unrecorded_responses[id(response)]
+                self._unrecorded_responses[id(replacement)] = replacement
+
     def take_unrecorded_response(self, response: Any) -> None:
         """Resolve a returned response that Hermes is recording."""
         with self._lock:
@@ -1402,6 +1409,22 @@ _AUXILIARY_REQUEST_CALLERS = {
 }
 
 
+def _observed_unwrap_data_envelope(unwrap: Callable[..., Any]) -> Any:
+    """Wrap Hermes' gateway envelope unwrapping so that the unwrapped
+    completion, which Hermes records instead, resolves the returned
+    response."""
+
+    def observed(response: Any, *args: Any, **kwargs: Any) -> Any:
+        unwrapped = unwrap(response, *args, **kwargs)
+        calls = _AUXILIARY_CALLS.get()
+        if calls is not None and unwrapped is not response:
+            calls.replace_unrecorded_response(response, unwrapped)
+        return unwrapped
+
+    observed.nemo_fabric_observed = True  # type: ignore[attr-defined]
+    return observed
+
+
 def _global_names(function: Any) -> set[str]:
     """Return the global names a function and its nested functions look up."""
     names: set[str] = set()
@@ -1422,10 +1445,21 @@ def _install_request_tracking() -> None:
 
     Each auxiliary request goes through ``_relay_sync_completion`` or
     ``_relay_async_completion``, looked up as a module global by the callers
-    in ``_AUXILIARY_REQUEST_CALLERS``. If Hermes no longer sends requests
-    through those names, start fails rather than missing failed requests.
+    in ``_AUXILIARY_REQUEST_CALLERS``. ``_validate_llm_response`` records the
+    completion that ``_unwrap_data_envelope`` returns, which differs from
+    the returned response for gateway envelopes. If Hermes no longer uses
+    those names, start fails rather than missing failed requests.
     """
     from agent import auxiliary_client
+
+    if "_unwrap_data_envelope" not in _global_names(
+        auxiliary_client._validate_llm_response
+    ):
+        raise lifecycle.LifecycleError(
+            "hermes_usage_accounting_unsupported",
+            "This Hermes version unwraps auxiliary responses outside "
+            "agent.auxiliary_client._unwrap_data_envelope",
+        )
 
     for caller, request in _AUXILIARY_REQUEST_CALLERS.items():
         if request not in _global_names(getattr(auxiliary_client, caller, None)):
@@ -1437,6 +1471,7 @@ def _install_request_tracking() -> None:
     for name, wrap in (
         ("_relay_sync_completion", _observed_relay_completion),
         ("_relay_async_completion", _observed_async_relay_completion),
+        ("_unwrap_data_envelope", _observed_unwrap_data_envelope),
     ):
         current = getattr(auxiliary_client, name)
         if not getattr(current, "nemo_fabric_observed", False):
