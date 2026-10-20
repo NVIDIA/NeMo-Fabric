@@ -815,6 +815,7 @@ pub fn check_service(service: &ServiceHandle, request: &CheckRequest) -> Result<
                     probe,
                     remaining,
                     CheckScope::Service,
+                    Some(&binding.service.adapter_id),
                 )
             };
             report.outcome = result.outcome;
@@ -952,7 +953,7 @@ pub fn check_environment(
                     let result = if remaining <= 0.0 {
                         unobserved(CheckReason::ProbeTimeout)
                     } else {
-                        probe_runtime(runtime_id, probe, remaining)
+                        probe_runtime(&binding.runtime, probe, remaining)
                     };
                     report.outcome = result.outcome;
                     report.reason_code = result.reason_code;
@@ -1066,8 +1067,14 @@ fn verify_health_mac(
         .is_ok()
 }
 
-fn probe_runtime(runtime_id: &str, level: CheckLevel, timeout: f64) -> AdapterCheckResult {
-    probe_target(runtime_id, level, timeout, CheckScope::Runtime)
+fn probe_runtime(runtime: &RuntimeHandle, level: CheckLevel, timeout: f64) -> AdapterCheckResult {
+    probe_target(
+        &runtime.runtime_id,
+        level,
+        timeout,
+        CheckScope::Runtime,
+        runtime.adapter_id.as_deref(),
+    )
 }
 
 fn probe_target(
@@ -1075,6 +1082,7 @@ fn probe_target(
     level: CheckLevel,
     timeout: f64,
     scope: CheckScope,
+    adapter_id: Option<&str>,
 ) -> AdapterCheckResult {
     let started = Instant::now();
     let budget = Duration::try_from_secs_f64(timeout).unwrap_or(Duration::MAX);
@@ -1373,6 +1381,30 @@ mod tests {
                 CheckLevel::Active => "fabric.adapter.interface",
                 _ => "fabric.adapter.readiness",
             }, "observed_at": utc_now()})
+    }
+
+    #[test]
+    fn openclaw_runtime_checks_accept_qualified_native_evidence() {
+        let mut runtime = runtime();
+        runtime.adapter_id = Some("nvidia.fabric.openclaw".into());
+        register(
+            &runtime,
+            vec![CheckLevel::Live, CheckLevel::Active, CheckLevel::Ready],
+        );
+        let peer = peer(&runtime, 3, |_, level| {
+            let mut observation = gateway_passed(level);
+            observation["activity"] = "busy".into();
+            observation
+        });
+        let request = request(&runtime, CheckLevel::Ready, 3.0);
+        let report = check_environment(&runtime.environment, &request).unwrap();
+        assert_eq!(report.outcome, CheckOutcome::Passed);
+        assert!(valid_remote_report(&report, &request));
+        assert_eq!(peer.join().unwrap().len(), 3);
+        let mut mixed = report;
+        mixed.checks[1].source = CheckSource::PiInterface;
+        assert!(!valid_remote_report(&mixed, &request));
+        cleanup(&runtime);
     }
 
     #[test]

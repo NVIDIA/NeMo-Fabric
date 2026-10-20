@@ -105,6 +105,32 @@ def test_service_report_requires_no_fabric_runtime(service_check_report):
     assert report.to_mapping() == service_check_report
 
 
+def test_openclaw_runtime_reports_accept_complete_native_evidence(service_check_report):
+    data = {
+        **service_check_report,
+        "scope": "runtime",
+        "runtime_id": "runtime-1",
+        "runtime": {"state": "active", "activity": "busy"},
+    }
+    del data["service_id"]
+    report = CheckReport.from_mapping(data)
+    assert report.outcome == "passed"
+    assert report.runtime["activity"] == "busy"
+
+
+def test_runtime_reports_reject_mixed_harness_evidence(service_check_report):
+    data = {
+        **service_check_report,
+        "scope": "runtime",
+        "runtime_id": "runtime-1",
+        "runtime": {"state": "active", "activity": "idle"},
+    }
+    del data["service_id"]
+    data["checks"][1]["source"] = "fabric.adapter.pi.interface"
+    with pytest.raises(FabricConfigError):
+        CheckReport.from_mapping(data)
+
+
 @pytest.mark.parametrize(
     "changes",
     [
