@@ -2791,6 +2791,30 @@ async def test_agent_protocol_subagent_makes_usage_unknown(
     assert result.usage is None
 
 
+async def test_rejected_only_call_with_agent_protocol_subagent_is_unknown(
+    tmp_path, make_payload, openai_endpoint
+):
+    # Zero observed calls prove nothing when a remote subagent can run models
+    # that the adapter's callbacks never see.
+    payload = make_payload(tmp_path)
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "subagents": [
+            {
+                "name": "researcher",
+                "description": "Researches on a remote server.",
+                "graph_id": "research_agent",
+                "url": "https://agents.example.test",
+            }
+        ]
+    }
+    openai_endpoint["replies"].append(provider_failure("400"))
+
+    (result,) = await run_invocations(payload, 1)
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.usage is None
+
+
 def test_aggregate_usage_without_model_calls_is_zero():
     assert adapter._aggregate_usage([]) == {
         "prompt_tokens": 0,

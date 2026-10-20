@@ -1316,7 +1316,10 @@ def _aggregate_usage(calls: list[dict[str, Any]]) -> dict[str, Any] | None:
     One call without a count makes the invocation's sum for that count a
     partial value, so it stays unknown rather than under-reported. Without a
     call, because none started or the provider rejected every one, the
-    invocation spent nothing, so every count and the cost are 0.
+    observed calls spent nothing, so every count and the cost are 0. That 0
+    covers the invocation only when every model call runs through these
+    callbacks; the caller makes usage unknown when an Agent Protocol subagent
+    can run models on a remote server.
     """
 
     totals: dict[str, Any] = {}
