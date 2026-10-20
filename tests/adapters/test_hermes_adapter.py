@@ -3175,3 +3175,137 @@ def test_request_tracking_rejects_a_moved_envelope_unwrap(monkeypatch):
         adapter._install_request_tracking()
 
     assert raised.value.code == "hermes_usage_accounting_unsupported"
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_auxiliary_request_that_returned_none_leaves_counts_unknown(
+    monkeypatch, async_mode
+):
+    from agent import auxiliary_client
+
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+
+    def attempt(response: Any) -> Any:
+        if async_mode:
+
+            async def respond() -> Any:
+                return response
+
+            returned = asyncio.run(adapter._observed_async_relay_completion(respond)())
+        else:
+            returned = adapter._observed_relay_completion(lambda: response)()
+        return auxiliary_client._validate_llm_response(
+            returned, "compression", provider="nvidia"
+        )
+
+    def recover_after_none() -> None:
+        # A 200 response with a null body, then Hermes' recovery succeeds.
+        with pytest.raises(RuntimeError):
+            attempt(None)
+        attempt(_completion(40, 4))
+
+    _owned_context(aux_accounting, calls, session_db)(recover_after_none)
+
+    assert calls.close()[1] == frozenset({"input", "cached", "output"})
+
+
+def test_auxiliary_usage_read_when_the_invocation_returns_is_unknown(monkeypatch):
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+    reading = threading.Event()
+    release = threading.Event()
+    omitted_counts = adapter._omitted_counts
+
+    def read_slowly(*args: Any) -> list[str]:
+        reading.set()
+        release.wait(timeout=10)
+        return omitted_counts(*args)
+
+    monkeypatch.setattr(adapter, "_omitted_counts", read_slowly)
+
+    def request_and_record() -> None:
+        response = adapter._observed_relay_completion(lambda: _completion(40, 4))()
+        aux_accounting.record_aux_usage(response, "compression", provider="nvidia")
+
+    worker = threading.Thread(
+        target=_owned_context(aux_accounting, calls, session_db),
+        args=(request_and_record,),
+    )
+    worker.start()
+    try:
+        # The invocation returns while Hermes' recorder reads the usage.
+        assert reading.wait(timeout=10)
+        tokens, unreported = calls.close()
+    finally:
+        release.set()
+        worker.join(timeout=10)
+
+    assert tokens == dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
+    assert unreported == frozenset({"input", "cached", "output"})
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_streamed_request_retried_without_streaming_leaves_counts_unknown(
+    monkeypatch, async_mode
+):
+    from agent import auxiliary_client
+
+    aux_accounting, _ = _install_auxiliary_observer_fresh(monkeypatch)
+    session_db = object()
+    calls = adapter._AuxiliaryCalls(session_db)
+
+    class StreamRejected(Exception):
+        pass
+
+    def create(**kwargs: Any) -> Any:
+        # The provider rejects the streamed request and answers the plain one.
+        if kwargs.get("stream"):
+            raise StreamRejected("stream not supported")
+        return _completion(40, 4)
+
+    async def create_async(**kwargs: Any) -> Any:
+        return create(**kwargs)
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=create_async if async_mode else create)
+        )
+    )
+    request = {"model": "test-model", "messages": [{"role": "user", "content": "x"}]}
+
+    def stream_and_record() -> None:
+        # Compression installs a progress hook, which makes Hermes stream.
+        with auxiliary_client.aux_progress_hook(lambda: None):
+            if async_mode:
+                response = asyncio.run(
+                    auxiliary_client._relay_async_completion(
+                        client, dict(request), provider="nvidia"
+                    )
+                )
+            else:
+                response = auxiliary_client._relay_sync_completion(
+                    client, dict(request), provider="nvidia"
+                )
+        auxiliary_client._validate_llm_response(
+            response, "compression", provider="nvidia"
+        )
+
+    _owned_context(aux_accounting, calls, session_db)(stream_and_record)
+
+    assert calls.close()[1] == frozenset({"input", "cached", "output"})
+
+
+def test_request_tracking_rejects_an_unobserved_dispatch(monkeypatch):
+    from agent import auxiliary_client
+
+    monkeypatch.setattr(
+        auxiliary_client, "_create_with_progress_once", lambda *args, **kwargs: None
+    )
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
+        adapter._install_request_tracking()
+
+    assert raised.value.code == "hermes_usage_accounting_unsupported"

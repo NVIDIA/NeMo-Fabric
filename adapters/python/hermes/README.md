@@ -136,7 +136,14 @@ whose turn made the call, using the same rules as a main-loop response. A
 response without usage, or one whose usage left out a count, leaves the
 affected counts unknown. An auxiliary request that raised, including a
 response the client could not parse, may have been billed, so the invocation
-has no `usage`. The same holds for a request still running, or a response
+has no `usage`. So does a request that returned no response, and one that
+Hermes dispatched to the provider more than once, such as a streamed request
+it retried without streaming. The adapter observes each provider dispatch of
+Hermes' auxiliary client. Hermes builds its auxiliary OpenAI and Anthropic
+clients with the SDKs' own retries off (`max_retries=0`), so a dispatch is one
+provider request. Retries inside a provider SDK configured otherwise, or
+inside a gateway, happen below every Hermes function and are not observed.
+The same holds for a request still running, or a response
 Hermes has not recorded yet, when the invocation returns, and that usage is
 never added to a later invocation.
 Mixture-of-agents calls are already in the session counters and are not
@@ -147,21 +154,19 @@ conversion. If that response reaches Hermes' usage recorder as another
 object, such as one a Relay execution intercept replaced, the invocation has
 no `usage`. Hermes' Codex Responses, Gemini, Bedrock and Copilot ACP auxiliary
 clients fill omitted counts with 0 when they convert the usage, so a response
-from one of them leaves every count unknown. When a turn starts Hermes'
-background memory or skill review, the review forks an agent that runs after
-the invocation returns and records its tokens outside the auxiliary client,
-so the invocation has no `usage`. A plugin context engine may call
+from one of them leaves every count unknown. A plugin context engine may call
 a model outside the auxiliary client, so an invocation in which one compressed
 has no `usage`. The adapter sets
 `auxiliary.title_generation.model_upgrade_enabled` to false, so Hermes keeps its
 locally derived session title and makes no title model call; with Relay
-enabled, title generation is off entirely. The adapter also sets
-`skip_background_review`, so Hermes runs no background memory or skill review.
-That review forks an agent after the turn returns and records the fork's
-tokens outside the auxiliary client. The adapter wraps
+enabled, title generation is off entirely. Fabric disables Hermes' automatic
+post-turn memory and skill review with `skip_background_review`. If Hermes
+nevertheless enters the background-review path during an invocation, the
+adapter leaves that invocation's usage unknown, because the review forks an
+agent that records its tokens outside the auxiliary client. The adapter wraps
 `agent.aux_accounting.record_aux_usage`, the auxiliary client's
-`_relay_sync_completion`, `_relay_async_completion` and
-`_unwrap_data_envelope`,
+`_relay_sync_completion`, `_relay_async_completion`, `_unwrap_data_envelope`
+and `_notify_aux_dispatch`,
 `agent.anthropic_adapter.create_anthropic_message`, and the Anthropic
 auxiliary client's `create` once per process, and the agent's
 `_spawn_background_review` when it starts the agent. The runtime fails to
