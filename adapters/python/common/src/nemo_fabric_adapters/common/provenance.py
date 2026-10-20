@@ -227,7 +227,15 @@ class BlockingProbe:
                 return
 
         self._running.set()
-        threading.Thread(target=run, name="nemo-fabric-version-probe", daemon=True).start()
+        try:
+            threading.Thread(
+                target=run, name="nemo-fabric-version-probe", daemon=True
+            ).start()
+        except Exception:
+            # No thread runs to clear the flag, so clear it here or every later
+            # call would time out at once.
+            self._running.clear()
+            raise
         # On timeout, wait_for cancels only this future. The thread keeps
         # running, and its late outcome is dropped.
         return await asyncio.wait_for(outcome, timeout)

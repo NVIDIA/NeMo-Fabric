@@ -168,6 +168,20 @@ async def test_blocking_probe_returns_the_result_or_the_raised_error():
         await probe.call(fail)
 
 
+async def test_blocking_probe_recovers_when_its_thread_cannot_start(monkeypatch):
+    probe = provenance.BlockingProbe()
+
+    def refuse_to_start(_thread: threading.Thread) -> None:
+        raise RuntimeError("can't start new thread")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(threading.Thread, "start", refuse_to_start)
+        with pytest.raises(RuntimeError, match="can't start new thread"):
+            await probe.call(lambda: "1.0.0", timeout=1)
+
+    assert await probe.call(lambda: "2.0.0", timeout=1) == "2.0.0"
+
+
 def test_package_version_report_marks_harness_and_served_models_no_source():
     report = provenance.package_version_report(
         "nemo-fabric-adapters-common", ["judge", "default"]
