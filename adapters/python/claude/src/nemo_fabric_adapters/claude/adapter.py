@@ -871,6 +871,38 @@ def _detailed_token_usage(usage: dict[str, Any]) -> dict[str, int | bool]:
     return counters
 
 
+def _top_level_token_usage(
+    usage: dict[str, Any], detailed: dict[str, int | bool]
+) -> dict[str, int | bool]:
+    """Return the top-level counters, with input including cache reads and writes.
+
+    The top-level usage has no cache-write field, so ``input_tokens`` is
+    Anthropic's input plus both cache parts, the same inclusive total consumers
+    derive from the detailed counters. Input, cache reads and the flag follow
+    the detailed rule: they are reported only when all three parts are known
+    and their sum fits in 64 bits.
+    """
+    tokens: dict[str, int | bool] = {
+        name: value
+        for name in ("output_tokens", "total_tokens")
+        if (value := _token_counter(usage.get(name))) is not None
+    }
+    if "input_tokens" in detailed:
+        cached_input_tokens = int(detailed["cached_input_tokens"])
+        input_tokens = _token_counter(
+            int(detailed["input_tokens"])
+            + cached_input_tokens
+            + int(detailed["cache_write_input_tokens"])
+        )
+        if input_tokens is not None:
+            tokens.update(
+                input_tokens=input_tokens,
+                cached_input_tokens=cached_input_tokens,
+                input_tokens_include_cache=True,
+            )
+    return tokens
+
+
 def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
@@ -887,11 +919,8 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
         )
     raw_usage = normalized.get("usage")
     usage = raw_usage if isinstance(raw_usage, dict) else {}
-    tokens = {
-        name: value
-        for name in ("input_tokens", "output_tokens", "total_tokens")
-        if (value := _token_counter(usage.get(name))) is not None
-    }
+    detailed = _detailed_token_usage(usage)
+    tokens = _top_level_token_usage(usage, detailed)
     cost = normalized.get("cost_usd")
     if (
         not isinstance(cost, (int, float))
@@ -902,7 +931,6 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
         cost = None
         if "cost_usd" in normalized:
             normalized["cost_usd"] = None
-    detailed = _detailed_token_usage(usage)
     extensions = {_DETAILED_TOKEN_USAGE_KEY: detailed} if detailed else {}
     agent_usage = (
         AgentUsage(**tokens, cost_usd=cost, extensions=extensions)

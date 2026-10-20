@@ -132,14 +132,20 @@ by the SDK and is not persisted as a NeMo Fabric artifact.
 
 ## Token Usage
 
-The result's `usage` carries Claude Code's `input_tokens`, `output_tokens`, and
-reported `cost_usd`. Claude Code counts tokens for its main agent loop only: its
-usage leaves out Task subagent, sidechain, and auxiliary model calls.
+The result's `usage` carries input, cached input, output, and reported
+`cost_usd`. Claude Code counts tokens for its main agent loop only: its usage
+leaves out Task subagent, sidechain, and auxiliary model calls.
 
-Claude Code's `input_tokens` excludes cache reads and cache writes, so the
-adapter also returns the `nemo_fabric.detailed_token_usage.v1` usage extension,
-declared under `extension_schemas.usage` in the descriptor. When Claude Code
-reports input, cache reads, and cache writes, the extension carries all three as
+Claude Code's `input_tokens` excludes cache reads and cache writes. When Claude
+Code reports input, cache reads, and cache writes, the top-level `input_tokens`
+is their sum, `cached_input_tokens` is the cache reads, and
+`input_tokens_include_cache` is `true`. If any of the three is missing or
+invalid, or their sum does not fit `uint64`, these three top-level fields are
+omitted.
+
+The adapter also returns the `nemo_fabric.detailed_token_usage.v1` usage
+extension, declared under `extension_schemas.usage` in the descriptor. When
+Claude Code reports all three counts, the extension carries them as
 `input_tokens`, `cached_input_tokens`, and `cache_write_input_tokens` with
 `input_tokens_include_cache: false`. If any of the three is missing, the
 extension carries no input counters. Output is reported as `output_tokens` with

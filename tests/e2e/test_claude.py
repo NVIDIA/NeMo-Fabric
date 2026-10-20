@@ -181,6 +181,33 @@ async def test_fabric_session_reuses_persistent_claude_runtime(tmp_path):
     assert not any(artifact.kind == "stderr" for artifact in second.artifacts.artifacts)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the mock Claude CLI is not yet a Windows executable",
+)
+async def test_claude_result_usage_includes_cache_tokens(tmp_path):
+    raw_usage = {
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 400,
+        "cache_read_input_tokens": 3000,
+        "output_tokens": 25,
+        "server_tool_use": {"web_search_requests": 0, "web_fetch_requests": 0},
+        "service_tier": "standard",
+    }
+    config = fabric_config(tmp_path, cli_path=MOCK_CLAUDE_CLI)
+    config.environment.env["MOCK_CLAUDE_CLI_RESULT_USAGE"] = json.dumps(raw_usage)
+
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        result = await runtime.invoke(input="first")
+
+    assert result.status == "succeeded", result.to_mapping()
+    assert result.output["usage"] == raw_usage
+    assert result.usage.input_tokens == 3412
+    assert result.usage.cached_input_tokens == 3000
+    assert result.usage.input_tokens_include_cache is True
+    assert result.usage.output_tokens == 25
+
+
 async def test_env_secrets_in_headers(api_server, tmp_path):
     os.environ["MY_KEY"] = "XYZ"
     tool_name = "mcp__headers__get_authorization_header"

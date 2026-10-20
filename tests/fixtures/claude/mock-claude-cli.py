@@ -10,6 +10,11 @@ import sys
 
 
 SESSION_ID = "11111111-1111-4111-8111-111111111111"
+RESULT_USAGE = json.loads(
+    os.environ.get(
+        "MOCK_CLAUDE_CLI_RESULT_USAGE", '{"input_tokens": 1, "output_tokens": 2}'
+    )
+)
 
 with open(os.environ["MOCK_CLAUDE_CLI_LOG"], "a", encoding="utf-8") as stream:
     stream.write(json.dumps(sys.argv[1:]) + "\n")
@@ -71,7 +76,7 @@ for line in sys.stdin:
                 "num_turns": 1,
                 "session_id": SESSION_ID,
                 "total_cost_usd": 0.001,
-                "usage": {"input_tokens": 1, "output_tokens": 2},
+                "usage": RESULT_USAGE,
                 "result": "mock Claude response",
             }
         ),

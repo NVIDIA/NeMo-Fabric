@@ -1005,16 +1005,26 @@ def test_agent_run_result_discards_tokens_larger_than_uint64():
     assert result.usage is None
 
 
+# A Claude Code result's usage, as the SDK's ResultMessage carries it.
+CLAUDE_CODE_RESULT_USAGE = {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 400,
+    "cache_read_input_tokens": 3000,
+    "output_tokens": 90,
+    "server_tool_use": {"web_search_requests": 0, "web_fetch_requests": 0},
+    "service_tier": "standard",
+    "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 400,
+    },
+}
+
+
 def test_agent_run_result_with_cache_counters_reports_detailed_token_usage():
     result = adapter._agent_run_result(
         {
             "response": "done",
-            "usage": {
-                "input_tokens": 12,
-                "cache_read_input_tokens": 3000,
-                "cache_creation_input_tokens": 400,
-                "output_tokens": 90,
-            },
+            "usage": CLAUDE_CODE_RESULT_USAGE,
             # Claude Code's model_usage is process-cumulative, so it is not
             # reported as invocation usage.
             "model_usage": {
@@ -1029,8 +1039,10 @@ def test_agent_run_result_with_cache_counters_reports_detailed_token_usage():
     )
 
     assert result.usage is not None
-    assert result.usage.input_tokens == 12
-    assert result.usage.cached_input_tokens is None
+    assert result.usage.input_tokens == 3412
+    assert result.usage.cached_input_tokens == 3000
+    assert result.usage.input_tokens_include_cache is True
+    assert result.usage.output_tokens == 90
     assert result.usage.extensions == {
         DETAILED_TOKEN_USAGE_KEY: {
             "input_tokens": 12,
@@ -1155,6 +1167,154 @@ def test_agent_run_result_reports_detailed_input_only_when_complete(usage, expec
 
     assert result.usage is not None
     assert result.usage.extensions == {DETAILED_TOKEN_USAGE_KEY: expected}
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
+        pytest.param(
+            {
+                "input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "output_tokens": 0,
+            },
+            (0, 0, True, 0),
+            id="explicit-zeros-are-reported",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "output_tokens": 1},
+            (None, None, None, 1),
+            id="absent-cache-counters",
+        ),
+        pytest.param(
+            {
+                "cache_read_input_tokens": 7,
+                "cache_creation_input_tokens": 2,
+                "output_tokens": 1,
+            },
+            (None, None, None, 1),
+            id="missing-input",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "cache_creation_input_tokens": 2, "output_tokens": 1},
+            (None, None, None, 1),
+            id="missing-cache-read",
+        ),
+        pytest.param(
+            {"input_tokens": 5, "cache_read_input_tokens": 7, "output_tokens": 1},
+            (None, None, None, 1),
+            id="missing-cache-write",
+        ),
+        pytest.param(
+            {
+                "input_tokens": 5,
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": 2,
+                "output_tokens": 1,
+            },
+            (None, None, None, 1),
+            id="null-cache-read",
+        ),
+        pytest.param(
+            {
+                "input_tokens": (1 << 64) - 1,
+                "cache_read_input_tokens": 1,
+                "cache_creation_input_tokens": 0,
+                "output_tokens": 1,
+            },
+            (None, None, None, 1),
+            id="inclusive-input-above-uint64",
+        ),
+        pytest.param(
+            {
+                "input_tokens": (1 << 64) - 2,
+                "cache_read_input_tokens": 1,
+                "cache_creation_input_tokens": 0,
+                "output_tokens": 1,
+            },
+            ((1 << 64) - 1, 1, True, 1),
+            id="inclusive-input-at-uint64",
+        ),
+        *(
+            pytest.param(
+                {
+                    "input_tokens": 5,
+                    "cache_read_input_tokens": 7,
+                    "cache_creation_input_tokens": invalid,
+                    "output_tokens": 1,
+                },
+                (None, None, None, 1),
+                id=f"invalid-cache-write-{label}",
+            )
+            for label, invalid in (
+                ("negative", -1),
+                ("bool", True),
+                ("float", 2.0),
+                ("string", "2"),
+            )
+        ),
+    ],
+)
+def test_agent_run_result_reports_inclusive_top_level_input_only_when_complete(
+    usage, expected
+):
+    result = adapter._agent_run_result({"response": "done", "usage": usage})
+
+    assert result.usage is not None
+    assert (
+        result.usage.input_tokens,
+        result.usage.cached_input_tokens,
+        result.usage.input_tokens_include_cache,
+        result.usage.output_tokens,
+    ) == expected
+
+
+@pytest.mark.usefixtures("requires_harbor")
+@pytest.mark.parametrize("with_detailed_usage", [True, False])
+def test_harbor_reads_same_input_from_top_level_and_detailed_usage(
+    tmp_path, with_detailed_usage
+):
+    from harbor.models.agent.context import AgentContext
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+    )
+
+    usage = adapter._agent_run_result(
+        {"response": "done", "usage": CLAUDE_CODE_RESULT_USAGE}
+    ).usage
+    assert usage is not None
+    run_usage = usage.to_mapping()
+    detailed = run_usage.pop("extensions")
+    # Core preserves adapter usage extensions as RunUsage.metadata.
+    run_usage["metadata"] = detailed if with_detailed_usage else {}
+    path = tmp_path / "result.json"
+    path.write_text(
+        json.dumps(
+            {
+                "status": "succeeded",
+                "agent_name": "claude",
+                "harness": "claude",
+                "adapter_kind": "python",
+                "adapter_id": "nvidia.claude",
+                "runtime_id": "runtime-1",
+                "invocation_id": "invocation-1",
+                "request_id": "request-1",
+                "output": {"response": "done"},
+                "events": [],
+                "metadata": {},
+                "artifacts": {"artifacts": []},
+                "telemetry": [],
+                "usage": run_usage,
+            }
+        )
+    )
+    context = AgentContext()
+
+    populate_context_from_result(context, path)
+
+    assert (context.n_input_tokens, context.n_cache_tokens) == (3412, 3000)
+    assert context.n_output_tokens == 90
 
 
 def test_failed_agent_run_result_keeps_detailed_token_usage():
