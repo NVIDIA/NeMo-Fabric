@@ -52,12 +52,14 @@ Set `RuntimeConfig(artifacts=..., record=RecordConfig(enabled=True))` to have
 NeMo Fabric write `run-record.jsonl` for each invocation under `<artifact
 root>/.fabric/<runtime_id>/<invocation_id>/`. Recording is off by default and
 needs an artifact root, the `local` environment provider, and a `process` or
-`python` adapter. The result lists the file as the artifact with kind
-`run_record`. The file has a `start` line, written before the request, and an
-`end` line with status, elapsed time, error code, numeric usage, and artifact
-names. It holds no prompts, output, or error messages. The start line does keep
-the values of seven allowlisted `RunRequest.context` keys (task identity and
-the Harbor trial link), cut to 256 characters, so don't put prompt text in
+`python` adapter. Once the start line is written, the result lists the file as
+the artifact with kind `run_record`; if creating the record fails, the result
+has a `record_write_failed` event and no such artifact. The file has a `start`
+line, written before the request, and an `end` line with status, elapsed time,
+error code, numeric usage, and artifact names. It holds no prompts, output, or
+error messages. The start line does keep the values of seven allowlisted
+`RunRequest.context` keys (task identity and the Harbor trial link): strings
+cut to 256 characters and integers as they are, so don't put prompt text in
 those keys. A record without an end line has an unknown outcome; do not count
 it as failed. Recording is synchronous and best-effort: when the invocation
 returns a result, a failed record write adds a `record_write_failed` event to
