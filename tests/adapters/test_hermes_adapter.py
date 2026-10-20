@@ -2057,10 +2057,12 @@ async def test_hermes_stop_unregisters_the_agent_usage_observer():
     agent = _UsageRecordingAgent([])
     runtime = _usage_recording_runtime(agent)
     assert agent in adapter._USAGE_OBSERVERS
+    assert agent in adapter._SUMMARY_ATTEMPT_OBSERVERS
 
     await runtime.stop()
 
     assert agent not in adapter._USAGE_OBSERVERS
+    assert agent not in adapter._SUMMARY_ATTEMPT_OBSERVERS
 
 
 @pytest.mark.parametrize("drift", ["replaced", "not_called"])

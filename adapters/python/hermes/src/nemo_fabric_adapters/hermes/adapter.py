@@ -652,6 +652,7 @@ class HermesRuntime:
         session_db = self._session_db
         if agent is not None:
             _USAGE_OBSERVERS.pop(agent, None)
+            _SUMMARY_ATTEMPT_OBSERVERS.pop(agent, None)
         had_mcp_servers = bool(self._hermes_config.get("mcp_servers"))
         had_relay_plugin = self._relay_plugin_config_path is not None
         self._agent = None
