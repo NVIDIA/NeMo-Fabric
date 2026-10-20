@@ -52,7 +52,10 @@ fact holds a `value`, or a `state` and `reason` when it has no value, plus
 `source`, `collected_by`, and `method`. Accept `collected_by`, `method`, and
 `reason` codes you do not recognize. Adapter-reported facts, such as the
 harness version and the served model, read state `unsupported` with reason
-`key_not_declared` when the adapter does not report them. Every bundled
+`key_not_declared` when the adapter descriptor does not declare their report
+key. When the descriptor declares the key, a result that omits the key reads
+`unavailable` with reason `key_omitted`, and a key that omits the fact reads
+`unavailable` with reason `fact_omitted`. Every bundled
 adapter reports its package version. The Claude Code, Codex, Hermes Agent,
 OpenClaw, Deep Agents, and mini-SWE-agent adapters report the harness version,
 and the Claude Code adapter reports the served model. The Cline adapter reports
