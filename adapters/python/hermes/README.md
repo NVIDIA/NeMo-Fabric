@@ -151,7 +151,10 @@ a model outside the auxiliary client, so an invocation in which one compressed
 has no `usage`. The adapter sets
 `auxiliary.title_generation.model_upgrade_enabled` to false, so Hermes keeps its
 locally derived session title and makes no title model call; with Relay
-enabled, title generation is off entirely. The adapter wraps
+enabled, title generation is off entirely. The adapter also sets
+`skip_background_review`, so Hermes runs no background memory or skill review.
+That review forks an agent after the turn returns and records the fork's
+tokens outside the auxiliary client. The adapter wraps
 `agent.aux_accounting.record_aux_usage`, the auxiliary client's
 `_relay_sync_completion` and `_relay_async_completion`,
 `agent.anthropic_adapter.create_anthropic_message`, and the Anthropic
