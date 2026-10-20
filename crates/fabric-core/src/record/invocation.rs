@@ -1409,11 +1409,13 @@ mod tests {
     }
 
     #[test]
-    fn warm_runtime_end_minus_start_cpu_is_each_invocation_own_cpu_time() {
+    fn warm_runtime_end_minus_start_cpu_is_each_exchange_own_cpu_time() {
         use std::sync::atomic::{AtomicU64, Ordering};
         // The snapshot's CPU time is cumulative since the host started, so a
         // warm runtime's second invocation starts with the first one's CPU
-        // time already counted. Whole milliseconds keep the subtraction exact.
+        // time already counted. CPU time the host uses after the exchange
+        // ends and before the result is finished belongs to neither end
+        // line. Whole and quarter seconds keep the subtraction exact.
         let host_cpu_ms = Arc::new(AtomicU64::new(1_000));
         let read: ReadResources = {
             let host_cpu_ms = Arc::clone(&host_cpu_ms);
@@ -1429,20 +1431,29 @@ mod tests {
         let (_, _, invocation) = record_test_fixture();
         let cpu = |line: &Value| line["resources"]["cpu_time_seconds"].as_f64().expect("cpu");
 
-        let mut own_cpu = Vec::new();
+        let (mut end_cpu, mut own_cpu) = (Vec::new(), Vec::new());
         for (name, burn_ms) in [("warm-cpu-1", 2_000), ("warm-cpu-2", 500)] {
             let (folder, mut recorder) = start_recorder(name, &ticker, Arc::clone(&read));
             host_cpu_ms.fetch_add(burn_ms, Ordering::SeqCst);
             recorder.exchange_ended(recorder.read_exchange_end(Instant::now(), &read()));
+            // The host keeps running between the exchange end and finish.
+            host_cpu_ms.fetch_add(250, Ordering::SeqCst);
             recorder
                 .finish(Ok(succeeded_result(&invocation)))
                 .expect("result");
             let lines = read_lines(&folder.join(RECORD_FILE_NAME));
             let _ = std::fs::remove_dir_all(folder);
-            own_cpu.push(cpu(lines.last().expect("end line")) - cpu(&lines[0]));
+            let end = cpu(lines.last().expect("end line"));
+            end_cpu.push(end);
+            own_cpu.push(end - cpu(&lines[0]));
         }
 
-        // Not 3.0 and 3.5, the host's totals at each end.
+        // The end lines keep the exchange-end totals, not 3.25 and 4.0 read
+        // at finish. The second start line's 3.25 includes the first
+        // invocation's 0.25 after its exchange, which neither difference
+        // counts.
+        assert_eq!(end_cpu, [3.0, 3.75]);
+        // Not 3.0 and 3.75, the host's totals at each exchange end.
         assert_eq!(own_cpu, [2.0, 0.5]);
     }
 }
