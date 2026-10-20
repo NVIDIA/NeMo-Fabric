@@ -16,9 +16,11 @@
 //! above are never cut.
 //!
 //! `models` keeps at most 16 roles and `mcp.servers` at most 32 servers, in
-//! sorted key order. An entry whose key is longer than 128 characters is
-//! dropped. While the compact JSON of the whole object is larger than
-//! 128 KiB, MCP server entries are dropped from the end of the sorted order,
+//! sorted key order. `plan` servers take their places first, and servers
+//! only the harness reports fill the places left. An entry whose key is
+//! longer than 128 characters is dropped. While the compact JSON of the
+//! whole object is larger than 128 KiB, MCP server entries are dropped from
+//! the end of the sorted order, `harness` entries before `plan` entries,
 //! then model roles. Dropped entries are counted in a [`TruncatedEntries`]
 //! marker next to the map: `models_truncated` and `mcp.servers_truncated`.
 //! If the object is still too large with no MCP server and no model role,
@@ -593,14 +595,15 @@ impl WhatRan {
     }
 
     /// Keep the compact JSON of the whole object within 128 KiB. While it
-    /// is larger, drop the last MCP server in sorted key order, then the
-    /// last model role, counting each in its map's marker with reason
-    /// `byte_budget`. With neither left and the object still too large,
-    /// replace it with [`WhatRan::minimal`].
+    /// is larger, drop the last MCP server in sorted key order, a server of
+    /// any other origin before a `plan` server, then the last model role,
+    /// counting each in its map's marker with reason `byte_budget`. With
+    /// neither left and the object still too large, replace it with
+    /// [`WhatRan::minimal`].
     fn apply_byte_budget(&mut self) {
         while self.serialized_len() > MAX_WHAT_RAN_BYTES {
             if let Some(mcp) = self.mcp.as_mut()
-                && mcp.servers.pop_last().is_some()
+                && pop_last_server(&mut mcp.servers).is_some()
             {
                 mcp.servers_truncated = Some(one_more_byte_budget_drop(&mcp.servers_truncated));
             } else if let Some(models) = self.models.as_mut()
@@ -623,8 +626,7 @@ impl WhatRan {
             self.models_truncated = merged_marker(self.models_truncated.take(), dropped);
         }
         if let Some(mcp) = self.mcp.as_mut() {
-            let (kept, dropped) =
-                bounded_entries(&mcp.servers, MAX_MCP_SERVERS, McpServerFacts::clone);
+            let (kept, dropped) = bounded_servers(&mcp.servers);
             mcp.servers = kept;
             mcp.servers_truncated = merged_marker(mcp.servers_truncated.take(), dropped);
         }
@@ -771,6 +773,48 @@ fn bounded_entries<P, F>(
         dropped,
     });
     (kept, truncated)
+}
+
+/// At most 32 MCP servers, `plan` servers first: the cap and the key rule
+/// of [`bounded_entries`] apply to the `plan` servers, and servers of any
+/// other origin, such as `harness`, fill only the places left, so a report
+/// never pushes out a server the plan configures. One marker counts every
+/// dropped server.
+fn bounded_servers(
+    servers: &BTreeMap<String, McpServerFacts>,
+) -> (BTreeMap<String, McpServerFacts>, Option<TruncatedEntries>) {
+    let (plan, others): (BTreeMap<_, _>, BTreeMap<_, _>) = servers
+        .iter()
+        .map(|(name, server)| (name.clone(), server.clone()))
+        .partition(|(_, server)| server.origin == ORIGIN_PLAN);
+    let (mut kept, plan_dropped) = bounded_entries(&plan, MAX_MCP_SERVERS, McpServerFacts::clone);
+    let (others_kept, others_dropped) =
+        bounded_entries(&others, MAX_MCP_SERVERS - kept.len(), McpServerFacts::clone);
+    kept.extend(others_kept);
+    let dropped = match (plan_dropped, others_dropped) {
+        (Some(plan), Some(others)) => Some(TruncatedEntries {
+            reason: if plan.reason == REASON_ENTRY_CAP {
+                plan.reason
+            } else {
+                others.reason
+            },
+            dropped: plan.dropped.saturating_add(others.dropped),
+        }),
+        (plan, others) => plan.or(others),
+    };
+    (kept, dropped)
+}
+
+/// Remove the last server in sorted key order whose origin is not `plan`,
+/// or the last server when every one is a `plan` server.
+fn pop_last_server(servers: &mut BTreeMap<String, McpServerFacts>) -> Option<McpServerFacts> {
+    let name = servers
+        .iter()
+        .rev()
+        .find(|(_, server)| server.origin != ORIGIN_PLAN)
+        .or_else(|| servers.last_key_value())
+        .map(|(name, _)| name.clone())?;
+    servers.remove(&name)
 }
 
 /// `marker` with one more dropped entry and reason `byte_budget`.
@@ -2413,5 +2457,129 @@ mod tests {
             what_ran["mcp"]["servers_truncated"],
             json!({"reason": "entry_cap", "dropped": 1})
         );
+    }
+
+    /// A plan declaring the MCP report key, with MCP servers under the given
+    /// names and, when `heavy_roles` is set, 16 model roles whose providers
+    /// take most of the 128 KiB budget.
+    fn mcp_plan(server_names: &[String], heavy_roles: bool) -> RunPlan {
+        let mut plan = plan_declaring(&[MCP_REPORT_KEY]);
+        let server = plan.capability_plan.mcp_servers["files"].clone();
+        plan.capability_plan.mcp_servers = server_names
+            .iter()
+            .map(|name| (name.clone(), server.clone()))
+            .collect();
+        if heavy_roles {
+            let model = plan.config.models["default"].clone();
+            plan.config.models = numbered_keys("role", 16)
+                .into_iter()
+                .map(|role| (role, model.clone()))
+                .collect();
+            for model in plan.config.models.values_mut() {
+                model.provider = "p".repeat(7_000);
+            }
+        }
+        plan
+    }
+
+    /// An MCP report naming each server in `names` with a `runtime` block
+    /// that lists `tool_count` long tool names.
+    fn mcp_report(names: &[String], tool_count: usize) -> Value {
+        let tools: Vec<String> = (0..tool_count)
+            .map(|index| format!("{index:03}{}", "t".repeat(250)))
+            .collect();
+        let servers: serde_json::Map<String, Value> = names
+            .iter()
+            .map(|name| {
+                (
+                    name.clone(),
+                    json!({"transport": "stdio", "runtime": {
+                        "connected": reported(json!(true), "harness_status"),
+                        "tool_names": reported(json!(tools), "harness_api")}}),
+                )
+            })
+            .collect();
+        json!({MCP_REPORT_KEY: {"servers": servers}})
+    }
+
+    fn origins(what_ran: &Value) -> Vec<(String, String)> {
+        what_ran["mcp"]["servers"]
+            .as_object()
+            .expect("servers")
+            .iter()
+            .map(|(name, server)| {
+                (
+                    name.clone(),
+                    server["origin"].as_str().expect("origin").to_string(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn harness_entries_fill_only_the_places_plan_servers_leave_under_the_cap() {
+        let plan_names = numbered_keys("server", 30);
+        let harness_names = numbered_keys("aa", 5);
+
+        let (what_ran, _) = ingest(&mcp_plan(&plan_names, false), mcp_report(&harness_names, 0));
+
+        let kept = origins(&what_ran);
+        let plan_kept: Vec<_> = kept
+            .iter()
+            .filter(|(_, origin)| origin == "plan")
+            .map(|(name, _)| name.clone())
+            .collect();
+        let harness_kept: Vec<_> = kept
+            .iter()
+            .filter(|(_, origin)| origin == "harness")
+            .map(|(name, _)| name.clone())
+            .collect();
+        assert_eq!(plan_kept, plan_names);
+        assert_eq!(harness_kept, harness_names[..2]);
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "entry_cap", "dropped": 3})
+        );
+        // Every kept plan server keeps the endpoint core configured.
+        for name in &plan_names {
+            assert_eq!(
+                what_ran["mcp"]["servers"][name]["endpoint"]["source"],
+                "configured"
+            );
+        }
+    }
+
+    #[test]
+    fn the_byte_budget_drops_harness_entries_before_plan_servers() {
+        // The plan servers that fit beside 16 heavy model roles.
+        let collected = collect(&plan_near_the_byte_budget(&numbered_keys("server", 32)));
+        let plan_names = map_keys(&collected["mcp"]["servers"]);
+        assert!(!plan_names.is_empty());
+        // Harness names sort before every plan server. Each entry is about
+        // 10 KiB, so the five cannot all fit, and the report stays under its
+        // own 64 KiB limit.
+        let harness_names = numbered_keys("aa", 5);
+
+        let (what_ran, _) = ingest(&mcp_plan(&plan_names, true), mcp_report(&harness_names, 40));
+
+        assert!(json_len(&what_ran) <= 128 * 1024, "{}", json_len(&what_ran));
+        let kept = origins(&what_ran);
+        let plan_kept: Vec<_> = kept
+            .iter()
+            .filter(|(_, origin)| origin == "plan")
+            .map(|(name, _)| name.clone())
+            .collect();
+        let harness_kept = kept.len() - plan_kept.len();
+        assert_eq!(plan_kept, plan_names);
+        assert!(harness_kept < harness_names.len(), "{kept:?}");
+        assert!(
+            json_len(&mcp_report(&harness_names, 40)[MCP_REPORT_KEY]) < 64 * 1024,
+            "the report must be ingested, not marked too_large"
+        );
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            json!({"reason": "byte_budget", "dropped": harness_names.len() - harness_kept})
+        );
+        assert_eq!(map_keys(&what_ran["models"]).len(), 16);
     }
 }

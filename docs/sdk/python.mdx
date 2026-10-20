@@ -1081,9 +1081,12 @@ order, and a `tool_names_truncated` marker in the `runtime` block counts the
 names the adapter or NeMo Fabric dropped.
 
 `models` keeps at most 16 roles and `mcp.servers` at most 32 servers, taken in
-sorted key order. An entry whose key is longer than 128 characters is dropped.
-While the whole `what_ran` is larger than 128 KiB of compact JSON, MCP servers
-are dropped from the end of the sorted order, and then model roles. A map that
+sorted key order. Servers the plan configures take their places first, and
+servers only the harness reports fill the places left. An entry whose key is
+longer than 128 characters is dropped. While the whole `what_ran` is larger
+than 128 KiB of compact JSON, MCP servers are dropped from the end of the
+sorted order, harness-reported servers before plan servers, and then model
+roles. A map that
 lost entries has a marker next to it, `models_truncated` or
 `mcp.servers_truncated`, with the `reason` (`key_too_long`, `entry_cap`, or
 `byte_budget`) and the `dropped` count. Each map has one marker: when more than
