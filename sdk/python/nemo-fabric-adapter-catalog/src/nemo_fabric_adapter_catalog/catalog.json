@@ -1348,6 +1348,18 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.versions.v1": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1421,7 +1433,7 @@
         "name": "nemo-fabric-adapters-nooa",
         "version": "0.6.0"
       },
-      "sha256": "80f632e09ea3279e7283a58790e53516d693162bc7742f2e932b8e7453373042",
+      "sha256": "c7905de4f20a376eac20061c9f5c49f6be6d8eb40c83497c919c3a53173e30fd",
       "source": "adapters/python/nooa/nooa.fabric-adapter.json"
     },
     "nvidia.fabric.nooa.bench-agent": {
@@ -1443,6 +1455,18 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.versions.v1": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1513,7 +1537,7 @@
         "name": "nemo-fabric-adapters-nooa",
         "version": "0.6.0"
       },
-      "sha256": "87e09e21e71d7b7bb081c357f1cbc2278a9b467ba76cc4db77d230713d126b20",
+      "sha256": "a70774d0926488f0a7f03bbf1a1f3d2962a939c7433795cc8cd618839b8c938e",
       "source": "adapters/python/nooa/nooa-bench.fabric-adapter.json"
     },
     "nvidia.fabric.openclaw": {
@@ -1874,6 +1898,18 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.versions.v1": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1945,7 +1981,7 @@
         "name": "nemo-fabric-adapters-openhands",
         "version": "0.6.0"
       },
-      "sha256": "062ef09ba5e82dfdf0b4374632a8b39b7ff975160b0c6f62e68d2f4ac6f0b59e",
+      "sha256": "9f621c3c5308bce2104b7d17ff71e3c401b1823429aa9f70bac1053eaa420f21",
       "source": "adapters/python/openhands/openhands.fabric-adapter.json"
     },
     "nvidia.fabric.pi": {
@@ -2303,6 +2339,18 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.versions.v1": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -2414,7 +2462,7 @@
         "name": "nemo-fabric-adapters-remote-agent",
         "version": "0.6.0"
       },
-      "sha256": "39870c056b7aa15b8706b6cabf9190029f6c9165c5c9ce4b427f5f18bd7ba70a",
+      "sha256": "e5da937cefdfddf59720e9e04fbc22d3abd0f7418eaab99ffaeee8c0c3bc681b",
       "source": "adapters/python/remote-agent/remote-agent.fabric-adapter.json"
     }
   },

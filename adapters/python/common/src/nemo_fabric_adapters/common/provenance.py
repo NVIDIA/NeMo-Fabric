@@ -18,6 +18,7 @@ import importlib.metadata
 import sys
 import threading
 from collections.abc import Callable
+from collections.abc import Iterable
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -157,6 +158,23 @@ def versions_report(
             for role in roles[:_MAX_MODEL_ROLES]
         },
     }
+
+
+def package_version_report(
+    distribution: str, model_roles: Iterable[str]
+) -> dict[str, Any]:
+    """The report of an adapter that has a source only for its package version.
+
+    The harness name and version and each role's served model read
+    ``unsupported`` with reason ``no_source``.
+    """
+
+    return versions_report(
+        package_version=package_version_fact(distribution),
+        harness_name=no_source_fact(),
+        harness_version=no_source_fact(),
+        served_models={role: no_source_fact() for role in model_roles},
+    )
 
 
 class BlockingProbe:

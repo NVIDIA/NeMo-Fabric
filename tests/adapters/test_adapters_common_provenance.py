@@ -166,3 +166,16 @@ async def test_blocking_probe_returns_the_result_or_the_raised_error():
     assert await probe.call(lambda: "1.2.3") == "1.2.3"
     with pytest.raises(RuntimeError, match="no version"):
         await probe.call(fail)
+
+
+def test_package_version_report_marks_harness_and_served_models_no_source():
+    report = provenance.package_version_report(
+        "nemo-fabric-adapters-common", ["judge", "default"]
+    )
+
+    no_source = missing("unsupported", "no_source", "adapter_report")
+    assert report == {
+        "adapter": {"package_version": known("0.6.0")},
+        "harness": {"name": no_source, "version": no_source},
+        "models": {"default": {"served": no_source}, "judge": {"served": no_source}},
+    }
