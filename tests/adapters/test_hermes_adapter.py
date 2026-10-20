@@ -1579,6 +1579,30 @@ def test_invocation_usage_with_lower_or_missing_counters_leaves_them_unknown():
     assert no_baseline is None
 
 
+def test_invocation_usage_keeps_cached_input_when_input_is_unknown():
+    before = dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
+    after = {**before, "input_tokens": 10, "cache_read_tokens": 2, "output_tokens": 3}
+    without_cache_writes = {
+        key: value for key, value in after.items() if key != "cache_write_tokens"
+    }
+
+    unreported = adapter._invocation_usage(
+        after, before, unreported=frozenset({"input"})
+    )
+    no_write_counter = adapter._invocation_usage(without_cache_writes, before)
+    cache_only = adapter._invocation_usage(
+        after, before, unreported=frozenset({"input", "output"})
+    )
+
+    for usage in (unreported, no_write_counter):
+        assert usage is not None
+        assert (usage.input_tokens, usage.total_tokens) == (None, None)
+        assert (usage.cached_input_tokens, usage.output_tokens) == (2, 3)
+    assert cache_only is not None
+    assert cache_only.cached_input_tokens == 2
+    assert (cache_only.input_tokens, cache_only.output_tokens) == (None, None)
+
+
 def test_invocation_usage_above_the_contract_bound_is_unknown():
     zero = dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
     near_max = {**zero, "input_tokens": (1 << 64) - 2, "output_tokens": 3}

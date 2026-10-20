@@ -1004,8 +1004,8 @@ def _invocation_usage(
     usage never holds a whole-session total. ``unreported`` names the counts
     ("input", "cached", "output") that a provider response of this invocation
     left out and Hermes counted as 0. Those counts are unknown, and so is the
-    total when input or output is. A count above what AgentUsage holds is
-    unknown too.
+    total when input or output is; cached input stays known without input. A
+    count above what AgentUsage holds is unknown too.
     """
     skipped = skipped or {}
     change = {
@@ -1025,9 +1025,14 @@ def _invocation_usage(
         )
         if _is_count(input_tokens):
             fields["input_tokens"] = input_tokens
-            if "cached" not in unreported:
-                fields["cached_input_tokens"] = change["cache_read_tokens"]
             fields["input_tokens_include_cache"] = True
+    # Cache reads are their own count, known even when the input is not.
+    if (
+        "cached" not in unreported
+        and "cache_read_tokens" in change
+        and _is_count(change["cache_read_tokens"])
+    ):
+        fields["cached_input_tokens"] = change["cache_read_tokens"]
     if (
         "output" not in unreported
         and "output_tokens" in change
