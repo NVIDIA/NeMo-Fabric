@@ -1456,7 +1456,7 @@ function unsupportedSessionAction(name: string): never {
   throw new LifecycleError("pi_unsupported_session_operation", `Pi session operation ${name} is not supported`);
 }
 
-class PiSdkSessionHandle implements PiSessionHandle {
+export class PiSdkSessionHandle implements PiSessionHandle {
   readonly relay?: PiRelayRuntime;
   private readonly session: AgentSession;
   private readonly state: { shutdownRequested: boolean };
@@ -1531,6 +1531,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
       this.compaction = expected === undefined ? undefined : { expected, calls: [] };
     };
     this.compactionListeners.add(onCompactionPrepared);
+    let warmedUp = false;
     try {
       await this.session.prompt(text, {
         expandPromptTemplates: true,
@@ -1543,12 +1544,14 @@ class PiSdkSessionHandle implements PiSessionHandle {
       this.compactionListeners.delete(onCompactionPrepared);
       this.compaction = undefined;
       unsubscribe();
+      // A warm-up's tokens reach no usage entry the adapter can check, and a
+      // failed or discarded one reaches none at all, so a prompt with a
+      // warm-up attempt since the previous prompt has unknown tokens. Every
+      // prompt accounts for its attempts, including one that throws, so a
+      // later prompt does not inherit them.
+      warmedUp = this.warmUpAttempts !== this.warmUpAttemptsCounted;
+      this.warmUpAttemptsCounted = this.warmUpAttempts;
     }
-    // A warm-up's tokens reach no usage entry the adapter can check, and a
-    // failed or discarded one reaches none at all, so a prompt with a warm-up
-    // attempt since the previous prompt has unknown tokens.
-    const warmedUp = this.warmUpAttempts !== this.warmUpAttemptsCounted;
-    this.warmUpAttemptsCounted = this.warmUpAttempts;
     return {
       accepted,
       turnStarted,

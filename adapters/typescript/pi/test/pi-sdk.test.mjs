@@ -17,6 +17,7 @@ import {
   endedCallCounts,
   modelAwareCompactionReserveTokens,
   PiSdkSessionFactory,
+  PiSdkSessionHandle,
   recordReportedCounts,
   reportedCountsFrom,
   resolveCustomTools,
@@ -2062,6 +2063,76 @@ async function warmedCall({ warmUp, settleFirst = false }) {
     await close(server);
   }
 }
+
+/**
+ * A Pi session stand-in whose prompts each run one model call through the
+ * agent's stream function and reports 10 input and 2 output tokens. A
+ * "warm" entry also replays the call's request body the way Pi's cache
+ * warmer does, "warm-and-throw" then fails the prompt, and "answer" does
+ * neither.
+ */
+function scriptedPiSession(script) {
+  const listeners = new Set();
+  const model = { id: "m", api: "openai-completions", provider: "test" };
+  let step;
+  const agent = {
+    streamFunction: async (_model, _context, options) => {
+      await options.onPayload?.({}, model);
+      if (step === "warm" || step === "warm-and-throw") {
+        await options.onPayload?.({}, model);
+      }
+      await options.onProviderStreamEvent?.(
+        { choices: [], usage: { prompt_tokens: 10, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 0 } } },
+        model,
+      );
+      const message = {
+        role: "assistant",
+        content: [{ type: "text", text: "done" }],
+        stopReason: "stop",
+        usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 },
+      };
+      return { result: async () => message };
+    },
+  };
+  return {
+    agent,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    async prompt(_text, options) {
+      options.preflightResult?.();
+      step = script.shift();
+      const response = await agent.streamFunction(model, { messages: [] }, {});
+      const message = await response.result();
+      await new Promise((resolve) => setImmediate(resolve));
+      if (step === "warm-and-throw") {
+        throw new Error("prompt failed");
+      }
+      for (const listener of listeners) {
+        listener({ type: "turn_start" });
+        listener({ type: "message_end", message });
+      }
+    },
+  };
+}
+
+test("a prompt that throws after a warm-up attempt does not leave the next prompt unknown", async () => {
+  const session = scriptedPiSession(["warm-and-throw", "answer", "answer", "warm", "answer"]);
+  const handle = new PiSdkSessionHandle(session, { shutdownRequested: false }, tmpdir(), new Set());
+
+  await assert.rejects(handle.prompt("one"), /prompt failed/);
+  const second = await handle.prompt("two");
+  const third = await handle.prompt("three");
+  const warmed = await handle.prompt("four");
+  const fifth = await handle.prompt("five");
+
+  assert.deepEqual(second.usage, { input: 10, cacheRead: 0, output: 2 });
+  assert.deepEqual(third.usage, { input: 10, cacheRead: 0, output: 2 });
+  // The prompt that owns a warm-up attempt stays unknown.
+  assert.equal(warmed.usage, undefined);
+  assert.deepEqual(fifth.usage, { input: 10, cacheRead: 0, output: 2 });
+});
 
 for (const warmUp of ["fail", "hold", "answer"]) {
   test(`notes a cache warm-up attempt that Pi's warmer ${warmUp === "hold" ? "aborts" : warmUp === "fail" ? "fails" : "completes"}`, async () => {
