@@ -252,6 +252,13 @@ and the provider's total is used when present. Other providers and streamed
 responses use LangChain's `usage_metadata`, which some integrations fill with 0
 for an omitted count.
 
+Cached input tokens come from `prompt_tokens_details.cached_tokens` in
+OpenAI-shaped raw usage and from `usage_metadata.input_token_details.cache_read`
+otherwise. They follow the same rule: one call without a cache count leaves the
+invocation's cached count unknown, and a reported 0 stays 0. When input tokens
+are known, the adapter reports that they include cached tokens, because
+LangChain's `UsageMetadata.input_tokens` counts every input token type.
+
 ## Runtime Lifecycle
 
 NeMo Fabric starts one local adapter host for every runtime. During runtime start,

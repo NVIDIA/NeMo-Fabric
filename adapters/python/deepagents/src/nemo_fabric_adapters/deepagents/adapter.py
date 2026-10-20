@@ -770,6 +770,7 @@ class DeepAgentsRuntime:
             "input_tokens": usage.get("prompt_tokens"),
             "output_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),
+            "cached_input_tokens": usage.get("cached_tokens"),
         }
         tokens = {
             name: value
@@ -778,6 +779,11 @@ class DeepAgentsRuntime:
             and not isinstance(value, bool)
             and 0 <= value <= (1 << 64) - 1
         }
+        if "input_tokens" in tokens:
+            # LangChain's UsageMetadata defines input_tokens as the sum of every
+            # input token type, cache reads included; OpenAI's raw prompt_tokens
+            # includes cached tokens too.
+            tokens["input_tokens_include_cache"] = True
         cost = usage.get("cost")
         if (
             not isinstance(cost, (int, float))
@@ -1300,6 +1306,9 @@ def _aggregate_usage(calls: list[dict[str, Any]]) -> dict[str, Any] | None:
         values = [_reported_tokens(call, source) for call in calls]
         if all(value is not None for value in values):
             totals[target] = sum(values)
+    cached = [_reported_cached_tokens(call) for call in calls]
+    if all(value is not None for value in cached):
+        totals["cached_tokens"] = sum(cached)
     costs = [_reported_cost(call) for call in calls]
     if all(cost is not None for cost in costs):
         totals["cost"] = math.fsum(costs)
@@ -1340,6 +1349,27 @@ def _reported_tokens(call: dict[str, Any], name: str) -> int | None:
         if all(_is_token_count(part) for part in parts):
             return value
     return None
+
+
+def _reported_cached_tokens(call: dict[str, Any]) -> int | None:
+    """Return one call's cache-read input tokens, or ``None`` when not reported.
+
+    OpenAI-shaped raw usage reports them as ``prompt_tokens_details.cached_tokens``;
+    ``ChatOpenAI`` renames that key for priority and flex service tiers, so the raw
+    count is read when present. Other responses use LangChain's
+    ``usage_metadata.input_token_details.cache_read``.
+    """
+
+    metadata = call.get("response_metadata")
+    raw = metadata.get("token_usage") if isinstance(metadata, dict) else None
+    if isinstance(raw, dict):
+        details, key = raw.get("prompt_tokens_details"), "cached_tokens"
+    else:
+        usage = call.get("usage")
+        details = usage.get("input_token_details") if isinstance(usage, dict) else None
+        key = "cache_read"
+    value = details.get(key) if isinstance(details, dict) else None
+    return value if _is_token_count(value) else None
 
 
 def _is_token_count(value: Any) -> bool:

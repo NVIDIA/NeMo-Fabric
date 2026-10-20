@@ -2604,11 +2604,17 @@ async def test_summarization_model_call_usage_is_counted(
     assert "tools" not in summary_request
     assert "tools" in agent_request
     assert first.usage == AgentUsage(
-        input_tokens=1500, output_tokens=10, total_tokens=1510
+        input_tokens=1500,
+        output_tokens=10,
+        total_tokens=1510,
+        input_tokens_include_cache=True,
     )
     assert second.status is AgentRunStatus.SUCCEEDED
     assert second.usage == AgentUsage(
-        input_tokens=1700, output_tokens=65, total_tokens=1765
+        input_tokens=1700,
+        output_tokens=65,
+        total_tokens=1765,
+        input_tokens_include_cache=True,
     )
 
 
@@ -2658,7 +2664,10 @@ async def test_subagent_model_calls_are_counted(
     }
     assert len(subgraphs) == 2
     assert result.usage == AgentUsage(
-        input_tokens=1111, output_tokens=1111, total_tokens=2222
+        input_tokens=1111,
+        output_tokens=1111,
+        total_tokens=2222,
+        input_tokens_include_cache=True,
     )
 
 
@@ -2680,7 +2689,10 @@ async def test_recursion_limit_failure_keeps_usage_of_completed_model_calls(
     assert result.status is AgentRunStatus.FAILED
     assert result.error.code == "deepagents_recursion_limit_reached"
     assert result.usage == AgentUsage(
-        input_tokens=10 * calls, output_tokens=calls, total_tokens=11 * calls
+        input_tokens=10 * calls,
+        output_tokens=calls,
+        total_tokens=11 * calls,
+        input_tokens_include_cache=True,
     )
 
 
@@ -2701,7 +2713,12 @@ def provider_failure(kind: str) -> Any:
         # usage stays known.
         pytest.param(
             "400",
-            AgentUsage(input_tokens=120, output_tokens=8, total_tokens=128),
+            AgentUsage(
+                input_tokens=120,
+                output_tokens=8,
+                total_tokens=128,
+                input_tokens_include_cache=True,
+            ),
             id="400-rejection",
         ),
         # The provider may have done work without reporting usage.
@@ -2785,12 +2802,17 @@ async def test_recorder_keeps_a_cancelled_call_unreported():
     [
         pytest.param(
             [{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}],
-            AgentUsage(input_tokens=0, output_tokens=0, total_tokens=0),
+            AgentUsage(
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+                input_tokens_include_cache=True,
+            ),
             id="explicit-zero",
         ),
         pytest.param(
             [{"prompt_tokens": 100}],
-            AgentUsage(input_tokens=100),
+            AgentUsage(input_tokens=100, input_tokens_include_cache=True),
             id="input-only",
         ),
         pytest.param(
@@ -2800,7 +2822,12 @@ async def test_recorder_keeps_a_cancelled_call_unreported():
         ),
         pytest.param(
             [{"prompt_tokens": 100, "completion_tokens": 5}],
-            AgentUsage(input_tokens=100, output_tokens=5, total_tokens=105),
+            AgentUsage(
+                input_tokens=100,
+                output_tokens=5,
+                total_tokens=105,
+                input_tokens_include_cache=True,
+            ),
             id="total-omitted",
         ),
         pytest.param(
@@ -2810,7 +2837,12 @@ async def test_recorder_keeps_a_cancelled_call_unreported():
         ),
         pytest.param(
             [{"prompt_tokens": 7, "completion_tokens": 5, "total_tokens": 0}],
-            AgentUsage(input_tokens=7, output_tokens=5, total_tokens=0),
+            AgentUsage(
+                input_tokens=7,
+                output_tokens=5,
+                total_tokens=0,
+                input_tokens_include_cache=True,
+            ),
             id="provider-total-zero-kept",
         ),
         pytest.param(
@@ -2837,6 +2869,69 @@ async def test_partial_usage_reports_keep_missing_counts_unknown(
 
     assert result.status is AgentRunStatus.SUCCEEDED
     assert result.usage == expected
+
+
+@pytest.mark.parametrize(
+    ("cached", "expected"),
+    [
+        pytest.param([40, 60], 100, id="every-call-reports-cache"),
+        pytest.param([40, None], None, id="one-call-omits-cache"),
+        pytest.param([0, 0], 0, id="explicit-zero"),
+    ],
+)
+async def test_cached_input_tokens_are_known_only_when_every_call_reported_them(
+    tmp_path, make_payload, openai_endpoint, cached, expected
+):
+    def usage(cached_tokens: int | None) -> dict[str, Any]:
+        reported: dict[str, Any] = {
+            "prompt_tokens": 100,
+            "completion_tokens": 5,
+            "total_tokens": 105,
+        }
+        if cached_tokens is not None:
+            reported["prompt_tokens_details"] = {"cached_tokens": cached_tokens}
+        return reported
+
+    openai_endpoint["replies"] += [
+        chat_completion(usage(cached[0]), tool_calls=[LS_TOOL_CALL]),
+        chat_completion(usage(cached[1])),
+    ]
+
+    (result,) = await run_invocations(make_payload(tmp_path), 1)
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert result.usage == AgentUsage(
+        input_tokens=200,
+        cached_input_tokens=expected,
+        input_tokens_include_cache=True,
+        output_tokens=10,
+        total_tokens=210,
+    )
+
+
+@pytest.mark.parametrize(
+    ("cache_read", "expected"),
+    [
+        pytest.param(30, 30, id="reported"),
+        pytest.param(0, 0, id="explicit-zero"),
+        pytest.param(None, None, id="omitted"),
+    ],
+)
+def test_anthropic_cache_reads_are_counted_as_included_input(cache_read, expected):
+    # langchain-anthropic adds cache reads and writes to input_tokens and keeps an
+    # omitted cache count out of input_token_details.
+    from anthropic.types import Usage
+    from langchain_anthropic.chat_models import _create_usage_metadata
+
+    usage_metadata = _create_usage_metadata(
+        Usage(input_tokens=10, output_tokens=5, cache_read_input_tokens=cache_read)
+    )
+    totals = adapter._aggregate_usage(
+        [adapter._message_to_dict(AIMessage("done", usage_metadata=usage_metadata))]
+    )
+
+    assert totals.get("cached_tokens") == expected
+    assert totals["prompt_tokens"] == 10 + (cache_read or 0)
 
 
 async def test_bad_mcp_transport_fails_runtime_start(tmp_path, make_payload):
