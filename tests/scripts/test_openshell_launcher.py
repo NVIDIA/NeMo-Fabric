@@ -34,7 +34,8 @@ args = sys.argv[1:]
 root = pathlib.Path(os.environ["MOCK_ROOT"])
 with (root / "operations.jsonl").open("a") as stream:
     stream.write(json.dumps({"command": name, "args": args,
-                             "provider": os.environ.get("NEMO_FABRIC_OPEN_SHELL_PROVIDER")}) + "\n")
+                             "provider": os.environ.get("NEMO_FABRIC_OPEN_SHELL_PROVIDER"),
+                             "openai_key_present": "OPENAI_API_KEY" in os.environ}) + "\n")
 if name == "uname":
     print(os.environ.get("MOCK_OS", "Linux") if args == ["-s"] else "x86_64")
 elif name == "cargo":
@@ -62,6 +63,10 @@ elif name == "openshell-gateway":
             connection, _ = server.accept()
             connection.close()
 elif name == "openshell":
+    if "sandbox" not in args:
+        if not any(token in args for token in ("settings", "provider")):
+            raise RuntimeError("unexpected OpenShell setup command")
+        sys.exit(0)
     state = root / "sandbox-state.json"
     operation = args[args.index("sandbox") + 1]
     sandbox_name = args[args.index(operation) + 1] if operation != "create" else args[args.index("--name") + 1]
@@ -283,6 +288,46 @@ run_workload_consumer() {
         if operation["command"] == "openshell" and "delete" in operation["args"]
     ]
     assert bool(deleted_calls) is deleted
+
+
+def test_code_review_workload_configures_hosted_provider_before_sandbox(launcher):
+    _, root, _ = launcher
+    completed = _run(
+        launcher,
+        ROOT / "examples/code_review_agent/demo-openshell-openclaw-sdk.sh",
+        {
+            "OPENSHELL_EXAMPLE_MODE": "caller_owned",
+            "NVIDIA_API_KEY": "test-key-must-not-appear-in-command-arguments",
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    operations = _operations(root)
+    provider_calls = [
+        operation
+        for operation in operations
+        if operation["command"] == "openshell"
+        and "provider" in operation["args"]
+        and operation["args"][operation["args"].index("provider") + 1]
+        in ("profile", "create")
+    ]
+    profile, provider = provider_calls
+    profile_args = profile["args"]
+    assert profile_args[profile_args.index("provider") + 1 :][:2] == ["profile", "import"]
+    assert Path(profile_args[profile_args.index("--file") + 1]).name == "openshell-provider.yaml"
+    provider_args = provider["args"]
+    assert provider_args[provider_args.index("provider") + 1] == "create"
+    assert provider_args[provider_args.index("--name") + 1] == "hosted"
+    assert provider_args[provider_args.index("--type") + 1] == "nvidia-code-review"
+    assert provider_args[provider_args.index("--credential") + 1] == "OPENAI_API_KEY"
+    assert provider["openai_key_present"]
+    create = next(
+        operation
+        for operation in operations
+        if operation["command"] == "openshell" and "sandbox" in operation["args"]
+    )
+    assert "hosted" in create["args"]
+    assert "test-key-must-not-appear-in-command-arguments" not in json.dumps(operations)
 
 
 @pytest.mark.parametrize(
