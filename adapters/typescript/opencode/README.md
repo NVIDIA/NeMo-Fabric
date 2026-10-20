@@ -96,3 +96,43 @@ When OpenCode reports a diff for an invocation and the runtime has an artifact
 root, the adapter writes it to a runtime- and invocation-scoped path beneath
 `opencode/` and returns it as a `patch` artifact. Without an artifact root, it
 returns no patch artifact.
+
+### Token Usage
+
+Each result's `usage` is the growth of OpenCode's session token counters
+during the invocation. A subagent runs in a child session with its own
+counters, so the adapter adds the growth of every subagent session below the
+Fabric session. The counters include every model call these sessions record,
+including context compaction. The adapter gives the session a fixed title, so
+OpenCode makes no title-generation call.
+
+`input_tokens` includes cache reads and cache writes, and
+`input_tokens_include_cache` is `true`. `cached_input_tokens` holds the cache
+reads. `output_tokens` includes reasoning tokens, and `total_tokens` is their
+sum. OpenCode computes its cost figures from the model catalog's rates, so the
+adapter does not report them as `cost_usd`.
+
+The adapter checks new assistant and compaction records that the invocation
+added to each session's full message history, including records that a
+compaction removed from the session context. OpenCode stores a count the provider left
+out as 0. A real model call always has input, so a call with no input tokens
+leaves `input_tokens` unknown, and a call with no output or reasoning tokens
+leaves `output_tokens` unknown. Either case also leaves out `total_tokens`, and
+so does a session counter that is missing or goes down. A `total_tokens` past
+JavaScript's safe integer range is left out.
+
+Counter growth from earlier background work is excluded. Usage remains unknown
+when a delayed completion or resumed child prevents reliable attribution. The
+result has no `usage` in these cases:
+
+- A model call or compaction failed and OpenCode recorded no usage for it.
+- A subagent session that the invocation started was still running when it
+  ended, or the Fabric session was already running when it started.
+- The invocation continued a subagent that was still running from earlier
+  work, or made a model call after the completion notice of a subagent that
+  existed before the invocation.
+- The session counters or message history cannot be read.
+
+OpenCode replaces individual missing counters with zero before the adapter
+sees them. Those omissions and internal retries without recorded usage can
+still undercount totals.

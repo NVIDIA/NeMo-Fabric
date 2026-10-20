@@ -168,8 +168,39 @@ provider-specific model settings, and `max_tokens` are not supported.
 The adapter runs in a persistent Bun process. `start` creates one embedded
 OpenCode host and one OpenCode session for the NeMo Fabric runtime. Ordered
 plain-text invocations reuse that session and its conversation history. A
-successful result has `output.response`. Usage fields are present when OpenCode
-reports them. `stop` removes the OpenCode session and closes the embedded host.
+successful result has `output.response`. `stop` removes the OpenCode session
+and closes the embedded host.
+
+Each result's `usage` is the growth of OpenCode's session token counters
+during the invocation, including context compaction calls. The adapter adds
+the growth of every subagent session below the Fabric session, because a
+subagent runs in a child session with its own counters. `input_tokens`
+includes cache reads and cache writes, with `input_tokens_include_cache` set to
+`true` and the cache reads in `cached_input_tokens`. `output_tokens` includes
+reasoning tokens, and `total_tokens` is their sum. The adapter does not report
+OpenCode's catalog-rate cost as `cost_usd`.
+
+The adapter checks new assistant and compaction records that the invocation
+added to each session's full message history. OpenCode stores a count the provider
+left out as 0. A real model call always has input, so a call with no input
+tokens leaves `input_tokens` unknown, and a call with no output or reasoning
+tokens leaves `output_tokens` unknown. Either case also leaves out
+`total_tokens`, and so does a session counter that is missing or goes down. A
+`total_tokens` past JavaScript's safe integer range is left out.
+
+Counter growth from earlier background work is excluded. Usage remains unknown
+when a delayed completion or resumed child prevents reliable attribution. A
+result has no `usage` when a model call or compaction failed without recorded
+usage, when a subagent session that the invocation started was still running
+when it ended, when the Fabric session was already running when it started,
+when the invocation continued a subagent that was still running from earlier
+work, when it made a model call after the completion notice of a subagent that
+existed before the invocation, or when the counters or message history cannot
+be read.
+
+OpenCode replaces individual missing counters with zero before the adapter sees
+them. Those omissions and internal retries without recorded usage can still
+undercount totals.
 
 ```mermaid
 flowchart LR

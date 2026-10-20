@@ -54,6 +54,9 @@ const NONINTERACTIVE_SESSION_PERMISSIONS = [
   { action: "read", resource: "*.env.example", effect: "allow" },
   { action: "question", resource: "*", effect: "deny" },
 ] as const;
+// OpenCode starts a background model call to name an untitled session, and that
+// call can finish after the invocation ends. A fixed title skips it.
+const SESSION_TITLE = "NeMo Fabric";
 // OpenCode allows 30 seconds each for MCP transport startup and initial tool
 // catalog discovery. Keep the Fabric readiness deadline aligned with both.
 const MCP_CONNECTION_TIMEOUT_MS = 65_000;
@@ -544,61 +547,318 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function usage(message: Record<string, unknown>): AgentUsage | undefined {
-  const tokens = isRecord(message.tokens) ? message.tokens : undefined;
-  const input = tokens?.input;
-  const output = tokens?.output;
-  const cost = message.cost;
-  if (typeof input !== "number" && typeof output !== "number" && typeof cost !== "number") {
-    return undefined;
-  }
-  const result: AgentUsage = {};
-  if (typeof input === "number") {
-    result.input_tokens = input;
-  }
-  if (typeof output === "number") {
-    result.output_tokens = output;
-  }
-  if (typeof input === "number" && typeof output === "number") {
-    result.total_tokens = input + output;
-  }
-  if (typeof cost === "number") {
-    result.cost_usd = cost;
-  }
-  return result;
+/** OpenCode's five token counts, on a session or on one model-call record. A count is absent when it was not returned. */
+interface TokenCounters {
+  input?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  output?: number;
+  reasoning?: number;
 }
 
-function totalUsage(messages: Record<string, unknown>[]): AgentUsage | undefined {
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let costUsd = 0;
-  let hasInputTokens = false;
-  let hasOutputTokens = false;
-  let hasCostUsd = false;
-  for (const message of messages) {
-    const current = usage(message);
-    if (current?.input_tokens !== undefined && current.input_tokens !== null) {
-      inputTokens += current.input_tokens;
-      hasInputTokens = true;
-    }
-    if (current?.output_tokens !== undefined && current.output_tokens !== null) {
-      outputTokens += current.output_tokens;
-      hasOutputTokens = true;
-    }
-    if (current?.cost_usd !== undefined && current.cost_usd !== null) {
-      costUsd += current.cost_usd;
-      hasCostUsd = true;
-    }
-  }
-  if (!hasInputTokens && !hasOutputTokens && !hasCostUsd) {
+function tokenCounter(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+// OpenCode 2.0.23 always returns all five session counters. Reading each one
+// defensively keeps a malformed session from turning into a measured count.
+function tokenCounters(holder: unknown): TokenCounters {
+  const tokens = isRecord(holder) && isRecord(holder.tokens) ? holder.tokens : {};
+  const cache = isRecord(tokens.cache) ? tokens.cache : {};
+  return {
+    input: tokenCounter(tokens.input),
+    cacheRead: tokenCounter(cache.read),
+    cacheWrite: tokenCounter(cache.write),
+    output: tokenCounter(tokens.output),
+    reasoning: tokenCounter(tokens.reasoning),
+  };
+}
+
+/** The growth of one cumulative counter, unknown when either side is missing or the counter went down. */
+function counterDelta(before: number | undefined, after: number | undefined): number | undefined {
+  return before === undefined || after === undefined || after < before ? undefined : after - before;
+}
+
+/** The sum, unknown when a value is unknown or the sum is past the safe integer range. */
+function sumDefined(values: (number | undefined)[]): number | undefined {
+  if (!values.every((value) => value !== undefined)) {
     return undefined;
   }
+  const sum = values.reduce((total: number, value) => total + value, 0);
+  return Number.isSafeInteger(sum) ? sum : undefined;
+}
+
+/** Which sides of the counter growth every new model call measured. */
+interface CallCoverage {
+  input: boolean;
+  output: boolean;
+}
+
+function isCallRecord(message: unknown): message is Record<string, unknown> {
+  return isRecord(message) && (message.type === "assistant" || message.type === "compaction");
+}
+
+/**
+ * Which sides the session counters measure for the model calls in `messages`,
+ * or undefined when a call has no complete token report. OpenCode adds nothing
+ * for a failed call or compaction without usage, and it stores a count the
+ * provider left out as 0. A real call has input, so a call with no input
+ * leaves input unknown; one with no output, which is rare, leaves output
+ * unknown.
+ */
+function callCoverage(messages: unknown[]): CallCoverage | undefined {
+  const coverage = { input: true, output: true };
+  for (const record of messages.filter(isCallRecord)) {
+    const tokens = tokenCounters(record);
+    const input = sumDefined([tokens.input, tokens.cacheRead, tokens.cacheWrite]);
+    const output = sumDefined([tokens.output, tokens.reasoning]);
+    if (input === undefined || output === undefined) {
+      return undefined;
+    }
+    coverage.input &&= input > 0;
+    coverage.output &&= output > 0;
+  }
+  return coverage;
+}
+
+/** The session IDs that subagent calls in `messages` started or continued. */
+function subagentSessionIDs(messages: unknown[]): Set<string> {
+  const sessionIDs = new Set<string>();
+  for (const message of messages) {
+    if (!isRecord(message) || !Array.isArray(message.content)) {
+      continue;
+    }
+    for (const part of message.content) {
+      if (!isRecord(part) || part.type !== "tool" || part.name !== "subagent" || !isRecord(part.state)) {
+        continue;
+      }
+      for (const holder of [part.state.input, part.state.metadata]) {
+        if (isRecord(holder) && typeof holder.sessionID === "string") {
+          sessionIDs.add(holder.sessionID);
+        }
+      }
+    }
+  }
+  return sessionIDs;
+}
+
+/**
+ * Whether a model call in one session's new `messages` follows a completion
+ * notice for one of `childSessionIDs`. The call may answer the notice.
+ */
+function answersCompletionNotice(messages: unknown[], childSessionIDs: ReadonlySet<string>): boolean {
+  // Newest first, so a notice at index i precedes every call at a lower index.
+  return messages.some(
+    (message, index) =>
+      isRecord(message) &&
+      message.type === "synthetic" &&
+      isRecord(message.metadata) &&
+      typeof message.metadata.childID === "string" &&
+      childSessionIDs.has(message.metadata.childID) &&
+      messages.slice(0, index).some(isCallRecord),
+  );
+}
+
+/** One session's place in the tree, cumulative counters, newest message and run state at a point in time. */
+interface SessionUsageSnapshot {
+  parentID?: string;
+  counters: TokenCounters;
+  newestMessageId?: string;
+  running: boolean;
+}
+
+// A new session starts with every counter at zero.
+const NEW_SESSION: SessionUsageSnapshot = {
+  counters: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0 },
+  running: false,
+};
+// OpenCode accepts at most 200 messages per page.
+const PAGE_SIZE = 100;
+
+/**
+ * The items of an OpenCode cursor-paginated listing. OpenCode returns a next
+ * cursor with every non-empty page, so the walk ends on an empty page, and a
+ * malformed page or a non-empty page without a cursor fails the read.
+ */
+async function* listedItems(fetchPage: (cursor?: string) => Promise<unknown>): AsyncGenerator<unknown> {
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await fetchPage(cursor);
+    const items = isRecord(page) ? page.data : undefined;
+    if (!Array.isArray(items)) {
+      throw new Error("OpenCode returned a malformed page");
+    }
+    if (items.length === 0) {
+      return;
+    }
+    yield* items;
+    const next = isRecord(page) && isRecord(page.cursor) ? page.cursor.next : undefined;
+    if (typeof next !== "string") {
+      throw new Error("OpenCode returned a page without a cursor");
+    }
+    cursor = next;
+  }
+}
+
+/**
+ * Invocation usage from the summed counter growth of the prompted session and
+ * its subagent sessions. OpenCode splits input into uncached input, cache reads
+ * and cache writes, and output into visible output and reasoning; the result
+ * counts the parts together, so input includes the cache and output includes
+ * reasoning. A side that a call did not measure, or whose counter is missing or
+ * went down, is unknown, and so is the total.
+ */
+function usageFromGrowth(growth: TokenCounters[], coverage: CallCoverage): AgentUsage | undefined {
+  const part = (key: keyof TokenCounters) => sumDefined(growth.map((counters) => counters[key]));
+  const cacheRead = part("cacheRead");
+  const input = coverage.input ? sumDefined([part("input"), cacheRead, part("cacheWrite")]) : undefined;
+  const output = coverage.output ? sumDefined([part("output"), part("reasoning")]) : undefined;
+  if (input === undefined && output === undefined) {
+    return undefined;
+  }
+  const total = sumDefined([input, output]);
   return {
-    ...(hasInputTokens ? { input_tokens: inputTokens } : {}),
-    ...(hasOutputTokens ? { output_tokens: outputTokens } : {}),
-    ...(hasInputTokens && hasOutputTokens ? { total_tokens: inputTokens + outputTokens } : {}),
-    ...(hasCostUsd ? { cost_usd: costUsd } : {}),
+    ...(input === undefined
+      ? {}
+      : { input_tokens: input, cached_input_tokens: cacheRead, input_tokens_include_cache: true }),
+    ...(output === undefined ? {} : { output_tokens: output }),
+    ...(total === undefined ? {} : { total_tokens: total }),
   };
+}
+
+function counterGrowth(before: TokenCounters, after: TokenCounters): TokenCounters {
+  return {
+    input: counterDelta(before.input, after.input),
+    cacheRead: counterDelta(before.cacheRead, after.cacheRead),
+    cacheWrite: counterDelta(before.cacheWrite, after.cacheWrite),
+    output: counterDelta(before.output, after.output),
+    reasoning: counterDelta(before.reasoning, after.reasoning),
+  };
+}
+
+/** Usage is observational, so a failed read leaves usage unknown instead of failing the prompt. */
+async function observeUsage<T>(read: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await read();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Reads invocation usage from OpenCode's cumulative session counters, which
+ * include compaction calls that leave no assistant message. A subagent runs in
+ * a child session with its own counters, so the reader adds the growth of every
+ * session below the prompted one. It checks each new model call in the full
+ * message history of every session, which, unlike the session context, does
+ * not start at the latest compaction.
+ */
+class OpenCodeUsageReader {
+  private readonly client: OpenCodeClient;
+  private readonly sessionID: string;
+
+  constructor(client: OpenCodeClient, sessionID: string) {
+    this.client = client;
+    this.sessionID = sessionID;
+  }
+
+  async snapshot(): Promise<Map<string, SessionUsageSnapshot>> {
+    const snapshots = new Map<string, SessionUsageSnapshot>();
+    const active: unknown = await this.client.sessions.active();
+    if (!isRecord(active)) {
+      throw new Error("OpenCode returned malformed active sessions");
+    }
+    for (const { sessionID, parentID } of await this.sessionTree()) {
+      const session = await this.client.sessions.get({ sessionID });
+      const newest = (await this.client.message.list({ sessionID, limit: 1 })).data[0];
+      snapshots.set(sessionID, {
+        ...(parentID === undefined ? {} : { parentID }),
+        counters: tokenCounters(session),
+        running: Object.hasOwn(active, sessionID),
+        ...(isRecord(newest) && typeof newest.id === "string" ? { newestMessageId: newest.id } : {}),
+      });
+    }
+    return snapshots;
+  }
+
+  /**
+   * Usage since `before`. A subagent session that was already running belongs
+   * to an earlier invocation, so its counter growth, and that of every session
+   * below it, is left out. A completion notice for a subagent session that
+   * existed before the invocation is earlier work too. Usage is unknown when a model
+   * call is not measured, when the invocation continues a running earlier
+   * session or makes a call after an earlier session's notice, or when one of
+   * its own sessions is still running.
+   */
+  async usageSince(before: Map<string, SessionUsageSnapshot>): Promise<AgentUsage | undefined> {
+    const after = await this.snapshot();
+    if (before.get(this.sessionID)?.running !== false || [...before.keys()].some((id) => !after.has(id))) {
+      return undefined;
+    }
+    const excluded = new Set([...before].filter(([, snapshot]) => snapshot.running).map(([sessionID]) => sessionID));
+    const growth: TokenCounters[] = [];
+    const added: unknown[] = [];
+    // The tree lists every parent before its children.
+    for (const [sessionID, current] of after) {
+      if (excluded.has(sessionID) || (current.parentID !== undefined && excluded.has(current.parentID))) {
+        excluded.add(sessionID);
+        continue;
+      }
+      const previous = before.get(sessionID) ?? NEW_SESSION;
+      const messages = await this.messagesSince(sessionID, previous.newestMessageId);
+      if (current.running || messages === undefined) {
+        return undefined;
+      }
+      // A session ID cannot tell one run of a child from the next, so a notice
+      // for a child that existed before the invocation always counts as
+      // earlier work.
+      const earlierChildren = new Set([...before.keys(), ...excluded].filter((childID) => childID !== sessionID));
+      const continuesExcluded = [...subagentSessionIDs(messages)].some((childID) => excluded.has(childID));
+      if (continuesExcluded || answersCompletionNotice(messages, earlierChildren)) {
+        return undefined;
+      }
+      added.push(...messages);
+      growth.push(counterGrowth(previous.counters, current.counters));
+    }
+    const coverage = callCoverage(added);
+    return coverage === undefined ? undefined : usageFromGrowth(growth, coverage);
+  }
+
+  /** The prompted session followed by every session below it, each after its parent. */
+  private async sessionTree(): Promise<{ sessionID: string; parentID?: string }[]> {
+    const tree: { sessionID: string; parentID?: string }[] = [{ sessionID: this.sessionID }];
+    // The array iterator also visits entries pushed during the loop.
+    for (const { sessionID: parentID } of tree) {
+      const children = listedItems((cursor) =>
+        this.client.sessions.list(cursor === undefined ? { parentID, limit: PAGE_SIZE } : { cursor, limit: PAGE_SIZE }),
+      );
+      for await (const child of children) {
+        if (!isRecord(child) || typeof child.id !== "string") {
+          throw new Error("OpenCode returned a malformed session");
+        }
+        tree.push({ sessionID: child.id, parentID });
+      }
+    }
+    return tree;
+  }
+
+  /** Messages newer than `boundaryID`, or undefined when that message is no longer in the history. */
+  private async messagesSince(sessionID: string, boundaryID?: string): Promise<unknown[] | undefined> {
+    const messages: unknown[] = [];
+    // Newest first. OpenCode rejects an order together with a cursor.
+    const history = listedItems((cursor) =>
+      this.client.message.list(
+        cursor === undefined ? { sessionID, limit: PAGE_SIZE } : { sessionID, cursor, limit: PAGE_SIZE },
+      ),
+    );
+    for await (const message of history) {
+      if (boundaryID !== undefined && isRecord(message) && message.id === boundaryID) {
+        return messages;
+      }
+      messages.push(message);
+    }
+    return boundaryID === undefined ? messages : undefined;
+  }
 }
 
 function patch(diffs: unknown): string | undefined {
@@ -621,37 +881,39 @@ function messageIds(messages: unknown[]): Set<string> {
   );
 }
 
-/** Extract the terminal assistant outcome after OpenCode reports a session idle. */
+function newAssistantMessages(
+  messages: unknown[],
+  existingMessageIds?: ReadonlySet<string>,
+): Record<string, unknown>[] {
+  return messages.filter(
+    (message): message is Record<string, unknown> =>
+      isRecord(message) &&
+      message.type === "assistant" &&
+      (existingMessageIds === undefined ||
+        (typeof message.id === "string" && !existingMessageIds.has(message.id))),
+  );
+}
+
+/**
+ * Extract the terminal assistant outcome after OpenCode reports a session idle.
+ * The invocation's usage is attached whenever it is known, including when the
+ * prompt produced no usable assistant message.
+ */
 export function extractOpenCodePromptOutcome(
   messages: unknown[],
   existingMessageIds?: ReadonlySet<string>,
+  usage?: AgentUsage,
 ): OpenCodePromptOutcome {
-  const assistantMessages: Record<string, unknown>[] = [];
-  for (const message of messages) {
-    if (!isRecord(message) || message.type !== "assistant") {
-      continue;
-    }
-    if (
-      existingMessageIds !== undefined &&
-      (typeof message.id !== "string" || existingMessageIds.has(message.id))
-    ) {
-      continue;
-    }
-    assistantMessages.push(message);
-  }
-  const terminal = assistantMessages.at(-1);
+  const withUsage = usage === undefined ? {} : { usage };
+  const terminal = newAssistantMessages(messages, existingMessageIds).at(-1);
   if (terminal === undefined) {
-    return {};
+    return withUsage;
   }
-  const invocationUsage = totalUsage(assistantMessages);
   if (terminal.finish === "error" || terminal.error !== undefined) {
-    return {
-      errorMessage: "OpenCode model invocation failed",
-      ...(invocationUsage === undefined ? {} : { usage: invocationUsage }),
-    };
+    return { errorMessage: "OpenCode model invocation failed", ...withUsage };
   }
   if (!Array.isArray(terminal.content)) {
-    return {};
+    return withUsage;
   }
   const text = terminal.content
     .filter((part): part is Record<string, unknown> => isRecord(part) && part.type === "text")
@@ -660,7 +922,7 @@ export function extractOpenCodePromptOutcome(
     .join("");
   return {
     ...(text.length === 0 ? {} : { text }),
-    ...(invocationUsage === undefined ? {} : { usage: invocationUsage }),
+    ...withUsage,
   };
 }
 
@@ -801,11 +1063,19 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
     try {
       const historyBeforePrompt = await this.client.sessions.context({ sessionID: this.id });
       const existingMessageIds = messageIds(historyBeforePrompt);
+      const usageReader = new OpenCodeUsageReader(this.client, this.id);
+      const usageBeforePrompt = await observeUsage(() => usageReader.snapshot());
       promptMayHaveBeenSubmitted = true;
       await this.client.sessions.prompt({ sessionID: this.id, text });
       await this.client.sessions.wait({ sessionID: this.id });
       const historyAfterPrompt = await this.client.sessions.context({ sessionID: this.id });
-      const outcome = extractOpenCodePromptOutcome(historyAfterPrompt, existingMessageIds);
+      const outcome = extractOpenCodePromptOutcome(
+        historyAfterPrompt,
+        existingMessageIds,
+        usageBeforePrompt === undefined
+          ? undefined
+          : await observeUsage(() => usageReader.usageSince(usageBeforePrompt)),
+      );
       try {
         const sessionPatch = patch(await this.client.sessions.diff({ sessionID: this.id }));
         return { ...outcome, ...(sessionPatch === undefined ? {} : { patch: sessionPatch }) };
@@ -902,6 +1172,7 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
       }, embedOptions);
       await verifyLoadedSkills(client, workspace, skills);
       const session = await client.sessions.create({
+        title: SESSION_TITLE,
         location: { directory: workspace },
         model: { providerID: model.provider, id: model.model },
         permissions: NONINTERACTIVE_SESSION_PERMISSIONS,
