@@ -122,11 +122,7 @@ async def invoke(
     if not completed:
         raise ValueError("Chat Completions stream ended without [DONE]")
 
-    return "".join(text), _usage(
-        usage.get("prompt_tokens"),
-        usage.get("completion_tokens"),
-        usage.get("total_tokens"),
-    )
+    return "".join(text), _usage(usage)
 
 
 async def _sse_data(response: AsyncStreamResponse) -> AsyncIterator[str]:
@@ -149,15 +145,22 @@ def _json_object(data: str) -> dict[str, Any]:
     return value
 
 
-def _usage(
-    input_tokens: int | None,
-    output_tokens: int | None,
-    total_tokens: int | None,
-) -> contract.AgentUsage | None:
-    if input_tokens is None and output_tokens is None and total_tokens is None:
+def _usage(usage: dict[str, Any]) -> contract.AgentUsage | None:
+    input_tokens = usage.get("prompt_tokens")
+    output_tokens = usage.get("completion_tokens")
+    total_tokens = usage.get("total_tokens")
+    prompt_details = usage.get("prompt_tokens_details") or {}
+    if not isinstance(prompt_details, dict):
+        raise TypeError("Chat Completions prompt_tokens_details must be an object")
+    cached_input_tokens = prompt_details.get("cached_tokens")
+    counts = (input_tokens, cached_input_tokens, output_tokens, total_tokens)
+    if all(count is None for count in counts):
         return None
     return contract.AgentUsage(
         input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        # Chat Completions prompt_tokens already counts cached prompt tokens.
+        input_tokens_include_cache=True if input_tokens is not None else None,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
     )

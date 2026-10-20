@@ -26,6 +26,7 @@ from nemo_fabric.errors import FabricConfigError
 from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
+from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.openclaw import adapter
 from nemo_fabric_adapters.openclaw import _windows_job
@@ -286,7 +287,13 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     request = json.loads(request_capture.read_text(encoding="utf-8"))
     assert result.status == "succeeded"
     assert result.output == {"response": "OpenClaw response"}
-    assert result.usage.total_tokens == 5
+    assert result.usage == AgentUsage(
+        input_tokens=1003,
+        cached_input_tokens=1000,
+        input_tokens_include_cache=True,
+        output_tokens=2,
+        total_tokens=1005,
+    )
     assert request == {
         "model": "openclaw/default",
         "messages": [

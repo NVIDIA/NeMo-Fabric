@@ -86,6 +86,18 @@ OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gate
 
 Relay telemetry and native OpenTelemetry are not supported.
 
+### Token Usage
+
+The result's `usage` carries the counts from the Gateway's Chat Completions
+`usage` object. OpenClaw counts cache reads in `prompt_tokens`, so the adapter
+reports `input_tokens_include_cache: true` and reports
+`prompt_tokens_details.cached_tokens` as `cached_input_tokens`. OpenClaw omits
+that detail when no tokens were read from cache, and the cached count then
+stays unknown. OpenClaw leaves cache writes out of `prompt_tokens` but can
+include them in `total_tokens`, so `total_tokens` can exceed input plus output.
+OpenClaw sends `0` for every count when the agent run recorded no usage, so the
+adapter cannot tell that case from a measured zero.
+
 ## Use a NeMo Fabric-Owned Service
 
 `prepare_service()` maps the normalized `FabricConfig` to `openclaw.json`,

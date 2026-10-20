@@ -114,10 +114,14 @@ class Handler(BaseHTTPRequestHandler):
             {
                 "object": "chat.completion.chunk",
                 "choices": [],
+                # OpenClaw 2026.9.4 counts cache reads in prompt_tokens and
+                # reports them and reasoning tokens in the detail objects.
                 "usage": {
-                    "prompt_tokens": 3,
+                    "prompt_tokens": 1003,
                     "completion_tokens": 2,
-                    "total_tokens": 5,
+                    "total_tokens": 1005,
+                    "prompt_tokens_details": {"cached_tokens": 1000},
+                    "completion_tokens_details": {"reasoning_tokens": 1},
                 },
             },
         ]
