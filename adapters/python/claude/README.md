@@ -149,8 +149,8 @@ output tokens.
 Harbor accounting reads these counters before any ATIF trajectory. With the
 input counters present, Harbor sets `n_input_tokens` to input plus cache reads
 plus cache writes and `n_cache_tokens` to cache reads, from the same main-loop
-scope as `n_output_tokens`. A Relay trajectory then fills only the counts the
-result leaves unknown.
+scope as `n_output_tokens`. Counts the result leaves unknown stay unknown in
+Harbor; a Relay trajectory's totals are recorded separately and never fill them.
 
 ## Relay Observability
 
