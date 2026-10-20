@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.metadata
 import json
 import sys
 import threading
@@ -58,7 +59,7 @@ def test_known_fact_replaces_a_lone_surrogate_so_the_result_stays_valid_json():
 
 def test_package_version_fact_reads_installed_metadata():
     assert provenance.package_version_fact("nemo-fabric-adapters-common") == known(
-        "0.6.0"
+        importlib.metadata.version("nemo-fabric-adapters-common")
     )
     assert provenance.package_version_fact("nemo-fabric-no-such-package") == missing(
         "unavailable", "not_collected"
@@ -68,8 +69,12 @@ def test_package_version_fact_reads_installed_metadata():
 @pytest.mark.parametrize(
     ("distribution", "module", "expected"),
     [
-        ("deepagents", deepagents.__name__, known("0.7.9")),
-        ("mini-swe-agent", minisweagent.__name__, known("2.4.6")),
+        ("deepagents", deepagents.__name__, known(importlib.metadata.version("deepagents"))),
+        (
+            "mini-swe-agent",
+            minisweagent.__name__,
+            known(importlib.metadata.version("mini-swe-agent")),
+        ),
         # The distribution exists but did not install the loaded module.
         ("mini-swe-agent", deepagents.__name__, missing("unavailable", "not_attributed")),
         ("deepagents", "nemo_fabric_not_loaded", missing("unavailable", "not_collected")),
@@ -189,7 +194,11 @@ def test_package_version_report_marks_harness_and_served_models_no_source():
 
     no_source = missing("unsupported", "no_source", "adapter_report")
     assert report == {
-        "adapter": {"package_version": known("0.6.0")},
+        "adapter": {
+            "package_version": known(
+                importlib.metadata.version("nemo-fabric-adapters-common")
+            )
+        },
         "harness": {"name": no_source, "version": no_source},
         "models": {"default": {"served": no_source}, "judge": {"served": no_source}},
     }
