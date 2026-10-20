@@ -49,21 +49,23 @@ Treat missing counters and cost as unknown, not zero. `cached_input_tokens` repo
 ## Run Records
 
 Set `RuntimeConfig(artifacts=..., record=RecordConfig(enabled=True))` to have
-NeMo Fabric write `run-record.jsonl` for each invocation under
-`<artifact root>/.fabric/<runtime_id>/<invocation_id>/`. Recording is off by
-default and needs an artifact root, the `local` environment provider, and a
-`process` or `python` adapter. The
-result lists the file as the artifact with kind `run_record`. The file has a
-`start` line, written before the request, and an `end` line with status,
-elapsed time, error code, numeric usage, and artifact names. It holds no
-prompts, output, or error messages. A record without an end line has an
-unknown outcome; do not count it as failed. Recording is synchronous and
-best-effort: when the invocation returns a result, a failed record write adds
-a `record_write_failed` event to it, and its status, output, error, and usage
-stay the same; when the invocation raises, the error stays the same error.
-Slow storage delays the invocation. The format is the `v1alpha1`
-[run record line schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/sdk/run-record-line.schema.json)
-and may change until a reader ships.
+NeMo Fabric write `run-record.jsonl` for each invocation under `<artifact
+root>/.fabric/<runtime_id>/<invocation_id>/`. Recording is off by default and
+needs an artifact root, the `local` environment provider, and a `process` or
+`python` adapter. The result lists the file as the artifact with kind
+`run_record`. The file has a `start` line, written before the request, and an
+`end` line with status, elapsed time, error code, numeric usage, and artifact
+names. It holds no prompts, output, or error messages. The start line does keep
+the values of seven allowlisted `RunRequest.context` keys (task identity and
+the Harbor trial link), cut to 256 characters, so don't put prompt text in
+those keys. A record without an end line has an unknown outcome; do not count
+it as failed. Recording is synchronous and best-effort: when the invocation
+returns a result, a failed record write adds a `record_write_failed` event to
+it, and its status, output, error, and usage stay the same; when the invocation
+raises, the error stays the same error. Slow storage delays the invocation. The
+format is the `v1alpha1` [run record line schema](https://github.com/NVIDIA/NeM
+o-Fabric/blob/main/schemas/sdk/run-record-line.schema.json) and may change
+until a reader ships.
 
 ## Correlation IDs
 
