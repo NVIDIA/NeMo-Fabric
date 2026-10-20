@@ -487,9 +487,10 @@ def test_result_pass_keeps_atif_evidence(
         assert "invocation_id" not in fabric
 
 
+@pytest.mark.parametrize("prepopulated", [False, True])
 @pytest.mark.parametrize("runner_failure_document", [False, True])
 def test_no_fabric_result_keeps_atif_out_of_accounting(
-    failure_path, trajectory_path, runner_failure_document
+    failure_path, trajectory_path, runner_failure_document, prepopulated
 ):
     from harbor.models.agent.context import AgentContext
     from nemo_fabric.integrations.harbor.fabric_agent import FabricAgent
@@ -497,7 +498,13 @@ def test_no_fabric_result_keeps_atif_out_of_accounting(
     agent = FabricAgent(logs_dir=failure_path.parent, fabric_adapter_id="acme.agent")
     if runner_failure_document:
         agent._result_path = failure_path
-    context = AgentContext()
+    context = (
+        AgentContext(
+            n_input_tokens=12, n_cache_tokens=3, n_output_tokens=4, cost_usd=0.25
+        )
+        if prepopulated
+        else AgentContext()
+    )
 
     agent.populate_context_post_run(context)
 

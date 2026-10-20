@@ -616,6 +616,8 @@ else:
 
             if self._result_path is not None:
                 populate_context_from_result(context, self._result_path)
+            else:
+                _clear_accounting(context)
             populate_context_from_trajectory(context, self.logs_dir / "trajectory.json")
             populate_context_from_telemetry_summary(
                 context,
@@ -887,6 +889,7 @@ def populate_context_from_result(
     if isinstance(document, dict) and "runner_error" in document:
         failure = FabricRunnerFailure.model_validate(document)
         _replace_result_metadata(context, failure.model_dump())
+        _clear_accounting(context)
         return failure
     result = RunResult.from_mapping(document)
     mapping = result.to_mapping()
@@ -986,6 +989,15 @@ def _replace_result_metadata(context: AgentContext, fields: dict[str, Any]) -> N
         else {}
     )
     context.metadata["fabric"] = {**fields, **evidence}
+
+
+def _clear_accounting(context: AgentContext) -> None:
+    """Without a Fabric result, no source can vouch for Harbor's accounting fields."""
+
+    context.n_input_tokens = None
+    context.n_cache_tokens = None
+    context.n_output_tokens = None
+    context.cost_usd = None
 
 
 def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
