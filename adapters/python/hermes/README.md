@@ -218,8 +218,10 @@ truncated, and refused responses in `agent.turn_response_check`, and the
 iteration-limit summary's `_summary_text` and attempt builders in
 `agent.chat_completion_helpers`, `tools.delegate_tool._build_child_agent`, and
 the native usage readers in `agent.bedrock_adapter` and
-`agent.gemini_native_adapter`, once per process. The runtime fails to start if
-the installed Hermes no longer calls them by those names.
+`agent.gemini_native_adapter`, once per process. Startup checks the
+response-handler, summary and delegation interception points, and requires the
+native usage-reader functions to exist. These checks do not detect every
+internal Hermes change.
 
 ## Execution Model
 
