@@ -249,7 +249,7 @@ uv pip install --python .venv/bin/python openshell==0.1.2
 
 The image records its installed descriptor inventory in `/opt/fabric/runtime-server.json`. It advertises interface version 2.
 
-The current CLI exposes `serve`, `start`, `invoke`, and `stop`. The example waits for the socket, then starts, invokes, and stops using the returned runtime ID. A sandbox can own multiple runtime IDs; invoking or stopping one does not affect the others. Rebuild the image and create a new sandbox after updating the CLI; an existing sandbox keeps its original image and command protocol.
+The current CLI exposes `serve`, `check`, `start`, `invoke`, and `stop`. The example waits for the socket, then starts, invokes, and stops using the returned runtime ID. A sandbox can own multiple runtime IDs; invoking or stopping one does not affect the others. Rebuild the image and create a new sandbox after updating the CLI; an existing sandbox keeps its original image and command protocol.
 
 Select a registered test gateway using `OPENSHELL_GATEWAY` and set `OPENSHELL_WORKSPACE` to the test workspace. The real `OPENAI_API_KEY` belongs in the environment of the workstation shell running `openshell provider create`, outside the sandbox. OpenShell stores that credential at the gateway and supplies a shadow credential to processes inside the sandbox.
 

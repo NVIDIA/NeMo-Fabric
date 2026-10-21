@@ -13,4 +13,4 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 Observe server health through the command bridge without lifecycle effects.
 
-OpenShell server checks map to `fabric-agent-ctl check` in the selected sandbox. Local server checks and runtime checks are unsupported in this slice.
+OpenShell server checks map to `fabric-agent-ctl check` in the selected sandbox. Local server checks and runtime checks return `unsupported_scope`. The reserved operational level returns `unsupported_level` without probing.
