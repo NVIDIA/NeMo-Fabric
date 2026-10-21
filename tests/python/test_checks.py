@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Public health checks validate inputs and preserve bounded, safe reports."""
+"""SDK health request and report validation."""
 
 import asyncio
 import json
@@ -126,7 +126,7 @@ async def test_sdk_checks_use_one_client_timer(
 async def test_expired_request_returns_timeout_without_probing(
     check_environment, monkeypatch
 ):
-    """Exercise an expired budget without depending on platform clock precision."""
+    """Use a scoped clock to exercise an expired deadline."""
     native = MagicMock()
     monkeypatch.setattr("nemo_fabric.client._native", native)
     ticks = iter([0.0])

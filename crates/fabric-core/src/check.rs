@@ -695,12 +695,12 @@ fn utc_now() -> String {
     DateTime::<Utc>::from(SystemTime::now()).to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
-/// Check server or runtime health without acquiring an invocation or lifecycle-exchange lock.
+/// Check server or runtime health in the selected environment.
 ///
 /// Local runtimes use their authenticated adapter health channel. OpenShell
 /// server and runtime checks execute `fabric-agent-ctl check` in the sandbox.
 /// Local server checks and other providers return `unsupported_scope`.
-/// Timeouts and ownership changes return health evidence without runtime teardown.
+/// Timeouts and ownership changes return `unknown` health evidence.
 pub fn check_environment(
     environment: &EnvironmentHandle,
     request: &CheckRequest,

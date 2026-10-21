@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// A private, authenticated health channel keeps probes independent of the
-// ordered invocation pipe. Neither deadlines nor disconnects tear down a runtime.
+// Authenticated loopback transport for adapter health probes.
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { writeFile, unlink } from "node:fs/promises";
