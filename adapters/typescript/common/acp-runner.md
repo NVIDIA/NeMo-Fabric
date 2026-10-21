@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric ACP Runner
 
-The shared Agent Client Protocol (ACP) runner provides process and session lifecycle support for TypeScript harness adapters. An adapter translates NeMo Fabric configuration and results, while the runner owns the ACP child process, transport, protocol negotiation, persistent session, prompt exchange, and shutdown.
+The shared Agent Client Protocol (ACP) runner lets TypeScript harness adapters start an ACP agent process and reuse one session across ordered invocations. The adapter translates NeMo Fabric configuration and results; the runner manages ACP communication and the child-process lifecycle.
 
 ## Understand the Process Boundary
 
@@ -20,41 +20,45 @@ flowchart TB
   end
 
   subgraph AdapterProcess["Node.js adapter process"]
-    Host["Adapter lifecycle host<br/>Validate requests · serialize invocations"]
-    Adapter["Harness-specific adapter — Kiro<br/>Translate config · permissions · results · usage"]
-    Runner["Shared ACP runner<br/>Own child process · enforce timeouts<br/>ACP SDK client · local session handle"]
+    Host["Lifecycle host"]
+    Adapter["Harness adapter"]
+    Runner["ACP runner"]
 
     Host <-->|"start / invoke / stop"| Adapter
-    Adapter <-->|"Session options / prompt / result"| Runner
+    Adapter <-->|"Session API"| Runner
   end
 
-  subgraph HarnessProcess["Harness child process — kiro-cli acp"]
+  subgraph HarnessProcess["Harness child process"]
     Endpoint["ACP server"]
-    Engine["Agent execution<br/>Model calls · tool execution"]
-    State[("Persistent session state<br/>Conversation context")]
+    Engine["Agent execution"]
+    State[("Session state")]
 
     Endpoint <--> Engine
     Engine <--> State
   end
 
   Model["Model provider"]
-  MCP["MCP servers<br/>Separate local processes or remote services"]
-  Workspace[("Workspace files")]
+  MCP["MCP servers"]
+  Workspace[("Workspace")]
 
-  Runtime <-->|"Fabric adapter protocol over stdio"| Host
-  Runner <-->|"ACP over stdio<br/>Session setup · prompts · updates · permissions"| Endpoint
-  Runner -.->|"Spawn / terminate process"| HarnessProcess
+  Runtime <-->|"Adapter protocol / stdio"| Host
+  Runner <-->|"ACP / stdio"| Endpoint
+  Runner -.->|"Spawn / terminate"| HarnessProcess
 
   Engine <-->|"Inference"| Model
-  Engine <-->|"MCP tool calls"| MCP
-  Engine <-->|"Built-in file and shell tools"| Workspace
+  Engine <-->|"Tool calls"| MCP
+  Engine <-->|"File / shell tools"| Workspace
 ```
 
-The runner does not translate `AgentConfig`, normalize target results, or choose target-specific modes and options. The adapter remains responsible for those operations.
+The lifecycle host validates requests and serializes invocations. The harness-specific adapter selects target modes and options, supplies permission policy, and normalizes results and usage. The runner retains the ACP SDK client and a local session handle, while the harness owns the conversation state and agent execution.
 
-The runner retains a local ACP session handle, while the harness owns the conversation state and agent execution. MCP server configuration travels through ACP during session creation; model requests and MCP tool calls originate in the harness.
+MCP server configuration travels through ACP during session creation; model requests and MCP tool calls originate in the harness. MCP servers run as separate local processes or remote services.
 
-## Startup Responsibilities
+## Adapter Integration
+
+An adapter supplies process arguments, environment variables, workspace, MCP definitions, session configuration, permission policy, timeouts, and optional readiness behavior through `AcpSessionOptions`. It calls `startAcpSession` during startup, retains the returned `AcpSession`, calls `prompt` for each ordered invocation, and calls `stop` during runtime cleanup.
+
+## Start a Session
 
 `startAcpSession` performs the following work before returning a session:
 
@@ -65,24 +69,20 @@ The runner retains a local ACP session handle, while the harness owns the conver
 5. Applies an advertised session mode and configuration options when the adapter requests them.
 6. Waits for an adapter-defined readiness notification when one is configured.
 
-Startup uses one timeout for each bounded operation. A startup failure closes the connection and terminates a partially started child process.
+Each startup operation has its own timeout rather than sharing one overall startup deadline. A startup failure disposes any local session observer, closes the connection, and terminates the partially started child process; this cleanup does not attempt the normal `session/close` exchange.
 
-## Prompt Responsibilities
+## Agent Invocation
 
-The lifecycle host serializes adapter invocations. For each invocation, the runner sends one `session/prompt` request and collects text from `agent_message_chunk` updates until the prompt response arrives. It returns the text, ACP stop reason, and target-reported usage to the adapter.
+For each agent invocation, the runner sends one `session/prompt` request and collects text from `agent_message_chunk` updates until the response arrives.
 
-When a prompt exceeds its deadline, the runner sends `session/cancel` and reports a stable timeout error. The adapter decides how to translate ACP errors, stop reasons, and usage into the NeMo Fabric adapter contract.
+During agent execution, permission requests are resolved through the adapter-provided permission resolver. The runner selects only an option of the requested kind that the ACP agent actually offered. If no compatible option exists, it cancels the permission request.
 
-Permission requests are resolved through the adapter-provided permission resolver. The runner selects only an option of the requested kind that the ACP agent actually offered. If no compatible option exists, it cancels the permission request.
+When the invocation completes, the runner returns the collected text, ACP stop reason, and target-reported usage. The adapter translates these into the NeMo Fabric adapter contract.
 
-## Shutdown Responsibilities
+When an agent invocation exceeds its deadline, the runner attempts to send `session/cancel` and reports a stable timeout error. Cancellation does not itself stop the session or terminate the child process. The adapter decides how to translate the error and whether to stop the session; the Kiro adapter stops and invalidates the session after an invocation error.
+
+## Stop a Session
 
 Shutdown is idempotent. The runner disposes its active-session observer, requests `session/close` when the agent advertises that capability, closes the ACP connection, and sends `SIGTERM` to the child process. If the child does not exit before the shutdown deadline, the runner sends `SIGKILL` and waits for process exit.
-
-The same process cleanup runs after partial startup so an adapter does not retain an orphaned ACP process.
-
-## Adapter Integration
-
-An adapter supplies process arguments, environment variables, workspace, MCP definitions, session configuration, permission policy, timeouts, and optional readiness behavior through `AcpSessionOptions`. It retains the returned `AcpSession` for ordered invocations and calls `stop` during runtime cleanup.
 
 Refer to the [Kiro adapter](../kiro/README.md) for the first integration that uses the shared ACP runner.
