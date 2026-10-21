@@ -31,7 +31,7 @@ The adapter supports:
 - Explicit local `.ts` or `.js` extension files contained by the NeMo Fabric
   workspace
 - Slash commands registered by those explicit extensions
-- NeMo Relay 0.9 or 0.10 telemetry through a runtime-owned gateway and an explicitly
+- NeMo Relay 0.9, 0.10, or 0.11 telemetry through a runtime-owned gateway and an explicitly
   configured Relay Pi extension
 - Live model-turn ATOF records for successful Relay redirects through the
   default embedded NeMo Fabric collector. Startup `model_redirect` marks remain
@@ -84,11 +84,11 @@ The full build installs its own dependencies, so you do not need to run
 
 ### Install NeMo Relay
 
-Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.11.0` on `PATH`. Install it
+Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.12.0` on `PATH`. Install it
 separately from the npm adapter:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.9.0,<0.11.0"
+pip install "nemo-relay-cli-bin>=0.9.0,<0.12.0"
 ```
 
 To select a specific Relay executable instead of relying on `PATH`, set
@@ -296,3 +296,16 @@ create divergent implementations.
 
 `typescript` and `@types/node` are exact-pinned build inputs and are absent from
 the published production dependency graph.
+
+
+## Credential-free HTTP model gateways
+
+For Relay-enabled runs, set `harness.settings.insecure_http_model_hosts` to the exact bare DNS hostnames or IP addresses of trusted inference gateways. This requires NeMo Relay CLI 0.11.0 or later; older supported CLIs remain compatible when the setting is omitted.
+
+```python
+config.harness.settings["insecure_http_model_hosts"] = ["inference.internal", "10.0.0.10"]
+```
+
+Entries have no scheme, port, path, wildcard, brackets, or IPv6 zone identifier. DNS matching ignores case and a trailing dot. Each listed host may use custom ports and paths. Fabric writes explicit `[]` to revoke inherited trust and preserves omission when the setting is absent. System Relay configuration has higher priority and can enforce an empty list.
+
+Relay strips authorization, API-key, cookie, custom credential headers, and middleware-added credentials before forwarding remote HTTP model requests, including model credentials supplied to Pi. Configured upstream authentication conflicts with HTTP. Prompts and responses remain unencrypted. HTTPS is the default; this opt-in does not authorize MCP or observability endpoints, caller-selected destinations, or remote HTTP WebSockets.

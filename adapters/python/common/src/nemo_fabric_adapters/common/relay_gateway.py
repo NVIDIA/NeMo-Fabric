@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from nemo_fabric_adapters.common.relay_version import is_supported_relay_version
+from nemo_fabric_adapters.common.relay_version import RELAY_MINIMUM_VERSION
 
 
 RELAY_HEALTH_TIMEOUT_SECONDS = 10.0
@@ -97,11 +97,11 @@ def relay_cli_contract(executable: Path) -> RelayCliContract:
         raise RelayGatewayError("NeMo Relay CLI version could not be determined")
     major, minor, patch = (int(value) for value in match.groups()[:3])
     version = (major, minor, patch)
-    if match.group(4) is not None or not is_supported_relay_version(version):
+    if match.group(4) is not None or not RELAY_MINIMUM_VERSION <= version < (0, 12, 0):
         raise RelayGatewayError(
             "unsupported NeMo Relay CLI version "
             f"{'.'.join(str(value) for value in version)}; "
-            "NeMo Fabric requires >=0.9.0,<0.11.0"
+            "NeMo Fabric requires >=0.9.0,<0.12.0"
         )
     return RelayCliContract(version=version)
 

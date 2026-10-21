@@ -34,6 +34,25 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
+      "insecure_http_model_hosts": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"
+            },
+            {
+              "pattern": "^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$",
+              "format": "ipv6"
+            }
+          ]
+        },
+        "uniqueItems": true,
+        "description": "Hosts trusted for credential-free HTTP model forwarding through NeMo Relay >=0.11.0; no schemes, ports, paths, wildcards, brackets, or zone identifiers."
+      },
       "sandbox": {
         "type": "string",
         "enum": ["read-only", "workspace-write", "danger-full-access"],

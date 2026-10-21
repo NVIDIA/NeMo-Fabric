@@ -24,14 +24,18 @@ import {
   startRelayGateway,
   stopRelayGateway,
   type RelayGatewayLaunch,
+  type RelayCliContract,
 } from "./relay-gateway.js";
 
+import { relayHttpModelConfig } from "./relay-http.js";
+
 const RELAY_INSTALL_COMMAND =
-  'Install "nemo-relay-cli-bin>=0.9.0,<0.11.0" and ensure nemo-relay is on PATH';
+  'Install "nemo-relay-cli-bin>=0.9.0,<0.12.0" and ensure nemo-relay is on PATH';
 const RELAY_EXTENSION_REMEDIATION =
-  "set harness.settings.relay_extension_path to the NeMo Relay 0.9 or 0.10 Pi extension file or package directory";
+  "set harness.settings.relay_extension_path to the NeMo Relay 0.9, 0.10, or 0.11 Pi extension file or package directory";
 const RELAY_ENV_NAMES = [
   "NEMO_RELAY_PI_GATEWAY_URL",
+  "NEMO_RELAY_PI_COMMAND",
   "NEMO_RELAY_PI_OPENAI_UPSTREAM",
   "NEMO_RELAY_PI_ANTHROPIC_UPSTREAM",
 ] as const;
@@ -122,6 +126,7 @@ function setRelayEnvironment(
   gatewayUrl: string,
   model: PiRelayModel,
   releaseReservation: () => void,
+  executable: string,
 ): () => void {
   const previous = new Map<string, string | undefined>();
   for (const name of RELAY_ENV_NAMES) {
@@ -129,6 +134,7 @@ function setRelayEnvironment(
     delete process.env[name];
   }
   process.env.NEMO_RELAY_PI_GATEWAY_URL = gatewayUrl;
+  process.env.NEMO_RELAY_PI_COMMAND = executable;
   if (model.api === "openai-completions" || model.api === "openai-responses") {
     process.env.NEMO_RELAY_PI_OPENAI_UPSTREAM = model.baseUrl;
   } else if (model.api === "anthropic-messages") {
@@ -257,8 +263,9 @@ export class PiRelayFactory implements PiRelayControllerFactory {
           { metadata: relayErrorMetadata(error) },
         );
       }
+      let contract: RelayCliContract;
       try {
-        await this.dependencies.checkContract(executable);
+        contract = await this.dependencies.checkContract(executable);
       } catch (error) {
         throw new LifecycleError(
           "pi_relay_incompatible",
@@ -267,13 +274,14 @@ export class PiRelayFactory implements PiRelayControllerFactory {
         );
       }
 
+      const gatewayConfig = relayHttpModelConfig(input.config.harness?.settings ?? {}, contract);
       let pluginConfig: RelayPluginConfig;
       let atifMatchers: RelayAtifMatcher[];
       let configPath: string;
       let pluginConfigPath: string;
       try {
         pluginConfig = await this.dependencies.loadPluginConfig(input);
-        ({ configPath, pluginConfigPath } = await this.dependencies.writeConfigs(pluginConfig));
+        ({ configPath, pluginConfigPath } = await this.dependencies.writeConfigs(pluginConfig, gatewayConfig));
         atifMatchers = await prepareRelayAtifMatchers(pluginConfig);
       } catch (error) {
         throw new LifecycleError(
@@ -312,7 +320,7 @@ export class PiRelayFactory implements PiRelayControllerFactory {
           metadata: relayErrorMetadata(error, { gateway_log_path: launch.logPath }),
         });
       }
-      restoreEnvironment = setRelayEnvironment(launch.url, model, releaseEnvironment);
+      restoreEnvironment = setRelayEnvironment(launch.url, model, releaseEnvironment, launch.executable);
       const runtime = new PiRelayRuntime({
         extensionPath,
         pluginConfig,

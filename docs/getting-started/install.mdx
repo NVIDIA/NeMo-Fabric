@@ -325,10 +325,10 @@ removed `RelayOtlpConfig` model with `RelayOpenTelemetryConfig` and one or more
 
 Claude and Codex harness extras install their compatible CLI binary without
 the Relay Python package. Pi requires a separate CLI installation alongside
-the npm adapter. Install the `>=0.9,<0.11` range:
+the npm adapter. Install the `>=0.9,<0.12` range:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.9,<0.11"
+pip install "nemo-relay-cli-bin>=0.9,<0.12"
 ```
 
 If `cargo-binstall` is available, install the pinned CLI with Cargo:
@@ -338,9 +338,13 @@ cargo binstall nemo-relay-cli --version 0.10.0
 ```
 
 After installation, run `nemo-relay --version` and confirm the version is in
-the `>=0.9,<0.11` range. When Relay is enabled with
+the `>=0.9,<0.12` range. When Relay is enabled with
 `FabricConfig.enable_relay(...)`, the Claude, Codex, and Pi adapters start and
 supervise the CLI gateway automatically.
+
+Explicit `harness.settings.insecure_http_model_hosts` requires Relay CLI 0.11.x.
+It permits credential-free remote HTTP model traffic, with unencrypted prompts
+and responses. Omit the setting to retain compatibility with older CLIs.
 
 The Pi adapter also requires a user-supplied path to the
 [Relay Pi extension](https://github.com/NVIDIA/NeMo-Relay/tree/0.10.0/crates/cli/assets/pi-extension)

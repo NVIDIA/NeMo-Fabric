@@ -86,7 +86,7 @@ async def main() -> None:
     parser.add_argument(
         "--pi-relay-extension-path",
         metavar="PATH",
-        help="Path to the NeMo Relay 0.9 or 0.10 Pi extension file or package directory.",
+        help="Path to the NeMo Relay 0.9, 0.10, or 0.11 Pi extension file or package directory.",
     )
     skill_group = parser.add_mutually_exclusive_group()
     skill_group.add_argument(
@@ -162,7 +162,10 @@ async def main() -> None:
         parser.error("--stream requires --relay")
     if args.stream and args.plan:
         parser.error("--stream cannot be combined with --plan")
-    if args.variant in {"cline", "droid", "kilo", "openclaw", "openhands", "qwen"} and args.relay:
+    if (
+        args.variant in {"cline", "droid", "kilo", "openclaw", "openhands", "qwen"}
+        and args.relay
+    ):
         display_name = {
             "cline": "Cline",
             "droid": "Factory Droid",

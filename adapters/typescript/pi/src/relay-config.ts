@@ -381,7 +381,7 @@ export function encodeToml(value: Record<string, unknown>): string {
     .replace(/\n{3,}/g, "\n\n")}\n`;
 }
 
-export async function writeRelayConfigs(pluginConfig: RelayPluginConfig): Promise<RelayConfigPaths> {
+export async function writeRelayConfigs(pluginConfig: RelayPluginConfig, gatewayConfig: Record<string, unknown> = {}): Promise<RelayConfigPaths> {
   const runtimeConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;
   if (!runtimeConfigPath) {
     throw new Error("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled");
@@ -399,7 +399,7 @@ export async function writeRelayConfigs(pluginConfig: RelayPluginConfig): Promis
   const pluginConfigPath = join(configDir, "plugins.toml");
   await mkdir(configDir, { recursive: true });
   await Promise.all([
-    writeFile(configPath, encodeToml({}), "utf8"),
+    writeFile(configPath, encodeToml(gatewayConfig), "utf8"),
     writeFile(pluginConfigPath, encodeToml(enabledPluginConfig), "utf8"),
   ]);
   return { configPath, pluginConfigPath };

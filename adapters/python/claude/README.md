@@ -154,7 +154,7 @@ Harbor; a Relay trajectory's totals are recorded separately and never fill them.
 
 ## Relay Observability
 
-Relay requires a NeMo Relay CLI in the `>=0.9,<0.11` range on `PATH`. The
+Relay requires a NeMo Relay CLI in the `>=0.9,<0.12` range on `PATH`. The
 Claude adapter does not provide a separate `relay` extra; its `harness` and
 `full` extras install the compatible CLI through `nemo-relay-cli-bin`. The root
 `nemo-fabric[relay]` extra installs only the Relay Python package.
@@ -181,6 +181,31 @@ The NeMo Fabric result includes `relay_runtime.gateway_config_path`,
 `relay_runtime.gateway_log_path`, and the collected `relay_artifacts`. Relay
 startup failures return a stable adapter error and retain the gateway log for
 diagnosis.
+
+### Credential-free HTTP model gateways
+
+For Relay-enabled runs, NeMo Relay CLI >=0.11.0 supports explicit trust for
+HTTP model hosts. Set `harness.settings.insecure_http_model_hosts` to the exact
+hostnames or IP addresses of your private inference gateways:
+
+```python
+config.harness.settings["insecure_http_model_hosts"] = ["inference.internal", "10.0.0.10"]
+```
+
+Entries contain no scheme, port, path, or wildcard. Matching ignores DNS case
+and a trailing dot, permits any port or path on that host, and does not infer
+trust from DNS resolution. The adapter passes this list to Relay's runtime
+`[upstream]` configuration. An explicit empty list clears inherited HTTP trust;
+omitting the setting preserves Relay's existing configuration behavior. System
+Relay configuration takes precedence and can enforce an empty list.
+
+This path is for unauthenticated model endpoints: Relay strips authorization,
+API-key, cookie, and other credential headers before remote HTTP forwarding,
+including model credentials supplied to the harness. Relay rejects conflicting
+upstream authorization configuration. Prompts and responses still travel over
+plaintext HTTP. HTTPS remains the default. This setting affects Relay-enabled
+Codex, Claude, and Pi model forwarding; MCP policy is unchanged. Older Relay CLIs
+reject the setting with an upgrade message.
 
 ## Typed Configuration
 

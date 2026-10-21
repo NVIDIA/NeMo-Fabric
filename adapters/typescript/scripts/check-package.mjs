@@ -67,6 +67,8 @@ const expectedByPackage = {
     "dist/relay-config.js",
     "dist/relay-gateway.d.ts",
     "dist/relay-gateway.js",
+    "dist/relay-http.d.ts",
+    "dist/relay-http.js",
     "dist/relay.d.ts",
     "dist/relay.js",
     "dist/runtime.d.ts",

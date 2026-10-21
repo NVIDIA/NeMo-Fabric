@@ -26,6 +26,25 @@
   "settings_schema": {
     "type": "object",
     "properties": {
+      "insecure_http_model_hosts": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"
+            },
+            {
+              "pattern": "^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$",
+              "format": "ipv6"
+            }
+          ]
+        },
+        "uniqueItems": true,
+        "description": "Hosts trusted for credential-free HTTP model forwarding through NeMo Relay >=0.11.0; no schemes, ports, paths, wildcards, brackets, or zone identifiers."
+      },
       "extensions": {
         "type": "array",
         "items": {
@@ -37,7 +56,7 @@
       "relay_extension_path": {
         "type": "string",
         "minLength": 1,
-        "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9 or 0.10 Pi extension"
+        "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9, 0.10, or 0.11 Pi extension"
       }
     },
     "additionalProperties": false

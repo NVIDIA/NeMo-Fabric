@@ -1027,7 +1027,10 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     const existing = modelRuntime.getModel(selected.provider, selected.model);
     const catalogEntry = buildCatalogModel(selected, existing);
     try {
-      modelRuntime.registerProvider(selected.provider, { models: [catalogEntry] });
+      // Keep the endpoint at provider scope so Relay can redirect it without a
+      // per-model baseUrl taking precedence over the extension's provider override.
+      const { baseUrl, ...modelDefinition } = catalogEntry;
+      modelRuntime.registerProvider(selected.provider, { baseUrl, models: [modelDefinition] });
     } catch (error) {
       const cause = error instanceof Error ? error.message : String(error);
       // Pi throws here with a 'no "api" specified' message when it can't resolve the model's
@@ -1119,7 +1122,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       if (relayErrors.length > 0) {
         throw new LifecycleError(
           "pi_relay_extension_load_failed",
-          "The configured NeMo Relay Pi extension failed to load; use the Pi extension from a NeMo Relay 0.9 or 0.10 release",
+          "The configured NeMo Relay Pi extension failed to load; use the Pi extension from a NeMo Relay 0.9, 0.10, or 0.11 release",
           {
             metadata: {
               count: relayErrors.length,
