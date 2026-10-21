@@ -397,7 +397,7 @@ bash examples/openshell/run-demo.sh \
 
 Set `OPENSHELL_EXAMPLE_MODE=caller_owned` or `fabric_owned` to run one mode.
 Hermes reads the sample repository with its terminal tool. The launcher saves
-normalized reports under `.tmp/code-review/` and collects declared artifacts
+normalized reports under `.tmp/code-review-hermes/` and collects declared artifacts
 into each result directory's `artifacts/` subdirectory. Set
 `OPENSHELL_CODE_REVIEW_RELAY=true` to include Hermes' NeMo Relay ATOF/ATIF
 artifacts. The image uses Python 3.14, a pinned Hermes source revision, and
