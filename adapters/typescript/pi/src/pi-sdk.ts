@@ -910,7 +910,6 @@ class PiSdkSessionHandle implements PiSessionHandle {
   }
 
   async check(level: CheckLevel): Promise<AdapterCheckResult> {
-    if (level === "operational") return { ...unobservedHealth("unsupported_level"), outcome: "unsupported" };
     if (this.stopped) return { ...unobservedHealth("session_closed"), outcome: "failed", activity: "stopped" };
     if (!this.initialized) return unobservedHealth("capabilities_unverified");
     if (this.session.sessionId !== this.nativeSessionId) return unobservedHealth("observation_changed");

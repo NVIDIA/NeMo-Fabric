@@ -223,8 +223,6 @@ class RuntimeServer:
             level=command.get("level", "live"),
             timeout_seconds=command.get("timeout_seconds", 3.0),
         )
-        if request.level == "operational":
-            return check_response(runtime_report(request, "unsupported_level", started))
         owned = self.runtimes.get(request.runtime_id)
         if owned is None:
             return check_response(

@@ -50,7 +50,7 @@ def runtime_check_report_fixture():
     )
 
 
-@pytest.mark.parametrize("level", ["live", "active", "ready", "operational"])
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
 def test_runtime_check_flags_map_to_sdk_levels(level):
     request = cli.parse_command(
         ["check", "--agent", "researcher", "--runtime-id", "runtime-1", f"--{level}"]
@@ -88,18 +88,29 @@ async def test_busy_runtime_check_dispatches_without_its_invocation_lock(
     protocol.validate_response(response, "check")
 
 
-async def test_missing_runtime_and_operational_level_do_not_dispatch(
-    host, host_request, mock_fabric
-):
+async def test_missing_runtime_does_not_dispatch(host, host_request, mock_fabric):
     mock_fabric.check = AsyncMock()
     missing = await host.handle(host_request("check", runtime_id="missing"))
     assert missing["result"]["reason_code"] == "runtime_unavailable"
-    operational = await host.handle(
-        host_request("check", runtime_id="missing", level="operational")
-    )
-    assert operational["status"] == "unsupported"
-    assert operational["result"]["reason_code"] == "unsupported_level"
     mock_fabric.check.assert_not_awaited()
+
+
+def test_removed_operational_level_is_rejected_by_cli_and_protocol(host_request):
+    with pytest.raises(protocol.ProtocolError):
+        cli.parse_command(
+            [
+                "check",
+                "--agent",
+                "researcher",
+                "--runtime-id",
+                "runtime-1",
+                "--operational",
+            ]
+        )
+    with pytest.raises(protocol.ProtocolError):
+        protocol.validate_request(
+            host_request("check", runtime_id="runtime-1", level="operational")
+        )
 
 
 async def test_runtime_check_deadline_does_not_stop_the_runtime(

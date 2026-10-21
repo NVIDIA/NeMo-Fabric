@@ -69,6 +69,7 @@ def check_report_fixture():
         {"scope": "server", "level": "live"},
         {"scope": "runtime"},
         {"scope": "runtime", "runtime_id": " "},
+        {"scope": "runtime", "runtime_id": "runtime-1", "level": "operational"},
         {"scope": "server", "timeout_seconds": True},
         {"scope": "server", "timeout_seconds": 0},
         {"scope": "server", "timeout_seconds": float("nan")},
@@ -122,7 +123,7 @@ async def test_sdk_checks_use_one_client_timer(
     assert report.to_mapping()["checks"] == check_report["checks"]
 
 
-async def test_expired_operational_request_remains_unsupported_without_probing(
+async def test_expired_request_returns_timeout_without_probing(
     check_environment, monkeypatch
 ):
     """Exercise an expired budget without depending on platform clock precision."""
@@ -137,12 +138,12 @@ async def test_expired_operational_request_remains_unsupported_without_probing(
         request=CheckRequest(
             scope="runtime",
             runtime_id="runtime-1",
-            level="operational",
+            level="live",
             timeout_seconds=0.5,
         ),
     )
-    assert report.outcome == "unsupported"
-    assert report.reason_code == "unsupported_level"
+    assert report.outcome == "unknown"
+    assert report.reason_code == "probe_timeout"
     assert report.checks == []
     native.check_environment.assert_not_called()
 

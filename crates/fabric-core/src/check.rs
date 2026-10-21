@@ -517,7 +517,6 @@ fn valid_remote_report(report: &CheckReport, request: &CheckRequest) -> bool {
         CheckLevel::Live => 1,
         CheckLevel::Active => 2,
         CheckLevel::Ready => 3,
-        _ => return false,
     };
     if report.checks.len() > count {
         return false;
@@ -701,7 +700,6 @@ fn utc_now() -> String {
 /// Local runtimes use their authenticated adapter health channel. OpenShell
 /// server and runtime checks execute `fabric-agent-ctl check` in the sandbox.
 /// Local server checks and other providers return `unsupported_scope`.
-/// The reserved operational level returns `unsupported_level` without probing.
 /// Timeouts and ownership changes return health evidence without runtime teardown.
 pub fn check_environment(
     environment: &EnvironmentHandle,
@@ -982,7 +980,6 @@ fn probe_runtime(runtime_id: &str, level: CheckLevel, timeout: f64) -> AdapterCh
             CheckLevel::Live => CheckSource::PiSession,
             CheckLevel::Active => CheckSource::PiInterface,
             CheckLevel::Ready => CheckSource::PiSetup,
-            CheckLevel::Operational => CheckSource::Adapter,
         };
         if (observation.outcome == CheckOutcome::Passed) != observation.reason_code.is_none()
             || (observation.outcome == CheckOutcome::Passed

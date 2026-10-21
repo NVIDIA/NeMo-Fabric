@@ -23,8 +23,6 @@ SERVER_STATES = {
 def runtime_report(
     request: CheckRequest, reason: str, started: float
 ) -> dict[str, Any]:
-    if request.level == "operational":
-        reason = "unsupported_level"
     report = CheckReport.from_mapping(
         {
             "schema_version": SCHEMA_VERSION,

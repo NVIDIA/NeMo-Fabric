@@ -82,7 +82,7 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         flag = arguments[index]
         if flag in flags:
             raise ProtocolError()
-        if flag in ("--live", "--active", "--ready", "--operational"):
+        if flag in ("--live", "--active", "--ready"):
             flags[flag] = True
             index += 1
             continue
@@ -113,7 +113,7 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         if flags.keys() & {"--agent", "--runtime-id"}:
             required.update({"--agent", "--runtime-id"})
             allowed.update(required)
-            levels = flags.keys() & {"--live", "--active", "--ready", "--operational"}
+            levels = flags.keys() & {"--live", "--active", "--ready"}
             if len(levels) > 1:
                 raise ProtocolError()
             allowed.update(levels)
