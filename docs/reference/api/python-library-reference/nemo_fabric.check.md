@@ -19,7 +19,7 @@ Strict, safe health requests and immutable health reports.
 
 Select server or runtime health in a separately supplied environment.
 
-Runtime checks default to ``live``. One positive, finite timeout covers all requested levels. ``operational`` returns unsupported without probing. Server checks reject runtime IDs and levels, including explicit nulls.
+Runtime checks default to ``live``. One positive, finite timeout covers all requested levels. Server checks reject runtime IDs and levels, including explicit nulls.
 
 
 

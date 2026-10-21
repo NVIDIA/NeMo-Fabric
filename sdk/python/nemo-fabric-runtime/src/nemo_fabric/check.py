@@ -24,7 +24,7 @@ from pydantic import (
 from nemo_fabric.errors import FabricConfigError
 from nemo_fabric.types import FabricMapping
 
-CheckLevel = Literal["live", "active", "ready", "operational"]
+CheckLevel = Literal["live", "active", "ready"]
 CheckOutcome = Literal["passed", "failed", "unknown", "unsupported"]
 CheckReason = Literal[
     "server_stopping",
@@ -55,7 +55,7 @@ class CheckRequest(BaseModel):
     """Select server or runtime health in a separately supplied environment.
 
     Runtime checks default to ``live``. One positive, finite timeout covers all
-    requested levels. ``operational`` returns unsupported without probing.
+    requested levels.
     Server checks reject runtime IDs and levels, including explicit nulls.
     """
 
@@ -226,14 +226,6 @@ class _Report(_StrictModel):
                 or self.server is not None
             ):
                 raise ValueError("invalid runtime scope")
-            if self.requested_level == "operational":
-                if (
-                    self.outcome != "unsupported"
-                    or self.reason_code != "unsupported_level"
-                    or self.checks
-                ):
-                    raise ValueError("operational must not probe")
-                return self
             levels = ["live", "active", "ready"][
                 : ["live", "active", "ready"].index(self.requested_level) + 1
             ]
@@ -328,16 +320,14 @@ class CheckReport(FabricMapping):
 def _timeout_report(request: CheckRequest, started: float) -> CheckReport:
     completed = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     server = request.scope == "server"
-    # The reserved level remains unsupported even if routing exhausts the budget.
-    operational = request.level == "operational"
     return CheckReport.from_mapping(
         {
             "schema_version": "fabric.check/v1alpha1",
             "scope": request.scope,
             "runtime_id": request.runtime_id,
             "requested_level": request.level,
-            "outcome": "unsupported" if operational else "unknown",
-            "reason_code": "unsupported_level" if operational else "probe_timeout",
+            "outcome": "unknown",
+            "reason_code": "probe_timeout",
             "completed_at": completed,
             "elapsed_ms": max(0.0, (time.monotonic() - started) * 1000),
             "server": {"state": "unknown"} if server else None,

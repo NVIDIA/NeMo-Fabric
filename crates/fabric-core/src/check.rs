@@ -18,7 +18,7 @@ pub enum CheckVersion {
     V1Alpha1,
 }
 
-/// Agent health level; operational checks are reserved and unsupported.
+/// Agent health level.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckLevel {
@@ -29,8 +29,6 @@ pub enum CheckLevel {
     Active,
     /// Observe required local model, tool, and connection setup.
     Ready,
-    /// Reserved; never dispatch an agent probe.
-    Operational,
 }
 
 impl CheckLevel {
@@ -40,7 +38,6 @@ impl CheckLevel {
             Self::Live => "live",
             Self::Active => "active",
             Self::Ready => "ready",
-            Self::Operational => "operational",
         }
     }
 }
@@ -488,7 +485,6 @@ fn valid_server_report(report: &CheckReport) -> bool {
 ///
 /// OpenShell server checks map to `fabric-agent-ctl check` in the selected
 /// sandbox. Local server checks and runtime checks return `unsupported_scope`.
-/// The reserved operational level returns `unsupported_level` without probing.
 pub fn check_environment(
     environment: &EnvironmentHandle,
     request: &CheckRequest,
@@ -500,19 +496,16 @@ pub fn check_environment(
             reason: "check timeout must be positive and finite".into(),
         });
     }
-    if let CheckRequest::Runtime { runtime_id, .. } = request {
-        if runtime_id.trim().is_empty() || runtime_id.contains('\0') {
-            return Err(crate::FabricError::InvalidConfig {
-                field: "check.runtime_id".into(),
-                reason: "runtime ID must be nonempty".into(),
-            });
-        }
+    if let CheckRequest::Runtime { runtime_id, .. } = request
+        && (runtime_id.trim().is_empty() || runtime_id.contains('\0'))
+    {
+        return Err(crate::FabricError::InvalidConfig {
+            field: "check.runtime_id".into(),
+            reason: "runtime ID must be nonempty".into(),
+        });
     }
     let mut report = unobserved_report(request, CheckReason::UnsupportedScope);
-    if request.level() == Some(CheckLevel::Operational) {
-        report = unobserved_report(request, CheckReason::UnsupportedLevel);
-    } else if environment.provider == "openshell" && matches!(request, CheckRequest::Server { .. })
-    {
+    if environment.provider == "openshell" && matches!(request, CheckRequest::Server { .. }) {
         let remaining = request.timeout_seconds() - started.elapsed().as_secs_f64();
         if remaining <= 0.0 {
             report = unobserved_report(request, CheckReason::ProbeTimeout);

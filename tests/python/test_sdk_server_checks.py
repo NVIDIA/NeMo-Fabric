@@ -10,6 +10,7 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from nemo_fabric import CheckReport, CheckRequest, EnvironmentHandle, Fabric
 from nemo_fabric.runtime_server.health import server_report
@@ -34,6 +35,11 @@ def server_environment_fixture():
             },
         }
     )
+
+
+def test_sdk_request_rejects_removed_operational_level():
+    with pytest.raises(ValidationError, match="level"):
+        CheckRequest(scope="runtime", runtime_id="runtime-1", level="operational")
 
 
 @pytest.mark.parametrize("state", ["responding", "stopping", "unknown"])

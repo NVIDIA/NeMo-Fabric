@@ -11,7 +11,7 @@ export interface AdapterCheckRequest {
   /**
    * One native level to observe.
    */
-  level: "live" | "active" | "ready" | "operational";
+  level: "live" | "active" | "ready";
   /**
    * Exact runtime selected by the core.
    */

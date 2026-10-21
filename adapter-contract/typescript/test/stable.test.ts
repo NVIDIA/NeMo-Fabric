@@ -36,6 +36,9 @@ const healthRequest: AdapterCheckRequest = { runtime_id: "runtime-1", level: "re
 const healthResult: AdapterCheckResult = { outcome: "passed", reason_code: null, activity: "busy",
   source: "fabric.adapter.pi.session", observed_at: "2026-10-19T12:00:00Z" };
 void healthRequest;
+// @ts-expect-error operational is not a supported health level
+const removedHealthLevel: AdapterCheckRequest = { runtime_id: "runtime-1", level: "operational", timeout_seconds: 3 };
+void removedHealthLevel;
 void healthResult;
 // @ts-expect-error a health result preserves its required null fields
 const incompleteHealth: AdapterCheckResult = { outcome: "unknown", activity: "unknown", source: "fabric.adapter" };
