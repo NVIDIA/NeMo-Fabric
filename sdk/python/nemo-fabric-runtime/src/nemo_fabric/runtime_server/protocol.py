@@ -137,7 +137,6 @@ def validate_request(request: Any) -> str:
                 "live",
                 "active",
                 "ready",
-                "operational",
             ):
                 raise ProtocolError()
         if "timeout_seconds" in request and (

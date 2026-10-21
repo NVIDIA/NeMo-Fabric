@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 import pytest_asyncio
 import uvicorn
 from fastapi import FastAPI, Request
@@ -274,14 +275,10 @@ async def test_health_selects_one_runtime_and_release_invalidates_bindings(
         )
         assert active.outcome == "passed"
         assert active.runtime_id == second.runtime_id
-        operational = await fabric.check(
-            environment=environment,
-            request=CheckRequest(
+        with pytest.raises(ValidationError, match="level"):
+            CheckRequest(
                 scope="runtime", runtime_id=second.runtime_id, level="operational"
-            ),
-        )
-        assert operational.reason_code == "unsupported_level"
-        assert operational.checks == []
+            )
         await fabric.release_environment(environment)
         released = await fabric.check(
             environment=environment,

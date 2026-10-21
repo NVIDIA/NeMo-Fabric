@@ -1303,8 +1303,7 @@ impl TaskCommand {
                             && !agent.contains('\0')
                             && !runtime_id.trim().is_empty()
                             && !runtime_id.contains('\0')
-                            && ["live", "active", "ready", "operational"]
-                                .contains(&level.as_str()) =>
+                            && ["live", "active", "ready"].contains(&level.as_str()) =>
                     {
                         arguments.extend([
                             "--agent".into(),
