@@ -65,7 +65,7 @@
       "type": "object"
     },
     "CheckOutcome": {
-      "description": "Health outcome, independent of invocation outcomes.",
+      "description": "Health check outcome.",
       "oneOf": [
         {
           "const": "passed",
@@ -90,7 +90,7 @@
       ]
     },
     "CheckReason": {
-      "description": "Fixed diagnostic codes; reports never include exception text.",
+      "description": "Diagnostic codes for health observations.",
       "oneOf": [
         {
           "const": "server_stopping",
@@ -160,7 +160,7 @@
       ]
     },
     "CheckRuntimeState": {
-      "description": "Runtime lifecycle state; no state implies descendant cleanup.",
+      "description": "Runtime lifecycle state.",
       "oneOf": [
         {
           "const": "active",
@@ -264,13 +264,13 @@
       "oneOf": [
         {
           "const": "fabric.check/v1alpha1",
-          "description": "Initial bounded health contract.",
+          "description": "Health contract version `fabric.check/v1alpha1`.",
           "type": "string"
         }
       ]
     },
     "RuntimeActivity": {
-      "description": "Current runtime activity; busy alone does not fail health.",
+      "description": "Current runtime activity.",
       "oneOf": [
         {
           "const": "idle",
@@ -301,7 +301,7 @@
     },
     "RuntimeObservation": {
       "additionalProperties": false,
-      "description": "Runtime evidence, kept separate from agent observations.",
+      "description": "Runtime state and activity.",
       "properties": {
         "activity": {
           "$ref": "#/$defs/RuntimeActivity",
@@ -355,7 +355,7 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "Public health result; no prompts, configuration, or raw exceptions.",
+  "description": "Health check report.",
   "properties": {
     "checks": {
       "description": "Exactly the attempted stages, in order.",

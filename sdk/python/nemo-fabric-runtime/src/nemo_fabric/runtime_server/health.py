@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Server-scope health evidence; no runtime or adapter access."""
+"""Runtime server health reports for the command bridge."""
 
 import re
 import sys

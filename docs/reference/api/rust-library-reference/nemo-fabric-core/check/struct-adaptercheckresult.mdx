@@ -1,7 +1,7 @@
 ---
 title: "Struct Adapter Check Result"
 sidebar-title: "AdapterCheckResult"
-description: "One adapter-owned observation, returned through the independent health channel."
+description: "Result of one adapter health probe."
 position: 11
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -11,7 +11,7 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct AdapterCheckResult &#123;\n    pub outcome: <a href=\"enum-checkoutcome.mdx\">CheckOutcome</a>,\n    pub reason_code: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-checkreason.mdx\">CheckReason</a>&gt;,\n    pub activity: <a href=\"enum-runtimeactivity.mdx\">RuntimeActivity</a>,\n    pub source: <a href=\"enum-checksource.mdx\">CheckSource</a>,\n    pub observed_at: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n&#125;"}} /></pre>
 
-One adapter-owned observation, returned through the independent health channel.
+Result of one adapter health probe.
 
 ## Fields
 

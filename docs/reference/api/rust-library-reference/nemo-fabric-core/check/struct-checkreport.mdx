@@ -1,7 +1,7 @@
 ---
 title: "Struct Check Report"
 sidebar-title: "CheckReport"
-description: "Public health result; no prompts, configuration, or raw exceptions."
+description: "Health check report."
 position: 16
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -11,7 +11,7 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct CheckReport &#123;\n    pub schema_version: <a href=\"enum-checkversion.mdx\">CheckVersion</a>,\n    pub scope: <a href=\"enum-checkscope.mdx\">CheckScope</a>,\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub requested_level: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-checklevel.mdx\">CheckLevel</a>&gt;,\n    pub outcome: <a href=\"enum-checkoutcome.mdx\">CheckOutcome</a>,\n    pub reason_code: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-checkreason.mdx\">CheckReason</a>&gt;,\n    pub completed_at: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub elapsed_ms: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.f64.html\">f64</a>,\n    pub server: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-serverobservation.mdx\">ServerObservation</a>&gt;,\n    pub runtime: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-runtimeobservation.mdx\">RuntimeObservation</a>&gt;,\n    pub checks: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-checkobservation.mdx\">CheckObservation</a>&gt;,\n&#125;"}} /></pre>
 
-Public health result; no prompts, configuration, or raw exceptions.
+Health check report.
 
 ## Fields
 

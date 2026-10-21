@@ -5,7 +5,7 @@
 // Do not edit it directly; run `npm run generate` instead.
 
 /**
- * Fixed diagnostic codes; reports never include exception text.
+ * Diagnostic codes for health observations.
  */
 export type CheckReason =
   | "server_stopping"
@@ -23,7 +23,7 @@ export type CheckReason =
   | "unsupported_scope";
 
 /**
- * One adapter-owned observation, returned through the independent health channel.
+ * Result of one adapter health probe.
  */
 export interface AdapterCheckResult {
   /**
