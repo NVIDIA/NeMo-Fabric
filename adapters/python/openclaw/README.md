@@ -88,15 +88,15 @@ Relay telemetry and native OpenTelemetry are not supported.
 
 ## Gateway Health
 
-Use `Fabric.check()` with a prepared or attached service handle to observe the Gateway before starting any NeMo Fabric runtimes. Gateway checks use the local SDK and the existing Gateway; no additional deployed service is required.
+Use `Fabric.check()` with a prepared or attached service handle to observe the Gateway before starting any NeMo Fabric runtimes. Gateway checks use the local SDK and the selected Gateway.
 
 | Level | Native observation |
 |---|---|
 | `live` | `GET /healthz` returns the expected liveness response. |
-| `active` | Authenticated `GET /v1/models` returns a valid model inventory. A particular agent is not required by the probe. |
+| `active` | Authenticated `GET /v1/models` returns a valid model inventory. |
 | `ready` | `GET /readyz` reports native Gateway readiness, including configured channel health. |
 
-Requesting `ready` evaluates `live`, `active`, and `ready` in order under one deadline, stopping at the first nonpassing result. A configured channel failure can fail Gateway readiness while the first two levels pass. Native readiness follows OpenClaw's channel policies and can use cached observations; a passing result does not prove message delivery, model-provider access, or selected-agent execution. Checks do not invoke models, execute tools, send test messages, or restart the Gateway.
+Requesting `ready` evaluates `live`, `active`, and `ready` in order under one deadline, stopping at the first nonpassing result. A configured channel failure can fail Gateway readiness while the first two levels pass. Native readiness follows OpenClaw's channel policies and can use cached observations.
 
 Check an owned Gateway with the following code, or pass the handle returned by `attach_service()`:
 
@@ -114,7 +114,7 @@ async with await fabric.prepare_service(config, base_dir=base_dir) as service:
     print(report.outcome)
 ```
 
-Checks can run while connected runtimes are invoking. Timeouts return `unknown/probe_timeout` and leave invocations running. Release during a check returns `unknown/observation_changed`; checks after release return `unknown/service_unavailable`. Releasing an attached service leaves the caller-owned Gateway running. OpenClaw runtime-scoped agent checks remain unsupported in this implementation.
+Checks can run while connected runtimes are invoking. Timeouts return `unknown/probe_timeout`. Release during a check returns `unknown/observation_changed`; checks after release return `unknown/service_unavailable`.
 
 ## Use a NeMo Fabric-Owned Service
 

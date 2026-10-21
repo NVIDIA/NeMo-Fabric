@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Private health transport, independent of the ordered lifecycle pipe."""
+"""Authenticated loopback transport for adapter health probes."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ _LIMIT = 16 * 1024
 
 
 def unobserved_health(reason: str) -> dict[str, Any]:
-    """Return a fixed diagnostic without native evidence or exception details."""
+    """Return an unknown health result with the given reason code."""
     return {
         "outcome": "unknown",
         "reason_code": reason,
@@ -77,9 +77,8 @@ async def serve_health(
 ) -> _HealthServer:
     """Publish an authenticated loopback endpoint for one adapter host.
 
-    The protocol matches the TypeScript host: a private 256-bit secret signs
-    direction, nonce, and payload. The secret never crosses the connection.
-    Deadlines cancel only the observation coroutine, leaving the host alive.
+    Requests and responses use HMAC-SHA256 signatures over the direction,
+    nonce, and payload. Each deadline applies to its observation coroutine.
     """
     token = secrets.token_hex(32)
     state = _HealthServer(Path(directory) / "health.endpoint.json")
