@@ -3,6 +3,9 @@
 
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { serve } from "../dist/index.js";
@@ -132,6 +135,33 @@ test("classifies factory failures as adapter startup failures", async () => {
 
   assert.equal(response.outcome.error.code, "lifecycle_adapter_start_failed");
   assert.equal(response.outcome.error.message, "Adapter failed during lifecycle start");
+});
+
+test("classifies health channel startup failures and cleans up the runtime", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "fabric-health-start-"));
+  const previousHome = process.env.FABRIC_HOME;
+  process.env.FABRIC_HOME = join(directory, "PRIVATE-unavailable-directory");
+  t.after(async () => {
+    if (previousHome === undefined) delete process.env.FABRIC_HOME;
+    else process.env.FABRIC_HOME = previousHome;
+    await rm(directory, { recursive: true, force: true });
+  });
+  let stopped = 0;
+  const [response] = await exchange(
+    () => ({
+      async start() {},
+      async invoke() { throw new Error("unreachable"); },
+      async check() { throw new Error("unreachable"); },
+      async stop() { stopped += 1; },
+    }),
+    [start("runtime-1")],
+  );
+
+  assert.equal(response.outcome.error.stage, "start");
+  assert.equal(response.outcome.error.code, "lifecycle_health_unavailable");
+  assert.equal(response.outcome.error.message, "Adapter health channel could not be started");
+  assert.equal(JSON.stringify(response).includes("PRIVATE"), false);
+  assert.equal(stopped, 1);
 });
 
 test("retains a runtime for final cleanup when stop fails", async () => {
