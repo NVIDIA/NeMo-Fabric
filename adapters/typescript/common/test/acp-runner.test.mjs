@@ -6,6 +6,7 @@ import { access, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { AcpRunnerError, startAcpSession } from "../dist/index.js";
@@ -124,3 +125,78 @@ test("returns a stable missing-process error", async () => {
     (error) => error instanceof AcpRunnerError && error.code === "acp_process_unavailable",
   );
 });
+
+test("handles readiness failure while session configuration is pending", async () => {
+  await assert.rejects(
+    startAcpSession({
+      command: process.execPath,
+      args: [fixture],
+      cwd: process.cwd(),
+      env: { ...process.env, TEST_READINESS_NOTIFICATION: "1", TEST_DELAY_MODE: "1" },
+      modeId: "plan",
+      readinessNotification: {
+        method: "_test/mcp/status",
+        isReady: () => { throw new Error("readiness callback failed"); },
+      },
+    }),
+    (error) => error instanceof AcpRunnerError && error.code === "acp_start_failed",
+  );
+});
+
+async function waitForProcessToStop(pid) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    try {
+      process.kill(pid, 0);
+      if (process.platform === "linux") {
+        // Orphaned children can remain as zombies until the system reaps them.
+        const status = await readFile(`/proc/${pid}/stat`, "utf8");
+        if (status.slice(status.lastIndexOf(")") + 2).startsWith("Z")) return;
+      }
+    } catch (error) {
+      if (error.code === "ESRCH" || error.code === "ENOENT") return;
+      throw error;
+    }
+    await delay(10);
+  }
+  assert.fail(`Process ${pid} is still running after cleanup`);
+}
+
+for (const scenario of ["parent exits", "forced shutdown", "partial startup"]) {
+  test(`cleans up descendants after ${scenario}`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "fabric-acp-tree-"));
+    const marker = join(directory, "pids.json");
+    const options = {
+      command: process.execPath,
+      args: [fixture],
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        TEST_DESCENDANT_MARKER: marker,
+        TEST_IGNORE_SIGTERM: scenario === "parent exits" ? "0" : "1",
+        TEST_PROTOCOL_MISMATCH: scenario === "partial startup" ? "1" : "0",
+      },
+      shutdownTimeoutMs: 100,
+    };
+    let session;
+    try {
+      if (scenario === "partial startup") {
+        await assert.rejects(startAcpSession(options), (error) => error.code === "acp_protocol_unsupported");
+      } else {
+        session = await startAcpSession(options);
+        await assert.rejects(session.prompt("hang", 25), (error) => error.code === "acp_prompt_timeout");
+        await session.stop();
+      }
+      const pids = JSON.parse(await readFile(marker, "utf8"));
+      await waitForProcessToStop(pids.parent);
+      await waitForProcessToStop(pids.child);
+    } finally {
+      await session?.stop();
+      const pids = JSON.parse(await readFile(marker, "utf8"));
+      for (const pid of [pids.parent, pids.child]) {
+        try { process.kill(pid, "SIGKILL"); } catch (error) {
+          if (error.code !== "ESRCH") throw error;
+        }
+      }
+    }
+  });
+}

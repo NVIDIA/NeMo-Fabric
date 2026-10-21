@@ -83,6 +83,6 @@ When an agent invocation exceeds its deadline, the runner attempts to send `sess
 
 ## Stop a Session
 
-Shutdown is idempotent. The runner disposes its active-session observer, requests `session/close` when the agent advertises that capability, closes the ACP connection, and sends `SIGTERM` to the child process. If the child does not exit before the shutdown deadline, the runner sends `SIGKILL` and waits for process exit.
+Shutdown is idempotent. The runner disposes its active-session observer, requests `session/close` when the agent advertises that capability, and closes the ACP connection. On POSIX systems, the agent runs in a dedicated process group: cleanup sends `SIGTERM` to the group, waits for the agent to exit within the shutdown timeout, then sends `SIGKILL` to any remaining group members. On Windows, cleanup uses `taskkill /T /F` to terminate the agent and its descendants. The runner waits for the agent process to exit before returning.
 
 Refer to the [Kiro adapter](../kiro/README.md) for the first integration that uses the shared ACP runner.

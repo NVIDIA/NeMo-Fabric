@@ -29,8 +29,8 @@ host begins reading lifecycle input before it awaits asynchronous adapter setup.
 
 `startAcpSession` owns ACP process launch, capability negotiation, one
 persistent session, prompt exchange, and cleanup. An adapter remains
-responsible for translating normalized Fabric configuration into its harness's
-ACP inputs and for normalizing ACP outcomes into Fabric results.
+responsible for translating normalized NeMo Fabric configuration into its harness's
+ACP inputs and for normalizing ACP outcomes into NeMo Fabric results.
 
 Refer to the [ACP runner guide](./acp-runner.md) for the process boundary,
 invocation flow, lifecycle ownership, readiness handling, and shutdown behavior.

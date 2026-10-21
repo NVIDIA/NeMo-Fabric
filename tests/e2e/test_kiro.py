@@ -69,22 +69,30 @@ async def test_kiro_live_runtime_has_mcp_tools_on_first_invocation(tmp_path):
     config.environment.workspace = tmp_path
     config.environment.artifacts = tmp_path / "artifacts"
     config.runtime.artifacts = tmp_path / "artifacts"
+    marker = tmp_path / "mcp-probe-called"
+    token = uuid.uuid4().hex
     config.add_mcp_server(
-        "time",
+        "probe",
         transport="stdio",
         url=sys.executable,
-        args=["-m", "mcp_server_time"],
+        args=[
+            str(root / "tests" / "_utils" / "probe_mcp_server.py"),
+            "--marker",
+            str(marker),
+            "--token",
+            token,
+        ],
     )
 
     async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
         result = await runtime.invoke(
             input=(
-                "Call the time MCP tool for Asia/Tokyo on this first invocation. "
-                "After the tool succeeds, include FABRIC_KIRO_MCP_OK in your response. "
+                "Call the probe MCP tool on this first invocation. "
+                "After the tool succeeds, reply with only the token it returns. "
                 "If the tool is unavailable, reply TOOL_UNAVAILABLE instead."
             )
         )
 
     assert result.status == "succeeded", result.to_mapping()
-    assert "FABRIC_KIRO_MCP_OK" in result.output.response
-    assert "TOOL_UNAVAILABLE" not in result.output.response
+    assert marker.read_text(encoding="utf-8") == token
+    assert token in result.output.response

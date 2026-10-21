@@ -411,6 +411,53 @@ def test_kilo_model_endpoint_overrides_project_into_plan():
     }
 
 
+def test_kiro_model_override_projects_into_plan():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "kiro",
+            "--model",
+            "model-b",
+            "--plan",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    agent_config = json.loads(completed.stdout)["agent_config"]
+    assert agent_config["models"]["default"] == {"provider": "kiro", "model": "model-b"}
+
+
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [("--base-url", "https://example.test/v1"), ("--api-key-env", "CUSTOM_KEY")],
+)
+def test_kiro_rejects_unsupported_model_flags(flag, value):
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "kiro",
+            flag,
+            value,
+            "--plan",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 2
+    assert f"{flag} is not supported by the Kiro adapter" in completed.stderr
+
+
 @pytest.mark.parametrize(
     ("options", "message"),
     [

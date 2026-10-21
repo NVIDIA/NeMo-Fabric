@@ -435,7 +435,7 @@ npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
 Set `KIRO_API_KEY` before these commands only in a non-interactive environment.
 The variant uses Kiro's current default model and permits only one-time tool
 approvals offered through ACP. It does not project the shared
-Fabric skill or system instruction because the initial Kiro adapter does not
+NeMo Fabric skill or system instruction because the initial Kiro adapter does not
 advertise those fields. Kiro does not currently support Relay through this
 adapter.
 

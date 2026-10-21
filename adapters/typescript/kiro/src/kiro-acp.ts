@@ -156,16 +156,23 @@ class KiroAcpSession implements KiroSessionHandle {
       throw new LifecycleError("kiro_session_failed", "Kiro ACP session communication failed");
     }
     let usage: AgentUsage | undefined;
-    if (result.usage === undefined) {
+    try {
+      if (result.usage === undefined) {
+        this.previousUsage = undefined;
+        this.usageContinuityLost = true;
+      } else if (this.usageContinuityLost) {
+        validateUsage(result.usage);
+        this.previousUsage = result.usage;
+        this.usageContinuityLost = false;
+      } else {
+        usage = normalizeUsage(result.usage, this.previousUsage);
+        this.previousUsage = result.usage;
+      }
+    } catch {
+      // Optional usage metadata must not discard a completed invocation.
+      usage = undefined;
       this.previousUsage = undefined;
       this.usageContinuityLost = true;
-    } else if (this.usageContinuityLost) {
-      validateUsage(result.usage);
-      this.previousUsage = result.usage;
-      this.usageContinuityLost = false;
-    } else {
-      usage = normalizeUsage(result.usage, this.previousUsage);
-      this.previousUsage = result.usage;
     }
     return {
       text: result.text,

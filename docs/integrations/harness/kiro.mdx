@@ -6,9 +6,9 @@ description: "Install and configure the NVIDIA NeMo Fabric harness integration f
 SPDX-License-Identifier: Apache-2.0 */}
 
 Use the `nvidia.fabric.kiro` adapter to run Kiro CLI V3 through its standard
-Agent Client Protocol (ACP) server. Each Fabric runtime starts one
+Agent Client Protocol (ACP) server. Each NeMo Fabric runtime starts one
 `kiro-cli acp --agent-engine=v3` child process and creates one persistent ACP
-session. Ordered Fabric invocations reuse that session; independent runtimes
+session. Ordered NeMo Fabric invocations reuse that session; independent runtimes
 use separate processes and sessions.
 
 ## Install Kiro and the Adapter
@@ -81,7 +81,7 @@ The settings schema is closed:
 | `permission_mode` | `deny` rejects tool permission requests. `allow_once` chooses only a one-time allow option offered by Kiro. The default is `deny`. |
 
 The adapter never selects a persistent allow option. `permission_mode` controls
-ACP permission responses; it is not a normalized Fabric tool allowlist.
+ACP permission responses; it is not a normalized NeMo Fabric tool allowlist.
 
 ## MCP Servers
 
@@ -107,11 +107,11 @@ server as connected before accepting the first invocation.
 The initial adapter accepts `models` and `mcp`. Kiro model, mode, and effort
 selection use advertised ACP session configuration. Successful assistant text,
 terminal stop reasons, session identifiers, and reported token usage are
-normalized into Fabric results.
+normalized into NeMo Fabric results.
 
-Fabric system instructions, skill paths, built-in tool policy, arbitrary model
+NeMo Fabric system instructions, skill paths, built-in tool policy, arbitrary model
 endpoints, Relay telemetry, and streaming are not advertised. Kiro may support
-related native features, but this adapter does not claim them until Fabric can
+related native features, but this adapter does not claim them until NeMo Fabric can
 configure and verify them through a stable Kiro interface.
 
 ## Try the Code-Review Example
@@ -126,5 +126,5 @@ configure and verify them through a stable Kiro interface.
 
 Set `KIRO_API_KEY` before these commands only in a non-interactive environment.
 
-The example intentionally does not project the shared Fabric skill or system
+The example intentionally does not project the shared NeMo Fabric skill or system
 instruction because the initial Kiro adapter does not advertise those fields.

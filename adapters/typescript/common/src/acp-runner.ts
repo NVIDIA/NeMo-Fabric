@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 
 import {
@@ -114,6 +115,53 @@ function waitForSpawn(child: ChildProcessWithoutNullStreams): Promise<void> {
 function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
   return new Promise((resolve) => child.once("exit", () => resolve()));
+}
+
+async function terminateProcessTree(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<void> {
+  const pid = child.pid;
+  if (pid === undefined) return;
+  if (process.platform === "win32") {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const taskkill = process.env.SystemRoot === undefined
+      ? "taskkill"
+      : join(process.env.SystemRoot, "System32", "taskkill.exe");
+    await new Promise<void>((resolve) => {
+      execFile(taskkill, ["/pid", String(pid), "/T", "/F"], { timeout: timeoutMs, windowsHide: true }, () => resolve());
+    });
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    await timeout(
+      waitForExit(child),
+      timeoutMs,
+      new AcpRunnerError("acp_shutdown_timeout", "The ACP agent did not stop before the deadline"),
+    );
+    return;
+  }
+  const signalGroup = (signal: NodeJS.Signals): void => {
+    try {
+      process.kill(-pid, signal);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  };
+  // Each agent has its own process group, including tool and MCP children.
+  signalGroup("SIGTERM");
+  try {
+    await timeout(
+      waitForExit(child),
+      timeoutMs,
+      new AcpRunnerError("acp_shutdown_timeout", "The ACP agent did not stop before the deadline"),
+    );
+  } catch (error) {
+    if (!(error instanceof AcpRunnerError) || error.code !== "acp_shutdown_timeout") throw error;
+  } finally {
+    // The parent can exit before its descendants. Clean up the group even then.
+    signalGroup("SIGKILL");
+  }
+  await timeout(
+    waitForExit(child),
+    timeoutMs,
+    new AcpRunnerError("acp_shutdown_timeout", "The ACP agent did not stop before the deadline"),
+  );
 }
 
 function selectedPermission(
@@ -235,18 +283,7 @@ class SpawnedAcpSession implements AcpSession {
       }
     }
     this.connection.close();
-    if (this.child.exitCode !== null || this.child.signalCode !== null) return;
-    this.child.kill("SIGTERM");
-    try {
-      await timeout(
-        waitForExit(this.child),
-        this.shutdownTimeoutMs,
-        new AcpRunnerError("acp_shutdown_timeout", "The ACP agent did not stop before the deadline"),
-      );
-    } catch {
-      this.child.kill("SIGKILL");
-      await waitForExit(this.child);
-    }
+    await terminateProcessTree(this.child, this.shutdownTimeoutMs);
   }
 }
 
@@ -258,18 +295,7 @@ async function stopPartial(
 ): Promise<void> {
   activeSession?.dispose();
   connection?.close();
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  child.kill("SIGTERM");
-  try {
-    await timeout(
-      waitForExit(child),
-      shutdownTimeoutMs,
-      new AcpRunnerError("acp_shutdown_timeout", "The ACP agent did not stop before the deadline"),
-    );
-  } catch {
-    child.kill("SIGKILL");
-    await waitForExit(child);
-  }
+  await terminateProcessTree(child, shutdownTimeoutMs);
 }
 
 export async function startAcpSession(options: AcpSessionOptions): Promise<AcpSession> {
@@ -279,6 +305,7 @@ export async function startAcpSession(options: AcpSessionOptions): Promise<AcpSe
     cwd: options.cwd,
     env: options.env,
     stdio: ["pipe", "pipe", "pipe"],
+    detached: process.platform !== "win32",
   });
   child.stderr.resume();
 
@@ -302,6 +329,9 @@ export async function startAcpSession(options: AcpSessionOptions): Promise<AcpSe
             resolveReadiness = resolve;
             rejectReadiness = reject;
           });
+    // Notifications can reject readiness before session configuration finishes.
+    // Keep the original promise so the await below still observes the failure.
+    void readiness?.catch(() => { });
     app.onRequest(methods.client.session.requestPermission, async ({ params }) =>
       selectedPermission(params, await permissionResolver(params)),
     );

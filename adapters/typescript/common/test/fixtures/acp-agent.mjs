@@ -1,8 +1,11 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { writeFileSync } from "node:fs";
 import { Readable, Writable } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { PROTOCOL_VERSION, agent, methods, ndJsonStream } from "@agentclientprotocol/sdk";
 
@@ -12,6 +15,16 @@ let model = "model-a";
 let effort = "medium";
 let mcpCount = 0;
 let ready = false;
+
+if (process.env.TEST_DESCENDANT_MARKER !== undefined) {
+  const descendant = spawn(process.execPath, ["-e", `
+    process.on("SIGTERM", () => {});
+    process.send(process.pid);
+    setInterval(() => {}, 1000);
+  `], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
+  const [pid] = await once(descendant, "message");
+  writeFileSync(process.env.TEST_DESCENDANT_MARKER, JSON.stringify({ parent: process.pid, child: pid }));
+}
 
 function configOptions() {
   return [
@@ -71,7 +84,8 @@ app.onRequest(methods.agent.session.new, ({ params, client }) => {
     configOptions: configOptions(),
   };
 });
-app.onRequest(methods.agent.session.setMode, ({ params }) => {
+app.onRequest(methods.agent.session.setMode, async ({ params }) => {
+  if (process.env.TEST_DELAY_MODE === "1") await delay(100);
   mode = params.modeId;
   return {};
 });
@@ -107,7 +121,7 @@ app.onRequest(methods.agent.session.prompt, async ({ params, client }) => {
     },
   });
   const usage = {
-    inputTokens: turn * 2,
+    inputTokens: input === "usage-reset" ? 1 : input === "usage-malformed" ? 1.5 : turn * 2,
     outputTokens: turn * 3,
     totalTokens: turn * 5,
     ...(input.startsWith("cache-") ? { cachedReadTokens: turn * 7 } : {}),
@@ -121,6 +135,7 @@ app.onRequest(methods.agent.session.close, () => {
 });
 
 process.on("SIGTERM", () => {
+  if (process.env.TEST_IGNORE_SIGTERM === "1") return;
   if (process.env.TEST_EXIT_MARKER !== undefined) writeFileSync(process.env.TEST_EXIT_MARKER, "stopped\n");
   process.exit(0);
 });

@@ -7,7 +7,7 @@
 // consumer-managed harness and exercises the packaged lifecycle.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -540,18 +540,28 @@ try {
   if (invalidKiroResponse.outcome?.error?.code !== "lifecycle_invalid_operation") {
     throw new Error(`Installed Kiro CLI returned an unexpected response: ${JSON.stringify(invalidKiroResponse)}`);
   }
-  const [missingKiroResponse] = runKiroCli(kiroRoot, consumerRoot, [kiroStartRequest(consumerRoot)]);
+  const missingKiroBin = join(temporaryRoot, "missing-kiro-bin");
+  await mkdir(missingKiroBin);
+  const [missingKiroResponse] = runKiroCli(
+    kiroRoot,
+    consumerRoot,
+    [kiroStartRequest(consumerRoot)],
+    { ...process.env, PATH: missingKiroBin },
+  );
   if (missingKiroResponse.outcome?.error?.code !== "kiro_harness_unavailable") {
     throw new Error(`Adapter-only install did not report the missing Kiro CLI: ${JSON.stringify(missingKiroResponse)}`);
   }
 
   const kiroBin = join(temporaryRoot, "kiro-bin");
   await mkdir(kiroBin);
-  const kiroExecutable = join(kiroBin, process.platform === "win32" ? "kiro-cli.cmd" : "kiro-cli");
+  const kiroExecutable = join(kiroBin, process.platform === "win32" ? "kiro-cli.exe" : "kiro-cli");
   if (process.platform === "win32") {
+    // Direct spawn requires an executable, not a .cmd wrapper. Node receives
+    // "acp" as its script argument and runs this workspace-local fixture.
+    await copyFile(process.execPath, kiroExecutable);
     await writeFile(
-      kiroExecutable,
-      "@echo off\r\n\"%TEST_NODE_EXECUTABLE%\" \"%TEST_ACP_FIXTURE%\" %*\r\n",
+      join(consumerRoot, "acp"),
+      'import(require("node:url").pathToFileURL(process.env.TEST_ACP_FIXTURE).href);\n',
       "utf8",
     );
   } else {
