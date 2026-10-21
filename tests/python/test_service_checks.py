@@ -86,6 +86,7 @@ def test_service_check_defaults_without_a_runtime():
         {"scope": "service", "service_id": "service-1", "runtime_id": "runtime-1"},
         {"scope": "service", "service_id": "service-1", "runtime_id": None},
         {"scope": "service", "service_id": "service-1", "level": None},
+        {"scope": "service", "service_id": "service-1", "level": "operational"},
         {"scope": "runtime", "runtime_id": "runtime-1", "service_id": "service-1"},
         {"scope": "server", "service_id": "service-1"},
     ],

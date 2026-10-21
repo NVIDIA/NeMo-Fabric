@@ -118,16 +118,24 @@ async def test_unauthenticated_health_requests_never_dispatch_probes(
     ("changes", "outcome", "reason"),
     [
         ({"runtime_id": "other-service"}, "unknown", "runtime_unavailable"),
-        ({"level": "operational"}, "unsupported", "unsupported_level"),
     ],
 )
-async def test_health_channel_rejects_other_targets_and_reserved_levels(
+async def test_health_channel_rejects_other_targets(
     health_channel, health_exchange, changes, outcome, reason
 ):
     endpoint, probe, _, _ = health_channel
     result = await health_exchange(endpoint, changes=changes)
     assert result["outcome"] == outcome
     assert result["reason_code"] == reason
+    probe.assert_not_awaited()
+
+
+@pytest.mark.parametrize("level", ["operational", "unknown-level"])
+async def test_health_channel_rejects_unknown_levels(
+    health_channel, health_exchange, level
+):
+    endpoint, probe, _, _ = health_channel
+    assert await health_exchange(endpoint, changes={"level": level}) is None
     probe.assert_not_awaited()
 
 

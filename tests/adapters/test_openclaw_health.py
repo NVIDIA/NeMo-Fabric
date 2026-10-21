@@ -188,12 +188,12 @@ async def test_gateway_check_rejects_stopping_connection(gateway_health):
     assert requests == []
 
 
-async def test_gateway_operational_check_is_unsupported_without_native_requests(
+async def test_gateway_unknown_level_is_unsupported_without_native_requests(
     gateway_health,
 ):
     runtime, _, requests = gateway_health
 
-    result = await runtime.check("operational")
+    result = await runtime.check("unknown-level")
 
     assert result["outcome"] == "unsupported"
     assert result["reason_code"] == "unsupported_level"
