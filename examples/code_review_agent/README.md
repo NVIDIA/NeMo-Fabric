@@ -412,6 +412,33 @@ connection. Use a dedicated credential for that server, or a placeholder when
 it requires none. Public IP addresses and hostnames remain blocked; omit the
 opt-in for HTTPS or loopback endpoints.
 
+### Kiro (`kiro`)
+
+Install Node.js 22.19 or later, install and authenticate Kiro CLI, then build
+the source adapter:
+
+```bash
+curl -fsSL https://cli.kiro.dev/install | bash
+kiro-cli login
+just install-typescript-kiro
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
+```
+
+```bash
+.venv/bin/python -m examples.code_review_agent --variant kiro --plan
+.venv/bin/python -m examples.code_review_agent \
+  --variant kiro \
+  --input "Review calculator.py" \
+  --show-output
+```
+
+Set `KIRO_API_KEY` before these commands only in a non-interactive environment.
+The variant uses Kiro's current default model and permits only one-time tool
+approvals offered through ACP. It does not project the shared
+Fabric skill or system instruction because the initial Kiro adapter does not
+advertise those fields. Kiro does not currently support Relay through this
+adapter.
+
 ### Pi (`pi`)
 
 Install Node.js 22.19 or later, and follow the

@@ -7,7 +7,7 @@
 // consumer-managed harness and exercises the packaged lifecycle.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,7 @@ const packageRoots = [
   join(repositoryRoot, "adapters/typescript/opencode"),
   join(repositoryRoot, "adapters/typescript/qwen"),
   join(repositoryRoot, "adapters/typescript/kilo"),
+  join(repositoryRoot, "adapters/typescript/kiro"),
 ];
 
 function npm(args, cwd) {
@@ -138,6 +139,19 @@ function runKiloCli(kiloRoot, consumerRoot, requests) {
   });
   if (invocation.error) throw invocation.error;
   if (invocation.status !== 0) throw new Error(`Installed Kilo Code CLI failed: ${invocation.stderr}`);
+  return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+function runKiroCli(kiroRoot, consumerRoot, requests, env = process.env) {
+  const invocation = spawnSync(process.execPath, [join(kiroRoot, "dist/cli.js")], {
+    cwd: consumerRoot,
+    encoding: "utf8",
+    env,
+    input: `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`,
+    timeout: 60_000,
+  });
+  if (invocation.error) throw invocation.error;
+  if (invocation.status !== 0) throw new Error(`Installed Kiro CLI adapter failed: ${invocation.stderr}`);
   return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 
@@ -254,6 +268,18 @@ function kiloStartRequest(consumerRoot) {
   return {
     ...request,
     payload: {...request.payload, agent_name: "kilo-install-check"},
+  };
+}
+
+function kiroStartRequest(consumerRoot) {
+  const request = openCodeStartRequest(consumerRoot);
+  return {
+    ...request,
+    payload: {
+      ...request.payload,
+      agent_name: "kiro-install-check",
+      config: {},
+    },
   };
 }
 
@@ -503,6 +529,90 @@ try {
   const [missingKiloResponse] = runKiloCli(kiloRoot, consumerRoot, [kiloStartRequest(consumerRoot)]);
   if (missingKiloResponse.outcome?.error?.code !== "kilo_harness_unavailable") {
     throw new Error(`Adapter-only install did not report the missing Kilo Code harness: ${JSON.stringify(missingKiloResponse)}`);
+  }
+
+  const kiroRoot = join(consumerRoot, "node_modules/nemo-fabric-adapters-kiro");
+  const kiroDescriptor = JSON.parse(await readFile(join(kiroRoot, "kiro.fabric-adapter.json"), "utf8"));
+  if (kiroDescriptor.runner?.command !== "node" || kiroDescriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("Installed Kiro descriptor does not reference its packaged Node.js CLI");
+  }
+  const [invalidKiroResponse] = runKiroCli(kiroRoot, consumerRoot, [{}]);
+  if (invalidKiroResponse.outcome?.error?.code !== "lifecycle_invalid_operation") {
+    throw new Error(`Installed Kiro CLI returned an unexpected response: ${JSON.stringify(invalidKiroResponse)}`);
+  }
+  const [missingKiroResponse] = runKiroCli(kiroRoot, consumerRoot, [kiroStartRequest(consumerRoot)]);
+  if (missingKiroResponse.outcome?.error?.code !== "kiro_harness_unavailable") {
+    throw new Error(`Adapter-only install did not report the missing Kiro CLI: ${JSON.stringify(missingKiroResponse)}`);
+  }
+
+  const kiroBin = join(temporaryRoot, "kiro-bin");
+  await mkdir(kiroBin);
+  const kiroExecutable = join(kiroBin, process.platform === "win32" ? "kiro-cli.cmd" : "kiro-cli");
+  if (process.platform === "win32") {
+    await writeFile(
+      kiroExecutable,
+      "@echo off\r\n\"%TEST_NODE_EXECUTABLE%\" \"%TEST_ACP_FIXTURE%\" %*\r\n",
+      "utf8",
+    );
+  } else {
+    await writeFile(
+      kiroExecutable,
+      "#!/bin/sh\nexec \"$TEST_NODE_EXECUTABLE\" \"$TEST_ACP_FIXTURE\" \"$@\"\n",
+      "utf8",
+    );
+    await chmod(kiroExecutable, 0o755);
+  }
+  const kiroEnvironment = {
+    ...process.env,
+    PATH: `${kiroBin}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+    TEST_ACP_FIXTURE: join(repositoryRoot, "adapters/typescript/common/test/fixtures/acp-agent.mjs"),
+    TEST_NODE_EXECUTABLE: process.execPath,
+  };
+  const kiroFixtureStart = kiroStartRequest(consumerRoot);
+  kiroFixtureStart.payload.runtime_context.environment.env = {
+    ...kiroFixtureStart.payload.runtime_context.environment.env,
+    TEST_ACP_FIXTURE: kiroEnvironment.TEST_ACP_FIXTURE,
+    TEST_NODE_EXECUTABLE: kiroEnvironment.TEST_NODE_EXECUTABLE,
+  };
+  const kiroResponses = runKiroCli(
+    kiroRoot,
+    consumerRoot,
+    [
+      kiroFixtureStart,
+      {
+        operation: "invoke",
+        payload: {
+          request: { input: "one" },
+          runtime_context: {
+            ...kiroStartRequest(consumerRoot).payload.runtime_context,
+            invocation_id: "invocation-kiro-one",
+          },
+        },
+      },
+      {
+        operation: "invoke",
+        payload: {
+          request: { input: "two" },
+          runtime_context: {
+            ...kiroStartRequest(consumerRoot).payload.runtime_context,
+            invocation_id: "invocation-kiro-two",
+          },
+        },
+      },
+      { operation: "stop", payload: { runtime_id: "runtime-install-check" } },
+    ],
+    kiroEnvironment,
+  );
+  if (
+    kiroResponses.length !== 4 ||
+    kiroResponses[0].outcome?.status !== "succeeded" ||
+    kiroResponses[1].outcome?.output?.output?.response !==
+      "one:1:build:model-a:medium:mcp=0:permission=none:ready=false" ||
+    kiroResponses[2].outcome?.output?.output?.response !==
+      "two:2:build:model-a:medium:mcp=0:permission=none:ready=false" ||
+    kiroResponses[3].outcome?.status !== "succeeded"
+  ) {
+    throw new Error(`Packaged Kiro lifecycle failed: ${JSON.stringify(kiroResponses)}`);
   }
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

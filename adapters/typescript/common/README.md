@@ -8,7 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 This package provides the persistent process lifecycle host shared by
 TypeScript adapters. It validates southbound configuration, requests, runtime
 context, and terminal results against the schemas bundled with
-`nemo-fabric-adapter-contract`.
+`nemo-fabric-adapter-contract`. It also provides an ACP client runner for
+adapters whose harness exposes the Agent Client Protocol over stdio.
 
 The host owns JSONL framing, ordered `start`/`invoke`/`stop` dispatch, runtime
 identity checks, safe lifecycle failures, and cleanup after partial startup or
@@ -26,6 +27,14 @@ await serve(() => new MyAdapterRuntime());
 The factory may return a runtime directly or resolve one asynchronously. The
 host begins reading lifecycle input before it awaits asynchronous adapter setup.
 
+`startAcpSession` owns ACP process launch, capability negotiation, one
+persistent session, prompt exchange, and cleanup. An adapter remains
+responsible for translating normalized Fabric configuration into its harness's
+ACP inputs and for normalizing ACP outcomes into Fabric results.
+
+Refer to the [ACP runner guide](./acp-runner.md) for the process boundary,
+invocation flow, lifecycle ownership, readiness handling, and shutdown behavior.
+
 This package is intended to be published as the shared runtime dependency for
 TypeScript adapters. Its public API will be versioned independently from the
 adapters that use it.
@@ -36,6 +45,9 @@ adapters that use it.
 hand-written validators were rejected because they could drift from those
 schemas. `nemo-fabric-adapter-contract` supplies the shared types and packaged
 schemas; copying them into this package would create another contract authority.
+
+`@agentclientprotocol/sdk` provides the stable ACP v1 client and schema types.
+`zod` satisfies its runtime peer dependency.
 
 `typescript` and `@types/node` are exact-pinned build inputs. They provide the
 compiler and Node.js declarations without entering the published production

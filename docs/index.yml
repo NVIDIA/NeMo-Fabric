@@ -74,6 +74,8 @@ navigation:
             path: ./integrations/harness/deepagents.mdx
           - page: Kilo Code
             path: ./integrations/harness/kilo.mdx
+          - page: Kiro
+            path: ./integrations/harness/kiro.mdx
           - page: mini-SWE-agent
             path: ./integrations/harness/mini-swe-agent.mdx
           - page: OpenClaw

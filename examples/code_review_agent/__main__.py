@@ -25,6 +25,7 @@ from examples.code_review_agent.config import (
     droid_config,
     hermes_config,
     kilo_config,
+    kiro_config,
     nooa_config,
     openclaw_config,
     openhands_config,
@@ -37,6 +38,7 @@ from examples.code_review_agent.config import (
 CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "hermes": hermes_config,
     "kilo": kilo_config,
+    "kiro": kiro_config,
     "claude": claude_config,
     "cline": cline_config,
     "codex": codex_config,
@@ -162,11 +164,12 @@ async def main() -> None:
         parser.error("--stream requires --relay")
     if args.stream and args.plan:
         parser.error("--stream cannot be combined with --plan")
-    if args.variant in {"cline", "droid", "kilo", "openclaw", "openhands", "qwen"} and args.relay:
+    if args.variant in {"cline", "droid", "kilo", "kiro", "openclaw", "openhands", "qwen"} and args.relay:
         display_name = {
             "cline": "Cline",
             "droid": "Factory Droid",
             "kilo": "Kilo Code",
+            "kiro": "Kiro",
             "openclaw": "OpenClaw",
             "openhands": "OpenHands",
             "qwen": "Qwen Code",
