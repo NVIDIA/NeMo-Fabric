@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from pydantic import ValidationError
 import pytest_asyncio
 import uvicorn
 from fastapi import FastAPI, Request
@@ -278,7 +279,8 @@ async def test_gateway_release_invalidates_a_pending_readiness_observation(
 
 
 @pytest.mark.skipif(
-    sys.platform != "linux", reason="Owned Gateway fixture requires Linux process supervision"
+    sys.platform != "linux",
+    reason="Owned Gateway fixture requires Linux process supervision",
 )
 async def test_fabric_owned_gateway_can_be_checked_and_released_without_runtimes(
     tmp_path,
@@ -333,16 +335,10 @@ async def test_fabric_owned_gateway_can_be_checked_and_released_without_runtimes
             "passed",
             "failed",
         ]
-        operational = await fabric.check(
-            service=service.handle,
-            request=CheckRequest(
-                scope="service",
-                service_id=service.service_id,
-                level="operational",
-            ),
-        )
-        assert operational.reason_code == "unsupported_level"
-        assert operational.checks == []
+        with pytest.raises(ValidationError, match="level"):
+            CheckRequest(
+                scope="service", service_id=service.service_id, level="operational"
+            )
         assert not request_path.exists()
     finally:
         await service.release()

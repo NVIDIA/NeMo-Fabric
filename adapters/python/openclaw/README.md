@@ -114,7 +114,7 @@ async with await fabric.prepare_service(config, base_dir=base_dir) as service:
     print(report.outcome)
 ```
 
-Checks can run while connected runtimes are invoking. Timeouts return `unknown/probe_timeout` and leave invocations running. Release during a check returns `unknown/observation_changed`; checks after release return `unknown/service_unavailable`. Releasing an attached service leaves the caller-owned Gateway running. The reserved `operational` level is unsupported and sends no probe. OpenClaw runtime-scoped agent checks remain unsupported in this implementation.
+Checks can run while connected runtimes are invoking. Timeouts return `unknown/probe_timeout` and leave invocations running. Release during a check returns `unknown/observation_changed`; checks after release return `unknown/service_unavailable`. Releasing an attached service leaves the caller-owned Gateway running. OpenClaw runtime-scoped agent checks remain unsupported in this implementation.
 
 ## Use a NeMo Fabric-Owned Service
 

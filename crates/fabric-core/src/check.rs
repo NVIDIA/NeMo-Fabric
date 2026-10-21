@@ -767,64 +767,55 @@ pub fn check_service(service: &ServiceHandle, request: &CheckRequest) -> Result<
             reason: "service ID and positive finite timeout are required".into(),
         });
     }
-    let mut report = unobserved_report(
-        request,
-        if *level == CheckLevel::Operational {
-            CheckReason::UnsupportedLevel
-        } else {
-            CheckReason::ServiceUnavailable
-        },
-    );
-    if *level != CheckLevel::Operational {
-        let binding = SERVICE_BINDINGS
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(service_id)
-            .filter(|binding| binding.service == *service)
-            .map(|binding| (binding.clone(), binding.generation.load(Ordering::SeqCst)));
-        if let Some((binding, generation)) = binding {
-            for (probe, stage) in [
-                (CheckLevel::Live, CheckStage::Live),
-                (CheckLevel::Active, CheckStage::Active),
-                (CheckLevel::Ready, CheckStage::Ready),
-            ] {
-                if !binding.levels.contains(&probe) {
-                    report.outcome = CheckOutcome::Unsupported;
-                    report.reason_code = Some(if binding.levels.is_empty() {
-                        CheckReason::UnsupportedAdapter
-                    } else {
-                        CheckReason::UnsupportedLevel
-                    });
-                    break;
-                }
-                let remaining = request.timeout_seconds() - started.elapsed().as_secs_f64();
-                let result = if remaining <= 0.0 {
-                    unobserved(CheckReason::ProbeTimeout)
+    let mut report = unobserved_report(request, CheckReason::ServiceUnavailable);
+    let binding = SERVICE_BINDINGS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(service_id)
+        .filter(|binding| binding.service == *service)
+        .map(|binding| (binding.clone(), binding.generation.load(Ordering::SeqCst)));
+    if let Some((binding, generation)) = binding {
+        for (probe, stage) in [
+            (CheckLevel::Live, CheckStage::Live),
+            (CheckLevel::Active, CheckStage::Active),
+            (CheckLevel::Ready, CheckStage::Ready),
+        ] {
+            if !binding.levels.contains(&probe) {
+                report.outcome = CheckOutcome::Unsupported;
+                report.reason_code = Some(if binding.levels.is_empty() {
+                    CheckReason::UnsupportedAdapter
                 } else {
-                    probe_target(
-                        &binding.runtime.runtime_id,
-                        probe,
-                        remaining,
-                        CheckScope::Service,
-                    )
-                };
-                report.outcome = result.outcome;
-                report.reason_code = result.reason_code;
-                report.checks.push(CheckObservation {
-                    name: stage,
-                    outcome: result.outcome,
-                    reason_code: result.reason_code,
-                    source: result.source,
-                    observed_at: result.observed_at,
+                    CheckReason::UnsupportedLevel
                 });
-                if result.outcome != CheckOutcome::Passed || probe == *level {
-                    break;
-                }
+                break;
             }
-            if binding.generation.load(Ordering::SeqCst) != generation {
-                report.outcome = CheckOutcome::Unknown;
-                report.reason_code = Some(CheckReason::ObservationChanged);
+            let remaining = request.timeout_seconds() - started.elapsed().as_secs_f64();
+            let result = if remaining <= 0.0 {
+                unobserved(CheckReason::ProbeTimeout)
+            } else {
+                probe_target(
+                    &binding.runtime.runtime_id,
+                    probe,
+                    remaining,
+                    CheckScope::Service,
+                )
+            };
+            report.outcome = result.outcome;
+            report.reason_code = result.reason_code;
+            report.checks.push(CheckObservation {
+                name: stage,
+                outcome: result.outcome,
+                reason_code: result.reason_code,
+                source: result.source,
+                observed_at: result.observed_at,
+            });
+            if result.outcome != CheckOutcome::Passed || probe == *level {
+                break;
             }
+        }
+        if binding.generation.load(Ordering::SeqCst) != generation {
+            report.outcome = CheckOutcome::Unknown;
+            report.reason_code = Some(CheckReason::ObservationChanged);
         }
     }
     report.elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;

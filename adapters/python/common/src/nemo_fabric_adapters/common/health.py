@@ -131,11 +131,6 @@ async def serve_health(
                 return
             if request.runtime_id != runtime_id:
                 result = unobserved_health("runtime_unavailable")
-            elif request.level == "operational":
-                result = {
-                    **unobserved_health("unsupported_level"),
-                    "outcome": "unsupported",
-                }
             else:
                 deadline = asyncio.get_running_loop().time() + request.timeout_seconds
                 try:
