@@ -55,19 +55,21 @@ class _HealthServer:
         if self.closed:
             return
         self.closed = True
-        if self.server is not None:
-            self.server.close()
-        for writer in tuple(self.writers):
-            writer.close()
-        tasks = tuple(self.tasks)
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        if self.server is not None:
-            await self.server.wait_closed()
-        if self.owns_endpoint:
-            with suppress(FileNotFoundError):
-                self.path.unlink()
+        try:
+            if self.owns_endpoint:
+                with suppress(FileNotFoundError):
+                    self.path.unlink()
+        finally:
+            if self.server is not None:
+                self.server.close()
+            for writer in tuple(self.writers):
+                writer.close()
+            tasks = tuple(self.tasks)
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if self.server is not None:
+                await self.server.wait_closed()
 
 
 async def serve_health(
