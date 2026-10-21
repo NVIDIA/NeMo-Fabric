@@ -809,7 +809,7 @@ class OpenClawRuntime:
         """Check Gateway or runtime health using native endpoints.
 
         Gateway readiness follows native ``/readyz``, including configured
-        channels. Runtime activity covers Fabric invocations. The health-channel
+        channels. Runtime activity covers NeMo Fabric invocations. The health-channel
         caller supplies one deadline for every native request.
         """
         result: dict[str, Any] = {
@@ -916,9 +916,9 @@ class OpenClawRuntime:
                 ) as response:
                     status = response.status_code
                     if path == "/v1/chat/completions":
-                        # Native OpenClaw checks the method before reading a
-                        # body or starting an agent. A disabled route returns
-                        # 404 even when /v1/models is served by the Responses API.
+                        # The Chat Completions route returns 405 with Allow: POST
+                        # for GET requests. A disabled route returns 404 even when
+                        # the Responses API serves /v1/models.
                         if status != 405:
                             return observed("failed", "endpoint_unavailable")
                         if response.headers.get("allow", "").strip() != "POST":
