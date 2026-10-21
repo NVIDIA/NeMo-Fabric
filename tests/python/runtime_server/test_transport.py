@@ -42,7 +42,17 @@ def lifecycle_files_fixture(monkeypatch):
     return files
 
 
-@pytest.mark.parametrize("name", ["init", "sandbox supervisor", "name ) with (parens)"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "init",
+        "sandbox supervisor",
+        "name ) with (parens)",
+        "",
+        "name\nwith newline",
+        "init \u03a9",
+    ],
+)
 def test_lifecycle_identity_uses_boot_and_init_start_time(lifecycle_files, name):
     lifecycle_files["/proc/1/stat"] = f"1 ({name}) S " + "0 " * 18 + "123 0\n"
     assert transport._sandbox_lifecycle_id() == (
@@ -58,6 +68,16 @@ def test_lifecycle_identity_uses_boot_and_init_start_time(lifecycle_files, name)
         ("/proc/1/stat", PermissionError()),
         ("/proc/1/stat", "1 (init) S 0"),
         ("/proc/1/stat", "1 (init) S " + "0 " * 18 + "invalid"),
+        ("/proc/1/stat", "2 (init) S " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 init) S " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init S " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init)S " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init) running " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init) 1 " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init) \u00e9 " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init) S " + "0 " * 18 + "+123"),
+        ("/proc/1/stat", "1 (init) S " + "0 " * 18 + "1_23"),
+        ("/proc/1/stat", "1 (init) S " + "0 " * 18 + "\u0661\u0662\u0663"),
     ],
 )
 def test_unreadable_lifecycle_identity_is_unknown(lifecycle_files, path, value):
@@ -129,15 +149,21 @@ async def test_server_preserves_same_or_unknown_lifecycle_marker(
     assert not socket_path.exists()
 
 
+@pytest.mark.parametrize(
+    "value", [PermissionError(), "2 (init) S " + "0 " * 18 + "123"]
+)
 async def test_server_preserves_marker_when_current_lifecycle_is_unknown(
-    host, socket_path, lifecycle_files
+    host, socket_path, lifecycle_files, value
 ):
-    lifecycle_files["/proc/1/stat"] = PermissionError()
+    lifecycle_files["/proc/1/stat"] = value
     marker = socket_path.with_suffix(".unclean")
     previous_id = "b234f7d1-02cb-4b91-8717-90e4a8957dbb:122"
     marker.write_text(previous_id)
     with pytest.raises(protocol.ProtocolError) as caught:
-        await transport.serve(host, socket_path=socket_path, stop_event=asyncio.Event())
+        await asyncio.wait_for(
+            transport.serve(host, socket_path=socket_path, stop_event=asyncio.Event()),
+            1,
+        )
     assert caught.value.code == "cleanup_unconfirmed"
     assert marker.read_text() == previous_id
 

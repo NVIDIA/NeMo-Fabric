@@ -39,14 +39,27 @@ else:
 
 
 def _sandbox_lifecycle_id() -> str | None:
+    # Expect Linux /proc mounted for the sandbox's private process namespace:
+    #   /proc/sys/kernel/random/boot_id: b234f7d1-02cb-4b91-8717-90e4a8957dbb
+    #   /proc/1/stat: 1 (sandbox supervisor) S ... 123 ...
+    # In the stat example, the first "..." represents fields 4-21. Field 22 is
+    # process 1's start time in clock ticks since boot; it becomes index 19 after
+    # removing fields 1-2. The resulting marker is "<boot UUID>:<start ticks>":
+    #   b234f7d1-02cb-4b91-8717-90e4a8957dbb:123
+    # Unavailable or malformed inputs return None, so existing markers block startup.
     try:
         boot_id = UUID(Path("/proc/sys/kernel/random/boot_id").read_text().strip())
         # The parenthesized process name can itself contain spaces and parentheses.
-        fields = Path("/proc/1/stat").read_text().rsplit(")", 1)[1].split()
-        start_time = int(fields[19])  # /proc/PID/stat field 22, after name and PID.
-        if start_time >= 0:
-            return f"{boot_id}:{start_time}"
-    except (OSError, ValueError, IndexError):
+        process, closing, tail = Path("/proc/1/stat").read_text().rpartition(")")
+        if not closing or not process.startswith("1 (") or not tail.startswith(" "):
+            return None
+        fields = tail.split()
+        if len(fields) < 20 or len(fields[0]) != 1 or not fields[0].isalpha():
+            return None
+        start_time = fields[19]  # /proc/PID/stat field 22, after name and PID.
+        if tail.isascii() and start_time.isdecimal():
+            return f"{boot_id}:{int(start_time)}"
+    except (OSError, ValueError):
         pass
     return None
 
