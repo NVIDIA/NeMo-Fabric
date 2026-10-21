@@ -738,7 +738,8 @@ def _write_service_connection(
         prefix=f".{path.name}.",
     )
     try:
-        os.fchmod(descriptor, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             descriptor = -1
             stream.write(payload)

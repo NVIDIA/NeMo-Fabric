@@ -754,10 +754,9 @@ pub(crate) fn invalidate_service(service: &ServiceHandle) {
     if bindings
         .get(&service.service_id)
         .is_some_and(|binding| binding.service == *service)
+        && let Some(binding) = bindings.remove(&service.service_id)
     {
-        if let Some(binding) = bindings.remove(&service.service_id) {
-            binding.generation.fetch_add(1, Ordering::SeqCst);
-        }
+        binding.generation.fetch_add(1, Ordering::SeqCst);
     }
 }
 

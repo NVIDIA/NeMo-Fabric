@@ -104,6 +104,7 @@ async def native_gateway_fixture(unused_tcp_port):
             log_config=None,
             access_log=False,
             lifespan="off",
+            timeout_graceful_shutdown=1,
         )
     )
     serving = asyncio.create_task(server.serve())
@@ -276,7 +277,9 @@ async def test_gateway_release_invalidates_a_pending_readiness_observation(
         await asyncio.gather(checking, return_exceptions=True)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Executable POSIX Gateway fixture")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Owned Gateway fixture requires Linux process supervision"
+)
 async def test_fabric_owned_gateway_can_be_checked_and_released_without_runtimes(
     tmp_path,
 ):
