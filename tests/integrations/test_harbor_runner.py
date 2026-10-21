@@ -21,7 +21,6 @@ SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
 SWEBENCH_README = SWEBENCH_ROOT / "README.md"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
 SWEBENCH_CLINE_DOCKERFILE = SWEBENCH_ROOT / "cline" / "Dockerfile"
-SWEBENCH_KIRO_DOCKERFILE = SWEBENCH_ROOT / "kiro" / "Dockerfile"
 SWEBENCH_OPENCODE_DOCKERFILE = SWEBENCH_ROOT / "opencode" / "Dockerfile"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
@@ -345,12 +344,12 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     declared_extras = set(sdk_project["optional-dependencies"])
 
     assert "run.sh" not in calculator
-    assert calculator.count(" harbor run \\") == 6
-    assert calculator.count("uv run --extra harbor harbor run \\") == 6
+    assert calculator.count(" harbor run \\") == 5
+    assert calculator.count("uv run --extra harbor harbor run \\") == 5
     assert '--ak "fabric_config_bundle=$TASK_DIR/environment/fabric"' in calculator
     assert "uv run --extra harbor --extra" not in calculator
     assert landing.count("uv run --extra harbor harbor run") == 0
-    assert swebench.count("uv run --extra harbor harbor run") == 11
+    assert swebench.count("uv run --extra harbor harbor run") == 9
     assert "--agent-import-path" not in landing + calculator + swebench
     assert "fabric_config_path" not in calculator
     assert "fabric_config_path" not in landing
@@ -370,25 +369,18 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "--model anthropic/claude-sonnet-4-5" in calculator
     assert "fabric_adapter_id=nvidia.fabric.openclaw" in calculator
     assert "fabric_adapter_id=nvidia.fabric.pi" in calculator
-    pi_command = calculator.split("## 4. Pi", 1)[1].split("## 5. Kiro", 1)[0]
+    pi_command = calculator.split("## 4. Pi", 1)[1].split("## 5. Codex", 1)[0]
     assert "fabric_max_turns" not in pi_command
-    assert "fabric_adapter_id=nvidia.fabric.kiro" in calculator
-    kiro_command = calculator.split("## 5. Kiro", 1)[1].split("## 6. Codex", 1)[0]
-    assert "--model" not in kiro_command
-    assert 'fabric_harness_settings={"permission_mode":"allow_once"}' in kiro_command
-    assert "KIRO_API_KEY" in kiro_command
     assert "fabric_adapter_id=nvidia.fabric.codex" in calculator
     assert "fabric_model_api_key_env=OPENAI_API_KEY" in calculator
-    codex_command = calculator.split("## 6. Codex", 1)[1].split(
+    codex_command = calculator.split("## 5. Codex", 1)[1].split(
         "## Inspect Results", 1
     )[0]
     assert "fabric_max_turns" not in codex_command
     assert "fabric_discovery_paths=" in calculator
     assert "pi.fabric-adapter.json" in calculator
-    assert "kiro.fabric-adapter.json" in calculator
     assert "-e '/opt/nemo-fabric/adapters/python/codex[harness]'" in dockerfile
     assert "--workspace nemo-fabric-adapters-pi" in dockerfile
-    assert "--workspace nemo-fabric-adapters-kiro" in dockerfile
     assert "fabric_model_api_key_env=NVIDIA_API_KEY" in calculator
     assert 'CALCULATOR_DIR="$PWD/examples/harbor/calculator"' in calculator
     assert "calculator/README.md" in landing
@@ -417,8 +409,8 @@ def test_harbor_calculator_documents_explicit_cli_commands():
         "fabric_adapter_id=nvidia.fabric.opencode",
     ):
         assert swebench.count(value) == 2
-    assert swebench.count("fabric_config_target=/opt/nemo-fabric-config") == 6
-    assert swebench.count("fabric_python=/opt/nemo-fabric-venv/bin/python") == 6
+    assert swebench.count("fabric_config_target=/opt/nemo-fabric-config") == 4
+    assert swebench.count("fabric_python=/opt/nemo-fabric-venv/bin/python") == 4
     assert "--job-name django-13741-opencode-install" not in swebench
     assert "--job-name django-13741-opencode" not in swebench
     assert (
@@ -435,19 +427,9 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert 'CLINE_JOB_NAME="django-13741-cline-$(date +%Y%m%d-%H%M%S)"' in swebench
     assert '--job-name "${CLINE_JOB_NAME}-install"' in swebench
     assert '--job-name "$CLINE_JOB_NAME"' in swebench
-    for value in (
-        '--path "$KIRO_SWEBENCH_TASK"',
-        "fabric_adapter_id=nvidia.fabric.kiro",
-    ):
-        assert swebench.count(value) == 2
-    assert 'KIRO_JOB_NAME="django-13741-kiro-$(date +%Y%m%d-%H%M%S)"' in swebench
-    assert '--job-name "${KIRO_JOB_NAME}-install"' in swebench
-    assert '--job-name "$KIRO_JOB_NAME"' in swebench
-    assert "--ae 'KIRO_API_KEY=${KIRO_API_KEY}'" in swebench
     assert "--ae 'NVIDIA_API_KEY=${NVIDIA_API_KEY}'" in swebench
     assert '"$RUNS_DIR/$OPENCODE_JOB_NAME/result.json"' in swebench
     assert '"$RUNS_DIR/$CLINE_JOB_NAME/result.json"' in swebench
-    assert '"$RUNS_DIR/$KIRO_JOB_NAME/result.json"' in swebench
     assert "export JOB_NAME=django-13741-hermes" in swebench
     for flag in (
         "--path",
@@ -510,21 +492,6 @@ def test_swebench_cline_image_uses_supported_sdk_and_locked_adapter_dependencies
     assert "@cline/sdk@0.0.83" in dockerfile
     assert "--ignore-scripts" in dockerfile
     assert "package-lock.json" in dockerfile
-
-
-def test_swebench_kiro_image_uses_cli_and_locked_adapter_dependencies():
-    dockerfile = SWEBENCH_KIRO_DOCKERFILE.read_text(encoding="utf-8")
-    preparation = (SWEBENCH_ROOT / "prepare_kiro_swebench.sh").read_text(
-        encoding="utf-8"
-    )
-
-    assert "https://cli.kiro.dev/install" in dockerfile
-    assert "-o /tmp/install-kiro.sh" in dockerfile
-    assert "npm ci" in dockerfile
-    assert "--workspace nemo-fabric-adapters-kiro" in dockerfile
-    assert "--ignore-scripts" in dockerfile
-    assert "package-lock.json" in dockerfile
-    assert 'cp "$script_dir/kiro/Dockerfile"' in preparation
 
 
 def test_harbor_calculator_setup_and_solution_fail_fast():

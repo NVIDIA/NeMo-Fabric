@@ -7,19 +7,15 @@ COPY --from=node:24.16.0-bookworm-slim /usr/local /usr/local
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential curl git pkg-config libssl-dev unzip \
+        build-essential curl git pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh \
     && sh /tmp/rustup-init.sh -y --profile minimal \
     && rm -f /tmp/rustup-init.sh
-ENV PATH=/root/.local/bin:/root/.cargo/bin:$PATH
+ENV PATH=/root/.cargo/bin:$PATH
 
 RUN npm install --global openclaw@2026.9.4 --allow-scripts=openclaw
-
-RUN curl -fsSL https://cli.kiro.dev/install -o /tmp/install-kiro.sh \
-    && bash /tmp/install-kiro.sh \
-    && rm -f /tmp/install-kiro.sh
 
 COPY vendor/nemo-fabric /opt/nemo-fabric
 RUN pip install --no-cache-dir \
@@ -31,19 +27,15 @@ RUN pip install --no-cache-dir \
         -e /opt/nemo-fabric/adapters/python/openclaw \
         -e "/opt/nemo-fabric/sdk/python/nemo-fabric[claude,openclaw]"
 
-# Build the Pi and Kiro adapters from the vendored source.
+# Build the Pi adapter and its pinned SDK harness from the vendored source.
 RUN npm ci --prefix /opt/nemo-fabric/adapter-contract/typescript --ignore-scripts \
     && npm ci --prefix /opt/nemo-fabric/adapters/typescript \
-        --workspace nemo-fabric-adapters-pi \
-        --workspace nemo-fabric-adapters-kiro \
-        --include-workspace-root --ignore-scripts \
+        --workspace nemo-fabric-adapters-pi --include-workspace-root --ignore-scripts \
     && npm run build --prefix /opt/nemo-fabric/adapter-contract/typescript \
     && npm run build --prefix /opt/nemo-fabric/adapters/typescript \
         --workspace nemo-fabric-adapters-common \
     && npm run build --prefix /opt/nemo-fabric/adapters/typescript \
-        --workspace nemo-fabric-adapters-pi \
-    && npm run build --prefix /opt/nemo-fabric/adapters/typescript \
-        --workspace nemo-fabric-adapters-kiro
+        --workspace nemo-fabric-adapters-pi
 
 COPY calculator.py /app/calculator.py
 COPY fabric /opt/fabric-calculator

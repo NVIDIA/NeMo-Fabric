@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 This self-contained calculator task is the fastest way to check the complete
 Harbor → `FabricAgent` → NeMo Fabric → verifier path. Start with the deterministic,
 credential-free scripted run, then use the same task to try OpenClaw, Claude,
-Pi, Kiro, or Codex. `FabricAgent` translates Harbor
+Pi, or Codex. `FabricAgent` translates Harbor
 options into a complete typed `FabricConfig`; Harbor owns the task, container, verifier, reward,
 concurrency, and run layout.
 
@@ -20,9 +20,8 @@ same shell. Commit the NeMo Fabric revision you want to run because the build co
 is created from `HEAD`.
 
 The credential-free smoke does not require an API key. Export `NVIDIA_API_KEY`
-for OpenClaw and Pi runs; `ANTHROPIC_API_KEY` for Claude;
-`KIRO_API_KEY` for Kiro; or `OPENAI_API_KEY` for Codex. The first image build
-can take several minutes.
+for OpenClaw and Pi runs; `ANTHROPIC_API_KEY` for Claude; or
+`OPENAI_API_KEY` for Codex. The first image build can take several minutes.
 
 Harbor 0.23 resolves literal `${VAR}` values in `--ae` against the host
 environment. The commands below keep those templates quoted so the shell does
@@ -166,34 +165,7 @@ uv run --extra harbor harbor run \
   --force-build
 ```
 
-## 5. Kiro
-
-The task image installs Kiro CLI and builds the Kiro ACP adapter from the same
-vendored Fabric revision. This run lets Kiro select its current default model.
-The `allow_once` policy selects only one-time permissions that Kiro explicitly
-offers inside the isolated task container.
-
-```bash
-: "${KIRO_API_KEY:?Export KIRO_API_KEY before running Kiro}"
-
-uv run --extra harbor harbor run \
-  --path "$TASK_DIR" \
-  --agent nemo_fabric.integrations.harbor:FabricAgent \
-  --ak fabric_adapter_id=nvidia.fabric.kiro \
-  --ak 'fabric_harness_settings={"permission_mode":"allow_once"}' \
-  --ak fabric_config_base_dir=/opt/fabric-calculator \
-  --ak 'fabric_discovery_paths=["/opt/nemo-fabric/adapters/typescript/kiro/kiro.fabric-adapter.json"]' \
-  --ak fabric_workspace=/app \
-  --ak fabric_runtime_timeout_seconds=600 \
-  --ae 'KIRO_API_KEY=${KIRO_API_KEY}' \
-  --job-name fabric-kiro \
-  --jobs-dir "$RUNS_DIR" \
-  --n-concurrent 1 \
-  --n-attempts 1 \
-  --force-build
-```
-
-## 6. Codex
+## 5. Codex
 
 The task image installs the Codex Python adapter and its SDK-managed app-server.
 This recipe explicitly gives Codex `workspace-write` sandboxing and denies
@@ -224,10 +196,9 @@ uv run --extra harbor harbor run \
   --force-build
 ```
 
-The OpenClaw, Claude, Pi, Kiro, and Codex runs use the same task and verifier as
-the scripted smoke. Compare their `result.json` rewards and `agent/` metadata
-under `$RUNS_DIR` to see the selected harness without changing Harbor task
-setup.
+The OpenClaw, Claude, Pi, and Codex runs use the same task and verifier as the
+scripted smoke. Compare their `result.json` rewards and `agent/` metadata under
+`$RUNS_DIR` to see the selected harness without changing Harbor task setup.
 
 ## Inspect Results
 

@@ -15,8 +15,8 @@ multi-task run.
 
 Complete the shared host setup in the [Harbor landing page](../README.md#shared-host-setup),
 then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes Agent,
-OpenCode, or Cline runs; `KIRO_API_KEY` for Kiro; or `ANTHROPIC_API_KEY` for
-Claude before using that harness.
+OpenCode, or Cline runs, or `ANTHROPIC_API_KEY` for Claude runs before using
+that harness.
 
 ## Prepare the Task Bundle
 
@@ -238,73 +238,6 @@ Inspect the Cline result with its generated job name:
 ```bash
 uv run --extra harbor python -m json.tool \
   "$RUNS_DIR/$CLINE_JOB_NAME/result.json"
-```
-
-## Run One Task with Kiro
-
-Prepare the task with Kiro CLI and the Kiro ACP adapter from the current
-checkout. The SWE-Bench task image requires `linux/amd64`:
-
-```bash
-cd "$(git rev-parse --show-toplevel)"
-
-export FABRIC_AGENT='nemo_fabric.integrations.harbor:FabricAgent'
-export FABRIC_BUNDLE="$PWD/examples/harbor/swebench"
-export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
-export DOCKER_DEFAULT_PLATFORM=linux/amd64
-
-./examples/harbor/swebench/prepare_kiro_swebench.sh
-
-export KIRO_SWEBENCH_TASK="$RUNS_DIR/prepared-django__django-13741-kiro"
-export KIRO_JOB_NAME="django-13741-kiro-$(date +%Y%m%d-%H%M%S)"
-```
-
-Verify the prepared image without credentials or a model call:
-
-```bash
-uv run --extra harbor harbor run \
-  --path "$KIRO_SWEBENCH_TASK" \
-  --agent "$FABRIC_AGENT" \
-  --ak fabric_adapter_id=nvidia.fabric.kiro \
-  --ak fabric_config_bundle="$FABRIC_BUNDLE" \
-  --ak fabric_config_target=/opt/nemo-fabric-config \
-  --ak fabric_python=/opt/nemo-fabric-venv/bin/python \
-  --install-only \
-  --job-name "${KIRO_JOB_NAME}-install" \
-  --jobs-dir "$RUNS_DIR" \
-  --n-concurrent 1 \
-  --force-build
-```
-
-Run the prepared task with Kiro's current default model:
-
-```bash
-: "${KIRO_API_KEY:?Export KIRO_API_KEY before running Kiro}"
-
-uv run --extra harbor harbor run \
-  --path "$KIRO_SWEBENCH_TASK" \
-  --agent "$FABRIC_AGENT" \
-  --ak fabric_adapter_id=nvidia.fabric.kiro \
-  --ak 'fabric_harness_settings={"permission_mode":"allow_once"}' \
-  --ak fabric_config_bundle="$FABRIC_BUNDLE" \
-  --ak fabric_config_target=/opt/nemo-fabric-config \
-  --ak fabric_python=/opt/nemo-fabric-venv/bin/python \
-  --ak fabric_runtime_timeout_seconds=1800 \
-  --ak fabric_timeout_sec=1900 \
-  --ae 'KIRO_API_KEY=${KIRO_API_KEY}' \
-  --job-name "$KIRO_JOB_NAME" \
-  --jobs-dir "$RUNS_DIR" \
-  --n-concurrent 1 \
-  --n-attempts 1 \
-  --max-retries 1 \
-  --force-build
-```
-
-Inspect the Kiro result with its generated job name:
-
-```bash
-uv run --extra harbor python -m json.tool \
-  "$RUNS_DIR/$KIRO_JOB_NAME/result.json"
 ```
 
 ## Run the Same Task with Claude
