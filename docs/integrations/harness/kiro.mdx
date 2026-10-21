@@ -1,6 +1,6 @@
 ---
-title: "Kiro"
-description: "Run Kiro CLI V3 through its Agent Client Protocol server."
+title: "Use the Kiro Adapter"
+description: "Install and configure the NVIDIA NeMo Fabric harness integration for Kiro."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -29,10 +29,12 @@ For source development from the repository root:
 
 ```bash
 just install-typescript-kiro
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
 ```
 
-## Configure Fabric
+## Configure the Adapter
 
 The following configuration registers the source descriptor and uses Kiro's
 current default model:

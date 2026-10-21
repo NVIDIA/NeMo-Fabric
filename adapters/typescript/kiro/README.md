@@ -9,7 +9,7 @@ This package provides the `nvidia.fabric.kiro` process adapter. It starts a
 caller-installed Kiro CLI V3 ACP agent, creates one persistent ACP session per
 Fabric runtime, and reuses that session across ordered invocations.
 
-## Installation
+## Install the Adapter
 
 Install Node.js 22.19.0 or newer, install and authenticate the Kiro CLI, then
 install the adapter:
@@ -23,10 +23,12 @@ npm install nemo-fabric-adapters-kiro
 For non-interactive authentication, set `KIRO_API_KEY` instead of using the
 browser login. The adapter never installs or updates Kiro at runtime.
 
-For source development from the repository root:
+For source development, run these commands from the repository root:
 
 ```bash
-npm install --prefix adapters/typescript
+just install-typescript-kiro
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
 ```
 
