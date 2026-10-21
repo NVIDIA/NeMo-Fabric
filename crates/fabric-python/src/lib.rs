@@ -260,7 +260,7 @@ fn release_environment(py: Python<'_>, environment_json: String) -> PyResult<()>
         .map_err(to_py_error)
 }
 
-/// Observe local runtime health independently of invocation exchange.
+/// Check health in the selected environment.
 #[pyfunction]
 fn check_environment(
     py: Python<'_>,

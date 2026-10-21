@@ -25,7 +25,7 @@
       "oneOf": [
         {
           "const": "fabric.check/v1alpha1",
-          "description": "Initial bounded health contract.",
+          "description": "Health contract version `fabric.check/v1alpha1`.",
           "type": "string"
         }
       ]
@@ -36,7 +36,7 @@
   "oneOf": [
     {
       "additionalProperties": false,
-      "description": "Check server responsiveness without selecting a runtime.",
+      "description": "Check runtime server responsiveness.",
       "properties": {
         "schema_version": {
           "$ref": "#/$defs/CheckVersion",

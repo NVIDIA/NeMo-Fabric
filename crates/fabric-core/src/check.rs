@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded SDK health checks and shared health contracts.
+//! Health check requests, reports, and shared contracts.
 
 use crate::{EnvironmentHandle, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -12,7 +12,7 @@ use std::time::{Instant, SystemTime};
 /// Version of the health request and report contract.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum CheckVersion {
-    /// Initial bounded health contract.
+    /// Health contract version `fabric.check/v1alpha1`.
     #[default]
     #[serde(rename = "fabric.check/v1alpha1")]
     V1Alpha1,
@@ -56,7 +56,7 @@ pub enum CheckStage {
     Ready,
 }
 
-/// Health outcome, independent of invocation outcomes.
+/// Health check outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckOutcome {
@@ -70,7 +70,7 @@ pub enum CheckOutcome {
     Unsupported,
 }
 
-/// Fixed diagnostic codes; reports never include exception text.
+/// Diagnostic codes for health observations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckReason {
@@ -168,7 +168,7 @@ fn runtime_id<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CheckRequest {
-    /// Check server responsiveness without selecting a runtime.
+    /// Check runtime server responsiveness.
     Server {
         /// Version of this contract.
         #[serde(default)]
@@ -218,7 +218,7 @@ impl CheckRequest {
     }
 }
 
-/// Current runtime activity; busy alone does not fail health.
+/// Current runtime activity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeActivity {
@@ -234,7 +234,7 @@ pub enum RuntimeActivity {
     Unknown,
 }
 
-/// Runtime lifecycle state; no state implies descendant cleanup.
+/// Runtime lifecycle state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckRuntimeState {
@@ -248,7 +248,7 @@ pub enum CheckRuntimeState {
     Unknown,
 }
 
-/// Runtime evidence, kept separate from agent observations.
+/// Runtime state and activity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeObservation {
@@ -294,7 +294,7 @@ pub struct AdapterCheckRequest {
     pub timeout_seconds: f64,
 }
 
-/// One adapter-owned observation, returned through the independent health channel.
+/// Result of one adapter health probe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(transform = required_fields)]
@@ -332,7 +332,7 @@ pub struct CheckObservation {
     pub observed_at: Option<String>,
 }
 
-/// Public health result; no prompts, configuration, or raw exceptions.
+/// Health check report.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(transform = required_fields)]
@@ -481,7 +481,7 @@ fn valid_server_report(report: &CheckReport) -> bool {
         }
 }
 
-/// Observe server health through the command bridge without lifecycle effects.
+/// Check runtime server health through the command bridge.
 ///
 /// OpenShell server checks map to `fabric-agent-ctl check` in the selected
 /// sandbox. Local server checks and runtime checks return `unsupported_scope`.

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Strict, safe health requests and immutable health reports."""
+"""Health requests and immutable health reports."""
 
 from __future__ import annotations
 
@@ -272,10 +272,9 @@ class _Report(_StrictModel):
 
 
 class CheckReport(FabricMapping):
-    """Immutable health evidence, independent of invocation outcomes.
+    """Immutable health check report.
 
-    ``to_mapping()`` returns detached JSON data. Passing health does not promise
-    model access, valid credentials, concurrent invocation, or descendant cleanup.
+    ``to_mapping()`` returns detached JSON data.
     """
 
     schema_version: str
@@ -299,8 +298,7 @@ class CheckReport(FabricMapping):
         raise AttributeError("CheckReport is immutable")
 
     def _complete(self, started: float) -> Self:
-        # Evidence is already validated and frozen. Only caller-owned timing
-        # changes here, after decoding and validation have finished.
+        # Record client completion after response decoding and validation.
         data = dict(self._data)
         data["completed_at"] = (
             datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")

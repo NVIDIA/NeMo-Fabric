@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Server health is fresh, bounded, independent of agents, and read only."""
+"""Runtime server health responses and deadlines."""
 
 import asyncio
 import copy

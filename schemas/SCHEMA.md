@@ -67,10 +67,7 @@ these related representations do not drift.
 
 ## Adapter Contract
 
-- `adapter-contract/adapter-check-request` and `adapter-check-result`: one
-  independently dispatched health probe and its fixed, safe observation.
-  These closed objects preserve required null fields and never carry prompts,
-  configuration values, credentials, or raw exceptions.
+- `adapter-contract/adapter-check-request` and `adapter-check-result`: a health-probe request and its observation. These closed objects preserve required null fields and use fixed reason codes and evidence-source identifiers.
 - `adapter-contract/adapter-descriptor`: adapter identity, runner,
   requirements, accepted normalized fields, schemas, telemetry support, and
   runtime capability claims.

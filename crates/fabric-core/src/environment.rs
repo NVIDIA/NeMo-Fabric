@@ -485,8 +485,7 @@ where
     }
 }
 
-// Health must not acquire an invocation worker or the shared provider lock.
-// This process owns only the read-only check command and is always retired.
+// A dedicated provider process handles each health check and exits after the response.
 fn request_check_provider_process<T>(
     command: OsString,
     operation: ProviderOperation<'_>,

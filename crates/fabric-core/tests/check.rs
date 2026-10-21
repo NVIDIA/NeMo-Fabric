@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Public health request and no-probe behavior.
+//! Public health request validation and scope outcomes.
 
 use nemo_fabric_core::{
     CheckOutcome, CheckReason, CheckRequest, EnvironmentHandle, check_environment,

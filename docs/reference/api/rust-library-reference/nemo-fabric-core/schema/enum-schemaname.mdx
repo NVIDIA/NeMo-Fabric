@@ -37,6 +37,7 @@ pub enum SchemaName {
     ArtifactManifest,
     ErrorInfo,
     FabricEvent,
+    RuntimeResourceSnapshot,
 }
 ```
 
@@ -200,6 +201,12 @@ Structured error metadata schema.
 
 NeMo Fabric lifecycle event schema.
 
+### `RuntimeResourceSnapshot`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "RuntimeResourceSnapshot"}} /></pre>
+
+Runtime resource snapshot schema.
+
 ## Implementations
 
 ### `impl SchemaName`
@@ -208,7 +215,7 @@ NeMo Fabric lifecycle event schema.
 
 #### `ALL`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">26</a>]"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">27</a>]"}} /></pre>
 
 All public schemas in stable output order.
 

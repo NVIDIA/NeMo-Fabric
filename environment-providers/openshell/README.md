@@ -44,9 +44,8 @@ Start and stop use the same command route.
 
 `Fabric.check()` maps health requests to `fabric-agent-ctl check`. Checks use
 an independent provider worker and one remaining deadline across gateway
-connection, identity verification, exec, and response decoding. Failed or
-unknown health reports remain SDK results; checks never cancel invocations or
-stop runtimes.
+connection, identity verification, exec, and response decoding. Failed and
+unknown health reports return through the SDK.
 
 ## Use the OpenShell Provider
 

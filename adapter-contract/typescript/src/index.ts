@@ -49,5 +49,5 @@ export type CheckLevel = AdapterCheckRequest["level"];
 export type CheckOutcome = AdapterCheckResult["outcome"];
 /** Fixed evidence-source identifier. */
 export type CheckSource = AdapterCheckResult["source"];
-/** Agent activity observed independently of invocation dispatch. */
+/** Agent activity at observation time. */
 export type RuntimeActivity = AdapterCheckResult["activity"];

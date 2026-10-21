@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.check`
 
-Strict, safe health requests and immutable health reports.
+Health requests and immutable health reports.
 
 
 
@@ -76,9 +76,9 @@ Return a detached request using the defaulted level and timeout.
 
 ## <kbd>class</kbd> `CheckReport`
 
-Immutable health evidence, independent of invocation outcomes.
+Immutable health check report.
 
-``to_mapping()`` returns detached JSON data. Passing health does not promise model access, valid credentials, concurrent invocation, or descendant cleanup.
+``to_mapping()`` returns detached JSON data.
 
 
 

@@ -60,8 +60,7 @@ except ImportError:
 
 
 _COLLECTOR_CONTROL_TIMEOUT_MARGIN_SECONDS = 1.0
-# Invocations can occupy the event loop's default blocking-worker pool.
-# Health uses separate workers and never waits for invocation completion.
+# Dedicated workers run health requests during invocations.
 _CHECK_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="fabric-health")
 logger = logging.getLogger(__name__)
 
@@ -92,21 +91,21 @@ class Fabric:
     async def check(
         self, *, environment: EnvironmentHandle, request: CheckRequest
     ) -> CheckReport:
-        """Observe server or agent health without starting tasks or repairing failures.
+        """Check server or runtime health in the selected environment.
 
         OpenShell server checks execute ``fabric-agent-ctl check`` inside the
         selected sandbox. Checks work before a runtime starts and while an
         invocation is running. Local server and runtime checks return
         ``unsupported_scope``.
         The request's single deadline covers routing, all levels, and decoding.
-        Timeouts leave runtimes and active invocations running.
+        Timeouts return ``unknown`` with reason ``probe_timeout``.
 
         Args:
             environment: Prepared or attached execution environment.
             request: Typed scope, runtime target, highest level, and timeout.
 
         Returns:
-            An immutable ``CheckReport`` describing only the requested health.
+            An immutable ``CheckReport`` with ordered health observations.
 
         Raises:
             FabricConfigError: If arguments or returned evidence are invalid.

@@ -137,7 +137,7 @@ CheckReason = Literal[
 
 @dataclass(slots=True, kw_only=True)
 class AdapterCheckRequest(ContractModel):
-    """One native health probe, dispatched separately from invocations."""
+    """Request for one native adapter health probe."""
 
     runtime_id: str
     level: CheckLevel
@@ -155,7 +155,7 @@ class AdapterCheckRequest(ContractModel):
 
 @dataclass(slots=True, kw_only=True)
 class AdapterCheckResult(ContractModel):
-    """Fixed, safe evidence from one adapter health probe; nulls are required."""
+    """Result of one adapter health probe; null fields are required."""
 
     outcome: Literal["passed", "failed", "unknown", "unsupported"]
     reason_code: CheckReason | None

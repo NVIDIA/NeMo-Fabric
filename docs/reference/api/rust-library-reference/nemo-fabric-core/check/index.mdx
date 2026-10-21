@@ -1,39 +1,39 @@
 ---
 title: "Module check"
 sidebar-title: "check"
-description: "Bounded SDK health checks and shared health contracts."
-position: 150
+description: "Health check requests, reports, and shared contracts."
+position: 163
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-Bounded SDK health checks and shared health contracts.
+Health check requests, reports, and shared contracts.
 
 ## Structs
 
 - [AdapterCheckRequest](struct-adaptercheckrequest.mdx): One adapter health probe using the remaining shared deadline budget.
-- [AdapterCheckResult](struct-adaptercheckresult.mdx): One adapter-owned observation, returned through the independent health channel.
+- [AdapterCheckResult](struct-adaptercheckresult.mdx): Result of one adapter health probe.
 - [CheckObservation](struct-checkobservation.mdx): One attempted stage in evaluation order.
-- [CheckReport](struct-checkreport.mdx): Public health result; no prompts, configuration, or raw exceptions.
-- [RuntimeObservation](struct-runtimeobservation.mdx): Runtime evidence, kept separate from agent observations.
+- [CheckReport](struct-checkreport.mdx): Health check report.
+- [RuntimeObservation](struct-runtimeobservation.mdx): Runtime state and activity.
 - [ServerObservation](struct-serverobservation.mdx): Server lifecycle observation.
 
 ## Enums
 
 - [CheckLevel](enum-checklevel.mdx): Agent health level.
-- [CheckOutcome](enum-checkoutcome.mdx): Health outcome, independent of invocation outcomes.
-- [CheckReason](enum-checkreason.mdx): Fixed diagnostic codes; reports never include exception text.
+- [CheckOutcome](enum-checkoutcome.mdx): Health check outcome.
+- [CheckReason](enum-checkreason.mdx): Diagnostic codes for health observations.
 - [CheckRequest](enum-checkrequest.mdx): Select server or runtime health; the environment is supplied separately.
-- [CheckRuntimeState](enum-checkruntimestate.mdx): Runtime lifecycle state; no state implies descendant cleanup.
+- [CheckRuntimeState](enum-checkruntimestate.mdx): Runtime lifecycle state.
 - [CheckScope](enum-checkscope.mdx): Requested health scope.
 - [CheckSource](enum-checksource.mdx): Fixed evidence-source identifiers.
 - [CheckStage](enum-checkstage.mdx): One attempted server or agent stage.
 - [CheckVersion](enum-checkversion.mdx): Version of the health request and report contract.
-- [RuntimeActivity](enum-runtimeactivity.mdx): Current runtime activity; busy alone does not fail health.
+- [RuntimeActivity](enum-runtimeactivity.mdx): Current runtime activity.
 - [ServerState](enum-serverstate.mdx): Server states supported by the health contract.
 
 ## Functions
 
-- [check_environment](fn-check-environment.mdx): Observe server health through the command bridge without lifecycle effects.
+- [check_environment](fn-check-environment.mdx): Check runtime server health through the command bridge.
