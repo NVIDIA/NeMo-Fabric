@@ -51,7 +51,7 @@ function stop(runtimeId) {
   return { operation: "stop", payload: { runtime_id: runtimeId } };
 }
 
-async function exchange(factory, messages) {
+async function exchange(factory, messages, { endInput = true } = {}) {
   const input = new PassThrough();
   const output = new PassThrough();
   const diagnostics = new PassThrough();
@@ -64,8 +64,12 @@ async function exchange(factory, messages) {
   for (const message of messages) {
     input.write(`${JSON.stringify(message)}\n`);
   }
-  input.end();
-  await serving;
+  if (endInput) input.end();
+  try {
+    await serving;
+  } finally {
+    input.end();
+  }
   return encoded.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 
@@ -137,7 +141,7 @@ test("classifies factory failures as adapter startup failures", async () => {
   assert.equal(response.outcome.error.message, "Adapter failed during lifecycle start");
 });
 
-test("classifies health channel startup failures and cleans up the runtime", async (t) => {
+test("health startup failure ends the host and cleans up with input still open", { timeout: 2000 }, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "fabric-health-start-"));
   const previousHome = process.env.FABRIC_HOME;
   process.env.FABRIC_HOME = join(directory, "PRIVATE-unavailable-directory");
@@ -147,21 +151,26 @@ test("classifies health channel startup failures and cleans up the runtime", asy
     await rm(directory, { recursive: true, force: true });
   });
   let stopped = 0;
-  const [response] = await exchange(
+  let invoked = 0;
+  const responses = await exchange(
     () => ({
       async start() {},
-      async invoke() { throw new Error("unreachable"); },
+      async invoke() { invoked += 1; return { status: "succeeded", output: null }; },
       async check() { throw new Error("unreachable"); },
       async stop() { stopped += 1; },
     }),
-    [start("runtime-1")],
+    [start("runtime-1"), invoke("runtime-1", "unused", "after-failure")],
+    { endInput: false },
   );
 
+  assert.equal(responses.length, 1);
+  const [response] = responses;
   assert.equal(response.outcome.error.stage, "start");
   assert.equal(response.outcome.error.code, "lifecycle_health_unavailable");
   assert.equal(response.outcome.error.message, "Adapter health channel could not be started");
   assert.equal(JSON.stringify(response).includes("PRIVATE"), false);
   assert.equal(stopped, 1);
+  assert.equal(invoked, 0);
 });
 
 test("retains a runtime for final cleanup when stop fails", async () => {

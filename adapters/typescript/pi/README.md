@@ -286,7 +286,7 @@ exact runtime ID. Pi supports three ordered health levels:
 | --- | --- |
 | `live` | Completed initialization, unchanged session identity, and a fresh native `extensionRunner.createContext().isIdle()` response. Both idle and busy responses pass. |
 | `active` | Liveness plus completed extension binding and an available request interface. |
-| `ready` | Earlier levels plus the selected model remaining configured, required tools remaining registered through `getAllTools()`, and required MCP transports having no observed error or closure. |
+| `ready` | Earlier levels plus the selected model remaining configured, required tools remaining active or callable through other tools, and required MCP transports having no observed error or closure. |
 
 Health probes use an authenticated channel during invocations. MCP failures and closures remain observable after startup. Stop and ownership changes invalidate observations collected in flight.
 

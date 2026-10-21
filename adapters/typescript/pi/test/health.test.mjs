@@ -129,8 +129,8 @@ test("stopping invalidates an observation and prevents fresh probes", async () =
   assert.equal(probes, 1);
 });
 
-async function nativeSession(t, config = {}) {
-  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-health-")));
+async function nativeSession(t, config = {}, directory) {
+  const workspace = directory ?? await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-health-")));
   t.after(() => rm(workspace, { recursive: true, force: true }));
   const handle = await new PiSdkSessionFactory().create({
     ...input,
@@ -171,6 +171,40 @@ test("real Pi health observations preserve the session and make no model calls",
   await handle.stop();
   assert.equal((await handle.check("live")).reason_code, "session_closed");
 });
+
+for (const exposure of ["direct", "model-only", "deferred", "codemode"]) {
+  test(`ready observes required ${exposure} tools after loadout changes`, async (t) => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-tool-health-")));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const extension = join(directory, "tools.js");
+    await writeFile(extension, `export default function (pi) {
+  pi.registerTool({
+    name: "health_tool", label: "Health Tool", description: "Test tool availability",
+    exposure: ${JSON.stringify(exposure)},
+    parameters: { type: "object", properties: {} },
+    async execute() { return { content: [{ type: "text", text: "ok" }], details: {} }; }
+  });
+  pi.registerCommand("disable-tools", { description: "Disable tools", handler: async () => pi.setActiveTools([]) });
+  pi.registerCommand("enable-tools", { description: "Enable tools", handler: async () => pi.setActiveTools(["health_tool"]) });
+}
+`);
+    const { handle } = await nativeSession(t, {
+      tools: { enabled: ["health_tool"] },
+      harness: { settings: { extensions: ["tools.js"] } },
+    }, directory);
+    assert.equal((await handle.check("ready")).outcome, "passed");
+    await handle.prompt("/disable-tools");
+    assert.equal((await handle.check("live")).outcome, "passed");
+    assert.equal((await handle.check("active")).outcome, "passed");
+    const observation = await handle.check("ready");
+    const available = exposure === "deferred" || exposure === "codemode";
+    assert.equal(observation.outcome, available ? "passed" : "failed");
+    assert.equal(observation.reason_code, available ? null : "health_failed");
+    await handle.prompt("/enable-tools");
+    assert.equal((await handle.check("ready")).outcome, "passed");
+    assert.equal(handle.turnCount, 0);
+  });
+}
 
 test("ready observes a required MCP server closing after successful startup", async (t) => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-health-mcp-")));
