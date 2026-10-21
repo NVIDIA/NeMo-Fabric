@@ -345,7 +345,8 @@ def owned_gateway_config_fixture(tmp_path):
 
 
 @pytest.mark.skipif(
-    sys.platform != "linux", reason="Owned Gateway fixture requires Linux process supervision"
+    sys.platform != "linux",
+    reason="Owned Gateway fixture requires Linux process supervision",
 )
 async def test_fabric_owned_gateway_can_be_checked_and_released_without_runtimes(
     owned_gateway_config,
@@ -467,7 +468,8 @@ async def test_runtime_health_checks_selected_interface_and_survives_a_busy_time
 
 
 @pytest.mark.skipif(
-    sys.platform != "linux", reason="Owned Gateway fixture requires Linux process supervision"
+    sys.platform != "linux",
+    reason="Owned Gateway fixture requires Linux process supervision",
 )
 @pytest.mark.parametrize("execution", ["local", "openshell"])
 async def test_owned_runtime_checks_through_sdk_and_sandbox_command_bridge(
@@ -536,20 +538,18 @@ async def test_owned_runtime_checks_through_sdk_and_sandbox_command_bridge(
         assert (
             await fabric.check(environment=environment, request=request)
         ).reason_code == "health_failed"
-        operational = await fabric.check(
-            environment=environment,
-            request=CheckRequest(
+        with pytest.raises(ValidationError, match="level"):
+            CheckRequest(
                 scope="runtime", runtime_id=runtime.runtime_id, level="operational"
-            ),
-        )
-        assert operational.outcome == "unsupported"
-        assert operational.checks == []
+            )
         if execution == "openshell":
             commands = [
                 json.loads(line)
                 for line in server_sdk_bridge[1].read_text().splitlines()
             ]
-            checks = [command for command in commands if command["operation"] == "check"]
+            checks = [
+                command for command in commands if command["operation"] == "check"
+            ]
             assert checks
             assert all(
                 command["agent"] == config.metadata.name
