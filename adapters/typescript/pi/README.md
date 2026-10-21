@@ -285,14 +285,10 @@ exact runtime ID. Pi supports three ordered health levels:
 | Level | Evidence |
 | --- | --- |
 | `live` | Completed initialization, unchanged session identity, and a fresh native `extensionRunner.createContext().isIdle()` response. Both idle and busy responses pass. |
-| `active` | Liveness plus completed extension binding and an interface that NeMo Fabric has not stopped, disabled, or marked unusable. |
+| `active` | Liveness plus completed extension binding and an available request interface. |
 | `ready` | Earlier levels plus the selected model remaining configured, required tools remaining registered through `getAllTools()`, and required MCP transports having no observed error or closure. |
 
-Health probes use a separate channel from invocation dispatch. Probes do not
-send prompts, execute tools, or contact model providers. Passing readiness
-establishes the listed local setup checks; model access and credentials are
-outside those checks. MCP failures and closures remain observable after
-startup. Stop and ownership changes invalidate observations collected in flight.
+Health probes use an authenticated channel during invocations. MCP failures and closures remain observable after startup. Stop and ownership changes invalidate observations collected in flight.
 
 ## Dependency Rationale
 
