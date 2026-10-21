@@ -2,7 +2,7 @@
 title: "Module check"
 sidebar-title: "check"
 description: "Runtime health checks and shared contracts."
-position: 163
+position: 164
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -22,10 +22,10 @@ Runtime health checks and shared contracts.
 
 ## Enums
 
-- [CheckLevel](enum-checklevel.mdx): Agent health level.
+- [CheckLevel](enum-checklevel.mdx): Runtime or service health level.
 - [CheckOutcome](enum-checkoutcome.mdx): Health check outcome.
 - [CheckReason](enum-checkreason.mdx): Diagnostic codes for health observations.
-- [CheckRequest](enum-checkrequest.mdx): Select server or runtime health; the environment is supplied separately.
+- [CheckRequest](enum-checkrequest.mdx): Select server, runtime, or registered service health.
 - [CheckRuntimeState](enum-checkruntimestate.mdx): Runtime lifecycle state.
 - [CheckScope](enum-checkscope.mdx): Requested health scope.
 - [CheckSource](enum-checksource.mdx): Fixed evidence-source identifiers.
@@ -36,4 +36,5 @@ Runtime health checks and shared contracts.
 
 ## Functions
 
-- [check_environment](fn-check-environment.mdx): Check server or runtime health in the selected environment.
+- [check_environment](fn-check-environment.mdx): Check server or runtime health through a supplied environment.
+- [check_service](fn-check-service.mdx): Check health for a registered service.

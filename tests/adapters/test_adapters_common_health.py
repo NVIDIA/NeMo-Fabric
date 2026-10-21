@@ -130,6 +130,77 @@ async def test_health_channel_rejects_other_targets(
     probe.assert_not_awaited()
 
 
+@pytest.mark.parametrize(
+    "invalid",
+    ["oversized", "missing_newline", "duplicate_envelope", "duplicate_payload"],
+)
+async def test_health_channel_rejects_invalid_request_lines(health_channel, invalid):
+    endpoint, probe, _, _ = health_channel
+    payload = '{"runtime_id":"service-1","level":"live","timeout_seconds":1}'
+    if invalid == "duplicate_payload":
+        payload = payload[:-1] + ',"level":"live"}'
+    nonce = secrets.token_hex(32)
+    signature = hmac.new(
+        endpoint["token"].encode(),
+        f"request\n{nonce}\n{payload}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    envelope = json.dumps({"nonce": nonce, "payload": payload, "proof": signature})
+    if invalid == "duplicate_envelope":
+        envelope = envelope[:-1] + f',"nonce":"{nonce}"' + "}"
+    wire = envelope.encode() + b"\n"
+    if invalid == "oversized":
+        wire = b"x" * (health._LIMIT + 1) + b"\n"
+    elif invalid == "missing_newline":
+        wire = wire[:-1]
+    reader, writer = await asyncio.open_connection("127.0.0.1", endpoint["port"])
+    try:
+        writer.write(wire)
+        await writer.drain()
+        writer.write_eof()
+        assert await asyncio.wait_for(reader.read(), 1) == b""
+        probe.assert_not_awaited()
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
+async def test_health_channel_closes_requests_that_exceed_the_connection_cap(
+    health_channel,
+):
+    endpoint, probe, _, server = health_channel
+    connections = []
+    try:
+        for _ in range(64):
+            connections.append(
+                await asyncio.open_connection("127.0.0.1", endpoint["port"])
+            )
+        async with asyncio.timeout(1):
+            while len(server.writers) != 64:
+                await asyncio.sleep(0)
+        reader, writer = await asyncio.open_connection("127.0.0.1", endpoint["port"])
+        connections.append((reader, writer))
+        assert await asyncio.wait_for(reader.read(), 1) == b""
+        probe.assert_not_awaited()
+    finally:
+        for _, writer in connections:
+            writer.close()
+        await asyncio.gather(*(writer.wait_closed() for _, writer in connections))
+
+
+async def test_health_channel_closes_idle_connections_after_the_read_deadline(
+    health_channel,
+):
+    endpoint, probe, _, _ = health_channel
+    reader, writer = await asyncio.open_connection("127.0.0.1", endpoint["port"])
+    try:
+        assert await asyncio.wait_for(reader.read(), 5) == b""
+        probe.assert_not_awaited()
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
 @pytest.mark.parametrize("level", ["operational", "unknown-level"])
 async def test_health_channel_rejects_unknown_levels(
     health_channel, health_exchange, level
@@ -222,6 +293,57 @@ async def test_health_server_never_overwrites_an_existing_endpoint(tmp_path):
     with pytest.raises(OSError):
         await health.serve_health("service-1", tmp_path, AsyncMock())
     assert path.read_text() == "existing endpoint"
+
+
+async def test_health_server_revokes_credentials_before_cancellable_shutdown(
+    health_channel, tmp_path, monkeypatch
+):
+    _, probe, path, server = health_channel
+    waiting = asyncio.Event()
+
+    async def wait_closed():
+        waiting.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(server.server, "wait_closed", wait_closed)
+    closing = asyncio.create_task(server.close())
+    try:
+        await asyncio.wait_for(waiting.wait(), 1)
+        closing.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await closing
+        assert not path.exists()
+        replacement = await health.serve_health("service-2", tmp_path, probe)
+        await server.close()
+        assert path.exists()
+        await replacement.close()
+    finally:
+        closing.cancel()
+        await asyncio.gather(closing, return_exceptions=True)
+
+
+async def test_health_server_closes_transports_when_credential_removal_fails(
+    health_channel, monkeypatch
+):
+    endpoint, probe, path, server = health_channel
+    reader, writer = await asyncio.open_connection("127.0.0.1", endpoint["port"])
+    try:
+        async with asyncio.timeout(1):
+            while not server.writers:
+                await asyncio.sleep(0)
+        mock_path = MagicMock(spec=type(path))
+        mock_path.unlink.side_effect = PermissionError("TEST_ONLY_PRIVATE")
+        monkeypatch.setattr(server, "path", mock_path)
+        with pytest.raises(PermissionError):
+            await server.close()
+        assert not server.server.is_serving()
+        assert await asyncio.wait_for(reader.read(), 1) == b""
+        assert not server.writers
+        assert not server.tasks
+        probe.assert_not_awaited()
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
 
 @pytest.fixture(name="health_runtime")
