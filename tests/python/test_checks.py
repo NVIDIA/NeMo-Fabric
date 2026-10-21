@@ -9,6 +9,7 @@ import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -124,15 +125,20 @@ async def test_sdk_checks_use_one_client_timer(
 async def test_expired_operational_request_remains_unsupported_without_probing(
     check_environment, monkeypatch
 ):
+    """Exercise an expired budget without depending on platform clock precision."""
     native = MagicMock()
     monkeypatch.setattr("nemo_fabric.client._native", native)
+    ticks = iter([0.0])
+    clock = SimpleNamespace(monotonic=lambda: next(ticks, 1.0))
+    monkeypatch.setattr("nemo_fabric.client.time", clock)
+    monkeypatch.setattr("nemo_fabric.check.time", clock)
     report = await Fabric().check(
         environment=check_environment,
         request=CheckRequest(
             scope="runtime",
             runtime_id="runtime-1",
             level="operational",
-            timeout_seconds=1e-7,
+            timeout_seconds=0.5,
         ),
     )
     assert report.outcome == "unsupported"

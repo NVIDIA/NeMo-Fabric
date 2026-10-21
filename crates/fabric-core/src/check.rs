@@ -550,12 +550,11 @@ fn valid_remote_report(report: &CheckReport, request: &CheckRequest) -> bool {
         {
             return false;
         }
-        if let Some(observed) = &check.observed_at {
-            if !DateTime::parse_from_rfc3339(observed)
+        if let Some(observed) = &check.observed_at
+            && !DateTime::parse_from_rfc3339(observed)
                 .is_ok_and(|time| time.offset().local_minus_utc() == 0 && Some(time) <= completed)
-            {
-                return false;
-            }
+        {
+            return false;
         }
         if check.outcome == CheckOutcome::Passed
             && (check.observed_at.is_none()
@@ -661,16 +660,15 @@ fn probe_remote(
     if started.elapsed().as_secs_f64() >= request.timeout_seconds() {
         report = unobserved_report(request, CheckReason::ProbeTimeout);
     }
-    if let CheckRequest::Runtime { runtime_id, .. } = request {
-        if crate::runtime::remote_check_agent(environment, runtime_id)
+    if let CheckRequest::Runtime { runtime_id, .. } = request
+        && crate::runtime::remote_check_agent(environment, runtime_id)
             .ok()
             .flatten()
             != agent
-        {
-            report.outcome = CheckOutcome::Unknown;
-            report.reason_code = Some(CheckReason::ObservationChanged);
-            report.runtime = None;
-        }
+    {
+        report.outcome = CheckOutcome::Unknown;
+        report.reason_code = Some(CheckReason::ObservationChanged);
+        report.runtime = None;
     }
     report
 }
@@ -700,10 +698,9 @@ pub(crate) fn invalidate_runtime(runtime: &RuntimeHandle) {
     if bindings
         .get(&runtime.runtime_id)
         .is_some_and(|b| b.runtime == *runtime)
+        && let Some(binding) = bindings.remove(&runtime.runtime_id)
     {
-        if let Some(binding) = bindings.remove(&runtime.runtime_id) {
-            binding.generation.fetch_add(1, Ordering::SeqCst);
-        }
+        binding.generation.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -725,9 +722,12 @@ fn utc_now() -> String {
     DateTime::<Utc>::from(SystemTime::now()).to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
-/// Check a local runtime without acquiring an invocation or lifecycle-exchange lock.
+/// Check server or runtime health without acquiring an invocation or lifecycle-exchange lock.
 ///
-/// Local server scope and non-local providers are unsupported in this slice.
+/// Local runtimes use their authenticated adapter health channel. OpenShell
+/// server and runtime checks execute `fabric-agent-ctl check` in the sandbox.
+/// Local server checks and other providers return `unsupported_scope`.
+/// The reserved operational level returns `unsupported_level` without probing.
 /// Timeouts and ownership changes return health evidence without runtime teardown.
 pub fn check_environment(
     environment: &EnvironmentHandle,

@@ -289,17 +289,21 @@ async function dispatch(
     state.failed = false;
     const directory = process.env.FABRIC_HOME;
     if (directory !== undefined && candidate.check !== undefined) {
-      state.health = await serveHealth(messageRuntimeId, directory, async (level) => {
-        const generation = state.generation;
-        const runtime = state.runtime;
-        if (state.stopping || runtime?.check === undefined) return unobservedHealth("observation_changed");
-        if (state.failed && level !== "live") return {
-          ...unobservedHealth("endpoint_unavailable"), outcome: "failed",
-        };
-        const result = await runtime.check(level);
-        return state.generation === generation && state.runtime === runtime && !state.stopping
-          ? result : unobservedHealth("observation_changed");
-      });
+      try {
+        state.health = await serveHealth(messageRuntimeId, directory, async (level) => {
+          const generation = state.generation;
+          const runtime = state.runtime;
+          if (state.stopping || runtime?.check === undefined) return unobservedHealth("observation_changed");
+          if (state.failed && level !== "live") return {
+            ...unobservedHealth("endpoint_unavailable"), outcome: "failed",
+          };
+          const result = await runtime.check(level);
+          return state.generation === generation && state.runtime === runtime && !state.stopping
+            ? result : unobservedHealth("observation_changed");
+        });
+      } catch {
+        throw new LifecycleError("lifecycle_health_unavailable", "Adapter health channel could not be started");
+      }
     }
     return success("start");
   }
