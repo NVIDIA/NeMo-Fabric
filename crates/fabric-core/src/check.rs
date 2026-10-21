@@ -487,7 +487,8 @@ fn valid_server_report(report: &CheckReport) -> bool {
 /// Observe server health through the command bridge without lifecycle effects.
 ///
 /// OpenShell server checks map to `fabric-agent-ctl check` in the selected
-/// sandbox. Local server checks and runtime checks are unsupported in this slice.
+/// sandbox. Local server checks and runtime checks return `unsupported_scope`.
+/// The reserved operational level returns `unsupported_level` without probing.
 pub fn check_environment(
     environment: &EnvironmentHandle,
     request: &CheckRequest,

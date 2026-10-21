@@ -96,8 +96,9 @@ class Fabric:
 
         OpenShell server checks execute ``fabric-agent-ctl check`` inside the
         selected sandbox. Checks work before a runtime starts and while an
-        invocation is running. Local server and runtime scopes are unsupported
-        in this server-only implementation.
+        invocation is running. Local server and runtime checks return
+        ``unsupported_scope``; the reserved operational level returns
+        ``unsupported_level`` without probing.
         The request's single deadline covers routing, all levels, and decoding.
         Timeouts leave runtimes and active invocations running.
 
