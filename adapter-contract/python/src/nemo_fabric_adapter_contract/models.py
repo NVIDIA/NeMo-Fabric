@@ -117,7 +117,7 @@ class ContractModel:
         return encode_dataclass(self)
 
 
-CheckLevel = Literal["live", "active", "ready", "operational"]
+CheckLevel = Literal["live", "active", "ready"]
 CheckReason = Literal[
     "server_stopping",
     "capabilities_unverified",

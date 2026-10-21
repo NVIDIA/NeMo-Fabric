@@ -25,6 +25,7 @@ def test_check_probe_contract_round_trips_required_nulls():
 @pytest.mark.parametrize(
     "fields",
     [
+        {"runtime_id": "runtime-1", "level": "operational", "timeout_seconds": 1},
         {"runtime_id": "runtime-1", "level": "ready", "timeout_seconds": False},
         {"runtime_id": " ", "level": "live", "timeout_seconds": 1},
         {"runtime_id": "runtime-1", "level": "live", "timeout_seconds": 0},

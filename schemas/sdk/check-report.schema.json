@@ -1,7 +1,7 @@
 {
   "$defs": {
     "CheckLevel": {
-      "description": "Agent health level; operational checks are reserved and unsupported.",
+      "description": "Agent health level.",
       "oneOf": [
         {
           "const": "live",
@@ -16,11 +16,6 @@
         {
           "const": "ready",
           "description": "Observe required local model, tool, and connection setup.",
-          "type": "string"
-        },
-        {
-          "const": "operational",
-          "description": "Reserved; never dispatch an agent probe.",
           "type": "string"
         }
       ]

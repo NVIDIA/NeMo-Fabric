@@ -62,14 +62,11 @@ fn runtime_scope_and_local_server_are_unsupported() {
 }
 
 #[test]
-fn operational_runs_no_probes_and_echoes_the_target() {
-    let request = serde_json::from_value(json!({
-        "scope":"runtime", "runtime_id":"missing", "level":"operational"
-    }))
-    .unwrap();
-    let report = check_environment(&environment(), &request).unwrap();
-    assert_eq!(report.outcome, CheckOutcome::Unsupported);
-    assert_eq!(report.reason_code, Some(CheckReason::UnsupportedLevel));
-    assert_eq!(report.runtime_id.as_deref(), Some("missing"));
-    assert!(report.checks.is_empty());
+fn operational_is_not_a_valid_health_level() {
+    assert!(
+        serde_json::from_value::<CheckRequest>(json!({
+            "scope":"runtime", "runtime_id":"missing", "level":"operational"
+        }))
+        .is_err()
+    );
 }
