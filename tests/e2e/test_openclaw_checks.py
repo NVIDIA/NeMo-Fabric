@@ -466,7 +466,9 @@ async def test_runtime_health_checks_selected_interface_and_survives_a_busy_time
     ).outcome == "passed"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Executable POSIX Gateway fixture")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Owned Gateway fixture requires Linux process supervision"
+)
 @pytest.mark.parametrize("execution", ["local", "openshell"])
 async def test_owned_runtime_checks_through_sdk_and_sandbox_command_bridge(
     execution, owned_gateway_config, server_sdk_bridge, tmp_path
@@ -547,11 +549,12 @@ async def test_owned_runtime_checks_through_sdk_and_sandbox_command_bridge(
                 json.loads(line)
                 for line in server_sdk_bridge[1].read_text().splitlines()
             ]
+            checks = [command for command in commands if command["operation"] == "check"]
+            assert checks
             assert all(
                 command["agent"] == config.metadata.name
                 and command["runtime_id"] == runtime.runtime_id
-                for command in commands
-                if command["operation"] == "check"
+                for command in checks
             )
     finally:
         await runtime.stop()
