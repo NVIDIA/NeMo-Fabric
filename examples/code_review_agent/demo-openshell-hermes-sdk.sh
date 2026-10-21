@@ -57,7 +57,6 @@ run_workload_consumer() {
   fi
   uv run --no-sync python -m examples.code_review_agent.openshell_sdk_consumer \
     --ownership "${ownership}" \
-    --harness hermes \
     "${relay_args[@]}" \
     --gateway "http://127.0.0.1:${GATEWAY_PORT}" \
     --image "${RUNTIME_IMAGE}" \

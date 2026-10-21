@@ -30,7 +30,6 @@ from nemo_fabric import (
 from examples.code_review_agent.config import (
     CODE_REVIEW_INSTRUCTION,
     hermes_config,
-    openclaw_config,
     with_relay,
 )
 
@@ -48,31 +47,23 @@ HERMES_TASK_DISCOVERY_PATH = "/opt/fabric/adapters/python/hermes"
 def build_config(args: argparse.Namespace) -> FabricConfig:
     """Build a harness config with OpenShell environment settings."""
 
-    harness = getattr(args, "harness", "openclaw")
     relay_enabled = getattr(args, "relay", False)
-    task_discovery_paths = None
-    if harness == "hermes":
-        config = hermes_config()
-        hermes_descriptor = (
-            Path(__file__).resolve().parents[2]
-            / "adapters/python/hermes/hermes.fabric-adapter.json"
+    config = hermes_config()
+    hermes_descriptor = (
+        Path(__file__).resolve().parents[2]
+        / "adapters/python/hermes/hermes.fabric-adapter.json"
+    )
+    if not hermes_descriptor.is_file():
+        raise FileNotFoundError(
+            "Hermes adapter descriptor is missing from this checkout"
         )
-        if not hermes_descriptor.is_file():
-            raise FileNotFoundError(
-                "Hermes adapter descriptor is missing from this checkout"
-            )
-        config.discovery = DiscoveryConfig(local_paths=[hermes_descriptor])
-        task_discovery_paths = [HERMES_TASK_DISCOVERY_PATH]
-        config.instructions.system.content = (
-            f"{CODE_REVIEW_INSTRUCTION} Use the terminal tool to read workspace files."
-        )
-        config.tools = ToolsConfig(enabled=["terminal"])
-        config.runtime.max_turns = 6
-    else:
-        config = openclaw_config()
+    config.discovery = DiscoveryConfig(local_paths=[hermes_descriptor])
+    config.instructions.system.content = (
+        f"{CODE_REVIEW_INSTRUCTION} Use the terminal tool to read workspace files."
+    )
+    config.tools = ToolsConfig(enabled=["terminal"])
+    config.runtime.max_turns = 6
     if relay_enabled:
-        if harness != "hermes":
-            raise ValueError("Relay is supported for the Hermes harness only")
         config = with_relay(config)
     config.metadata.name = "openshell-code-review"
     model = config.models["default"]
@@ -96,11 +87,7 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
             "policy_yaml": Path(args.policy_file).read_text(encoding="utf-8"),
             "providers": ["hosted"],
             "sandbox_name": args.sandbox_name,
-            **(
-                {"task_discovery_paths": task_discovery_paths}
-                if task_discovery_paths is not None
-                else {}
-            ),
+            "task_discovery_paths": [HERMES_TASK_DISCOVERY_PATH],
         },
     )
     if args.ownership == "caller_owned":
@@ -157,11 +144,7 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
                 }
                 break
             output = review.get("output")
-            if (
-                args.harness == "hermes"
-                and isinstance(output, dict)
-                and output.get("completed") is False
-            ):
+            if isinstance(output, dict) and output.get("completed") is False:
                 report["error"] = {
                     "code": "hermes_incomplete",
                     "request_id": result.request_id,
@@ -185,18 +168,14 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
                     await runtime.stop()
                 except Exception as error:
                     report["status"] = "failed"
-                    report["error"] = report["error"] or {
-                        "code": type(error).__name__
-                    }
+                    report["error"] = report["error"] or {"code": type(error).__name__}
         finally:
             if environment is not None:
                 try:
                     await fabric.release_environment(environment)
                 except Exception as error:
                     report["status"] = "failed"
-                    report["error"] = report["error"] or {
-                        "code": type(error).__name__
-                    }
+                    report["error"] = report["error"] or {"code": type(error).__name__}
 
     result_path = Path(args.results_file)
     result_path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,7 +203,9 @@ def _record_fabric_owned_sandbox(args: argparse.Namespace, environment: Any) -> 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ownership", choices=("caller_owned", "fabric_owned"), required=True)
+    parser.add_argument(
+        "--ownership", choices=("caller_owned", "fabric_owned"), required=True
+    )
     parser.add_argument("--gateway", required=True)
     parser.add_argument("--workspace", default="default")
     parser.add_argument("--image", required=True)
@@ -232,7 +213,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--results-file", required=True)
     parser.add_argument("--sandbox-name", required=True)
     parser.add_argument("--sandbox-id")
-    parser.add_argument("--harness", choices=("openclaw", "hermes"), default="openclaw")
     parser.add_argument("--relay", action="store_true")
     parser.add_argument(
         "--model",
@@ -254,13 +234,13 @@ def main() -> None:
     args = _parser().parse_args()
     if args.ownership == "caller_owned" and not args.sandbox_id:
         raise SystemExit("--sandbox-id is required for caller_owned mode")
-    if args.relay and args.harness != "hermes":
-        raise SystemExit("--relay requires --harness hermes")
     args.inputs = args.inputs or list(DEFAULT_PROMPTS)
     if len(args.inputs) != 2:
         raise SystemExit("--input must be supplied exactly twice")
     if not (os.environ.get("OPENAI_API_KEY") or os.environ.get("NVIDIA_API_KEY")):
-        raise SystemExit("OPENAI_API_KEY or NVIDIA_API_KEY is required for the model provider")
+        raise SystemExit(
+            "OPENAI_API_KEY or NVIDIA_API_KEY is required for the model provider"
+        )
     report = asyncio.run(run_demo(args))
     if report["status"] != "succeeded":
         raise SystemExit(1)

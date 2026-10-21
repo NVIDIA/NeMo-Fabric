@@ -60,7 +60,6 @@ for relay in (False, True):
         results_file="/tmp/code-review/report.json",
         sandbox_name="review-build-check",
         sandbox_id=None,
-        harness="hermes",
         relay=relay,
         model="nvidia/nemotron-3.5-lightning-30b-a3b",
         base_url="https://integrate.api.nvidia.com/v1",

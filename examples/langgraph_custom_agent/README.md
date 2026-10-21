@@ -219,7 +219,8 @@ lifecycle remains easy to identify.
 The source example above shows the agent and adapter boundary. This deployment
 path packages the same LangGraph agent and custom adapter in a task image; a
 host-side consumer uses the normal NeMo Fabric SDK and OpenShell provider for
-both sandbox ownership modes.
+both sandbox ownership modes. Compare the [Hermes code-review example](../code_review_agent/README.md#run-hermes-in-openshell)
+to see the same deployment path with an existing third-party harness.
 
 From the repository root, use a host Python environment with the NeMo Fabric
 SDK and native extension, Docker with Linux containers, Rust/Cargo, and `uv`.

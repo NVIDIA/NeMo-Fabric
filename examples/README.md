@@ -46,7 +46,7 @@ print one JSON document containing `atof_records` and the separate terminal
 `result`. Relay retains redirect-decision marks in configured ATOF artifacts, while
 Pi's startup `model_redirect` marks are not included in `atof_records`.
 
-The [OpenShell Code Review example](code_review_agent/README.md#openshell-through-the-nemo-fabric-sdk) uses the normal SDK/provider lifecycle to run the same task with OpenClaw or Hermes, including an optional Hermes + NeMo Relay variant. A separate raw/direct route in that guide shows OpenShell's Python client. The SDK route packages the harness inside the sandbox image and keeps lifecycle setup in the host consumer.
+The [OpenShell Code Review example](code_review_agent/README.md#run-hermes-in-openshell) packages Hermes Agent inside the sandbox and uses the normal SDK/provider lifecycle from the host. It runs two review turns and can collect NeMo Relay evidence.
 
 ## LangGraph Custom Agent
 
