@@ -927,10 +927,12 @@ class PiSdkSessionHandle implements PiSessionHandle {
       };
       if (level === "ready") {
         const model = this.session.model;
-        const registered = new Set(this.session.getAllTools().map((tool) => tool.name));
+        const available = new Set([
+          ...this.session.getActiveToolNames(), ...this.session.getCallableToolNames(),
+        ]);
         if (model?.id !== this.expectedModel.id || model.provider !== this.expectedModel.provider
           || this.modelRuntime.getModel(model.provider, model.id) === undefined
-          || this.requiredTools.some((name) => !registered.has(name))
+          || this.requiredTools.some((name) => !available.has(name))
           || [...this.connections.values()].some((connection) => !connection.healthy)) {
           return { outcome: "failed", reason_code: "health_failed", activity, source, observed_at };
         }
