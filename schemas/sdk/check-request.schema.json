@@ -100,7 +100,7 @@
     },
     {
       "additionalProperties": false,
-      "description": "Check a prepared or attached service without selecting a runtime.",
+      "description": "Check a prepared or attached service.",
       "properties": {
         "level": {
           "$ref": "#/$defs/CheckLevel",

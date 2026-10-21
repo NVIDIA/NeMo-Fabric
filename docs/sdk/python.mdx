@@ -298,7 +298,7 @@ to the probe.
 
 ### Gateway Service Health
 
-Check a prepared or attached OpenClaw Gateway with `Fabric.check(service=..., request=...)`. Service checks use the exact process-local `ServiceHandle` and do not require an environment or an attached runtime:
+Check a prepared or attached OpenClaw Gateway with `Fabric.check(service=..., request=...)`. Service checks use the selected process-local `ServiceHandle`:
 
 ```python
 from nemo_fabric import CheckRequest, Fabric
@@ -314,9 +314,9 @@ async with await fabric.prepare_service(config) as service:
     print(report.outcome)
 ```
 
-For OpenClaw, `live` validates `/healthz`, `active` validates an authenticated `/v1/models` response, and `ready` follows native `/readyz`, including configured channel health. A failed channel can fail Gateway readiness while `live` and `active` pass. These observations do not prove selected-agent execution, model-provider access, or message delivery. Refer to the [OpenClaw Gateway health guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/python/openclaw/README.md#gateway-health).
+For OpenClaw, `live` validates `/healthz`, `active` validates an authenticated `/v1/models` response, and `ready` follows native `/readyz`, including configured channel health. A failed channel can fail Gateway readiness while `live` and `active` pass. Refer to the [OpenClaw Gateway health guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/python/openclaw/README.md#gateway-health).
 
-Service checks evaluate earlier levels in order under the same three-second default deadline. They can run during invocations and never repair, restart, or release the Gateway. Reports have `scope="service"`, the selected `service_id`, and null runtime evidence. Release during a check invalidates evidence with `unknown/observation_changed`; a released or unavailable binding returns `unknown/service_unavailable`. Service hosting and checks remain local SDK capabilities; the sandbox command bridge continues to support server and runtime checks.
+Service checks evaluate earlier levels in order under the same three-second default deadline. They can run during invocations. Reports have `scope="service"`, the selected `service_id`, and null runtime evidence. Release during a check invalidates evidence with `unknown/observation_changed`; a released or unavailable binding returns `unknown/service_unavailable`. Service hosting and checks remain local SDK capabilities; the sandbox command bridge continues to support server and runtime checks.
 
 ### Sandbox Command Bridge
 

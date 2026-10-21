@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Gateway services can be checked before any Fabric runtime exists."""
+"""SDK health checks for registered Gateway services."""
 
 import json
 from datetime import datetime, timezone

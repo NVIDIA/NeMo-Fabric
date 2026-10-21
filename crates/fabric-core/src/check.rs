@@ -244,7 +244,7 @@ pub enum CheckRequest {
         #[schemars(extend("exclusiveMinimum" = 0))]
         timeout_seconds: f64,
     },
-    /// Check a prepared or attached service without selecting a runtime.
+    /// Check a prepared or attached service.
     Service {
         /// Version of this contract.
         #[serde(default)]
@@ -760,7 +760,7 @@ pub(crate) fn invalidate_service(service: &ServiceHandle) {
     }
 }
 
-/// Observe a registered service without acquiring a lifecycle or invocation lock.
+/// Check health for a registered service.
 ///
 /// The complete handle must match the active binding. Releasing a service
 /// invalidates observations in flight, including failed transport observations.

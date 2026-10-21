@@ -804,7 +804,7 @@ class OpenClawRuntime:
         self._windows_job: int | None = None
 
     async def check(self, level: str) -> dict[str, Any]:
-        """Observe the Gateway without invoking an agent or changing its lifecycle.
+        """Check Gateway health using its native endpoints.
 
         Gateway readiness follows native ``/readyz``, including configured
         channels. The health-channel caller supplies the shared deadline.

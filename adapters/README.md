@@ -231,7 +231,7 @@ Local Pi runtimes also support `Fabric.check()` at the `live`, `active`, and
 `ready` levels. These observations can run during an invocation and inspect
 native session and local setup state. Refer to the [Pi health contract](typescript/pi/README.md#runtime-health).
 
-Prepared and attached OpenClaw Gateways support service-scoped `Fabric.check()` calls before any runtime exists. Gateway `ready` follows OpenClaw's native `/readyz`, including configured channels. OpenClaw runtime-scoped agent checks remain unsupported. Refer to the [Gateway health contract](python/openclaw/README.md#gateway-health).
+Prepared and attached OpenClaw Gateways support service-scoped `Fabric.check()` calls before any runtime exists. Gateway `ready` follows OpenClaw's native `/readyz`, including configured channels. Refer to the [Gateway health contract](python/openclaw/README.md#gateway-health).
 
 Shared lifecycle, Relay gateway, hook, and payload helpers are documented in
 the [adapter utilities guide](python/common/README.md).

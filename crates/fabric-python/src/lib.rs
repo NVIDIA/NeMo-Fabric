@@ -276,7 +276,7 @@ fn check_environment(
     to_json(&report)
 }
 
-/// Observe a registered service without starting a runtime or task.
+/// Check health for a registered service.
 #[pyfunction]
 fn check_service(py: Python<'_>, service_json: String, request_json: String) -> PyResult<String> {
     let service = parse_service_handle(service_json)?;
