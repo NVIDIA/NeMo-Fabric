@@ -2,22 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { homedir, tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { QwenSdkSessionFactory, QwenUsageTracker } from "../dist/qwen-sdk.js";
-
-async function archiveTemporary(path) {
-  const trash = join(homedir(), "trash", "nemo-fabric");
-  await mkdir(trash, { recursive: true });
-  try { await rename(path, join(trash, `${basename(path)}-${randomUUID()}`)); }
-  catch (error) { if (error.code !== "ENOENT") throw error; }
-}
 
 const key = "nemo_fabric.usage_accounting.v1";
 function observedUsage(usage) {
@@ -347,7 +339,7 @@ test("Qwen SDK exposes an explicit skill", { timeout: 45_000 }, async () => {
     await session?.close();
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
-    await archiveTemporary(workspace);
+    await rm(workspace, { recursive: true, force: true });
   }
 });
 
