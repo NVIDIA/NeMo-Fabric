@@ -133,7 +133,7 @@ a 90-second adapter startup limit.
 
 Relay 0.10.3 includes an
 [upstream startup-memory fix](https://github.com/NVIDIA/NeMo-Relay/pull/1375).
-Use that release to obtain the fix on 0.10 installations. Fabric continues to
+Use that release to obtain the fix on 0.10 installations. NeMo Fabric continues to
 accept the supported `>=0.9,<0.11` CLI range.
 
 ## Relay Request Correlation
