@@ -592,6 +592,29 @@ If a config contains relative paths, pass a `base_dir` to `plan(...)`,
 `start_runtime(...)`. The base directory anchors skills, workspaces, artifacts,
 and other relative paths to the caller's package or job layout.
 
+### Configure Dynamic Relay Plugins
+
+Dynamic Relay plugins are configured separately under `relay.plugins.dynamic`. Enable `telemetry.providers.relay` with `enable_relay()` so NeMo Fabric forwards this configuration to the adapter's Relay integration. The following example configures a dynamic plugin without static components:
+
+```python
+from nemo_fabric import RelayConfig
+
+plugin_config = config.model_copy(deep=True)
+plugin_config.relay = RelayConfig(
+    plugins={
+        "dynamic": [
+            {
+                "manifest": "/opt/switchyard/relay-plugin.toml",
+                "enabled": True,
+            }
+        ]
+    }
+)
+plugin_config.enable_relay()
+```
+
+NeMo Fabric preserves the `relay.plugins` section alongside any configured `relay.observability`, `relay.components`, and `relay.policy`. Relay owns manifest validation, loading, and activation. Use absolute manifest paths accessible inside the agent environment. Plugin activation depends on the selected adapter's Relay integration and the installed Relay version. For Hermes installation requirements, refer to [Use the Hermes Agent Adapter](../integrations/harness/hermes.mdx).
+
 ## API Inventory
 
 Create `Fabric()` as the primary SDK entrypoint. It is a regular Python object,
