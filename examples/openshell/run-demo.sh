@@ -258,6 +258,10 @@ if ! kill -0 "${GATEWAY_PID}" 2>/dev/null; then
   exit 1
 fi
 
+if declare -F configure_workload_gateway >/dev/null; then
+  configure_workload_gateway
+fi
+
 run_consumer() {
   OPENSHELL_FABRIC_SANDBOX_STATE_FILE="${FABRIC_SANDBOX_STATE_FILE}" \
     VIRTUAL_ENV="${DEMO_PYTHON_ENV}" UV_PROJECT_ENVIRONMENT="${DEMO_PYTHON_ENV}" \
@@ -268,9 +272,11 @@ run_consumer() {
 
 if [[ "${EXAMPLE_MODE}" == caller_owned || "${EXAMPLE_MODE}" == both ]]; then
   CALLER_SANDBOX_ATTEMPTED=1
+  # Guard empty arrays for Bash 3.2's set -u behavior without adding empty args.
   "${OPENSHELL_CLI}" --gateway-endpoint "http://127.0.0.1:${GATEWAY_PORT}" \
     --workspace default sandbox create --name "${SANDBOX_NAME}" --from "${RUNTIME_IMAGE}" \
-    --policy "${POLICY_FILE}" "${MODEL_ENV_ARGS[@]}" "${SERVER_ENV_ARGS[@]}" \
+    --policy "${POLICY_FILE}" ${MODEL_ENV_ARGS[@]+"${MODEL_ENV_ARGS[@]}"} \
+    ${SERVER_ENV_ARGS[@]+"${SERVER_ENV_ARGS[@]}"} \
     --detach --no-tty -- fabric-agent-ctl serve
   SANDBOX_JSON="$("${OPENSHELL_CLI}" --gateway-endpoint "http://127.0.0.1:${GATEWAY_PORT}" \
     --workspace default sandbox get "${SANDBOX_NAME}" --output json)"

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import {EventEmitter} from "node:events";
 import test from "node:test";
-import {mkdtemp, mkdir, rm, writeFile} from "node:fs/promises";
+import {mkdtemp, mkdir, realpath, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {PassThrough} from "node:stream";
@@ -41,7 +41,18 @@ function backgroundResult(id, sessionId) {
 
 const call = (input, output, read = 0, write = 0, reasoning = 0) => ({input, output, reasoning, cache: {read, write}});
 const userPrompt = user("user-1");
-const usageOf = (messages, prompt = "user-1", prompts = [prompt], children = new Map()) => extractInvocationUsage(messages, prompt, new Set(prompts), children);
+function usageView(usage) {
+  if (usage === undefined) return undefined;
+  const base = Object.fromEntries(Object.entries(usage).filter(([key]) => key !== "extensions"));
+  return Object.keys(base).length ? base : undefined;
+}
+function outcomeView(outcome) {
+  const view = {...outcome};
+  delete view.usage;
+  const usage = usageView(outcome.usage);
+  return usage === undefined ? view : {...view, usage};
+}
+const usageOf = (messages, prompt = "user-1", prompts = [prompt], children = new Map()) => usageView(extractInvocationUsage(messages, prompt, new Set(prompts), children));
 
 test("extracts Kilo Code terminal text without taking usage from the last message", () => {
   assert.deepEqual(extractPromptOutcome({
@@ -59,18 +70,18 @@ test("sums every Kilo Code model call of the prompt with cache and reasoning", (
     assistant("edit-file", [step(call(150, 40, 2200, 0, 20))]),
     assistant("answer", [step(call(90, 200, 2350)), {type: "text", text: "done"}]),
   ];
-  // The first call's cache read is 0, which Kilo Code also stores for omitted cache details.
+  // The first source 0 does not prove a provider cache report. Reads remain observed.
   assert.deepEqual(usageOf(messages, "user-1", ["old-user", "user-1"]), {
     input_tokens: 6990,
-    input_tokens_include_cache: true,
+
+   input_tokens_include_cache: true,
     output_tokens: 340,
-    total_tokens: 7330,
   });
 });
 
 test("sums every finished step that Kilo Code recorded in one message", () => {
   const messages = [userPrompt, assistant("a", [step(call(4, 6)), step(call(8, 12))])];
-  assert.deepEqual(usageOf(messages), {input_tokens: 12, input_tokens_include_cache: true, output_tokens: 18, total_tokens: 30});
+  assert.deepEqual(usageOf(messages), {input_tokens: 12, input_tokens_include_cache: true, output_tokens: 18});
 });
 
 test("counts Kilo Code compaction calls inside the prompt's turn", () => {
@@ -82,7 +93,7 @@ test("counts Kilo Code compaction calls inside the prompt's turn", () => {
     user("continue", [{type: "text", synthetic: true, metadata: {compaction_continue: true}, text: "Continue"}]),
     assistant("b", [step(call(60, 5, 20))], "continue"),
   ];
-  assert.deepEqual(usageOf(compaction), {input_tokens: 530, input_tokens_include_cache: true, output_tokens: 55, total_tokens: 585});
+  assert.deepEqual(usageOf(compaction), {input_tokens: 530, input_tokens_include_cache: true, output_tokens: 55});
   // Compaction before the prompt's first call follows the previous prompt's last call.
   const preflight = [
     user("user-0"),
@@ -92,7 +103,7 @@ test("counts Kilo Code compaction calls inside the prompt's turn", () => {
     assistant("summary", [step(call(300, 40))], "compaction"),
     assistant("answer", [step(call(20, 2))]),
   ];
-  assert.deepEqual(usageOf(preflight, "user-1", ["user-0", "user-1"]), {input_tokens: 320, input_tokens_include_cache: true, output_tokens: 42, total_tokens: 362});
+  assert.deepEqual(usageOf(preflight, "user-1", ["user-0", "user-1"]), {input_tokens: 320, input_tokens_include_cache: true, output_tokens: 42});
 });
 
 test("adds the calls of a Kilo Code foreground subagent from its child session", () => {
@@ -101,7 +112,7 @@ test("adds the calls of a Kilo Code foreground subagent from its child session",
     {info: {id: "c-user", role: "user", time: {created: 2001}}, parts: [{type: "text", text: "sub task"}]},
     {info: {id: "c-a", role: "assistant", parentID: "c-user", time: {created: 2002, completed: 2003}}, parts: [step(call(5000, 50))]},
   ];
-  assert.deepEqual(usageOf(messages, "user-1", ["user-1"], new Map([["child-1", child]])), {input_tokens: 6500, input_tokens_include_cache: true, output_tokens: 65, total_tokens: 6565});
+  assert.deepEqual(usageOf(messages, "user-1", ["user-1"], new Map([["child-1", child]])), {input_tokens: 6500, input_tokens_include_cache: true, output_tokens: 65});
   assert.equal(usageOf(messages), undefined, "an unread child session leaves usage unknown");
 });
 
@@ -118,7 +129,7 @@ test("adds only the calls of the resumed Kilo Code subagent window", () => {
     {info: {id: "c-user-1", role: "user", time: {created: 3001}}, parts: []},
     {info: {id: "c-a-1", role: "assistant", parentID: "c-user-1", time: {created: 3002, completed: 3003}}, parts: [step(call(400, 4))]},
   ];
-  assert.deepEqual(usageOf(messages, "user-1", ["user-0", "user-1"], new Map([["child-1", child]])), {input_tokens: 420, input_tokens_include_cache: true, output_tokens: 6, total_tokens: 426});
+  assert.deepEqual(usageOf(messages, "user-1", ["user-0", "user-1"], new Map([["child-1", child]])), {input_tokens: 420, input_tokens_include_cache: true, output_tokens: 6});
 });
 
 test("reports no Kilo Code usage when a background turn may own a compaction after a newer prompt", () => {
@@ -179,7 +190,7 @@ test("leaves a Kilo Code reply to an earlier background subagent out of the prom
     assistant("background-reply", [step(call(7000, 70))], "result"),
     assistant("answer", [step(call(300, 3))]),
   ];
-  assert.deepEqual(usageOf(messages, "user-1", ["user-0", "user-1"]), {input_tokens: 300, input_tokens_include_cache: true, output_tokens: 3, total_tokens: 303});
+  assert.deepEqual(usageOf(messages, "user-1", ["user-0", "user-1"]), {input_tokens: 300, input_tokens_include_cache: true, output_tokens: 3});
   assert.equal(usageOf(messages, "user-0", ["user-0", "user-1"]), undefined);
 });
 
@@ -209,9 +220,42 @@ test("reports no Kilo Code usage when a model call never finished", () => {
   assert.equal(usageOf(undefined, "user-1"), undefined);
 });
 
-test("derives the Kilo Code total from input and output", () => {
+test("adds nothing for a Kilo Code message that compacted before sending its request", () => {
+  // Kilo Code stores the assistant message before the call. When the preflight check finds the context too large,
+  // Kilo Code records overflow:false only for its preflight signal. A provider
+  // context-overflow sets overflow:true and does not prove zero billed work.
+  const overflowed = (next) => [
+    userPrompt,
+    assistant("a", [step(call(100, 10, 50))]),
+    assistant("overflowed", []),
+    ...next,
+  ];
+  const compacted = overflowed([
+    user("compaction", [{type: "compaction", auto: true, overflow: false}]),
+    assistant("summary", [step(call(300, 40))], "compaction"),
+    user("continue", [{type: "text", synthetic: true, metadata: {compaction_continue: true}, text: "Continue"}]),
+    assistant("b", [step(call(60, 5, 20))], "continue"),
+  ]);
+  assert.deepEqual(usageOf(compacted), {input_tokens: 530, input_tokens_include_cache: true, output_tokens: 55});
+  assert.equal(usageOf(overflowed([assistant("b", [step(call(60, 5))])])), undefined, "without the compaction the call may have been billed");
+});
+
+test("a rejected Kilo Code call cannot prove zero billed work from HTTP status", () => {
+  const ended = (error) => {
+    const failed = assistant("failed", []);
+    failed.info.error = error;
+    return usageOf([userPrompt, assistant("a", [step(call(100, 10, 50))]), failed]);
+  };
+  const apiError = (statusCode) => ({name: "APIError", data: {message: "rejected", isRetryable: false, ...(statusCode === undefined ? {} : {statusCode})}});
+  for (const status of [400, 401, 413, 429]) assert.equal(ended(apiError(status)), undefined, `status ${status}`);
+  for (const status of [408, 500, 503, undefined]) assert.equal(ended(apiError(status)), undefined, `status ${status}`);
+  assert.equal(ended({name: "UnknownError", data: {message: "fetch failed"}}), undefined);
+  assert.equal(ended({name: "MessageAbortedError", data: {message: "Aborted"}}), undefined);
+});
+
+test("does not promote Kilo Code derived totals into source usage", () => {
   const messages = [userPrompt, assistant("a", [step({total: 28, ...call(10, 15, 3)})]), assistant("b", [step(call(7, 3, 1, 0, 2))])];
-  assert.deepEqual(usageOf(messages), {input_tokens: 21, cached_input_tokens: 4, input_tokens_include_cache: true, output_tokens: 20, total_tokens: 41});
+  assert.deepEqual(usageOf(messages), {input_tokens: 21, cached_input_tokens: 4, input_tokens_include_cache: true, output_tokens: 20});
 });
 
 test("leaves Kilo Code counts unknown when any call omitted them", () => {
@@ -237,14 +281,14 @@ test("leaves a Kilo Code count unknown when a call zero-filled it", () => {
   assert.deepEqual(usageOf([userPrompt, reported, assistant("b", [step({...zeroOutput, total: 9})])]), {input_tokens: 19, input_tokens_include_cache: true});
 });
 
-test("leaves Kilo Code cached input unknown when a call's cache read was zero-filled", () => {
-  // An earlier call read 20 tokens from the cache, then a call omitted its cache details, which Kilo Code stores as 0.
+test("keeps mixed zero-filled cache reads unknown while retaining main counts", () => {
+  // A cold source0 does not become a complete provider cache count when a later call reads cache.
+  const cold = assistant("cold", [step(call(10, 20, 0, 500))]);
+  assert.deepEqual(usageOf([userPrompt, cold, assistant("warm", [step(call(5, 5, 510))])]), {input_tokens: 1025, input_tokens_include_cache: true, output_tokens: 25});
+  // A sum of 0 is unknown, because Kilo Code also stores 0 for omitted cache details, even beside a cache write.
+  assert.deepEqual(usageOf([userPrompt, cold]), {input_tokens: 510, input_tokens_include_cache: true, output_tokens: 20});
   const earlier = [user("user-0"), assistant("earlier", [step(call(100, 10, 20))], "user-0")];
-  assert.deepEqual(usageOf([...earlier, userPrompt, assistant("a", [step(call(10, 20))])], "user-1", ["user-0", "user-1"]), {input_tokens: 10, input_tokens_include_cache: true, output_tokens: 20, total_tokens: 30});
-  // A cache write does not show that the call reported its cache reads.
-  assert.deepEqual(usageOf([userPrompt, assistant("a", [step(call(10, 20, 0, 500))])]), {input_tokens: 510, input_tokens_include_cache: true, output_tokens: 20, total_tokens: 530});
-  // Every call read from the cache, so the cached input is known.
-  assert.deepEqual(usageOf([userPrompt, assistant("a", [step(call(10, 20, 30))]), assistant("b", [step(call(5, 5, 40))])]), {input_tokens: 85, cached_input_tokens: 70, input_tokens_include_cache: true, output_tokens: 25, total_tokens: 110});
+  assert.deepEqual(usageOf([...earlier, userPrompt, assistant("a", [step(call(10, 20))])], "user-1", ["user-0", "user-1"]), {input_tokens: 10, input_tokens_include_cache: true, output_tokens: 20});
 });
 
 // Step tokens recorded by a real Kilo Code 7.7.12 server for a provider usage report with one side missing.
@@ -269,7 +313,23 @@ const sessionInput = (workspace) => ({
 
 // A Kilo Code session fake that lists messages oldest first, or only the newest `limit` of them.
 function sessionClient(history, respond, listings = [], children = new Map()) {
+  const queue = [];
+  let waiter;
+  const emit = (event) => {
+    if (waiter !== undefined) { const deliver = waiter; waiter = undefined; deliver(event); }
+    else queue.push(event);
+  };
   return {
+    usageEvent: emit,
+    event: {subscribe: async (_parameters, {signal}) => ({stream: (async function* () {
+      yield {type: "server.connected"};
+      signal.addEventListener("abort", () => emit(undefined), {once: true});
+      while (!signal.aborted) {
+        const event = queue.length ? queue.shift() : await new Promise(resolve => { waiter = resolve; });
+        if (event === undefined) return;
+        yield event;
+      }
+    })()})},
     app: {skills: async () => ({data: []})},
     mcp: {status: async () => ({data: {}})},
     session: {
@@ -281,14 +341,19 @@ function sessionClient(history, respond, listings = [], children = new Map()) {
         const listed = parameters.limit === undefined ? source : source.slice(-parameters.limit);
         return {data: listed.map((message) => structuredClone(message))};
       },
-      prompt: async () => ({data: respond()}),
+      prompt: async () => {
+        const data = respond();
+        for (const [sessionID, messages] of children) for (const message of messages) emit({type: "message.updated", properties: {info: {...message.info, sessionID}}});
+        for (const message of history) emit({type: "message.updated", properties: {info: {...message.info, sessionID: "session-1"}}});
+        return {data};
+      },
       delete: async () => {},
     },
   };
 }
 
 async function withSession(client, check) {
-  const workspace = await mkdtemp(join(tmpdir(), "kilo-adapter-test-"));
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "kilo-adapter-test-")));
   const factory = new KiloSdkSessionFactory(async () => () => client, async () => ({url: "http://127.0.0.1:4123", close: async () => {}}));
   try {
     const handle = await factory.create(sessionInput(workspace));
@@ -311,9 +376,9 @@ test("reports each Kilo Code prompt's own usage on a reused session", async () =
     return final;
   });
   await withSession(client, async (handle) => {
-    const expected = {input_tokens: 13, input_tokens_include_cache: true, output_tokens: 3, total_tokens: 16};
-    assert.deepEqual(await handle.prompt("one"), {text: "answer 1", usage: expected});
-    assert.deepEqual(await handle.prompt("two"), {text: "answer 2", usage: expected});
+    const expected = {input_tokens: 13, input_tokens_include_cache: true, output_tokens: 3};
+    assert.deepEqual(outcomeView(await handle.prompt("one")), {text: "answer 1", usage: expected});
+    assert.deepEqual(outcomeView(await handle.prompt("two")), {text: "answer 2", usage: expected});
   });
 });
 
@@ -330,7 +395,7 @@ test("reads a Kilo Code foreground subagent's child session for the prompt's usa
     return final;
   }, [], children);
   await withSession(client, async (handle) => {
-    assert.deepEqual(await handle.prompt("one"), {text: "answer", usage: {input_tokens: 6500, input_tokens_include_cache: true, output_tokens: 65, total_tokens: 6565}});
+    assert.deepEqual(outcomeView(await handle.prompt("one")), {text: "answer", usage: {input_tokens: 6500, input_tokens_include_cache: true, output_tokens: 65}});
   });
 });
 
@@ -351,10 +416,10 @@ test("keeps a late Kilo Code background reply out of the next prompt's usage", a
     return final;
   });
   await withSession(client, async (handle) => {
-    assert.deepEqual(await handle.prompt("one"), {text: "answer 1"});
-    assert.deepEqual(await handle.prompt("two"), {
+    assert.deepEqual(outcomeView(await handle.prompt("one")), {text: "answer 1"});
+    assert.deepEqual(outcomeView(await handle.prompt("two")), {
       text: "answer 2",
-      usage: {input_tokens: 4, cached_input_tokens: 1, input_tokens_include_cache: true, output_tokens: 1, total_tokens: 5},
+      usage: {input_tokens: 4, cached_input_tokens: 1, input_tokens_include_cache: true, output_tokens: 1},
     });
   });
 });
@@ -368,7 +433,7 @@ test("returns the Kilo Code answer without usage when listing messages fails aft
     return final;
   }, [undefined, new Error("listing failed")]);
   await withSession(client, async (handle) => {
-    assert.deepEqual(await handle.prompt("one"), {text: "answer"});
+    assert.deepEqual(outcomeView(await handle.prompt("one")), {text: "answer"});
   });
 });
 
@@ -381,7 +446,7 @@ test("reports a Kilo Code model error without usage when the call never finished
     return failed;
   });
   await withSession(client, async (handle) => {
-    assert.deepEqual(await handle.prompt("one"), {error: true});
+    assert.deepEqual(outcomeView(await handle.prompt("one")), {error: true});
   });
 });
 
@@ -454,7 +519,7 @@ test("waits for server cleanup before rejecting startup", async () => {
 });
 
 test("projects normalized configuration into an isolated Kilo Code server", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "kilo-adapter-test-"));
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "kilo-adapter-test-")));
   const skill = join(workspace, "review-skill");
   await mkdir(skill);
   await writeFile(join(skill, "SKILL.md"), "# Review\n", "utf8");
@@ -508,7 +573,7 @@ test("projects normalized configuration into an isolated Kilo Code server", asyn
 });
 
 test("denies interactive permissions when normalized tools are omitted", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "kilo-adapter-test-"));
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "kilo-adapter-test-")));
   let serverEnvironment;
   const client = {
     app: {skills: async () => ({data: []})},
@@ -563,7 +628,7 @@ test("denies interactive permissions when normalized tools are omitted", async (
 });
 
 test("aborts the Kilo session when a prompt reaches its deadline", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "kilo-adapter-test-"));
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "kilo-adapter-test-")));
   let promptSignal;
   let abortParameters;
   let abortSignal;
@@ -616,4 +681,71 @@ test("aborts the Kilo session when a prompt reaches its deadline", async () => {
   } finally {
     await rm(workspace, {recursive: true, force: true});
   }
+});
+
+
+test("an unavailable Kilo event observer never waits for a prompt watermark", async () => {
+  const history = [];
+  const client = sessionClient(history, () => {
+    history.push(user("user-1"));
+    const final = assistant("a", [step(call(10, 2)), {type: "text", text: "answer"}]);
+    history.push(final);
+    return final;
+  });
+  delete client.event;
+  await withSession(client, async handle => {
+    handle.usageEvents.through = async () => { assert.fail("unavailable observer must not wait"); };
+    const outcome = await handle.prompt("one");
+    assert.equal(outcome.text, "answer");
+    assert.equal(outcome.usage.input_tokens, undefined);
+    assert.equal(outcome.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 10);
+  });
+});
+
+test("Kilo event readiness acquired after startup certifies only the next invocation", async () => {
+  const history = [];
+  let connect;
+  let turn = 0;
+  const client = sessionClient(history, () => {
+    turn += 1;
+    history.push(user(`user-${turn}`));
+    const final = assistant(`a-${turn}`, [step(call(10, 2)), {type: "text", text: "answer"}], `user-${turn}`);
+    history.push(final);
+    if (turn === 1) connect();
+    return final;
+  });
+  const original = client.event.subscribe;
+  client.event.subscribe = async (...args) => {
+    await new Promise(resolve => { connect = resolve; });
+    return await original(...args);
+  };
+  await withSession(client, async handle => {
+    assert.equal((await handle.prompt("one")).usage.input_tokens, undefined);
+    assert.equal((await handle.prompt("two")).usage.input_tokens, 10);
+  });
+});
+
+test("Kilo observation deadline exhaustion preserves execution and collected usage", async t => {
+  const history = [];
+  let now = 1000;
+  t.mock.method(Date, "now", () => now);
+  const client = sessionClient(history, () => {
+    history.push(user("user-1"));
+    const final = assistant("a", [step(call(10, 2)), {type: "text", text: "answer"}]);
+    history.push(final);
+    return final;
+  });
+  const originalMessages = client.session.messages;
+  client.session.messages = async (...args) => {
+    const result = await originalMessages(...args);
+    if (args[0].limit === undefined) now = 2000;
+    return result;
+  };
+  await withSession(client, async handle => {
+    handle.usageEvents.through = async (_id, timeout) => { assert.equal(timeout, 0); return false; };
+    const outcome = await handle.prompt("one", 2000);
+    assert.equal(outcome.text, "answer");
+    assert.equal(outcome.usage.input_tokens, undefined);
+    assert.equal(outcome.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 10);
+  });
 });

@@ -1,0 +1,23 @@
+# Keep the OpenClaw image build context to its adapter and review workload.
+**
+!Cargo.toml
+!Cargo.lock
+!pyproject.toml
+!LICENSE
+!adapters/
+!adapters/python/
+!adapters/python/common/
+!adapters/python/common/**
+!adapters/python/openclaw/
+!adapters/python/openclaw/**
+!examples/
+!examples/code_review_agent/
+!examples/code_review_agent/**
+**/__pycache__
+**/*.pyc
+**/*.so
+**/.venv
+**/node_modules
+**/dist
+examples/code_review_agent/artifacts
+examples/code_review_agent/results

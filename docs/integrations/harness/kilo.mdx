@@ -120,40 +120,49 @@ filters are unsupported.
 The adapter accepts plain-text input and returns the terminal assistant text in
 `output.response`.
 
-Usage sums the model calls that Kilo Code recorded for the invocation's prompt,
-including in-turn compaction and the calls of foreground `task` subagents in
-their child sessions. Kilo Code 7.7.12 can run a subagent in the background when
-the model asks for it. An invocation that starts a background subagent reports
-no usage, because the subagent and Kilo Code's reply to its result can run after
-the invocation returns. That reply is never counted toward a later invocation.
-The adapter sets the session title so that Kilo Code does not make an unrecorded
-model call to generate one.
+Usage comes from each retained `step-finish` record owned by the invocation's
+prompt, including in-turn compaction and foreground `task` child-session
+windows. The adapter sends source observations through
+`nemo_fabric.usage_accounting.v1`; Fabric's shared accounting code owns sums,
+complete totals and pricing. Missing evidence preserves useful observations
+without publishing incomplete counts as complete.
 
-`input_tokens` includes cache reads and cache writes, `cached_input_tokens`
-holds the cache reads, and `output_tokens` includes reasoning tokens.
-`total_tokens` is `input_tokens` plus `output_tokens`, so it is unknown when
-either of them is unknown. The adapter does not use Kilo Code's own total,
-because Kilo Code 7.7.12 computes it as input plus output with an omitted side
-counted as 0.
+Kilo Code 7.7.12 subtracts cache reads/writes from its stored input and reasoning
+from stored output, then clamps at zero. The adapter reverses that source
+transform only when a positive adjusted counter proves the clamp lost no
+information. Fabric's normalized input includes cache and output includes
+reasoning. Kilo zero-fills omitted dimensions, so a stored cache or reasoning
+zero cannot establish provider field presence. A positive cache count stays
+independently useful even when input is unknown. Kilo's derived `total` and
+mixed provider/catalog `cost` do not become reported totals or `cost_usd`.
 
-Kilo Code 7.7.12 records an omitted input, output, reasoning, or cache count as
-0 before the adapter sees it. The adapter therefore treats a call's input or
-output that adds up to 0 as unknown. Kilo Code zero-fills missing cache details, so
-a cache read of 0 is unknown, and `cached_input_tokens` is reported only when
-every counted call has a nonzero cache read. When any model call leaves a field unknown, or the field's sum is
-larger than JavaScript can represent exactly, the result omits that field. The
-result has no usage when a counted model call reported neither input nor output,
-or when an assistant message of the invocation has no step-finish part or is
-still running, meaning it has neither a completion time nor an error. A message
-that ended with an error still counts the step-finish parts it recorded. It also
-has no usage when a subagent's child session cannot be read or starts its own
-subagent, or when a new model call cannot be traced to a prompt. Kilo Code does
-not record an attempt that it retries before the call finishes, so those tokens
-are not counted.
+A transient event observer detects actual retries hidden by the final message
+history. Startup waits up to 500 ms for event readiness. After a prompt, history
+reads and the terminal event watermark share a 500 ms budget, ending 100 ms
+before the invocation deadline when one is supplied. An unavailable observer
+does not add a watermark wait. Missing or dropped events create a scope gap;
+they do not fail execution or replay a prompt. A completed failed turn can retain settled
+counts. A failed call without usable usage creates a gap regardless of HTTP
+status. An explicit `overflow: false` compaction marker distinguishes a
+preflight that sent no request from a provider context-overflow rejection.
 
-Kilo Code computes most cost figures from its model catalog's rates, and its
-messages do not say which costs a provider reported, so the adapter does not
-report them as `cost_usd`.
+Actual background tasks leave complete totals unknown because their child work
+and injected parent reply can outlive the invocation. Settled owned steps
+remain observed. Late work never moves into a later invocation. Unread,
+ambiguous or deeper child sessions also leave gaps. Merely enabling delegation
+does not. The adapter sets a fixed session title to avoid Kilo's separate title
+model call.
+
+When prompt communication fails, the adapter uses the same bounded history
+reader to retain provably owned settled steps before retiring the session.
+The failed result keeps its original error code and observed usage with an
+unfinished-work gap. If the history boundary or remaining observation budget
+is unavailable, no subtotal is invented. The prompt is never replayed.
+
+Each assistant message supplies its own accounting model/provider identity.
+A custom configured endpoint does not establish native provider pricing.
+Fabric can separately estimate cost when the source identity, usage and price
+catalog establish an applicable basis.
 
 Ordered invocations reuse one warm session and its conversation history. A
 prompt has a 30-minute deadline; on timeout the adapter asks Kilo Code to abort
