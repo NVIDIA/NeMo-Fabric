@@ -6,22 +6,13 @@ import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 
 import {
-  addEventUsage,
-  addUsage,
-  noteReportedFields,
   buildCatalogModel,
-  endedCallCounts,
   modelAwareCompactionReserveTokens,
   PiSdkSessionFactory,
-  PiSdkSessionHandle,
-  recordReportedCounts,
-  reportedCountsFrom,
   resolveCustomTools,
-  summaryCallCount,
   selectPiMcpServers,
   withCustomBaseUrl,
 } from "../dist/pi-sdk.js";
@@ -123,6 +114,18 @@ test("buildCatalogModel overrides only the explicitly supplied fields of a known
   assert.equal(entry.contextWindow, NATIVE_MODEL.contextWindow);
 });
 
+for (const input of [["audio"], ["text", "audio"]]) {
+  test(`buildCatalogModel rejects unsupported input modalities for a known model: ${input.join(", ")}`, () => {
+    assert.throws(
+      () => buildCatalogModel(
+        { provider: "openai", model: "gpt-4.1-mini", api_key_env: "K", extensions: { input } },
+        NATIVE_MODEL,
+      ),
+      (error) => error.code === "pi_model_extensions_invalid" && error.message.includes("input"),
+    );
+  });
+}
+
 test("buildCatalogModel requires context_window and max_tokens for an unknown model", () => {
   // No base (Pi does not know the model) and only api/base_url supplied: context_window and
   // max_tokens have no usable Pi default, so a complete definition is required rather than
@@ -141,15 +144,20 @@ test("buildCatalogModel requires context_window and max_tokens for an unknown mo
 });
 
 test("buildCatalogModel accepts a complete unknown-model definition and invents no optional defaults", () => {
-  // api + base_url + context_window + max_tokens is complete; optional fields (cost, reasoning,
-  // input) stay unset so Pi defaults them — the adapter adds none.
+  // Required metadata is passed through, including zero cost rates; optional reasoning stays unset.
   const entry = buildCatalogModel(
     {
       provider: "gw",
       model: "gw/model",
       api_key_env: "K",
       base_url: "https://gw/v1",
-      extensions: { api: "openai-completions", context_window: 32_000, max_tokens: 4_096 },
+      extensions: {
+        api: "openai-completions",
+        context_window: 32_000,
+        max_tokens: 4_096,
+        input: ["text", "image"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
     },
     undefined,
   );
@@ -157,9 +165,9 @@ test("buildCatalogModel accepts a complete unknown-model definition and invents 
   assert.equal(entry.baseUrl, "https://gw/v1");
   assert.equal(entry.contextWindow, 32_000);
   assert.equal(entry.maxTokens, 4_096);
-  assert.equal(entry.cost, undefined);
+  assert.deepEqual(entry.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
   assert.equal(entry.reasoning, undefined);
-  assert.equal(entry.input, undefined);
+  assert.deepEqual(entry.input, ["text", "image"]);
 });
 
 test("maps normalized MCP servers and tool filters to native Pi MCP configuration", () => {
@@ -1166,43 +1174,48 @@ test("resolves a gateway model's api from extensions.api", async () => {
   }
 });
 
-test("rejects an unknown gateway model that omits context_window/max_tokens", async () => {
-  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-minimal-")));
-  const extensionPath = join(workspace, "relay-extension.js");
-  await writeFile(extensionPath, "export default function () {}\n", "utf8");
-  const factory = captureModelFactory({});
-  try {
-    await assert.rejects(
-      factory.create({
-        agentName: "pi-catalog-minimal",
-        baseDir: workspace,
-        config: {
-          harness: { settings: { relay_extension_path: extensionPath } },
-          models: {
-            default: {
-              api_key_env: "TEST_API_KEY",
-              base_url: "https://gateway.example.test/v1",
-              model: "custom-gateway-model",
-              provider: "custom-gateway-provider",
-              // Only the wire protocol is supplied. context_window/max_tokens have no usable Pi
-              // default, so an incomplete gateway definition must be rejected (not registered
-              // with undefined limits that break compaction).
-              extensions: { api: "openai-completions" },
+for (const [description, missingFields, extensions] of [
+  ["missing context_window/max_tokens", ["context_window", "max_tokens"], { api: "openai-completions" }],
+  ["missing input/cost", ["input", "cost"], { api: "openai-completions", context_window: 32000, max_tokens: 4096 }],
+  ["missing input", ["input"], { ...GATEWAY_EXTENSIONS, input: undefined }],
+  ["missing cost", ["cost"], { ...GATEWAY_EXTENSIONS, cost: undefined }],
+  ["empty input", ["input"], { ...GATEWAY_EXTENSIONS, input: [] }],
+  ["unsupported input modality", ["input"], { ...GATEWAY_EXTENSIONS, input: ["text", "audio"] }],
+]) {
+  test(`rejects an unknown gateway model with ${description}`, async () => {
+    const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-minimal-")));
+    const extensionPath = join(workspace, "relay-extension.js");
+    await writeFile(extensionPath, "export default function () {}\n", "utf8");
+    const factory = captureModelFactory({});
+    try {
+      await assert.rejects(
+        factory.create({
+          agentName: "pi-catalog-minimal",
+          baseDir: workspace,
+          config: {
+            harness: { settings: { relay_extension_path: extensionPath } },
+            models: {
+              default: {
+                api_key_env: "TEST_API_KEY",
+                base_url: "https://gateway.example.test/v1",
+                model: "custom-gateway-model",
+                provider: "custom-gateway-provider",
+                extensions,
+              },
             },
+            tools: { enabled: [] },
           },
-          tools: { enabled: [] },
-        },
-        runtimeContext: makeRuntimeContext(workspace),
-      }),
-      (error) =>
-        error.code === "pi_model_extensions_invalid" &&
-        error.message.includes("context_window") &&
-        error.message.includes("max_tokens"),
-    );
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
-});
+          runtimeContext: makeRuntimeContext(workspace),
+        }),
+        (error) =>
+          error.code === "pi_model_extensions_invalid" &&
+          missingFields.every((field) => error.message.includes(field)),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+}
 
 test("rejects an unknown gateway model with no extensions.api", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-noapi-")));
@@ -1449,887 +1462,3 @@ test("accepts a well-formed extensions.cost", async () => {
     await rm(workspace, { recursive: true, force: true });
   }
 });
-
-// Lookups for what a model call's provider reported: every count, or a call
-// whose raw stream events the adapter never saw.
-const allReported = () => ({ input: true, cacheRead: true, output: true });
-const unseen = () => undefined;
-// A prompt's running total before any call, with input counting the cache.
-const NO_TOKENS = { input: 0, cacheRead: 0, output: 0 };
-
-test("sums each call's own usage report", () => {
-  const first = addUsage(NO_TOKENS, { input: 10, output: 2, cacheRead: 5, cacheWrite: 1, totalTokens: 18 });
-  const second = addUsage(first, { input: 3, output: 4, cacheRead: 0, cacheWrite: 0, reasoning: 2 });
-
-  assert.deepEqual(second, { input: 19, cacheRead: 5, output: 6 });
-  assert.equal(addUsage(undefined, { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }), undefined);
-});
-
-test("a count whose sum is not a safe integer is unknown, and the others stay known", () => {
-  const max = Number.MAX_SAFE_INTEGER;
-
-  // Input counts cache reads and writes, so its own sum can overflow.
-  assert.deepEqual(addUsage(NO_TOKENS, { input: max, cacheRead: 2, cacheWrite: 0, output: 1 }), {
-    cacheRead: 2,
-    output: 1,
-  });
-  // A running total that reaches the largest safe integer stays exact.
-  assert.deepEqual(addUsage({ input: max - 1, cacheRead: 0, output: max }, { input: 1, cacheRead: 0, cacheWrite: 0, output: 1 }), {
-    input: max,
-    cacheRead: 0,
-  });
-  // Only the cache reads overflow here; input and output stay known.
-  assert.deepEqual(addUsage({ input: 1, cacheRead: max, output: 1 }, { input: 0, cacheRead: 1, cacheWrite: 0, output: 1 }), {
-    input: 2,
-    output: 2,
-  });
-});
-
-// A tool result that reports usage, as a custom tool can.
-const toolResult = (usage) => ({ type: "message_end", message: { role: "toolResult", usage } });
-
-test("a tool usage report without a cache count keeps its other counts known", () => {
-  const total = addEventUsage(NO_TOKENS, toolResult({ input: 10, cacheRead: 2, output: 3 }), allReported);
-
-  // Input counts cache writes, so without cacheWrite the input and the total
-  // are unknown; the cache reads and output stay known.
-  assert.deepEqual(total, { cacheRead: 2, output: 3 });
-  // A report with only cache reads keeps them.
-  assert.deepEqual(addEventUsage(NO_TOKENS, toolResult({ cacheRead: 4 }), allReported), { cacheRead: 4 });
-});
-
-test("a tool usage report with only an output count adds that count", () => {
-  const total = addEventUsage({ input: 40, cacheRead: 0, output: 1 }, toolResult({ output: 4 }), allReported);
-
-  assert.deepEqual(total, { output: 5 });
-});
-
-test("a tool result without usage leaves the prompt's tokens unchanged", () => {
-  const total = { input: 40, cacheRead: 0, output: 1 };
-
-  assert.deepEqual(addEventUsage(total, { type: "message_end", message: { role: "toolResult" } }, unseen), total);
-});
-
-test("counts the tokens Pi bills outside assistant messages", () => {
-  const usage = (tokens) => ({ input: tokens, output: 1, cacheRead: 0, cacheWrite: 0 });
-  const events = [
-    { type: "message_end", message: { role: "assistant", usage: usage(10) } },
-    { type: "compaction_end", aborted: false, result: { summary: "s", usage: usage(100) } },
-    { type: "message_end", message: { role: "toolResult", usage: usage(20) } },
-    { type: "message_end", message: { role: "toolResult" } },
-    { type: "entry_appended", entry: { type: "usage", usage: usage(5) } },
-    { type: "entry_appended", entry: { type: "custom" } },
-    { type: "turn_start" },
-  ];
-
-  const total = events.reduce((sum, event) => addEventUsage(sum, event, allReported), NO_TOKENS);
-
-  assert.deepEqual(total, { input: 135, cacheRead: 0, output: 4 });
-});
-
-test("a compaction without a usage report leaves the prompt's tokens unknown", () => {
-  assert.equal(
-    addEventUsage(NO_TOKENS, { type: "compaction_end", aborted: false, result: { summary: "s" } }, allReported),
-    undefined,
-  );
-  assert.equal(addEventUsage(NO_TOKENS, { type: "compaction_end", aborted: true }, allReported), undefined);
-});
-
-test("an aborted assistant message leaves the prompt's tokens unknown", () => {
-  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-
-  assert.equal(
-    addEventUsage(
-      NO_TOKENS,
-      { type: "message_end", message: { role: "assistant", stopReason: "aborted", usage } },
-      allReported,
-    ),
-    undefined,
-  );
-});
-
-test("a model call's counts are known only as far as its provider reported them", () => {
-  const zeroFilled = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
-  const assistant = { type: "message_end", message: { role: "assistant", usage: zeroFilled } };
-  const reported = (counts) => () => ({ input: false, cacheRead: false, output: false, ...counts });
-
-  // Pi fills an omitted count with 0, so a call the adapter did not see is unknown.
-  assert.equal(addEventUsage(NO_TOKENS, assistant, unseen), undefined);
-  assert.equal(
-    addEventUsage(NO_TOKENS, { type: "compaction_end", aborted: false, result: { usage: zeroFilled } }, unseen),
-    undefined,
-  );
-  assert.equal(
-    addEventUsage(NO_TOKENS, { type: "entry_appended", entry: { type: "usage", usage: zeroFilled } }, unseen),
-    undefined,
-  );
-  // A reported zero is a measured zero; an omitted count stays unknown.
-  assert.deepEqual(addEventUsage(NO_TOKENS, assistant, allReported), NO_TOKENS);
-  assert.deepEqual(addEventUsage(NO_TOKENS, assistant, reported({ input: true, cacheRead: true })), {
-    input: 0,
-    cacheRead: 0,
-  });
-  assert.deepEqual(addEventUsage(NO_TOKENS, assistant, reported({ input: true, output: true })), {
-    input: 0,
-    output: 0,
-  });
-  // Cache reads stay known without the input that includes them.
-  assert.deepEqual(addEventUsage(NO_TOKENS, assistant, reported({ cacheRead: true })), { cacheRead: 0 });
-  // A tool reports its own usage, so a zero there is a measured zero.
-  assert.deepEqual(
-    addEventUsage(NO_TOKENS, { type: "message_end", message: { role: "toolResult", usage: zeroFilled } }, unseen),
-    NO_TOKENS,
-  );
-});
-
-test("reads which counts each wire protocol's raw usage reports", () => {
-  const counts = (api, events) => {
-    const seen = new Set();
-    for (const event of events) {
-      noteReportedFields(seen, api, event);
-    }
-    return reportedCountsFrom(api, seen);
-  };
-  const anthropicStart = (usage) => ({ type: "message_start", message: { usage } });
-  const anthropicUsage = { input_tokens: 10, cache_read_input_tokens: 4, cache_creation_input_tokens: 0 };
-
-  // Anthropic input excludes the cache, so it needs both cache fields, and only
-  // a message_delta reports the output count.
-  assert.deepEqual(
-    counts("anthropic-messages", [
-      anthropicStart({ ...anthropicUsage, output_tokens: 1 }),
-      { type: "message_delta", usage: { output_tokens: 5 } },
-    ]),
-    { input: true, cacheRead: true, output: true },
-  );
-  assert.deepEqual(
-    counts("anthropic-messages", [
-      anthropicStart({ input_tokens: 10, output_tokens: 1 }),
-      { type: "message_delta", usage: { output_tokens: 5 } },
-    ]),
-    { input: false, cacheRead: false, output: true },
-  );
-  assert.deepEqual(
-    counts("anthropic-messages", [anthropicStart({ ...anthropicUsage, output_tokens: 1 }), { type: "message_delta" }]),
-    { input: true, cacheRead: true, output: false },
-  );
-  // The other protocols replace a call's usage with each report, and their
-  // input includes the cache, so a missing cache detail leaves only it unknown.
-  assert.deepEqual(
-    counts("openai-completions", [
-      { choices: [], usage: { prompt_tokens: 7, prompt_tokens_details: { cached_tokens: 2 } } },
-      { choices: [], usage: { completion_tokens: 2 } },
-    ]),
-    { input: false, cacheRead: false, output: true },
-  );
-  assert.deepEqual(
-    counts("openai-completions", [{ choices: [], usage: { prompt_tokens: 7, prompt_tokens_details: { cached_tokens: 2 } } }]),
-    { input: true, cacheRead: true, output: false },
-  );
-  assert.deepEqual(
-    counts("openai-responses", [{ type: "response.completed", response: { usage: { input_tokens: 3 } } }]),
-    { input: true, cacheRead: false, output: false },
-  );
-  assert.deepEqual(
-    counts("google-generative-ai", [{ usageMetadata: { promptTokenCount: 4, thoughtsTokenCount: 3 } }]),
-    { input: true, cacheRead: false, output: true },
-  );
-  assert.deepEqual(
-    counts("bedrock-converse-stream", [{ metadata: { usage: { outputTokens: 6 } } }]),
-    { input: false, cacheRead: false, output: true },
-  );
-  // A protocol the adapter does not know reports nothing it can trust.
-  assert.deepEqual(counts("custom-api", [{ usage: { prompt_tokens: 1, completion_tokens: 1 } }]), {
-    input: false,
-    cacheRead: false,
-    output: false,
-  });
-});
-
-test("a split-turn compaction counts its summary calls only when they add up", () => {
-  const call = (tokens) => ({ input: tokens, output: 1, cacheRead: 0, cacheWrite: 0 });
-  const history = call(20);
-  const prefix = call(30);
-  const combined = { input: 50, output: 2, cacheRead: 0, cacheWrite: 0 };
-  const ended = { type: "compaction_end", aborted: false, result: { summary: "s", usage: combined } };
-  // Only the summary calls have records; Pi reports their combined usage.
-  const recorded = (key) => (key === history || key === prefix ? allReported() : undefined);
-  const split = { isSplitTurn: true, messagesToSummarize: [{}], turnPrefixMessages: [{}] };
-
-  assert.equal(summaryCallCount(split), 2);
-  assert.equal(summaryCallCount({ ...split, messagesToSummarize: [] }), 1);
-  assert.equal(summaryCallCount({ isSplitTurn: false, messagesToSummarize: [{}], turnPrefixMessages: [] }), 1);
-  assert.equal(summaryCallCount(undefined), undefined);
-  assert.deepEqual(addEventUsage(NO_TOKENS, ended, recorded, { expected: 2, calls: [history, prefix] }), {
-    input: 50,
-    cacheRead: 0,
-    output: 2,
-  });
-  // A summary call the session did not see, or calls that do not add up to the
-  // combined usage, leave the prompt's tokens unknown.
-  assert.equal(addEventUsage(NO_TOKENS, ended, recorded, { expected: 2, calls: [prefix] }), undefined);
-  assert.equal(addEventUsage(NO_TOKENS, ended, recorded, { expected: 2, calls: [history, call(29)] }), undefined);
-  assert.equal(addEventUsage(NO_TOKENS, ended, recorded), undefined);
-});
-
-test("a retried compaction summary leaves the prompt's tokens unknown", () => {
-  const usage = { input: 20, output: 1, cacheRead: 0, cacheWrite: 0 };
-  const events = [
-    { type: "summarization_retry_scheduled", attempt: 1, maxAttempts: 3, delayMs: 0, errorMessage: "stream dropped" },
-    { type: "summarization_retry_attempt_start" },
-    { type: "summarization_retry_finished" },
-    { type: "compaction_end", aborted: false, result: { summary: "s", usage } },
-  ];
-
-  assert.equal(
-    events.reduce((sum, event) => addEventUsage(sum, event, allReported), NO_TOKENS),
-    undefined,
-  );
-});
-
-test("counts a failed request as 0 tokens only after rate limits", () => {
-  const rejected = { stopReason: "error", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
-  const none = { input: false, cacheRead: false, output: false };
-  const counts = (api, message, observation) =>
-    endedCallCounts(api, new Set(), message, { accepted: false, streamed: false, statuses: [429], unanswered: false, ...observation });
-
-  assert.deepEqual(counts("openai-completions", rejected, {}), allReported());
-  assert.deepEqual(counts("anthropic-messages", rejected, { statuses: [429, 429] }), allReported());
-  // A timeout, a server error, another client error, or an attempt without
-  // any response may have been billed.
-  for (const statuses of [[400], [408], [503], [504], [500], [429, 503]]) {
-    assert.deepEqual(counts("openai-completions", rejected, { statuses }), none, String(statuses));
-  }
-  assert.deepEqual(counts("openai-completions", rejected, { statuses: [], unanswered: true }), none);
-  assert.deepEqual(counts("openai-completions", rejected, { statuses: [] }), none);
-  // Protocols whose requests do not go through the observed fetch.
-  assert.deepEqual(counts("google-generative-ai", rejected, {}), none);
-  assert.deepEqual(counts("bedrock-converse-stream", rejected, {}), none);
-  assert.deepEqual(counts("custom-api", rejected, {}), none);
-  // An accepted or streamed request, or one with counts, may have billed tokens.
-  assert.deepEqual(counts("openai-completions", rejected, { accepted: true }), none);
-  assert.deepEqual(counts("openai-completions", rejected, { streamed: true }), none);
-  assert.deepEqual(counts("openai-completions", { ...rejected, usage: { ...rejected.usage, input: 3 } }, {}), none);
-  assert.deepEqual(counts("openai-completions", { ...rejected, stopReason: "aborted" }, {}), none);
-  // A successful attempt keeps its reported counts after a rate limit, but not
-  // after an ambiguous attempt.
-  const seen = new Set(["prompt_tokens", "completion_tokens"]);
-  const succeeded = { stopReason: "stop", usage: rejected.usage };
-  const afterRetry = (observation) =>
-    endedCallCounts("openai-completions", seen, succeeded, { accepted: true, streamed: true, unanswered: false, ...observation });
-  assert.deepEqual(afterRetry({ statuses: [429, 200] }), { input: true, cacheRead: false, output: true });
-  for (const statuses of [[408, 200], [503, 200], [504, 200]]) {
-    assert.deepEqual(afterRetry({ statuses }), none, String(statuses));
-  }
-  assert.deepEqual(afterRetry({ statuses: [200], unanswered: true }), none);
-});
-
-/**
- * Run prompts through the real Pi SDK against a local chat-completions endpoint
- * that answers each request from `replies` in order. A reply's `usage` is sent
- * as the stream's final usage chunk; a reply without one sends no usage. A
- * reply with `status` rejects the request with that HTTP status, one with
- * `dropStream` closes the connection after the first chunk, and one with
- * `closeBeforeHeaders` closes it before sending any response.
- * `modelExtensions` overrides the catalog entry, such as its context window,
- * and `extension` is the source of a Pi extension the session loads.
- */
-async function promptsAgainstScriptedEndpoint(replies, prompts, modelExtensions = undefined, extension = undefined) {
-  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-usage-")));
-  await writeFile(join(workspace, "note.txt"), "nonce\n", "utf8");
-  if (extension !== undefined) {
-    await writeFile(join(workspace, "usage-extension.js"), extension, "utf8");
-  }
-  let served = 0;
-  const provider = createServer(async (request, response) => {
-    for await (const _chunk of request);
-    const reply = replies[served++];
-    if (reply.closeBeforeHeaders) {
-      request.socket.destroy();
-      return;
-    }
-    if (reply.status !== undefined) {
-      response.writeHead(reply.status, { "content-type": "application/json" });
-      response.end(JSON.stringify({ error: { message: "rate limited", type: "rate_limit_error" } }));
-      return;
-    }
-    const common = { id: `chatcmpl-usage-${served}`, object: "chat.completion.chunk", created: 0, model: "openai/gpt-oss-20b" };
-    const chunk = (fields) => `data: ${JSON.stringify({ ...common, ...fields })}\n\n`;
-    const delta = reply.readNote
-      ? { role: "assistant", tool_calls: [{ index: 0, id: `call-${served}`, type: "function", function: { name: "read", arguments: JSON.stringify({ path: "note.txt" }) } }] }
-      : { role: "assistant", content: reply.content };
-    response.writeHead(200, { "content-type": "text/event-stream" });
-    if (reply.dropStream) {
-      response.write(chunk({ choices: [{ index: 0, delta, finish_reason: null }] }));
-      // Let the client read the first chunk before the connection drops.
-      setTimeout(() => response.destroy(), 100);
-      return;
-    }
-    response.end(
-      chunk({ choices: [{ index: 0, delta, finish_reason: null }] }) +
-        chunk({ choices: [{ index: 0, delta: {}, finish_reason: reply.readNote ? "tool_calls" : "stop" }] }) +
-        (reply.usage === undefined ? "" : chunk({ choices: [], usage: reply.usage })) +
-        "data: [DONE]\n\n",
-    );
-  });
-  const providerUrl = await listen(provider);
-  let handle;
-  try {
-    handle = await new PiSdkSessionFactory().create({
-      agentName: "pi-usage-test",
-      baseDir: workspace,
-      config: {
-        ...(extension === undefined ? {} : { harness: { settings: { extensions: ["usage-extension.js"] } } }),
-        models: {
-          default: {
-            api_key_env: "TEST_API_KEY",
-            base_url: `${providerUrl}/v1`,
-            model: "openai/gpt-oss-20b",
-            provider: "nvidia",
-            ...(modelExtensions === undefined ? {} : { extensions: modelExtensions }),
-          },
-        },
-        tools: { enabled: null },
-      },
-      runtimeContext: { ...makeRuntimeContext(workspace), telemetry: undefined },
-    });
-    const outcomes = [];
-    for (const prompt of prompts) {
-      outcomes.push(await handle.prompt(prompt));
-    }
-    assert.equal(served, replies.length);
-    return outcomes;
-  } finally {
-    await handle?.stop();
-    await close(provider);
-    await rm(workspace, { recursive: true, force: true });
-  }
-}
-
-test(
-  "reports each prompt's own tokens through the Pi SDK",
-  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-  async () => {
-    const [first, second] = await promptsAgainstScriptedEndpoint(
-      [
-        { readNote: true, usage: { prompt_tokens: 100, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 40 } } },
-        { content: "first", usage: { prompt_tokens: 150, completion_tokens: 0 } },
-        { content: "second", usage: { prompt_tokens: 300, completion_tokens: 25 } },
-      ],
-      ["read the note", "again"],
-    );
-
-    // A reported zero output count stays a measured zero. The second call sent
-    // no cache details, so the prompt's cache reads are unknown.
-    assert.deepEqual(first.usage, { input: 250, output: 10 });
-    assert.deepEqual(second.usage, { input: 300, output: 25 });
-  },
-);
-
-test(
-  "leaves a prompt's tokens unknown when any provider response omits usage",
-  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-  async () => {
-    const [omitted, mixed, reported] = await promptsAgainstScriptedEndpoint(
-      [
-        { content: "no usage" },
-        { readNote: true, usage: { prompt_tokens: 100, completion_tokens: 10 } },
-        { content: "partial" },
-        { content: "reported", usage: { prompt_tokens: 50, completion_tokens: 5 } },
-      ],
-      ["one", "two", "three"],
-    );
-
-    assert.equal(omitted.text, "no usage");
-    assert.equal(omitted.usage, undefined);
-    assert.equal(mixed.text, "partial");
-    assert.equal(mixed.usage, undefined);
-    assert.deepEqual(reported.usage, { input: 50, output: 5 });
-  },
-);
-
-test(
-  "leaves a count the provider omitted unknown and keeps reported zeros",
-  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-  async () => {
-    const [inputOnly, outputOnly, zeros, afterPartial] = await promptsAgainstScriptedEndpoint(
-      [
-        { content: "input only", usage: { prompt_tokens: 100 } },
-        { content: "output only", usage: { completion_tokens: 5 } },
-        { content: "zeros", usage: { prompt_tokens: 0, completion_tokens: 0, prompt_tokens_details: { cached_tokens: 0 } } },
-        { readNote: true, usage: { prompt_tokens: 60 } },
-        { content: "both", usage: { prompt_tokens: 70, completion_tokens: 7 } },
-      ],
-      ["one", "two", "three", "four"],
-    );
-
-    // Pi fills an omitted count with 0; the provider's raw report decides.
-    assert.deepEqual(inputOnly.usage, { input: 100 });
-    assert.deepEqual(outputOnly.usage, { output: 5 });
-    assert.deepEqual(zeros.usage, { input: 0, cacheRead: 0, output: 0 });
-    // One call without an output count leaves the prompt's output unknown.
-    assert.deepEqual(afterPartial.usage, { input: 130 });
-  },
-);
-
-test(
-  "counts a compaction that Pi summarizes in one call",
-  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-  async () => {
-    // The second prompt is longer than Pi's 20,000 recent tokens, so Pi cuts at
-    // that prompt and summarizes only the earlier history, in one call.
-    const [, compacted] = await promptsAgainstScriptedEndpoint(
-      [
-        { content: "first", usage: { prompt_tokens: 100, completion_tokens: 5 } },
-        { readNote: true, usage: { prompt_tokens: 200, completion_tokens: 5 } },
-        { content: "done", usage: { prompt_tokens: 90_000, completion_tokens: 5 } },
-        { content: "history summary", usage: { prompt_tokens: 20, completion_tokens: 1 } },
-      ],
-      ["one", "y".repeat(100_000)],
-      { context_window: 100_000, max_tokens: 1_000 },
-    );
-
-    assert.deepEqual(compacted.usage, { input: 90_220, output: 11 });
-  },
-);
-
-for (const [name, historyUsage, expected] of [
-  ["counts both summary calls of a split-turn compaction", { prompt_tokens: 20, completion_tokens: 1 }, { input: 90_240, output: 12 }],
-  ["leaves input unknown when a split-turn summary call omits it", { completion_tokens: 1 }, { output: 12 }],
-]) {
-  test(name, { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" }, async () => {
-    // The second prompt's final reply reports a context above the compaction
-    // threshold and is longer than Pi's 20,000 recent tokens, so Pi cuts inside
-    // that turn and summarizes the history and the turn prefix in two calls,
-    // then reports only their combined usage.
-    const [, compacted] = await promptsAgainstScriptedEndpoint(
-      [
-        { content: "first", usage: { prompt_tokens: 100, completion_tokens: 5 } },
-        { readNote: true, usage: { prompt_tokens: 200, completion_tokens: 5 } },
-        { content: "x".repeat(100_000), usage: { prompt_tokens: 90_000, completion_tokens: 5 } },
-        { content: "history summary", usage: historyUsage },
-        { content: "turn prefix summary", usage: { prompt_tokens: 20, completion_tokens: 1 } },
-      ],
-      ["one", "read the note"],
-      { context_window: 100_000, max_tokens: 1_000 },
-    );
-
-    assert.deepEqual(compacted.usage, expected);
-  });
-}
-
-test(
-  "counts a rate-limited request as 0 tokens when Pi's retry succeeds",
-  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-  async () => {
-    const [retried] = await promptsAgainstScriptedEndpoint(
-      [{ status: 429 }, { content: "after retry", usage: { prompt_tokens: 50, completion_tokens: 5 } }],
-      ["one"],
-    );
-
-    assert.equal(retried.text, "after retry");
-    assert.deepEqual(retried.usage, { input: 50, output: 5 });
-  },
-);
-
-for (const status of [408, 503, 504]) {
-  test(
-    `leaves a prompt's tokens unknown when a ${status} precedes a successful retry`,
-    { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-    async () => {
-      // The provider may have processed the prompt before answering with a
-      // timeout or a server error.
-      const [retried] = await promptsAgainstScriptedEndpoint(
-        [{ status }, { content: "after retry", usage: { prompt_tokens: 50, completion_tokens: 5 } }],
-        ["one"],
-      );
-
-      assert.equal(retried.text, "after retry");
-      assert.equal(retried.usage, undefined);
-    },
-  );
-}
-
-test(
-  "leaves a prompt's tokens unknown when a connection fails before any HTTP response",
-  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-  async () => {
-    // The provider may have received and billed the prompt before the
-    // connection failed, so the failed attempt is not a known 0.
-    const [retried] = await promptsAgainstScriptedEndpoint(
-      [{ closeBeforeHeaders: true }, { content: "after retry", usage: { prompt_tokens: 50, completion_tokens: 5 } }],
-      ["one"],
-    );
-
-    assert.equal(retried.text, "after retry");
-    assert.equal(retried.usage, undefined);
-  },
-);
-
-/**
- * Run one model call through the adapter's recorder while Pi's own cache
- * warmer keeps its prompt cache entry warm, against a local endpoint that
- * answers the call and, by `warmUp`, fails ("fail"), answers ("answer") or
- * holds ("hold") each one-token warm-up request. With `settleFirst`, the
- * agent settles before the first refresh is due. Returns how many warm-up
- * attempts the recorder noted and how many the endpoint received.
- */
-async function warmedCall({ warmUp, settleFirst = false }) {
-  const received = { call: 0, warmUp: 0 };
-  const held = [];
-  const server = createServer(async (request, response) => {
-    let body = "";
-    for await (const chunk of request) body += chunk;
-    const payload = JSON.parse(body);
-    const isWarmUp = (payload.max_completion_tokens ?? payload.max_tokens) === 1;
-    received[isWarmUp ? "warmUp" : "call"] += 1;
-    if (isWarmUp && warmUp === "fail") {
-      response.writeHead(500, { "content-type": "application/json" });
-      response.end(JSON.stringify({ error: { message: "overloaded", type: "server_error" } }));
-      return;
-    }
-    if (isWarmUp && warmUp === "hold") {
-      held.push(response);
-      return;
-    }
-    const common = { id: "chatcmpl-warm", object: "chat.completion.chunk", created: 0, model: "m" };
-    const chunk = (fields) => `data: ${JSON.stringify({ ...common, ...fields })}\n\n`;
-    response.writeHead(200, { "content-type": "text/event-stream" });
-    response.end(
-      chunk({ choices: [{ index: 0, delta: { role: "assistant", content: "done" }, finish_reason: null }] }) +
-        chunk({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }) +
-        chunk({ choices: [], usage: { prompt_tokens: 100_000, completion_tokens: 1 } }) +
-        "data: [DONE]\n\n",
-    );
-  });
-  const baseUrl = await listen(server);
-  const { CacheWarmer } = await import(
-    new URL("../node_modules/@earendil-works/pi-coding-agent/dist/core/cache-warmer.js", import.meta.url)
-  );
-  const { streamSimple } = await import("@earendil-works/pi-ai/api/openai-completions");
-  // The warmer prices a refresh from the branch's last prompt size.
-  const sessionManager = {
-    getBranch: () => [{ type: "message", message: { role: "assistant", usage: { input: 100_000, cacheRead: 0, cacheWrite: 0 } } }],
-    appendUsage: (kind, provider, model, usage) => ({ type: "usage", kind, usage }),
-  };
-  const warmer = new CacheWarmer({ streamSimple }, sessionManager, () => "streaming");
-  const agent = {
-    streamFunction: (model, context, options) => {
-      warmer.start({ model, context, options }, () => true);
-      return streamSimple(model, context, options);
-    },
-  };
-  let warmUps = 0;
-  recordReportedCounts(agent, new WeakMap(), () => undefined, () => {
-    warmUps += 1;
-  });
-  // An 11-second prompt cache lifetime schedules the first refresh after 1 second.
-  const model = {
-    id: "m",
-    name: "m",
-    api: "openai-completions",
-    provider: "test",
-    baseUrl: `${baseUrl}/v1`,
-    reasoning: false,
-    input: ["text"],
-    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-    contextWindow: 200_000,
-    maxTokens: 1_000,
-    promptCache: { short: 11 },
-  };
-  try {
-    const response = await agent.streamFunction(
-      model,
-      { messages: [{ role: "user", content: "one", timestamp: 0 }] },
-      { apiKey: "test", cacheRetention: "short" },
-    );
-    await response.result();
-    if (settleFirst) {
-      warmer.onAgentSettled();
-    }
-    const deadline = Date.now() + 3_000;
-    while (!settleFirst && received.warmUp === 0 && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    // The agent settles: Pi aborts an outstanding warm-up and discards it.
-    warmer.onAgentSettled();
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    return { warmUps, received };
-  } finally {
-    warmer.cancel();
-    for (const response of held) {
-      response.destroy();
-    }
-    await close(server);
-  }
-}
-
-/**
- * A Pi session stand-in whose prompts each run one model call through the
- * agent's stream function and reports 10 input and 2 output tokens. A
- * "warm" entry also replays the call's request body the way Pi's cache
- * warmer does, "warm-and-throw" then fails the prompt, and "answer" does
- * neither.
- */
-function scriptedPiSession(script) {
-  const listeners = new Set();
-  const model = { id: "m", api: "openai-completions", provider: "test" };
-  let step;
-  const agent = {
-    streamFunction: async (_model, _context, options) => {
-      await options.onPayload?.({}, model);
-      if (step === "warm" || step === "warm-and-throw") {
-        await options.onPayload?.({}, model);
-      }
-      await options.onProviderStreamEvent?.(
-        { choices: [], usage: { prompt_tokens: 10, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 0 } } },
-        model,
-      );
-      const message = {
-        role: "assistant",
-        content: [{ type: "text", text: "done" }],
-        stopReason: "stop",
-        usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 },
-      };
-      return { result: async () => message };
-    },
-  };
-  return {
-    agent,
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    async prompt(_text, options) {
-      options.preflightResult?.();
-      step = script.shift();
-      const response = await agent.streamFunction(model, { messages: [] }, {});
-      const message = await response.result();
-      await new Promise((resolve) => setImmediate(resolve));
-      if (step === "warm-and-throw") {
-        throw new Error("prompt failed");
-      }
-      for (const listener of listeners) {
-        listener({ type: "turn_start" });
-        listener({ type: "message_end", message });
-      }
-    },
-  };
-}
-
-test("a prompt that throws after a warm-up attempt does not leave the next prompt unknown", async () => {
-  const session = scriptedPiSession(["warm-and-throw", "answer", "answer", "warm", "answer"]);
-  const handle = new PiSdkSessionHandle(session, { shutdownRequested: false }, tmpdir(), new Set());
-
-  await assert.rejects(handle.prompt("one"), /prompt failed/);
-  const second = await handle.prompt("two");
-  const third = await handle.prompt("three");
-  const warmed = await handle.prompt("four");
-  const fifth = await handle.prompt("five");
-
-  assert.deepEqual(second.usage, { input: 10, cacheRead: 0, output: 2 });
-  assert.deepEqual(third.usage, { input: 10, cacheRead: 0, output: 2 });
-  // The prompt that owns a warm-up attempt stays unknown.
-  assert.equal(warmed.usage, undefined);
-  assert.deepEqual(fifth.usage, { input: 10, cacheRead: 0, output: 2 });
-});
-
-for (const warmUp of ["fail", "hold", "answer"]) {
-  test(`notes a cache warm-up attempt that Pi's warmer ${warmUp === "hold" ? "aborts" : warmUp === "fail" ? "fails" : "completes"}`, async () => {
-    const { warmUps, received } = await warmedCall({ warmUp });
-
-    assert.deepEqual(received, { call: 1, warmUp: 1 });
-    assert.equal(warmUps, 1);
-  });
-}
-
-test("notes no warm-up when the agent settles before the refresh is due", async () => {
-  const { warmUps, received } = await warmedCall({ warmUp: "answer", settleFirst: true });
-
-  assert.deepEqual(received, { call: 1, warmUp: 0 });
-  assert.equal(warmUps, 0);
-});
-
-/** One unmasked WebSocket text frame, as a server sends it. */
-function webSocketTextFrame(text) {
-  const payload = Buffer.from(text);
-  let header;
-  if (payload.length < 126) {
-    header = Buffer.from([0x81, payload.length]);
-  } else if (payload.length < 65_536) {
-    header = Buffer.from([0x81, 126, payload.length >> 8, payload.length & 0xff]);
-  } else {
-    header = Buffer.alloc(10);
-    header[0] = 0x81;
-    header[1] = 127;
-    header.writeBigUInt64BE(BigInt(payload.length), 2);
-  }
-  return Buffer.concat([header, payload]);
-}
-
-/** The Responses events of a completed reply that reports `usage`. */
-function codexReplyEvents(usage) {
-  const part = { type: "output_text", text: "done", annotations: [] };
-  const item = { id: "msg_usage", type: "message", role: "assistant", status: "completed", content: [part] };
-  const response = { id: "resp_usage", object: "response", created_at: 0, status: "completed", model: "gpt-test", output: [item], usage };
-  return [
-    { type: "response.created", response: { ...response, status: "in_progress", output: [] } },
-    { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
-    { type: "response.content_part.added", item_id: item.id, output_index: 0, content_index: 0, part: { ...part, text: "" } },
-    { type: "response.output_text.delta", item_id: item.id, output_index: 0, content_index: 0, delta: "done" },
-    { type: "response.output_text.done", item_id: item.id, output_index: 0, content_index: 0, text: "done" },
-    { type: "response.content_part.done", item_id: item.id, output_index: 0, content_index: 0, part },
-    { type: "response.output_item.done", output_index: 0, item },
-    { type: "response.completed", response },
-  ];
-}
-
-/**
- * Run one model call through Pi's Codex transport, wrapped by the adapter's
- * recorder, against a local endpoint. `webSocket` is "reply" to answer the
- * WebSocket request or "drop" to close the connection after receiving it
- * and before any event; `http` is the HTTP fallback's status, with 200
- * replying over server-sent events. Returns the counts the adapter recorded
- * for the call and the requests each transport received.
- */
-async function codexCallCounts({ webSocket, http }) {
-  const usage = { input_tokens: 50, input_tokens_details: { cached_tokens: 0 }, output_tokens: 5, total_tokens: 55 };
-  const received = { webSocket: 0, http: 0 };
-  const sockets = new Set();
-  const server = createServer(async (request, response) => {
-    for await (const _chunk of request);
-    received.http += 1;
-    if (http !== 200) {
-      response.writeHead(http, { "content-type": "application/json" });
-      response.end(JSON.stringify({ error: { message: "rate limited", type: "rate_limit_error" } }));
-      return;
-    }
-    response.writeHead(200, { "content-type": "text/event-stream" });
-    response.end(codexReplyEvents(usage).map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""));
-  });
-  server.on("upgrade", (request, socket) => {
-    sockets.add(socket);
-    const accept = createHash("sha1")
-      .update(`${request.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
-      .digest("base64");
-    socket.write(
-      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
-    );
-    // The first client frame is Pi's response.create request.
-    socket.once("data", () => {
-      received.webSocket += 1;
-      if (webSocket === "drop") {
-        socket.destroy();
-        return;
-      }
-      for (const event of codexReplyEvents(usage)) {
-        socket.write(webSocketTextFrame(JSON.stringify(event)));
-      }
-    });
-  });
-  const baseUrl = await listen(server);
-  const sessionId = randomUUID();
-  const { closeOpenAICodexWebSocketSessions, stream } = await import("@earendil-works/pi-ai/api/openai-codex-responses");
-  try {
-    const records = new WeakMap();
-    const agent = { streamFunction: stream };
-    recordReportedCounts(agent, records, () => undefined);
-    const claims = Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "account" } })).toString("base64url");
-    const model = {
-      id: "gpt-test",
-      name: "gpt-test",
-      api: "openai-codex-responses",
-      provider: "openai-codex",
-      baseUrl,
-      reasoning: false,
-      input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 100_000,
-      maxTokens: 1_000,
-    };
-    const response = await agent.streamFunction(
-      model,
-      { messages: [{ role: "user", content: "one", timestamp: 0 }] },
-      { apiKey: `header.${claims}.signature`, sessionId, transport: "auto" },
-    );
-    const message = await response.result();
-    await new Promise((resolve) => setImmediate(resolve));
-    return { counts: records.get(message), message, received };
-  } finally {
-    // Pi keeps a session's WebSocket open for reuse until an idle timer ends.
-    closeOpenAICodexWebSocketSessions(sessionId);
-    for (const socket of sockets) {
-      socket.destroy();
-    }
-    await close(server);
-  }
-}
-
-test(
-  "keeps a Codex WebSocket reply's counts known",
-  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-  async () => {
-    const { counts, message, received } = await codexCallCounts({ webSocket: "reply", http: 200 });
-
-    assert.deepEqual(received, { webSocket: 1, http: 0 });
-    assert.equal(message.stopReason, "stop");
-    assert.deepEqual(counts, { input: true, cacheRead: true, output: true });
-  },
-);
-
-for (const [name, http, stopReason] of [
-  ["a successful HTTP fallback", 200, "stop"],
-  ["a rate-limited HTTP fallback", 429, "error"],
-]) {
-  test(
-    `leaves a Codex call's counts unknown when its WebSocket request failed before ${name}`,
-    { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-    async () => {
-      // The provider received the WebSocket request and may have billed it,
-      // but the fetch only sees the HTTP fallback.
-      const { counts, message, received } = await codexCallCounts({ webSocket: "drop", http });
-
-      assert.deepEqual(received, { webSocket: 1, http: 1 });
-      assert.equal(message.stopReason, stopReason);
-      assert.ok(message.diagnostics.some((diagnostic) => diagnostic.type === "provider_transport_failure"));
-      assert.deepEqual(counts, { input: false, cacheRead: false, output: false });
-    },
-  );
-}
-
-test(
-  "leaves a prompt's tokens unknown when a stream fails after it started",
-  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-  async () => {
-    // The provider accepted the request and streamed, so it may have billed
-    // tokens that the dropped stream never reported.
-    const [dropped] = await promptsAgainstScriptedEndpoint(
-      [{ content: "partial", dropStream: true }, { content: "after retry", usage: { prompt_tokens: 50, completion_tokens: 5 } }],
-      ["one"],
-    );
-
-    assert.equal(dropped.text, "after retry");
-    assert.equal(dropped.usage, undefined);
-  },
-);
-
-test(
-  "keeps usage known when an extension replaces an assistant message's usage object",
-  { skip: supportsPi ? false : "Pi 1.0 requires Node 22.19 or newer" },
-  async () => {
-    const extension = `export default function (pi) {
-  pi.on("message_end", (event) =>
-    event.message.role === "assistant" ? { message: { ...event.message, usage: { ...event.message.usage } } } : undefined,
-  );
-}
-`;
-    const [replaced] = await promptsAgainstScriptedEndpoint(
-      [{ content: "done", usage: { prompt_tokens: 50, completion_tokens: 5 } }],
-      ["one"],
-      undefined,
-      extension,
-    );
-
-    assert.deepEqual(replaced.usage, { input: 50, output: 5 });
-  },
-);

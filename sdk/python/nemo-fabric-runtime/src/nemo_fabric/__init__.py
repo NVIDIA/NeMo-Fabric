@@ -3,6 +3,15 @@
 
 """Python SDK surface for NeMo Fabric."""
 
+from nemo_fabric.accounting import summarize_usage
+from nemo_fabric.types import ModelUsage
+from nemo_fabric.types import PerModelUsage
+from nemo_fabric.types import PricingBasis
+from nemo_fabric.types import AppliedPricing
+from nemo_fabric.types import TokenCounts
+from nemo_fabric.types import TokenCost
+from nemo_fabric.types import CostAmount
+from nemo_fabric.types import UsageGap
 from nemo_fabric.client import Fabric
 from nemo_fabric.capabilities import AdapterCapabilityProfile
 from nemo_fabric.capabilities import inspect_adapter
@@ -12,6 +21,8 @@ from nemo_fabric.errors import FabricError
 from nemo_fabric.errors import FabricNativeUnavailableError
 from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric.errors import FabricStateError
+from nemo_fabric.errors import ResourceObservationUnavailableError
+from nemo_fabric.errors import ResourceObservationUnsupportedError
 from nemo_fabric.models import EnvironmentConfig
 from nemo_fabric.models import DiscoveryConfig
 from nemo_fabric.models import FabricBaseModel
@@ -37,6 +48,8 @@ from nemo_fabric.models import RelayOpenTelemetryConfig
 from nemo_fabric.models import RelayOpenTelemetryEndpointConfig
 from nemo_fabric.models import RelayS3StorageConfig
 from nemo_fabric.models import RunRequest
+from nemo_fabric.models import SystemStatsConfig
+from nemo_fabric.models import SystemStatsSamplingConfig
 from nemo_fabric.models import RuntimeConfig
 from nemo_fabric.models import SkillConfig
 from nemo_fabric.models import TelemetryConfig
@@ -61,15 +74,33 @@ from nemo_fabric.types import EnvironmentReference
 from nemo_fabric.types import FabricEvent
 from nemo_fabric.types import RunOutput
 from nemo_fabric.types import RunPlan
+from nemo_fabric.types import CgroupObservation
+from nemo_fabric.types import CgroupSnapshot
+from nemo_fabric.types import CgroupStats
+from nemo_fabric.types import GaugeSummary
+from nemo_fabric.types import Measurement
+from nemo_fabric.types import SampleSummary
+from nemo_fabric.types import InvocationSystemStats
+from nemo_fabric.types import ResourceObservation
 from nemo_fabric.types import RunResult
 from nemo_fabric.types import RunUsage
 from nemo_fabric.types import RuntimeCapabilities
 from nemo_fabric.types import RuntimeHandle
+from nemo_fabric.types import RuntimeResourceSnapshot
 from nemo_fabric.types import ServiceHandle
 from nemo_fabric.types import ServiceReference
 from nemo_fabric.types import TelemetryRef
 
 __all__ = [
+    "summarize_usage",
+    "ModelUsage",
+    "PerModelUsage",
+    "PricingBasis",
+    "AppliedPricing",
+    "TokenCounts",
+    "TokenCost",
+    "CostAmount",
+    "UsageGap",
     "AdapterCapabilityProfile",
     "AdapterInfo",
     "ArtifactManifest",
@@ -113,13 +144,26 @@ __all__ = [
     "FabricNativeUnavailableError",
     "FabricRuntimeError",
     "FabricStateError",
+    "ResourceObservationUnavailableError",
+    "ResourceObservationUnsupportedError",
     "RunOutput",
     "RunPlan",
     "RunRequest",
+    "CgroupObservation",
+    "CgroupSnapshot",
+    "CgroupStats",
+    "GaugeSummary",
+    "Measurement",
+    "SampleSummary",
+    "InvocationSystemStats",
+    "ResourceObservation",
     "RunResult",
     "RunUsage",
     "RuntimeCapabilities",
     "RuntimeHandle",
+    "RuntimeResourceSnapshot",
+    "SystemStatsConfig",
+    "SystemStatsSamplingConfig",
     "RuntimeConfig",
     "Runtime",
     "RuntimeStatus",

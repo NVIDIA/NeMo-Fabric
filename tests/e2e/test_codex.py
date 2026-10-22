@@ -42,9 +42,9 @@ def _mock_codex_config(api_server, tmp_path):
 def _skill_tool_call(selected_skill, workdir):
     if sys.platform == "win32":
         return {
-            "name": "shell_command",
+            "name": "exec_command",
             "arguments": {
-                "command": f'Get-Content -Raw "{selected_skill / "SKILL.md"}"',
+                "cmd": f'Get-Content -Raw "{selected_skill / "SKILL.md"}"',
                 "workdir": str(workdir),
             },
         }
@@ -128,13 +128,14 @@ async def test_native_usage_round_trips_to_harbor_without_relay(
         assert context.cost_usd is None
 
 
-def test_skill_tool_call_uses_classic_shell_on_windows(monkeypatch, tmp_path):
+def test_skill_tool_call_uses_powershell_on_windows(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "platform", "win32")
 
     tool_call = _skill_tool_call(tmp_path / "default", tmp_path)
 
-    assert tool_call["name"] == "shell_command"
-    assert set(tool_call["arguments"]) == {"command", "workdir"}
+    assert tool_call["name"] == "exec_command"
+    assert set(tool_call["arguments"]) == {"cmd", "workdir"}
+    assert tool_call["arguments"]["cmd"].startswith("Get-Content -Raw ")
 
 
 @pytest.mark.usefixtures("nemo_relay")

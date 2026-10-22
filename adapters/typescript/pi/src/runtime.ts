@@ -5,31 +5,13 @@
 // to a PiSessionHandle and normalized results while keeping SDK construction
 // behind a factory for focused lifecycle testing.
 
-import type {
-  AgentRunRequest,
-  AgentRunResult,
-  AgentUsage,
-  JsonObject,
-  RuntimeContext,
-} from "nemo-fabric-adapter-contract";
+import type { AgentRunRequest, AgentRunResult, AgentUsage, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import { collectRelayArtifacts, type RelayArtifact } from "./relay-config.js";
 import type { PiRelayRuntime } from "./relay.js";
 
 export type PiStopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | string;
-
-/**
- * Token counts Pi recorded during one prompt. Each count is absent when a
- * call's provider left it unreported.
- */
-export interface PiTokenUsage {
-  /** Input tokens, including cache reads and cache writes. */
-  input?: number;
-  /** Cache reads, part of `input`. */
-  cacheRead?: number;
-  output?: number;
-}
 
 export interface PiPromptOutcome {
   accepted: boolean;
@@ -39,8 +21,9 @@ export interface PiPromptOutcome {
   stopReason?: PiStopReason;
   errorMessage?: string;
   shutdownRequested?: boolean;
-  /** Absent when no count of the prompt's calls is known. */
-  usage?: PiTokenUsage;
+  /** Invocation-owned source observations, reduced by the shared contract. */
+  usage?: AgentUsage;
+  promptFailed?: boolean;
 }
 
 export interface PiSessionHandle {
@@ -59,26 +42,6 @@ function failed(code: string, message: string): AgentRunResult {
     status: "failed",
     output: null,
     error: { code, message, retryable: false },
-  };
-}
-
-/**
- * The invocation's usage, with input counting its cache reads and writes. A
- * count that a call left unreported stays absent, cache reads are kept even
- * when input is unknown, and the total is absent unless both input and output
- * are known and their sum is a safe integer.
- */
-function agentUsage(usage: PiTokenUsage | undefined): AgentUsage | undefined {
-  if (usage === undefined || (usage.input === undefined && usage.cacheRead === undefined && usage.output === undefined)) {
-    return undefined;
-  }
-  const { input, cacheRead, output } = usage;
-  const total = input === undefined || output === undefined ? undefined : input + output;
-  return {
-    ...(input === undefined ? {} : { input_tokens: input, input_tokens_include_cache: true }),
-    ...(cacheRead === undefined ? {} : { cached_input_tokens: cacheRead }),
-    ...(output === undefined ? {} : { output_tokens: output }),
-    ...(total === undefined || !Number.isSafeInteger(total) ? {} : { total_tokens: total }),
   };
 }
 
@@ -155,7 +118,6 @@ export class PiAdapterRuntime implements AdapterRuntime {
 
     const relay = this.session.relay;
     const outcome = await this.session.prompt(request.input);
-    const usage = agentUsage(outcome.usage);
     if (
       !Number.isInteger(outcome.turnCount) ||
       outcome.turnCount < this.turnCount ||
@@ -164,13 +126,22 @@ export class PiAdapterRuntime implements AdapterRuntime {
       throw new LifecycleError("pi_invalid_turn_count", "Pi returned an invalid cumulative turn count");
     }
     this.turnCount = outcome.turnCount;
+    if (outcome.promptFailed) {
+      return withRelayOutput(
+        failed("pi_prompt_failed", outcome.errorMessage || "The Pi prompt failed"),
+        relay,
+        outcome.turnStarted,
+        outcome.turnCount,
+        outcome.usage,
+      );
+    }
     if (!outcome.accepted) {
       return withRelayOutput(
         failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"),
         relay,
         outcome.turnStarted,
         outcome.turnCount,
-        usage,
+        outcome.usage,
       );
     }
     if (outcome.shutdownRequested || outcome.stopReason === "aborted") {
@@ -192,7 +163,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         relay,
         outcome.turnStarted,
         outcome.turnCount,
-        usage,
+        outcome.usage,
       );
     }
     if (outcome.stopReason === "error") {
@@ -201,7 +172,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         relay,
         outcome.turnStarted,
         outcome.turnCount,
-        usage,
+        outcome.usage,
       );
     }
     if (outcome.text === undefined || outcome.text.length === 0) {
@@ -210,7 +181,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         relay,
         outcome.turnStarted,
         outcome.turnCount,
-        usage,
+        outcome.usage,
       );
     }
     return withRelayOutput(
@@ -218,7 +189,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
       relay,
       outcome.turnStarted,
       outcome.turnCount,
-      usage,
+      outcome.usage,
     );
   }
 

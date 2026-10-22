@@ -11,12 +11,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import uvicorn
 
-# The sentinel an OpenAI-compatible router returns as the assistant message
-# when its upstream connection times out.
-_ROUTER_TIMEOUT_TEXT = "Connect timeout, please try again later."
-# Chat-completion usage the mock reports unless a scenario sets another one.
-_ZERO_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-
 
 @contextmanager
 def mock_api_server(port: int) -> Iterator[str]:
@@ -24,12 +18,7 @@ def mock_api_server(port: int) -> Iterator[str]:
     Context manager for a mock API server.
 
     Use the /_requests endpoint to inspect captured chat-completion payloads after a test action.
-    Use the /_scenario endpoint to configure a status code, ordered tool calls, or the
-    chat-completion usage object and finish reason for subsequent requests. Its ordered
-    ``replies`` override the usage or finish reason of the next chat completions, one
-    reply each, make one invalid, reject one with its ``status_code``, or send one
-    with ``no_choices`` (an empty ``choices`` list). A tool call with ``usage`` streams
-    that usage.
+    Use the /_scenario endpoint to configure a status code or ordered tool calls for subsequent requests.
     Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
@@ -47,9 +36,6 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.tool_calls = []
         app.state.tool_call_index = 0
         app.state.mcp_authorization_headers = []
-        app.state.usage = dict(_ZERO_USAGE)
-        app.state.finish_reason = "stop"
-        app.state.replies = []
 
     reset_state()
 
@@ -79,7 +65,7 @@ def mock_api_server(port: int) -> Iterator[str]:
 
     @app.post("/_scenario")
     async def scenario(request: Request) -> dict[str, object]:
-        """Configure the status code, tool calls or usage for subsequent requests."""
+        """Configure the status code or ordered tool calls for subsequent requests."""
 
         payload = await request.json()
         app.state.status_code = int(payload.get("status_code", 200))
@@ -88,9 +74,6 @@ def mock_api_server(port: int) -> Iterator[str]:
             [tool_call] if tool_call is not None else []
         )
         app.state.tool_call_index = 0
-        app.state.usage = payload.get("usage", dict(_ZERO_USAGE))
-        app.state.finish_reason = payload.get("finish_reason", "stop")
-        app.state.replies = list(payload.get("replies", []))
         return {
             "status_code": app.state.status_code,
             "tool_call": tool_call,
@@ -166,17 +149,6 @@ def mock_api_server(port: int) -> Iterator[str]:
     async def chat_completions(request: Request):
         payload = await request.json()
         app.state.requests.append(payload)
-        if app.state.replies and "status_code" in app.state.replies[0]:
-            rejected = app.state.replies.pop(0)
-            return JSONResponse(
-                status_code=int(rejected["status_code"]),
-                content={
-                    "error": {
-                        "message": f"configured status {rejected['status_code']}",
-                        "type": "invalid_request_error",
-                    }
-                },
-            )
         if app.state.status_code != 200:
             return JSONResponse(
                 status_code=app.state.status_code,
@@ -205,16 +177,9 @@ def mock_api_server(port: int) -> Iterator[str]:
         ]
         latest = user_messages[-1].get("content", "") if user_messages else ""
         content = f"echo user_count={len(user_messages)} latest={latest}"
-        reply = app.state.replies.pop(0) if app.state.replies else {}
-        usage = reply.get("usage", app.state.usage)
-        finish_reason = reply.get("finish_reason", app.state.finish_reason)
-        if reply.get("invalid", False):
-            # A router timeout reported as a successful completion, which
-            # OpenAI-compatible clients such as Hermes reject as invalid.
-            content = _ROUTER_TIMEOUT_TEXT
         if payload.get("stream") is True:
             return StreamingResponse(
-                _stream_chat_completion(payload, content, usage, finish_reason),
+                _stream_chat_completion(payload, content),
                 media_type="text/event-stream",
             )
 
@@ -224,16 +189,18 @@ def mock_api_server(port: int) -> Iterator[str]:
                 "object": "chat.completion",
                 "created": 0,
                 "model": payload.get("model", "fabric-echo"),
-                "choices": []
-                if reply.get("no_choices", False)
-                else [
+                "choices": [
                     {
                         "index": 0,
                         "message": {"role": "assistant", "content": content},
-                        "finish_reason": finish_reason,
+                        "finish_reason": "stop",
                     }
                 ],
-                "usage": usage,
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
             }
         )
 
@@ -311,12 +278,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         thread.join(timeout=5)
 
 
-def _stream_chat_completion(
-    payload: dict[str, object],
-    content: str,
-    usage: dict[str, object],
-    finish_reason: str,
-) -> Iterator[str]:
+def _stream_chat_completion(payload: dict[str, object], content: str) -> Iterator[str]:
     model = payload.get("model", "fabric-echo")
     chunks = [
         {
@@ -354,7 +316,7 @@ def _stream_chat_completion(
                 {
                     "index": 0,
                     "delta": {},
-                    "finish_reason": finish_reason,
+                    "finish_reason": "stop",
                 }
             ],
         },
@@ -363,15 +325,19 @@ def _stream_chat_completion(
     for chunk in chunks:
         yield f"data: {json.dumps(chunk)}\n\n"
     if payload.get("stream_options") == {"include_usage": True}:
-        usage_chunk = {
+        usage = {
             "id": "chatcmpl-fabric-test",
             "object": "chat.completion.chunk",
             "created": 0,
             "model": model,
             "choices": [],
-            "usage": usage,
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            },
         }
-        yield f"data: {json.dumps(usage_chunk)}\n\n"
+        yield f"data: {json.dumps(usage)}\n\n"
     yield "data: [DONE]\n\n"
 
 
@@ -442,18 +408,6 @@ def _stream_tool_call_completion(
             ],
         },
     ]
-    if "usage" in tool_call:
-        # A tool call scripted with ``usage`` ends with that usage chunk.
-        chunks.append(
-            {
-                "id": "chatcmpl-fabric-tool-test",
-                "object": "chat.completion.chunk",
-                "created": 0,
-                "model": model,
-                "choices": [],
-                "usage": tool_call["usage"],
-            }
-        )
 
     for chunk in chunks:
         yield f"data: {json.dumps(chunk)}\n\n"

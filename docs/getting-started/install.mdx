@@ -190,6 +190,22 @@ npm install nemo-fabric-adapters-droid
 
 The adapter never installs the Droid CLI at runtime. Refer to the [Factory Droid adapter guide](../integrations/harness/droid.mdx) for supported configuration and discovery.
 
+### Install Kiro
+
+The [Kiro adapter](../integrations/harness/kiro.mdx) requires Node.js 22.19.0
+or newer and a caller-installed Kiro CLI with the V3 ACP server. Install and
+authenticate Kiro, then install the adapter:
+
+```bash
+pip install nemo-fabric
+curl -fsSL https://cli.kiro.dev/install | bash
+kiro-cli login
+npm install nemo-fabric-adapters-kiro
+```
+
+For non-interactive environments, provide `KIRO_API_KEY` instead of using
+browser login. NeMo Fabric does not install or update the Kiro CLI at runtime.
+
 ### Install an Adapter and Harness Without the Runtime
 
 Use an adapter package's `harness` extra when a different environment runs NeMo

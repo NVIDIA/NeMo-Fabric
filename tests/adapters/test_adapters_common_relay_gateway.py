@@ -271,3 +271,66 @@ def test_stop_relay_gateway_is_idempotent_for_exited_process():
 
     process.terminate.assert_not_called()
     process.kill.assert_not_called()
+
+
+@pytest.fixture(name="gateway_clock")
+def gateway_clock_fixture(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    mock_clock = MagicMock(spec=relay_gateway.time)
+    mock_clock.monotonic.return_value = 0.0
+
+    def advance(seconds: float) -> None:
+        mock_clock.monotonic.return_value += seconds
+
+    mock_clock.sleep.side_effect = advance
+    monkeypatch.setattr(relay_gateway, "time", mock_clock)
+    return mock_clock
+
+
+def test_wait_for_relay_gateway_allows_preflight_before_worker_readiness(
+    monkeypatch, gateway_clock
+):
+    process = MagicMock()
+    process.poll.return_value = None
+    response = MagicMock()
+    response.__enter__.return_value.status = 200
+
+    def probe_health(url, *, timeout):
+        gateway_clock.monotonic.return_value += timeout
+        if gateway_clock.monotonic() < 14.0:
+            raise relay_gateway.urllib.error.URLError("still initializing")
+        return response
+
+    monkeypatch.setattr(relay_gateway.urllib.request, "urlopen", probe_health)
+
+    relay_gateway.wait_for_relay_gateway(process, "http://127.0.0.1:43210/healthz")
+
+    assert 14.0 <= gateway_clock.monotonic() < 30.0
+
+
+@pytest.mark.parametrize(
+    ("probe_elapsed", "expected_sleep"), [(0.25, None), (0.20, 0.05)]
+)
+def test_wait_for_relay_gateway_limits_each_probe_to_remaining_startup_budget(
+    monkeypatch, gateway_clock, probe_elapsed, expected_sleep
+):
+    process = MagicMock()
+    process.poll.return_value = None
+
+    def probe_health(url, *, timeout):
+        gateway_clock.monotonic.return_value += probe_elapsed
+        raise relay_gateway.urllib.error.URLError("not ready")
+
+    mock_probe = MagicMock(side_effect=probe_health)
+    monkeypatch.setattr(relay_gateway.urllib.request, "urlopen", mock_probe)
+
+    with pytest.raises(relay_gateway.RelayGatewayError, match="did not become ready"):
+        relay_gateway.wait_for_relay_gateway(
+            process, "http://127.0.0.1:43210/healthz", timeout=0.25
+        )
+
+    mock_probe.assert_called_once_with("http://127.0.0.1:43210/healthz", timeout=0.25)
+    if expected_sleep is None:
+        gateway_clock.sleep.assert_not_called()
+    else:
+        gateway_clock.sleep.assert_called_once_with(pytest.approx(expected_sleep))
+    assert gateway_clock.monotonic() == pytest.approx(0.25)

@@ -13,12 +13,9 @@ import os
 import sys
 import threading
 import tomllib
-from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
-from types import SimpleNamespace
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -31,9 +28,6 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
 if importlib.util.find_spec("run_agent") is not None:
-    # Load the Hermes module the adapter's usage observer wraps before tests
-    # replace the tools package with stubs.
-    import agent.chat_completion_helpers  # noqa: F401
     from hermes_state import SessionDB
     from run_agent import AIAgent
 
@@ -578,7 +572,6 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             "cwd": "/workspace/repo",
             "timeout": 90,
         },
-        "auxiliary": {"title_generation": {"model_upgrade_enabled": False}},
         "skills": {"external_dirs": ["skills/review"]},
         "mcp_servers": {
             "github": {
@@ -881,7 +874,6 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     mock_session_db = MagicMock(spec=SessionDB)
     mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
     mock_ai_agent = MagicMock(spec=AIAgent)
-    mock_ai_agent.context_compressor = MagicMock()
     mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
     monkeypatch.setattr(
         mock_ai_agent_type.__init__.__func__,
@@ -1080,7 +1072,7 @@ async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
     assert runtime._mcp_authentication_checked is False
 
 
-def test_build_hermes_config_disables_model_titles_and_relay_titles():
+def test_build_hermes_config_disables_session_title_generation_only_for_relay():
     agent_config = _agent_config(
         {
             "harness": {"settings": {}},
@@ -1093,14 +1085,8 @@ def test_build_hermes_config_disables_model_titles_and_relay_titles():
         agent_config, workspace=".", relay_enabled=True
     )
 
-    # The model title call's tokens bypass the counters the adapter reports,
-    # so Hermes keeps its locally derived title; Relay runs have no titles.
-    assert ordinary_config["auxiliary"] == {
-        "title_generation": {"model_upgrade_enabled": False}
-    }
-    assert relay_config["auxiliary"] == {
-        "title_generation": {"enabled": False, "model_upgrade_enabled": False}
-    }
+    assert "auxiliary" not in ordinary_config
+    assert relay_config["auxiliary"] == {"title_generation": {"enabled": False}}
 
 
 def test_write_hermes_config_writes_file(tmp_path: Path):
@@ -1366,7 +1352,6 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
 
     mock_ai_agent = MagicMock(spec=AIAgent)
-    mock_ai_agent.context_compressor = MagicMock()
     mock_ai_agent.session_id = "runtime-fabric-123"
     mock_ai_agent.model = "test-model"
     mock_ai_agent.platform = "fabric"
@@ -1380,47 +1365,20 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         *first_messages,
         {"role": "assistant", "content": "second response"},
     ]
-    turns = iter(
-        [
-            {
-                "response": "first response",
-                "completed": True,
-                "failed": False,
-                "messages": first_messages,
-                "input_tokens": 100,
-                "cache_read_tokens": 0,
-                "cache_write_tokens": 50,
-                "output_tokens": 20,
-            },
-            {
-                "response": "second response",
-                "completed": True,
-                "failed": False,
-                "messages": second_messages,
-                "input_tokens": 130,
-                "cache_read_tokens": 50,
-                "cache_write_tokens": 50,
-                "output_tokens": 35,
-            },
-        ]
-    )
-    session_counters = (
-        "input_tokens",
-        "cache_read_tokens",
-        "cache_write_tokens",
-        "output_tokens",
-    )
-    for counter in session_counters:
-        setattr(mock_ai_agent, f"session_{counter}", 0)
-
-    def run_conversation(*args, **kwargs):
-        # Hermes stamps its session counters into a finished turn's result.
-        result = next(turns)
-        for counter in session_counters:
-            setattr(mock_ai_agent, f"session_{counter}", result[counter])
-        return result
-
-    mock_ai_agent.run_conversation.side_effect = run_conversation
+    mock_ai_agent.run_conversation.side_effect = [
+        {
+            "response": "first response",
+            "completed": True,
+            "failed": False,
+            "messages": first_messages,
+        },
+        {
+            "response": "second response",
+            "completed": True,
+            "failed": False,
+            "messages": second_messages,
+        },
+    ]
     mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
     monkeypatch.setattr(
         mock_ai_agent_type.__init__.__func__,
@@ -1548,14 +1506,6 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     assert first.output["response"] == "first response"
     assert second.output["response"] == "second response"
     assert "session_id" not in second.output
-    # Hermes reports session totals; each invocation reports its own change,
-    # with input counting its cache reads and writes.
-    assert first.usage is not None and second.usage is not None
-    assert (first.usage.input_tokens, first.usage.cached_input_tokens) == (150, 0)
-    assert first.usage.output_tokens == 20
-    assert (second.usage.input_tokens, second.usage.cached_input_tokens) == (80, 50)
-    assert second.usage.input_tokens_include_cache is True
-    assert (second.usage.output_tokens, second.usage.total_tokens) == (15, 95)
     assert Path(second.output["hermes_home"]) == (
         tmp_path
         / "artifacts"
@@ -1564,671 +1514,6 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         / "runtimes"
         / "runtime-fabric-123"
     )
-
-
-def test_invocation_usage_with_lower_or_missing_counters_leaves_them_unknown():
-    counters = {
-        "input_tokens": 10,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0,
-        "output_tokens": 4,
-    }
-    usage = adapter._invocation_usage(
-        counters, {**counters, "input_tokens": 50, "output_tokens": 1}
-    )
-    missing = adapter._invocation_usage({}, counters)
-    no_baseline = adapter._invocation_usage(counters, {})
-
-    assert usage is not None
-    assert usage.input_tokens is None
-    assert usage.output_tokens == 3
-    assert missing is None
-    assert no_baseline is None
-
-
-def test_invocation_usage_keeps_cached_input_when_input_is_unknown():
-    before = dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
-    after = {**before, "input_tokens": 10, "cache_read_tokens": 2, "output_tokens": 3}
-    without_cache_writes = {
-        key: value for key, value in after.items() if key != "cache_write_tokens"
-    }
-
-    unreported = adapter._invocation_usage(
-        after, before, unreported=frozenset({"input"})
-    )
-    no_write_counter = adapter._invocation_usage(without_cache_writes, before)
-    cache_only = adapter._invocation_usage(
-        after, before, unreported=frozenset({"input", "output"})
-    )
-
-    for usage in (unreported, no_write_counter):
-        assert usage is not None
-        assert (usage.input_tokens, usage.total_tokens) == (None, None)
-        assert (usage.cached_input_tokens, usage.output_tokens) == (2, 3)
-    assert cache_only is not None
-    assert cache_only.cached_input_tokens == 2
-    assert (cache_only.input_tokens, cache_only.output_tokens) == (None, None)
-
-
-def test_invocation_usage_above_the_contract_bound_is_unknown():
-    zero = dict.fromkeys(adapter._SESSION_TOKEN_KEYS, 0)
-    near_max = {**zero, "input_tokens": (1 << 64) - 2, "output_tokens": 3}
-
-    usage = adapter._invocation_usage(
-        near_max, zero, skipped={"input_tokens": 5, "output_tokens": 1}
-    )
-
-    assert usage is not None
-    assert usage.input_tokens is None
-    assert usage.total_tokens is None
-    assert usage.output_tokens == 4
-
-
-def test_session_counters_keep_only_valid_counts():
-    agent = SimpleNamespace(
-        session_input_tokens=7,
-        session_cache_read_tokens=True,
-        session_cache_write_tokens=-1,
-        session_output_tokens="3",
-    )
-
-    assert adapter._session_counters(agent) == {"input_tokens": 7}
-
-
-# A turn step that ends the turn with a failure result carrying no session
-# counters, like Hermes' billing, content-policy and partial-turn results.
-_COUNTERLESS_FAILURE = "counterless failure"
-
-
-def _record_response(agent: Any, response: Any) -> None:
-    """Fold a provider response the way Hermes' turn loop does."""
-    from agent import turn_response_check
-
-    turn_response_check.record_response_usage(
-        agent,
-        response,
-        messages=[],
-        api_call_count=1,
-        api_duration=0.0,
-        compression_attempts=0,
-        max_compression_attempts=3,
-    )
-
-
-class _UsageRecordingAgent:
-    """Hermes agent stand-in whose turns run scripted provider responses
-    through Hermes' own usage accounting and context compressor, called the
-    way Hermes' turn loop calls it. A callable step runs against the agent and
-    may raise; ``_COUNTERLESS_FAILURE`` ends the turn with a failure result."""
-
-    def __init__(
-        self,
-        turns: list[list[dict[str, object] | Callable[[Any], None] | str | None]],
-        api_mode: str = "chat_completions",
-    ) -> None:
-        from agent.context_compressor import ContextCompressor
-
-        self._turns = turns
-        self.context_compressor = ContextCompressor(
-            model="test-model", quiet_mode=True
-        )
-        self.provider = "custom"
-        self.api_mode = api_mode
-        self.model = "test-model"
-        self.base_url = "http://127.0.0.1:1/v1"
-        self.api_key = ""
-        self.client = None
-        self.session_id = "runtime-usage"
-        self._session_db = None
-        self.quiet_mode = True
-        self.verbose_logging = False
-        for counter in (
-            "api_calls",
-            "prompt_tokens",
-            "completion_tokens",
-            "total_tokens",
-            "input_tokens",
-            "output_tokens",
-            "cache_read_tokens",
-            "cache_write_tokens",
-            "reasoning_tokens",
-            "estimated_cost_usd",
-        ):
-            setattr(self, f"session_{counter}", 0)
-
-    def close(self) -> None:
-        pass
-
-    def run_conversation(self, user_message: str) -> dict[str, object]:
-        messages = [{"role": "user", "content": user_message}]
-        for usage in self._turns.pop(0):
-            if usage == _COUNTERLESS_FAILURE:
-                return {"final_response": "", "failed": True, "messages": messages}
-            if callable(usage):
-                usage(self)
-                continue
-            _record_response(self, SimpleNamespace(usage=usage))
-        return {
-            "final_response": "done",
-            "completed": True,
-            "messages": messages,
-            **{
-                key: getattr(self, f"session_{key}")
-                for key in (
-                    "input_tokens",
-                    "cache_read_tokens",
-                    "cache_write_tokens",
-                    "output_tokens",
-                )
-            },
-        }
-
-
-def _usage_recording_runtime(agent: _UsageRecordingAgent) -> adapter.HermesRuntime:
-    agent_config = _agent_config(
-        {"models": {"default": {"provider": "test", "model": "test-model"}}}
-    )
-    runtime = adapter.HermesRuntime()
-    runtime._started = True
-    runtime._agent_config = agent_config
-    runtime._model_config = agent_config.models["default"]
-    runtime._runtime_id = "runtime-usage"
-    runtime._agent = agent
-    runtime._observe_usage_reports(agent)
-    return runtime
-
-
-def _usage_invocation() -> tuple[AgentRunRequest, RuntimeContext]:
-    return _invocation(
-        {
-            "runtime_context": _runtime_context(
-                runtime_id="runtime-usage"
-            ).to_mapping(),
-            "request": {"input": "next"},
-        }
-    )
-
-
-async def test_hermes_usage_from_provider_responses_keeps_unreported_tokens_unknown():
-    def reported(prompt: int, completion: int) -> dict[str, int]:
-        return {
-            "prompt_tokens": prompt,
-            "completion_tokens": completion,
-            "total_tokens": prompt + completion,
-        }
-
-    agent = _UsageRecordingAgent(
-        [
-            [reported(120, 7), reported(200, 3)],
-            [reported(0, 0)],
-            [None],
-            [reported(50, 5), None],
-            [reported(400, 40)],
-        ]
-    )
-    runtime = _usage_recording_runtime(agent)
-    invocation = _usage_invocation()
-
-    two_calls = await runtime.invoke(*invocation)
-    reported_zero = await runtime.invoke(*invocation)
-    omitted = await runtime.invoke(*invocation)
-    mixed = await runtime.invoke(*invocation)
-    after_mixed = await runtime.invoke(*invocation)
-
-    assert agent.session_api_calls == 7
-    assert two_calls.usage is not None
-    assert (two_calls.usage.input_tokens, two_calls.usage.output_tokens) == (320, 10)
-    assert reported_zero.usage is not None
-    assert reported_zero.usage.input_tokens == 0
-    assert reported_zero.usage.output_tokens == 0
-    assert reported_zero.usage.total_tokens == 0
-    # Hermes counts a response without usage as an API call but adds no
-    # tokens, so the invocation's tokens are unknown rather than 0 or partial.
-    assert omitted.usage is None
-    assert mixed.usage is None
-    assert after_mixed.usage is not None
-    assert after_mixed.usage.input_tokens == 400
-    assert after_mixed.usage.output_tokens == 40
-
-
-async def test_hermes_usage_with_partial_provider_report_leaves_omitted_count_unknown():
-    agent = _UsageRecordingAgent(
-        [
-            [{"prompt_tokens": 100}],
-            [{"completion_tokens": 5}],
-            [{"prompt_tokens": 0, "completion_tokens": 0}],
-            [{"prompt_tokens": 60, "completion_tokens": 6}, {"prompt_tokens": 70}],
-            [{"prompt_tokens": 400, "completion_tokens": 40}],
-        ]
-    )
-    runtime = _usage_recording_runtime(agent)
-    invocation = _usage_invocation()
-
-    input_only = await runtime.invoke(*invocation)
-    output_only = await runtime.invoke(*invocation)
-    reported_zero = await runtime.invoke(*invocation)
-    one_partial = await runtime.invoke(*invocation)
-    after_partial = await runtime.invoke(*invocation)
-
-    # Hermes normalizes an omitted count to 0; the provider's report decides.
-    assert input_only.usage is not None
-    assert input_only.usage.input_tokens == 100
-    # The provider sent no cache details, so the cached share is unknown.
-    assert input_only.usage.cached_input_tokens is None
-    assert input_only.usage.output_tokens is None
-    assert input_only.usage.total_tokens is None
-    assert output_only.usage is not None
-    assert output_only.usage.input_tokens is None
-    assert output_only.usage.cached_input_tokens is None
-    assert output_only.usage.output_tokens == 5
-    assert output_only.usage.total_tokens is None
-    assert reported_zero.usage is not None
-    assert reported_zero.usage.input_tokens == 0
-    assert reported_zero.usage.output_tokens == 0
-    assert reported_zero.usage.total_tokens == 0
-    # One response without an output count leaves the invocation's output unknown.
-    assert one_partial.usage is not None
-    assert one_partial.usage.input_tokens == 130
-    assert one_partial.usage.output_tokens is None
-    assert after_partial.usage is not None
-    assert after_partial.usage.input_tokens == 400
-    assert after_partial.usage.output_tokens == 40
-    assert after_partial.usage.total_tokens == 440
-
-
-async def test_hermes_usage_with_empty_provider_usage_is_unknown():
-    # Hermes treats an empty usage object like a missing one; the adapter also
-    # counts it as a report with every count left out.
-    agent = _UsageRecordingAgent(
-        [[{}], [{"prompt_tokens": 400, "completion_tokens": 40}]]
-    )
-    runtime = _usage_recording_runtime(agent)
-    invocation = _usage_invocation()
-
-    empty = await runtime.invoke(*invocation)
-    after_empty = await runtime.invoke(*invocation)
-
-    assert agent.session_api_calls == 2
-    assert empty.usage is None
-    assert after_empty.usage is not None
-    assert (after_empty.usage.input_tokens, after_empty.usage.output_tokens) == (
-        400,
-        40,
-    )
-
-
-async def test_hermes_usage_reports_cache_counts_only_when_the_provider_sent_them():
-    chat = _UsageRecordingAgent(
-        [
-            [
-                {
-                    "prompt_tokens": 50,
-                    "completion_tokens": 5,
-                    "prompt_tokens_details": {"cached_tokens": 20},
-                }
-            ],
-        ]
-    )
-    # Anthropic's input_tokens excludes the cache, so input needs both cache fields.
-    anthropic = _UsageRecordingAgent(
-        [
-            [{"input_tokens": 100, "output_tokens": 5}],
-            [
-                {
-                    "input_tokens": 100,
-                    "cache_read_input_tokens": 30,
-                    "cache_creation_input_tokens": 0,
-                    "output_tokens": 5,
-                }
-            ],
-        ],
-        api_mode="anthropic_messages",
-    )
-    chat_runtime = _usage_recording_runtime(chat)
-    anthropic_runtime = _usage_recording_runtime(anthropic)
-    invocation = _usage_invocation()
-
-    cached = await chat_runtime.invoke(*invocation)
-    without_cache_fields = await anthropic_runtime.invoke(*invocation)
-    with_cache_fields = await anthropic_runtime.invoke(*invocation)
-
-    assert cached.usage is not None
-    assert (cached.usage.input_tokens, cached.usage.cached_input_tokens) == (50, 20)
-    assert without_cache_fields.usage is not None
-    assert without_cache_fields.usage.input_tokens is None
-    assert without_cache_fields.usage.cached_input_tokens is None
-    assert without_cache_fields.usage.output_tokens == 5
-    assert without_cache_fields.usage.total_tokens is None
-    assert with_cache_fields.usage is not None
-    assert with_cache_fields.usage.input_tokens == 130
-    assert with_cache_fields.usage.cached_input_tokens == 30
-    assert with_cache_fields.usage.total_tokens == 135
-
-
-def _reported(prompt: int, completion: int) -> dict[str, int]:
-    return {
-        "prompt_tokens": prompt,
-        "completion_tokens": completion,
-        "total_tokens": prompt + completion,
-    }
-
-
-async def test_hermes_usage_after_failed_or_counterless_turn_is_each_turns_own():
-    def fail_turn(agent: Any) -> None:
-        raise RuntimeError("turn failed")
-
-    agent = _UsageRecordingAgent(
-        [
-            [_reported(100, 10)],
-            # Hermes' early failure results carry no session counters.
-            [_reported(40, 4), _COUNTERLESS_FAILURE],
-            [_reported(50, 5)],
-            [_reported(70, 7), fail_turn],
-            [_reported(60, 6)],
-        ]
-    )
-    runtime = _usage_recording_runtime(agent)
-    invocation = _usage_invocation()
-
-    first = await runtime.invoke(*invocation)
-    counterless = await runtime.invoke(*invocation)
-    after_counterless = await runtime.invoke(*invocation)
-    with pytest.raises(RuntimeError):
-        await runtime.invoke(*invocation)
-    after_exception = await runtime.invoke(*invocation)
-
-    usages = [
-        (turn.usage.input_tokens, turn.usage.output_tokens, turn.usage.total_tokens)
-        for turn in (first, counterless, after_counterless, after_exception)
-        if turn.usage is not None
-    ]
-    # Each invocation reports its own tokens; the turn that raised never
-    # reaches the next invocation's usage.
-    assert usages == [(100, 10, 110), (40, 4, 44), (50, 5, 55), (60, 6, 66)]
-    assert counterless.status == AgentRunStatus.FAILED
-
-
-async def test_hermes_usage_after_session_counter_reset_is_unknown_for_that_turn():
-    def reset_session(agent: Any) -> None:
-        for counter in ("input_tokens", "cache_read_tokens", "output_tokens"):
-            setattr(agent, f"session_{counter}", 0)
-
-    agent = _UsageRecordingAgent(
-        [
-            [_reported(100, 10)],
-            [reset_session, _reported(30, 3)],
-            [_reported(20, 2)],
-        ]
-    )
-    runtime = _usage_recording_runtime(agent)
-    invocation = _usage_invocation()
-
-    await runtime.invoke(*invocation)
-    reset = await runtime.invoke(*invocation)
-    after_reset = await runtime.invoke(*invocation)
-
-    assert reset.usage is None
-    assert after_reset.usage is not None
-    assert (after_reset.usage.input_tokens, after_reset.usage.output_tokens) == (20, 2)
-
-
-@pytest.mark.parametrize(
-    ("handler", "action"),
-    [
-        ("handle_content_policy_refusal", "break"),
-        ("recover_from_truncation", "continue"),
-        ("recover_from_truncation", "fallthrough"),
-        ("retry_invalid_response", "continue"),
-        ("retry_invalid_response", "fallthrough"),
-    ],
-)
-async def test_hermes_skipped_response_usage_is_counted_once(handler, action):
-    # check_api_response returns after these handlers before recording the
-    # response's usage, unless the handler falls through to
-    # record_response_usage, which then counts it.
-    def positional_handler(agent: Any, response: Any, *args: Any) -> Any:
-        return SimpleNamespace(action=action)
-
-    def keyword_handler(agent: Any, *, response: Any, **kwargs: Any) -> Any:
-        return SimpleNamespace(action=action)
-
-    # Hermes passes retry_invalid_response the response by keyword.
-    observed = adapter._observed_response_handler(
-        handler,
-        keyword_handler if handler == "retry_invalid_response" else positional_handler,
-    )
-
-    def skipped(agent: Any) -> None:
-        response = SimpleNamespace(usage=_reported(40, 1))
-        if handler == "retry_invalid_response":
-            observed(agent, response=response, error_details=[])
-        else:
-            observed(agent, response, None)
-        if action == "fallthrough":
-            _record_response(agent, response)
-
-    agent = _UsageRecordingAgent([[skipped, _reported(50, 5)]])
-    runtime = _usage_recording_runtime(agent)
-
-    turn = await runtime.invoke(*_usage_invocation())
-
-    assert turn.usage is not None
-    assert (turn.usage.input_tokens, turn.usage.output_tokens) == (90, 6)
-
-
-async def test_hermes_skipped_response_uses_the_route_that_served_it():
-    # A refusal handler can switch the agent to a fallback provider before it
-    # returns; the refused response still has the first route's usage shape.
-    def refuse_and_fall_back(agent: Any, response: Any, *args: Any) -> Any:
-        agent.provider = "custom"
-        agent.api_mode = "chat_completions"
-        return SimpleNamespace(action="break")
-
-    observed = adapter._observed_response_handler(
-        "handle_content_policy_refusal", refuse_and_fall_back
-    )
-
-    def refused(agent: Any) -> None:
-        anthropic_usage = {
-            "input_tokens": 100,
-            "cache_read_input_tokens": 30,
-            "cache_creation_input_tokens": 0,
-            "output_tokens": 0,
-        }
-        observed(agent, SimpleNamespace(usage=anthropic_usage), None)
-
-    fallback_usage = {
-        **_reported(50, 5),
-        "prompt_tokens_details": {"cached_tokens": 0},
-    }
-    agent = _UsageRecordingAgent(
-        [[refused, fallback_usage]], api_mode="anthropic_messages"
-    )
-    runtime = _usage_recording_runtime(agent)
-
-    turn = await runtime.invoke(*_usage_invocation())
-
-    assert turn.usage is not None
-    assert (turn.usage.input_tokens, turn.usage.cached_input_tokens) == (180, 30)
-    assert turn.usage.output_tokens == 5
-
-
-def _bedrock_response(usage: dict[str, int]) -> Any:
-    from agent import bedrock_adapter
-
-    return bedrock_adapter.normalize_converse_response(
-        {"output": {"message": {"content": [{"text": "done"}]}}, "usage": usage}
-    )
-
-
-def _bedrock_streamed_response(usage: dict[str, int] | None) -> Any:
-    from agent import bedrock_adapter
-
-    events: list[dict[str, Any]] = [
-        {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "done"}}},
-        {"messageStop": {"stopReason": "end_turn"}},
-    ]
-    if usage is not None:
-        events.append({"metadata": {"usage": usage}})
-    return bedrock_adapter.stream_converse_with_callbacks({"stream": events})
-
-
-def _gemini_response(usage: dict[str, int]) -> Any:
-    from agent import gemini_native_adapter
-
-    return gemini_native_adapter.translate_gemini_response(
-        {
-            "candidates": [
-                {"content": {"parts": [{"text": "done"}]}, "finishReason": "STOP"}
-            ],
-            "usageMetadata": usage,
-        },
-        "gemini-test",
-    )
-
-
-@pytest.mark.parametrize(
-    ("response", "expected"),
-    [
-        # Bedrock fills an omitted count with 0 before Hermes sees it.
-        (
-            lambda: _bedrock_response({"inputTokens": 100}),
-            {"input_tokens": 100, "cached_input_tokens": None, "output_tokens": None},
-        ),
-        (
-            lambda: _bedrock_response(
-                {"inputTokens": 100, "outputTokens": 5, "cacheReadInputTokens": 20}
-            ),
-            {"input_tokens": 120, "cached_input_tokens": 20, "output_tokens": 5},
-        ),
-        # A stream that ends without its metadata event reports no count.
-        (
-            lambda: _bedrock_streamed_response(None),
-            {"input_tokens": None, "cached_input_tokens": None, "output_tokens": None},
-        ),
-        (
-            lambda: _bedrock_streamed_response({"inputTokens": 30, "outputTokens": 3}),
-            {"input_tokens": 30, "cached_input_tokens": None, "output_tokens": 3},
-        ),
-        (
-            lambda: _gemini_response({"promptTokenCount": 40}),
-            {"input_tokens": 40, "cached_input_tokens": None, "output_tokens": None},
-        ),
-        (
-            lambda: _gemini_response(
-                {
-                    "promptTokenCount": 40,
-                    "cachedContentTokenCount": 10,
-                    "candidatesTokenCount": 4,
-                    "thoughtsTokenCount": 2,
-                }
-            ),
-            {"input_tokens": 40, "cached_input_tokens": 10, "output_tokens": 6},
-        ),
-    ],
-    ids=[
-        "bedrock-input-only",
-        "bedrock-complete",
-        "bedrock-stream-without-metadata",
-        "bedrock-stream",
-        "gemini-input-only",
-        "gemini-complete",
-    ],
-)
-async def test_hermes_usage_keeps_native_transport_omissions_unknown(
-    response: Callable[[], Any], expected: dict[str, int | None]
-):
-    agent = _UsageRecordingAgent(
-        [[lambda agent: _record_response(agent, response())]]
-    )
-    runtime = _usage_recording_runtime(agent)
-    request, context = _usage_invocation()
-
-    result = await runtime.invoke(request, context)
-
-    usage = result.usage
-    if not any(expected.values()):
-        assert usage is None
-        return
-    assert usage is not None
-    assert {
-        "input_tokens": usage.input_tokens,
-        "cached_input_tokens": usage.cached_input_tokens,
-        "output_tokens": usage.output_tokens,
-    } == expected
-
-
-async def test_hermes_stop_unregisters_the_agent_usage_observer():
-    agent = _UsageRecordingAgent([])
-    runtime = _usage_recording_runtime(agent)
-    assert agent in adapter._USAGE_OBSERVERS
-    assert agent in adapter._SUMMARY_ATTEMPT_OBSERVERS
-    assert agent in adapter._DELEGATION_OBSERVERS
-
-    await runtime.stop()
-
-    assert agent not in adapter._USAGE_OBSERVERS
-    assert agent not in adapter._SUMMARY_ATTEMPT_OBSERVERS
-    assert agent not in adapter._DELEGATION_OBSERVERS
-
-
-def test_hermes_subagent_builder_notes_only_the_observed_parent():
-    class Agent:
-        pass
-
-    noted: list[str] = []
-    parent, subagent = Agent(), Agent()
-    adapter._DELEGATION_OBSERVERS[parent] = lambda: noted.append("parent")
-
-    def build_child_agent(task_index: int, goal: str, parent_agent: object) -> str:
-        return f"child of {parent_agent is parent}"
-
-    build = adapter._observed_subagent_builder(build_child_agent)
-
-    try:
-        assert build(0, "goal", parent_agent=parent) == "child of True"
-        # A subagent's own subagent belongs to its parent's delegated work.
-        assert build(0, "goal", parent_agent=subagent) == "child of False"
-    finally:
-        adapter._DELEGATION_OBSERVERS.pop(parent, None)
-
-    assert noted == ["parent"]
-
-
-def test_hermes_usage_observer_rejects_an_unknown_subagent_builder(monkeypatch):
-    from tools import delegate_tool
-
-    monkeypatch.setattr(
-        delegate_tool, "_build_child_agent", lambda *args, **kwargs: None
-    )
-
-    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
-        adapter._observe_delegation()
-
-    assert raised.value.code == "hermes_usage_accounting_unsupported"
-
-
-@pytest.mark.parametrize("drift", ["replaced", "not_called"])
-def test_hermes_usage_observer_rejects_unknown_usage_call_site(monkeypatch, drift):
-    from agent import turn_response_check
-    from agent import turn_usage
-
-    monkeypatch.setattr(
-        turn_response_check, "record_response_usage", turn_usage.record_response_usage
-    )
-    if drift == "replaced":
-        monkeypatch.setattr(
-            turn_response_check, "record_response_usage", lambda *args, **kwargs: None
-        )
-    else:
-        monkeypatch.setattr(
-            turn_response_check, "check_api_response", lambda *args, **kwargs: None
-        )
-
-    with pytest.raises(adapter.lifecycle.LifecycleError) as raised:
-        adapter._install_usage_observer()
-
-    assert raised.value.code == "hermes_usage_accounting_unsupported"
 
 
 @pytest.mark.parametrize(
@@ -2308,19 +1593,12 @@ async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch
     worker_started = threading.Event()
     worker_release = threading.Event()
     mock_agent = MagicMock()
-    mock_agent.session_input_tokens = 0
-    mock_agent.session_cache_read_tokens = 0
-    mock_agent.session_cache_write_tokens = 0
-    mock_agent.session_output_tokens = 0
     mock_session_db = MagicMock()
     calls = 0
 
     def run_turn(**_kwargs):
         nonlocal calls
         calls += 1
-        # Each turn bills calls * 100 input and calls * 10 output tokens.
-        mock_agent.session_input_tokens += calls * 100
-        mock_agent.session_output_tokens += calls * 10
         if calls == 1:
             worker_started.set()
             assert worker_release.wait(timeout=1)
@@ -2366,10 +1644,6 @@ async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch
     result = await runtime.invoke(*_invocation(invocation))
 
     assert result.output["response"] == "turn-2"
-    # The cancelled turn's tokens are in the counters before this turn starts,
-    # so this result reports only its own.
-    assert result.usage is not None
-    assert (result.usage.input_tokens, result.usage.output_tokens) == (200, 20)
     await runtime.stop()
 
 
