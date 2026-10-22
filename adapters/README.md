@@ -62,6 +62,7 @@ build, and packaging conventions.
 | [Factory Droid](typescript/droid/README.md) | `nvidia.fabric.droid` | `nemo-fabric-adapters-droid` | Node.js 22.19+ |
 | [Kilo Code](typescript/kilo/README.md) | `nvidia.fabric.kilo` | `nemo-fabric-adapters-kilo` | Node.js 22.19+ |
 | [Kiro](typescript/kiro/README.md) | `nvidia.fabric.kiro` | `nemo-fabric-adapters-kiro` | Node.js 22.19+ |
+| [Strands](typescript/strands/README.md) | `nvidia.fabric.strands` | `nemo-fabric-adapters-strands` | Node.js 22.19+ |
 | [OpenCode](typescript/opencode/README.md) | `nvidia.fabric.opencode` | `nemo-fabric-adapters-opencode` | Bun 1.4.2+ |
 | [Pi](typescript/pi/README.md) | `nvidia.fabric.pi` | `nemo-fabric-adapters-pi` | Node.js 22.19+ |
 | [Qwen Code](typescript/qwen/README.md) | `nvidia.fabric.qwen` | `nemo-fabric-adapters-qwen` | Node.js 22.19+ |
@@ -104,6 +105,7 @@ integration shape and implement the minimum lifecycle.
 | [Kilo Code](typescript/kilo/README.md) | Local Kilo server and one Kilo session | Not supported | Reuses the session and submits one SDK prompt for ordered text input | Deletes the session, terminates the server, and removes the isolated profile | Adapter-owned loopback service |
 | [Kilo Code](typescript/kilo/README.md) | Configured Kilo provider and model with an optional OpenAI-compatible base URL | `tools.enabled` and `tools.blocked` map to native Kilo tool names | Normalized: stdio, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
 | [Kiro](typescript/kiro/README.md) | Optional model selected from the Kiro ACP session catalog | ACP permission requests use the closed adapter setting; normalized tool policy is not exposed | Normalized ACP session inputs: stdio, streamable HTTP, and SSE | Not exposed | Kiro native behavior |
+| [Strands](typescript/strands/README.md) | Bedrock or explicit OpenAI-compatible Chat Completions endpoint | Built-in tool selection; stock harness permissions | Stdio, streamable HTTP, and SSE | Not exposed | Append system instructions |
 | [OpenCode](typescript/opencode/README.md) | Configured OpenCode provider and model with an optional OpenAI-compatible base URL | Not exposed | Normalized: stdio and streamable HTTP | Normalized `skills.paths` | Not exposed |
 | [Pi](typescript/pi/README.md) | One Pi-catalog provider and model with an optional base URL override | `tools.definitions`, `tools.enabled`, and `tools.blocked` cover built-ins, trusted local modules, and explicit extension tools | Not exposed | Normalized `skills.paths` | Not exposed |
 | [Qwen Code](typescript/qwen/README.md) | OpenAI-compatible provider and model | Native `tools.blocked` deny list | Normalized: stdio and streamable HTTP with per-server tool filters | Explicit `skills.paths` | Not exposed |
@@ -214,6 +216,7 @@ Agent Trajectory Interchange Format (ATIF).
 | [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Runtime-owned Relay 0.9 or 0.10 CLI gateway and explicit Pi extension | Reuses the session and calls `prompt()` for ordered text input; with `streaming=True`, routes per-invocation model-turn ATOF for successful redirects through the embedded collector; startup `model_redirect` marks remain in configured Relay ATOF artifacts and are not included in `invoke_stream()`; `relay_artifacts` does not include local ATIF | Aborts work, emits extension shutdown so local ATIF finalizes on disk, disposes the session, and then stops the gateway | Not implemented |
 | [Qwen Code](typescript/qwen/README.md) | SDK query and bundled Qwen CLI child process | Not supported | Reuses one live SDK query across ordered text turns | Closes the query and removes isolated temporary settings | Not implemented |
 | [Kiro](typescript/kiro/README.md) | Kiro CLI V3 child process and ACP session | Not supported | Reuses one ACP session and submits ordered text prompts | Closes the ACP session and terminates the Kiro child process | Not implemented |
+| [Strands](typescript/strands/README.md) | Strands CLI ACP child process and session | Not supported | Ordered text prompts retain one bounded conversation | Terminates the child process and removes temporary CLI state | Not implemented |
 | [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a shared ATOF collector | Registers the request ID, maps it into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |
 
 Telemetry output names use the descriptor contract values. Claude, Codex,

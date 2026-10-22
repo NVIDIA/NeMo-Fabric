@@ -137,6 +137,20 @@ const expectedByPackage = {
     "kiro.fabric-adapter.json",
     "package.json",
   ],
+  "nemo-fabric-adapters-strands": [
+    "LICENSE",
+    "README.md",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/configuration.d.ts",
+    "dist/configuration.js",
+    "dist/strands-acp.d.ts",
+    "dist/strands-acp.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "strands.fabric-adapter.json",
+    "package.json",
+  ],
 };
 const expectedFiles = expectedByPackage[manifest.name];
 if (expectedFiles === undefined) {

@@ -486,3 +486,19 @@ npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-qwen
 Set `NVIDIA_API_KEY` to run the example. The variant keeps the code-review skill,
 uses Qwen's non-interactive default approval mode, and blocks shell and edit
 tools. The variant does not configure an MCP server or Relay telemetry.
+
+### Strands (`strands`)
+
+Run the standard Strands harness through the shared ACP runner. From the repository root:
+
+```bash
+npm install --global @strands-agents/cli@0.2.1
+just install-typescript-strands
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-strands
+export NVIDIA_API_KEY="<your-key>"
+.venv/bin/python -m examples.code_review_agent --variant strands --plan
+.venv/bin/python -m examples.code_review_agent --variant strands --input "Review the workspace changes."
+```
+
+This variant uses the NVIDIA model configured in `strands_config()`, append-only review instructions, and native shell/read/write/edit tools. Tool calls run with the task environment's permissions. Normalized skills and Relay telemetry are unsupported. For Bedrock or a keyless custom endpoint, update the default `ModelConfig` as shown in the [adapter guide](../../adapters/typescript/strands/README.md). No Dockerfile is required.
