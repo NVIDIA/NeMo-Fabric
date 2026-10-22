@@ -527,7 +527,7 @@ async def test_harbor_custom_install_preserves_explicit_adapter_python(tmp_path:
     }
 
 
-def test_harbor_populates_usage_from_canonical_atif(tmp_path: Path):
+def test_harbor_keeps_canonical_atif_usage_separate(tmp_path: Path):
     from nemo_fabric.integrations.harbor.fabric_agent import (
         populate_context_from_trajectory,
     )
@@ -554,10 +554,22 @@ def test_harbor_populates_usage_from_canonical_atif(tmp_path: Path):
 
     populate_context_from_trajectory(context, trajectory)
 
-    assert context.n_input_tokens == 12
-    assert context.n_cache_tokens == 3
-    assert context.n_output_tokens == 4
-    assert context.cost_usd == 0.25
+    assert context.n_input_tokens is None
+    assert context.n_cache_tokens is None
+    assert context.n_output_tokens is None
+    assert context.cost_usd is None
+    assert context.metadata["fabric"]["atif_final_metrics"] == {
+        "source": "atif",
+        "coverage": "unverified",
+        "final_metrics": {
+            "total_prompt_tokens": 12,
+            "total_completion_tokens": 4,
+            "total_cached_tokens": 3,
+            "total_cost_usd": 0.25,
+            "total_steps": None,
+            "extra": None,
+        },
+    }
     assert context.metadata["fabric"]["harbor_atif_validation"] == {
         "status": "succeeded",
         "error": None,

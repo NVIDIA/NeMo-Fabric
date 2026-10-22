@@ -54,7 +54,6 @@ COPY --chown=node:node examples/code_review_agent/ /sandbox/code-review/
 RUN install -d -m 0700 -o 1000 -g 1000 /sandbox/tmp /sandbox/workspace /sandbox/artifacts /sandbox/.cache
 ARG FABRIC_SOURCE_SHA256=unrecorded
 LABEL org.nvidia.nemo-fabric.runtime-server.interface="2" \
-      org.nvidia.nemo-fabric.runtime-server.runtime-limit="1" \
       org.nvidia.nemo-fabric.source-sha256="$FABRIC_SOURCE_SHA256" \
       io.nemoclaw.fabric.bridge='{"interface_version":2,"operations":["start","invoke","stop","serve"]}' \
       io.nemoclaw.fabric.catalog=""

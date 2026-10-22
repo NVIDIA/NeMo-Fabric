@@ -862,7 +862,9 @@ def served_model_fact(messages: InvocationMessages | None) -> dict[str, Any]:
     """
 
     if messages is None:
-        return provenance.missing_fact("unavailable", "not_collected", _METHOD_HARNESS_API)
+        return provenance.missing_fact(
+            "unavailable", "not_collected", _METHOD_HARNESS_API
+        )
     if messages.failure is not None:
         return provenance.missing_fact(
             "collection_failed", messages.failure, _METHOD_HARNESS_API
@@ -877,9 +879,13 @@ def served_model_fact(messages: InvocationMessages | None) -> dict[str, Any]:
         and message.model != _SYNTHETIC_MODEL
     }
     if not models:
-        return provenance.missing_fact("unavailable", "empty_response", _METHOD_HARNESS_API)
+        return provenance.missing_fact(
+            "unavailable", "empty_response", _METHOD_HARNESS_API
+        )
     if len(models) > 1:
-        return provenance.missing_fact("unavailable", "not_attributed", _METHOD_HARNESS_API)
+        return provenance.missing_fact(
+            "unavailable", "not_attributed", _METHOD_HARNESS_API
+        )
     return provenance.known_fact(models.pop(), _METHOD_HARNESS_API)
 
 
@@ -899,6 +905,8 @@ def init_message_version(messages: list[Message]) -> dict[str, Any] | None:
                 "unavailable", "empty_response", _METHOD_INIT_MESSAGE
             )
     return None
+
+
 # Claude Code's result usage keys and the detailed input counters they fill.
 # Anthropic's input_tokens excludes cache reads and cache writes, and its
 # output_tokens includes thinking, which Anthropic bills as output.
@@ -945,9 +953,7 @@ def _detailed_token_usage(usage: dict[str, Any]) -> dict[str, int | bool]:
     return counters
 
 
-def _agent_run_result(
-    output: dict[str, Any], versions: dict[str, Any] | None = None
-) -> AgentRunResult:
+def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
     reported_error = normalized.pop("error", None)
@@ -990,7 +996,6 @@ def _agent_run_result(
         output=normalized,
         error=error,
         usage=agent_usage,
-        extensions={provenance.VERSIONS_REPORT_KEY: versions} if versions else {},
     )
 
 
@@ -1149,6 +1154,7 @@ class ClaudeRuntime:
         self._harness_version = provenance.missing_fact(
             "unavailable", "not_collected", _METHOD_INIT_MESSAGE
         )
+        self._invocation_messages: InvocationMessages | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1198,6 +1204,26 @@ class ClaudeRuntime:
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
     ) -> AgentRunResult:
+        self._invocation_messages = None
+        result = await self._invoke(request, runtime_context)
+        result.extensions.update(
+            (
+                {
+                    provenance.VERSIONS_REPORT_KEY: self._versions_report(
+                        self._agent_config, self._invocation_messages
+                    )
+                }
+                if self._agent_config is not None
+                else {}
+            )
+        )
+        return result
+
+    async def _invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
         client = self._client
         agent_config = self._agent_config
         fabric_runtime_id = self._fabric_runtime_id
@@ -1218,7 +1244,6 @@ class ClaudeRuntime:
                     "claude_runtime_unavailable",
                     "Claude runtime cannot accept another invocation after a runtime failure",
                 ),
-                self._versions_report(agent_config, messages),
             )
 
         invocation_deadline = lifecycle.invocation_deadline(runtime_context)
@@ -1269,12 +1294,11 @@ class ClaudeRuntime:
                             relay,
                             artifacts=[],
                         ),
-                        self._versions_report(agent_config, messages),
                     )
 
         if self._relay is not None:
             output = _relay_output(output, self._relay)
-        return _agent_run_result(output, self._versions_report(agent_config, messages))
+        return _agent_run_result(output)
 
     def _versions_report(
         self, config: AgentConfig, messages: InvocationMessages | None
@@ -1313,6 +1337,7 @@ class ClaudeRuntime:
         """
 
         collected = InvocationMessages() if collected is None else collected
+        self._invocation_messages = collected
         messages = collected.items
         result: ResultMessage | None = None
         deadline = asyncio.timeout(remaining_timeout)
@@ -1399,7 +1424,9 @@ class ClaudeRuntime:
         ):
             total = None
         self._cost_total = total
-        reset = any(isinstance(message, ConversationResetMessage) for message in messages)
+        reset = any(
+            isinstance(message, ConversationResetMessage) for message in messages
+        )
         if total is None or previous is None or reset or total < previous:
             return None
         # Drop float subtraction noise such as 0.19999999999999998. A tenth of a

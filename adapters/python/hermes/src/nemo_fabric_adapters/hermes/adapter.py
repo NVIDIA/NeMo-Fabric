@@ -78,7 +78,9 @@ async def probe_hermes_version(
     try:
         version = await probe.call(version_call, timeout=timeout)
     except TimeoutError:
-        return provenance.missing_fact("collection_failed", "timeout", _METHOD_HARNESS_API)
+        return provenance.missing_fact(
+            "collection_failed", "timeout", _METHOD_HARNESS_API
+        )
     except HermesVersionCallMissingError:
         return provenance.no_source_fact()
     except Exception:
@@ -124,6 +126,7 @@ class HermesRuntime:
         self._harness_version = provenance.missing_fact(
             "unavailable", "not_collected", _METHOD_HARNESS_API
         )
+        self._package_version = provenance.package_version_fact(_PACKAGE_DISTRIBUTION)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -282,7 +285,35 @@ class HermesRuntime:
             await self.stop()
             raise
 
+    def _versions_extensions(self) -> dict[str, Any]:
+        return {
+            provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
+                package_version=self._package_version,
+                harness_name=provenance.known_fact(
+                    "hermes-agent", provenance.METHOD_ADAPTER_REPORT
+                ),
+                harness_version=self._harness_version,
+                served_models={
+                    role: provenance.no_source_fact()
+                    for role in (
+                        self._agent_config.models
+                        if self._agent_config is not None
+                        else ()
+                    )
+                },
+            )
+        }
+
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        result = await self._invoke(request, runtime_context)
+        result.extensions.update(self._versions_extensions())
+        return result
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
@@ -435,21 +466,7 @@ class HermesRuntime:
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
             output=output,
             error=error,
-            extensions={
-                provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
-                    package_version=provenance.package_version_fact(
-                        _PACKAGE_DISTRIBUTION
-                    ),
-                    harness_name=provenance.known_fact(
-                        _HARNESS_NAME, provenance.METHOD_ADAPTER_REPORT
-                    ),
-                    harness_version=self._harness_version,
-                    served_models={
-                        role: provenance.no_source_fact()
-                        for role in agent_config.models
-                    },
-                )
-            },
+            extensions={},
         )
 
     async def _authenticate_mcp_servers(self) -> None:

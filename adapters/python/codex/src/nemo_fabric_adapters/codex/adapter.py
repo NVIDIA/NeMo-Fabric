@@ -848,6 +848,8 @@ def thread_config(
     mcp_servers = _native_mcp_servers(config)
     if mcp_servers:
         result["mcp_servers"] = mcp_servers
+    # Keep the pre-0.154 behavior of waiting for configured MCP servers.
+    result["mcp_optional_startup_grace_ms"] = 0
     if callback_url := _mcp_oauth_callback_url(config):
         result["mcp_oauth_callback_url"] = callback_url
     overrides = _mapping(
@@ -1095,9 +1097,11 @@ async def read_cli_version(
         async with asyncio.timeout(timeout):
             response = await thread.read()
     except TimeoutError:
-        return provenance.missing_fact("collection_failed", "timeout", _METHOD_HARNESS_API)
-    except (CodexError, RuntimeError, OSError, ValueError):
-        # ValueError covers a response the SDK's models reject.
+        return provenance.missing_fact(
+            "collection_failed", "timeout", _METHOD_HARNESS_API
+        )
+    except Exception:
+        # Provenance failures must not prevent execution; cancellation still propagates.
         return provenance.missing_fact(
             "collection_failed", "no_result", _METHOD_HARNESS_API
         )
@@ -1109,21 +1113,8 @@ async def read_cli_version(
     return provenance.known_fact(version, _METHOD_HARNESS_API)
 
 
-def versions_report(config: AgentConfig, harness_version: dict[str, Any]) -> dict[str, Any]:
-    """Codex's versions report. Codex knows only the configured model."""
-
-    return provenance.versions_report(
-        package_version=provenance.package_version_fact(_PACKAGE_DISTRIBUTION),
-        harness_name=provenance.known_fact(_HARNESS_NAME, provenance.METHOD_ADAPTER_REPORT),
-        harness_version=harness_version,
-        served_models={role: provenance.no_source_fact() for role in config.models},
-    )
-
-
 def _agent_run_result(
-    output: dict[str, Any],
-    cumulative_totals: dict[str, int] | None = None,
-    versions: dict[str, Any] | None = None,
+    output: dict[str, Any], cumulative_totals: dict[str, int] | None = None
 ) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
@@ -1149,7 +1140,6 @@ def _agent_run_result(
         output=normalized,
         error=error,
         usage=agent_usage,
-        extensions={provenance.VERSIONS_REPORT_KEY: versions} if versions else {},
     )
 
 
@@ -1386,6 +1376,7 @@ class CodexRuntime:
         self._harness_version = provenance.missing_fact(
             "unavailable", "not_collected", _METHOD_HARNESS_API
         )
+        self._package_version = provenance.package_version_fact(_PACKAGE_DISTRIBUTION)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1474,7 +1465,33 @@ class CodexRuntime:
         self._usage_totals = dict.fromkeys(USAGE_FIELDS, 0)
         self._harness_version = harness_version
 
+    def _versions_extensions(self) -> dict[str, Any]:
+        return {
+            provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
+                package_version=self._package_version,
+                harness_name=provenance.known_fact(
+                    "codex", provenance.METHOD_ADAPTER_REPORT
+                ),
+                harness_version=self._harness_version,
+                served_models={
+                    role: provenance.no_source_fact()
+                    for role in (
+                        self._config.models if self._config is not None else ()
+                    )
+                },
+            )
+        }
+
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        result = await self._invoke(request, runtime_context)
+        result.extensions.update(self._versions_extensions())
+        return result
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
@@ -1505,7 +1522,6 @@ class CodexRuntime:
                     "codex_runtime_unavailable",
                     "Codex runtime cannot accept another invocation after a runtime failure",
                 ),
-                versions=versions_report(config, self._harness_version),
             )
 
         invocation_deadline = lifecycle.invocation_deadline(runtime_context)
@@ -1561,7 +1577,6 @@ class CodexRuntime:
                     return _agent_run_result(
                         _relay_output(failure, relay, artifacts=[]),
                         self._usage_totals,
-                        versions_report(config, self._harness_version),
                     )
         except AdapterRelayError as error:
             output = adapter_failure(error)
@@ -1573,9 +1588,7 @@ class CodexRuntime:
         self._unusable = not usable
         if self._relay is not None:
             output = _relay_output(output, self._relay)
-        return _agent_run_result(
-            output, self._usage_totals, versions_report(config, self._harness_version)
-        )
+        return _agent_run_result(output, self._usage_totals)
 
     async def stop(self) -> None:
         client = self._client

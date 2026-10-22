@@ -17,11 +17,19 @@ export {
 export { insecureHttpModelHosts, modelEndpointAllowed } from "./model-endpoint.js";
 
 export {
-  VERSIONS_REPORT_KEY,
-  boundedText,
-  missingFact,
-  packageVersionFact,
-  packageVersionReport,
-  withPackageVersion,
-  type ServedModelFact,
+  AcpRunnerError,
+  startAcpSession,
+  type AcpConfigOption,
+  type AcpMcpServer,
+  type AcpPermissionDecision,
+  type AcpPermissionResolver,
+  type AcpPromptResult,
+  type AcpSession,
+  type AcpSessionOptions,
+  type AcpSessionReadinessNotification,
+} from "./acp-runner.js";
+
+export {
+  VERSIONS_REPORT_KEY, boundedText, missingFact, packageVersionFact,
+  packageVersionReport, withPackageVersion, type ServedModelFact,
 } from "./provenance.js";

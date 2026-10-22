@@ -932,6 +932,119 @@
       "sha256": "a7e4124a236408686856225f908813a3197efde6bb932a0ac2eb45e0462fe6d1",
       "source": "adapters/typescript/kilo/kilo.fabric-adapter.json"
     },
+    "nvidia.fabric.kiro": {
+      "descriptor": {
+        "adapter_id": "nvidia.fabric.kiro",
+        "adapter_kind": "process",
+        "capabilities": {
+          "cancellation": false,
+          "service": false,
+          "streaming": false,
+          "updates": false
+        },
+        "config": {
+          "accepts": [
+            "models",
+            "mcp"
+          ]
+        },
+        "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.versions.v1": {
+                "type": "object"
+              },
+              "session_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "stop_reason": {
+                "enum": [
+                  "end_turn",
+                  "max_tokens",
+                  "max_turn_requests",
+                  "refusal",
+                  "cancelled"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "session_id",
+              "stop_reason"
+            ],
+            "type": "object"
+          }
+        },
+        "model_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "api_key_env": {
+              "const": "KIRO_API_KEY"
+            },
+            "model": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "provider": {
+              "const": "kiro"
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ],
+          "type": "object"
+        },
+        "requirements": {
+          "binaries": [
+            "node",
+            "kiro-cli"
+          ]
+        },
+        "runner": {
+          "command": "node",
+          "script": "dist/cli.js"
+        },
+        "settings_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "mode_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "permission_mode": {
+              "enum": [
+                "deny",
+                "allow_once"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "ecosystem": "typescript",
+      "package": {
+        "name": "nemo-fabric-adapters-kiro",
+        "version": "0.6.0"
+      },
+      "sha256": "d138e70b87701737fbf29d124f35c236e34829fa4dbf6a4a62a4699c4e5115a1",
+      "source": "adapters/typescript/kiro/kiro.fabric-adapter.json"
+    },
     "nvidia.fabric.langchain.deepagents": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.langchain.deepagents",

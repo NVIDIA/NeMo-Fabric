@@ -22,6 +22,9 @@ const expectedByPackage = {
   "nemo-fabric-adapters-common": [
     "LICENSE",
     "README.md",
+    "acp-runner.md",
+    "dist/acp-runner.d.ts",
+    "dist/acp-runner.js",
     "dist/index.d.ts",
     "dist/index.js",
     "dist/lifecycle.d.ts",
@@ -122,6 +125,20 @@ const expectedByPackage = {
     "kilo.fabric-adapter.json",
     "package.json",
   ],
+  "nemo-fabric-adapters-kiro": [
+    "LICENSE",
+    "README.md",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/configuration.d.ts",
+    "dist/configuration.js",
+    "dist/kiro-acp.d.ts",
+    "dist/kiro-acp.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "kiro.fabric-adapter.json",
+    "package.json",
+  ],
 };
 const expectedFiles = expectedByPackage[manifest.name];
 if (expectedFiles === undefined) {
@@ -193,6 +210,17 @@ if (manifest.name === "nemo-fabric-adapters-droid") {
       manifest.peerDependenciesMeta?.["@factory/droid-sdk"]?.optional !== true ||
       manifest.devDependencies?.["@factory/droid-sdk"] !== "0.9.1") {
     throw new Error("The Droid SDK must be a compatible optional peer and exact-pinned development dependency");
+  }
+}
+if (manifest.name === "nemo-fabric-adapters-kiro") {
+  if (manifest.exports?.["./descriptor"] !== "./kiro.fabric-adapter.json") {
+    throw new Error("The Kiro package must export its adapter descriptor");
+  }
+  const descriptor = JSON.parse(
+    await readFile(join(packageRoot, "kiro.fabric-adapter.json"), "utf8"),
+  );
+  if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("The Kiro descriptor runner must resolve inside the npm package");
   }
 }
 if (manifest.name === "nemo-fabric-adapters-opencode") {

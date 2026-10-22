@@ -128,6 +128,8 @@ descriptor schema.
 - `sdk/artifact-manifest`: normalized artifact references.
 - `sdk/error-info`: structured runtime or adapter error metadata.
 - `sdk/fabric-event`: NeMo Fabric lifecycle or progress event.
+- `sdk/runtime-resource-snapshot`: timestamped memory, process count, and CPU
+  time of a runtime's local adapter host and its descendants.
 
 ### Deferred Core Objects
 
@@ -167,3 +169,13 @@ just generate-typescript-contract
 
 Run `just test-typescript` to check generated-file drift, strict compile-time
 fixtures, package contents, and clean-consumer imports.
+
+### Invocation Provenance
+
+`what_ran` in `sdk/run-result` is optional provenance with schema `nemo.fabric.what_ran` and version `v1alpha1`. Rust and Python readers treat malformed provenance or an unsupported schema or version as absent while preserving the rest of the result. Fact `source` and `state` values are closed sets; collector, method, and reason codes are open. Unknown properties are accepted. A `what_ran_truncated` marker permits sections to be absent. This northbound field does not change the adapter result contract. See the [SDK guide](../docs/sdk/python.mdx#what-ran) for facts, bounds, and truncation rules.
+
+### Invocation System Measurements
+
+`system_stats` in `sdk/run-result` contains a monotonic adapter exchange duration, before/after observations of the executing adapter host process tree, and an optional CPU counter difference estimate. Its `ResourceObservation` definition is tagged by `status`: `available` carries a snapshot; `unavailable` and `unsupported` carry a reason. Endpoint memory is not peak memory. A missing estimate is unknown, not zero. The compatible `resource_snapshot` field repeats the final available snapshot. These northbound additions do not change the adapter result contract.
+
+`system_stats` in `sdk/agent` and `sdk/run-plan` defaults to all endpoint metric groups when omitted; explicit null disables invocation collection and its artifacts and must survive serialization. `SystemStatsConfig.collect` selects `process`, `cgroup.cpu`, `cgroup.memory`, and `cgroup.pressure`; empty, duplicate, and unknown selections are rejected. Optional nested `sampling` enables bounded native series with `interval_ms` and `max_samples`. The config is northbound-only. `collected_groups` records the selection; `not_collected` distinguishes excluded sources from selected-but-unavailable evidence. Unselected process reductions and an entirely excluded cgroup block are omitted; the final legacy `resource_snapshot` is independent. The result adds scoped cgroup endpoint measurements and sampled gauge/CPU reductions with explicit coverage and retention diagnostics. Numeric `Measurement` values distinguish available, unlimited limits, unavailable, and unsupported evidence. Samples and summaries use `fabric.system_stats/v1alpha1` and carry existing execution IDs. Provider lifetime high-water, summed process RSS, and invocation sampled peak have separate meanings.

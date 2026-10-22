@@ -27,7 +27,9 @@ def known(value: str, method: str = "package_metadata") -> dict[str, str]:
     }
 
 
-def missing(state: str, reason: str, method: str = "package_metadata") -> dict[str, str]:
+def missing(
+    state: str, reason: str, method: str = "package_metadata"
+) -> dict[str, str]:
     return {
         "state": state,
         "reason": reason,
@@ -74,15 +76,27 @@ def test_package_version_fact_reads_installed_metadata():
 @pytest.mark.parametrize(
     ("distribution", "module", "expected"),
     [
-        ("deepagents", deepagents.__name__, known(importlib.metadata.version("deepagents"))),
+        (
+            "deepagents",
+            deepagents.__name__,
+            known(importlib.metadata.version("deepagents")),
+        ),
         (
             "mini-swe-agent",
             minisweagent.__name__,
             known(importlib.metadata.version("mini-swe-agent")),
         ),
         # The distribution exists but did not install the loaded module.
-        ("mini-swe-agent", deepagents.__name__, missing("unavailable", "not_attributed")),
-        ("deepagents", "nemo_fabric_not_loaded", missing("unavailable", "not_collected")),
+        (
+            "mini-swe-agent",
+            deepagents.__name__,
+            missing("unavailable", "not_attributed"),
+        ),
+        (
+            "deepagents",
+            "nemo_fabric_not_loaded",
+            missing("unavailable", "not_collected"),
+        ),
     ],
 )
 def test_loaded_module_version_fact_accepts_only_the_module_the_package_installed(
@@ -119,7 +133,6 @@ def test_versions_report_keeps_16_roles_in_sorted_order_and_bounds_values():
     assert report["adapter"]["package_version"] == known("0.6.0")
 
 
-
 def test_versions_report_keeps_the_roles_core_keeps_in_code_point_order():
     vectors = json.loads((FIXTURES / "role-order.json").read_text(encoding="utf-8"))
     override = missing("unavailable", "not_attributed", "harness_api")
@@ -135,6 +148,7 @@ def test_versions_report_keeps_the_roles_core_keeps_in_code_point_order():
 
     assert list(report["models"]) == vectors["kept"]
     assert report["models"]["\ue000"] == {"served": override}
+
 
 def probe_threads() -> int:
     return sum(
@@ -226,3 +240,27 @@ def test_package_version_report_marks_harness_and_served_models_no_source():
         "harness": {"name": no_source, "version": no_source},
         "models": {"default": {"served": no_source}, "judge": {"served": no_source}},
     }
+
+
+@pytest.mark.parametrize(
+    "error", [OSError("unreadable metadata"), ValueError("invalid metadata")]
+)
+def test_package_metadata_errors_are_collection_failures(monkeypatch, error):
+    def fail(*args):
+        raise error
+
+    monkeypatch.setattr(importlib.metadata, "version", fail)
+    monkeypatch.setattr(importlib.metadata, "distribution", fail)
+    expected = missing("collection_failed", "no_result")
+    assert provenance.package_version_fact("deepagents") == expected
+    assert provenance.loaded_module_version_fact("deepagents", "deepagents") == expected
+
+
+def test_loaded_module_path_errors_are_collection_failures(monkeypatch):
+    def fail(*args, **kwargs):
+        raise OSError("unreadable module path")
+
+    monkeypatch.setattr(Path, "resolve", fail)
+    assert provenance.loaded_module_version_fact("deepagents", "deepagents") == missing(
+        "collection_failed", "no_result"
+    )

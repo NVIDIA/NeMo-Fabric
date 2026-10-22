@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -31,7 +31,7 @@ test("bounded text matches core's string length rule", async () => {
 });
 
 test("each TypeScript adapter reads its own package version", async () => {
-  for (const adapter of ["cline", "droid", "kilo", "opencode", "pi", "qwen"]) {
+  for (const adapter of ["cline", "droid", "kilo", "kiro", "opencode", "pi", "qwen"]) {
     const packageJson = new URL(`../../${adapter}/package.json`, import.meta.url);
     const {version} = JSON.parse(await readFile(packageJson, "utf8"));
     assert.deepEqual(packageVersionFact(packageJson), {
@@ -40,7 +40,7 @@ test("each TypeScript adapter reads its own package version", async () => {
   }
 });
 
-test("an unreadable package.json reads not_collected", () => {
+test("a missing package.json reads not_collected", () => {
   assert.deepEqual(packageVersionFact(new URL("file:///nonexistent/package.json")), {
     state: "unavailable", reason: "not_collected", source: "reported", collected_by: "adapter", method: "package_metadata",
   });
@@ -72,7 +72,7 @@ test("the wrapper adds the versions report and keeps the result", async () => {
       models: {default: {served: noSource}, judge: {served: noSource}},
     });
   } finally {
-    await rm(directory, {recursive: true, force: true});
+    // Retain this uniquely named temporary directory for test diagnostics.
   }
 });
 
@@ -107,7 +107,7 @@ test("the wrapper picks the served-model role from the start input", async () =>
 
     assert.deepEqual(result.extensions[VERSIONS_REPORT_KEY].models, {primary: {served: notAttributed}});
   } finally {
-    await rm(directory, {recursive: true, force: true});
+    // Retain this uniquely named temporary directory for test diagnostics.
   }
 });
 
@@ -121,4 +121,31 @@ test("the report keeps the roles core keeps, in code point order", async () => {
 
   assert.deepEqual(Object.keys(report.models), vectors.kept);
   assert.deepEqual(report.models["\u{E000}"], {served: notAttributed});
+});
+
+
+test("returned version facts are detached from later invocations", async () => {
+  const runtime = withPackageVersion({
+    async start() {}, async stop() {},
+    async invoke() { return {status: "succeeded", output: "done"}; },
+  }, new URL("../package.json", import.meta.url));
+  await runtime.start({agentName: "test", baseDir: ".", config: {models: {default: {}}}, runtimeContext: {}});
+  const first = await runtime.invoke({input: "one"}, {});
+  first.extensions[VERSIONS_REPORT_KEY].harness.version.reason = "changed";
+  const second = await runtime.invoke({input: "two"}, {});
+  assert.equal(second.extensions[VERSIONS_REPORT_KEY].harness.version.reason, "no_source");
+});
+
+
+test("invalid package metadata is a collection failure", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "fabric-provenance-invalid-"));
+  try {
+    const packageJson = pathToFileURL(join(directory, "package.json"));
+    await writeFile(packageJson, "invalid json");
+    assert.deepEqual(packageVersionFact(packageJson), {
+      state: "collection_failed", reason: "no_result", source: "reported", collected_by: "adapter", method: "package_metadata",
+    });
+  } finally {
+    // Retain this uniquely named temporary directory for test diagnostics.
+  }
 });

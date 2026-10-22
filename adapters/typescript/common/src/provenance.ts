@@ -49,15 +49,17 @@ export interface ServedModelFact {
 
 /**
  * The `version` field of the adapter's own `package.json`, read synchronously.
- * A file that can't be read or parsed reads `unavailable` with reason
- * `not_collected`, and an empty version reads `empty_response`.
+ * Missing metadata reads `unavailable/not_collected`; unreadable or invalid
+ * metadata reads `collection_failed/no_result`. An empty version reads
+ * `unavailable/empty_response`.
  */
 export function packageVersionFact(packageJson: URL): JsonObject {
   let version: unknown;
   try {
     version = (JSON.parse(readFileSync(packageJson, "utf8")) as {version?: unknown}).version;
-  } catch {
-    return missingFact("unavailable", "not_collected", "package_metadata");
+  } catch (error) {
+    const absent = error instanceof Error && "code" in error && error.code === "ENOENT";
+    return missingFact(absent ? "unavailable" : "collection_failed", absent ? "not_collected" : "no_result", "package_metadata");
   }
   if (typeof version !== "string" || version.length === 0) {
     return missingFact("unavailable", "empty_response", "package_metadata");
@@ -132,7 +134,7 @@ export function withPackageVersion(
     async invoke(request: AgentRunRequest, context: RuntimeContext): Promise<AgentRunResult> {
       const result = await runtime.invoke(request, context);
       if (report === undefined) return result;
-      return {...result, extensions: {...(result.extensions ?? {}), [VERSIONS_REPORT_KEY]: report}};
+      return {...result, extensions: {...(result.extensions ?? {}), [VERSIONS_REPORT_KEY]: structuredClone(report)}};
     },
     stop(): Promise<void> {
       return runtime.stop();

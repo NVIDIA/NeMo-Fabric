@@ -17,12 +17,9 @@ import hashlib
 import importlib.metadata
 import sys
 import threading
-from collections.abc import Callable
-from collections.abc import Iterable
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import Any
-from typing import TypeVar
+from typing import Any, TypeVar
 
 VERSIONS_REPORT_KEY = "nemo_fabric.versions.v1"
 PROBE_TIMEOUT_SECONDS = 5.0
@@ -86,9 +83,7 @@ def bounded_text(text: str) -> str:
     if len(text) <= _MAX_VALUE_CHARS:
         return text
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    return (
-        f"{text[:_TRUNCATED_PREFIX_CHARS]}~{digest[:_TRUNCATED_DIGEST_HEX_DIGITS]}"
-    )
+    return f"{text[:_TRUNCATED_PREFIX_CHARS]}~{digest[:_TRUNCATED_DIGEST_HEX_DIGITS]}"
 
 
 def package_version_fact(distribution: str) -> dict[str, Any]:
@@ -96,21 +91,24 @@ def package_version_fact(distribution: str) -> dict[str, Any]:
 
     try:
         version = importlib.metadata.version(distribution)
+        if not isinstance(version, str) or not version:
+            return missing_fact(
+                "unavailable", "empty_response", METHOD_PACKAGE_METADATA
+            )
+        return known_fact(version, METHOD_PACKAGE_METADATA)
     except importlib.metadata.PackageNotFoundError:
         return missing_fact("unavailable", "not_collected", METHOD_PACKAGE_METADATA)
-    if not version:
-        return missing_fact("unavailable", "empty_response", METHOD_PACKAGE_METADATA)
-    return known_fact(version, METHOD_PACKAGE_METADATA)
+    except Exception:
+        return missing_fact("collection_failed", "no_result", METHOD_PACKAGE_METADATA)
 
 
 def loaded_module_version_fact(distribution: str, module_name: str) -> dict[str, Any]:
-    """The version of ``distribution`` when it installed the loaded ``module_name``.
+    """Report installed packaging identity only when it owns the loaded module.
 
-    Another copy of the module can shadow the installed package, for example a
-    source checkout earlier on ``sys.path``. The version is reported only when
-    the distribution's file list holds the file the module was loaded from;
-    otherwise it reads ``unavailable`` with reason ``not_attributed``. A module
-    that is not loaded reads ``not_collected``.
+    A source checkout may shadow an installed distribution. Its metadata is
+    reported only when the distribution file list contains the loaded file.
+    Metadata or filesystem failures remain explicit missing facts and cannot
+    fail an invocation. Package identity does not attest to unchanged code.
     """
 
     module = sys.modules.get(module_name)
@@ -119,19 +117,25 @@ def loaded_module_version_fact(distribution: str, module_name: str) -> dict[str,
         return missing_fact("unavailable", "not_collected", METHOD_PACKAGE_METADATA)
     try:
         installed = importlib.metadata.distribution(distribution)
+        loaded = Path(module_file).resolve()
+        if not any(
+            Path(str(installed.locate_file(file))).resolve() == loaded
+            for file in installed.files or ()
+            if file.name == loaded.name
+        ):
+            return missing_fact(
+                "unavailable", "not_attributed", METHOD_PACKAGE_METADATA
+            )
+        version = installed.version
+        if not isinstance(version, str) or not version:
+            return missing_fact(
+                "unavailable", "empty_response", METHOD_PACKAGE_METADATA
+            )
+        return known_fact(version, METHOD_PACKAGE_METADATA)
     except importlib.metadata.PackageNotFoundError:
         return missing_fact("unavailable", "not_collected", METHOD_PACKAGE_METADATA)
-    loaded = Path(module_file).resolve()
-    if not any(
-        Path(str(installed.locate_file(file))).resolve() == loaded
-        for file in installed.files or ()
-        if file.name == loaded.name
-    ):
-        return missing_fact("unavailable", "not_attributed", METHOD_PACKAGE_METADATA)
-    version = installed.version
-    if not version:
-        return missing_fact("unavailable", "empty_response", METHOD_PACKAGE_METADATA)
-    return known_fact(version, METHOD_PACKAGE_METADATA)
+    except Exception:
+        return missing_fact("collection_failed", "no_result", METHOD_PACKAGE_METADATA)
 
 
 def versions_report(

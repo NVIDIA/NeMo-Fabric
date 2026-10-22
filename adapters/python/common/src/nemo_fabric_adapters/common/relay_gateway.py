@@ -20,7 +20,10 @@ from typing import Any
 from nemo_fabric_adapters.common.relay_version import is_supported_relay_version
 
 
-RELAY_HEALTH_TIMEOUT_SECONDS = 10.0
+# Readiness includes plugin preflight and worker startup before health is served.
+# This operational budget is separate from Relay's inner request timeouts and
+# Fabric's outer adapter-start limit.
+RELAY_STARTUP_TIMEOUT_SECONDS = 30.0
 RELAY_STOP_TIMEOUT_SECONDS = 5.0
 RELAY_VERSION_TIMEOUT_SECONDS = 5.0
 
@@ -110,24 +113,32 @@ def wait_for_relay_gateway(
     process: subprocess.Popen[Any],
     health_url: str,
     *,
-    timeout: float = RELAY_HEALTH_TIMEOUT_SECONDS,
+    timeout: float = RELAY_STARTUP_TIMEOUT_SECONDS,
 ) -> None:
     """Wait until the Relay health endpoint succeeds or startup fails."""
 
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         returncode = process.poll()
         if returncode is not None:
             raise RelayGatewayError(
                 f"NeMo Relay gateway exited with status {returncode} before becoming ready"
             )
         try:
-            with urllib.request.urlopen(health_url, timeout=1) as response:
+            with urllib.request.urlopen(
+                health_url, timeout=min(1.0, remaining)
+            ) as response:
                 if 200 <= response.status < 300:
                     return
         except (OSError, urllib.error.URLError):
             pass
-        time.sleep(0.1)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(0.1, remaining))
     raise RelayGatewayError(f"NeMo Relay gateway did not become ready at {health_url}")
 
 

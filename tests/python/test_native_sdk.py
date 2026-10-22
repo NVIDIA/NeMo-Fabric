@@ -32,6 +32,72 @@ async def test_native_sdk(hermes_shim_agent_dir: Path):
     await smoke(Fabric(), hermes_shim_agent_dir)
 
 
+async def test_native_one_shot_exposes_core_and_plan_facts(hermes_shim_agent_dir):
+    result = await Fabric().run(
+        hermes_shim_config(), base_dir=hermes_shim_agent_dir, input="hello native"
+    )
+    assert result.status == "succeeded"
+    assert result.what_ran["fabric"]["core_version"]["value"] == native.version()
+    assert result.what_ran["adapter"]["id"] == "test.fabric.hermes_shim"
+    assert result.what_ran["harness"]["version"]["reason"] == "key_not_declared"
+    assert result.what_ran["environment"] == {"provider": "local"}
+
+
+async def test_native_declared_adapter_facts_are_ingested_without_overwriting_core(
+    hermes_shim_agent_dir,
+):
+    descriptor = (
+        hermes_shim_agent_dir / "adapters/hermes-shim/hermes-shim.fabric-adapter.json"
+    )
+    data = json.loads(descriptor.read_text())
+    key = "nemo_fabric.versions.v1"
+    data["extension_schemas"]["run_result"] = {
+        "type": "object",
+        "properties": {key: {"type": "object"}},
+        "additionalProperties": False,
+    }
+    descriptor.write_text(json.dumps(data))
+
+    def reported(value):
+        return {
+            "value": value,
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "adapter_report",
+        }
+
+    report = {
+        "fabric": {"core_version": reported("spoofed-core")},
+        "adapter": {"id": "spoofed-adapter", "package_version": reported("fixture-1")},
+        "harness": {
+            "name": reported("fixture-harness"),
+            "version": reported("fixture-2"),
+        },
+        "models": {
+            "default": {
+                "requested": reported("spoofed-model"),
+                "served": reported("fixture-served"),
+            }
+        },
+    }
+    result = await Fabric().run(
+        hermes_shim_config(),
+        base_dir=hermes_shim_agent_dir,
+        request=RunRequest(
+            input="hello versions", context={"result_extensions": {key: report}}
+        ),
+    )
+    facts = result.what_ran
+    assert result.status == "succeeded"
+    assert facts["adapter"]["package_version"] == reported("fixture-1")
+    assert facts["harness"]["version"] == reported("fixture-2")
+    assert facts["models"]["default"]["served"] == reported("fixture-served")
+    assert facts["fabric"]["core_version"]["value"] == native.version()
+    assert facts["adapter"]["id"] == "test.fabric.hermes_shim"
+    assert facts["models"]["default"]["requested"]["value"] == "test-model"
+    assert "adapter" not in result["metadata"]
+
+
 @pytest.mark.parametrize("new_value", ["rotated-secret", None])
 async def test_named_environment_changes_require_runtime_restart(
     hermes_shim_agent_dir, new_value
@@ -418,10 +484,6 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert result["adapter_kind"] == "python"
     assert result["metadata"]["adapter_runner"] == "persistent_local_host"
     assert result["output"]["received"] == "hello native"
-    assert result.what_ran["fabric"]["core_version"]["value"] == native.version()
-    assert result.what_ran["adapter"]["id"] == "test.fabric.hermes_shim"
-    assert result.what_ran["harness"]["version"]["reason"] == "key_not_declared"
-    assert result.what_ran["environment"] == {"provider": "local"}
     assert result.output["native_mcp_servers"] == ["github"]
     assert any(artifact.name == "stdout" for artifact in result.artifacts.artifacts)
     assert first["status"] == "succeeded"

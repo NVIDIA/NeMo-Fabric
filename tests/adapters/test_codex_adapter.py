@@ -542,6 +542,7 @@ def test_single_invocation_uses_native_thread_and_turn_contract(
     assert start["sandbox"] == adapter.Sandbox.workspace_write
     assert start["config"] == {
         "features": {"web_search": False},
+        "mcp_optional_startup_grace_ms": 0,
         "model_reasoning_effort": "high",
     }
     client.thread.turn.assert_awaited_once_with(
@@ -649,6 +650,7 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
 
     assert output["completed"] is True
     config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    assert config["mcp_optional_startup_grace_ms"] == 0
     assert config["mcp_servers"] == {
         "remote": {
             "url": "https://mcp.example.test/mcp",
@@ -2173,7 +2175,10 @@ def test_codex_versions_report_names_the_harness_as_an_adapter_report():
     )
     harness_version = _version_fact("unavailable", "not_collected")
 
-    report = adapter.versions_report(config, harness_version)
+    runtime = adapter.CodexRuntime()
+    runtime._config = config
+    runtime._harness_version = harness_version
+    report = runtime._versions_extensions()["nemo_fabric.versions.v1"]
 
     assert report["harness"] == {
         "name": {
