@@ -177,7 +177,7 @@ def test_python_reference_exactly_covers_exported_sdk_classes() -> None:
     for module, names in functions.items():
         page = REFERENCE_DIR / f"{module}.md"
         documented = {
-            match.group(1) for match in FUNCTION_SIGNATURE.finditer(page.read_text())
+            match.group(1) for match in FUNCTION_SIGNATURE.finditer(page.read_text(encoding="utf-8"))
         }
         assert names <= documented
         assert f'slug: "{MODULE_SLUGS[module]}"' in page.read_text(encoding="utf-8")
@@ -274,7 +274,7 @@ def test_generated_signatures_preserve_python_callable_semantics():
         page = REFERENCE_DIR / f"{module_name}.md"
         rendered = {
             match.group(1): match.group(2)
-            for match in FUNCTION_SIGNATURE.finditer(page.read_text())
+            for match in FUNCTION_SIGNATURE.finditer(page.read_text(encoding="utf-8"))
         }
         for function_name in function_names:
             function = getattr(module, function_name)

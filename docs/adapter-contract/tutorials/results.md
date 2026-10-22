@@ -108,7 +108,7 @@ A model aggregate is not a single request. No adapter should fabricate call
 boundaries, hide execution features or change retry settings to make usage look
 complete. Costs computed from a price table never become `cost_usd`.
 
-## 2. Separate Failure Classes
+### 2. Separate Failure Classes
 
 Use these failure classes consistently:
 

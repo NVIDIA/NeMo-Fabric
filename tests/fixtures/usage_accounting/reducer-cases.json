@@ -437,5 +437,41 @@
       "observed_input": 100,
       "exhaustive": true
     }
+  },
+  {
+    "name": "reported_cost_keeps_fractional_sum_precision",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "cost_usd": 0.1
+        }
+      },
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "cost_usd": 0.2000000005
+        }
+      },
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "cost_usd": 0.1
+        }
+      }
+    ],
+    "expected": {
+      "input_tokens": null,
+      "cost_usd": 0.4000000005,
+      "observed_input": null,
+      "observed_output": null,
+      "exhaustive": true
+    }
   }
 ]
