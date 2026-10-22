@@ -334,22 +334,28 @@ def test_no_call_requires_source_proof():
 
 
 @pytest.mark.parametrize("interactive", [False])
-@pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.parametrize("responses", [False, True])
+@pytest.mark.parametrize("outcome", ["succeeded", "failed", "raised", "malformed"])
 async def test_runtime_result_keeps_model_usage_independently_of_execution_status(
-    make_client, monkeypatch, tmp_path, interactive, failed
+    make_client, monkeypatch, tmp_path, interactive, responses, outcome
 ):
     from unittest.mock import AsyncMock
     from nemo_fabric_adapter_contract.models import AgentRunRequest, RuntimeContext
     from nemo_fabric_adapters.nooa import adapter, bench_adapter
     from nemo_fabric_adapters.nooa.telemetry import RelayInvocation
 
-    client, _ = make_client()
+    failed = outcome != "succeeded"
+    client, _ = make_client(responses=responses)
     agent = MagicMock(_summarizers=[], queue_manager=MagicMock())
     agent.queue_manager.running_handles.return_value = []
     agent.shell.close = AsyncMock()
 
     async def run(*args):
         await client.acall(MESSAGES)
+        if outcome == "raised":
+            raise RuntimeError("scripted target failure after a billed call")
+        if outcome == "malformed":
+            return None
         if interactive:
             if failed:
                 raise RuntimeError("scripted target failure after a billed call")
