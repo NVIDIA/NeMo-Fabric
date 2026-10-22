@@ -365,8 +365,8 @@ async def test_non_model_failure_keeps_completed_call_usage(make_model):
 @pytest.fixture(name="make_runtime")
 async def make_runtime_fixture(tmp_path, monkeypatch):
     runtimes = []
-    os.environ["SCRIPTED_MODEL_KEY"] = "unused-scripted"
-    os.environ.pop("OPENAI_PROXY", None)
+    monkeypatch.setenv("SCRIPTED_MODEL_KEY", "unused-scripted")
+    monkeypatch.delenv("OPENAI_PROXY", raising=False)
 
     async def make(replies, *, identity="runtime", profile=None, barrier=None):
         ledger = []

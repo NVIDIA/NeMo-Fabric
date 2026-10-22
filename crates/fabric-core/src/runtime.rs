@@ -2324,7 +2324,7 @@ fn run_local_host_invocation_with_timeout(
     let model_usage = match agent_result
         .usage
         .as_ref()
-        .map(|raw| crate::model_usage::normalize_model_usage(raw))
+        .map(crate::model_usage::normalize_model_usage)
         .transpose()
     {
         Ok(usage) => usage.flatten(),
@@ -6114,7 +6114,7 @@ for line in sys.stdin:
 
     #[test]
     fn local_host_returns_flat_supported_accounting_with_the_normalized_result() {
-        let (_root, plan) = local_host_plan("accounted_usage_result");
+        let (root, plan) = local_host_plan("accounted_usage_result");
         let result = run_plan(&plan, RunRequest::text("accounted")).expect("normalized result");
         assert_eq!(result.status, RunStatus::Succeeded);
         let usage = result.model_usage.expect("supported accounting");
@@ -6129,6 +6129,7 @@ for line in sys.stdin:
         assert_eq!(usage.cost.estimated.observed_nano_usd, None);
         assert!(usage.cost.pricing.is_none());
         assert!(usage.cost.applied_rates.is_empty());
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -6688,7 +6689,7 @@ for line in sys.stdin:
             let diagnostic = serde_json::to_string(events[0]).unwrap();
             assert!(!diagnostic.contains("private-accounting-identity"));
             assert!(!diagnostic.contains("request totals"));
-            let _ = root;
+            let _ = fs::remove_dir_all(root);
         }
     }
 }
