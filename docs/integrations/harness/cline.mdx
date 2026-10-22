@@ -138,25 +138,37 @@ Successful results include normalized response text and usage when Cline
 reports it. Adapter-owned result metadata includes the Cline session ID, finish
 reason, iteration count, and selected model when available.
 
-Usage covers the model calls of one invocation. Cline's input counts include
-cache reads and cache writes, so the adapter reports cache reads as
-`cached_input_tokens` and, when the input count is known, sets
-`input_tokens_include_cache: true`. `output_tokens` includes reasoning tokens.
-The `nemo_fabric.detailed_token_usage.v1` usage extension repeats these counts,
-adds cache writes as `cache_write_input_tokens`, and sets
-`output_tokens_include_reasoning: true`. Cline turns both a reported 0 and a
-count the provider omitted into 0, so a count of 0 is unknown, and so is a
-total built from it. Positive cache counts remain available when the input
-count is unknown. Cline sums usage before returning it. If one model call
-omits a counter and another reports it, the adapter cannot detect that the
-positive aggregate is incomplete. The exception is an input count below the
-cache counts it includes, which the adapter leaves unknown. When the provider
-reports no cost, Cline estimates one from catalog prices, so the adapter does
-not report `cost_usd`.
-
-The adapter-specific `cache_read_tokens` and `cache_write_tokens` usage
-extension keys are replaced by `cached_input_tokens` and the detailed
-extension's `cache_write_input_tokens`.
-
 The initial adapter does not support NeMo Relay telemetry, native streaming,
 Relay-backed streaming, or adapter-specific `harness.settings`.
+
+## Token usage
+
+The adapter records Cline's public model hooks separately for each Fabric
+invocation. Each assistant message supplies one logical call's metrics and
+model identity. Positive counters remain independent observations: an omitted
+output count does not discard observed input or cache counts. Cline 0.0.83
+fills omitted fields with zero before these hooks, so a zero cannot establish
+reported presence.
+
+The pinned provider can retry physical requests inside one logical call. Its
+Core-local hooks do not expose those attempts. A 503 followed by a successful
+response produces the same hook metrics as the success alone. The adapter
+therefore retains these counts with `scope_unverified`; complete invocation
+totals are unavailable from this boundary. Execution and retries are unchanged.
+Complete accounting requires a supported Core-local physical-attempt or
+fetch-injection hook.
+
+Input includes cache reads and writes; output includes reasoning. Positive cache-write observations
+remain in `nemo_fabric.usage_accounting.v1`; they are not certified complete
+values in the detailed-usage projection. The shared accounting
+contract retains observations and gaps in `nemo_fabric.usage_accounting.v1`;
+Fabric core normalizes totals and applies the selected pricing catalog.
+Cline's `totalCost` can contain a client estimate and is not provider-reported
+`cost_usd`. A custom endpoint keeps the literal model but does not
+claim the configured API protocol as its billing provider.
+
+Actual compaction adds unobserved model work outside these hooks. A model
+call still running at return retains its observed increments with an
+unfinished-work gap. Returned snapshots are frozen; late callbacks never
+enter a later invocation. Spawning and agent teams remain disabled by the
+adapter's existing configuration.

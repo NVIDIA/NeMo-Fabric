@@ -22,7 +22,7 @@ The adapter supports:
   (`api`, `context_window`, `max_tokens`, `cost`, `reasoning`, `input`, `name`);
   a field you set overrides, a field you omit keeps a Pi-known model's existing
   value. The adapter adds no defaults: a gateway model Pi does not ship must
-  supply `api`, `base_url`, `context_window`, and `max_tokens`.
+  supply `api`, `base_url`, `context_window`, `max_tokens`, `input`, and `cost`. Adapter startup rejects missing required metadata before invoking the model.
 - Optional replacement system instructions
 - Tool allow and block policy
 - NeMo Fabric custom tools loaded through normalized `tools.definitions`

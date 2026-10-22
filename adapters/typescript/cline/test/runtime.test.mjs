@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { LifecycleError } from "nemo-fabric-adapters-common";
 
-import { ClineAdapterRuntime } from "../dist/runtime.js";
+import { ClineAdapterRuntime, ClinePromptError } from "../dist/runtime.js";
 
 function startInput(runtimeId = "runtime-1") {
   return {
@@ -157,4 +157,25 @@ test("stop is safe before start and idempotent after start", async () => {
   await runtime.stop();
   await runtime.stop();
   assert.equal(stops, 1);
+});
+
+
+test("a failed SDK exchange returns its evidence and invalidates the session", async () => {
+  let stops = 0;
+  const evidence = { extensions: { "nemo_fabric.usage_accounting.v1": {
+    models_exhaustive: false, observed: { input_tokens: 40 },
+    gaps: [{ reason: "unfinished_work", dimensions: ["input_tokens"] }],
+  } } };
+  const runtime = new ClineAdapterRuntime({ async create() {
+    return { async prompt() {
+      throw new ClinePromptError(new LifecycleError("cline_session_failed", "connection lost", { retryable: true }), evidence);
+    }, async stop() { stops++; } };
+  } });
+  await runtime.start(startInput());
+  const result = await runtime.invoke({ input: "one" }, context);
+  assert.equal(result.status, "failed");
+  assert.equal(result.error.retryable, true);
+  assert.deepEqual(result.usage, evidence);
+  assert.equal(stops, 1);
+  await assert.rejects(runtime.invoke({ input: "two" }, context), error => error.code === "cline_not_started");
 });

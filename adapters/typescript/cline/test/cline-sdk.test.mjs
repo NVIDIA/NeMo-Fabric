@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { ClineSdkSessionFactory } from "../dist/cline-sdk.js";
+import { clineUsageHooks } from "../dist/usage.js";
 
 function input(overrides = {}) {
   return {
@@ -49,15 +50,25 @@ function fakeSdk(options = {}) {
     { finishReason: "completed", text: "first", usage: { inputTokens: 2, outputTokens: 3, totalCost: 0.5 } },
     { finishReason: "completed", text: "second", usage: { inputTokens: 4, outputTokens: 1 } },
   ];
+  let hooks;
+  let messageId = 0;
+  const next = () => {
+    const result = results.shift();
+    hooks?.beforeModel({ snapshot: { usage: {} } });
+    hooks?.afterModel({ assistantMessage: { id: `message-${++messageId}`, metrics: result?.usage,
+      modelInfo: result?.model ?? { id: "gpt-test", provider: "openai" } } });
+    return result;
+  };
   const core = {
     async start(value) {
       calls.start.push(value);
-      return { sessionId: "cline-session-1", result: results.shift() };
+      hooks = value.localRuntime.hooks;
+      return { sessionId: "cline-session-1", result: next() };
     },
     async send(value) {
       calls.send.push(value);
       if (options.sendError !== undefined) throw options.sendError;
-      return results.shift();
+      return next();
     },
     async stop(value) { calls.stop.push(value); },
     async dispose(value) { calls.dispose.push(value); },
@@ -118,38 +129,21 @@ test("maps model, endpoint, credential, system instruction, and built-in tool po
       search_codebase: { enabled: false, autoApprove: true },
       run_commands: { enabled: false, autoApprove: true },
     },
-    localRuntime: { configExtensions: [] },
+    localRuntime: { configExtensions: [], hooks: clineUsageHooks },
     prompt: "one",
   });
   assert.deepEqual(sdk.calls.send, [{ sessionId: "cline-session-1", prompt: "two" }]);
-  assert.deepEqual(first.usage, {
-    input_tokens: 2,
-    input_tokens_include_cache: true,
-    output_tokens: 3,
-    total_tokens: 5,
-    extensions: {
-      "nemo_fabric.detailed_token_usage.v1": {
-        input_tokens: 2,
-        input_tokens_include_cache: true,
-        output_tokens: 3,
-        output_tokens_include_reasoning: true,
-      },
-    },
-  });
-  assert.deepEqual(second.usage, {
-    input_tokens: 4,
-    input_tokens_include_cache: true,
-    output_tokens: 1,
-    total_tokens: 5,
-    extensions: {
-      "nemo_fabric.detailed_token_usage.v1": {
-        input_tokens: 4,
-        input_tokens_include_cache: true,
-        output_tokens: 1,
-        output_tokens_include_reasoning: true,
-      },
-    },
-  });
+  assert.equal(first.usage.input_tokens, undefined);
+  assert.equal(first.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 2);
+  assert.equal(first.usage.output_tokens, undefined);
+  assert.equal(first.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.output_tokens, 3);
+  assert.equal(first.usage.cost_usd, undefined);
+  assert.equal(first.usage.extensions["nemo_fabric.usage_accounting.v1"].models[0].provider, undefined);
+  assert.equal(second.usage.input_tokens, undefined);
+  assert.equal(second.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 4);
+  assert.equal(second.usage.output_tokens, undefined);
+  assert.equal(second.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.output_tokens, 1);
+  assert.equal(second.usage.extensions["nemo_fabric.usage_accounting.v1"].models[0].requests_exhaustive, false);
   await handle.stop();
 });
 
@@ -296,236 +290,67 @@ test("rejects malformed Cline results", async () => {
   await usageHandle.stop();
 });
 
-test("maps Cline terminal finish reasons", async () => {
+test("maps terminal statuses while keeping failed and aborted call evidence", async () => {
   const sdk = fakeSdk({ results: [
     { finishReason: "aborted", text: "stopped", usage: { inputTokens: 1, outputTokens: 0 } },
     { finishReason: "error", text: "provider failed", usage: { inputTokens: 2, outputTokens: 1 } },
     { finishReason: "max_iterations", text: "iteration limit reached" },
   ] });
   const handle = await new ClineSdkSessionFactory(sdk.loader).create(input());
-  assert.deepEqual(await handle.prompt("one"), {
-    status: "aborted",
-    text: "stopped",
-    usage: {
-      input_tokens: 1,
-      input_tokens_include_cache: true,
-      extensions: {
-        "nemo_fabric.detailed_token_usage.v1": { input_tokens: 1, input_tokens_include_cache: true },
-      },
-    },
-    extensions: { session_id: "cline-session-1", finish_reason: "aborted" },
-  });
-  assert.deepEqual(await handle.prompt("two"), {
-    status: "failed",
-    text: "provider failed",
-    errorMessage: "provider failed",
-    usage: {
-      input_tokens: 2,
-      input_tokens_include_cache: true,
-      output_tokens: 1,
-      total_tokens: 3,
-      extensions: {
-        "nemo_fabric.detailed_token_usage.v1": {
-          input_tokens: 2,
-          input_tokens_include_cache: true,
-          output_tokens: 1,
-          output_tokens_include_reasoning: true,
-        },
-      },
-    },
-    extensions: { session_id: "cline-session-1", finish_reason: "error" },
-  });
-  assert.deepEqual(await handle.prompt("three"), {
-    status: "failed",
-    text: "iteration limit reached",
-    errorMessage: "iteration limit reached",
-    extensions: { session_id: "cline-session-1", finish_reason: "max_iterations" },
-  });
+  const aborted = await handle.prompt("one");
+  assert.equal(aborted.status, "aborted");
+  assert.equal(aborted.usage.input_tokens, undefined);
+  assert.equal(aborted.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 1);
+  assert.equal(aborted.usage.output_tokens, undefined);
+  const failed = await handle.prompt("two");
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.errorMessage, "provider failed");
+  assert.equal(failed.usage.input_tokens, undefined);
+  assert.equal(failed.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 2);
+  assert.equal(failed.usage.output_tokens, undefined);
+  assert.equal(failed.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.output_tokens, 1);
+  const limited = await handle.prompt("three");
+  assert.equal(limited.status, "failed");
+  assert.equal(limited.errorMessage, "iteration limit reached");
+  assert.equal(limited.usage.input_tokens, undefined);
   await handle.stop();
 });
 
-test("normalizes Cline usage and result metadata", async () => {
+test("preserves independent cache dimensions, per-call identity and result metadata", async () => {
   const sdk = fakeSdk({ results: [{
-    finishReason: "completed",
-    text: "done",
-    iterations: 2,
+    finishReason: "completed", text: "done", iterations: 2,
     model: { id: "model-a", provider: "provider-a", ignored: true },
-    // Cline counts input as the AI SDK does: cache reads and writes included.
-    usage: {
-      inputTokens: 1200,
-      outputTokens: 50,
-      cacheReadTokens: 900,
-      cacheWriteTokens: 200,
-      totalCost: 0.25,
-    },
+    usage: { inputTokens: 1200, outputTokens: 50, cacheReadTokens: 900, cacheWriteTokens: 200, totalCost: 0.25 },
+  }, {
+    finishReason: "completed", text: "done",
+    usage: { inputTokens: 0, outputTokens: 50, cacheReadTokens: 900, cacheWriteTokens: 200 },
   }] });
   const handle = await new ClineSdkSessionFactory(sdk.loader).create(input());
-
-  assert.deepEqual(await handle.prompt("one"), {
-    status: "completed",
-    text: "done",
-    usage: {
-      input_tokens: 1200,
-      cached_input_tokens: 900,
-      input_tokens_include_cache: true,
-      output_tokens: 50,
-      total_tokens: 1250,
-      extensions: {
-        "nemo_fabric.detailed_token_usage.v1": {
-          input_tokens: 1200,
-          cached_input_tokens: 900,
-          cache_write_input_tokens: 200,
-          input_tokens_include_cache: true,
-          output_tokens: 50,
-          output_tokens_include_reasoning: true,
-        },
-      },
-    },
-    extensions: {
-      session_id: "cline-session-1",
-      finish_reason: "completed",
-      iterations: 2,
-      model: { id: "model-a", provider: "provider-a" },
-    },
+  const first = await handle.prompt("one");
+  assert.equal(first.usage.input_tokens, undefined);
+  assert.equal(first.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 1200);
+  assert.equal(first.usage.input_tokens_include_cache, undefined);
+  assert.equal(first.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens_include_cache, true);
+  assert.equal(first.usage.output_tokens, undefined);
+  assert.equal(first.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.output_tokens, 50);
+  assert.equal(first.usage.cached_input_tokens, undefined);
+  assert.equal(first.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.cached_input_tokens, 900);
+  assert.equal(first.usage.cost_usd, undefined);
+  assert.equal(first.usage.extensions["nemo_fabric.detailed_token_usage.v1"].cache_write_input_tokens, undefined);
+  assert.equal(first.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.cache_write_input_tokens, 200);
+  assert.equal(first.usage.extensions["nemo_fabric.usage_accounting.v1"].models[0].model, "model-a");
+  assert.deepEqual(first.extensions, {
+    session_id: "cline-session-1", finish_reason: "completed", iterations: 2,
+    model: { id: "model-a", provider: "provider-a" },
   });
-  await handle.stop();
-
-  // Cline leaves out a cache write count of 0.
-  const readOnly = fakeSdk({ results: [{
-    finishReason: "completed",
-    text: "done",
-    usage: { inputTokens: 1000, outputTokens: 40, cacheReadTokens: 800 },
-  }] });
-  const readOnlyHandle = await new ClineSdkSessionFactory(readOnly.loader).create(input());
-  assert.deepEqual((await readOnlyHandle.prompt("one")).usage, {
-    input_tokens: 1000,
-    cached_input_tokens: 800,
-    input_tokens_include_cache: true,
-    output_tokens: 40,
-    total_tokens: 1040,
-    extensions: {
-      "nemo_fabric.detailed_token_usage.v1": {
-        input_tokens: 1000,
-        cached_input_tokens: 800,
-        input_tokens_include_cache: true,
-        output_tokens: 40,
-        output_tokens_include_reasoning: true,
-      },
-    },
-  });
-  await readOnlyHandle.stop();
-
-  // A provider without prompt caching: Cline leaves out both cache counts.
-  const uncached = fakeSdk({ results: [{
-    finishReason: "completed",
-    text: "done",
-    usage: { inputTokens: 700, outputTokens: 30 },
-  }] });
-  const uncachedHandle = await new ClineSdkSessionFactory(uncached.loader).create(input());
-  assert.deepEqual((await uncachedHandle.prompt("one")).usage, {
-    input_tokens: 700,
-    input_tokens_include_cache: true,
-    output_tokens: 30,
-    total_tokens: 730,
-    extensions: {
-      "nemo_fabric.detailed_token_usage.v1": {
-        input_tokens: 700,
-        input_tokens_include_cache: true,
-        output_tokens: 30,
-        output_tokens_include_reasoning: true,
-      },
-    },
-  });
-  await uncachedHandle.stop();
-});
-
-test("leaves Cline token counts of 0 unknown", async () => {
-  const sdk = fakeSdk({ results: [
-    // Cline records a count the provider omitted as 0.
-    { finishReason: "completed", text: "done", iterations: 1, usage: { inputTokens: 0, outputTokens: 0, totalCost: 0 } },
-    { finishReason: "completed", text: "done", iterations: 1, usage: { inputTokens: 12, outputTokens: 0 } },
-    // Cline's result for an aborted interactive turn reports all zeros.
-    {
-      finishReason: "aborted",
-      text: "",
-      iterations: 0,
-      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0 },
-    },
-  ] });
-  const handle = await new ClineSdkSessionFactory(sdk.loader).create(input());
-
-  assert.equal((await handle.prompt("one")).usage, undefined);
-  assert.deepEqual((await handle.prompt("two")).usage, {
-    input_tokens: 12,
-    input_tokens_include_cache: true,
-    extensions: {
-      "nemo_fabric.detailed_token_usage.v1": { input_tokens: 12, input_tokens_include_cache: true },
-    },
-  });
-  assert.equal((await handle.prompt("three")).usage, undefined);
-  await handle.stop();
-});
-
-test("keeps Cline cache counts when the input total is unknown", async () => {
-  const sdk = fakeSdk({ results: [
-    // An OpenAI-compatible response can omit prompt_tokens and still report cached tokens.
-    { finishReason: "completed", text: "done", usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 900, cacheWriteTokens: 200 } },
-    { finishReason: "completed", text: "done", usage: { inputTokens: 0, outputTokens: 50, cacheReadTokens: 900, cacheWriteTokens: 200 } },
-  ] });
-  const handle = await new ClineSdkSessionFactory(sdk.loader).create(input());
-
-  assert.deepEqual((await handle.prompt("one")).usage, {
-    cached_input_tokens: 900,
-    extensions: {
-      "nemo_fabric.detailed_token_usage.v1": { cached_input_tokens: 900, cache_write_input_tokens: 200 },
-    },
-  });
-  assert.deepEqual((await handle.prompt("two")).usage, {
-    cached_input_tokens: 900,
-    output_tokens: 50,
-    extensions: {
-      "nemo_fabric.detailed_token_usage.v1": {
-        cached_input_tokens: 900,
-        cache_write_input_tokens: 200,
-        output_tokens: 50,
-        output_tokens_include_reasoning: true,
-      },
-    },
-  });
-  await handle.stop();
-});
-
-test("leaves a Cline input total below its cache counts unknown", async () => {
-  // One model call omitted prompt_tokens but reported 900 cached tokens; another reported 150 input.
-  const sdk = fakeSdk({ results: [
-    { finishReason: "completed", text: "done", usage: { inputTokens: 150, outputTokens: 15, cacheReadTokens: 900 } },
-    { finishReason: "completed", text: "done", usage: { inputTokens: 150, outputTokens: 15, cacheReadTokens: 100, cacheWriteTokens: 60 } },
-  ] });
-  const handle = await new ClineSdkSessionFactory(sdk.loader).create(input());
-
-  assert.deepEqual((await handle.prompt("one")).usage, {
-    cached_input_tokens: 900,
-    output_tokens: 15,
-    extensions: {
-      "nemo_fabric.detailed_token_usage.v1": {
-        cached_input_tokens: 900,
-        output_tokens: 15,
-        output_tokens_include_reasoning: true,
-      },
-    },
-  });
-  assert.deepEqual((await handle.prompt("two")).usage, {
-    cached_input_tokens: 100,
-    output_tokens: 15,
-    extensions: {
-      "nemo_fabric.detailed_token_usage.v1": {
-        cached_input_tokens: 100,
-        cache_write_input_tokens: 60,
-        output_tokens: 15,
-        output_tokens_include_reasoning: true,
-      },
-    },
-  });
+  const second = await handle.prompt("two");
+  assert.equal(second.usage.input_tokens, undefined);
+  assert.equal(second.usage.cached_input_tokens, undefined);
+  assert.equal(second.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.cached_input_tokens, 900);
+  assert.equal(second.usage.output_tokens, undefined);
+  assert.equal(second.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.output_tokens, 50);
+  assert.equal(second.usage.extensions["nemo_fabric.detailed_token_usage.v1"].cache_write_input_tokens, undefined);
+  assert.equal(second.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.cache_write_input_tokens, 200);
   await handle.stop();
 });
 
@@ -543,7 +368,8 @@ test("declares every usage extension field the adapter returns", async () => {
     .extension_schemas.usage;
   assert.equal(schema.additionalProperties, false);
   for (const [key, value] of Object.entries(extensions)) {
-    const declared = schema.properties[key];
+    const entry = schema.properties[key];
+    const declared = entry?.$ref ? schema.$defs[entry.$ref.split("/").at(-1)] : entry;
     assert.ok(declared, `undeclared usage extension ${key}`);
     assert.equal(declared.additionalProperties, false);
     for (const field of Object.keys(value)) {
@@ -661,3 +487,27 @@ test("rejects unsupported MCP authentication and tool filters", async () => {
     (error) => error.code === "cline_mcp_blocklist_unsupported",
   );
 });
+
+for (const [provider, baseUrl, expected] of [
+  ["openai", "https://api.openai.com/v1", "openai"],
+  ["openai-compatible", "https://api.openai.com:443/v1", "openai"],
+  ["openai-compatible", "https://api.openai.com:8443/v1", undefined],
+  ["openai-compatible", "https://other.fixture.invalid/v1", undefined],
+]) {
+  test(`billing identity follows ${provider} route ${baseUrl}`, async () => {
+    const sdk = fakeSdk({results: [{finishReason: "completed", text: "done", usage: {inputTokens: 40, outputTokens: 8}, model: {id: "gpt-test", provider}}]});
+    const configured = input();
+    configured.config.models.default.provider = provider;
+    configured.config.models.default.base_url = baseUrl;
+    const handle = await new ClineSdkSessionFactory(sdk.loader).create(configured);
+    try {
+      const result = await handle.prompt("one");
+      assert.equal(result.usage.input_tokens, undefined);
+      const accounting = result.usage.extensions["nemo_fabric.usage_accounting.v1"];
+      assert.equal(accounting.observed.input_tokens, 40);
+      assert.equal(accounting.models[0].provider, expected);
+    } finally {
+      await handle.stop();
+    }
+  });
+}

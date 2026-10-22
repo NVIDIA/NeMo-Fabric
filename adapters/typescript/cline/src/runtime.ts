@@ -4,6 +4,15 @@
 import type { AgentRunRequest, AgentRunResult, AgentUsage, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
+/** A failed SDK exchange still carries evidence; the runtime remains unusable. */
+export class ClinePromptError extends LifecycleError {
+  readonly usage: AgentUsage;
+  constructor(error: LifecycleError, usage: AgentUsage) {
+    super(error.code, error.message, { retryable: error.retryable, metadata: error.metadata });
+    this.usage = usage;
+  }
+}
+
 export interface ClinePromptOutcome {
   status: "completed" | "aborted" | "failed";
   text?: string;
@@ -72,6 +81,13 @@ export class ClineAdapterRuntime implements AdapterRuntime {
       outcome = await session.prompt(request.input);
     } catch (error) {
       await this.invalidate(session);
+      if (error instanceof ClinePromptError) {
+        return {
+          status: "failed", output: null, usage: error.usage,
+          error: { code: error.code, message: error.message, retryable: error.retryable,
+            ...(error.metadata === undefined ? {} : { metadata: error.metadata }) },
+        };
+      }
       if (error instanceof LifecycleError) {
         throw error;
       }

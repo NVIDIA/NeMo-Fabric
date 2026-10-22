@@ -88,3 +88,35 @@ The adapter accepts no Cline-specific `harness.settings`. Unsupported
 normalized fields, unknown settings, unknown built-in tool names, authenticated
 MCP configuration, and MCP tool allowlists or blocklists fail instead of being
 ignored.
+
+## Token usage
+
+The adapter records Cline's public model hooks separately for each Fabric
+invocation. Each assistant message supplies one logical call's metrics and
+model identity. Positive counters remain independent observations: an omitted
+output count does not discard observed input or cache counts. Cline 0.0.83
+fills omitted fields with zero before these hooks, so a zero cannot establish
+reported presence.
+
+The pinned provider can retry physical requests inside one logical call. Its
+Core-local hooks do not expose those attempts. A 503 followed by a successful
+response produces the same hook metrics as the success alone. The adapter
+therefore retains these counts with `scope_unverified`; complete invocation
+totals are unavailable from this boundary. Execution and retries are unchanged.
+Complete accounting requires a supported Core-local physical-attempt or
+fetch-injection hook.
+
+Input includes cache reads and writes; output includes reasoning. Positive cache-write observations
+remain in `nemo_fabric.usage_accounting.v1`; they are not certified complete
+values in the detailed-usage projection. The shared accounting
+contract retains observations and gaps in `nemo_fabric.usage_accounting.v1`;
+Fabric core normalizes totals and applies the selected pricing catalog.
+Cline's `totalCost` can contain a client estimate and is not provider-reported
+`cost_usd`. A custom endpoint keeps the literal model but does not
+claim the configured API protocol as its billing provider.
+
+Actual compaction adds unobserved model work outside these hooks. A model
+call still running at return retains its observed increments with an
+unfinished-work gap. Returned snapshots are frozen; late callbacks never
+enter a later invocation. Spawning and agent teams remain disabled by the
+adapter's existing configuration.
