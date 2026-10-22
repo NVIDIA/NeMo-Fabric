@@ -48,6 +48,13 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 
 ✅ Supported · — Not supported. Support may come through normalized configuration, native harness behavior, or a specific target. Refer to each adapter guide or the [complete compatibility matrix](adapters/README.md#configuration-compatibility) for details and limitations.
 
+Opt in to local run evidence with `runtime.record.enabled` and an artifact root,
+or use `nemo-fabric run --preset scripted --record --artifacts ./runs`.
+Recording saves a bounded invocation record and the finalized full result.
+Inspect a saved result with `python -m nemo_fabric.reporting <run-result.json>`;
+add `--details` for resources and pricing evidence or `--json` for exact values.
+See [run recording](docs/sdk/python.mdx#opt-in-run-recording) for boundaries and limitations.
+
 ## NVIDIA Ecosystem
 
 NeMo Fabric is an execution layer for NVIDIA products that build, evaluate, deploy, and improve agents. The ecosystem includes shipped integrations with [NVIDIA NeMo Helix](https://github.com/NVIDIA-NeMo/nemo-helix), concrete integrations with [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw/) and [NVIDIA NeMo Gym](https://github.com/NVIDIA-NeMo/gym), and emerging rollout integrations such as [NVIDIA Polar](https://github.com/NVIDIA-NeMo/ProRL-Agent-Server). [Explore the NeMo Fabric ecosystem](docs/about-nemo-fabric/ecosystem.mdx).

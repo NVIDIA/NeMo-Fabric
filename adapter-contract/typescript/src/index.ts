@@ -13,6 +13,7 @@ export type * from "./generated/agent-config.js";
 export type * from "./generated/agent-run-request.js";
 export type * from "./generated/agent-run-result.js";
 export type * from "./generated/runtime-context.js";
+export type * from "./generated/usage-accounting.js";
 export type {
   JsonArray,
   JsonObject,
@@ -39,3 +40,5 @@ export type EnvironmentOwnership = EnvironmentHandle["ownership"];
 export type AgentRunStatus = AgentRunResult["status"];
 
 export { ADAPTER_CONTRACT_VERSION };
+export { USAGE_ACCOUNTING_KEY, usageFromObservations } from "./usage.js";
+export type { UsageObservation } from "./usage.js";

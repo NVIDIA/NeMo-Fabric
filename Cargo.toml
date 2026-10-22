@@ -36,9 +36,7 @@ libc = "0.2.186"
 schemars = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# SHA-256 for the `what_ran` string length rule, which ends a cut value with a
-# digest prefix. Std has no SHA-256, and `sha2` 0.10 is already in the lockfile
-# through the OpenShell provider.
+# SHA-256 identifies reproducible pricing catalogs and bounded provenance strings.
 sha2 = { version = "0.10.9", default-features = false }
 thiserror = "2"
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Threading"] }

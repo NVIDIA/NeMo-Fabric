@@ -11,12 +11,20 @@ pub mod doctor;
 mod endpoint;
 mod environment;
 pub mod error;
+mod measurement;
+pub mod model_usage;
+pub mod price_catalog;
+pub mod pricing;
+mod record;
 pub mod resource_snapshot;
 pub mod runtime;
 pub mod schema;
 pub mod system_stats;
 mod task_command;
 mod time;
+pub mod usage_accounting;
+mod usage_normalization;
+pub use record::run_record_folder;
 pub mod what_ran;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
@@ -35,10 +43,11 @@ pub use config::{
     EnvironmentOwnership, EnvironmentPlan, FabricConfig, HarnessConfig, InstructionConfig,
     InstructionMode, InstructionsConfig, McpAuthenticationConfig, McpConfig, McpExposure,
     McpServerPlan, McpTransport, MetadataConfig, ModelConfig, OAuthTokenEndpointAuthMethod,
-    ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, ResolvedAdapterTargetDescriptor,
-    RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
-    TelemetryProvider, TelemetryProviderConfig, ToolDefinitionConfig, ToolsConfig, WorkflowConfig,
-    WorkflowEntrypointConfig, WorkflowTargetSpec, inspect_adapter_config, load_adapter_descriptor,
+    PricingConfig, RecordConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor,
+    ResolvedAdapterTargetDescriptor, RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig,
+    TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig,
+    ToolDefinitionConfig, ToolsConfig, WorkflowConfig, WorkflowEntrypointConfig,
+    WorkflowTargetSpec, inspect_adapter_config, load_adapter_descriptor,
     load_adapter_target_descriptor, resolve_diagnostic_plan_from_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories, resolve_run_plan_from_config,
     resolve_run_plan_from_config_with_adapter_directories,

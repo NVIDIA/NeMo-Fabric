@@ -1155,6 +1155,7 @@ Important fields:
 | `status` | Terminal invocation status such as success, failure, or cancellation. |
 | `output` | Harness output normalized to the configured output schema. |
 | `error` | Structured failure metadata when available. |
+| `model_usage` | Optional normalized complete counts, observations, gaps and separately reported/estimated cost. |
 | `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
 | `system_stats` | Optional `InvocationSystemStats`: monotonic adapter exchange duration, before/after observations with availability, and an optional CPU counter difference estimate. |
 | `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. |
@@ -1191,6 +1192,60 @@ Each counter is optional: missing values are unknown, not zero. `cached_input_to
 If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial
 `RunResult`.
+
+### Complete counts and useful observations
+
+`result.model_usage` is present when the adapter supplies the declared
+`nemo_fabric.usage_accounting.v1` evidence. Its token fields are independently
+nullable counts: input includes cache reads and writes, output includes
+reasoning, and total requires known input plus output. The independent raw
+provider total remains in `result.usage`.
+
+Typed access to `model_usage` requires an updated SDK. Permissive readers can retain or ignore the new field; closed validators must use the updated result schema. Current readers still accept older results without this field.
+
+```python
+from nemo_fabric import summarize_usage
+
+if result.model_usage is not None:
+    print(result.model_usage.input_tokens)          # Complete count, or None.
+    print(result.model_usage.observed.input_tokens) # Available observations.
+    print(result.model_usage.gaps)                 # Affected dimensions/reasons.
+    print(result.model_usage.cost.estimated.amount_nano_usd)
+
+summary = summarize_usage(
+    [result], expected=[(result.runtime_id, result.invocation_id)]
+)
+print(summary["dimensions"]["input_tokens"])
+```
+
+A complete count covers work initiated by the invocation, including descendants,
+at return. Owned unfinished work or missing usage leaves only the affected
+complete counts unknown. Failure alone is not a gap. Observations remain visible
+but are not guaranteed mathematical lower bounds. Returned evidence is frozen;
+late usage never transfers to a later invocation. If accounting passes the adapter contract but cannot be normalized, `model_usage` is absent and a sanitized
+`model_usage_invalid` event records the accounting failure. The execution status,
+output and raw usage remain available. Undeclared or structurally invalid adapter
+extensions still fail the adapter contract. Legacy usage without supported
+accounting remains available in `result.usage` and is not certified complete by
+`summarize_usage`.
+
+`cost.reported` contains only provider-reported amounts; `cost.estimated` contains
+catalog estimates. Both distinguish `amount_nano_usd` from `observed_nano_usd`.
+Estimates retain their pricing basis and distinct selected rate snapshots.
+Configure `PricingConfig(catalog_path="prices.json")` for a Relay-compatible
+catalog override; planning freezes its bytes. An explicitly established provider must match the catalog entry's provider, including aliases and shorter model paths. A different provider's entry cannot price that source solely because the model name matches. When no provider identity is available, an explicit user catalog can match the model name alone. Bundled provider prices apply only
+when the configured route establishes the native provider. Unknown model,
+cache-price or request-tier evidence affects estimates without erasing tokens.
+Nonzero Anthropic cache writes currently lack expiry-price evidence, so their
+complete estimate remains unknown; independently priceable parts remain observed.
+Known zero writes need no expiry evidence. Estimates are not invoices.
+
+`summarize_usage` requires an explicit expected invocation inventory. It retains
+missing results in coverage, keeps complete totals separate from observed sums,
+checks uint64 overflow and separates incompatible pricing bases. It never adds
+legacy, log or Relay/ATIF values to native accounting. Do not rank partial spend
+as cheaper or silently remove timed-out attempts from comparisons.
+
 
 ### What Ran
 
@@ -1499,3 +1554,80 @@ backpressure. The consumer decides whether to wait, retry, scale out, or fail.
 
 ## Next Steps
 - Review the examples in the GitHub repo [`examples/`](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples).
+
+
+## Opt-in run recording
+
+Set `runtime.record.enabled` and a host-side artifact root to save local runs:
+
+```python
+from nemo_fabric import RecordConfig
+
+config.runtime.record = RecordConfig(enabled=True)
+config.runtime.artifacts = "./runs"
+```
+
+The CLI accepts the same settings:
+
+```bash
+nemo-fabric run --preset scripted --input "Inspect the example" --record --artifacts ./runs
+```
+
+Recording supports the local environment provider with Python or process adapters.
+It is disabled when the record setting is omitted. Enabling it without an artifact
+root or with an unsupported execution location fails validation.
+
+Each invocation writes bounded start/end lines to
+`.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`. The start line retains
+identities and configured model names. It omits prompts, output, credentials,
+exception messages and arbitrary adapter metadata. Allowlisted context identity
+keys retain string or integer values; other context values are omitted.
+
+The sibling `run-result.json` contains the complete returned result and can
+contain sensitive output. One-shot results are finalized after runtime shutdown;
+persistent-runtime results describe the invocation before a later shutdown.
+An invocation end record never establishes the outcome of a later shutdown.
+Saved results are created exclusively and never replace an existing file or
+symlink. Recording failures add diagnostics without retrying paid work or
+replacing the execution outcome. No result file is promised when execution
+raises before returning a result.
+
+The start/end record's elapsed time covers its invocation window, including start
+record I/O and core preparation. It excludes end-record writes, full-result
+persistence and one-shot runtime startup/shutdown. It is not pure model time or
+the caller's task schedule interval. Record I/O is synchronous and best effort.
+Each record line is limited to 64 KiB; oversized lines stop that record without
+replacing the available execution result.
+
+### Inspect a saved run
+
+```bash
+python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json
+python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json --details
+python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json --json
+```
+
+Replace the placeholder IDs with the returned `run_result` artifact path. The
+default overview separates execution, scoped elapsed time, complete token totals,
+observed subtotals, cache breakdown and each cost amount. It names accounting
+gaps and exposes diagnostic paths. Estimates retain their pricing basis and are
+not invoices. An execution failure can retain complete usage; successful
+execution does not establish task correctness or complete accounting.
+
+Use `--details` for the final resource snapshot and pricing evidence. Resource
+snapshots describe the runtime process tree, not inference GPU usage. The CPU
+counter is cumulative since host start; endpoint RSS is not a peak. Rounded
+currency and human-readable units affect text only. JSON retains exact values,
+and positive amounts never display as zero.
+
+The inspector accepts an explicit `run-record.jsonl` to show the invocation
+boundary when a full result is unavailable. It retains complete lines before a
+truncated tail and rejects duplicate or conflicting lines. The bounded record preserves validated normalized accounting, including complete
+and observed counts, when present in the invocation result. Legacy numeric usage
+remains unverified diagnostics. Missing evidence never becomes zero.
+
+A full result remains authoritative over its matching sibling record. The reader
+checks identities, skips sibling symlinks, and never opens referenced logs or
+telemetry payloads or uses them to fill missing counts. Each inspected file is
+limited to 16 MiB; larger saved results remain unchanged and can be inspected
+separately. Recording requires no benchmark framework, task labels or Relay.
