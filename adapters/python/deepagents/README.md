@@ -226,41 +226,51 @@ and Agent Protocol subagents manage their own recursion limit in the remote
 service.
 
 The normalized result includes the final response, buffered messages and
-per-step events, LangGraph thread id, token usage (and cost when the provider
-reports it), and errors. Configuration and preflight failures (a missing
-credential, an absent `deepagents` package, or an invalid MCP server) fail
-runtime start before an invocation is accepted.
+per-step events, LangGraph thread id, token usage, and errors. Model callbacks
+account for the current invocation, including summarization and in-process
+subagents. The `output.usage` diagnostic remains the graph-message subtotal,
+labeled `usage_source: graph_state_messages`. Configuration and
+preflight failures (a missing credential, an absent `deepagents` package, or an
+invalid MCP server) fail runtime start before an invocation is accepted.
 
-Usage sums every chat-model call that runs in the adapter process for the
-invocation: the main agent, declarative subagents, and Deep Agents
-summarization. Agent Protocol subagents (entries with `graph_id`) run in their
-remote service, where the adapter cannot count their calls, so a runtime
-configured with one reports unknown token counts and cost. A token count or
-cost is reported only when every counted call reported it; otherwise it stays
-unknown. This also holds for a failed invocation. A request the provider
-rejects with a 4xx status (other than 408) contributes no usage, so without an
-Agent Protocol subagent an invocation that made no model call, or whose every
-call was rejected, reports 0 tokens and 0 cost. A 5xx response, timeout,
-cancellation or unfinished call leaves the invocation's counts and cost
-unknown, because the provider may have billed the call without reporting usage.
-OpenAI SDK retries happen inside one LangChain call, so a 5xx the SDK retries
-to success is not visible to the adapter, and only the final response's
-reported usage counts. Usage replayed from a configured LangChain model cache
-would be counted as reported; NeMo Fabric configures no such cache.
+## Token Usage
 
-When a response carries OpenAI-shaped usage in
-`response_metadata.token_usage`, as `ChatOpenAI` responses without streaming
-do, the raw counts decide what was reported: an omitted count stays unknown,
-and the provider's total is used when present. Other providers and streamed
-responses use LangChain's `usage_metadata`, which some integrations fill with 0
-for an omitted count.
+Each invocation owns its model-call evidence and freezes it when the adapter
+returns. Late callbacks cannot change that result or enter a later invocation.
+The descriptor declares `nemo_fabric.usage_accounting.v1` for complete dimensions,
+observations and gaps, and `nemo_fabric.detailed_token_usage.v1` for raw cache and
+reasoning conventions. An omitted count stays unknown; a reported zero stays zero.
 
-Cached input tokens come from `prompt_tokens_details.cached_tokens` in
-OpenAI-shaped raw usage and from `usage_metadata.input_token_details.cache_read`
-otherwise. They follow the same rule: one call without a cache count leaves the
-invocation's cached count unknown, and a reported 0 stays 0. When input tokens
-are known, the adapter reports that they include cached tokens, because
-LangChain's `UsageMetadata.input_tokens` counts every input token type.
+For adapter-created OpenAI-compatible clients, the collector observes sync and
+async calls and their HTTP attempts without changing requests or retries. Normal
+reported calls stay known. An actual failed or unfinished attempt without usable
+usage creates a gap and retains available observations. An error status never
+proves zero spend. A non-model failure keeps completed model-call usage.
+Structured-output length errors retain the OpenAI SDK's terminal completion usage.
+
+Streaming may lose raw field presence in ChatOpenAI: positive counts remain usable,
+while zero-filled counters stay unknown. Multiple usage frames are not summed
+without evidence that they are deltas. Supported LangChain cache hits contribute
+zero new provider tokens without changing stored cache entries. This callback
+does not collect provider-reported cost or promote harness cost estimates.
+Native OpenAI pricing identity requires every observed request for that call to
+use `https://api.openai.com` on the standard HTTPS port. Custom endpoints,
+including environment-selected endpoints, keep their token and model evidence
+without native-provider pricing identity. Catalog estimation is added separately;
+this collector does not compute prices.
+
+Unmanaged ChatOpenAI model overrides retain available observations with unverified
+scope. Other provider clients that expose usage only through LangChain
+`usage_metadata` retain graph-message diagnostics but do not yet supply normalized
+token observations. Actual remote Agent Protocol dispatch creates a gap; an
+unused remote configuration or polling an existing task alone does not.
+A host timeout that prevents a returned adapter result remains missing evidence;
+the callback cannot amend a result after return.
+
+Focused source tests use Deep Agents 0.7.9, LangChain Core 1.6.0, LangChain OpenAI
+1.1.10 and OpenAI 2.24.0 against scripted transports. Remote dispatch coverage is a
+unit test, not a remote-service end-to-end test. These checks do not establish
+invoice equivalence or every provider's accounting behavior.
 
 ## Runtime Lifecycle
 

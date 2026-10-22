@@ -5,8 +5,9 @@
 
 These tests stub the ``deepagents``/``langchain``/``langgraph`` SDKs so they run
 without the real harness installed; they assert the normalized Fabric result and
-the live runtime's thread continuity. The real SDK is exercised by the opt-in
-integration test in ``tests/e2e/test_deepagents.py``.
+the live runtime's thread continuity. Pinned model/graph boundaries also run in
+``test_deepagents_accounting.py`` against scripted transports. Credentialed
+integration coverage lives in ``tests/e2e/test_deepagents.py``.
 """
 
 from __future__ import annotations
@@ -23,11 +24,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import ANY
 
 import pytest
-from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI as InstalledChatOpenAI
 from langgraph.errors import GraphRecursionError
 from nemo_fabric_adapter_contract.codec import ContractValidationError
@@ -37,7 +36,6 @@ from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
-from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
@@ -51,23 +49,6 @@ def _activation(*diagnostics: dict[str, object]) -> types.SimpleNamespace:
 
 
 ROOT = Path(__file__).resolve().parents[2]
-
-
-async def call_model(config: dict[str, Any] | None, message: AIMessage) -> AIMessage:
-    """Return ``message`` from a real LangChain chat-model call under ``config``.
-
-    The call fires the run's LangChain callbacks the way a Deep Agents model call
-    does, which is where the adapter reads usage. Test stand-ins for the Relay
-    handler are not LangChain handlers, so they are left out.
-    """
-
-    callbacks = [
-        callback
-        for callback in (config or {}).get("callbacks") or []
-        if isinstance(callback, BaseCallbackHandler)
-    ]
-    model = GenericFakeChatModel(messages=iter([message]))
-    return await model.ainvoke("prompt", config={"callbacks": callbacks})
 
 
 def test_descriptor_declares_supported_normalized_config():
@@ -213,17 +194,11 @@ def fake_sdks_fixture(monkeypatch):
             recorder["subgraphs"] = subgraphs
             recorder["checkpointer"] = kwargs.get("checkpointer")
             user = inputs["messages"][-1]["content"]
-            ai = await call_model(
-                config,
-                AIMessage(
-                    content=f"reply to {user}",
-                    usage_metadata={
-                        "input_tokens": 5,
-                        "output_tokens": 7,
-                        "total_tokens": 12,
-                    },
-                ),
-            )
+            ai = {
+                "role": "ai",
+                "content": f"reply to {user}",
+                "usage": {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
+            }
             # subgraphs=True yields 3-tuples ``(namespace, mode, chunk)``; the main
             # graph has an empty namespace. ``updates`` carries the message produced
             # this turn; ``values`` is the full replayed state.
@@ -1472,7 +1447,7 @@ def test_native_telemetry_requires_mapping(tmp_path, make_payload):
         )
 
 
-async def test_relay_disabled_adds_no_scope_or_relay_callbacks(
+async def test_relay_disabled_adds_no_relay_scope_or_callbacks(
     tmp_path, make_payload, fake_sdks
 ):
     # With telemetry disabled the invocation runs without a Relay scope, callback
@@ -1481,9 +1456,9 @@ async def test_relay_disabled_adds_no_scope_or_relay_callbacks(
 
     assert output["completed"] is True
     assert "telemetry" not in output
-    # The only run callback is the adapter's own model-usage recorder.
     callbacks = fake_sdks["config"]["callbacks"]
-    assert [type(callback) for callback in callbacks] == [adapter.ModelCallUsage]
+    assert len(callbacks) == 1
+    assert isinstance(callbacks[0], adapter.ModelCallUsage)
     assert "relay-mw" not in (fake_sdks["create_kwargs"].get("middleware") or [])
 
 
@@ -2099,19 +2074,14 @@ async def test_cost_is_extracted_from_response_metadata(
 ):
     import deepagents
 
+    message = {
+        "role": "ai",
+        "content": "done",
+        "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        "response_metadata": {"cost": 0.0025},
+    }
+
     async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
-        message = await call_model(
-            config,
-            AIMessage(
-                content="done",
-                usage_metadata={
-                    "input_tokens": 1,
-                    "output_tokens": 1,
-                    "total_tokens": 2,
-                },
-                response_metadata={"cost": 0.0025},
-            ),
-        )
         yield ((), "updates", {"agent": {"messages": [message]}})
         yield ((), "values", {"messages": [message]})
 
@@ -2142,49 +2112,27 @@ def test_aggregate_usage_discards_tokens_larger_than_uint64():
     assert adapter._aggregate_usage([{"usage": {"input_tokens": 1 << 64}}]) is None
 
 
-@pytest.mark.parametrize(
-    ("costs", "expected"),
-    [
-        pytest.param([0.0, 0.0], 0.0, id="explicit-zero"),
-        pytest.param([0.5, 0.25], 0.75, id="every-call"),
-        pytest.param([0.5, None], None, id="one-call-without-cost"),
-    ],
-)
-def test_aggregate_usage_reports_cost_only_when_every_call_did(costs, expected):
-    calls = [
-        {"usage": {"input_tokens": 1}, "response_metadata": {"cost": cost}}
-        for cost in costs
-    ]
-
-    assert adapter._aggregate_usage(calls).get("cost") == expected
-
-
 async def test_replayed_state_usage_counts_current_turn_only(
     tmp_path, make_payload, monkeypatch
 ):
-    # On a later turn the final state replays prior messages; usage and
-    # cost must reflect only the message emitted this turn, not the replayed one.
+    # Existing-behavior coverage: the graph-message diagnostic excludes replayed
+    # messages. Model-call accounting is independent of this diagnostic.
     import deepagents
 
-    prior = AIMessage(
-        content="prior",
-        usage_metadata={"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-        response_metadata={"cost": 0.001},
-    )
+    prior = {
+        "role": "ai",
+        "content": "prior",
+        "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        "response_metadata": {"cost": 0.001},
+    }
+    current = {
+        "role": "ai",
+        "content": "now",
+        "usage": {"input_tokens": 2, "output_tokens": 2, "total_tokens": 4},
+        "response_metadata": {"cost": 0.002},
+    }
 
     async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
-        current = await call_model(
-            config,
-            AIMessage(
-                content="now",
-                usage_metadata={
-                    "input_tokens": 2,
-                    "output_tokens": 2,
-                    "total_tokens": 4,
-                },
-                response_metadata={"cost": 0.002},
-            ),
-        )
         # Only the current turn's message is emitted as an update...
         yield ((), "updates", {"agent": {"messages": [current]}})
         # ...but the final state also replays the prior turn.
@@ -2483,536 +2431,47 @@ def test_deepagents_passthrough_rejects_fabric_owned_option():
         adapter._validated_deepagents_settings({"model": "untrusted-model"})
 
 
-def chat_completion(
-    usage: dict[str, Any] | None,
-    *,
-    tool_calls: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """Return an OpenAI Chat Completions response body with the given usage."""
+async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monkeypatch):
+    # Existing-behavior coverage: graph-message diagnostics include subgraph
+    # messages. Duplicate message ids are counted once.
+    import deepagents
 
-    message: dict[str, Any] = {"role": "assistant", "content": "done"}
-    if tool_calls:
-        message["content"] = None
-        message["tool_calls"] = tool_calls
-    body: dict[str, Any] = {
-        "id": f"chatcmpl-{uuid.uuid4().hex}",
-        "object": "chat.completion",
-        "created": 0,
-        "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-        "choices": [
-            {
-                "index": 0,
-                "message": message,
-                "finish_reason": "tool_calls" if tool_calls else "stop",
-            }
-        ],
+    sub_ai = {
+        "role": "ai",
+        "content": "subagent work",
+        "id": "sub-1",
+        "usage": {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30},
     }
-    if usage is not None:
-        body["usage"] = usage
-    return body
-
-
-LS_TOOL_CALL = {
-    "id": "call-1",
-    "type": "function",
-    "function": {"name": "ls", "arguments": '{"path": "/"}'},
-}
-
-
-@pytest.fixture(name="openai_endpoint")
-def openai_endpoint_fixture(fake_sdks, monkeypatch) -> dict[str, Any]:
-    """Run the real Deep Agents graph and ChatOpenAI against a scripted endpoint.
-
-    Tests append response bodies, ``httpx.Response`` objects, or exceptions to
-    raise to ``replies``; each model request takes the next one, and its JSON
-    body is kept in ``requests``. ``profile`` sets the chat model profile, which Deep Agents uses
-    to choose its summarization trigger.
-    """
-
-    import httpx
-
-    for name in (
-        "deepagents",
-        "deepagents.backends",
-        "deepagents.middleware",
-        "deepagents.middleware.subagents",
-        "langchain.chat_models",
-        "langgraph",
-        "langgraph.checkpoint",
-        "langgraph.checkpoint.sqlite",
-        "langgraph.checkpoint.sqlite.aio",
-    ):
-        monkeypatch.delitem(sys.modules, name, raising=False)
-    endpoint: dict[str, Any] = {"replies": [], "requests": [], "profile": None}
-
-    def respond(request: httpx.Request) -> httpx.Response:
-        endpoint["requests"].append(json.loads(request.content))
-        reply = endpoint["replies"].pop(0)
-        if isinstance(reply, Exception):
-            raise reply
-        if isinstance(reply, httpx.Response):
-            return reply
-        return httpx.Response(200, json=reply)
-
-    def build_chat_openai(**kwargs: Any) -> InstalledChatOpenAI:
-        return InstalledChatOpenAI(
-            **kwargs,
-            max_retries=0,
-            profile=endpoint["profile"],
-            http_async_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
-        )
-
-    fake_sdks["chat_openai"].side_effect = build_chat_openai
-    return endpoint
-
-
-async def run_invocations(payload: dict[str, Any], count: int) -> list[AgentRunResult]:
-    runtime = adapter.DeepAgentsRuntime()
-    await runtime.start(lifecycle_start_payload(payload))
-    try:
-        return [
-            await runtime.invoke(*lifecycle_invocation(payload)) for _ in range(count)
-        ]
-    finally:
-        await runtime.stop()
-
-
-async def test_summarization_model_call_usage_is_counted(
-    tmp_path, make_payload, openai_endpoint
-):
-    # Deep Agents summarizes older history with a separate model call whose response
-    # never enters graph state. Its usage belongs to the invocation that made it.
-    openai_endpoint["profile"] = {"max_input_tokens": 1000}
-    openai_endpoint["replies"] += [
-        chat_completion(
-            {"prompt_tokens": 1500, "completion_tokens": 10, "total_tokens": 1510}
-        ),
-        # Second invocation: the summary call, then the agent's model call.
-        chat_completion(
-            {"prompt_tokens": 1400, "completion_tokens": 60, "total_tokens": 1460}
-        ),
-        chat_completion(
-            {"prompt_tokens": 300, "completion_tokens": 5, "total_tokens": 305}
-        ),
-    ]
-    payload = make_payload(tmp_path)
-    payload["request"]["input"] = "word " * 6000
-
-    first, second = await run_invocations(payload, 2)
-
-    summary_request, agent_request = openai_endpoint["requests"][1:]
-    assert "tools" not in summary_request
-    assert "tools" in agent_request
-    assert first.usage == AgentUsage(
-        input_tokens=1500,
-        output_tokens=10,
-        total_tokens=1510,
-        input_tokens_include_cache=True,
-    )
-    assert second.status is AgentRunStatus.SUCCEEDED
-    assert second.usage == AgentUsage(
-        input_tokens=1700,
-        output_tokens=65,
-        total_tokens=1765,
-        input_tokens_include_cache=True,
-    )
-
-
-async def test_subagent_model_calls_are_counted(
-    tmp_path, make_payload, openai_endpoint
-):
-    # Two parallel ``task`` calls run the general-purpose subagent twice; each
-    # subagent's model call belongs to this invocation.
-    task_calls = [
-        {
-            "id": f"task-{index}",
-            "type": "function",
-            "function": {
-                "name": "task",
-                "arguments": json.dumps(
-                    {
-                        "description": f"Echo the word {index}.",
-                        "subagent_type": "general-purpose",
-                    }
-                ),
-            },
-        }
-        for index in (1, 2)
-    ]
-    openai_endpoint["replies"] += [
-        chat_completion(
-            {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-            tool_calls=task_calls,
-        ),
-        chat_completion(
-            {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}
-        ),
-        chat_completion(
-            {"prompt_tokens": 100, "completion_tokens": 100, "total_tokens": 200}
-        ),
-        chat_completion(
-            {"prompt_tokens": 1000, "completion_tokens": 1000, "total_tokens": 2000}
-        ),
-    ]
-
-    (result,) = await run_invocations(make_payload(tmp_path), 1)
-
-    assert result.status is AgentRunStatus.SUCCEEDED
-    assert len(openai_endpoint["requests"]) == 4
-    subgraphs = {
-        event["subgraph"] for event in result.output["events"] if "subgraph" in event
-    }
-    assert len(subgraphs) == 2
-    assert result.usage == AgentUsage(
-        input_tokens=1111,
-        output_tokens=1111,
-        total_tokens=2222,
-        input_tokens_include_cache=True,
-    )
-
-
-async def test_recursion_limit_failure_keeps_usage_of_completed_model_calls(
-    tmp_path, make_payload, openai_endpoint
-):
-    tool_call_reply = chat_completion(
-        {"prompt_tokens": 10, "completion_tokens": 1, "total_tokens": 11},
-        tool_calls=[LS_TOOL_CALL],
-    )
-    openai_endpoint["replies"] += [tool_call_reply] * 20
-    payload = make_payload(tmp_path)
-    payload["config"]["runtime"] = {"max_turns": 6}
-
-    (result,) = await run_invocations(payload, 1)
-
-    calls = len(openai_endpoint["requests"])
-    assert calls > 1
-    assert result.status is AgentRunStatus.FAILED
-    assert result.error.code == "deepagents_recursion_limit_reached"
-    assert result.usage == AgentUsage(
-        input_tokens=10 * calls,
-        output_tokens=calls,
-        total_tokens=11 * calls,
-        input_tokens_include_cache=True,
-    )
-
-
-def provider_failure(kind: str) -> Any:
-    """Return a scripted endpoint reply that fails a model call."""
-
-    import httpx
-
-    if kind == "timeout":
-        return httpx.ReadTimeout("provider did not answer in time")
-    return httpx.Response(int(kind), json={"error": {"message": "request failed"}})
-
-
-@pytest.mark.parametrize(
-    ("failure", "expected"),
-    [
-        # A 4xx rejection other than 408 spends nothing, so the finished call's
-        # usage stays known.
-        pytest.param(
-            "400",
-            AgentUsage(
-                input_tokens=120,
-                output_tokens=8,
-                total_tokens=128,
-                input_tokens_include_cache=True,
-            ),
-            id="400-rejection",
-        ),
-        # The provider may have billed the call without reporting usage.
-        pytest.param("408", None, id="408-request-timeout"),
-        pytest.param("503", None, id="503-server-error"),
-        pytest.param("timeout", None, id="read-timeout"),
-    ],
-)
-async def test_failed_model_call_usage_follows_provider_response(
-    tmp_path, make_payload, openai_endpoint, failure, expected
-):
-    openai_endpoint["replies"] += [
-        chat_completion(
-            {"prompt_tokens": 120, "completion_tokens": 8, "total_tokens": 128},
-            tool_calls=[LS_TOOL_CALL],
-        ),
-        provider_failure(failure),
-    ]
-
-    (result,) = await run_invocations(make_payload(tmp_path), 1)
-
-    assert result.status is AgentRunStatus.FAILED
-    assert result.usage == expected
-
-
-async def test_rejected_only_model_call_reports_zero_usage(
-    tmp_path, make_payload, openai_endpoint
-):
-    # The provider rejected the only model call, so the invocation spent nothing.
-    openai_endpoint["replies"].append(provider_failure("400"))
-
-    (result,) = await run_invocations(make_payload(tmp_path), 1)
-
-    assert result.status is AgentRunStatus.FAILED
-    assert result.usage == AgentUsage(
-        input_tokens=0,
-        cached_input_tokens=0,
-        output_tokens=0,
-        total_tokens=0,
-        input_tokens_include_cache=True,
-        cost_usd=0.0,
-    )
-
-
-async def test_agent_protocol_subagent_makes_usage_unknown(
-    tmp_path, make_payload, openai_endpoint
-):
-    # An Agent Protocol subagent runs its model calls on a remote server, which
-    # the adapter cannot count, so local sums would undercount the invocation.
-    payload = make_payload(tmp_path)
-    payload["config"]["harness"]["settings"]["deepagents"] = {
-        "subagents": [
-            {
-                "name": "researcher",
-                "description": "Researches on a remote server.",
-                "graph_id": "research_agent",
-                "url": "https://agents.example.test",
-            }
-        ]
-    }
-    openai_endpoint["replies"].append(
-        chat_completion(
-            {"prompt_tokens": 120, "completion_tokens": 8, "total_tokens": 128}
-        )
-    )
-
-    (result,) = await run_invocations(payload, 1)
-
-    assert result.status is AgentRunStatus.SUCCEEDED
-    assert result.usage is None
-
-
-async def test_rejected_only_call_with_agent_protocol_subagent_is_unknown(
-    tmp_path, make_payload, openai_endpoint
-):
-    # Zero observed calls prove nothing when a remote subagent can run models
-    # that the adapter's callbacks never see.
-    payload = make_payload(tmp_path)
-    payload["config"]["harness"]["settings"]["deepagents"] = {
-        "subagents": [
-            {
-                "name": "researcher",
-                "description": "Researches on a remote server.",
-                "graph_id": "research_agent",
-                "url": "https://agents.example.test",
-            }
-        ]
-    }
-    openai_endpoint["replies"].append(provider_failure("400"))
-
-    (result,) = await run_invocations(payload, 1)
-
-    assert result.status is AgentRunStatus.FAILED
-    assert result.usage is None
-
-
-def test_aggregate_usage_without_model_calls_is_zero():
-    assert adapter._aggregate_usage([]) == {
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "total_tokens": 0,
-        "cached_tokens": 0,
-        "cost": 0.0,
+    main_ai = {
+        "role": "ai",
+        "content": "final",
+        "id": "main-1",
+        "usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
     }
 
+    async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
+        assert subgraphs is True
+        # subagent step under a subgraph namespace, emitted twice (dedup by id)
+        yield (("task:researcher",), "updates", {"agent": {"messages": [sub_ai]}})
+        yield (("task:researcher",), "updates", {"agent": {"messages": [sub_ai]}})
+        # main graph step + replayed final state
+        yield ((), "updates", {"agent": {"messages": [main_ai]}})
+        yield ((), "values", {"messages": [main_ai]})
 
-@pytest.mark.parametrize(
-    ("failure", "expected"),
-    [
-        pytest.param(
-            "429",
-            {"prompt_tokens": 30, "completion_tokens": 2, "total_tokens": 32},
-            id="429-then-success",
-        ),
-        pytest.param("503", None, id="503-then-success"),
-    ],
-)
-async def test_retried_model_call_usage_follows_failed_attempt(
-    fake_sdks, openai_endpoint, failure, expected
-):
-    # LangChain's with_retry runs each attempt as its own chat-model call, as the
-    # Deep Agents summarization model does.
-    openai_endpoint["replies"] += [
-        provider_failure(failure),
-        chat_completion(
-            {"prompt_tokens": 30, "completion_tokens": 2, "total_tokens": 32}
-        ),
-    ]
-    model = fake_sdks["chat_openai"](
-        model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-        api_key="test123",
-        base_url="https://integrate.api.nvidia.com/v1",
-    )
-    model_usage = adapter.ModelCallUsage()
+    agent = MagicMock()
+    agent.astream = astream
+    monkeypatch.setattr(deepagents, "create_deep_agent", MagicMock(return_value=agent))
 
-    await model.with_retry(stop_after_attempt=2, wait_exponential_jitter=False).ainvoke(
-        "summarize", config={"callbacks": [model_usage]}
-    )
+    output = await invoke_once(make_payload(tmp_path))
 
-    assert adapter._aggregate_usage(model_usage.calls()) == expected
-
-
-async def test_recorder_keeps_a_cancelled_call_unreported():
-    # Recorder unit test: a cancelled call ends without on_llm_end and, when
-    # LangChain gathers it, without on_llm_error; its start record keeps the
-    # invocation's counts unknown.
-    model_usage = adapter.ModelCallUsage()
-    await call_model(
-        {"callbacks": [model_usage]},
-        AIMessage(
-            content="done",
-            usage_metadata={"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-        ),
-    )
-    model_usage.on_chat_model_start({}, [], run_id=uuid.uuid4())
-
-    assert adapter._aggregate_usage(model_usage.calls()) is None
-
-
-@pytest.mark.parametrize(
-    ("usages", "expected"),
-    [
-        pytest.param(
-            [{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}],
-            AgentUsage(
-                input_tokens=0,
-                output_tokens=0,
-                total_tokens=0,
-                input_tokens_include_cache=True,
-            ),
-            id="explicit-zero",
-        ),
-        pytest.param(
-            [{"prompt_tokens": 100}],
-            AgentUsage(input_tokens=100, input_tokens_include_cache=True),
-            id="input-only",
-        ),
-        pytest.param(
-            [{"completion_tokens": 5}],
-            AgentUsage(output_tokens=5),
-            id="output-only",
-        ),
-        pytest.param(
-            [{"prompt_tokens": 100, "completion_tokens": 5}],
-            AgentUsage(
-                input_tokens=100,
-                output_tokens=5,
-                total_tokens=105,
-                input_tokens_include_cache=True,
-            ),
-            id="total-omitted",
-        ),
-        pytest.param(
-            [{"completion_tokens": 5, "total_tokens": 105}],
-            AgentUsage(output_tokens=5, total_tokens=105),
-            id="provider-total-with-input-omitted",
-        ),
-        pytest.param(
-            [{"prompt_tokens": 7, "completion_tokens": 5, "total_tokens": 0}],
-            AgentUsage(
-                input_tokens=7,
-                output_tokens=5,
-                total_tokens=0,
-                input_tokens_include_cache=True,
-            ),
-            id="provider-total-zero-kept",
-        ),
-        pytest.param(
-            [
-                {"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105},
-                None,
-            ],
-            None,
-            id="one-call-without-usage",
-        ),
-    ],
-)
-async def test_partial_usage_reports_keep_missing_counts_unknown(
-    tmp_path, make_payload, openai_endpoint, usages, expected
-):
-    # ChatOpenAI turns an omitted count into 0; a count is known only when every
-    # model call in the invocation reported it.
-    openai_endpoint["replies"] += [
-        *(chat_completion(usage, tool_calls=[LS_TOOL_CALL]) for usage in usages[:-1]),
-        chat_completion(usages[-1]),
-    ]
-
-    (result,) = await run_invocations(make_payload(tmp_path), 1)
-
-    assert result.status is AgentRunStatus.SUCCEEDED
-    assert result.usage == expected
-
-
-@pytest.mark.parametrize(
-    ("cached", "expected"),
-    [
-        pytest.param([40, 60], 100, id="every-call-reports-cache"),
-        pytest.param([40, None], None, id="one-call-omits-cache"),
-        pytest.param([0, 0], 0, id="explicit-zero"),
-    ],
-)
-async def test_cached_input_tokens_are_known_only_when_every_call_reported_them(
-    tmp_path, make_payload, openai_endpoint, cached, expected
-):
-    def usage(cached_tokens: int | None) -> dict[str, Any]:
-        reported: dict[str, Any] = {
-            "prompt_tokens": 100,
-            "completion_tokens": 5,
-            "total_tokens": 105,
-        }
-        if cached_tokens is not None:
-            reported["prompt_tokens_details"] = {"cached_tokens": cached_tokens}
-        return reported
-
-    openai_endpoint["replies"] += [
-        chat_completion(usage(cached[0]), tool_calls=[LS_TOOL_CALL]),
-        chat_completion(usage(cached[1])),
-    ]
-
-    (result,) = await run_invocations(make_payload(tmp_path), 1)
-
-    assert result.status is AgentRunStatus.SUCCEEDED
-    assert result.usage == AgentUsage(
-        input_tokens=200,
-        cached_input_tokens=expected,
-        input_tokens_include_cache=True,
-        output_tokens=10,
-        total_tokens=210,
-    )
-
-
-@pytest.mark.parametrize(
-    ("cache_read", "expected"),
-    [
-        pytest.param(30, 30, id="reported"),
-        pytest.param(0, 0, id="explicit-zero"),
-        pytest.param(None, None, id="omitted"),
-    ],
-)
-def test_anthropic_cache_reads_are_counted_as_included_input(cache_read, expected):
-    # langchain-anthropic adds cache reads and writes to input_tokens and keeps an
-    # omitted cache count out of input_token_details.
-    from anthropic.types import Usage
-    from langchain_anthropic.chat_models import _create_usage_metadata
-
-    usage_metadata = _create_usage_metadata(
-        Usage(input_tokens=10, output_tokens=5, cache_read_input_tokens=cache_read)
-    )
-    totals = adapter._aggregate_usage(
-        [adapter._message_to_dict(AIMessage("done", usage_metadata=usage_metadata))]
-    )
-
-    assert totals.get("cached_tokens") == expected
-    assert totals["prompt_tokens"] == 10 + (cache_read or 0)
+    # subagent (10/20/30) + main (2/3/5), the duplicate subagent message counted once
+    assert output["usage"] == {
+        "prompt_tokens": 12,
+        "completion_tokens": 23,
+        "total_tokens": 35,
+    }
+    # the subgraph step is recorded with its namespace label
+    assert any(evt.get("subgraph") == "task:researcher" for evt in output["events"])
 
 
 async def test_bad_mcp_transport_fails_runtime_start(tmp_path, make_payload):
@@ -3094,6 +2553,10 @@ async def test_openai_compatible_model_receives_normalized_sampling(
         temperature=0.2,
         top_p=0.8,
         max_completion_tokens=256,
+        http_client=ANY,
+        http_async_client=ANY,
+        metadata=ANY,
+        cache=ANY,
     )
 
 
@@ -3144,6 +2607,10 @@ async def test_unset_sampling_preserves_chat_model_defaults(
         model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
         api_key="test123",
         base_url="https://integrate.api.nvidia.com/v1",
+        http_client=ANY,
+        http_async_client=ANY,
+        metadata=ANY,
+        cache=ANY,
     )
 
 

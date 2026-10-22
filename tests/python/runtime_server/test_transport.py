@@ -22,6 +22,194 @@ if sys.platform == "win32":
 from nemo_fabric.runtime_server import protocol, transport
 
 
+@pytest.fixture(name="lifecycle_files")
+def lifecycle_files_fixture(monkeypatch):
+    files = {
+        "/proc/sys/kernel/random/boot_id": "b234f7d1-02cb-4b91-8717-90e4a8957dbb\n",
+        "/proc/1/stat": "1 (sandbox supervisor) S " + "0 " * 18 + "123 0\n",
+    }
+    read_text = Path.read_text
+
+    def read_lifecycle_file(path, *args, **kwargs):
+        if str(path) in files:
+            value = files[str(path)]
+            if isinstance(value, OSError):
+                raise value
+            return value
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_lifecycle_file)
+    return files
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "init",
+        "sandbox supervisor",
+        "name ) with (parens)",
+        "",
+        "name\nwith newline",
+        "init \u03a9",
+    ],
+)
+def test_lifecycle_identity_uses_boot_and_init_start_time(lifecycle_files, name):
+    lifecycle_files["/proc/1/stat"] = f"1 ({name}) S " + "0 " * 18 + "123 0\n"
+    assert transport._sandbox_lifecycle_id() == (
+        "b234f7d1-02cb-4b91-8717-90e4a8957dbb:123"
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        ("/proc/sys/kernel/random/boot_id", FileNotFoundError()),
+        ("/proc/sys/kernel/random/boot_id", "not-a-boot-id"),
+        ("/proc/1/stat", PermissionError()),
+        ("/proc/1/stat", "1 (init) S 0"),
+        ("/proc/1/stat", "1 (init) S " + "0 " * 18 + "invalid"),
+        ("/proc/1/stat", "2 (init) S " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 init) S " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init S " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init)S " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init) running " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init) 1 " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init) \u00e9 " + "0 " * 18 + "123"),
+        ("/proc/1/stat", "1 (init) S " + "0 " * 18 + "+123"),
+        ("/proc/1/stat", "1 (init) S " + "0 " * 18 + "1_23"),
+        ("/proc/1/stat", "1 (init) S " + "0 " * 18 + "\u0661\u0662\u0663"),
+    ],
+)
+def test_unreadable_lifecycle_identity_is_unknown(lifecycle_files, path, value):
+    lifecycle_files[path] = value
+    assert transport._sandbox_lifecycle_id() is None
+
+
+@pytest.mark.parametrize(
+    "previous_id",
+    [
+        "b234f7d1-02cb-4b91-8717-90e4a8957dbb:122",
+        "cf2a6615-0517-41f8-a5b3-e835dd7402bc:123",
+    ],
+    ids=["container-restart", "host-reboot"],
+)
+async def test_server_starts_after_sandbox_lifecycle_changes(
+    host, host_request, socket_path, lifecycle_files, previous_id
+):
+    marker = socket_path.with_suffix(".unclean")
+    marker.write_text(previous_id)
+    retained = socket_path.parent / "retained"
+    retained.write_text("keep")
+    stop, ready = asyncio.Event(), asyncio.Event()
+    task = asyncio.create_task(
+        transport.serve(
+            host, socket_path=socket_path, stop_event=stop, ready_event=ready
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), 1)
+        assert marker.read_text() == "b234f7d1-02cb-4b91-8717-90e4a8957dbb:123"
+        response = await transport.client(
+            host_request("start"), socket_path=socket_path
+        )
+        assert response["status"] == "succeeded", response
+        # The existing lock must still exclude another server after marker recovery.
+        with pytest.raises(OSError):
+            await transport.serve(
+                host, socket_path=socket_path, stop_event=asyncio.Event()
+            )
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, 2)
+    assert marker.exists()
+    assert retained.read_text() == "keep"
+
+
+@pytest.mark.parametrize(
+    "previous_id",
+    [
+        "b234f7d1-02cb-4b91-8717-90e4a8957dbb:123",
+        "",
+        "previous host may still own adapter processes",
+        "not-a-boot-id:122",
+        "b234f7d1-02cb-4b91-8717-90e4a8957dbb:invalid",
+        "b234f7d1-02cb-4b91-8717-90e4a8957dbb:122\ntrailing data",
+        "b234f7d1-02cb-4b91-8717-90e4a8957dbb:" + "1" * 200,
+    ],
+)
+async def test_server_preserves_same_or_unknown_lifecycle_marker(
+    host, socket_path, lifecycle_files, previous_id
+):
+    marker = socket_path.with_suffix(".unclean")
+    marker.write_text(previous_id)
+    with pytest.raises(protocol.ProtocolError) as caught:
+        await transport.serve(host, socket_path=socket_path, stop_event=asyncio.Event())
+    assert caught.value.code == "cleanup_unconfirmed"
+    assert marker.read_text() == previous_id
+    assert not socket_path.exists()
+
+
+@pytest.mark.parametrize(
+    "value", [PermissionError(), "2 (init) S " + "0 " * 18 + "123"]
+)
+async def test_server_preserves_marker_when_current_lifecycle_is_unknown(
+    host, socket_path, lifecycle_files, value
+):
+    lifecycle_files["/proc/1/stat"] = value
+    marker = socket_path.with_suffix(".unclean")
+    previous_id = "b234f7d1-02cb-4b91-8717-90e4a8957dbb:122"
+    marker.write_text(previous_id)
+    with pytest.raises(protocol.ProtocolError) as caught:
+        await asyncio.wait_for(
+            transport.serve(host, socket_path=socket_path, stop_event=asyncio.Event()),
+            1,
+        )
+    assert caught.value.code == "cleanup_unconfirmed"
+    assert marker.read_text() == previous_id
+
+
+@pytest.mark.parametrize("kind", ["symlink", "directory", "fifo"])
+async def test_server_rejects_nonregular_lifecycle_marker(
+    host, socket_path, lifecycle_files, kind
+):
+    marker = socket_path.with_suffix(".unclean")
+    target = socket_path.parent / "caller-owned"
+    target.write_text("b234f7d1-02cb-4b91-8717-90e4a8957dbb:122")
+    if kind == "symlink":
+        marker.symlink_to(target)
+    elif kind == "directory":
+        marker.mkdir()
+    else:
+        os.mkfifo(marker)
+    with pytest.raises(protocol.ProtocolError) as caught:
+        await asyncio.wait_for(
+            transport.serve(host, socket_path=socket_path, stop_event=asyncio.Event()),
+            1,
+        )
+    assert caught.value.code == "cleanup_unconfirmed"
+    assert marker.exists()
+    assert target.read_text() == "b234f7d1-02cb-4b91-8717-90e4a8957dbb:122"
+
+
+async def test_unused_server_removes_marker_with_lifecycle_identity(
+    host, socket_path, lifecycle_files
+):
+    stop, ready = asyncio.Event(), asyncio.Event()
+    task = asyncio.create_task(
+        transport.serve(
+            host, socket_path=socket_path, stop_event=stop, ready_event=ready
+        )
+    )
+    marker = socket_path.with_suffix(".unclean")
+    try:
+        await asyncio.wait_for(ready.wait(), 1)
+        assert marker.read_text() == "b234f7d1-02cb-4b91-8717-90e4a8957dbb:123"
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, 2)
+    assert not marker.exists()
+
+
 async def test_unreachable_host_does_not_claim_state_or_effects(
     socket_path, host_request
 ):

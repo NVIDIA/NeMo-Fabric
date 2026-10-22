@@ -21,12 +21,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from typing import NamedTuple
-from uuid import UUID
 
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import ToolMessage
-from langchain_core.outputs import LLMResult
 from langgraph.errors import GraphRecursionError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
@@ -39,6 +36,10 @@ from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.deepagents.usage import AccountingCache
+from nemo_fabric_adapters.deepagents.usage import ModelCallUsage
+from nemo_fabric_adapters.deepagents.usage import model_metadata
+from nemo_fabric_adapters.deepagents.usage import observed_http_clients
 import nemo_fabric_adapters.common.utils as common_utils
 
 HARNESS = "deepagents"
@@ -195,7 +196,12 @@ def selected_model_name(model_config: AgentModelConfig) -> str:
     return model_config.model
 
 
-def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | None]:
+def build_chat_model(
+    model_config: AgentModelConfig,
+    *,
+    http_clients: tuple[Any, Any] | None = None,
+    observer: str | None = None,
+) -> tuple[Any, str, str | None]:
     """Build a LangChain chat model from Fabric model config.
 
     Known OpenAI-compatible providers use ``ChatOpenAI``. Other providers are
@@ -238,7 +244,22 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
 
     from langchain_openai import ChatOpenAI
 
-    kwargs = {"model": model_name, "api_key": api_key}
+    kwargs = {"model": model_name, "api_key": api_key, "cache": AccountingCache()}
+    if http_clients is not None:
+        kwargs.update(
+            http_client=http_clients[0],
+            http_async_client=http_clients[1],
+            metadata=model_metadata(observer),
+        )
+        # Client injection would otherwise turn off LangChain's native-OpenAI
+        # automatic stream-usage default. Preserve its original condition.
+        if (
+            base_url is None
+            and "OPENAI_BASE_URL" not in os.environ
+            and os.environ.get("OPENAI_API_BASE") is None
+            and os.environ.get("OPENAI_PROXY") is None
+        ):
+            kwargs["stream_usage"] = True
     if base_url:
         kwargs["base_url"] = base_url
     if temperature is not None:
@@ -541,17 +562,6 @@ def _validated_deepagents_settings(extra: Any) -> dict[str, Any]:
     return dict(extra)
 
 
-def _has_agent_protocol_subagent(subagents: Any) -> bool:
-    """Whether ``create_deep_agent`` runs a subagent on an Agent Protocol server.
-
-    Deep Agents routes a subagent spec with ``graph_id`` to its async subagent
-    middleware, which starts and updates tasks on a remote server.
-    """
-    return isinstance(subagents, list) and any(
-        isinstance(subagent, dict) and "graph_id" in subagent for subagent in subagents
-    )
-
-
 def _gate_subagent(
     subagent: dict[str, Any], enabled: set[str] | None, blocked: set[str]
 ) -> dict[str, Any]:
@@ -623,7 +633,9 @@ class DeepAgentsRuntime:
         self._callback_handler_type: Any = None
         self._telemetry_quarantine: str | None = None
         self._telemetry_quarantine_cause: str | None = None
-        self._has_remote_subagent = False
+        self._usage_observer: str | None = None
+        self._usage_remote_names: frozenset[str] = frozenset()
+        self._usage_http_clients: tuple[Any, Any] | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -642,7 +654,17 @@ class DeepAgentsRuntime:
             settings = agent_config.harness.settings if agent_config.harness else {}
             base_dir = common_utils.base_dir(payload)
             runtime_id = runtime_context.runtime_id
-            model, self._model_name, self._base_url = build_chat_model(model_config)
+            if (
+                model_config.provider in OPENAI_COMPATIBLE_PROVIDERS
+                and not os.environ.get("OPENAI_PROXY")
+            ):
+                self._usage_observer = uuid.uuid4().hex
+                self._usage_http_clients = observed_http_clients()
+            model, self._model_name, self._base_url = build_chat_model(
+                model_config,
+                http_clients=self._usage_http_clients,
+                observer=self._usage_observer,
+            )
             self._runtime_id = runtime_id
             self._thread_id = uuid.uuid4().hex
 
@@ -674,8 +696,10 @@ class DeepAgentsRuntime:
                 model,
                 settings,
             )
-            self._has_remote_subagent = _has_agent_protocol_subagent(
-                agent_kwargs.get("subagents")
+            self._usage_remote_names = frozenset(
+                subagent["name"]
+                for subagent in agent_kwargs.get("subagents", [])
+                if isinstance(subagent, dict) and "graph_id" in subagent
             )
             self._checkpointer = await open_checkpointer(
                 checkpointer_path(runtime_context, base_dir, runtime_id)
@@ -768,7 +792,7 @@ class DeepAgentsRuntime:
             resumed=resumed,
             result_state=outcome.result_state,
             events=outcome.events or [],
-            model_calls=outcome.model_calls or [],
+            turn_messages=outcome.turn_messages or [],
             error=outcome.error,
             telemetry_runtime=telemetry_runtime,
             relay_artifacts=relay_artifacts,
@@ -779,41 +803,9 @@ class DeepAgentsRuntime:
         )
         failed = bool(output.pop("failed", False))
         reported_error = output.pop("error", None)
-        raw_usage = output.get("usage")
-        # An Agent Protocol subagent's model calls run on its remote server and
-        # never reach this process, so the local sums may undercount the
-        # invocation and its counts and cost stay unknown.
-        usage = (
-            raw_usage
-            if isinstance(raw_usage, dict) and not self._has_remote_subagent
-            else {}
-        )
-        token_fields = {
-            "input_tokens": usage.get("prompt_tokens"),
-            "output_tokens": usage.get("completion_tokens"),
-            "total_tokens": usage.get("total_tokens"),
-            "cached_input_tokens": usage.get("cached_tokens"),
-        }
-        tokens = {
-            name: value
-            for name, value in token_fields.items()
-            if isinstance(value, int)
-            and not isinstance(value, bool)
-            and 0 <= value <= (1 << 64) - 1
-        }
-        if "input_tokens" in tokens:
-            # LangChain's UsageMetadata defines input_tokens as the sum of every
-            # input token type, cache reads included; OpenAI's raw prompt_tokens
-            # includes cached tokens too.
-            tokens["input_tokens_include_cache"] = True
-        cost = usage.get("cost")
-        if (
-            not isinstance(cost, (int, float))
-            or isinstance(cost, bool)
-            or not math.isfinite(cost)
-            or cost < 0
-        ):
-            cost = None
+        # Preserve the existing output diagnostic without promoting its message
+        # subtotal to typed invocation accounting.
+        output["usage_source"] = "graph_state_messages"
         return AgentRunResult(
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
             output=output,
@@ -825,11 +817,7 @@ class DeepAgentsRuntime:
                 if failed
                 else None
             ),
-            usage=(
-                AgentUsage(**tokens, cost_usd=cost)
-                if tokens or cost is not None
-                else None
-            ),
+            usage=outcome.accounted_usage,
         )
 
     async def _invoke_with_telemetry(
@@ -905,26 +893,34 @@ class DeepAgentsRuntime:
     ) -> TurnOutcome:
         """Run one agent turn, normalizing an invocation failure into an error string."""
 
-        model_usage = ModelCallUsage()
+        recorder = ModelCallUsage(self._usage_observer, self._usage_remote_names)
         try:
-            result_state, events = await invoke_compiled_agent(
-                self._agent,
-                user_message,
-                self._thread_id,
-                callbacks=[*(callbacks or []), model_usage],
-            )
+            with recorder.scope():
+                result_state, events, turn_messages = await invoke_compiled_agent(
+                    self._agent,
+                    user_message,
+                    self._thread_id,
+                    callbacks=[*(callbacks or []), recorder],
+                )
         except GraphRecursionError:
             return TurnOutcome(
-                model_calls=model_usage.calls(),
                 error="Deep Agents reached its graph recursion limit.",
                 error_code="deepagents_recursion_limit_reached",
+                accounted_usage=recorder.finish(),
             )
         except Exception as exc:  # normalized adapter failure
-            return TurnOutcome(model_calls=model_usage.calls(), error=_error_text(exc))
+            return TurnOutcome(
+                error=_error_text(exc), accounted_usage=recorder.finish()
+            )
+        finally:
+            # Also close ownership on cancellation, while preserving cancellation
+            # propagation. A later callback cannot mutate any returned result.
+            recorder.finish()
         return TurnOutcome(
             result_state=result_state,
             events=events,
-            model_calls=model_usage.calls(),
+            turn_messages=turn_messages,
+            accounted_usage=recorder.finish(),
         )
 
     def _telemetry_output(
@@ -964,6 +960,9 @@ class DeepAgentsRuntime:
 
     async def stop(self) -> None:
         checkpointer = self._checkpointer
+        clients, self._usage_http_clients = self._usage_http_clients, None
+        self._usage_observer = None
+        self._usage_remote_names = frozenset()
         self._start_payload = None
         self._runtime_id = None
         self._model_name = None
@@ -980,8 +979,15 @@ class DeepAgentsRuntime:
         self._relay_plugin_config = None
         self._callback_handler_type = None
         self._started = False
-        if checkpointer is not None:
-            await close_checkpointer(checkpointer)
+        try:
+            if checkpointer is not None:
+                await close_checkpointer(checkpointer)
+        finally:
+            if clients is not None:
+                try:
+                    clients[0].close()
+                finally:
+                    await clients[1].aclose()
 
 
 def _apply_callbacks(
@@ -999,65 +1005,17 @@ def _apply_callbacks(
     return config
 
 
-class ModelCallUsage(BaseCallbackHandler):
-    """Record what each chat-model call of one invocation reports.
-
-    LangChain fires these callbacks for every chat-model call in the run,
-    including calls whose response never enters graph state, such as the Deep
-    Agents summarization call. The records live on the handler, so calls that
-    finished before an invocation raised are still reported.
-
-    A call is recorded as unreported when it starts, and its usage replaces that
-    record when it ends. A request the provider rejects with a 4xx status (other
-    than 408) contributes no usage and is dropped. A 5xx response, timeout,
-    cancellation or unfinished call stays unreported and makes the invocation's
-    counts and cost unknown, because the provider may have billed the call
-    without reporting usage.
-    """
-
-    run_inline = True
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._calls: dict[UUID, dict[str, Any]] = {}
-
-    def on_chat_model_start(
-        self, serialized: Any, messages: Any, *, run_id: UUID, **kwargs: Any
-    ) -> None:
-        self._calls[run_id] = {}
-
-    def on_llm_start(
-        self, serialized: Any, prompts: Any, *, run_id: UUID, **kwargs: Any
-    ) -> None:
-        self._calls[run_id] = {}
-
-    def on_llm_end(self, response: LLMResult, *, run_id: UUID, **kwargs: Any) -> None:
-        generations = response.generations[0] if response.generations else []
-        message = getattr(generations[0], "message", None) if generations else None
-        self._calls[run_id] = {} if message is None else _message_to_dict(message)
-
-    def on_llm_error(
-        self, error: BaseException, *, run_id: UUID, **kwargs: Any
-    ) -> None:
-        # Provider SDKs (OpenAI, Anthropic) raise errors carrying the HTTP status
-        # code when the provider answered with an error response. A 4xx other
-        # than 408 (request timeout) means the provider rejected the request.
-        status_code = getattr(error, "status_code", None)
-        if isinstance(status_code, int) and 400 <= status_code < 500:
-            if status_code != 408:
-                self._calls.pop(run_id, None)
-
-    def calls(self) -> list[dict[str, Any]]:
-        return list(self._calls.values())
-
-
 async def invoke_compiled_agent(
     agent: Any,
     user_message: str,
     thread_id: str | None,
     callbacks: list[Any] | None = None,
-) -> tuple[Any, list[dict[str, Any]]]:
-    """Run a compiled agent and return its final state and per-step events.
+) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
+    """Run a compiled agent and return state, events, and current-turn messages.
+
+    On a later runtime invocation the final ``values`` state also replays
+    prior-turn messages. Keep graph-message diagnostics limited to this turn's
+    ``updates`` deltas. Typed accounting observes model callbacks separately.
 
     ``callbacks`` (e.g. the NeMo Relay callback handler) are appended to the
     LangGraph run config; any callbacks already present are preserved rather than
@@ -1072,10 +1030,12 @@ async def invoke_compiled_agent(
     config = config or None
 
     events: list[dict[str, Any]] = []
+    turn_messages: list[Any] = []
     final: Any = None
     # subgraphs=True surfaces subagent (delegated ``task``) steps as 3-tuples whose
-    # namespace identifies the subgraph, so they appear in ``events``; the final
-    # ``values`` state is taken from the main graph only (empty namespace).
+    # namespace identifies the subgraph. Folding their message deltas into this turn
+    # keeps message diagnostics scoped to this turn; the final ``values`` state is
+    # taken from the main graph only (empty namespace).
     stream = (
         agent.astream(inputs, config, stream_mode=["updates", "values"], subgraphs=True)
         if config
@@ -1087,9 +1047,16 @@ async def invoke_compiled_agent(
             if namespace:
                 event["subgraph"] = "/".join(str(part) for part in namespace)
             events.append(event)
+            for node_output in chunk.values():
+                if isinstance(node_output, dict):
+                    new = node_output.get("messages")
+                    if isinstance(new, list):
+                        turn_messages.extend(new)
+                    elif new is not None:
+                        turn_messages.append(new)
         elif mode == "values" and not namespace:
             final = chunk
-    return final, events
+    return final, events, _dedup_messages(_messages_to_dicts(turn_messages))
 
 
 class Observability(NamedTuple):
@@ -1104,8 +1071,9 @@ class TurnOutcome(NamedTuple):
     """
 
     result_state: Any = None
+    accounted_usage: AgentUsage | None = None
     events: list[dict[str, Any]] | None = None
-    model_calls: list[dict[str, Any]] | None = None
+    turn_messages: list[dict[str, Any]] | None = None
     error: str | None = None
     error_code: str | None = None
     telemetry_error: str | None = None
@@ -1222,7 +1190,7 @@ def normalize_output(
     resumed: bool,
     result_state: Any,
     events: list[dict[str, Any]],
-    model_calls: list[dict[str, Any]],
+    turn_messages: list[dict[str, Any]],
     error: str | None,
     telemetry_runtime: dict[str, Any] | None,
     relay_artifacts: list[dict[str, str]] | None,
@@ -1231,9 +1199,9 @@ def normalize_output(
 ) -> dict[str, Any]:
     messages = _extract_messages(result_state)
     response = _final_response(messages)
-    # Usage comes from this invocation's model calls, not from the final state,
-    # which also replays earlier turns and omits internal calls like summarization.
-    usage = _aggregate_usage(model_calls)
+    # Aggregate usage/cost from this turn's messages only; the replayed final state
+    # replays prior-turn messages that must not be re-counted.
+    usage = _aggregate_usage(turn_messages)
 
     output: dict[str, Any] = {
         "harness": HARNESS,
@@ -1281,6 +1249,26 @@ def _messages_to_dicts(raw: Any) -> list[dict[str, Any]]:
     return [item if isinstance(item, dict) else _message_to_dict(item) for item in raw]
 
 
+def _dedup_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop duplicate messages by id, preserving first-seen order.
+
+    With ``subgraphs=True`` the same message can surface in both a subgraph's
+    updates and the parent stream; de-duplicating by id keeps usage aggregation
+    from counting a message twice. Messages without an id are always kept.
+    """
+
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for message in messages:
+        message_id = message.get("id")
+        if isinstance(message_id, str):
+            if message_id in seen:
+                continue
+            seen.add(message_id)
+        unique.append(message)
+    return unique
+
+
 def _message_to_dict(message: Any) -> dict[str, Any]:
     role = (
         getattr(message, "type", None) or getattr(message, "role", None) or "assistant"
@@ -1310,128 +1298,56 @@ def _final_response(messages: list[dict[str, Any]]) -> Any:
     return messages[-1].get("content") if messages else None
 
 
-def _aggregate_usage(calls: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Sum model-call usage; a count is known only when every call reported it.
-
-    One call without a count makes the invocation's sum for that count a
-    partial value, so it stays unknown rather than under-reported. Without a
-    call, because none started or the provider rejected every one, the
-    observed calls spent nothing, so every count and the cost are 0. That 0
-    covers the invocation only when every model call runs through these
-    callbacks; the caller makes usage unknown when an Agent Protocol subagent
-    can run models on a remote server.
-    """
+def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Retain the historical graph-message diagnostic, without certifying scope."""
 
     totals: dict[str, Any] = {}
-    for source, target in (
-        ("input_tokens", "prompt_tokens"),
-        ("output_tokens", "completion_tokens"),
-        ("total_tokens", "total_tokens"),
-    ):
-        values = [_reported_tokens(call, source) for call in calls]
-        if all(value is not None for value in values):
-            totals[target] = sum(values)
-    cached = [_reported_cached_tokens(call) for call in calls]
-    if all(value is not None for value in cached):
-        totals["cached_tokens"] = sum(cached)
-    costs = [_reported_cost(call) for call in calls]
-    if all(cost is not None for cost in costs):
-        totals["cost"] = math.fsum(costs)
+    cost = 0.0
+    has_cost = False
+    for message in messages:
+        usage = message.get("usage") if isinstance(message.get("usage"), dict) else {}
+        for source, target in (
+            ("input_tokens", "prompt_tokens"),
+            ("output_tokens", "completion_tokens"),
+            ("total_tokens", "total_tokens"),
+        ):
+            value = usage.get(source)
+            if (
+                isinstance(value, int)
+                and not isinstance(value, bool)
+                and 0 <= value <= (1 << 64) - 1
+            ):
+                totals[target] = int(totals.get(target, 0)) + value
+        # Keep historical graph-message cost as a source diagnostic. Typed
+        # accounting does not consume this value or infer its pricing basis.
+        candidate = (
+            usage.get("total_cost") or usage.get("cost") or _metadata_cost(message)
+        )
+        if (
+            isinstance(candidate, (int, float))
+            and not isinstance(candidate, bool)
+            and math.isfinite(candidate)
+            and candidate >= 0
+        ):
+            cost += float(candidate)
+            has_cost = True
+    if has_cost:
+        totals["cost"] = cost
     return totals or None
 
 
-# Raw OpenAI Chat Completions usage keys behind each LangChain usage counter.
-_OPENAI_USAGE_KEYS = {
-    "input_tokens": "prompt_tokens",
-    "output_tokens": "completion_tokens",
-    "total_tokens": "total_tokens",
-}
-
-
-def _reported_tokens(call: dict[str, Any], name: str) -> int | None:
-    """Return one call's token count, or ``None`` when the provider omitted it.
-
-    ``ChatOpenAI`` turns an omitted Chat Completions count into 0 and derives a
-    missing or zero total from input plus output. When a response carries
-    OpenAI-shaped raw usage in ``response_metadata.token_usage``, the raw counts
-    are used: an omitted count is unknown, and a derived total counts only when
-    both of its parts were reported. Other responses use ``usage_metadata``.
-    """
-
-    usage = call.get("usage")
-    value = usage.get(name) if isinstance(usage, dict) else None
-    if not _is_token_count(value):
-        return None
-    metadata = call.get("response_metadata")
-    raw = metadata.get("token_usage") if isinstance(metadata, dict) else None
-    if not isinstance(raw, dict):
-        return value
-    reported = raw.get(_OPENAI_USAGE_KEYS[name])
-    if _is_token_count(reported):
-        return reported
-    if name == "total_tokens" and reported is None:
-        parts = (raw.get("prompt_tokens"), raw.get("completion_tokens"))
-        if all(_is_token_count(part) for part in parts):
-            return value
+def _metadata_cost(message: dict[str, Any]) -> float | None:
+    metadata = message.get("response_metadata")
+    if isinstance(metadata, dict):
+        value = metadata.get("cost")
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value >= 0
+        ):
+            return float(value)
     return None
-
-
-def _reported_cached_tokens(call: dict[str, Any]) -> int | None:
-    """Return one call's cache-read input tokens, or ``None`` when not reported.
-
-    OpenAI-shaped raw usage reports them as ``prompt_tokens_details.cached_tokens``;
-    ``ChatOpenAI`` renames that key for priority and flex service tiers, so the raw
-    count is read when present. Other responses use LangChain's
-    ``usage_metadata.input_token_details.cache_read``.
-    """
-
-    metadata = call.get("response_metadata")
-    raw = metadata.get("token_usage") if isinstance(metadata, dict) else None
-    if isinstance(raw, dict):
-        details, key = raw.get("prompt_tokens_details"), "cached_tokens"
-    else:
-        usage = call.get("usage")
-        details = usage.get("input_token_details") if isinstance(usage, dict) else None
-        key = "cache_read"
-    value = details.get(key) if isinstance(details, dict) else None
-    return value if _is_token_count(value) else None
-
-
-def _is_token_count(value: Any) -> bool:
-    return (
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and 0 <= value <= (1 << 64) - 1
-    )
-
-
-def _reported_cost(call: dict[str, Any]) -> float | None:
-    """Return a provider-reported cost for one call, or ``None`` when absent.
-
-    Cost is not part of LangChain's UsageMetadata; some providers report it on the
-    usage or response metadata.
-    """
-
-    usage = call.get("usage") if isinstance(call.get("usage"), dict) else {}
-    metadata = call.get("response_metadata")
-    candidates = (
-        usage.get("total_cost"),
-        usage.get("cost"),
-        metadata.get("cost") if isinstance(metadata, dict) else None,
-    )
-    for value in candidates:
-        if value is not None:
-            return float(value) if _is_cost(value) else None
-    return None
-
-
-def _is_cost(value: Any) -> bool:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-        and value >= 0
-    )
 
 
 def _supported_kwargs(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
