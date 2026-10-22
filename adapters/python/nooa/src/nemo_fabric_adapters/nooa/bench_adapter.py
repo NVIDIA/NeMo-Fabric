@@ -18,7 +18,6 @@ from nemo_fabric_adapter_contract.models import AgentRunError
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
-from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
@@ -26,6 +25,9 @@ from nemo_fabric_adapters.nooa.model_support import build_models
 from nemo_fabric_adapters.nooa.model_support import close_models
 from nemo_fabric_adapters.nooa.telemetry import RelayReport
 from nemo_fabric_adapters.nooa.telemetry import RelayTelemetry
+from nemo_fabric_adapters.nooa.usage import InvocationUsage
+from nemo_fabric_adapters.nooa.usage import owned_work_pending
+from nemo_fabric_adapters.nooa.usage import running_jobs
 
 ADAPTER = "python"
 HARNESS = "nooa-bench"
@@ -127,28 +129,7 @@ def _failure_output(code: str, message: str) -> AgentRunResult:
     )
 
 
-def _usage(tokens: Any) -> AgentUsage | None:
-    if not isinstance(tokens, dict):
-        return None
-    input_tokens = tokens.get("n_input_tokens")
-    output_tokens = tokens.get("n_output_tokens")
-    if (
-        isinstance(input_tokens, bool)
-        or not isinstance(input_tokens, int)
-        or isinstance(output_tokens, bool)
-        or not isinstance(output_tokens, int)
-    ):
-        return None
-    if input_tokens < 0 or output_tokens < 0:
-        return None
-    return AgentUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=input_tokens + output_tokens,
-    )
-
-
-def _success_output(native: dict[str, Any], usage: AgentUsage | None) -> AgentRunResult:
+def _success_output(native: dict[str, Any]) -> AgentRunResult:
     response = native.get("response")
     structured = native.get("result")
     if not isinstance(response, str):
@@ -163,7 +144,6 @@ def _success_output(native: dict[str, Any], usage: AgentUsage | None) -> AgentRu
             "completed": True,
             "result": structured,
         },
-        usage=usage,
     )
 
 
@@ -297,7 +277,10 @@ class BenchRuntime:
                 "OO Agents BenchAgent invocation failed; inspect adapter stderr for details",
             )
 
-        async def invoke_agent() -> AgentRunResult:
+        owner = InvocationUsage()
+        jobs_before = running_jobs(agent)
+
+        async def run_agent() -> AgentRunResult:
             task_input: dict[str, Any] = {
                 "user_message": request.input,
                 "working_dir": str(self._workspace),
@@ -305,7 +288,6 @@ class BenchRuntime:
             if self._instruction is not None:
                 task_input["instructions"] = self._instruction
             try:
-                from nooa.runtime.token_usage import get_task_tokens
                 from nooa.runtime.token_usage import start_task_tokens
 
                 # BenchAgent creates a replacement shell for each task. Close the
@@ -313,7 +295,6 @@ class BenchRuntime:
                 await _close_shell(agent)
                 start_task_tokens()
                 native = await agent._run_evaluation(task_input)
-                usage = _usage(get_task_tokens())
                 if not isinstance(native, dict):
                     raise ValueError("BenchAgent result must be an object")
                 if native.get("success") is not True:
@@ -321,7 +302,7 @@ class BenchRuntime:
                         "nooa_bench_task_failed",
                         "OO Agents BenchAgent reported task failure; inspect adapter stderr for details",
                     )
-                return _success_output(native, usage)
+                return _success_output(native)
             except asyncio.CancelledError:
                 raise
             except Exception as error:
@@ -333,6 +314,15 @@ class BenchRuntime:
                     "nooa_bench_invoke_failed",
                     "OO Agents BenchAgent invocation failed; inspect adapter stderr for details",
                 )
+
+        async def invoke_agent() -> AgentRunResult:
+            with owner.scope():
+                result = await run_agent()
+            result.usage = owner.finish(
+                unfinished=owned_work_pending(agent, owner, jobs_before),
+                no_calls_verified=True,
+            )
+            return result
 
         try:
             relay_invocation = await self._telemetry.invoke(

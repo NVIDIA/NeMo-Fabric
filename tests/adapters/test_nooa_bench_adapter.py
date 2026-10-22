@@ -264,11 +264,11 @@ async def test_bench_runtime_maps_task_result_usage_and_cleanup(
         },
     }
     assert result.usage is not None
-    assert result.usage.to_mapping() == {
-        "input_tokens": 12,
-        "output_tokens": 4,
-        "total_tokens": 16,
-    }
+    # This target makes no model call. The unrelated task accumulator is not
+    # evidence of model usage; the managed-client no-call boundary reports 0.
+    assert result.usage.input_tokens == 0
+    assert result.usage.output_tokens == 0
+    assert result.usage.total_tokens == 0
     bench_dependencies["relay_telemetry"].assert_called_once_with(
         agent_name="bench-test",
         base_dir=tmp_path,
@@ -402,7 +402,9 @@ def test_bench_persistent_host_runs_start_invoke_stop(tmp_path: Path):
     ]
     environment = os.environ.copy()
     environment["OPENAI_API_KEY"] = "fixture-key"
-    environment["PYTHONPATH"] = str(fixture_source)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(fixture_source), environment.get("PYTHONPATH", "")]
+    )
 
     completed = subprocess.run(
         [sys.executable, "-m", "nemo_fabric_adapters.nooa.bench_adapter"],
@@ -423,9 +425,8 @@ def test_bench_persistent_host_runs_start_invoke_stop(tmp_path: Path):
     ]
     invocation = responses[1]["outcome"]["output"]
     assert invocation["output"]["response"] == "test -f bench-agent-result.txt"
-    assert invocation["usage"] == {
-        "input_tokens": 12,
-        "output_tokens": 4,
-        "total_tokens": 16,
-    }
+    assert invocation["usage"]["input_tokens"] == 12
+    assert invocation["usage"]["cached_input_tokens"] == 0
+    assert invocation["usage"]["output_tokens"] == 4
+    assert invocation["usage"]["total_tokens"] == 16
     assert (workspace / "bench-agent-result.txt").is_file()

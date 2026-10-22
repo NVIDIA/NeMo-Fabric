@@ -32,6 +32,18 @@ artifact root, workflow settings, and exact skill paths.
 The descriptor accepts normalized models, model endpoint and temperature fields,
 `instructions.system`, `skills`, and whole MCP server configurations.
 
+## Model usage
+
+Calls through `context.models` are attributed separately to their initiating
+invocation, including calls from copied task contexts. The adapter detects
+owned pending history summaries and queue jobs before their first model call.
+It returns their available observations with an unfinished-work gap, without
+changing scheduling. Existing jobs do not contaminate a later invocation.
+
+A custom target that makes no managed client call has unknown usage because its
+factory can construct other clients. See [model usage](../README.md#model-usage)
+for source coverage, omissions, retries and cost behavior.
+
 ## Terminal Behavior
 
 `WAIT` pauses the dispatcher until another NOOA channel wakes within the same
@@ -42,34 +54,6 @@ end the invocation. The latter two return a successful adapter call with
 The normalized `messages` field contains ordered `{"content": "..."}` records.
 The `response` field contains the final message or, when the agent emits no
 `AgentMessage`, the terminal `RespondResult.explanation`.
-
-## Token Usage
-
-The adapter reports token usage for each invocation, including a failed one.
-It sums the usage that the model clients it built return for the calls that
-the invocation made, including calls from tasks the invocation started, such
-as NOOA's history summarizer.
-
-- When the invocation's last turn starts a history summary, the adapter waits
-  for that summary call before returning, for up to 120 seconds or until the
-  invocation's deadline, whichever comes first. The wait adds the time of one
-  summary call, only to those invocations. NOOA applies completed summaries at
-  the start of the next turn.
-- Usage is unknown when, at return, a summary, a model call or a queue job
-  that the invocation started is still running. The adapter does not wait for
-  queue jobs and does not cancel any of this work.
-- A call that returns after its invocation has returned, such as one from a
-  background job that is still running, is not reported by that invocation or
-  by any later one.
-- A call that raises is not counted. NOOA retries rate limits, server errors
-  and timeouts inside one call, and only the attempt that returns is counted.
-- Calls through a model client that the target builds itself are not counted.
-
-With either NOOA client type, `input_tokens` includes `cached_input_tokens`.
-With the default completion client, LiteLLM stores an omitted input, output or
-total count as 0, so the adapter reports a 0 in those counts as unknown. A
-reported cached-token count of 0 stays 0. With the Responses API client, a
-reported 0 stays 0. A count that any call omits stays unknown.
 
 ## Register a Target
 

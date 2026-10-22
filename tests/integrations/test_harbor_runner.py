@@ -267,7 +267,9 @@ def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
     assert adapter.selected_model(config) == "gpt-5.4"
     assert adapter.sandbox(config) == adapter.Sandbox.workspace_write
     assert adapter._reasoning_effort(config) == adapter.ReasoningEffort.high
-    assert adapter.thread_config(config, context, relay=None) == {}
+    assert adapter.thread_config(config, context, relay=None) == {
+        "mcp_optional_startup_grace_ms": 0
+    }
     assert adapter.resolve_cwd(context, payload["base_dir"]) == tmp_path
 
 
@@ -707,10 +709,17 @@ def test_harbor_lifecycle_populates_context_after_run(tmp_path: Path):
     )
 
     assert context.metadata["fabric"]["status"] == "succeeded"
-    assert context.n_input_tokens == 12
-    assert context.n_cache_tokens == 3
-    assert context.n_output_tokens == 4
-    assert context.cost_usd == 0.25
+    atif_metrics = context.metadata["fabric"]["atif_final_metrics"]
+    assert atif_metrics["source"] == "atif"
+    assert atif_metrics["coverage"] == "unverified"
+    assert atif_metrics["final_metrics"]["total_prompt_tokens"] == 12
+    assert atif_metrics["final_metrics"]["total_cached_tokens"] == 3
+    assert atif_metrics["final_metrics"]["total_completion_tokens"] == 4
+    assert atif_metrics["final_metrics"]["total_cost_usd"] == 0.25
+    assert context.n_input_tokens is None
+    assert context.n_cache_tokens is None
+    assert context.n_output_tokens is None
+    assert context.cost_usd is None
 
 
 def test_harbor_023_options_schema_and_preflight():

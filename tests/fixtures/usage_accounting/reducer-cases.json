@@ -1,0 +1,477 @@
+[
+  {
+    "name": "complete_calls",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 100,
+          "cached_input_tokens": 10,
+          "input_tokens_include_cache": true,
+          "output_tokens": 2,
+          "output_tokens_include_reasoning": true,
+          "total_tokens": 102,
+          "peak_request_input_tokens": 100
+        },
+        "is_model_call": true
+      },
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 200,
+          "cached_input_tokens": 20,
+          "input_tokens_include_cache": true,
+          "output_tokens": 3,
+          "output_tokens_include_reasoning": true,
+          "total_tokens": 203,
+          "peak_request_input_tokens": 200
+        },
+        "is_model_call": true
+      }
+    ],
+    "expected": {
+      "input_tokens": 300,
+      "cached_input_tokens": 30,
+      "output_tokens": 5,
+      "total_tokens": 305,
+      "peak_request_input_tokens": 200,
+      "observed_input": 300,
+      "observed_output": 5,
+      "exhaustive": true
+    }
+  },
+  {
+    "name": "partial_output_independent_total",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 100,
+          "cached_input_tokens": 10,
+          "input_tokens_include_cache": true,
+          "output_tokens": 2,
+          "output_tokens_include_reasoning": true,
+          "total_tokens": 102,
+          "peak_request_input_tokens": 100
+        },
+        "is_model_call": true
+      },
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 200,
+          "cached_input_tokens": 20,
+          "input_tokens_include_cache": true,
+          "total_tokens": 203,
+          "peak_request_input_tokens": 200
+        },
+        "is_model_call": true
+      }
+    ],
+    "expected": {
+      "input_tokens": 300,
+      "cached_input_tokens": 30,
+      "output_tokens": null,
+      "total_tokens": 305,
+      "observed_input": 300,
+      "observed_output": 2,
+      "exhaustive": true
+    }
+  },
+  {
+    "name": "explicit_zero",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 0,
+          "cached_input_tokens": 0,
+          "input_tokens_include_cache": true,
+          "output_tokens": 0,
+          "output_tokens_include_reasoning": true,
+          "total_tokens": 0,
+          "peak_request_input_tokens": 0
+        },
+        "is_model_call": true
+      }
+    ],
+    "expected": {
+      "input_tokens": 0,
+      "cached_input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0,
+      "observed_input": 0,
+      "observed_output": 0,
+      "exhaustive": true
+    }
+  },
+  {
+    "name": "missing_attempt",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 100,
+          "cached_input_tokens": 10,
+          "input_tokens_include_cache": true,
+          "output_tokens": 2,
+          "output_tokens_include_reasoning": true,
+          "total_tokens": 102,
+          "peak_request_input_tokens": 100
+        },
+        "gap": "missing_usage",
+        "is_model_call": true
+      }
+    ],
+    "expected": {
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "observed_input": 100,
+      "observed_output": 2,
+      "exhaustive": false
+    }
+  },
+  {
+    "name": "unfinished_work",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 100,
+          "cached_input_tokens": 10,
+          "input_tokens_include_cache": true,
+          "output_tokens": 2,
+          "output_tokens_include_reasoning": true,
+          "total_tokens": 102,
+          "peak_request_input_tokens": 100
+        }
+      },
+      {
+        "reported": {},
+        "gap": "unfinished_work"
+      }
+    ],
+    "expected": {
+      "input_tokens": null,
+      "output_tokens": null,
+      "observed_input": 100,
+      "observed_output": 2,
+      "exhaustive": false
+    }
+  },
+  {
+    "name": "mixed_input_conventions",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 100,
+          "cached_input_tokens": 10,
+          "input_tokens_include_cache": true,
+          "output_tokens": 2,
+          "output_tokens_include_reasoning": true,
+          "total_tokens": 102,
+          "peak_request_input_tokens": 100
+        }
+      },
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 100,
+          "cached_input_tokens": 10,
+          "input_tokens_include_cache": false,
+          "output_tokens": 2,
+          "output_tokens_include_reasoning": true,
+          "total_tokens": 102,
+          "peak_request_input_tokens": 100
+        }
+      }
+    ],
+    "expected": {
+      "input_tokens": null,
+      "cached_input_tokens": 20,
+      "output_tokens": 4,
+      "total_tokens": 204,
+      "observed_input": null,
+      "observed_output": 4,
+      "exhaustive": true
+    }
+  },
+  {
+    "name": "independent_cache",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "cached_input_tokens": 7,
+          "output_tokens": 2,
+          "output_tokens_include_reasoning": true
+        }
+      }
+    ],
+    "expected": {
+      "input_tokens": null,
+      "cached_input_tokens": 7,
+      "output_tokens": 2,
+      "total_tokens": null,
+      "observed_input": null,
+      "observed_output": 2,
+      "exhaustive": true
+    }
+  },
+  {
+    "name": "empty_coverage",
+    "records": [],
+    "expected": {
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "observed_input": null,
+      "observed_output": null,
+      "exhaustive": false
+    }
+  },
+  {
+    "name": "reported_cost",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "cost_usd": 1.25
+        }
+      },
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "cost_usd": 2.5
+        }
+      }
+    ],
+    "expected": {
+      "input_tokens": null,
+      "cost_usd": 3.75,
+      "observed_input": null,
+      "observed_output": null,
+      "exhaustive": true
+    }
+  },
+  {
+    "name": "mixed_actual_call_conventions",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 100,
+          "cached_input_tokens": 10,
+          "input_tokens_include_cache": true,
+          "output_tokens": 2,
+          "output_tokens_include_reasoning": true,
+          "total_tokens": 102,
+          "peak_request_input_tokens": 100,
+          "cache_write_input_tokens": 0
+        },
+        "is_model_call": true
+      },
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "input_tokens": 100,
+          "cached_input_tokens": 10,
+          "input_tokens_include_cache": false,
+          "output_tokens": 2,
+          "output_tokens_include_reasoning": true,
+          "total_tokens": 102,
+          "peak_request_input_tokens": 110,
+          "cache_write_input_tokens": 0
+        },
+        "is_model_call": true
+      }
+    ],
+    "expected": {
+      "input_tokens": null,
+      "cached_input_tokens": 20,
+      "output_tokens": 4,
+      "total_tokens": 204,
+      "observed_input": null,
+      "observed_output": 4,
+      "exhaustive": true
+    }
+  },
+  {
+    "name": "one_raw_unknown_convention",
+    "records": [
+      {
+        "reported": {
+          "input_tokens": 40,
+          "output_tokens": 8
+        },
+        "gap": "scope_unverified"
+      }
+    ],
+    "expected": {
+      "input_tokens": null,
+      "output_tokens": null,
+      "observed_input": 40,
+      "observed_output": 8,
+      "exhaustive": false
+    }
+  },
+  {
+    "name": "scoped_observation_does_not_label_complete_input",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "is_model_call": true,
+        "gap": "scope_unverified",
+        "reported": {
+          "input_tokens": 100,
+          "input_tokens_include_cache": true,
+          "output_tokens": 2,
+          "output_tokens_include_reasoning": true
+        }
+      }
+    ],
+    "expected": {
+      "input_tokens": null,
+      "input_tokens_include_cache": null,
+      "output_tokens": null,
+      "observed_input": 100,
+      "observed_output": 2,
+      "exhaustive": false
+    }
+  },
+  {
+    "name": "dimension_gap_keeps_independent_counts",
+    "records": [
+      {
+        "reported": {
+          "input_tokens": 100,
+          "cached_input_tokens": 20,
+          "cache_write_input_tokens": 0,
+          "input_tokens_include_cache": true,
+          "output_tokens": 5,
+          "output_tokens_include_reasoning": true
+        },
+        "model": "model",
+        "provider": "openai",
+        "gaps": [
+          {
+            "dimensions": [
+              "cached_input_tokens"
+            ],
+            "reason": "scope_unverified"
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "input_tokens": 100,
+      "cached_input_tokens": null,
+      "output_tokens": 5,
+      "observed_input": 100,
+      "exhaustive": true
+    }
+  },
+  {
+    "name": "actual_call_with_scoped_cache_gap",
+    "records": [
+      {
+        "reported": {
+          "input_tokens": 100,
+          "cached_input_tokens": 20,
+          "cache_write_input_tokens": 0,
+          "input_tokens_include_cache": true,
+          "output_tokens": 5,
+          "output_tokens_include_reasoning": true,
+          "peak_request_input_tokens": 100
+        },
+        "model": "model",
+        "provider": "openai",
+        "tokens_aligned": true,
+        "is_model_call": true,
+        "gaps": [
+          {
+            "dimensions": [
+              "cached_input_tokens"
+            ],
+            "reason": "scope_unverified"
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "input_tokens": 100,
+      "cached_input_tokens": null,
+      "output_tokens": 5,
+      "observed_input": 100,
+      "exhaustive": true
+    }
+  },
+  {
+    "name": "reported_cost_keeps_fractional_sum_precision",
+    "records": [
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "cost_usd": 0.1
+        }
+      },
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "cost_usd": 0.2000000005
+        }
+      },
+      {
+        "model": "fixture",
+        "provider": "fixture",
+        "tokens_aligned": true,
+        "reported": {
+          "cost_usd": 0.1
+        }
+      }
+    ],
+    "expected": {
+      "input_tokens": null,
+      "cost_usd": 0.4000000005,
+      "observed_input": null,
+      "observed_output": null,
+      "exhaustive": true
+    }
+  }
+]
