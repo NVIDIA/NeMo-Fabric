@@ -1,0 +1,23 @@
+---
+title: "Module resource_snapshot"
+sidebar-title: "resource_snapshot"
+slug: "/reference/api/rust-library-reference/nemo-fabric-core/resource_snapshot"
+description: "Resource snapshots of a runtime's local adapter host and its descendants."
+position: 148
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+Resource snapshots of a runtime's local adapter host and its descendants.
+
+A snapshot reads the process tree rooted at the adapter host process that NeMo Fabric started for a runtime, each parent before its children. CPU time adds every process's own CPU time and the CPU time of the children it has already waited for. An exited child that is not yet waited for counts through its own CPU time, so work done by finished descendants still counts. A child reaped between the read of its parent and its own read is missed by that one snapshot and is never counted twice. CPU time can drop between snapshots when a descendant is reparented out of the tree.
+
+Linux reads `/proc/<pid>/task/<tid>/children` and `/proc/<pid>/stat`. On a kernel without those children files, it reads every process's parent ID once per snapshot to find the tree. macOS reads `proc_listchildpids` and `proc_pid_rusage`. A snapshot exposes only its own fields: never command lines, environment variables, open files, or processes outside the tree.
+
+A live process in the tree that cannot be read, or a process table that the Linux fallback cannot read in full, makes the snapshot unavailable instead of leaving the process out. On Linux with `/proc` mounted `hidepid=invisible` or `hidepid=ptraceable`, a descendant that `/proc` hides, such as one running as another user, makes the snapshot unavailable, and the fallback for a kernel without children files is always unavailable.
+
+## Structs
+
+- [RuntimeResourceSnapshot](struct-runtimeresourcesnapshot.mdx): Timestamped resource usage of one runtime's local adapter host process tree.

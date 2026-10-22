@@ -1418,6 +1418,770 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `RuntimeResourceSnapshot`
+
+Timestamped resource usage of one runtime's local adapter host process tree.
+
+Memory, process count, and CPU time cover the adapter host process and its live descendants, not a shared service process. Values that cannot be read raise an error instead of reading as zero.
+
+
+
+**Attributes:**
+
+ - <b>`runtime_id`</b>:  Runtime this snapshot describes.
+ - <b>`started_at`</b>:  When NeMo Fabric started the adapter host, as RFC 3339 UTC.
+ - <b>`observed_at`</b>:  When NeMo Fabric read these values, as RFC 3339 UTC.
+ - <b>`resident_memory_bytes`</b>:  Sum of the live processes' resident set sizes.  Pages shared between processes count once per process.
+ - <b>`process_count`</b>:  Live processes in the tree, including the adapter host.
+ - <b>`cpu_time_seconds`</b>:  CPU time used since the adapter host started,  including exited descendants. It can drop when a descendant  leaves the tree.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `runtime_id` | `str` |
+| `started_at` | `str` |
+| `observed_at` | `str` |
+| `resident_memory_bytes` | `int` |
+| `process_count` | `int` |
+| `cpu_time_seconds` | `float` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `ResourceObservation`
+
+Adapter host process-tree reading, or an explicit collection failure.
+
+
+
+**Attributes:**
+
+ - <b>`status`</b>:  ``available``, ``unavailable``, ``unsupported``, or ``not_collected``.
+ - <b>`snapshot`</b>:  Present only when available; a ``RuntimeResourceSnapshot``.
+ - <b>`reason`</b>:  Present only when unavailable or unsupported.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `status` | `str` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+---
+
+### <kbd>property</kbd> reason
+
+Return the collection failure reason, otherwise None.
+
+---
+
+### <kbd>property</kbd> snapshot
+
+Return the reading when available, otherwise None.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `Measurement`
+
+Measured numeric value, an unlimited limit, or explicit missing evidence.
+
+
+
+**Attributes:**
+
+ - <b>`status`</b>:  available, unlimited, unavailable, unsupported, or not_collected.
+ - <b>`value`</b>:  Numeric reading when available, otherwise None.
+ - <b>`reason`</b>:  Collection failure/capability reason, otherwise None.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `status` | `str` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+---
+
+### <kbd>property</kbd> reason
+
+Return the reason for missing evidence, otherwise None.
+
+---
+
+### <kbd>property</kbd> value
+
+Return an available reading, otherwise None.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `CgroupSnapshot`
+
+Native adapter-host cgroup measurements, separate from process RSS.
+
+Counters cover this cgroup and its descendants, potentially including other workloads. Limits are visible ancestor bounds; hidden ancestors and actual exclusive capacity are unknown. memory_peak_bytes covers cgroup lifetime or its last external reset, never this invocation's peak.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `source` | `str` |
+| `scope` | `str` |
+| `target` | `str` |
+| `observed_at` | `str` |
+| `visible_cpu_limit_cores` | `Measurement` |
+| `visible_memory_limit_bytes` | `Measurement` |
+| `memory_current_bytes` | `Measurement` |
+| `memory_peak_bytes` | `Measurement` |
+| `swap_current_bytes` | `Measurement` |
+| `cpu_usage_microseconds` | `Measurement` |
+| `cpu_throttled_microseconds` | `Measurement` |
+| `oom_kills` | `Measurement` |
+| `pressure_stall_microseconds` | `Mapping[str, Measurement]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `CgroupObservation`
+
+Native cgroup snapshot or explicit unavailable/unsupported reason.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `status` | `str` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+---
+
+### <kbd>property</kbd> reason
+
+Return the missing-evidence reason, otherwise None.
+
+---
+
+### <kbd>property</kbd> snapshot
+
+Return the cgroup reading, otherwise None.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `CgroupStats`
+
+Cgroup endpoint observations and counter deltas over an invocation.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `before` | `CgroupObservation` |
+| `after` | `CgroupObservation` |
+| `cpu_usage_microseconds` | `Measurement` |
+| `cpu_throttled_microseconds` | `Measurement` |
+| `oom_kills` | `Measurement` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `GaugeSummary`
+
+Sampled gauge extrema, hold-last-value mean, and covered time.
+
+Sampled peak is not true high-water. Means exclude missing readings and gaps longer than twice the requested cadence. covered_fraction discloses how much of the invocation contributes to the mean.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `unit` | `str` |
+| `final_value` | `int \| None` |
+| `min` | `int \| None` |
+| `sampled_peak` | `int \| None` |
+| `time_weighted_mean` | `float \| None` |
+| `valid_samples` | `int` |
+| `covered_seconds` | `float` |
+| `covered_fraction` | `float` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `SampleSummary`
+
+Retained native series, reductions, and collection-quality diagnostics.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `target_interval_ms` | `int` |
+| `max_samples` | `int` |
+| `sample_count` | `int` |
+| `dropped_samples` | `int` |
+| `largest_gap_seconds` | `float` |
+| `collection_seconds` | `float` |
+| `truncated` | `bool` |
+| `diagnostics` | `Sequence[str]` |
+| `samples` | `ArtifactRef \| None` |
+| `cgroup_target_continuous` | `bool` |
+| `resident_memory_bytes` | `GaugeSummary \| None` |
+| `process_count` | `GaugeSummary \| None` |
+| `cpu_time_seconds_estimate` | `Measurement` |
+| `cpu_percent_one_core` | `Measurement` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `InvocationSystemStats`
+
+System measurements for one invocation in its executing runner.
+
+Observations cover the adapter host process tree, excluding the orchestrator and remote services. Endpoints are neither peaks nor time averages.
+
+
+
+**Attributes:**
+
+ - <b>`elapsed_seconds`</b>:  Monotonic adapter exchange duration, excluding startup,  endpoint collection, artifact preparation, and teardown.
+ - <b>`before`</b>:  Observation immediately before the adapter exchange.
+ - <b>`after`</b>:  Observation immediately after the exchange, under the same lock.
+ - <b>`cgroup`</b>:  Native adapter-host cgroup readings and counter deltas, or None.
+ - <b>`sampled`</b>:  Optional retained series, gauge reductions, and collection quality.
+ - <b>`cpu_time_seconds_estimate`</b>:  Nonnegative CPU counter difference, or None  if an endpoint is missing, identities differ, or the counter fell.  Process reaping and reparenting can make this underestimate work.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `cgroup` | `CgroupStats \| None` |
+| `sampled` | `SampleSummary \| None` |
+| `collected_groups` | `Sequence[str]` |
+| `elapsed_seconds` | `float` |
+| `before` | `ResourceObservation` |
+| `after` | `ResourceObservation` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> cpu_time_seconds_estimate
+
+Return the CPU counter difference estimate, or None when unknown.
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
 ## <kbd>class</kbd> `RunResult`
 
 Normalized terminal result from one NeMo Fabric invocation.
@@ -1439,6 +2203,8 @@ The model is both attribute-accessible and mapping-compatible. A harness failure
  - <b>`output`</b>:  Object-shaped adapter output as ``RunOutput``; non-object values  are preserved as-is.
  - <b>`error`</b>:  Structured failure, or ``None`` on success.
  - <b>`usage`</b>:  Normalized invocation usage, or ``None`` when unavailable.
+ - <b>`resource_snapshot`</b>:  Runtime resource snapshot read once after the  adapter returned this result, or ``None`` when the runtime's  resources could not be observed.
+ - <b>`system_stats`</b>:  Invocation duration and endpoint observations, or None  for older results or execution backends without collection.
  - <b>`artifacts`</b>:  Normalized artifact manifest.
  - <b>`telemetry`</b>:  Ordered telemetry references.
  - <b>`events`</b>:  Ordered lifecycle and invocation events.
@@ -1464,6 +2230,8 @@ The mapping exposes the following typed fields:
 | `output` | `RunOutput \| JSONValue` |
 | `error` | `ErrorInfo \| None` |
 | `usage` | `RunUsage \| None` |
+| `system_stats` | `InvocationSystemStats \| None` |
+| `resource_snapshot` | `RuntimeResourceSnapshot \| None` |
 | `artifacts` | `ArtifactManifest` |
 | `telemetry` | `Sequence[TelemetryRef]` |
 | `events` | `Sequence[FabricEvent]` |

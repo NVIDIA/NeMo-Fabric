@@ -32,6 +32,17 @@ async def test_native_sdk(hermes_shim_agent_dir: Path):
     await smoke(Fabric(), hermes_shim_agent_dir)
 
 
+async def test_native_one_shot_exposes_core_and_plan_facts(hermes_shim_agent_dir):
+    result = await Fabric().run(
+        hermes_shim_config(), base_dir=hermes_shim_agent_dir, input="hello native"
+    )
+    assert result.status == "succeeded"
+    assert result.what_ran["fabric"]["core_version"]["value"] == native.version()
+    assert result.what_ran["adapter"]["id"] == "test.fabric.hermes_shim"
+    assert result.what_ran["harness"]["version"]["reason"] == "key_not_declared"
+    assert result.what_ran["environment"] == {"provider": "local"}
+
+
 @pytest.mark.parametrize("new_value", ["rotated-secret", None])
 async def test_named_environment_changes_require_runtime_restart(
     hermes_shim_agent_dir, new_value
@@ -418,10 +429,6 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert result["adapter_kind"] == "python"
     assert result["metadata"]["adapter_runner"] == "persistent_local_host"
     assert result["output"]["received"] == "hello native"
-    assert result.what_ran["fabric"]["core_version"]["value"] == native.version()
-    assert result.what_ran["adapter"]["id"] == "test.fabric.hermes_shim"
-    assert result.what_ran["harness"]["version"]["reason"] == "key_not_declared"
-    assert result.what_ran["environment"] == {"provider": "local"}
     assert result.output["native_mcp_servers"] == ["github"]
     assert any(artifact.name == "stdout" for artifact in result.artifacts.artifacts)
     assert first["status"] == "succeeded"

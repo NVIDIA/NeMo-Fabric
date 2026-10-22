@@ -1395,7 +1395,10 @@ mod tests {
                 ("api_key_env", "MODEL_API_KEY"),
             ] {
                 if model_fields.get(field).is_some() {
-                    config["models"]["default"][field] = json!(value);
+                    config["models"]["default"][field] = model_fields[field]
+                        .get("const")
+                        .cloned()
+                        .unwrap_or_else(|| json!(value));
                 }
             }
             let accepts_mcp = accepts("mcp");

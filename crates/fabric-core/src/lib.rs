@@ -11,9 +11,12 @@ pub mod doctor;
 mod endpoint;
 mod environment;
 pub mod error;
+pub mod resource_snapshot;
 pub mod runtime;
 pub mod schema;
+pub mod system_stats;
 mod task_command;
+mod time;
 pub mod what_ran;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
@@ -42,6 +45,7 @@ pub use config::{
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};
+pub use resource_snapshot::RuntimeResourceSnapshot;
 pub use runtime::{
     AdapterInvocation, ArtifactManifest, ArtifactRef, EnvironmentHandle, EnvironmentReference,
     ErrorInfo, ErrorStage, FabricEvent, InvocationHandle, OpenAiChatCompletionChunk,
@@ -51,11 +55,16 @@ pub use runtime::{
     RunRequest, RunResult, RunStatus, RunUsage, RuntimeContext, RuntimeHandle,
     RuntimeTelemetryContext, ServiceHandle, ServiceOwnership, ServiceReference, TelemetryRef,
     attach_environment, attach_service, invoke_openai_stream, invoke_runtime, prepare_environment,
-    prepare_service, release_environment, release_service, run_plan, start_runtime,
-    start_runtime_in, start_runtime_with_service, stop_runtime,
+    prepare_service, release_environment, release_service, run_plan, runtime_resource_snapshot,
+    start_runtime, start_runtime_in, start_runtime_with_service, stop_runtime,
 };
 pub use schema::{
     SchemaName, generate_all_schemas, generate_schema, generate_schema_json, write_schema_snapshots,
+};
+pub use system_stats::{
+    CgroupObservation, CgroupSnapshot, CgroupStats, GaugeSummary, InvocationSystemStats,
+    Measurement, ResourceObservation, SampleSummary, SystemStatsConfig, SystemStatsMetricGroup,
+    SystemStatsSamplingConfig,
 };
 
 /// Returns the crate version compiled into this build.

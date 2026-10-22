@@ -66,6 +66,9 @@ pub struct FabricConfig {
     /// Telemetry configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<TelemetryConfig>,
+    /// Invocation stats: omitted means all endpoint groups, explicit null disables.
+    #[serde(default = "crate::system_stats::default_system_stats")]
+    pub system_stats: Option<crate::system_stats::SystemStatsConfig>,
     /// First-class NeMo Relay integration configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay: Option<RelayConfig>,
@@ -1866,6 +1869,9 @@ pub fn load_adapter_target_descriptor(path: impl AsRef<Path>) -> Result<AdapterT
 }
 
 pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
+    if let Some(stats) = &config.system_stats {
+        stats.validate()?;
+    }
     if config.harness.is_none() && config.workflow.is_none() {
         return invalid_config(
             "harness",

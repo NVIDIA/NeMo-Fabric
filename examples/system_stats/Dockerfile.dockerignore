@@ -1,0 +1,11 @@
+.git
+**/.venv
+**/node_modules
+**/target
+**/__pycache__
+**/.nemo-fabric-scaffold-test-*
+**/*.so
+**/*.dylib
+outputs
+research
+avo-fabric-poc

@@ -20,7 +20,7 @@ The following table shows which components each installation provides:
 | `pip install "nemo-fabric-adapters-codex[harness]"` | No | Yes | Yes | Yes |
 | `pip install nemo-fabric-adapters-codex` | No | Yes | No | No |
 
-For an environment-managed SDK, use `openai-codex==0.144.4`. For split runtime
+For an environment-managed SDK, use `openai-codex==0.154.0`. For split runtime
 and adapter environments, configure `ADAPTER_PYTHON` and use matching NeMo
 Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
@@ -154,7 +154,9 @@ Codex adapter does not provide a separate `relay` extra; its `harness` and
 
 Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the
 installed `nemo-relay` CLI as a supervised sidecar; do not start the gateway
-separately.
+separately. Gateway readiness has a 30-second budget covering configuration
+validation and required worker initialization. Startup fails on early process exit
+or an expired budget, and the gateway log is retained for diagnosis.
 NeMo Fabric routes the selected Responses-compatible provider through the
 gateway and passes its explicit `base_url` to Relay as the upstream endpoint.
 
