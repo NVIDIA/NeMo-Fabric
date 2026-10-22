@@ -3,8 +3,73 @@
 
 import json
 import sys
+from pathlib import Path
+
 import pytest
-from nemo_fabric import FabricConfig
+from nemo_fabric import Fabric, FabricConfig
+
+
+@pytest.fixture(name="accounting_runtime")
+async def accounting_runtime_fixture(tmp_path):
+    """Normalize controlled adapter evidence through the native public runtime."""
+    root = Path(__file__).resolve().parents[2]
+    accounting_schema = json.loads(
+        (root / "schemas/extensions/usage-accounting.schema.json").read_text()
+    )
+    definitions = accounting_schema.pop("$defs")
+    descriptor = {
+        "contract_version": "fabric.adapter/v1alpha2",
+        "adapter_id": "test.accounting",
+        "adapter_kind": "process",
+        "runner": {"command": sys.executable, "script": "adapter.py"},
+        "settings_schema": {"type": "object", "additionalProperties": False},
+        "extension_schemas": {
+            "usage": {
+                "type": "object",
+                "properties": {
+                    "nemo_fabric.usage_accounting.v1": accounting_schema,
+                    "nemo_fabric.detailed_token_usage.v1": {
+                        "$ref": "#/$defs/ReportedUsage"
+                    },
+                },
+                "additionalProperties": False,
+                "$defs": definitions,
+            }
+        },
+    }
+    (tmp_path / "accounting.fabric-adapter.json").write_text(json.dumps(descriptor))
+    (tmp_path / "adapter.py").write_text("""
+import json
+import sys
+
+for line in sys.stdin:
+    message = json.loads(line)
+    operation = message["operation"]
+    output = None
+    if operation == "invoke":
+        output = {
+            "status": "succeeded",
+            "output": None,
+            "usage": message["payload"]["request"]["input"],
+        }
+    print(json.dumps({
+        "operation": operation,
+        "outcome": {"status": "succeeded", "output": output},
+    }), flush=True)
+    if operation == "stop":
+        break
+""")
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "accounting"},
+            "harness": {"adapter_id": "test.accounting"},
+            "discovery": {"local_paths": ["accounting.fabric-adapter.json"]},
+            "environment": {"provider": "local", "workspace": "."},
+            "runtime": {"artifacts": "./artifacts"},
+        }
+    )
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        yield runtime
 
 
 @pytest.fixture(name="blocking_adapter_config")

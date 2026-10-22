@@ -44,28 +44,54 @@
         "description": "Whether the remote service accepts NeMo Fabric request correlation metadata and publishes ATOF to the configured Relay stream sink."
       }
     },
-    "required": ["base_url"],
+    "required": [
+      "base_url"
+    ],
     "additionalProperties": false
   },
   "model_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "provider": {"type": "string", "minLength": 1},
-      "model": {"type": "string", "minLength": 1},
-      "api_key_env": {"type": "string", "minLength": 1},
-      "temperature": {"type": "number"},
-      "top_p": {"type": "number", "minimum": 0, "maximum": 1},
-      "max_tokens": {"type": "integer", "minimum": 1},
+      "provider": {
+        "type": "string",
+        "minLength": 1
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "api_key_env": {
+        "type": "string",
+        "minLength": 1
+      },
+      "temperature": {
+        "type": "number"
+      },
+      "top_p": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "max_tokens": {
+        "type": "integer",
+        "minimum": 1
+      },
       "settings": {
         "type": "object",
         "properties": {
-          "max_tokens": {"type": "integer", "minimum": 1}
+          "max_tokens": {
+            "type": "integer",
+            "minimum": 1
+          }
         },
         "additionalProperties": false
       }
     },
-    "required": ["provider", "model"],
+    "required": [
+      "provider",
+      "model"
+    ],
     "additionalProperties": false
   },
   "requirements": {},
@@ -74,7 +100,9 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "nemo_fabric.versions.v1": {"type": "object"}
+        "nemo_fabric.versions.v1": {
+          "type": "object"
+        }
       },
       "additionalProperties": false
     }
@@ -87,7 +115,9 @@
       "models.max_tokens",
       "instructions.system"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": [
+      "replace"
+    ]
   },
   "capabilities": {
     "service": false,
@@ -98,8 +128,12 @@
   "telemetry": {
     "providers": {
       "relay": {
-        "outputs": ["atof"],
-        "integration_modes": ["remote_service"]
+        "outputs": [
+          "atof"
+        ],
+        "integration_modes": [
+          "remote_service"
+        ]
       }
     }
   }

@@ -36,6 +36,10 @@ from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.deepagents.usage import AccountingCache
+from nemo_fabric_adapters.deepagents.usage import ModelCallUsage
+from nemo_fabric_adapters.deepagents.usage import model_metadata
+from nemo_fabric_adapters.deepagents.usage import observed_http_clients
 from nemo_fabric_adapters.common import provenance
 import nemo_fabric_adapters.common.utils as common_utils
 
@@ -193,7 +197,12 @@ def selected_model_name(model_config: AgentModelConfig) -> str:
     return model_config.model
 
 
-def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | None]:
+def build_chat_model(
+    model_config: AgentModelConfig,
+    *,
+    http_clients: tuple[Any, Any] | None = None,
+    observer: str | None = None,
+) -> tuple[Any, str, str | None]:
     """Build a LangChain chat model from Fabric model config.
 
     Known OpenAI-compatible providers use ``ChatOpenAI``. Other providers are
@@ -236,7 +245,22 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
 
     from langchain_openai import ChatOpenAI
 
-    kwargs = {"model": model_name, "api_key": api_key}
+    kwargs = {"model": model_name, "api_key": api_key, "cache": AccountingCache()}
+    if http_clients is not None:
+        kwargs.update(
+            http_client=http_clients[0],
+            http_async_client=http_clients[1],
+            metadata=model_metadata(observer),
+        )
+        # Client injection would otherwise turn off LangChain's native-OpenAI
+        # automatic stream-usage default. Preserve its original condition.
+        if (
+            base_url is None
+            and "OPENAI_BASE_URL" not in os.environ
+            and os.environ.get("OPENAI_API_BASE") is None
+            and os.environ.get("OPENAI_PROXY") is None
+        ):
+            kwargs["stream_usage"] = True
     if base_url:
         kwargs["base_url"] = base_url
     if temperature is not None:
@@ -615,6 +639,9 @@ class DeepAgentsRuntime:
         self._callback_handler_type: Any = None
         self._telemetry_quarantine: str | None = None
         self._telemetry_quarantine_cause: str | None = None
+        self._usage_observer: str | None = None
+        self._usage_remote_names: frozenset[str] = frozenset()
+        self._usage_http_clients: tuple[Any, Any] | None = None
         self._harness_version = provenance.missing_fact(
             "unavailable", "not_collected", provenance.METHOD_PACKAGE_METADATA
         )
@@ -637,7 +664,17 @@ class DeepAgentsRuntime:
             settings = agent_config.harness.settings if agent_config.harness else {}
             base_dir = common_utils.base_dir(payload)
             runtime_id = runtime_context.runtime_id
-            model, self._model_name, self._base_url = build_chat_model(model_config)
+            if (
+                model_config.provider in OPENAI_COMPATIBLE_PROVIDERS
+                and not os.environ.get("OPENAI_PROXY")
+            ):
+                self._usage_observer = uuid.uuid4().hex
+                self._usage_http_clients = observed_http_clients()
+            model, self._model_name, self._base_url = build_chat_model(
+                model_config,
+                http_clients=self._usage_http_clients,
+                observer=self._usage_observer,
+            )
             self._runtime_id = runtime_id
             self._thread_id = uuid.uuid4().hex
 
@@ -668,6 +705,11 @@ class DeepAgentsRuntime:
                 base_dir,
                 model,
                 settings,
+            )
+            self._usage_remote_names = frozenset(
+                subagent["name"]
+                for subagent in agent_kwargs.get("subagents", [])
+                if isinstance(subagent, dict) and "graph_id" in subagent
             )
             self._checkpointer = await open_checkpointer(
                 checkpointer_path(runtime_context, base_dir, runtime_id)
@@ -802,28 +844,9 @@ class DeepAgentsRuntime:
         )
         failed = bool(output.pop("failed", False))
         reported_error = output.pop("error", None)
-        raw_usage = output.get("usage")
-        usage = raw_usage if isinstance(raw_usage, dict) else {}
-        token_fields = {
-            "input_tokens": usage.get("prompt_tokens"),
-            "output_tokens": usage.get("completion_tokens"),
-            "total_tokens": usage.get("total_tokens"),
-        }
-        tokens = {
-            name: value
-            for name, value in token_fields.items()
-            if isinstance(value, int)
-            and not isinstance(value, bool)
-            and 0 <= value <= (1 << 64) - 1
-        }
-        cost = usage.get("cost")
-        if (
-            not isinstance(cost, (int, float))
-            or isinstance(cost, bool)
-            or not math.isfinite(cost)
-            or cost < 0
-        ):
-            cost = None
+        # Preserve the existing output diagnostic without promoting its message
+        # subtotal to typed invocation accounting.
+        output["usage_source"] = "graph_state_messages"
         return AgentRunResult(
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
             output=output,
@@ -835,11 +858,7 @@ class DeepAgentsRuntime:
                 if failed
                 else None
             ),
-            usage=(
-                AgentUsage(**tokens, cost_usd=cost)
-                if tokens or cost is not None
-                else None
-            ),
+            usage=outcome.accounted_usage,
             extensions={},
         )
 
@@ -916,24 +935,34 @@ class DeepAgentsRuntime:
     ) -> TurnOutcome:
         """Run one agent turn, normalizing an invocation failure into an error string."""
 
+        recorder = ModelCallUsage(self._usage_observer, self._usage_remote_names)
         try:
-            result_state, events, turn_messages = await invoke_compiled_agent(
-                self._agent,
-                user_message,
-                self._thread_id,
-                callbacks=callbacks,
-            )
+            with recorder.scope():
+                result_state, events, turn_messages = await invoke_compiled_agent(
+                    self._agent,
+                    user_message,
+                    self._thread_id,
+                    callbacks=[*(callbacks or []), recorder],
+                )
         except GraphRecursionError:
             return TurnOutcome(
                 error="Deep Agents reached its graph recursion limit.",
                 error_code="deepagents_recursion_limit_reached",
+                accounted_usage=recorder.finish(),
             )
         except Exception as exc:  # normalized adapter failure
-            return TurnOutcome(error=_error_text(exc))
+            return TurnOutcome(
+                error=_error_text(exc), accounted_usage=recorder.finish()
+            )
+        finally:
+            # Also close ownership on cancellation, while preserving cancellation
+            # propagation. A later callback cannot mutate any returned result.
+            recorder.finish()
         return TurnOutcome(
             result_state=result_state,
             events=events,
             turn_messages=turn_messages,
+            accounted_usage=recorder.finish(),
         )
 
     def _telemetry_output(
@@ -973,6 +1002,9 @@ class DeepAgentsRuntime:
 
     async def stop(self) -> None:
         checkpointer = self._checkpointer
+        clients, self._usage_http_clients = self._usage_http_clients, None
+        self._usage_observer = None
+        self._usage_remote_names = frozenset()
         self._start_payload = None
         self._runtime_id = None
         self._model_name = None
@@ -989,8 +1021,15 @@ class DeepAgentsRuntime:
         self._relay_plugin_config = None
         self._callback_handler_type = None
         self._started = False
-        if checkpointer is not None:
-            await close_checkpointer(checkpointer)
+        try:
+            if checkpointer is not None:
+                await close_checkpointer(checkpointer)
+        finally:
+            if clients is not None:
+                try:
+                    clients[0].close()
+                finally:
+                    await clients[1].aclose()
 
 
 def _apply_callbacks(
@@ -1017,9 +1056,8 @@ async def invoke_compiled_agent(
     """Run a compiled agent and return state, events, and current-turn messages.
 
     On a later runtime invocation the final ``values`` state also replays
-    prior-turn messages, so usage/cost must be aggregated from the messages
-    emitted *this* turn — the ``updates`` deltas — rather than the full final
-    state.
+    prior-turn messages. Keep graph-message diagnostics limited to this turn's
+    ``updates`` deltas. Typed accounting observes model callbacks separately.
 
     ``callbacks`` (e.g. the NeMo Relay callback handler) are appended to the
     LangGraph run config; any callbacks already present are preserved rather than
@@ -1038,7 +1076,7 @@ async def invoke_compiled_agent(
     final: Any = None
     # subgraphs=True surfaces subagent (delegated ``task``) steps as 3-tuples whose
     # namespace identifies the subgraph. Folding their message deltas into this turn
-    # keeps usage/cost accurate for delegating runs; the final ``values`` state is
+    # keeps message diagnostics scoped to this turn; the final ``values`` state is
     # taken from the main graph only (empty namespace).
     stream = (
         agent.astream(inputs, config, stream_mode=["updates", "values"], subgraphs=True)
@@ -1075,6 +1113,7 @@ class TurnOutcome(NamedTuple):
     """
 
     result_state: Any = None
+    accounted_usage: AgentUsage | None = None
     events: list[dict[str, Any]] | None = None
     turn_messages: list[dict[str, Any]] | None = None
     error: str | None = None
@@ -1302,6 +1341,8 @@ def _final_response(messages: list[dict[str, Any]]) -> Any:
 
 
 def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Retain the historical graph-message diagnostic, without certifying scope."""
+
     totals: dict[str, Any] = {}
     cost = 0.0
     has_cost = False
@@ -1319,8 +1360,8 @@ def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
                 and 0 <= value <= (1 << 64) - 1
             ):
                 totals[target] = int(totals.get(target, 0)) + value
-        # Cost is not part of LangChain's UsageMetadata; surface it only when a
-        # model/provider reports it on the usage or response metadata.
+        # Keep historical graph-message cost as a source diagnostic. Typed
+        # accounting does not consume this value or infer its pricing basis.
         candidate = (
             usage.get("total_cost") or usage.get("cost") or _metadata_cost(message)
         )

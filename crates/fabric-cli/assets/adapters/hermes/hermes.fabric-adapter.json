@@ -19,7 +19,14 @@
           },
           "effort": {
             "type": "string",
-            "enum": ["none", "minimal", "low", "medium", "high", "xhigh"],
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
             "description": "Hermes model reasoning effort."
           }
         },
@@ -65,7 +72,9 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "provider": {"type": "string"}
+        "provider": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
@@ -73,7 +82,9 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "nemo_fabric.versions.v1": {"type": "object"}
+        "nemo_fabric.versions.v1": {
+          "type": "object"
+        }
       },
       "additionalProperties": false
     }
@@ -93,7 +104,9 @@
       "mcp.auth.oauth2",
       "skills"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": [
+      "replace"
+    ]
   },
   "telemetry": {
     "providers": {

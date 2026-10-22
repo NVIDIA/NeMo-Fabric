@@ -2,8 +2,15 @@
   "contract_version": "fabric.adapter/v1alpha2",
   "adapter_id": "nvidia.fabric.qwen",
   "adapter_kind": "process",
-  "runner": {"command": "node", "script": "dist/cli.js"},
-  "requirements": {"binaries": ["node"]},
+  "runner": {
+    "command": "node",
+    "script": "dist/cli.js"
+  },
+  "requirements": {
+    "binaries": [
+      "node"
+    ]
+  },
   "config": {
     "accepts": [
       "models",
@@ -16,28 +23,69 @@
       "mcp",
       "mcp.tool_filters"
     ],
-    "system_instruction_modes": ["replace", "append"]
+    "system_instruction_modes": [
+      "replace",
+      "append"
+    ]
   },
   "model_schema": {
     "type": "object",
     "properties": {
-      "provider": {"const": "openai"},
-      "model": {"type": "string", "minLength": 1},
-      "api_key_env": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
-      "base_url": {"type": ["string", "null"], "format": "uri", "pattern": "^https?://"},
-      "temperature": {"type": "number"},
-      "top_p": {"type": "number", "minimum": 0, "maximum": 1}
+      "provider": {
+        "const": "openai"
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "api_key_env": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "base_url": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri",
+        "pattern": "^https?://"
+      },
+      "temperature": {
+        "type": "number"
+      },
+      "top_p": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
     },
-    "required": ["provider", "model", "api_key_env"],
+    "required": [
+      "provider",
+      "model",
+      "api_key_env"
+    ],
     "additionalProperties": false
   },
   "settings_schema": {
     "type": "object",
     "properties": {
-      "permission_mode": {"enum": ["default", "plan", "auto-edit", "auto", "yolo"]},
+      "permission_mode": {
+        "enum": [
+          "default",
+          "plan",
+          "auto-edit",
+          "auto",
+          "yolo"
+        ]
+      },
       "insecure_http_model_hosts": {
         "type": "array",
-        "items": {"type": "string", "maxLength": 253, "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"},
+        "items": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"
+        },
         "uniqueItems": true,
         "description": "Explicitly trusted HTTP model endpoint hostnames, without schemes, ports, paths, or wildcards."
       }
@@ -49,10 +97,17 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "nemo_fabric.versions.v1": {"type": "object"}
+        "nemo_fabric.versions.v1": {
+          "type": "object"
+        }
       },
       "additionalProperties": false
     }
   },
-  "capabilities": {"streaming": false, "cancellation": false, "updates": false, "service": false}
+  "capabilities": {
+    "streaming": false,
+    "cancellation": false,
+    "updates": false,
+    "service": false
+  }
 }
