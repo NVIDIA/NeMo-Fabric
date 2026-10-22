@@ -23,6 +23,8 @@ pub use crate::agent_config::{
 use crate::agent_execution::{AgentRunRequest, AgentRunResult};
 use crate::error::{FabricError, Result};
 
+use crate::price_catalog::UserPriceCatalog;
+
 /// Versioned NVIDIA NeMo Fabric agent config.
 ///
 /// NeMo Fabric-owned fields apply uniformly, while adapter-translated fields are
@@ -66,10 +68,27 @@ pub struct FabricConfig {
     /// Telemetry configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<TelemetryConfig>,
+    /// Invocation stats: omitted means all endpoint groups, explicit null disables.
+    #[serde(default = "crate::system_stats::default_system_stats")]
+    pub system_stats: Option<crate::system_stats::SystemStatsConfig>,
     /// First-class NeMo Relay integration configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay: Option<RelayConfig>,
+    /// Optional catalog override for central token-price estimates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pricing: Option<PricingConfig>,
     /// Additive fields not yet recognized by this core version.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// Central token-price configuration; never changes provider requests.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PricingConfig {
+    /// Relay-compatible v1 catalog, resolved relative to the config base directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_path: Option<PathBuf>,
+    /// Additive pricing configuration, preserved for future versions.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
 }
@@ -1083,12 +1102,6 @@ pub struct RecordConfig {
     /// artifact root, the `local` environment provider, and a `process` or
     /// `python` adapter.
     pub enabled: bool,
-    /// Whether nothing else runs in the container during an invocation,
-    /// including other runtimes in the same process, so a rise in the
-    /// container's out-of-memory kill count reads `sandbox_failed` in the
-    /// record. Unset means false.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub exclusive_container: bool,
 }
 
 fn default_input_schema() -> String {
@@ -1895,6 +1908,9 @@ pub fn load_adapter_target_descriptor(path: impl AsRef<Path>) -> Result<AdapterT
 }
 
 pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
+    if let Some(stats) = &config.system_stats {
+        stats.validate()?;
+    }
     if config.harness.is_none() && config.workflow.is_none() {
         return invalid_config(
             "harness",
@@ -2668,7 +2684,9 @@ fn resolve_selected_descriptors(
         descriptor,
         adapter_target_descriptor.as_ref(),
     );
+    let user_price_catalog = resolve_user_price_catalog(&config, &base_dir)?;
     Ok(RunPlan {
+        user_price_catalog,
         agent_name: config.metadata.name.clone(),
         base_dir,
         config,
@@ -2681,6 +2699,33 @@ fn resolve_selected_descriptors(
         capabilities,
         telemetry_plan,
     })
+}
+
+fn resolve_user_price_catalog(
+    config: &FabricConfig,
+    base_dir: &Path,
+) -> Result<Option<UserPriceCatalog>> {
+    let Some(path) = config
+        .pricing
+        .as_ref()
+        .and_then(|p| p.catalog_path.as_ref())
+    else {
+        return Ok(None);
+    };
+    if path.as_os_str().to_string_lossy().trim().is_empty() {
+        return invalid_config("pricing.catalog_path", "must not be blank");
+    }
+    let path = resolve_path(base_dir, path);
+    let bytes = std::fs::read(&path).map_err(|error| FabricError::InvalidConfig {
+        field: "pricing.catalog_path".into(),
+        reason: format!("cannot read {}: {error}", path.display()),
+    })?;
+    UserPriceCatalog::from_bytes(path, &bytes)
+        .map(Some)
+        .map_err(|error| FabricError::InvalidConfig {
+            field: "pricing.catalog_path".into(),
+            reason: error.to_string(),
+        })
 }
 
 fn validate_capability_plan_compatibility(
@@ -4092,6 +4137,9 @@ fn normalize_path(path: PathBuf) -> PathBuf {
 /// Resolved NeMo Fabric run plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunPlan {
+    /// Catalog bytes are frozen during planning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_price_catalog: Option<UserPriceCatalog>,
     /// Stable agent name.
     pub agent_name: String,
     /// Base directory used to resolve relative NeMo Fabric paths.
@@ -7504,116 +7552,6 @@ mod tests {
                 && paths.len() == 2
         ));
     }
-
-    fn record_error(config: &FabricConfig) -> Option<(String, String)> {
-        match validate_config(config) {
-            Err(FabricError::InvalidConfig { field, reason }) => Some((field, reason)),
-            Err(error) => panic!("unexpected error: {error}"),
-            Ok(()) => None,
-        }
-    }
-
-    #[test]
-    fn record_enabled_without_an_artifact_root_fails_validation() {
-        let mut config = typed_config("nvidia.fabric.hermes");
-        config.runtime.record = Some(RecordConfig {
-            enabled: true,
-            exclusive_container: false,
-        });
-
-        assert_eq!(
-            record_error(&config),
-            Some((
-                "runtime.record.enabled".to_string(),
-                "requires runtime.artifacts or an environment artifact root".to_string()
-            ))
-        );
-        config.environment.as_mut().expect("environment").artifacts = Some(PathBuf::from("runs"));
-        assert_eq!(record_error(&config), None);
-        config.environment.as_mut().expect("environment").artifacts = None;
-        config.runtime.artifacts = Some(PathBuf::from("runs"));
-        assert_eq!(record_error(&config), None);
-    }
-
-    #[test]
-    fn record_enabled_with_a_non_local_provider_fails_validation() {
-        for provider in ["docker", "openshell"] {
-            let mut config = typed_config("nvidia.fabric.hermes");
-            config.runtime.artifacts = Some(PathBuf::from("runs"));
-            config.runtime.record = Some(RecordConfig {
-                enabled: true,
-                exclusive_container: false,
-            });
-            let environment = config.environment.as_mut().expect("environment");
-            environment.provider = provider.to_string();
-            // Valid OpenShell task paths, so only the record check can fail.
-            environment.workspace = Some(PathBuf::from("/sandbox/workspace"));
-            environment.artifacts = Some(PathBuf::from("/sandbox/artifacts"));
-
-            assert_eq!(
-                record_error(&config),
-                Some((
-                    "runtime.record.enabled".to_string(),
-                    "supported only with the local environment provider".to_string()
-                )),
-                "{provider}"
-            );
-        }
-    }
-
-    #[test]
-    fn record_enabled_with_an_adapter_outside_the_local_host_fails_validation() {
-        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
-        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
-        let mut config = typed_config("nvidia.fabric.claude");
-        config.runtime.artifacts = Some(PathBuf::from("runs"));
-        config.runtime.record = Some(RecordConfig {
-            enabled: true,
-            exclusive_container: false,
-        });
-        assert!(validate_record_adapter(&config, Some(&descriptor)).is_ok());
-
-        for kind in [AdapterKind::Http, AdapterKind::NativePlugin] {
-            descriptor.adapter_kind = kind;
-            assert!(matches!(
-                validate_record_adapter(&config, Some(&descriptor)),
-                Err(FabricError::InvalidConfig { field, reason })
-                    if field == "runtime.record.enabled"
-                        && reason == "supported only with a process or python adapter"
-            ));
-        }
-        config.runtime.record = None;
-        assert!(validate_record_adapter(&config, Some(&descriptor)).is_ok());
-    }
-
-    #[test]
-    fn record_disabled_or_absent_needs_no_artifact_root() {
-        let mut config = typed_config("nvidia.fabric.hermes");
-        assert_eq!(record_error(&config), None);
-        config.runtime.record = Some(RecordConfig {
-            enabled: false,
-            exclusive_container: false,
-        });
-        assert_eq!(record_error(&config), None);
-    }
-
-    #[test]
-    fn record_block_requires_enabled_and_rejects_unknown_fields() {
-        for runtime in [
-            serde_json::json!({"record": {}}),
-            serde_json::json!({"record": {"enabled": true, "durable": true}}),
-            serde_json::json!({"record": true}),
-        ] {
-            let mut value =
-                serde_json::to_value(typed_config("nvidia.fabric.hermes")).expect("config JSON");
-            value["runtime"] = runtime.clone();
-            assert!(
-                serde_json::from_value::<FabricConfig>(value).is_err(),
-                "{runtime}"
-            );
-        }
-    }
-
     #[test]
     fn remote_environment_paths_are_not_resolved_on_the_host() {
         let mut config = typed_config("nvidia.fabric.hermes");
@@ -7661,6 +7599,102 @@ mod tests {
             let error = validate_config(&config).expect_err("invalid task path");
             assert!(
                 matches!(error, FabricError::InvalidConfig {field, ..} if field == "environment.workspace")
+            );
+        }
+    }
+    fn record_error(config: &FabricConfig) -> Option<(String, String)> {
+        match validate_config(config) {
+            Err(FabricError::InvalidConfig { field, reason }) => Some((field, reason)),
+            Err(error) => panic!("unexpected error: {error}"),
+            Ok(()) => None,
+        }
+    }
+
+    #[test]
+    fn record_enabled_without_an_artifact_root_fails_validation() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.runtime.record = Some(RecordConfig { enabled: true });
+
+        assert_eq!(
+            record_error(&config),
+            Some((
+                "runtime.record.enabled".to_string(),
+                "requires runtime.artifacts or an environment artifact root".to_string()
+            ))
+        );
+        config.environment.as_mut().expect("environment").artifacts = Some(PathBuf::from("runs"));
+        assert_eq!(record_error(&config), None);
+        config.environment.as_mut().expect("environment").artifacts = None;
+        config.runtime.artifacts = Some(PathBuf::from("runs"));
+        assert_eq!(record_error(&config), None);
+    }
+
+    #[test]
+    fn record_enabled_with_a_non_local_provider_fails_validation() {
+        for provider in ["docker", "openshell"] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.runtime.artifacts = Some(PathBuf::from("runs"));
+            config.runtime.record = Some(RecordConfig { enabled: true });
+            let environment = config.environment.as_mut().expect("environment");
+            environment.provider = provider.to_string();
+            // Valid OpenShell task paths, so only the record check can fail.
+            environment.workspace = Some(PathBuf::from("/sandbox/workspace"));
+            environment.artifacts = Some(PathBuf::from("/sandbox/artifacts"));
+
+            assert_eq!(
+                record_error(&config),
+                Some((
+                    "runtime.record.enabled".to_string(),
+                    "supported only with the local environment provider".to_string()
+                )),
+                "{provider}"
+            );
+        }
+    }
+
+    #[test]
+    fn record_enabled_with_an_adapter_outside_the_local_host_fails_validation() {
+        let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        let mut config = typed_config("nvidia.fabric.claude");
+        config.runtime.artifacts = Some(PathBuf::from("runs"));
+        config.runtime.record = Some(RecordConfig { enabled: true });
+        assert!(validate_record_adapter(&config, Some(&descriptor)).is_ok());
+
+        for kind in [AdapterKind::Http, AdapterKind::NativePlugin] {
+            descriptor.adapter_kind = kind;
+            assert!(matches!(
+                validate_record_adapter(&config, Some(&descriptor)),
+                Err(FabricError::InvalidConfig { field, reason })
+                    if field == "runtime.record.enabled"
+                        && reason == "supported only with a process or python adapter"
+            ));
+        }
+        config.runtime.record = None;
+        assert!(validate_record_adapter(&config, Some(&descriptor)).is_ok());
+    }
+
+    #[test]
+    fn record_disabled_or_absent_needs_no_artifact_root() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        assert_eq!(record_error(&config), None);
+        config.runtime.record = Some(RecordConfig { enabled: false });
+        assert_eq!(record_error(&config), None);
+    }
+
+    #[test]
+    fn record_block_requires_enabled_and_rejects_unknown_fields() {
+        for runtime in [
+            serde_json::json!({"record": {}}),
+            serde_json::json!({"record": {"enabled": true, "durable": true}}),
+            serde_json::json!({"record": true}),
+        ] {
+            let mut value =
+                serde_json::to_value(typed_config("nvidia.fabric.hermes")).expect("config JSON");
+            value["runtime"] = runtime.clone();
+            assert!(
+                serde_json::from_value::<FabricConfig>(value).is_err(),
+                "{runtime}"
             );
         }
     }

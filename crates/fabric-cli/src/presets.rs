@@ -282,12 +282,12 @@ fn config(
             .unwrap_or_default(),
         instructions: None,
         runtime: RuntimeConfig {
+            record: None,
             input_schema: "text".to_string(),
             output_schema: "message".to_string(),
             artifacts: None,
             timeout_seconds: None,
             max_turns: None,
-            record: None,
             extensions: BTreeMap::new(),
         },
         environment: Some(EnvironmentConfig {
@@ -307,7 +307,9 @@ fn config(
         skills: None,
         mcp: None,
         telemetry: None,
+        system_stats: Some(Default::default()),
         relay: None,
+        pricing: None,
         extensions: BTreeMap::new(),
     }
 }

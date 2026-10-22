@@ -13,14 +13,15 @@
 //! Everything here is crate-private. The line format is public only through
 //! the `run-record-line` JSON Schema, version `v1alpha1`.
 
-mod cgroup;
 mod invocation;
 mod lines;
-mod stop;
 mod writer;
 
-pub(crate) use cgroup::CgroupReader;
-pub(crate) use invocation::{HostExit, InvocationRecorder, RecordStart};
+pub(crate) use invocation::{InvocationRecorder, RecordStart};
 pub(crate) use lines::RecordLine;
 #[cfg(test)]
 pub(crate) use writer::test_hooks;
+
+mod results;
+pub use results::run_record_folder;
+pub(crate) use results::{RequestRecord, RequestRecorder, RequestStage, persist_result};

@@ -558,16 +558,26 @@
         }
       ]
     },
+    "PricingConfig": {
+      "additionalProperties": true,
+      "description": "Central token-price configuration; never changes provider requests.",
+      "properties": {
+        "catalog_path": {
+          "description": "Relay-compatible v1 catalog, resolved relative to the config base directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "RecordConfig": {
       "additionalProperties": false,
       "description": "Per-invocation run record settings.\n\nWhen enabled, core appends a start line and an end line for each local\ninvocation to `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`.",
       "properties": {
         "enabled": {
           "description": "Whether to write a run record for each invocation. Requires an\nartifact root, the `local` environment provider, and a `process` or\n`python` adapter.",
-          "type": "boolean"
-        },
-        "exclusive_container": {
-          "description": "Whether nothing else runs in the container during an invocation,\nincluding other runtimes in the same process, so a rise in the\ncontainer's out-of-memory kill count reads `sandbox_failed` in the\nrecord. Unset means false.",
           "type": "boolean"
         }
       },
@@ -1384,6 +1394,87 @@
       },
       "type": "object"
     },
+    "SystemStatsConfig": {
+      "additionalProperties": false,
+      "description": "Native invocation collection, independent of Relay and recording.\nOmitted configuration collects all supported groups at the endpoints.\nExplicit null disables invocation stats, preserving the existing final\n`resource_snapshot` contract. Periodic sampling is independently opt-in.",
+      "properties": {
+        "collect": {
+          "default": [
+            "process",
+            "cgroup.cpu",
+            "cgroup.memory",
+            "cgroup.pressure"
+          ],
+          "description": "Groups to collect and persist. Omission selects all supported groups.",
+          "items": {
+            "$ref": "#/$defs/SystemStatsMetricGroup"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "sampling": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SystemStatsSamplingConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional bounded periodic collection; absence means endpoints only."
+        }
+      },
+      "type": "object"
+    },
+    "SystemStatsMetricGroup": {
+      "description": "Resource groups supported by the native invocation collector.",
+      "oneOf": [
+        {
+          "const": "process",
+          "description": "Adapter host process-tree CPU, resident memory, and process count.",
+          "type": "string"
+        },
+        {
+          "const": "cgroup.cpu",
+          "description": "Cgroup CPU capacity, usage, and throttling.",
+          "type": "string"
+        },
+        {
+          "const": "cgroup.memory",
+          "description": "Cgroup memory capacity, usage, swap, and OOM kills.",
+          "type": "string"
+        },
+        {
+          "const": "cgroup.pressure",
+          "description": "Cgroup CPU, memory, and I/O pressure counters.",
+          "type": "string"
+        }
+      ]
+    },
+    "SystemStatsSamplingConfig": {
+      "additionalProperties": false,
+      "description": "Bounded periodic collection within an enabled invocation stats configuration.",
+      "properties": {
+        "interval_ms": {
+          "default": 1000,
+          "description": "Target sample cadence, in milliseconds. Actual cadence is reported.",
+          "format": "uint32",
+          "maximum": 60000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "max_samples": {
+          "default": 10000,
+          "description": "Maximum retained readings, including both endpoints. Intermediate\nreadings are dropped at this bound; the final reading is preserved.",
+          "format": "uint32",
+          "maximum": 100000,
+          "minimum": 2,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "TelemetryConfig": {
       "additionalProperties": true,
       "description": "Telemetry configuration.",
@@ -1559,6 +1650,17 @@
       "description": "Named model roles.",
       "type": "object"
     },
+    "pricing": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PricingConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional catalog override for central token-price estimates."
+    },
     "relay": {
       "anyOf": [
         {
@@ -1588,6 +1690,25 @@
         }
       ],
       "description": "Skill capability configuration."
+    },
+    "system_stats": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SystemStatsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": {
+        "collect": [
+          "process",
+          "cgroup.cpu",
+          "cgroup.memory",
+          "cgroup.pressure"
+        ]
+      },
+      "description": "Invocation stats: omitted means all endpoint groups, explicit null disables."
     },
     "telemetry": {
       "anyOf": [
