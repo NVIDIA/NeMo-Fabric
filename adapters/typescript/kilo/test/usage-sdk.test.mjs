@@ -3,9 +3,9 @@
 
 import assert from "node:assert/strict";
 import {createServer} from "node:http";
-import {mkdir, mkdtemp, realpath, rename} from "node:fs/promises";
-import {homedir, tmpdir} from "node:os";
-import {basename, join} from "node:path";
+import {mkdtemp, realpath, rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import test from "node:test";
 import {createKiloClient} from "@kilocode/sdk/v2";
 import {KiloSdkSessionFactory} from "../dist/kilo-sdk.js";
@@ -73,9 +73,7 @@ for (const mode of ["normal", "retry", "lost-events"]) {
       events?.end();
       server.closeAllConnections();
       await new Promise(resolve => server.close(resolve));
-      const trash = join(homedir(), "trash", "nemo-fabric");
-      await mkdir(trash, {recursive: true});
-      await rename(workspace, join(trash, `${basename(workspace)}-${Date.now()}`));
+      await rm(workspace, {recursive: true, force: true});
     }
   });
 }
