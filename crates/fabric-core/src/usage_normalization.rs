@@ -348,6 +348,7 @@ pub fn describe_model_usage(usage: &AgentUsage) -> Result<ModelUsage, Accounting
                         combine_values(&parts, dimension).ok_or("token_count_out_of_range");
                 }
             }
+            validate_recovered_components(&mut complete, &mut observed);
             let mut aligned = model.observed_tokens_aligned;
             for (index, dimension) in UsageDimension::ALL.into_iter().enumerate() {
                 let tolerance = if dimension == UsageDimension::CostUsd {
@@ -451,6 +452,7 @@ pub fn describe_model_usage(usage: &AgentUsage) -> Result<ModelUsage, Accounting
             }
         }
     }
+    validate_recovered_components(&mut counts, &mut observations);
     counts[TOTAL] = add(counts[INPUT], counts[OUTPUT]);
     observations[TOTAL] = add(observations[INPUT], observations[OUTPUT]);
     let values = measurements(counts);
@@ -494,6 +496,27 @@ pub fn describe_model_usage(usage: &AgentUsage) -> Result<ModelUsage, Accounting
             ),
         }),
     })
+}
+
+// Recovery combines dimensions from different source levels. Recheck the same
+// complete-scope relationships normalize() enforces before publishing them.
+// Independent cache and reasoning counts survive a contradictory inclusive sum.
+fn validate_recovered_components(counts: &mut [Count; 8], observed: &mut [Count; 8]) {
+    let cache = counts[UsageDimension::CachedInputTokens as usize]
+        .unwrap_or(0)
+        .checked_add(counts[UsageDimension::CacheWriteInputTokens as usize].unwrap_or(0));
+    let peak = counts[UsageDimension::PeakRequestInputTokens as usize];
+    if counts[INPUT].is_ok_and(|input| {
+        cache.is_none_or(|cache| cache > input) || peak.is_ok_and(|peak| peak > input)
+    }) {
+        counts[INPUT] = Err("inconsistent_usage");
+        observed[INPUT] = Err("inconsistent_usage");
+    }
+    let reasoning = counts[UsageDimension::ReasoningTokens as usize];
+    if counts[OUTPUT].is_ok_and(|output| reasoning.is_ok_and(|reasoning| reasoning > output)) {
+        counts[OUTPUT] = Err("inconsistent_usage");
+        observed[OUTPUT] = Err("inconsistent_usage");
+    }
 }
 
 // An unconvertible aggregate must not erase a qualified model/request subset.

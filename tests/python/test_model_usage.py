@@ -10,7 +10,7 @@ import pytest
 
 from nemo_fabric.accounting import summarize_usage
 from nemo_fabric.errors import FabricConfigError
-from nemo_fabric.types import ModelUsage, PerModelUsage, TokenCounts
+from nemo_fabric.types import AppliedPricing, ModelUsage, PerModelUsage, TokenCounts
 
 
 def test_per_model_complete_counts_have_the_public_token_types():
@@ -472,3 +472,23 @@ def test_independently_rounded_provider_cost_is_not_a_token_reconciliation_error
     per_model_usage["cost"]["reported"] = {"amount_nano_usd": 9}
     usage["models"] = [per_model_usage]
     assert ModelUsage.from_mapping(usage).cost.reported.amount_nano_usd == 10
+
+
+@pytest.mark.parametrize("cache_rates", [{}, {"cache_read": 0}, {"cache_write": 0}])
+def test_applied_pricing_accepts_schema_optional_cache_rates(cache_rates):
+    parsed = AppliedPricing.from_mapping(
+        {
+            "catalog_sha256": "sha256:" + "a" * 64,
+            "provider": "fixture-provider",
+            "model_id": "fixture-model",
+            "pricing_as_of": "2026-10-22",
+            "pricing_source": "fixture-catalog",
+            "rates": {"input": 10, "output": 20, **cache_rates},
+        }
+    )
+    assert parsed.rates == {
+        "input": 10,
+        "output": 20,
+        "cache_read": cache_rates.get("cache_read"),
+        "cache_write": cache_rates.get("cache_write"),
+    }
