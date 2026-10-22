@@ -484,5 +484,185 @@
         "observed": 20
       }
     }
+  },
+  {
+    "name": "aggregate_recovered_cache_cannot_exceed_complete_input",
+    "usage": {
+      "input_tokens": 100,
+      "input_tokens_include_cache": true
+    },
+    "accounting": {
+      "models_exhaustive": true,
+      "gaps": [],
+      "models": [
+        {
+          "model": "cache-model",
+          "gaps": [],
+          "reported": {
+            "cached_input_tokens": 200,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 5,
+            "output_tokens_include_reasoning": true
+          }
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": null
+      },
+      "cached_input_tokens": {
+        "complete": 200,
+        "observed": 200
+      },
+      "cache_write_input_tokens": {
+        "complete": 0,
+        "observed": 0
+      },
+      "output_tokens": {
+        "complete": 5,
+        "observed": 5
+      },
+      "total_tokens": {
+        "complete": null,
+        "observed": null
+      }
+    }
+  },
+  {
+    "name": "model_recovered_request_cache_cannot_exceed_complete_input",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": true,
+      "gaps": [],
+      "models": [
+        {
+          "model": "cache-model",
+          "gaps": [],
+          "reported": {
+            "input_tokens": 100,
+            "input_tokens_include_cache": true,
+            "output_tokens": 5,
+            "output_tokens_include_reasoning": true
+          },
+          "requests_exhaustive": true,
+          "requests": [
+            {
+              "usage": {
+                "cached_input_tokens": 200,
+                "cache_write_input_tokens": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": null
+      },
+      "cached_input_tokens": {
+        "complete": 200,
+        "observed": 200
+      },
+      "cache_write_input_tokens": {
+        "complete": 0,
+        "observed": 0
+      },
+      "output_tokens": {
+        "complete": 5,
+        "observed": 5
+      },
+      "total_tokens": {
+        "complete": null,
+        "observed": null
+      }
+    }
+  },
+  {
+    "name": "model_recovered_request_peak_cannot_exceed_complete_input",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": true,
+      "gaps": [],
+      "models": [
+        {
+          "model": "peak-model",
+          "gaps": [],
+          "reported": {
+            "input_tokens": 100,
+            "input_tokens_include_cache": true,
+            "output_tokens": 5,
+            "output_tokens_include_reasoning": true
+          },
+          "requests_exhaustive": true,
+          "requests": [
+            {
+              "usage": {
+                "peak_request_input_tokens": 200
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": null
+      },
+      "output_tokens": {
+        "complete": 5,
+        "observed": 5
+      },
+      "total_tokens": {
+        "complete": null,
+        "observed": null
+      }
+    }
+  },
+  {
+    "name": "model_recovered_request_reasoning_cannot_exceed_complete_output",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": true,
+      "gaps": [],
+      "models": [
+        {
+          "model": "reasoning-model",
+          "gaps": [],
+          "reported": {
+            "input_tokens": 100,
+            "input_tokens_include_cache": true,
+            "output_tokens": 5,
+            "output_tokens_include_reasoning": true
+          },
+          "requests_exhaustive": true,
+          "requests": [
+            {
+              "usage": {
+                "reasoning_tokens": 10
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": 100,
+        "observed": 100
+      },
+      "output_tokens": {
+        "complete": null,
+        "observed": null
+      },
+      "total_tokens": {
+        "complete": null,
+        "observed": null
+      }
+    }
   }
 ]
