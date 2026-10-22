@@ -154,6 +154,10 @@ class MiniSweAgentRuntime:
                     )
                 else:
                     result = await self._run_agent(task)
+        except Exception:
+            # Ordinary errors propagate only before a worker starts or after
+            # it returns, so the agent remains safe for another invocation.
+            raise
         except BaseException:
             # asyncio.to_thread cannot cancel a running model/shell operation.
             # A later invocation must not share its agent or late responses.

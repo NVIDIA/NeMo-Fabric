@@ -1067,3 +1067,81 @@ def test_observed_openai_redirect_cannot_restore_native_provider_after_custom_at
     usage = owner.finish()
     assert usage.extensions[KEY]["observed"]["input_tokens"] == 10
     assert usage.extensions[KEY]["models"][0].get("provider") is None
+
+
+@pytest.mark.parametrize(
+    "failure_stage", ["ambient_config", "activation", "request_context"]
+)
+async def test_relay_setup_error_before_worker_keeps_runtime_reusable(
+    make_model, monkeypatch, failure_stage
+):
+    from nemo_fabric_adapter_contract.models import AgentRunRequest, RuntimeContext
+    from nemo_fabric_adapters.mini_swe_agent import adapter
+
+    model, requests = make_model(
+        [
+            (
+                200,
+                reply(
+                    {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12}
+                ),
+            )
+        ]
+    )
+    runtime = adapter.MiniSweAgentRuntime()
+    runtime._model = model
+    runtime._agent = MagicMock()
+    runtime._agent.n_calls = 0
+    runtime._agent.end_relay_invocation.return_value = []
+    runtime._relay_enabled = True
+    runtime._relay_plugin_config = {}
+    runtime._relay_plugin = MagicMock()
+    activation = runtime._relay_plugin.activate.return_value
+    runtime._relay_scope = MagicMock()
+    runtime._relay_scope_type = MagicMock()
+    reject_ambient = MagicMock()
+    request_context = MagicMock(return_value=(MagicMock(), {}))
+    monkeypatch.setattr(
+        adapter.common_utils, "reject_ambient_relay_plugin_config", reject_ambient
+    )
+    monkeypatch.setattr(
+        adapter.common_utils, "reject_inherited_relay_plugin_config", MagicMock()
+    )
+    monkeypatch.setattr(adapter.common_utils, "relay_request_context", request_context)
+    monkeypatch.setattr(
+        adapter.common_utils, "relay_correlation_metadata", MagicMock(return_value={})
+    )
+    monkeypatch.setattr(
+        adapter.common_utils, "collect_relay_artifacts", MagicMock(return_value={})
+    )
+    failing_boundary = {
+        "ambient_config": reject_ambient,
+        "activation": activation.__aenter__,
+        "request_context": request_context,
+    }[failure_stage]
+    failing_boundary.side_effect = RuntimeError("Relay setup unavailable")
+
+    def run(*args, **kwargs):
+        runtime._agent.n_calls += 1
+        model.query([{"role": "user", "content": "scripted"}])
+        return {"exit_status": "Submitted", "submission": "done"}
+
+    runtime._agent.run.side_effect = run
+    request = AgentRunRequest(input="scripted")
+    context = MagicMock(spec=RuntimeContext)
+    try:
+        with pytest.raises(RuntimeError, match="Relay setup unavailable"):
+            await runtime.invoke(request, context)
+        runtime._agent.run.assert_not_called()
+        assert requests == []
+
+        failing_boundary.side_effect = None
+        result = await runtime.invoke(request, context)
+        assert result.status == "succeeded"
+        assert result.usage.input_tokens == 10
+        assert result.usage.output_tokens == 2
+        assert result.usage.total_tokens == 12
+        assert len(requests) == 1
+        runtime._agent.run.assert_called_once()
+    finally:
+        await runtime.stop()
