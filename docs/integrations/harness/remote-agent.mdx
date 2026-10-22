@@ -158,3 +158,11 @@ remote deployment, but the adapter does not expose them through `FabricConfig`.
 `capabilities.streaming` remains false because that descriptor flag represents
 adapter-native OpenAI Chat Completions chunks. The adapter still reduces native
 OpenAI and Anthropic streams to a terminal result.
+
+## Usage evidence
+
+The adapter preserves literal endpoint reports in `nemo_fabric.usage_accounting.v1`, including independently reported cache reads, cache writes and totals. An omitted count stays unknown; a reported zero stays zero. Messages deltas replace earlier cumulative snapshots rather than adding them again. The adapter retains the latest usable snapshot when a stream fails after reporting usage.
+
+An OpenAI- or Anthropic-compatible response does not establish whether the independently deployed agent included its internal retries, child agents and auxiliary model calls. These reports remain observations with `scope_unverified`; complete invocation totals are unavailable. No requested alias is used to allocate the aggregate to a billing model. Provider cost and catalog estimates remain unavailable without source-established model allocation. Relay traces remain separate references and are never added to these counts.
+
+Anthropic Messages input excludes separately reported cache reads and writes. Missing cache fields on a compatible service do not establish zero or an inclusive input convention. Raw counts remain available even when the normalized cache-inclusive input cannot be established.

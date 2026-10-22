@@ -641,12 +641,7 @@ def _messages_start(payload: dict[str, object]) -> dict[str, object]:
             "model": payload.get("model", "fabric-echo"),
             "stop_reason": None,
             "stop_sequence": None,
-            "usage": {
-                "input_tokens": 0,
-                "cache_creation_input_tokens": 0,
-                "cache_read_input_tokens": 0,
-                "output_tokens": 0,
-            },
+            "usage": {"input_tokens": 0, "output_tokens": 0},
         },
     }
 

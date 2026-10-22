@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Token usage parsing in the shared Chat Completions stream helper."""
+"""The shared Chat Completions parser preserves observations without claiming scope."""
 
 from __future__ import annotations
 
@@ -16,8 +16,6 @@ _URL = "https://gateway.example.test/v1/chat/completions"
 
 
 def _stream(usage: object) -> str:
-    """Return an OpenAI-style stream: content chunks carry ``usage: null``."""
-
     chunks = [
         {
             "object": "chat.completion.chunk",
@@ -31,7 +29,7 @@ def _stream(usage: object) -> str:
     )
 
 
-async def _invoke(usage: object) -> AgentUsage | None:
+async def _invoke(usage: object) -> AgentUsage:
     def respond(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=_stream(usage))
 
@@ -40,15 +38,32 @@ async def _invoke(usage: object) -> AgentUsage | None:
             client, _URL, model="openclaw/default", messages=[]
         )
     assert text == "done"
+    assert reported is not None
     return reported
+
+
+def _observed(reported: AgentUsage) -> dict[str, object]:
+    # A terminal remote response does not establish internal calls or model scope.
+    for name in (
+        "input_tokens",
+        "cached_input_tokens",
+        "input_tokens_include_cache",
+        "output_tokens",
+        "total_tokens",
+        "cost_usd",
+    ):
+        assert getattr(reported, name) is None
+    accounting = reported.extensions["nemo_fabric.usage_accounting.v1"]
+    assert accounting["models_exhaustive"] is False
+    assert accounting.get("models", []) == []
+    assert any(gap["reason"] == "scope_unverified" for gap in accounting["gaps"])
+    return accounting["observed"]
 
 
 @pytest.mark.parametrize(
     ("usage", "expected"),
     [
         pytest.param(
-            # OpenClaw 2026.9.4 sends prompt_tokens = input + cache reads, plus
-            # both detail objects when it knows cache reads and reasoning.
             {
                 "prompt_tokens": 12000,
                 "completion_tokens": 300,
@@ -56,24 +71,25 @@ async def _invoke(usage: object) -> AgentUsage | None:
                 "prompt_tokens_details": {"cached_tokens": 9000},
                 "completion_tokens_details": {"reasoning_tokens": 120},
             },
-            AgentUsage(
-                input_tokens=12000,
-                cached_input_tokens=9000,
-                input_tokens_include_cache=True,
-                output_tokens=300,
-                total_tokens=12300,
-            ),
+            {
+                "input_tokens": 12000,
+                "cached_input_tokens": 9000,
+                "input_tokens_include_cache": True,
+                "output_tokens": 300,
+                "output_tokens_include_reasoning": True,
+                "total_tokens": 12300,
+            },
             id="cached-and-reasoning",
         ),
         pytest.param(
-            # OpenClaw omits prompt_tokens_details when nothing was read from cache.
             {"prompt_tokens": 40, "completion_tokens": 5, "total_tokens": 45},
-            AgentUsage(
-                input_tokens=40,
-                input_tokens_include_cache=True,
-                output_tokens=5,
-                total_tokens=45,
-            ),
+            {
+                "input_tokens": 40,
+                "input_tokens_include_cache": True,
+                "output_tokens": 5,
+                "output_tokens_include_reasoning": True,
+                "total_tokens": 45,
+            },
             id="cache-reads-not-reported",
         ),
         pytest.param(
@@ -83,13 +99,14 @@ async def _invoke(usage: object) -> AgentUsage | None:
                 "total_tokens": 0,
                 "prompt_tokens_details": {"cached_tokens": 0},
             },
-            AgentUsage(
-                input_tokens=0,
-                cached_input_tokens=0,
-                input_tokens_include_cache=True,
-                output_tokens=0,
-                total_tokens=0,
-            ),
+            {
+                "input_tokens": 0,
+                "cached_input_tokens": 0,
+                "input_tokens_include_cache": True,
+                "output_tokens": 0,
+                "output_tokens_include_reasoning": True,
+                "total_tokens": 0,
+            },
             id="explicit-zeros",
         ),
         pytest.param(
@@ -100,31 +117,32 @@ async def _invoke(usage: object) -> AgentUsage | None:
                 "prompt_tokens_details": None,
                 "completion_tokens_details": None,
             },
-            AgentUsage(
-                input_tokens=40,
-                input_tokens_include_cache=True,
-                output_tokens=5,
-                total_tokens=45,
-            ),
+            {
+                "input_tokens": 40,
+                "input_tokens_include_cache": True,
+                "output_tokens": 5,
+                "output_tokens_include_reasoning": True,
+                "total_tokens": 45,
+            },
             id="null-details",
         ),
         pytest.param(
             {"completion_tokens": 5},
-            AgentUsage(output_tokens=5),
+            {"output_tokens": 5, "output_tokens_include_reasoning": True},
             id="input-and-total-omitted",
         ),
         pytest.param(
             {"prompt_tokens_details": {"cached_tokens": 0}},
-            AgentUsage(cached_input_tokens=0),
+            {"cached_input_tokens": 0},
             id="only-cached-count",
         ),
-        pytest.param(None, None, id="no-usage"),
+        pytest.param(None, {}, id="no-usage"),
     ],
 )
-async def test_invoke_usage_reports_cached_input_and_keeps_omitted_counts_unknown(
-    usage: object, expected: AgentUsage | None
+async def test_invoke_usage_preserves_observed_counts_and_unknown_scope(
+    usage: object, expected: dict[str, object]
 ):
-    assert await _invoke(usage) == expected
+    assert _observed(await _invoke(usage)) == expected
 
 
 @pytest.mark.parametrize(
@@ -137,28 +155,18 @@ async def test_invoke_usage_reports_cached_input_and_keeps_omitted_counts_unknow
     ],
 )
 async def test_invoke_usage_rejects_non_object_prompt_tokens_details(details: object):
-    # Only a null details object means no cached count (see "null-details");
-    # any other non-object value is an invalid report.
     usage = {
         "prompt_tokens": 40,
         "completion_tokens": 5,
         "total_tokens": 45,
         "prompt_tokens_details": details,
     }
-
     with pytest.raises(TypeError, match="prompt_tokens_details must be an object"):
         await _invoke(usage)
 
 
-async def test_invoke_usage_keeps_every_count_known_across_a_cached_run():
-    # An OpenAI run: the first call reads nothing from cache and reports an
-    # explicit 0; later calls reuse the cached prompt prefix.
-    reports = [
-        (1200, 0, 80),
-        (1350, 1024, 95),
-        (1500, 1280, 60),
-    ]
-
+async def test_invoke_usage_preserves_cache_zero_and_cached_observations():
+    reports = [(1200, 0, 80), (1350, 1024, 95), (1500, 1280, 60)]
     for prompt, cached, completion in reports:
         usage = {
             "prompt_tokens": prompt,
@@ -167,11 +175,11 @@ async def test_invoke_usage_keeps_every_count_known_across_a_cached_run():
             "prompt_tokens_details": {"cached_tokens": cached, "audio_tokens": 0},
             "completion_tokens_details": {"reasoning_tokens": 0},
         }
-
-        assert await _invoke(usage) == AgentUsage(
-            input_tokens=prompt,
-            cached_input_tokens=cached,
-            input_tokens_include_cache=True,
-            output_tokens=completion,
-            total_tokens=prompt + completion,
-        )
+        assert _observed(await _invoke(usage)) == {
+            "input_tokens": prompt,
+            "cached_input_tokens": cached,
+            "input_tokens_include_cache": True,
+            "output_tokens": completion,
+            "output_tokens_include_reasoning": True,
+            "total_tokens": prompt + completion,
+        }

@@ -42,30 +42,6 @@ Anthropic Messages, the legacy `models.default.settings.max_tokens` key remains
 accepted; `models.default.max_tokens` takes precedence. The adapter otherwise
 uses `4096`.
 
-## Token Usage
-
-The result's `usage` carries the token counts that the remote endpoint reports
-for the invocation. A count the endpoint omits stays unknown, and a reported
-zero stays `0`. A `"usage": null` object means the endpoint reported no usage.
-
-- OpenAI Responses and Chat Completions include cached prompt tokens in their
-  input count. The adapter reports that input with
-  `input_tokens_include_cache: true`, and reports
-  `input_tokens_details.cached_tokens` or `prompt_tokens_details.cached_tokens`
-  as `cached_input_tokens`.
-- Anthropic Messages reports cache reads and cache writes separately from
-  `input_tokens`. The adapter adds each reported cache count to
-  `input_tokens`, reports cache reads as `cached_input_tokens`, and sets
-  `input_tokens_include_cache: true`. A missing cache field adds nothing: the
-  Anthropic API always sends both, and vLLM's `/v1/messages` omits them by
-  default and then reports the full prompt in `input_tokens`. Without
-  `input_tokens`, input stays unknown, and the reported cache reads and
-  output are kept. Counts in a `message_delta` event
-  replace those from `message_start`, because Anthropic reports them
-  cumulatively.
-- `total_tokens` is the endpoint's reported total. Anthropic Messages reports
-  no total, so it stays unknown.
-
 ## Relay-Backed Streaming
 
 The adapter supports `Runtime.invoke_stream()` when the independently deployed
@@ -360,3 +336,11 @@ constructed. The adapter only normalizes `models`, `models.temperature`,
 `models.top_p`, `models.max_tokens`, and replacement `instructions.system`
 settings. MCP, skills, tool policy, and subagents can be configured by the
 remote deployment, but the adapter does not expose them through `FabricConfig`.
+
+## Usage evidence
+
+The adapter preserves literal endpoint reports in `nemo_fabric.usage_accounting.v1`, including independently reported cache reads, cache writes and totals. An omitted count stays unknown; a reported zero stays zero. Messages deltas replace earlier cumulative snapshots rather than adding them again. The adapter retains the latest usable snapshot when a stream fails after reporting usage.
+
+An OpenAI- or Anthropic-compatible response does not establish whether the independently deployed agent included its internal retries, child agents and auxiliary model calls. These reports remain observations with `scope_unverified`; complete invocation totals are unavailable. No requested alias is used to allocate the aggregate to a billing model. Provider cost and catalog estimates remain unavailable without source-established model allocation. Relay traces remain separate references and are never added to these counts.
+
+Anthropic Messages input excludes separately reported cache reads and writes. Missing cache fields on a compatible service do not establish zero or an inclusive input convention. Raw counts remain available even when the normalized cache-inclusive input cannot be established.

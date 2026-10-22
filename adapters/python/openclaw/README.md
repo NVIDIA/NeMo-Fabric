@@ -86,18 +86,6 @@ OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gate
 
 Relay telemetry and native OpenTelemetry are not supported.
 
-### Token Usage
-
-The result's `usage` carries the counts from the Gateway's Chat Completions
-`usage` object. OpenClaw counts cache reads in `prompt_tokens`, so the adapter
-reports `input_tokens_include_cache: true` and reports
-`prompt_tokens_details.cached_tokens` as `cached_input_tokens`. OpenClaw omits
-that detail when no tokens were read from cache, and the cached count then
-stays unknown. OpenClaw leaves cache writes out of `prompt_tokens` but can
-include them in `total_tokens`, so `total_tokens` can exceed input plus output.
-OpenClaw sends `0` for every count when the agent run recorded no usage, so the
-adapter cannot tell that case from a measured zero.
-
 ## Use a NeMo Fabric-Owned Service
 
 `prepare_service()` maps the normalized `FabricConfig` to `openclaw.json`,
@@ -246,8 +234,10 @@ updated independently of the NeMo Fabric service lifecycle.
 The adapter runs the Gateway in an isolated process group, continuously checks
 its startup endpoint, and forwards `SIGINT` and `SIGTERM` on POSIX systems.
 On Linux, the adapter uses `setpriv --pdeathsig SIGTERM` when `setpriv` is
-available so that the kernel signals the Gateway after abrupt adapter
-termination. Windows uses a kill-on-close Job Object for the Gateway process
+available and can run, so that the kernel signals the Gateway after abrupt
+adapter termination. A sandbox that forbids applying capabilities, such as an
+OpenShell sandbox, makes `setpriv` fail; the adapter then starts the Gateway
+without it. Windows uses a kill-on-close Job Object for the Gateway process
 tree. Without `setpriv`, Linux has the same catchable-signal protection as
 macOS but cannot handle `SIGKILL`.
 
@@ -303,3 +293,9 @@ output after the Gateway and channel stop at the end of that interval.
 For Harbor, use managed mode so the Gateway and agent tools share the task
 workspace, as shown in the
 [calculator example](../../../examples/harbor/calculator/README.md#4-openclaw).
+
+## Usage evidence
+
+OpenClaw 2026.9.4 forwards an aggregate usage snapshot, falling back to its latest model-call snapshot. The Gateway zero-fills missing counts and can hide a model call that reported no usage. NeMo Fabric retains positive source reports as observations with `scope_unverified`; zero-filled zeros remain unknown. Complete invocation totals are unavailable from this endpoint.
+
+The Gateway's `prompt_tokens` includes cache reads but excludes cache writes. That partial convention does not establish NeMo Fabric's cache-inclusive input. The adapter preserves the literal prompt and independent cache/total reports in `nemo_fabric.usage_accounting.v1` without guessing missing cache writes. Positive output observations survive independently. A stream failure retains a previously received usage snapshot. The selected agent name does not allocate aggregate spend to a billing model, so no provider cost or catalog estimate is manufactured.

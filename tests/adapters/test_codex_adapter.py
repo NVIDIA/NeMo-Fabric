@@ -542,6 +542,7 @@ def test_single_invocation_uses_native_thread_and_turn_contract(
     assert start["sandbox"] == adapter.Sandbox.workspace_write
     assert start["config"] == {
         "features": {"web_search": False},
+        "mcp_optional_startup_grace_ms": 0,
         "model_reasoning_effort": "high",
     }
     client.thread.turn.assert_awaited_once_with(
@@ -649,6 +650,7 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
 
     assert output["completed"] is True
     config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    assert config["mcp_optional_startup_grace_ms"] == 0
     assert config["mcp_servers"] == {
         "remote": {
             "url": "https://mcp.example.test/mcp",
@@ -2103,3 +2105,87 @@ def test_main_serves_persistent_runtime(monkeypatch):
     serve.assert_called_once_with(
         adapter.CodexRuntime, config_loader=AgentConfig.from_mapping
     )
+
+
+def _version_fact(state: str, reason: str) -> dict[str, str]:
+    return {
+        "state": state,
+        "reason": reason,
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "harness_api",
+    }
+
+
+async def test_codex_reads_the_cli_version_from_a_real_app_server(tmp_path: Path):
+    import importlib.metadata
+
+    from openai_codex.client import CodexConfig
+
+    env = {"CODEX_HOME": str(tmp_path), "HOME": str(tmp_path), "PATH": os.environ["PATH"]}
+    async with AsyncCodex(config=CodexConfig(cwd=str(tmp_path), env=env)) as codex:
+        thread = await codex.thread_start(cwd=str(tmp_path), model="gpt-test")
+
+        fact = await adapter.read_cli_version(thread)
+
+    assert fact == {
+        "value": importlib.metadata.version("openai-codex-cli-bin"),
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "harness_api",
+    }
+
+
+async def _never_settles() -> None:
+    await asyncio.Event().wait()
+
+
+@pytest.mark.parametrize(
+    ("read", "expected"),
+    [
+        pytest.param(
+            AsyncMock(side_effect=_never_settles),
+            _version_fact("collection_failed", "timeout"),
+            id="never-settles",
+        ),
+        pytest.param(
+            AsyncMock(side_effect=JsonRpcError(-32603, "internal error")),
+            _version_fact("collection_failed", "no_result"),
+            id="rpc-error",
+        ),
+        pytest.param(
+            AsyncMock(return_value=SimpleNamespace(thread=SimpleNamespace(cli_version=""))),
+            _version_fact("unavailable", "empty_response"),
+            id="empty",
+        ),
+    ],
+)
+async def test_codex_cli_version_read_degrades_to_a_state(read, expected):
+    thread = MagicMock(spec=AsyncThread)
+    thread.read = read
+    started = time.monotonic()
+
+    assert await adapter.read_cli_version(thread, timeout=0.1) == expected
+    assert time.monotonic() - started < 1
+
+
+def test_codex_versions_report_names_the_harness_as_an_adapter_report():
+    config = AgentConfig.from_mapping(
+        {"models": {"default": {"provider": "openai", "model": "gpt-test"}}}
+    )
+    harness_version = _version_fact("unavailable", "not_collected")
+
+    runtime = adapter.CodexRuntime()
+    runtime._config = config
+    runtime._harness_version = harness_version
+    report = runtime._versions_extensions()["nemo_fabric.versions.v1"]
+
+    assert report["harness"] == {
+        "name": {
+            "value": "codex",
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "adapter_report",
+        },
+        "version": harness_version,
+    }

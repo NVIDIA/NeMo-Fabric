@@ -7,7 +7,9 @@
     "script": "dist/cli.js"
   },
   "requirements": {
-    "binaries": ["node"]
+    "binaries": [
+      "node"
+    ]
   },
   "config": {
     "accepts": [
@@ -19,7 +21,9 @@
       "mcp",
       "skills"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": [
+      "replace"
+    ]
   },
   "settings_schema": {
     "type": "object",
@@ -29,12 +33,31 @@
   "model_schema": {
     "type": "object",
     "properties": {
-      "provider": {"type": "string", "minLength": 1},
-      "model": {"type": "string", "minLength": 1},
-      "api_key_env": {"type": "string", "minLength": 1},
-      "base_url": {"type": ["string", "null"], "format": "uri"}
+      "provider": {
+        "type": "string",
+        "minLength": 1
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "api_key_env": {
+        "type": "string",
+        "minLength": 1
+      },
+      "base_url": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      }
     },
-    "required": ["provider", "model", "api_key_env"],
+    "required": [
+      "provider",
+      "model",
+      "api_key_env"
+    ],
     "additionalProperties": false
   },
   "extension_schemas": {
@@ -42,31 +65,62 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "session_id": {"type": "string", "minLength": 1},
+        "nemo_fabric.versions.v1": {
+          "type": "object"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "finish_reason": {
           "type": "string",
-          "enum": ["completed", "aborted", "error", "mistake_limit", "max_iterations"]
+          "enum": [
+            "completed",
+            "aborted",
+            "error",
+            "mistake_limit",
+            "max_iterations"
+          ]
         },
-        "iterations": {"type": "integer", "minimum": 0},
+        "iterations": {
+          "type": "integer",
+          "minimum": 0
+        },
         "model": {
           "type": "object",
           "properties": {
-            "id": {"type": "string"},
-            "provider": {"type": "string"}
+            "id": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            }
           },
-          "required": ["id", "provider"],
+          "required": [
+            "id",
+            "provider"
+          ],
           "additionalProperties": false
         }
       },
-      "required": ["session_id", "finish_reason"],
+      "required": [
+        "session_id",
+        "finish_reason"
+      ],
       "additionalProperties": false
     },
     "usage": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "cache_read_tokens": {"type": "integer", "minimum": 0},
-        "cache_write_tokens": {"type": "integer", "minimum": 0}
+        "cache_read_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache_write_tokens": {
+          "type": "integer",
+          "minimum": 0
+        }
       },
       "additionalProperties": false
     }

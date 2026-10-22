@@ -42,6 +42,7 @@ test("declares the cumulative Pi turn count in every run result", async () => {
   assert.deepEqual(descriptor.extension_schemas.run_result, {
     type: "object",
     properties: {
+      "nemo_fabric.versions.v1": { type: "object" },
       pi_turn_count: { type: "integer", minimum: 0 },
       pi_turn_started: { type: "boolean" },
     },
