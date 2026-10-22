@@ -14,7 +14,7 @@ from collections.abc import Callable
 from contextlib import AsyncExitStack
 from typing import Any
 
-from nemo_fabric import Fabric, FabricConfig
+from nemo_fabric import Fabric, FabricConfig, ModelConfig
 
 from examples.code_review_agent.config import (
     BASE_DIR,
@@ -25,6 +25,7 @@ from examples.code_review_agent.config import (
     droid_config,
     hermes_config,
     kilo_config,
+    kiro_config,
     nooa_config,
     openclaw_config,
     openhands_config,
@@ -37,6 +38,7 @@ from examples.code_review_agent.config import (
 CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "hermes": hermes_config,
     "kilo": kilo_config,
+    "kiro": kiro_config,
     "claude": claude_config,
     "cline": cline_config,
     "codex": codex_config,
@@ -162,11 +164,16 @@ async def main() -> None:
         parser.error("--stream requires --relay")
     if args.stream and args.plan:
         parser.error("--stream cannot be combined with --plan")
-    if args.variant in {"cline", "droid", "kilo", "openclaw", "openhands", "qwen"} and args.relay:
+    if (
+        args.variant
+        in {"cline", "droid", "kilo", "kiro", "openclaw", "openhands", "qwen"}
+        and args.relay
+    ):
         display_name = {
             "cline": "Cline",
             "droid": "Factory Droid",
             "kilo": "Kilo Code",
+            "kiro": "Kiro",
             "openclaw": "OpenClaw",
             "openhands": "OpenHands",
             "qwen": "Qwen Code",
@@ -214,9 +221,20 @@ async def main() -> None:
     ):
         parser.error("Pi Relay runs require --pi-relay-extension-path")
 
+    if args.variant == "kiro":
+        if args.base_url is not None:
+            parser.error("--base-url is not supported by the Kiro adapter")
+        if args.api_key_env is not None:
+            parser.error(
+                "--api-key-env is not supported by the Kiro adapter; use KIRO_API_KEY"
+            )
+
     config = CONFIG_BUILDERS[args.variant]()
     if args.model is not None:
-        config.models["default"].model = args.model
+        if args.variant == "kiro":
+            config.models["default"] = ModelConfig(provider="kiro", model=args.model)
+        else:
+            config.models["default"].model = args.model
     if args.base_url is not None:
         config.models["default"].base_url = args.base_url
     if args.api_key_env is not None:

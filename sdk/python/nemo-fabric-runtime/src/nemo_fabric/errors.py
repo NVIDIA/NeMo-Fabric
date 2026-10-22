@@ -79,3 +79,20 @@ class FabricCapabilityError(FabricRuntimeError):
 
 class FabricNativeUnavailableError(FabricRuntimeError):
     """SDK call requires the PyO3 extension, but it is not installed or importable."""
+
+
+class ResourceObservationUnavailableError(FabricRuntimeError):
+    """Runtime resources cannot be read now.
+
+    The runtime stopped, is stopping, its adapter host process exited, a live
+    process in its tree or the process table cannot be read, or the process
+    tree kept changing during the read.
+    """
+
+
+class ResourceObservationUnsupportedError(FabricRuntimeError):
+    """Runtime resources have no reader.
+
+    The runtime's adapter kind, environment provider, or operating system has
+    no resource reader.
+    """

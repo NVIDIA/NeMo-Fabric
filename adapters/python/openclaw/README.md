@@ -234,8 +234,10 @@ updated independently of the NeMo Fabric service lifecycle.
 The adapter runs the Gateway in an isolated process group, continuously checks
 its startup endpoint, and forwards `SIGINT` and `SIGTERM` on POSIX systems.
 On Linux, the adapter uses `setpriv --pdeathsig SIGTERM` when `setpriv` is
-available so that the kernel signals the Gateway after abrupt adapter
-termination. Windows uses a kill-on-close Job Object for the Gateway process
+available and can run, so that the kernel signals the Gateway after abrupt
+adapter termination. A sandbox that forbids applying capabilities, such as an
+OpenShell sandbox, makes `setpriv` fail; the adapter then starts the Gateway
+without it. Windows uses a kill-on-close Job Object for the Gateway process
 tree. Without `setpriv`, Linux has the same catchable-signal protection as
 macOS but cannot handle `SIGKILL`.
 

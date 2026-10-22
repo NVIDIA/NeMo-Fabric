@@ -12,6 +12,7 @@ from typing import Any
 
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.nooa.usage import install_model_observer
 
 
 def _config_error(code: str, message: str, **metadata: Any) -> lifecycle.LifecycleError:
@@ -95,6 +96,7 @@ async def build_models(config: AgentConfig) -> dict[str, Any]:
         ) from error
 
     result: dict[str, Any] = {}
+    observed: set[int] = set()
     try:
         for role, model in config.models.items():
             credential_env = _credential_env(model.provider, model.api_key_env)
@@ -117,6 +119,9 @@ async def build_models(config: AgentConfig) -> dict[str, Any]:
                 client_type=client_type,
                 **overrides,
             )
+            if id(result[role]) not in observed:
+                install_model_observer(result[role])
+                observed.add(id(result[role]))
     except BaseException as error:
         try:
             await close_models(result)

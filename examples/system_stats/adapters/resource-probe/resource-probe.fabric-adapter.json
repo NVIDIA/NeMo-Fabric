@@ -1,0 +1,6 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "example.stats_probe",
+  "adapter_kind": "process",
+  "runner": {"command": "python3", "script": "run.py"}
+}

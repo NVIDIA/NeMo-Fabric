@@ -22,6 +22,7 @@ mkdir -p "$out"
 PYTHONPATH="sdk/python/nemo-fabric-runtime/src" lazydocs \
   --output-path "$out" \
   --overview-file "index.md" \
+  "nemo_fabric.accounting" \
   "nemo_fabric.client" \
   "nemo_fabric.capabilities" \
   "nemo_fabric.runtime" \
@@ -78,6 +79,11 @@ add_frontmatter \
   "Python SDK Reference" \
   "Complete reference for the public NeMo Fabric Python SDK." \
   "/reference/api/python-library-reference"
+add_frontmatter \
+  "$out/nemo_fabric.accounting.md" \
+  "Model Usage Accounting" \
+  "Summarize complete and observed model usage with explicit coverage." \
+  "/reference/api/python-library-reference/accounting"
 add_frontmatter \
   "$out/nemo_fabric.client.md" \
   "Client" \
