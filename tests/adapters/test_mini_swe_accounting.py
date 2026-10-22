@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import httpx
 import litellm
 import pytest
+import pytest_asyncio
 from minisweagent.exceptions import FormatError
 from nemo_fabric_adapter_contract.models import ReportedUsage
 from nemo_fabric_adapters.mini_swe_agent.usage import (
@@ -55,19 +56,21 @@ def reply(usage, *, command="echo done", response_id="scripted"):
     }
 
 
-@pytest.fixture(autouse=True)
-def deny_outbound_fixture(monkeypatch):
-    # All source tests use in-memory HTTP transports. A route that ignores an
-    # injected client must fail before DNS or a socket can reach a provider.
-    monkeypatch.setattr(
-        "socket.getaddrinfo",
-        MagicMock(side_effect=AssertionError("outbound DNS forbidden")),
-    )
-    monkeypatch.setattr(
-        "socket.socket.connect",
-        MagicMock(side_effect=AssertionError("outbound connection forbidden")),
-    )
-    monkeypatch.setenv("MSWEA_MODEL_RETRY_STOP_AFTER_ATTEMPT", "1")
+@pytest_asyncio.fixture(autouse=True)
+async def deny_outbound_fixture(monkeypatch):
+    # Windows needs a loopback socketpair while creating its event loop. Apply
+    # guards after loop creation and restore them before the runner tears down.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "socket.getaddrinfo",
+            MagicMock(side_effect=AssertionError("outbound DNS forbidden")),
+        )
+        patch.setattr(
+            "socket.socket.connect",
+            MagicMock(side_effect=AssertionError("outbound connection forbidden")),
+        )
+        patch.setenv("MSWEA_MODEL_RETRY_STOP_AFTER_ATTEMPT", "1")
+        yield
 
 
 @pytest.fixture(name="make_model")
