@@ -26,6 +26,8 @@ schemas/
 │   ├── agent.schema.json
 │   ├── run-plan.schema.json
 │   └── ...
+├── extensions/                # Descriptor-declared extension payloads
+│   └── usage-accounting.schema.json
 └── adapter-contract/          # Southbound adapter-facing contract
     ├── adapter-descriptor.schema.json
     ├── adapter-target-descriptor.schema.json
@@ -38,9 +40,10 @@ schemas/
     └── openai-stream-record.schema.json
 ```
 
-An adapter author can treat `adapter-contract/` as the complete schema entry
-point. Contract versions remain explicit fields in the wire format rather than
-directory names.
+`adapter-contract/` defines the base adapter wire objects. Adapters returning
+supported extension payloads must also declare the applicable schema from
+`extensions/`. Contract versions remain explicit fields in the wire format
+rather than directory names.
 
 Start with the
 [adapter contract overview](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/adapter-contract/README.md)
