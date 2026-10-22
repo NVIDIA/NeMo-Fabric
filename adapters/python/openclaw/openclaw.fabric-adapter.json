@@ -26,7 +26,9 @@
           "channels": {
             "type": "object",
             "minProperties": 1,
-            "additionalProperties": {"type": "object"}
+            "additionalProperties": {
+              "type": "object"
+            }
           },
           "bindings": {
             "type": "array",
@@ -34,15 +36,26 @@
             "items": {
               "type": "object",
               "properties": {
-                "agentId": {"type": "string", "minLength": 1},
-                "match": {"type": "object"}
+                "agentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "match": {
+                  "type": "object"
+                }
               },
-              "required": ["agentId", "match"],
+              "required": [
+                "agentId",
+                "match"
+              ],
               "additionalProperties": true
             }
           }
         },
-        "required": ["channels", "bindings"],
+        "required": [
+          "channels",
+          "bindings"
+        ],
         "additionalProperties": false,
         "description": "OpenClaw-native channels and bindings for NeMo Fabric-owned services. Every binding must target the configured agent. Managed runtimes reject channel configuration."
       },
@@ -60,7 +73,10 @@
             "maximum": 65535
           }
         },
-        "required": ["start", "end"],
+        "required": [
+          "start",
+          "end"
+        ],
         "additionalProperties": false,
         "description": "Inclusive consumer-allocated port range. The adapter selects a Gateway base port whose complete derived footprint through base + 110 fits within the range. When omitted, the adapter selects an available local range."
       },
@@ -95,23 +111,59 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "provider": {"type": "string", "minLength": 1},
-      "model": {"type": "string", "minLength": 1},
-      "api_key_env": {"type": "string", "minLength": 1},
-      "base_url": {"type": "string", "minLength": 1},
-      "temperature": {"type": "number"},
-      "top_p": {"type": "number", "minimum": 0, "maximum": 1},
-      "max_tokens": {"type": "integer", "minimum": 1},
+      "provider": {
+        "type": "string",
+        "minLength": 1
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "api_key_env": {
+        "type": "string",
+        "minLength": 1
+      },
+      "base_url": {
+        "type": "string",
+        "minLength": 1
+      },
+      "temperature": {
+        "type": "number"
+      },
+      "top_p": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "max_tokens": {
+        "type": "integer",
+        "minimum": 1
+      },
       "settings": {
         "type": "object",
         "properties": {},
         "additionalProperties": false
       }
     },
-    "required": ["provider", "model"],
+    "required": [
+      "provider",
+      "model"
+    ],
     "additionalProperties": false
   },
   "requirements": {},
+  "extension_schemas": {
+    "run_result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "nemo_fabric.versions.v1": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "config": {
     "accepts": [
       "models",
@@ -125,7 +177,9 @@
       "mcp",
       "skills"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": [
+      "replace"
+    ]
   },
   "capabilities": {
     "service": true,

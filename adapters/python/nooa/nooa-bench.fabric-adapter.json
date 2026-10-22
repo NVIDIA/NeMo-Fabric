@@ -9,23 +9,43 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "provider": {"type": "string", "minLength": 1},
-      "model": {"type": "string", "minLength": 1},
-      "temperature": {"type": "number"},
-      "api_key_env": {"type": "string", "minLength": 1},
-      "base_url": {"type": "string", "minLength": 1},
+      "provider": {
+        "type": "string",
+        "minLength": 1
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "temperature": {
+        "type": "number"
+      },
+      "api_key_env": {
+        "type": "string",
+        "minLength": 1
+      },
+      "base_url": {
+        "type": "string",
+        "minLength": 1
+      },
       "settings": {
         "type": "object",
         "properties": {
           "client_type": {
             "type": "string",
-            "enum": ["completion", "responses"]
+            "enum": [
+              "completion",
+              "responses"
+            ]
           }
         },
         "additionalProperties": false
       }
     },
-    "required": ["provider", "model"],
+    "required": [
+      "provider",
+      "model"
+    ],
     "additionalProperties": false
   },
   "settings_schema": {
@@ -35,6 +55,18 @@
     "additionalProperties": false
   },
   "requirements": {},
+  "extension_schemas": {
+    "run_result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "nemo_fabric.versions.v1": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "config": {
     "accepts": [
       "models",
@@ -46,7 +78,11 @@
   "telemetry": {
     "providers": {
       "relay": {
-        "outputs": ["atif", "otel", "openinference"]
+        "outputs": [
+          "atif",
+          "otel",
+          "openinference"
+        ]
       }
     }
   },

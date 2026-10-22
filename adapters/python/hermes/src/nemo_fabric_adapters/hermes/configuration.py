@@ -110,13 +110,9 @@ def build_hermes_config(
         ),
     }
 
-    # Hermes replaces a session's locally derived title with one from a model
-    # call unless auxiliary.title_generation.model_upgrade_enabled is false
-    # (agent/title_generator.py), and records that call's tokens outside the
-    # session counters the adapter reports. Keep the derived title instead.
-    title_generation: dict[str, bool] = {"model_upgrade_enabled": False}
+    # Keep Hermes' local title without scheduling a model upgrade after return.
+    title_generation = {"model_upgrade_enabled": False}
     if relay_enabled:
-        # Hermes makes an extra model call for titles, which skews Relay telemetry.
         title_generation["enabled"] = False
     config["auxiliary"] = {"title_generation": title_generation}
 
@@ -232,6 +228,7 @@ def hermes_mcp_server_config(
 def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "model": config.get("model", {}),
+        "title_generation": (config.get("auxiliary") or {}).get("title_generation", {}),
         "terminal": config.get("terminal", {}),
         "skill_dirs": (config.get("skills") or {}).get("external_dirs", []),
         "mcp_servers": sorted((config.get("mcp_servers") or {}).keys()),

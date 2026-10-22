@@ -9,24 +9,50 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "provider": {"type": "string", "minLength": 1},
-      "model": {"type": "string", "minLength": 1},
-      "temperature": {"type": "number"},
-      "api_key_env": {"type": "string", "minLength": 1},
-      "base_url": {"type": "string", "minLength": 1},
+      "provider": {
+        "type": "string",
+        "minLength": 1
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "temperature": {
+        "type": "number"
+      },
+      "api_key_env": {
+        "type": "string",
+        "minLength": 1
+      },
+      "base_url": {
+        "type": "string",
+        "minLength": 1
+      },
       "settings": {
         "type": "object",
         "properties": {},
         "additionalProperties": false
       }
     },
-    "required": ["provider", "model"],
+    "required": [
+      "provider",
+      "model"
+    ],
     "if": {
-      "properties": {"provider": {"const": "anthropic"}},
-      "required": ["provider"]
+      "properties": {
+        "provider": {
+          "const": "anthropic"
+        }
+      },
+      "required": [
+        "provider"
+      ]
     },
     "else": {
-      "required": ["base_url", "api_key_env"]
+      "required": [
+        "base_url",
+        "api_key_env"
+      ]
     },
     "additionalProperties": false
   },
@@ -38,7 +64,11 @@
         "type": "array",
         "items": {
           "type": "string",
-          "enum": ["user", "project", "local"]
+          "enum": [
+            "user",
+            "project",
+            "local"
+          ]
         },
         "default": [],
         "description": "Claude settings scopes to load."
@@ -77,12 +107,28 @@
         "nemo_fabric.detailed_token_usage.v1": {
           "type": "object",
           "properties": {
-            "input_tokens": {"type": "integer", "minimum": 0},
-            "cached_input_tokens": {"type": "integer", "minimum": 0},
-            "cache_write_input_tokens": {"type": "integer", "minimum": 0},
-            "input_tokens_include_cache": {"type": "boolean"},
-            "output_tokens": {"type": "integer", "minimum": 0},
-            "output_tokens_include_reasoning": {"type": "boolean"}
+            "input_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cached_input_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cache_write_input_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "input_tokens_include_cache": {
+              "type": "boolean"
+            },
+            "output_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output_tokens_include_reasoning": {
+              "type": "boolean"
+            }
           },
           "additionalProperties": false
         }
@@ -93,10 +139,29 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "subtype": {"type": "string"},
-        "api_error_status": {"type": "integer"},
-        "exit_code": {"type": "integer"},
-        "timeout_seconds": {"type": "number", "minimum": 0}
+        "subtype": {
+          "type": "string"
+        },
+        "api_error_status": {
+          "type": "integer"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "run_result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "nemo_fabric.versions.v1": {
+          "type": "object"
+        }
       },
       "additionalProperties": false
     }
@@ -112,13 +177,23 @@
       "mcp",
       "skills"
     ],
-    "system_instruction_modes": ["replace", "append"]
+    "system_instruction_modes": [
+      "replace",
+      "append"
+    ]
   },
   "telemetry": {
     "providers": {
       "relay": {
-        "outputs": ["atif", "otel", "openinference"],
-        "integration_modes": ["hooks", "gateway"]
+        "outputs": [
+          "atif",
+          "otel",
+          "openinference"
+        ],
+        "integration_modes": [
+          "hooks",
+          "gateway"
+        ]
       }
     }
   }

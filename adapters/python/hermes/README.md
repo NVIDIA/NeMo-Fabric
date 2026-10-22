@@ -112,120 +112,6 @@ a child under `runtimes/<runtime_id>`, so invocations in one NeMo Fabric runtime
 share state without sharing config or the session database with another
 runtime.
 
-## Token Usage
-
-Hermes counts its main model's tokens per session, and the adapter keeps one
-session per runtime. The adapter reads the agent's session counters right before
-each turn runs and again after it, so each result's `usage` is that turn's
-change: `input_tokens` with cache reads and cache writes included,
-`cached_input_tokens`, `output_tokens`, and `total_tokens`. A failure result
-reports its own tokens too, and an invocation that raised or was cancelled
-never adds its tokens to the next one. A counter that is missing, that is not
-a non-negative integer below 2^64, or that went down because Hermes reset its
-session, is left out for that invocation. Delegation is one of Hermes' default
-toolsets: a subagent is its own agent with its own counters, and Hermes runs a
-top-level delegation in the background, so the subagent's calls can finish
-after the invocation returns. An invocation whose agent built a subagent has no
-`usage`; later invocations report only their own turns. Hermes also leaves out
-of its counters the summary request it makes when a turn reaches its iteration
-limit.
-The adapter adds the counts that this summary response reported, before Hermes
-reads its text, so they count even when Hermes cannot read the response and
-answers with its fallback text. An invocation whose summary response carried no
-usage, or whose summary request failed before any response, has no `usage`.
-
-Hermes keeps auxiliary model calls, such as context-compression summaries and
-vision analysis, out of these counters. The adapter adds the usage of each
-auxiliary response that Hermes' auxiliary client returns to the invocation
-whose turn made the call, using the same rules as a main-loop response. A
-response without usage, or one whose usage left out a count, leaves the
-affected counts unknown. An auxiliary request that raised, including a
-response the client could not parse, may have been billed, so the invocation
-has no `usage`. So does a request that returned no response, and one that
-had more than one observed dispatch, such as a streamed request Hermes retried
-without streaming. The adapter counts Hermes' auxiliary dispatch
-notifications. Hermes disables SDK retries for its OpenAI and Anthropic
-auxiliary clients. Native transport shim, SDK and gateway retries below that
-boundary are not observed.
-The same holds for a request still running, or a response
-Hermes has not recorded yet, when the invocation returns, and that usage is
-never added to a later invocation.
-Mixture-of-agents calls are already in the session counters and are not
-counted twice. An invocation that delegates has no `usage`, because a
-background subagent's main and auxiliary calls can finish after the
-invocation returns; the adapter never adds a subagent's auxiliary calls to
-the parent. Hermes' Anthropic auxiliary client drops the cache counts when it
-converts a response, so the adapter reads the raw Anthropic usage before the
-conversion. If that response reaches Hermes' usage recorder as another
-object, such as one a Relay execution intercept replaced, the invocation has
-no `usage`. Hermes' Codex Responses and Copilot ACP auxiliary clients fill
-omitted counts with 0 when they convert the usage, so a response from one of
-them leaves every count unknown. Auxiliary calls on the native Bedrock and
-Gemini transports follow the same raw-usage check as main-loop calls. A plugin context engine may call
-a model outside the auxiliary client, so an invocation in which one compressed
-has no `usage`. The adapter sets
-`auxiliary.title_generation.model_upgrade_enabled` to false, so Hermes keeps its
-locally derived session title and makes no title model call; with Relay
-enabled, title generation is off entirely. Fabric disables Hermes' automatic
-post-turn memory and skill review with `skip_background_review`. If Hermes
-nevertheless enters the background-review path during an invocation, the
-adapter leaves that invocation's usage unknown, because the review forks an
-agent that records its tokens outside the auxiliary client. The adapter wraps
-`agent.aux_accounting.record_aux_usage`, the auxiliary client's
-`_relay_sync_completion`, `_relay_async_completion`, `_unwrap_data_envelope`
-and `_notify_aux_dispatch`,
-`agent.anthropic_adapter.create_anthropic_message`, and the Anthropic
-auxiliary client's `create` once per process, and the agent's
-`_spawn_background_review` when it starts the agent. Startup checks that
-Hermes still reaches these functions by those names, that its auxiliary
-accounting context and mixture-of-agents exclusions exist, and that its agent
-accepts `skip_background_review`. These checks do not detect every internal
-Hermes change.
-
-Hermes adds no tokens for a provider response that carried no usage, so an
-invocation with such a response has no `usage`. For a response it rejects as
-invalid, a reply that hit the output token limit, and a reply stopped by a
-content filter, Hermes returns before adding the response's usage to its
-counters. The adapter adds the counts that such a response reported itself,
-using the provider and API mode that served it, and counts it only once when
-Hermes records it after all. A streamed call that fails and is retried inside
-Hermes' API call, such as an empty stream, never reaches these checks, so its
-billed usage is not observed and the invocation can undercount. Hermes reads a
-count that a response's usage left out as 0, so the adapter checks each
-response's usage before Hermes normalizes it. A reported zero still counts as 0.
-When a response left out its input count, the invocation's `usage` leaves out
-`input_tokens` and `total_tokens`, and keeps `cached_input_tokens` when the
-cache-read count is known. Anthropic Messages usage reports input without the
-cache, so its input count also needs both cache fields. When a response left out
-its output count, the `usage` leaves out `output_tokens` and `total_tokens`.
-When a response sent no cache details, the `usage` leaves out
-`cached_input_tokens`.
-
-This check covers the usage that the OpenAI-compatible, Responses, and Anthropic
-clients return. Hermes' native Bedrock Converse and Gemini transports fill a
-count the provider left out with 0, so the adapter reads which counts their raw
-usage reported before they do: Bedrock's input needs `inputTokens`, its cached
-input `cacheReadInputTokens` and its output `outputTokens`, and a Converse
-stream without its metadata event reports none; Gemini's input needs
-`promptTokenCount`, its cached input `cachedContentTokenCount`, and its output
-`candidatesTokenCount` or `thoughtsTokenCount`. Hermes' Anthropic transport
-replaces a stream event's `usage: null`, which some Anthropic-compatible
-gateways send, with zeros or with the start event's output count before the SDK
-builds the final message, so the adapter cannot see it. A null start usage
-leaves input and cached input unknown, because Hermes' filled usage has no cache
-fields, but a null final usage leaves a wrong output count. The Anthropic API
-itself always sends both. Hermes' Codex app-server runtime records usage outside
-this path. Hermes passes a response's raw usage to no per-agent hook, so the
-adapter wraps `record_response_usage` and the three handlers for invalid,
-truncated, and refused responses in `agent.turn_response_check`, and the
-iteration-limit summary's `_summary_text` and attempt builders in
-`agent.chat_completion_helpers`, `tools.delegate_tool._build_child_agent`, and
-the native usage readers in `agent.bedrock_adapter` and
-`agent.gemini_native_adapter`, once per process. Startup checks the
-response-handler, summary and delegation interception points, and requires the
-native usage-reader functions to exist. These checks do not detect every
-internal Hermes change.
-
 ## Execution Model
 
 Each NeMo Fabric runtime starts one local adapter host, constructs one Hermes Agent
@@ -235,6 +121,52 @@ those native objects and pass the prior turn's returned transcript back to
 method, closes the session database, and releases the Relay plugin context when
 enabled. Relay subscriber work is flushed after each invocation so ATIF output
 is complete before the result returns.
+
+## Token Usage
+
+Hermes reports invocation-owned model evidence through the shared
+`nemo_fabric.usage_accounting.v1` extension. An omitted count stays unknown;
+a reported 0 stays 0. Core normalizes cache and reasoning conventions and
+calculates separately labeled catalog estimates. Hermes' session cost estimate
+is not reported as provider `cost_usd`. Only an observed native HTTPS provider
+endpoint qualifies for bundled prices; a custom endpoint retains its actual
+model identity and requires an explicit user catalog for estimates.
+
+For Hermes revision `a62979dc`, Fabric observes the HTTP clients it owns through
+one qualified per-agent client-construction override. It preserves Hermes'
+client settings, connection-pool lifecycle, retries and lazy stream consumption.
+The observer reads usage before response normalization, including replies that
+Hermes later rejects or truncates, and iteration-limit summaries. Each physical
+request contributes once. A silent stream end without its terminal marker or a
+malformed/oversized event leaves complete totals unknown and retains the last
+readable observation. A failed request without usable usage makes complete
+totals unknown and retains other observed counts. HTTP status alone never
+establishes zero spend.
+
+Public execution middleware supplies observations for transports outside that
+HTTP seam, including native Anthropic and delegated agents. Their physical
+attempt coverage remains unverified. Public auxiliary hooks retain positive
+normalized counts, but their zero-filled counters cannot establish a reported
+zero or recover cache fields lost before the hook. Only the affected dimensions
+remain unknown. Compression through an opaque plugin engine records an explicit
+scope gap when its compression method actually runs. A shared or immutable
+plugin engine cannot be safely instrumented and remains unverified.
+
+An unfinished request or child at return creates an accounting gap. Results
+freeze at that boundary; late completion cannot change them or transfer tokens
+to the next invocation. Task delegation remains asynchronous where Hermes
+schedules it asynchronously. Cancellation still propagates through Fabric's
+existing lifecycle; a cancelled call that produces no result has no returned
+usage payload.
+
+NeMo Fabric disables automatic post-turn memory/skill review with
+`skip_background_review`, and disables model-generated title upgrades with
+`auxiliary.title_generation.model_upgrade_enabled=false`. Local title generation
+remains enabled without Relay; Relay runs retain their existing title disablement.
+The applied settings appear in `output.skip_background_review` and
+`output.hermes_native_config.title_generation`. These housekeeping controls do
+not disable task delegation. Other Hermes revisions keep execution and available
+middleware observations, but do not receive qualified transport completeness.
 
 ## Maintaining The Adapter
 

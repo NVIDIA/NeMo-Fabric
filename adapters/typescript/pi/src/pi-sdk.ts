@@ -5,7 +5,6 @@
 // into a controlled in-memory Pi session, including model credentials, skills,
 // extensions, custom tools, and workspace containment.
 
-import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -29,7 +28,7 @@ import {
   type PiRelayControllerFactory,
   type PiRelayRuntime,
 } from "./relay.js";
-import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle, PiTokenUsage } from "./runtime.js";
+import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runtime.js";
 
 // ProviderConfigInput isn't re-exported from pi's public entrypoint; derive it from
 // registerProvider's param type (ModelRuntime's constructor is private, so no InstanceType).
@@ -68,586 +67,6 @@ interface PiToolFactoryContext {
   name: string;
   settings: JsonObject;
   workspace: string;
-}
-
-const NO_TOKENS: PiTokenUsage = { input: 0, cacheRead: 0, output: 0 };
-
-/** Which counts of one model call the provider reported before Pi filled the rest with 0. */
-export interface ReportedCounts {
-  input: boolean;
-  cacheRead: boolean;
-  output: boolean;
-}
-
-/**
- * What the provider reported for the model call that produced an assistant
- * message or a usage object, if the adapter saw that call.
- */
-export type ReportedCountsLookup = (messageOrUsage: unknown) => ReportedCounts | undefined;
-
-const ALL_REPORTED: ReportedCounts = { input: true, cacheRead: true, output: true };
-const NONE_REPORTED: ReportedCounts = { input: false, cacheRead: false, output: false };
-
-/** Pi's four usage counts, each undefined unless it is a non-negative safe integer. */
-function piCounts(usage: unknown): Record<"input" | "cacheRead" | "cacheWrite" | "output", number | undefined> {
-  const fields = (typeof usage === "object" && usage !== null ? usage : {}) as Record<string, unknown>;
-  const count = (name: string): number | undefined => {
-    const value = fields[name];
-    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
-  };
-  return { input: count("input"), cacheRead: count("cacheRead"), cacheWrite: count("cacheWrite"), output: count("output") };
-}
-
-/**
- * The sum of token counts, or undefined when it is not a safe integer: a
- * larger sum loses precision, so the count it would report is unknown.
- */
-function safeSum(...counts: number[]): number | undefined {
-  const sum = counts.reduce((partial, count) => partial + count, 0);
-  return Number.isSafeInteger(sum) ? sum : undefined;
-}
-
-/**
- * One call's counts from Pi's usage, with input counting its cache reads and
- * writes, and which of them the usage holds. Input needs Pi's `input`,
- * `cacheRead` and `cacheWrite`, cache reads need `cacheRead`, and output needs
- * `output`; a missing field adds 0 to `counts` and leaves the counts that need
- * it unreported, and so does an input whose sum is not a safe integer.
- * Undefined when the usage is not an object.
- */
-function callCounts(usage: unknown): { counts: Required<PiTokenUsage>; present: ReportedCounts } | undefined {
-  if (typeof usage !== "object" || usage === null) {
-    return undefined;
-  }
-  const { input, cacheRead, cacheWrite, output } = piCounts(usage);
-  const inclusiveInput = safeSum(input ?? 0, cacheRead ?? 0, cacheWrite ?? 0);
-  return {
-    counts: { input: inclusiveInput ?? 0, cacheRead: cacheRead ?? 0, output: output ?? 0 },
-    present: {
-      input: input !== undefined && cacheRead !== undefined && cacheWrite !== undefined && inclusiveInput !== undefined,
-      cacheRead: cacheRead !== undefined,
-      output: output !== undefined,
-    },
-  };
-}
-
-/**
- * Add a call's counts to a prompt's running total. Each count stays known only
- * while every call reported it and its sum stays a safe integer, independently
- * of the others. The total is unknown once no count is known.
- */
-function sumCounts(total: PiTokenUsage, call: Required<PiTokenUsage>, reported: ReportedCounts): PiTokenUsage | undefined {
-  const sum: PiTokenUsage = {};
-  for (const name of ["input", "cacheRead", "output"] as const) {
-    const running = total[name];
-    const count = reported[name] && running !== undefined ? safeSum(running, call[name]) : undefined;
-    if (count !== undefined) {
-      sum[name] = count;
-    }
-  }
-  return sum.input === undefined && sum.cacheRead === undefined && sum.output === undefined ? undefined : sum;
-}
-
-/**
- * Add one call's own usage report, such as a tool's, to a prompt's running
- * total. A count the report leaves out is unknown for the whole prompt, and
- * the other counts stay known.
- */
-export function addUsage(total: PiTokenUsage | undefined, usage: unknown): PiTokenUsage | undefined {
-  const call = callCounts(usage);
-  return total === undefined || call === undefined ? undefined : sumCounts(total, call.counts, call.present);
-}
-
-/**
- * Add one model call's usage to a prompt's running total. Pi's provider
- * parsers fill a count the provider omitted with 0, so `reported` says which
- * counts the provider actually reported, from the raw stream events the
- * session recorded for that call. A count the provider omitted is unknown for
- * the whole prompt, and so is every count of a call the session has no
- * record for, such as a cache warm-up. A reported zero stays a measured zero.
- */
-function addModelCallUsage(
-  total: PiTokenUsage | undefined,
-  usage: unknown,
-  reported: ReportedCounts | undefined,
-): PiTokenUsage | undefined {
-  const call = callCounts(usage);
-  if (total === undefined || call === undefined || reported === undefined) {
-    return undefined;
-  }
-  return sumCounts(total, call.counts, {
-    input: reported.input && call.present.input,
-    cacheRead: reported.cacheRead && call.present.cacheRead,
-    output: reported.output && call.present.output,
-  });
-}
-
-/**
- * The summary calls Pi's `compact` makes for a compaction preparation: one for
- * the history, and for a split turn one for the turn prefix, without the
- * history call when there is no history to summarize. Undefined without a
- * preparation.
- */
-export function summaryCallCount(preparation: unknown): number | undefined {
-  if (typeof preparation !== "object" || preparation === null) {
-    return undefined;
-  }
-  const { isSplitTurn, messagesToSummarize, turnPrefixMessages } = preparation as Record<string, unknown>;
-  if (isSplitTurn !== true || !Array.isArray(turnPrefixMessages) || turnPrefixMessages.length === 0) {
-    return 1;
-  }
-  return Array.isArray(messagesToSummarize) && messagesToSummarize.length > 0 ? 2 : 1;
-}
-
-/** The model calls that ran between a compaction's preparation and its end. */
-export interface CompactionCalls {
-  /** How many summary calls the preparation needs, from `summaryCallCount`. */
-  expected: number;
-  /** The usage objects of the model calls that ended since the preparation. */
-  calls: readonly unknown[];
-}
-
-/**
- * Add a split-turn compaction's summary calls one by one. Pi reports only
- * their combined usage, so the calls count only when the session saw exactly
- * the summary calls the preparation needs and their usage adds up to the
- * combined usage; otherwise one call could be missing and the prompt's tokens
- * are unknown.
- */
-function addSummaryCallsUsage(
-  total: PiTokenUsage | undefined,
-  combined: unknown,
-  compaction: CompactionCalls | undefined,
-  reportedCounts: ReportedCountsLookup,
-): PiTokenUsage | undefined {
-  if (compaction === undefined || compaction.calls.length !== compaction.expected) {
-    return undefined;
-  }
-  const expected = piCounts(combined);
-  const names = ["input", "cacheRead", "cacheWrite", "output"] as const;
-  const addsUp = names.every((name) => {
-    const sum = compaction.calls.reduce<number | undefined>((partial, call) => {
-      const count = piCounts(call)[name];
-      return partial === undefined || count === undefined ? undefined : safeSum(partial, count);
-    }, 0);
-    return sum !== undefined && sum === expected[name];
-  });
-  if (!addsUp) {
-    return undefined;
-  }
-  return compaction.calls.reduce<PiTokenUsage | undefined>(
-    (sum, call) => addModelCallUsage(sum, call, reportedCounts(call)),
-    total,
-  );
-}
-
-/**
- * Add the tokens one session event recorded to a prompt's running total, as
- * Pi's own usage totals count them: an assistant message, a tool result that
- * reports usage, a finished compaction's summary calls, and a usage entry such
- * as a cache warm-up. A model call adds only the counts its provider
- * reported, as `reportedCounts` records them by assistant message or usage
- * object. The total becomes unknown when a model call reports no count, when
- * an assistant message or a compaction was aborted, or when a compaction
- * summary call was retried: Pi keeps no usage for a call it stopped or a
- * summary attempt that failed, and either may still have been billed. A
- * split-turn compaction's combined usage counts through its summary calls,
- * which `compaction` lists; see `addSummaryCallsUsage`.
- */
-export function addEventUsage(
-  total: PiTokenUsage | undefined,
-  event: unknown,
-  reportedCounts: ReportedCountsLookup,
-  compaction?: CompactionCalls,
-): PiTokenUsage | undefined {
-  const fields = (typeof event === "object" && event !== null ? event : {}) as {
-    type?: unknown;
-    message?: { role?: unknown; stopReason?: unknown; usage?: unknown };
-    aborted?: unknown;
-    result?: { usage?: unknown };
-    entry?: { type?: unknown; usage?: unknown };
-  };
-  switch (fields.type) {
-    case "message_end":
-      if (fields.message?.role === "assistant") {
-        // An extension's message_end handler can replace the message's usage
-        // object, but Pi keeps the message object itself.
-        const reported = reportedCounts(fields.message) ?? reportedCounts(fields.message.usage);
-        return fields.message.stopReason === "aborted"
-          ? undefined
-          : addModelCallUsage(total, fields.message.usage, reported);
-      }
-      if (fields.message?.role === "toolResult" && fields.message.usage !== undefined) {
-        return addUsage(total, fields.message.usage);
-      }
-      return total;
-    case "compaction_end": {
-      if (fields.aborted !== false || fields.result === undefined) {
-        return undefined;
-      }
-      const reported = reportedCounts(fields.result.usage);
-      return reported === undefined
-        ? addSummaryCallsUsage(total, fields.result.usage, compaction, reportedCounts)
-        : addModelCallUsage(total, fields.result.usage, reported);
-    }
-    case "summarization_retry_scheduled":
-      return undefined;
-    case "entry_appended":
-      return fields.entry?.type === "usage"
-        ? addModelCallUsage(total, fields.entry.usage, reportedCounts(fields.entry.usage))
-        : total;
-    default:
-      return total;
-  }
-}
-
-/** The value at a dotted `path` of a raw provider event, or undefined. */
-function rawField(value: unknown, path: string): unknown {
-  let field = value;
-  for (const name of path.split(".")) {
-    field = typeof field === "object" && field !== null ? (field as Record<string, unknown>)[name] : undefined;
-  }
-  return field;
-}
-
-/**
- * The raw usage fields Pi's parser reads for each count, by wire protocol
- * (`@earendil-works/pi-ai` 1.0.3). Input is reported when every `input` field
- * is present, cache reads and output when any of theirs is. Anthropic Messages
- * and pi-messages report input without the cache, so their input also needs
- * the cache fields, as in the Claude adapter. The other protocols' input count
- * includes the cache, so a missing cache detail leaves only the cache reads
- * unknown. Google output counts thinking tokens too.
- */
-interface UsageFields {
-  input: string[];
-  cacheRead: string[];
-  output: string[];
-}
-const RESPONSES_FIELDS: UsageFields = {
-  input: ["input_tokens"],
-  cacheRead: ["input_tokens_details.cached_tokens"],
-  output: ["output_tokens"],
-};
-const GOOGLE_FIELDS: UsageFields = {
-  input: ["promptTokenCount"],
-  cacheRead: ["cachedContentTokenCount"],
-  output: ["candidatesTokenCount", "thoughtsTokenCount"],
-};
-const REPORTED_FIELDS: Record<string, UsageFields> = {
-  "openai-completions": {
-    input: ["prompt_tokens"],
-    cacheRead: ["prompt_tokens_details.cached_tokens", "prompt_cache_hit_tokens", "cached_tokens"],
-    output: ["completion_tokens"],
-  },
-  "mistral-conversations": {
-    input: ["prompt_tokens"],
-    cacheRead: [
-      "promptTokensDetails.cachedTokens",
-      "prompt_tokens_details.cached_tokens",
-      "promptTokenDetails.cachedTokens",
-      "prompt_token_details.cached_tokens",
-      "numCachedTokens",
-      "num_cached_tokens",
-    ],
-    output: ["completion_tokens"],
-  },
-  "openai-responses": RESPONSES_FIELDS,
-  "azure-openai-responses": RESPONSES_FIELDS,
-  "openai-codex-responses": RESPONSES_FIELDS,
-  "bedrock-converse-stream": {
-    input: ["inputTokens"],
-    cacheRead: ["cacheReadInputTokens"],
-    output: ["outputTokens"],
-  },
-  "google-generative-ai": GOOGLE_FIELDS,
-  "google-vertex": GOOGLE_FIELDS,
-  "pi-messages": {
-    input: ["input", "cacheRead", "cacheWrite"],
-    cacheRead: ["cacheRead"],
-    output: ["output"],
-  },
-  "anthropic-messages": {
-    input: ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"],
-    cacheRead: ["cache_read_input_tokens"],
-    output: ["output_tokens"],
-  },
-};
-
-/**
- * Record the usage fields one raw provider stream event reports, in `seen`,
- * before Pi's parser fills an omitted count with 0. Pi reads the usage where
- * each protocol sends it. Anthropic Messages keeps the counts of
- * `message_start` and then takes only the counts a `message_delta` carries, so
- * its fields accumulate; its `message_start` output count is a placeholder
- * that the delta replaces, so only a delta reports output. The other
- * protocols replace a call's usage with each usage report.
- */
-export function noteReportedFields(seen: Set<string>, api: string, data: unknown): void {
-  const fields = REPORTED_FIELDS[api];
-  if (fields === undefined) {
-    return;
-  }
-  const paths = [...fields.input, ...fields.cacheRead, ...fields.output];
-  const isCount = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value) && value >= 0;
-  const add = (usage: unknown, names: string[]): void => {
-    for (const path of names) {
-      if (isCount(rawField(usage, path))) {
-        seen.add(path);
-      }
-    }
-  };
-  const replace = (usage: unknown, names = paths): void => {
-    if (usage) {
-      seen.clear();
-      add(usage, names);
-    }
-  };
-  const type = rawField(data, "type");
-  switch (api) {
-    case "openai-completions": {
-      const choices = rawField(data, "choices");
-      const choice = Array.isArray(choices) ? choices[0] : undefined;
-      replace(rawField(data, "usage") || rawField(choice, "usage"));
-      return;
-    }
-    case "mistral-conversations":
-      replace(rawField(data, "usage"));
-      return;
-    case "openai-responses":
-    case "azure-openai-responses":
-    case "openai-codex-responses":
-      if (type === "response.completed" || type === "response.incomplete" || type === "response.done") {
-        replace(rawField(data, "response.usage"));
-      }
-      return;
-    case "bedrock-converse-stream":
-      replace(rawField(data, "metadata.usage"));
-      return;
-    case "google-generative-ai":
-    case "google-vertex":
-      replace(rawField(data, "usageMetadata"));
-      return;
-    case "pi-messages":
-      if (type === "done" || type === "error") {
-        replace(rawField(data, "usage"));
-      }
-      return;
-    case "anthropic-messages":
-      if (type === "message_start") {
-        replace(rawField(data, "message.usage"), [...fields.input, ...fields.cacheRead]);
-      } else if (type === "message_delta" && rawField(data, "usage")) {
-        add(rawField(data, "usage"), paths);
-      }
-      return;
-  }
-}
-
-/** Which counts a call's provider reported, from the raw usage fields it sent. */
-export function reportedCountsFrom(api: string, seen: ReadonlySet<string>): ReportedCounts {
-  const fields = REPORTED_FIELDS[api];
-  if (fields === undefined) {
-    return { input: false, cacheRead: false, output: false };
-  }
-  return {
-    input: fields.input.every((path) => seen.has(path)),
-    cacheRead: fields.cacheRead.some((path) => seen.has(path)),
-    output: fields.output.some((path) => seen.has(path)),
-  };
-}
-
-/** What the adapter observed of one model call's HTTP attempts and stream. */
-export interface CallObservation {
-  /** The provider answered an attempt with a 2xx status (`onResponse`). */
-  accepted: boolean;
-  /** The provider sent at least one raw stream event. */
-  streamed: boolean;
-  /** The HTTP status of each attempt that got a response, in order. */
-  statuses: number[];
-  /** An attempt failed before any HTTP response, such as a connection error. */
-  unanswered: boolean;
-}
-
-// The one HTTP status after which a failed attempt is a known 0: a rate limit
-// rejects the request before the model runs. A timeout (408) or a server
-// error (5xx) can arrive after the provider processed the prompt, and other
-// 4xx statuses are not documented as unbilled for every provider.
-const UNBILLED_REJECTIONS = new Set([429]);
-
-// Built-in protocols that send their model request through the call's `fetch`
-// option (`@earendil-works/pi-ai` 1.0.3, `api/*.js`). The Google protocols
-// reject a custom fetch, Bedrock does not use one, and Codex may use a
-// WebSocket, which the fetch does not see.
-const FETCH_PROTOCOLS = new Set([
-  "anthropic-messages",
-  "azure-openai-responses",
-  "mistral-conversations",
-  "openai-codex-responses",
-  "openai-completions",
-  "openai-responses",
-  "pi-messages",
-]);
-
-interface CallAttempts {
-  delegate: typeof globalThis.fetch;
-  observation: CallObservation;
-}
-
-const callAttempts = new AsyncLocalStorage<CallAttempts>();
-
-/**
- * The fetch passed to every observed model call. It is one function, so Pi's
- * clients cached per fetch, such as the Anthropic federation client, keep
- * their token cache. It forwards to the call's own fetch and records each
- * attempt's outcome on the call that made it.
- */
-const observedFetch: typeof globalThis.fetch = async (input, init) => {
-  const attempts = callAttempts.getStore();
-  if (attempts === undefined) {
-    return globalThis.fetch(input, init);
-  }
-  let response: Response;
-  try {
-    response = await attempts.delegate(input, init);
-  } catch (error) {
-    attempts.observation.unanswered = true;
-    throw error;
-  }
-  attempts.observation.statuses.push(response.status);
-  return response;
-};
-
-/**
- * Which counts an ended model call's provider reported. A call with an
- * ambiguous attempt reports none, even when a later attempt succeeded: an
- * attempt that got no HTTP response, such as a connection error or a timeout
- * before headers, or that got any error status other than a rate limit (429),
- * such as a 408 or a 5xx, may have been billed. So may a Codex WebSocket
- * attempt that failed and made Pi fall back to HTTP, which the fetch never
- * sees: Pi records it on the final message as a `provider_transport_failure`
- * diagnostic. Pi retries `previous_response_not_found` and
- * `websocket_connection_limit_reached` on the WebSocket without a diagnostic;
- * the provider rejects both before the model runs, so the retried call keeps
- * its counts (`@earendil-works/pi-ai` 1.0.3, `api/openai-codex-responses.js`).
- * A call that ended in an error reports all its counts as 0 only when its protocol sends requests through
- * the observed fetch, the provider answered every attempt with a 429, no
- * attempt was accepted, no raw event arrived, and Pi's usage is all zeros.
- * Any other call keeps only the counts its raw events reported.
- */
-export function endedCallCounts(
-  api: string,
-  seen: ReadonlySet<string>,
-  message: { stopReason?: unknown; usage?: unknown; diagnostics?: unknown },
-  observation: CallObservation,
-): ReportedCounts {
-  const ambiguous =
-    observation.unanswered ||
-    hasTransportFailure(message.diagnostics) ||
-    observation.statuses.some((status) => (status < 200 || status >= 300) && !UNBILLED_REJECTIONS.has(status));
-  if (ambiguous) {
-    return NONE_REPORTED;
-  }
-  const counts = piCounts(message.usage);
-  const rejected =
-    FETCH_PROTOCOLS.has(api) &&
-    message.stopReason === "error" &&
-    observation.statuses.length > 0 &&
-    observation.statuses.every((status) => UNBILLED_REJECTIONS.has(status)) &&
-    !observation.accepted &&
-    !observation.streamed &&
-    counts.input === 0 &&
-    counts.cacheRead === 0 &&
-    counts.cacheWrite === 0 &&
-    counts.output === 0;
-  return rejected ? ALL_REPORTED : reportedCountsFrom(api, seen);
-}
-
-/** Whether a message's diagnostics record a failed transport attempt. */
-function hasTransportFailure(diagnostics: unknown): boolean {
-  return (
-    Array.isArray(diagnostics) &&
-    diagnostics.some(
-      (diagnostic) =>
-        typeof diagnostic === "object" &&
-        diagnostic !== null &&
-        (diagnostic as { type?: unknown }).type === "provider_transport_failure",
-    )
-  );
-}
-
-/**
- * Record which counts each model call's provider reported, keyed by the call's
- * final assistant message and its usage object, and pass each ended call's
- * usage object to `onCallEnd`. Pi hands every raw provider stream event, with
- * the model that served it, to `onProviderStreamEvent` before parsing it. The
- * agent loop and compaction summaries both call the agent's stream function,
- * so wrapping it covers both, and Pi passes the final message to
- * `message_end` and its usage object unchanged to `compaction_end`. The record
- * is stored before Pi emits either event. A request the provider rate-limited
- * before generating reports all its counts as 0, and a call with an ambiguous
- * attempt reports none (see `endedCallCounts`). Pi's cache warmer replays a
- * request with the same options outside the agent's stream function, so a
- * warm-up's raw events reach this observer too, but its usage entry has no
- * record and stays unknown. Every built-in protocol passes each call's request
- * body to `onPayload` once, before sending it (`@earendil-works/pi-ai` 1.0.3,
- * `api/*.js`), so a later `onPayload` on the same options is a warm-up
- * attempt, and `onWarmUp` is called before it is sent, including one that
- * fails or that Pi aborts and discards when the agent settles. The record is
- * copied when the call ends so a later warm-up cannot change it.
- */
-export function recordReportedCounts(
-  agent: AgentSession["agent"],
-  records: WeakMap<object, ReportedCounts>,
-  onCallEnd: (usage: object) => void,
-  onWarmUp: () => void = () => undefined,
-): void {
-  const streamFunction = agent.streamFunction;
-  agent.streamFunction = async (model, context, options) => {
-    const seen = new Set<string>();
-    let api: string = model.api;
-    const observation: CallObservation = { accepted: false, streamed: false, statuses: [], unanswered: false };
-    const ownFetch = options?.fetch;
-    const attempts: CallAttempts = {
-      delegate: ownFetch === undefined || ownFetch === observedFetch ? globalThis.fetch : ownFetch,
-      observation,
-    };
-    let payloads = 0;
-    const response = await callAttempts.run(attempts, () =>
-      streamFunction(model, context, {
-        ...options,
-        ...(FETCH_PROTOCOLS.has(model.api) ? { fetch: observedFetch } : {}),
-        onPayload: async (payload, payloadModel) => {
-          payloads += 1;
-          if (payloads > 1) {
-            onWarmUp();
-          }
-          return options?.onPayload?.(payload, payloadModel);
-        },
-        onResponse: async (providerResponse, responseModel) => {
-          observation.accepted ||= providerResponse.status >= 200 && providerResponse.status < 300;
-          await options?.onResponse?.(providerResponse, responseModel);
-        },
-        onProviderStreamEvent: async (data, eventModel) => {
-          observation.streamed = true;
-          api = eventModel?.api ?? model.api;
-          noteReportedFields(seen, api, data);
-          await options?.onProviderStreamEvent?.(data, eventModel);
-        },
-      }),
-    );
-    void response.result().then(
-      (message) => {
-        if (typeof message.usage === "object" && message.usage !== null) {
-          const counts = endedCallCounts(api, seen, message, observation);
-          records.set(message, counts);
-          records.set(message.usage, counts);
-          onCallEnd(message.usage);
-        }
-      },
-      () => undefined,
-    );
-    return response;
-  };
 }
 
 export function withCustomBaseUrl<T extends { api: string; baseUrl: string; compat?: object }>(
@@ -1077,20 +496,6 @@ function mcpRegistrationExtension(servers: Record<string, McpServerConfig>): Ext
   };
 }
 
-/**
- * Forward each compaction Pi prepares to the running prompts. Pi passes the
- * preparation only to extensions, not to session subscribers.
- */
-function compactionPreparationExtension(listeners: Set<(event: unknown) => void>): ExtensionFactory {
-  return (api) => {
-    api.on("session_before_compact", (event) => {
-      for (const listener of listeners) {
-        listener(event);
-      }
-    });
-  };
-}
-
 function selectModel(config: AgentConfig): AgentModelConfig {
   const entries = Object.entries(config.models ?? {});
   if (entries.length === 0) {
@@ -1116,8 +521,7 @@ function selectModel(config: AgentConfig): AgentModelConfig {
  *
  * It does, however, require what Pi has no usable default for. For an unknown model that means a
  * complete-enough definition: `api` (enforced at registration — Pi can't resolve the wire
- * protocol otherwise), `base_url`, and `context_window`/`max_tokens` (absent, these resolve to
- * undefined and break compaction/limit math rather than getting a sane default). Supplied values
+ * protocol otherwise), `base_url`, `context_window`/`max_tokens`, `input`, and `cost`. Supplied values
  * are validated (`api` a {@link SUPPORTED_MODEL_APIS} value, token limits positive, cost
  * well-formed) so a malformed override fails fast instead of reaching Pi.
  */
@@ -1144,6 +548,9 @@ export function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel
     }
     return value;
   };
+  if (Array.isArray(meta.input) && meta.input.some((item) => item !== "text" && item !== "image")) {
+    fail("model extensions.input must contain only 'text' or 'image' values");
+  }
   const suppliedInput = Array.isArray(meta.input)
     ? (meta.input.filter((item) => item === "text" || item === "image") as ("text" | "image")[])
     : undefined;
@@ -1154,27 +561,24 @@ export function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel
   const cost = parseCost(meta.cost, fail) ?? base?.cost;
   const contextWindow = positive(meta.context_window, base?.contextWindow, "context_window");
   const maxTokens = positive(model.max_tokens ?? meta.max_tokens, base?.maxTokens, "max_tokens");
-  // For an unknown model (not in Pi's catalog), require the fields Pi has no usable default for:
-  // base_url (Pi can't reach it otherwise) and context_window/max_tokens (absent, they resolve to
-  // undefined and break compaction/limit math rather than getting a sane Pi default). `api` is
-  // enforced separately at registration. The adapter still invents nothing — it requires the
-  // config to supply what Pi genuinely needs, failing fast with a clear error.
+  // An unknown model has no catalog entry to supply its endpoint, limits, input modalities,
+  // or cost rates. Require those fields before Pi uses them; `api` is enforced at registration.
   if (base === undefined) {
     const missing = [
       baseUrl === undefined ? "base_url" : undefined,
       contextWindow === undefined ? "context_window" : undefined,
       maxTokens === undefined ? "max_tokens" : undefined,
+      input === undefined ? "input" : undefined,
+      cost === undefined ? "cost" : undefined,
     ].filter((field): field is string => field !== undefined);
     if (missing.length > 0) {
       fail(
         `model '${model.model}' is not known to Pi, so a complete definition is required; ` +
-          `missing: ${missing.join(", ")} (set base_url and extensions.context_window/max_tokens)`,
+        `missing: ${missing.join(", ")} (set base_url and the required model extensions)`,
       );
     }
   }
-  // Build a sparse entry: include only resolved fields. Omitted optional ones (cost, reasoning,
-  // input) are left unset so Pi applies its own defaults — the adapter adds none. The SDK input
-  // type marks some fields non-optional but tolerates their absence at runtime.
+  // Include only resolved fields; the adapter adds no defaults for optional metadata.
   const entry: Record<string, unknown> = { id: model.model };
   if (typeof meta.name === "string" || base?.name !== undefined) {
     entry.name = typeof meta.name === "string" ? meta.name : base?.name;
@@ -1456,7 +860,7 @@ function unsupportedSessionAction(name: string): never {
   throw new LifecycleError("pi_unsupported_session_operation", `Pi session operation ${name} is not supported`);
 }
 
-export class PiSdkSessionHandle implements PiSessionHandle {
+class PiSdkSessionHandle implements PiSessionHandle {
   readonly relay?: PiRelayRuntime;
   private readonly session: AgentSession;
   private readonly state: { shutdownRequested: boolean };
@@ -1464,36 +868,12 @@ export class PiSdkSessionHandle implements PiSessionHandle {
   private stopped = false;
   private cumulativeTurnCount = 0;
   private readonly runtimeDir: string;
-  private readonly compactionListeners: Set<(event: unknown) => void>;
-  private readonly reportedCounts = new WeakMap<object, ReportedCounts>();
-  // Cache warm-up attempts, and how many of them a prompt has accounted for.
-  private warmUpAttempts = 0;
-  private warmUpAttemptsCounted = 0;
-  // The model calls that ended since the current compaction was prepared.
-  private compaction: { expected: number; calls: object[] } | undefined;
 
-  constructor(
-    session: AgentSession,
-    state: { shutdownRequested: boolean },
-    runtimeDir: string,
-    compactionListeners: Set<(event: unknown) => void>,
-    relay?: PiRelayRuntime,
-  ) {
+  constructor(session: AgentSession, state: { shutdownRequested: boolean }, runtimeDir: string, relay?: PiRelayRuntime) {
     this.session = session;
     this.state = state;
     this.runtimeDir = runtimeDir;
-    this.compactionListeners = compactionListeners;
     this.relay = relay;
-    recordReportedCounts(
-      session.agent,
-      this.reportedCounts,
-      (usage) => {
-        this.compaction?.calls.push(usage);
-      },
-      () => {
-        this.warmUpAttempts += 1;
-      },
-    );
     this.unsubscribeTurnCounter = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         this.cumulativeTurnCount += 1;
@@ -1511,9 +891,6 @@ export class PiSdkSessionHandle implements PiSessionHandle {
     let finalAssistant:
       | { role: "assistant"; content: unknown; stopReason: string; errorMessage?: string }
       | undefined;
-    let usage: PiTokenUsage | undefined = NO_TOKENS;
-    const reportedCounts: ReportedCountsLookup = (key) =>
-      typeof key === "object" && key !== null ? this.reportedCounts.get(key) : undefined;
     const unsubscribe = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         turnStarted = true;
@@ -1521,17 +898,7 @@ export class PiSdkSessionHandle implements PiSessionHandle {
       if (event.type === "message_end" && event.message.role === "assistant") {
         finalAssistant = event.message;
       }
-      usage = addEventUsage(usage, event, reportedCounts, this.compaction);
-      if (event.type === "compaction_end") {
-        this.compaction = undefined;
-      }
     });
-    const onCompactionPrepared = (event: unknown): void => {
-      const expected = summaryCallCount((event as { preparation?: unknown }).preparation);
-      this.compaction = expected === undefined ? undefined : { expected, calls: [] };
-    };
-    this.compactionListeners.add(onCompactionPrepared);
-    let warmedUp = false;
     try {
       await this.session.prompt(text, {
         expandPromptTemplates: true,
@@ -1541,16 +908,7 @@ export class PiSdkSessionHandle implements PiSessionHandle {
         },
       });
     } finally {
-      this.compactionListeners.delete(onCompactionPrepared);
-      this.compaction = undefined;
       unsubscribe();
-      // A warm-up's tokens reach no usage entry the adapter can check, and a
-      // failed or discarded one reaches none at all, so a prompt with a
-      // warm-up attempt since the previous prompt has unknown tokens. Every
-      // prompt accounts for its attempts, including one that throws, so a
-      // later prompt does not inherit them.
-      warmedUp = this.warmUpAttempts !== this.warmUpAttemptsCounted;
-      this.warmUpAttemptsCounted = this.warmUpAttempts;
     }
     return {
       accepted,
@@ -1560,7 +918,6 @@ export class PiSdkSessionHandle implements PiSessionHandle {
       stopReason: finalAssistant?.stopReason,
       errorMessage: finalAssistant?.errorMessage,
       shutdownRequested: this.state.shutdownRequested,
-      usage: finalAssistant === undefined || warmedUp ? undefined : usage,
     };
   }
 
@@ -1662,7 +1019,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
 
     // Register the selected model into Pi's catalog as an overlay on its existing entry (if any):
     // supplied config fields override, omitted ones keep Pi's native value, and for an unknown
-    // (gateway) model the overlay base is empty so defaults + a required `api` apply. This way
+    // (gateway) model the overlay base is empty so its required metadata must be explicit. This way
     // selecting a known provider/model and changing nothing preserves all its native properties,
     // while an explicit base_url / extensions field is still honored. A Fabric agent runs ONE
     // model role per session (selectModel enforces default-or-sole), mirroring the other
@@ -1721,16 +1078,9 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       runtimeDir = await mkdtemp(join(tmpdir(), "nemo-fabric-pi-"));
       const agentDir = runtimeDir;
       const mcpConnections = new Map(Object.keys(mcpServers).map((name) => [name, mcpReadiness()]));
-      const compactionListeners = new Set<(event: unknown) => void>();
-      const compactionExtension = {
-        name: "nemo-fabric-compaction-usage",
-        hidden: true,
-        factory: compactionPreparationExtension(compactionListeners),
-      };
       const extensionFactories = Object.keys(mcpServers).length === 0
-        ? [compactionExtension]
+        ? []
         : [
-            compactionExtension,
             { name: "nemo-fabric-mcp-servers", hidden: true, factory: mcpRegistrationExtension(mcpServers) },
             {
               name: "nemo-fabric-mcp",
@@ -1819,7 +1169,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         tools: enabled === null ? undefined : enabled,
         excludeTools: blocked,
       });
-      handle = new PiSdkSessionHandle(session, state, runtimeDir, compactionListeners, relay);
+      handle = new PiSdkSessionHandle(session, state, runtimeDir, relay);
       const blockedNames = new Set(blocked);
       const availableNames = new Set(session.getAllTools().map((tool) => tool.name));
       const missing = (enabled ?? []).filter((name) => !blockedNames.has(name) && !availableNames.has(name));

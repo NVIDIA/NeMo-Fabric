@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
+import importlib.metadata
 import json
 import os
 import shutil
@@ -199,34 +200,148 @@ def test_openclaw_rejects_unrecognized_version_output(output: str):
     assert caught.value.code == "openclaw_version_check_failed"
 
 
+_SETPRIV_RUNS = 'shift 3\nexec "$@"\n'
+_POSIX_SCRIPT = pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX shell scripts stand in for setpriv"
+)
+
+
 @pytest.mark.parametrize(
-    ("platform", "setpriv", "expected_prefix"),
+    ("platform", "script", "usable"),
     [
         pytest.param(
-            "linux",
-            "/usr/bin/setpriv",
-            ["/usr/bin/setpriv", "--pdeathsig", "SIGTERM", "--"],
-            id="linux-with-setpriv",
+            "darwin", _SETPRIV_RUNS, False, id="non-linux", marks=_POSIX_SCRIPT
         ),
-        pytest.param("linux", None, [], id="linux-without-setpriv"),
-        pytest.param("darwin", "/usr/bin/setpriv", [], id="non-linux"),
+        pytest.param("linux", None, False, id="linux-without-setpriv"),
+        pytest.param(
+            "linux", _SETPRIV_RUNS, True, id="setpriv-runs", marks=_POSIX_SCRIPT
+        ),
+        # An OpenShell sandbox forbids applying capabilities, so setpriv exits
+        # before running its command.
+        pytest.param(
+            "linux",
+            "echo 'setpriv: activate capabilities: Operation not permitted' >&2\n"
+            "exit 1\n",
+            False,
+            id="setpriv-refused",
+            marks=_POSIX_SCRIPT,
+        ),
     ],
 )
-def test_openclaw_gateway_command_uses_setpriv_on_linux_when_available(
+async def test_openclaw_gateway_uses_setpriv_on_linux_only_when_it_can_run(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     platform: str,
-    setpriv: str | None,
-    expected_prefix: list[str],
+    script: str | None,
+    usable: bool,
 ):
-    mock_which = MagicMock(return_value=setpriv)
+    setpriv = tmp_path / "setpriv"
+    if script is not None:
+        setpriv.write_text("#!/bin/sh\n" + script, encoding="utf-8")
+        setpriv.chmod(0o755)
     monkeypatch.setattr(adapter.sys, "platform", platform)
-    monkeypatch.setattr(adapter.shutil, "which", mock_which)
+    monkeypatch.setattr(
+        adapter.shutil,
+        "which",
+        MagicMock(return_value=str(setpriv) if script is not None else None),
+    )
 
+    prefix = await adapter._parent_death_prefix()
+
+    assert prefix == ([str(setpriv), "--pdeathsig", "SIGTERM", "--"] if usable else [])
+
+
+async def test_openclaw_gateway_skips_setpriv_when_the_probe_cannot_start(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(adapter.sys, "platform", "linux")
+    monkeypatch.setattr(
+        adapter.shutil, "which", MagicMock(return_value="/usr/bin/setpriv")
+    )
+    monkeypatch.setattr(
+        adapter.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(side_effect=OSError("permission denied")),
+    )
+
+    assert await adapter._parent_death_prefix() == []
+
+
+async def test_openclaw_gateway_probe_timeout_kills_and_reaps_process(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    mock_process.wait = AsyncMock(side_effect=asyncio.Event().wait)
+    mock_process.communicate = AsyncMock(return_value=(b"", b""))
+    monkeypatch.setattr(adapter.sys, "platform", "linux")
+    monkeypatch.setattr(
+        adapter.shutil, "which", MagicMock(return_value="/usr/bin/setpriv")
+    )
+    monkeypatch.setattr(
+        adapter.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=mock_process),
+    )
+
+    assert await adapter._parent_death_prefix(timeout=0.01) == []
+
+    mock_process.kill.assert_called_once_with()
+    mock_process.communicate.assert_awaited_once_with()
+
+
+async def test_openclaw_gateway_probe_cancellation_kills_and_reaps_process(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    started = asyncio.Event()
+
+    async def wait() -> int:
+        started.set()
+        await asyncio.Event().wait()
+        return 0
+
+    mock_process.wait = AsyncMock(side_effect=wait)
+    mock_process.communicate = AsyncMock(return_value=(b"", b""))
+    monkeypatch.setattr(adapter.sys, "platform", "linux")
+    monkeypatch.setattr(
+        adapter.shutil, "which", MagicMock(return_value="/usr/bin/setpriv")
+    )
+    monkeypatch.setattr(
+        adapter.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=mock_process),
+    )
+    task = asyncio.create_task(adapter._parent_death_prefix())
+    await started.wait()
+
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    mock_process.kill.assert_called_once_with()
+    mock_process.communicate.assert_awaited_once_with()
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        pytest.param(
+            ["/usr/bin/setpriv", "--pdeathsig", "SIGTERM", "--"], id="setpriv"
+        ),
+        # Where setpriv cannot run, the Gateway command runs unprefixed.
+        pytest.param([], id="unprefixed"),
+    ],
+)
+def test_openclaw_gateway_command_runs_the_gateway_after_its_prefix(prefix: list[str]):
     openclaw = Path("/usr/bin/openclaw")
-    command = adapter._gateway_command(openclaw, port=20_000)
+
+    command = adapter._gateway_command(openclaw, port=20_000, prefix=prefix)
 
     assert command == [
-        *expected_prefix,
+        *prefix,
         str(openclaw),
         "gateway",
         "run",
@@ -237,10 +352,6 @@ def test_openclaw_gateway_command_uses_setpriv_on_linux_when_available(
         "--auth",
         "token",
     ]
-    if platform == "linux":
-        mock_which.assert_called_once_with("setpriv")
-    else:
-        mock_which.assert_not_called()
 
 
 @pytest.mark.skipif(
@@ -287,6 +398,20 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert result.status == "succeeded"
     assert result.output == {"response": "OpenClaw response"}
     assert result.usage.total_tokens == 5
+    assert result.extensions["nemo_fabric.versions.v1"]["harness"] == {
+        "name": {
+            "value": "openclaw",
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "adapter_report",
+        },
+        "version": {
+            "value": "2026.9.4",
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "harness_probe",
+        },
+    }
     assert request == {
         "model": "openclaw/default",
         "messages": [
@@ -1142,14 +1267,26 @@ async def test_openclaw_stop_completes_cleanup_before_propagating_cancellation(
     runtime._log_tasks = [log_task]
     runtime._temp_dir = mock_temp_dir
 
+    # stop() awaits only mocks and in-process tasks here, and no timer has to
+    # fire, so each step finishes within a few event-loop turns. Counting turns
+    # instead of seconds keeps a garbage-collector pause on a slow runner from
+    # failing the test.
+    async def run_event_loop_until(condition):
+        for _ in range(100):
+            if condition():
+                return True
+            await asyncio.sleep(0)
+        return condition()
+
     stop_task = asyncio.create_task(runtime.stop())
-    await asyncio.wait_for(entered.wait(), timeout=1)
-    stop_task.cancel()
     try:
-        with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(asyncio.shield(stop_task), timeout=0.2)
+        assert await run_event_loop_until(entered.is_set)
+        stop_task.cancel()
+        assert await run_event_loop_until(stop_task.done)
+        assert stop_task.cancelled()
     finally:
         release.set()
+        stop_task.cancel()
         with suppress(asyncio.CancelledError):
             await stop_task
 
@@ -1362,7 +1499,7 @@ def test_windows_job_assigns_process_and_enables_kill_on_close(
 
 
 @pytest.mark.skipif(
-    sys.platform != "linux" or shutil.which("setpriv") is None,
+    sys.platform != "linux" or not asyncio.run(adapter._parent_death_prefix()),
     reason="Linux setpriv parent-death signal",
 )
 def test_linux_parent_death_stops_openclaw_gateway(mock_openclaw: Path, tmp_path: Path):
@@ -1473,6 +1610,12 @@ async def test_openclaw_plan_doctor_and_run_without_credentials(
     assert report.status == "pass"
     assert result.status == "succeeded"
     assert result.output == {"response": "OpenClaw response"}
+    # Core moved the adapter's versions report into what_ran.
+    assert "adapter" not in result.metadata
+    assert result.what_ran["harness"]["version"]["value"] == "2026.9.4"
+    assert result.what_ran["adapter"]["package_version"]["value"] == (
+        importlib.metadata.version("nemo-fabric-adapters-openclaw")
+    )
 
 
 @pytest.mark.skipif(

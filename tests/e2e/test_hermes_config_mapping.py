@@ -47,7 +47,8 @@ def test_hermes_config_mapping(tmp_path: Path):
         "transport": "streamable-http",
     }
     assert config["platform_toolsets"]["cli"] == []
-    assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
+    assert "plugins" not in config
+    assert config["auxiliary"]["title_generation"]["enabled"] is False
 
 
 def agent_config() -> AgentConfig:

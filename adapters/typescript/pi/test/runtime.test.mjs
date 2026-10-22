@@ -42,6 +42,7 @@ test("declares the cumulative Pi turn count in every run result", async () => {
   assert.deepEqual(descriptor.extension_schemas.run_result, {
     type: "object",
     properties: {
+      "nemo_fabric.versions.v1": { type: "object" },
       pi_turn_count: { type: "integer", minimum: 0 },
       pi_turn_started: { type: "boolean" },
     },
@@ -556,96 +557,4 @@ test("retries Relay cleanup when gateway shutdown fails", async () => {
   await runtime.stop();
   assert.equal(sessionStopAttempts, 2);
   assert.equal(relayStopAttempts, 2);
-});
-
-test("reports the invocation's tokens with cache reads and writes inside the input", async () => {
-  const usage = { input: 420, cacheRead: 300, output: 40 };
-  const runtime = new PiAdapterRuntime({
-    async create() {
-      return {
-        async prompt() {
-          return { accepted: true, turnStarted: true, turnCount: 1, text: "ok", stopReason: "stop", usage };
-        },
-        async stop() {},
-      };
-    },
-  });
-
-  await runtime.start(startInput());
-  const result = await runtime.invoke({ input: "one" }, context);
-  await runtime.stop();
-
-  assert.deepEqual(result.usage, {
-    input_tokens: 420,
-    cached_input_tokens: 300,
-    input_tokens_include_cache: true,
-    output_tokens: 40,
-    total_tokens: 460,
-  });
-});
-
-test("leaves out a total that is not a safe integer", async () => {
-  const usage = { input: Number.MAX_SAFE_INTEGER, cacheRead: 0, output: 2 };
-  const runtime = new PiAdapterRuntime({
-    async create() {
-      return {
-        async prompt() {
-          return { accepted: true, turnStarted: true, turnCount: 1, text: "ok", stopReason: "stop", usage };
-        },
-        async stop() {},
-      };
-    },
-  });
-
-  await runtime.start(startInput());
-  const result = await runtime.invoke({ input: "one" }, context);
-  await runtime.stop();
-
-  assert.deepEqual(result.usage, {
-    input_tokens: Number.MAX_SAFE_INTEGER,
-    cached_input_tokens: 0,
-    input_tokens_include_cache: true,
-    output_tokens: 2,
-  });
-});
-
-test("reports only the token counts the prompt's provider reported", async () => {
-  const outcomes = [{ input: 130, cacheRead: 30 }, { output: 5 }, { input: 70, output: 7 }, { cacheRead: 12, output: 3 }, { cacheRead: 4 }];
-  const runtime = new PiAdapterRuntime({
-    async create() {
-      let turnCount = 0;
-      return {
-        async prompt() {
-          turnCount += 1;
-          const usage = outcomes.shift();
-          return { accepted: true, turnStarted: true, turnCount, text: "ok", stopReason: "stop", usage };
-        },
-        async stop() {},
-      };
-    },
-  });
-
-  await runtime.start(startInput());
-  const inputOnly = await runtime.invoke({ input: "one" }, context);
-  const outputOnly = await runtime.invoke({ input: "two" }, context);
-  const noCacheDetail = await runtime.invoke({ input: "three" }, context);
-  const noInput = await runtime.invoke({ input: "four" }, context);
-  const cacheOnly = await runtime.invoke({ input: "five" }, context);
-  await runtime.stop();
-
-  assert.deepEqual(inputOnly.usage, {
-    input_tokens: 130,
-    cached_input_tokens: 30,
-    input_tokens_include_cache: true,
-  });
-  assert.deepEqual(outputOnly.usage, { output_tokens: 5 });
-  assert.deepEqual(noCacheDetail.usage, {
-    input_tokens: 70,
-    input_tokens_include_cache: true,
-    output_tokens: 7,
-    total_tokens: 77,
-  });
-  // Cache reads stay known when the input that includes them is not.
-  assert.deepEqual(noInput.usage, { cached_input_tokens: 12, output_tokens: 3 });
-  assert.deepEqual(cacheOnly.usage, { cached_input_tokens: 4 });
 });

@@ -22,7 +22,7 @@ The adapter supports:
   (`api`, `context_window`, `max_tokens`, `cost`, `reasoning`, `input`, `name`);
   a field you set overrides, a field you omit keeps a Pi-known model's existing
   value. The adapter adds no defaults: a gateway model Pi does not ship must
-  supply `api`, `base_url`, `context_window`, and `max_tokens`.
+  supply `api`, `base_url`, `context_window`, `max_tokens`, `input`, and `cost`. Adapter startup rejects missing required metadata before invoking the model.
 - Optional replacement system instructions
 - Tool allow and block policy
 - NeMo Fabric custom tools loaded through normalized `tools.definitions`
@@ -211,84 +211,6 @@ its records through an externally managed collector.
 This Relay-backed path runs the adapter's ordinary `invoke` operation. It is
 independent of native OpenAI streaming, so the adapter descriptor's
 `capabilities.streaming` value remains `false`.
-
-## Token Usage
-
-Each result's `usage` sums the tokens Pi records during the invocation, counted
-the way Pi's own usage totals count them: assistant messages, tool results that
-report usage, finished compaction summaries, and usage entries other than cache
-warm-ups, which leave `usage` unknown (see below). It holds `input_tokens` with
-cache reads and cache writes included, `cached_input_tokens`, `output_tokens`,
-and `total_tokens`. Pi computes its cost figures from the model catalog's
-rates, so the adapter does not report them as `cost_usd`.
-
-Pi fills a count that the provider did not report with 0, so the adapter reads
-the provider's raw stream events for each assistant message and compaction
-summary call and keeps only the counts the provider reported. A reported zero
-counts as 0, including a report of all zeros. When a call left out its input
-count, the result leaves out `input_tokens` and `total_tokens`, and keeps
-`cached_input_tokens` when every call reported its cache reads. Anthropic Messages usage reports input without the cache, so
-its input count also needs both cache fields. Bedrock Converse also reports
-input without the cache, but its API documents the cache fields as optional, so
-its input count needs only `inputTokens` rather than going unknown on every
-call that omits them. When a call left out its output count, the result leaves
-out `output_tokens` and `total_tokens`; for Anthropic Messages, only a
-`message_delta` reports the final output count. When a call sent no cache
-details, the result leaves out `cached_input_tokens`. A wire protocol outside
-Pi's built-in ones reports no counts the adapter can check, so its calls leave
-the result without `usage`.
-
-A failed call counts as 0 tokens only when the provider answered each of its
-attempts with a rate limit (429) before sending a successful response or any
-stream event, so a call that Pi retries after rate limits keeps the result's
-`usage` known. The adapter reads each attempt's status through the request's
-`fetch`, which the `anthropic-messages`, `azure-openai-responses`,
-`mistral-conversations`, `openai-codex-responses`, `openai-completions`,
-`openai-responses` and `pi-messages` protocols use. A failed call of any other
-protocol, including the Google protocols and Bedrock, or a Codex call sent over
-a WebSocket, leaves its counts unknown. When a Codex WebSocket attempt fails and
-Pi falls back to HTTP, Pi records the failure on the final message, and the
-call's counts stay unknown even when the fallback succeeds, because the provider
-may have received and billed the WebSocket request. An attempt that got any
-other error status, such as a request timeout (408) or a server error (5xx), or
-that got no HTTP response, such as a connection failure or a timeout before
-headers, leaves its call's counts unknown even when a later attempt succeeds,
-because the provider may have processed and billed the prompt. A call that fails
-after its stream started can have billed tokens that were never reported, so the
-counts it had not reported yet stay unknown; input that the provider already
-reported, such as Anthropic's `message_start` usage, stays known.
-
-When a compaction cuts inside a turn, Pi summarizes the earlier history and the
-start of that turn in separate calls and reports only their combined usage. The
-adapter counts each of those calls from its own report, after checking that the
-calls it saw are the ones the compaction needed and that they add up to the
-combined usage; otherwise the result has no `usage`.
-
-A tool result's `usage` counts each count it holds: its input needs `input`,
-`cacheRead`, and `cacheWrite`, its cache reads need `cacheRead`, and its output
-needs `output`. A count the tool left out, or that is not a non-negative
-safe integer, is left out of the result, and the other counts stay, so a
-report without `cacheWrite` keeps its cache reads and output. A tool result without a `usage` field adds
-nothing and leaves the result's `usage` unchanged. An extension's `message_end`
-handler that replaces an assistant message's usage does not change which
-counts the provider reported.
-
-The result has no `usage` when Pi produced no assistant message, when a model
-call reported none of the counts, when an assistant message was aborted, when a
-compaction was aborted or reported no usage, or when Pi retried a compaction
-summary call, because Pi keeps no usage for the failed attempt. It also has no
-`usage` when Pi attempted a cache warm-up since the previous invocation. Pi
-replays a warm-up outside the agent's stream function, so the adapter cannot tie
-its raw report to the warm-up's usage entry, and a warm-up that fails, or that
-Pi aborts and discards when the agent settles, writes no usage entry at all. The
-adapter notes every warm-up attempt before it is sent: each built-in protocol
-passes a call's request body to `onPayload` once, so a later `onPayload` on the
-same request options is a warm-up. Pi's model catalog gives a prompt cache
-lifetime only to Anthropic models, and in its default `streaming` mode Pi warms
-only while a step outlasts nine tenths of that lifetime, such as a tool that
-runs longer than 270 seconds. A count whose sum over the invocation's calls is
-not a safe integer is left out, and so is a total that would not be one; the
-other counts stay.
 
 ## Custom Tool Modules
 

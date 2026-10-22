@@ -79,10 +79,36 @@ Report only observed invocation usage. For cumulative target counters, compute t
 
 `fabric.adapter/v1alpha2` usage is a closed object. Do not add cache-write, reasoning, peak request, or per-model fields at its root. Put that detail in `usage.extensions["nemo_fabric.detailed_token_usage.v1"]` and declare the extension with `extension_schemas.usage` in the adapter descriptor. The detailed object repeats the normalized input, cached-input, output, and total token fields and can add `cache_write_input_tokens`, `reasoning_tokens`, `output_tokens_include_reasoning`, `peak_request_input_tokens`, and `models`. Within this object, `input_tokens_include_cache` applies to both cached reads and cache writes. Normalize `input_tokens` first if the provider includes only one component. Each model entry uses the same counters and requires a non-blank `model`; include `provider` when known.
 
+To report what ran, put a `nemo_fabric.versions.v1` object in `AgentRunResult.extensions` and name the key, as `{"type": "object"}`, under `properties` in `extension_schemas.run_result`. NeMo Fabric reads the key only when that schema names it literally, then moves it from `RunResult.metadata.adapter` into `RunResult.what_ran`. Result-extension validation runs first: a result that carries the key fails the invocation when `run_result` is missing or its schema rejects the key, so declare the key before you emit it, and keep it out of `required`. The object holds `adapter.package_version`, `harness.name`, `harness.version`, and `models.<role>.served`. Each is a fact with `source` `reported`, `collected_by` `adapter`, a `method`, and either a `value` or a `state` and `reason`. Report the version of the harness program that ran, never the version of an SDK that drives it, and report a fact you have no source for as `unsupported` with reason `no_source`. NeMo Fabric marks a fact with another source or collector `collection_failed` with reason `invalid_report`, ignores every other property, and marks every fact of a key larger than 64 KiB `collection_failed` with reason `too_large`. `nemo_fabric.mcp.v1` follows the same rules for `servers.<name>.runtime`; its `tool_names` keeps 64 sorted names. If you drop servers from that report to keep it under 64 KiB, count in its `servers_truncated` marker only the servers missing from the full capability plan supplied at lifecycle start, which NeMo Fabric adds to `what_ran`'s marker. A plan server you drop keeps its entry, and its runtime facts read `unavailable` with reason `fact_omitted`.
+
 NeMo Fabric preserves the extension at `RunResult.usage.metadata["nemo_fabric.detailed_token_usage.v1"]`. Consumers treat the detailed object as authoritative independently for each token dimension. Any of `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, or `input_tokens_include_cache` selects the detailed input counters. Any of `output_tokens`, `reasoning_tokens`, or `output_tokens_include_reasoning` selects the detailed output counters. Consumers do not fall back to the top-level counters for a selected dimension, so the detailed and top-level views can diverge. If the selected counters do not contain enough information to determine an inclusive total, that total remains unknown even when the top-level view contains a value.
 
 **Success Check**: `invoke` returns one typed `AgentRunResult` whose explicit
 status matches the presence or absence of an error.
+
+#### Invocation accounting evidence
+
+The closed `AgentUsage` root stays unchanged. Collectors can use
+`nemo_fabric_adapter_contract.usage.usage_from_observations` in Python or
+`usageFromObservations` in TypeScript to construct the descriptor-declared
+`nemo_fabric.usage_accounting.v1` extension. Its canonical schema is
+`schemas/extensions/usage-accounting.schema.json` in the repository. Declare it
+under `extension_schemas.usage` and keep packaged descriptor copies identical.
+
+Supply already deduplicated source units, source-established model/provider identity when known, raw inclusion flags and independent field presence. A configured client or request model can establish accounting identity when the source proves all included calls used it. An outer requested alias or role alone does not establish that allocation. Accounting identity does not replace served-model provenance.
+
+Collectors own source identity and invocation lifetime; the helper does not wait for late work or infer zero from an HTTP error. Complete fields cannot coexist with an explicit gap for that dimension. Use `unfinished_work`, `missing_usage` or `scope_unverified` only for actual missing evidence, not merely because a harness supports background work or retries. Retain raw observations when complete counts cannot be certified.
+
+A request-wide `UsageRequest.gap` affects every dimension of that call and cannot coexist with complete model or invocation totals. For a dimension-specific gap, omit the affected request fields and declare the scoped gap without setting the request-wide `gap`. Other dimensions can remain complete.
+
+A provider name must identify the source-established provider, not merely an API-compatible protocol. Custom endpoints and arbitrary gateways do not establish a native provider tariff. Preserve the model and counts when provider identity cannot be established. Catalog estimation is added separately and never changes reported usage.
+
+Core normalizes cache-inclusive input and reasoning-inclusive output once and
+returns the flat `RunResult.model_usage` view. Raw reasoning/peak/request evidence
+can support normalization and pricing without becoming mandatory public metrics.
+A model aggregate is not a single request. No adapter should fabricate call
+boundaries, hide execution features or change retry settings to make usage look
+complete. Costs computed from a price table never become `cost_usd`.
 
 ### 2. Separate Failure Classes
 
