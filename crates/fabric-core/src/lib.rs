@@ -12,6 +12,7 @@ mod environment;
 pub mod error;
 mod measurement;
 pub mod model_usage;
+pub mod price_catalog;
 pub mod pricing;
 pub mod resource_snapshot;
 pub mod runtime;
@@ -38,10 +39,11 @@ pub use config::{
     EnvironmentOwnership, EnvironmentPlan, FabricConfig, HarnessConfig, InstructionConfig,
     InstructionMode, InstructionsConfig, McpAuthenticationConfig, McpConfig, McpExposure,
     McpServerPlan, McpTransport, MetadataConfig, ModelConfig, OAuthTokenEndpointAuthMethod,
-    ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, ResolvedAdapterTargetDescriptor,
-    RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
-    TelemetryProvider, TelemetryProviderConfig, ToolDefinitionConfig, ToolsConfig, WorkflowConfig,
-    WorkflowEntrypointConfig, WorkflowTargetSpec, inspect_adapter_config, load_adapter_descriptor,
+    PricingConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor,
+    ResolvedAdapterTargetDescriptor, RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig,
+    TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig,
+    ToolDefinitionConfig, ToolsConfig, WorkflowConfig, WorkflowEntrypointConfig,
+    WorkflowTargetSpec, inspect_adapter_config, load_adapter_descriptor,
     load_adapter_target_descriptor, resolve_diagnostic_plan_from_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories, resolve_run_plan_from_config,
     resolve_run_plan_from_config_with_adapter_directories,

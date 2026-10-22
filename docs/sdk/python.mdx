@@ -1155,7 +1155,7 @@ Important fields:
 | `status` | Terminal invocation status such as success, failure, or cancellation. |
 | `output` | Harness output normalized to the configured output schema. |
 | `error` | Structured failure metadata when available. |
-| `model_usage` | Optional normalized complete counts, observations, gaps and provider-reported cost. Catalog estimates remain unavailable. |
+| `model_usage` | Optional normalized complete counts, observations, gaps and separately reported/estimated cost. |
 | `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
 | `system_stats` | Optional `InvocationSystemStats`: monotonic adapter exchange duration, before/after observations with availability, and an optional CPU counter difference estimate. |
 | `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. |
@@ -1212,7 +1212,7 @@ if result.model_usage is not None:
     print(result.model_usage.input_tokens)          # Complete count, or None.
     print(result.model_usage.observed.input_tokens) # Available observations.
     print(result.model_usage.gaps)                 # Affected dimensions/reasons.
-    print(result.model_usage.cost.reported.amount_nano_usd)
+    print(result.model_usage.cost.estimated.amount_nano_usd)
 
 summary = summarize_usage(
     [result], expected=[(result.runtime_id, result.invocation_id)]
@@ -1231,10 +1231,16 @@ extensions still fail the adapter contract. Legacy usage without supported
 accounting remains available in `result.usage` and is not certified complete by
 `summarize_usage`.
 
-`cost.reported` contains only provider-reported amounts. Complete and observed
-amounts use integer nano-USD. Catalog estimates remain unavailable in this slice;
-`cost.estimated` has no amounts and no typed pricing setting is exposed. The stable
-result shape retains optional pricing-basis fields for persisted evidence.
+`cost.reported` contains only provider-reported amounts; `cost.estimated` contains
+catalog estimates. Both distinguish `amount_nano_usd` from `observed_nano_usd`.
+Estimates retain their pricing basis and distinct selected rate snapshots.
+Configure `PricingConfig(catalog_path="prices.json")` for a Relay-compatible
+catalog override; planning freezes its bytes. An explicitly established provider must match the catalog entry's provider, including aliases and shorter model paths. A different provider's entry cannot price that source solely because the model name matches. When no provider identity is available, an explicit user catalog can match the model name alone. Bundled provider prices apply only
+when the configured route establishes the native provider. Unknown model,
+cache-price or request-tier evidence affects estimates without erasing tokens.
+Nonzero Anthropic cache writes currently lack expiry-price evidence, so their
+complete estimate remains unknown; independently priceable parts remain observed.
+Known zero writes need no expiry evidence. Estimates are not invoices.
 
 `summarize_usage` requires an explicit expected invocation inventory. It retains
 missing results in coverage, keeps complete totals separate from observed sums,

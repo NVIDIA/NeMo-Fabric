@@ -588,6 +588,10 @@ fn normalize_request(raw: &ReportedUsage, observation: bool) -> [Count; 8] {
     counts
 }
 
+pub(crate) fn normalized_request(raw: &ReportedUsage, observation: bool) -> ModelMeasurements {
+    measurements(normalize_request(raw, observation))
+}
+
 fn add(left: Count, right: Count) -> Count {
     left.and_then(|left| {
         right.and_then(|right| left.checked_add(right).ok_or("token_count_out_of_range"))
@@ -687,7 +691,7 @@ fn measurements(counts: [Count; 8]) -> ModelMeasurements {
                 unit: MeasurementUnit::NanoUsd,
                 source: MeasurementSource::FabricPriceCatalog,
                 attribution: Attribution::None,
-                reason: Some("catalog_pricing_unavailable".into()),
+                reason: Some("price_catalog_not_configured".into()),
             },
         },
     }

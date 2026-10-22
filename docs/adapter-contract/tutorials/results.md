@@ -99,7 +99,7 @@ Collectors own source identity and invocation lifetime; the helper does not wait
 
 A request-wide `UsageRequest.gap` affects every dimension of that call and cannot coexist with complete model or invocation totals. For a dimension-specific gap, omit the affected request fields and declare the scoped gap without setting the request-wide `gap`. Other dimensions can remain complete.
 
-A provider name must identify the source-established provider, not merely an API-compatible protocol. Custom endpoints and arbitrary gateways do not establish a native provider tariff. Preserve the model and counts when provider identity cannot be established. Catalog estimation is added separately and never changes reported usage.
+A provider name must identify the source-established provider, not merely an API-compatible protocol. Custom endpoints and arbitrary gateways do not establish a native provider tariff. Preserve the model and counts when provider identity cannot be established; explicit user catalogs can price that evidence with labeled assumptions.
 
 Core normalizes cache-inclusive input and reasoning-inclusive output once and
 returns the flat `RunResult.model_usage` view. Raw reasoning/peak/request evidence

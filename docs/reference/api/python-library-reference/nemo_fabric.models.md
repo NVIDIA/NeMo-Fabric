@@ -16,7 +16,6 @@ The Rust core remains the source of truth for persisted schema snapshots. These 
 
 ---
 
-
 ## <kbd>class</kbd> `FabricBaseModel`
 
 Base class for SDK-facing Pydantic models.
@@ -54,7 +53,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -64,7 +62,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -76,7 +73,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `MetadataConfig`
 
@@ -125,7 +121,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -135,7 +130,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -147,7 +141,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `HarnessConfig`
 
@@ -197,7 +190,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -207,7 +199,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -219,7 +210,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `WorkflowConfig`
 
@@ -268,7 +258,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -278,7 +267,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -290,7 +278,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `DiscoveryConfig`
 
@@ -338,7 +325,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -348,7 +334,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -360,7 +345,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `InstructionConfig`
 
@@ -409,7 +393,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -419,7 +402,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -431,7 +413,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `InstructionsConfig`
 
@@ -479,7 +460,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -489,7 +469,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -501,7 +480,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RuntimeConfig`
 
@@ -553,7 +531,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -563,7 +540,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -575,7 +551,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `EnvironmentConfig`
 
@@ -634,7 +609,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -644,7 +618,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -656,7 +629,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `ModelConfig`
 
@@ -711,7 +683,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -721,7 +692,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -733,7 +703,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `SkillConfig`
 
@@ -781,7 +750,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>method</kbd> `add_path`
 
 ```python
@@ -791,7 +759,6 @@ def add_path(path: str | Path) -> Self
 Add a skill path if absent.
 
 ---
-
 
 ### <kbd>classmethod</kbd> `from_mapping`
 
@@ -803,7 +770,6 @@ Validate a mapping using this Pydantic model.
 
 ---
 
-
 ### <kbd>method</kbd> `remove_path`
 
 ```python
@@ -813,7 +779,6 @@ def remove_path(path: str | Path) -> Self
 Remove a skill path if present.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -825,7 +790,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `McpAuthenticationConfig`
 
@@ -883,7 +847,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -893,7 +856,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -905,7 +867,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `McpServerConfig`
 
@@ -961,7 +922,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -971,7 +931,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -983,7 +942,6 @@ Return the server mapping without collapsing an explicit empty allowlist.
 
 
 ---
-
 
 ## <kbd>class</kbd> `McpConfig`
 
@@ -1031,7 +989,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>method</kbd> `add_server`
 
 ```python
@@ -1057,7 +1014,6 @@ For stdio, set ``url`` to the executable and pass each command-line argument as 
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1067,7 +1023,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `remove_server`
 
@@ -1079,7 +1034,6 @@ Remove a named MCP server if present.
 
 ---
 
-
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
@@ -1090,7 +1044,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayConfigPolicy`
 
@@ -1140,7 +1093,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1150,7 +1102,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1162,7 +1113,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayAtofFileSinkConfig`
 
@@ -1213,7 +1163,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1223,7 +1172,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1235,7 +1183,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayAtofStreamSinkConfig`
 
@@ -1290,7 +1237,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1300,7 +1246,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1312,7 +1257,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayAtofConfig`
 
@@ -1361,7 +1305,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1371,7 +1314,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1383,7 +1325,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayS3StorageConfig`
 
@@ -1439,7 +1380,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1449,7 +1389,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1461,7 +1400,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayHttpStorageConfig`
 
@@ -1513,7 +1451,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1523,7 +1460,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1535,7 +1471,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayAtifConfig`
 
@@ -1591,7 +1526,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1601,7 +1535,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1613,7 +1546,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayOpenTelemetryEndpointConfig`
 
@@ -1674,7 +1606,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1684,7 +1615,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1696,7 +1626,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayOpenTelemetryConfig`
 
@@ -1745,7 +1674,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1755,7 +1683,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1767,7 +1694,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayObservabilityConfig`
 
@@ -1820,7 +1746,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1830,7 +1755,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1842,7 +1766,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayComponentConfig`
 
@@ -1892,7 +1815,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1902,7 +1824,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1914,7 +1835,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RelayConfig`
 
@@ -1966,7 +1886,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -1976,7 +1895,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -1988,7 +1906,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `TelemetryProviderConfig`
 
@@ -2036,7 +1953,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -2046,7 +1962,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -2058,7 +1973,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `TelemetryConfig`
 
@@ -2106,7 +2020,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>method</kbd> `enable_native`
 
 ```python
@@ -2116,7 +2029,6 @@ def enable_native(*, config: Mapping[str, Any] | None = None) -> Self
 Let the selected adapter handle telemetry natively.
 
 ---
-
 
 ### <kbd>method</kbd> `enable_relay`
 
@@ -2128,7 +2040,6 @@ Enable NeMo Relay telemetry for subsequently started runtimes.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -2138,7 +2049,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `remove_provider`
 
@@ -2150,7 +2060,6 @@ Remove a configured telemetry provider.
 
 ---
 
-
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
@@ -2161,7 +2070,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `ToolDefinitionConfig`
 
@@ -2211,7 +2119,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -2221,7 +2128,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -2233,7 +2139,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `ToolsConfig`
 
@@ -2283,7 +2188,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>method</kbd> `add_definition`
 
 ```python
@@ -2301,7 +2205,6 @@ Add or replace one named definition and return this tools config.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -2311,7 +2214,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `remove_definition`
 
@@ -2323,7 +2225,6 @@ Remove one named definition and return this tools config.
 
 ---
 
-
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
@@ -2334,7 +2235,6 @@ Return the tool mapping without collapsing an explicit empty policy.
 
 
 ---
-
 
 ## <kbd>class</kbd> `SystemStatsSamplingConfig`
 
@@ -2383,7 +2283,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -2393,7 +2292,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -2405,7 +2303,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ---
-
 
 ## <kbd>class</kbd> `SystemStatsConfig`
 
@@ -2456,7 +2353,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -2466,7 +2362,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 
@@ -2479,6 +2374,72 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 ---
 
+## <kbd>class</kbd> `PricingConfig`
+
+Frozen Relay-compatible price-catalog override, read during planning.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `catalog_path` | `str \| Path \| None` | No | `None` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
 
 ## <kbd>class</kbd> `FabricConfig`
 
@@ -2508,6 +2469,7 @@ The model defines the following fields:
 | `system_stats` | `SystemStatsConfig \| None` | No | `SystemStatsConfig()` | — | — |
 | `telemetry` | `TelemetryConfig \| None` | No | `None` | — | — |
 | `relay` | `RelayConfig \| None` | No | `None` | — | — |
+| `pricing` | `PricingConfig \| None` | No | `None` | — | — |
 | `tools` | `ToolsConfig \| None` | No | `None` | — | — |
 
 ---
@@ -2542,7 +2504,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>method</kbd> `add_mcp_server`
 
 ```python
@@ -2568,7 +2529,6 @@ For stdio, set ``url`` to the executable and pass each command-line argument as 
 
 ---
 
-
 ### <kbd>method</kbd> `add_skill_path`
 
 ```python
@@ -2578,7 +2538,6 @@ def add_skill_path(path: str | Path) -> Self
 Add a skill path and return this config.
 
 ---
-
 
 ### <kbd>method</kbd> `add_tool_definition`
 
@@ -2597,7 +2556,6 @@ Add or replace one named tool definition and return this config.
 
 ---
 
-
 ### <kbd>method</kbd> `block_tools`
 
 ```python
@@ -2607,7 +2565,6 @@ def block_tools(*tools: str) -> Self
 Block adapter-native tool names and return this config.
 
 ---
-
 
 ### <kbd>method</kbd> `enable_relay`
 
@@ -2626,7 +2583,6 @@ Enable NeMo Relay telemetry and return this config.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -2636,7 +2592,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate the public agent config mapping shape.
 
 ---
-
 
 ### <kbd>method</kbd> `remove_mcp_server`
 
@@ -2648,7 +2603,6 @@ Remove a named MCP server and return this config.
 
 ---
 
-
 ### <kbd>method</kbd> `remove_skill_path`
 
 ```python
@@ -2658,7 +2612,6 @@ def remove_skill_path(path: str | Path) -> Self
 Remove a skill path and return this config.
 
 ---
-
 
 ### <kbd>method</kbd> `remove_tool_definition`
 
@@ -2670,7 +2623,6 @@ Remove one named tool definition and return this config.
 
 ---
 
-
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
@@ -2681,7 +2633,6 @@ Return a detached mapping matching the Rust ``FabricConfig`` schema.
 
 
 ---
-
 
 ## <kbd>class</kbd> `RunRequest`
 
@@ -2733,7 +2684,6 @@ Returns the set of fields that have been explicitly set on this model instance.
 
 ---
 
-
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
@@ -2743,7 +2693,6 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 Validate a mapping using this Pydantic model.
 
 ---
-
 
 ### <kbd>method</kbd> `to_mapping`
 

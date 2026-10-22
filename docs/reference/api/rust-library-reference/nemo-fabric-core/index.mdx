@@ -66,6 +66,7 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::MetadataConfig;`
 - `pub use config::ModelConfig;`
 - `pub use config::OAuthTokenEndpointAuthMethod;`
+- `pub use config::PricingConfig;`
 - `pub use config::ResolutionStrategy;`
 - `pub use config::ResolveContext;`
 - `pub use config::ResolvedAdapterDescriptor;`
@@ -164,7 +165,8 @@ Core config and runtime contract for NeMo Fabric.
 - [doctor](doctor/index.mdx): Plan diagnostics for NeMo Fabric.
 - [error](error/index.mdx): Error types for NeMo Fabric core.
 - [model_usage](model-usage/index.mdx): Invocation-owned normalized counts and separately identified costs.
-- [pricing](pricing/index.mdx): Persisted pricing-basis types for the stable model-usage result contract.
+- [price_catalog](price-catalog/index.mdx): Model price catalogs for estimating token cost.
+- [pricing](pricing/index.mdx): Catalog prices are estimates, separate from provider-reported amounts.
 - [resource_snapshot](resource-snapshot/index.mdx): Resource snapshots of a runtime's local adapter host and its descendants.
 - [runtime](runtime/index.mdx): Runtime invocation helpers.
 - [schema](schema/index.mdx): JSON Schema generation for the public NeMo Fabric contract.

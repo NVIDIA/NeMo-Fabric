@@ -256,8 +256,8 @@ does not collect provider-reported cost or promote harness cost estimates.
 Native OpenAI pricing identity requires every observed request for that call to
 use `https://api.openai.com` on the standard HTTPS port. Custom endpoints,
 including environment-selected endpoints, keep their token and model evidence
-without native-provider pricing identity. Catalog estimation is added separately;
-this collector does not compute prices.
+without native-provider pricing identity; an applicable user catalog can price
+them explicitly.
 
 Unmanaged ChatOpenAI model overrides retain available observations with unverified
 scope. Other provider clients that expose usage only through LangChain

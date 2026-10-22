@@ -873,6 +873,7 @@ struct LocalAdapterHost {
     relay_config: Option<RelayRuntimeConfig>,
     // Adapter startup values stay in memory, never in a serialized handle or plan.
     environment_env: BTreeMap<String, String>,
+    bundled_pricing_allowed: crate::pricing::NativePricingRoutes,
 }
 
 struct LocalServiceRecord {
@@ -2141,6 +2142,7 @@ fn run_local_host_invocation_with_timeout(
                     relay_config,
                     fabric_home,
                     fabric_invocation,
+                    host_guard.bundled_pricing_allowed.clone(),
                 ))
             }
             Err(error) => {
@@ -2166,6 +2168,7 @@ fn run_local_host_invocation_with_timeout(
         relay_config,
         fabric_home,
         fabric_invocation,
+        bundled_pricing_allowed,
     ) = exchange_result?;
 
     let agent_result: AgentRunResult = serde_json::from_value(adapter_output).map_err(|error| {
@@ -2324,7 +2327,13 @@ fn run_local_host_invocation_with_timeout(
     let model_usage = match agent_result
         .usage
         .as_ref()
-        .map(|raw| crate::model_usage::normalize_model_usage(raw))
+        .map(|raw| {
+            crate::model_usage::normalize_model_usage_for_routes(
+                raw,
+                plan.user_price_catalog.as_ref(),
+                |provider, model| bundled_pricing_allowed.allows(provider, model),
+            )
+        })
         .transpose()
     {
         Ok(usage) => usage.flatten(),
@@ -2584,6 +2593,10 @@ fn spawn_local_host(
     if let Some(root) = artifacts.root.as_ref() {
         command.env("FABRIC_ARTIFACTS", root);
     }
+    let bundled_pricing_allowed =
+        snapshot_pricing_route(&plan.config.models, &mut command, |name| {
+            std::env::var_os(name)
+        });
     // Start suspended so the host joins its job before it can start a process.
     #[cfg(windows)]
     std::os::windows::process::CommandExt::creation_flags(
@@ -2682,7 +2695,44 @@ fn spawn_local_host(
         artifacts,
         relay_config,
         environment_env,
+        bundled_pricing_allowed,
     })
+}
+
+// Freeze endpoint inheritance on the command itself so pricing describes the
+// persistent child's startup route, not a later mutation of the controller's env.
+fn snapshot_pricing_route(
+    models: &BTreeMap<String, crate::ModelConfig>,
+    command: &mut Command,
+    inherited: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> crate::pricing::NativePricingRoutes {
+    let mut endpoints = BTreeMap::new();
+    for name in crate::pricing::OPENAI_ENDPOINT_ENV_KEYS
+        .into_iter()
+        .chain(crate::pricing::ANTHROPIC_ENDPOINT_ENV_KEYS)
+    {
+        let value = command
+            .get_envs()
+            .find_map(|(key, value)| {
+                let matches = if cfg!(windows) {
+                    key.to_string_lossy().eq_ignore_ascii_case(name)
+                } else {
+                    key == name
+                };
+                matches.then(|| value.map(std::ffi::OsStr::to_owned))
+            })
+            .unwrap_or_else(|| inherited(name));
+        match value {
+            Some(value) => {
+                endpoints.insert(name.to_string(), value.to_string_lossy().into_owned());
+                command.env(name, value);
+            }
+            None => {
+                command.env_remove(name);
+            }
+        }
+    }
+    crate::pricing::NativePricingRoutes::from_models(models, &endpoints)
 }
 
 fn local_host_command(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<(Command, String)> {
@@ -6113,6 +6163,39 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn unused_custom_model_does_not_disable_native_call_pricing() {
+        let models = serde_json::from_value(serde_json::json!({
+            "default": {"provider": "openai", "model": "gpt-5.4"},
+            "unused": {
+                "provider": "openai", "model": "other-model",
+                "base_url": "https://custom.invalid/v1"
+            }
+        }))
+        .expect("model roles");
+        let allowed = snapshot_pricing_route(&models, &mut Command::new("unused"), |_| None);
+        let raw = serde_json::from_value(serde_json::json!({
+            "extensions": {"nemo_fabric.usage_accounting.v1": {
+                "models_exhaustive": true, "gaps": [], "models": [{
+                    "provider": "openai", "model": "gpt-5.4", "gaps": [],
+                    "reported": {
+                        "input_tokens": 100, "cached_input_tokens": 20,
+                        "cache_write_input_tokens": 0, "input_tokens_include_cache": true,
+                        "output_tokens": 5, "output_tokens_include_reasoning": true
+                    }
+                }]
+            }}
+        }))
+        .expect("source-established usage");
+        let usage =
+            crate::model_usage::normalize_model_usage_for_routes(&raw, None, |provider, model| {
+                allowed.allows(provider, model)
+            })
+            .expect("valid accounting")
+            .expect("normalized accounting");
+        assert!(usage.cost.estimated.amount_nano_usd.is_some());
+    }
+
+    #[test]
     fn local_host_returns_flat_supported_accounting_with_the_normalized_result() {
         let (_root, plan) = local_host_plan("accounted_usage_result");
         let result = run_plan(&plan, RunRequest::text("accounted")).expect("normalized result");
@@ -6125,10 +6208,6 @@ for line in sys.stdin:
         assert!(usage.models_exhaustive);
         assert_eq!(usage.models[0].model, "gpt-5.4");
         assert_eq!(usage.observed.input_tokens, Some(100));
-        assert_eq!(usage.cost.estimated.amount_nano_usd, None);
-        assert_eq!(usage.cost.estimated.observed_nano_usd, None);
-        assert!(usage.cost.pricing.is_none());
-        assert!(usage.cost.applied_rates.is_empty());
     }
 
     #[test]

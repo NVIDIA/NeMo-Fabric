@@ -6,11 +6,16 @@ import sys
 from pathlib import Path
 
 import pytest
-from nemo_fabric import Fabric, FabricConfig
+from nemo_fabric import Fabric, FabricConfig, PricingConfig
+
+
+@pytest.fixture(name="accounting_catalog")
+def accounting_catalog_fixture():
+    return None
 
 
 @pytest.fixture(name="accounting_runtime")
-async def accounting_runtime_fixture(tmp_path):
+async def accounting_runtime_fixture(tmp_path, accounting_catalog):
     """Normalize controlled adapter evidence through the native public runtime."""
     root = Path(__file__).resolve().parents[2]
     accounting_schema = json.loads(
@@ -68,6 +73,10 @@ for line in sys.stdin:
             "runtime": {"artifacts": "./artifacts"},
         }
     )
+    if accounting_catalog is not None:
+        catalog_path = tmp_path / "catalog.json"
+        catalog_path.write_text(json.dumps(accounting_catalog))
+        config.pricing = PricingConfig(catalog_path=catalog_path)
     async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
         yield runtime
 

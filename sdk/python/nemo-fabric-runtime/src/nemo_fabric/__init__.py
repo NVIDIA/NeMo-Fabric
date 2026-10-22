@@ -4,6 +4,7 @@
 """Python SDK surface for NeMo Fabric."""
 
 from nemo_fabric.accounting import summarize_usage
+from nemo_fabric.models import PricingConfig
 from nemo_fabric.types import ModelUsage
 from nemo_fabric.types import PerModelUsage
 from nemo_fabric.types import PricingBasis
@@ -93,6 +94,7 @@ from nemo_fabric.types import TelemetryRef
 
 __all__ = [
     "summarize_usage",
+    "PricingConfig",
     "ModelUsage",
     "PerModelUsage",
     "PricingBasis",

@@ -104,8 +104,39 @@ async def test_actual_calls_with_mixed_conventions_recover_complete_counts_in_co
 
 
 @pytest.mark.integration
-async def test_scoped_request_gap_preserves_cache_uncertainty_in_core(
-    reduced, accounting_runtime
+@pytest.mark.parametrize(
+    "accounting_catalog, complete_cost",
+    [
+        (
+            {
+                "version": 1,
+                "entries": [
+                    {
+                        "provider": "openai",
+                        "model_id": "model",
+                        "currency": "USD",
+                        "unit": "per_token",
+                        "rates": {
+                            "input_per_million": 1.0,
+                            "output_per_million": 2.0,
+                            "cache_read_per_million": cache_rate,
+                            "cache_write_per_million": 1.25,
+                        },
+                        "prompt_cache": {
+                            "read_accounting": "included_in_prompt_tokens"
+                        },
+                        "pricing_as_of": "2026-10-21",
+                        "pricing_source": "test fixture",
+                    }
+                ],
+            },
+            complete_cost,
+        )
+        for cache_rate, complete_cost in [(0.1, None), (1.0, 110_000)]
+    ],
+)
+async def test_scoped_request_gap_preserves_cache_uncertainty_and_independent_pricing(
+    reduced, accounting_runtime, complete_cost
 ):
     index = next(
         i
@@ -132,3 +163,4 @@ async def test_scoped_request_gap_preserves_cache_uncertainty_in_core(
     assert usage.cached_input_tokens is None
     assert usage.observed.cached_input_tokens == 20
     assert usage.models[0].cached_input_tokens is None
+    assert usage.cost.estimated.amount_nano_usd == complete_cost
