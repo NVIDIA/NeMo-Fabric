@@ -12,12 +12,12 @@ import type {
   AgentUsage,
   JsonObject,
 } from "nemo-fabric-adapter-contract";
+import { usageFromObservations, type UsageObservation } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import type { DroidPromptOutcome, DroidSessionFactory, DroidSessionHandle } from "./runtime.js";
 
 const DROID_SDK_INSTALL_COMMAND = "npm install @factory/droid-sdk@0.9.1";
-const DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1";
 const MCP_STARTUP_TIMEOUT_MS = 10_000;
 const MCP_STATUS_POLL_INTERVAL_MS = 50;
 const INHERITED_ENVIRONMENT_NAMES = new Set([
@@ -425,8 +425,8 @@ function customModelSettingsEnvironment(
  * handler, and Bedrock Converse custom models use the Converse handler.
  */
 type DroidInputConvention =
-  /** Gemini: Droid keeps promptTokenCount, which includes cached content. */
-  | "includes_cache_reads"
+  /** Gemini: Droid keeps the provider total effective promptTokenCount. */
+  | "includes_cache"
   /** Responses and Chat Completions: Droid subtracts cache reads from the provider input. */
   | "excludes_cache_reads"
   /** Anthropic Messages and Bedrock Converse: the provider input excludes cache reads and writes. */
@@ -434,27 +434,18 @@ type DroidInputConvention =
 
 interface DroidUsageConvention {
   input: DroidInputConvention;
-  /**
-   * The provider sends a cache read count, or omits it only when it is 0, on
-   * every response. Droid's 0 then means no cache reads rather than no report.
-   */
-  reportsCacheReads: boolean;
 }
 
-// Anthropic and Bedrock define total input as input plus cache reads and
-// writes, and the OpenAI Responses usage object requires cached_tokens. Gemini
-// JSON omits a zero cachedContentTokenCount. Factory-hosted, xAI, and custom
-// endpoints are not shown to report cache reads on every response.
-const GEMINI: DroidUsageConvention = { input: "includes_cache_reads", reportsCacheReads: true };
-const ANTHROPIC_OR_BEDROCK: DroidUsageConvention = { input: "excludes_cache", reportsCacheReads: true };
-const OPENAI_RESPONSES: DroidUsageConvention = { input: "excludes_cache_reads", reportsCacheReads: true };
-const EXCLUDES_CACHE: DroidUsageConvention = { input: "excludes_cache", reportsCacheReads: false };
-const EXCLUDES_CACHE_READS: DroidUsageConvention = { input: "excludes_cache_reads", reportsCacheReads: false };
+// These source conventions describe Droid's persisted input, not a promise
+// that its aggregate includes every provider usage report.
+const GEMINI: DroidUsageConvention = { input: "includes_cache" };
+const EXCLUDES_CACHE: DroidUsageConvention = { input: "excludes_cache" };
+const EXCLUDES_CACHE_READS: DroidUsageConvention = { input: "excludes_cache_reads" };
 
 const BUILT_IN_MODEL_CONVENTIONS: ReadonlyArray<readonly [string, DroidUsageConvention]> = [
-  ["claude-", ANTHROPIC_OR_BEDROCK],
+  ["claude-", EXCLUDES_CACHE],
   ["gemini-", GEMINI],
-  ["gpt-", OPENAI_RESPONSES],
+  ["gpt-", EXCLUDES_CACHE_READS],
   ["grok-", EXCLUDES_CACHE_READS],
   // Factory-hosted models use the Anthropic Messages or Chat Completions handler;
   // the Chat Completions handler never records cache writes.
@@ -472,7 +463,7 @@ const GOOGLE_HINT = /gemini|garnet|generativelanguage\.googleapis\.com|aiplatfor
 function customModelConvention(settings: CustomModelSettings): DroidUsageConvention | undefined {
   switch (settings.provider) {
     case "bedrock-converse":
-      return ANTHROPIC_OR_BEDROCK;
+      return EXCLUDES_CACHE;
     case "anthropic":
       return EXCLUDES_CACHE;
     case "openai":
@@ -628,92 +619,54 @@ function validTokenCount(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
-/**
- * Returns the turn's input including cache reads and writes, or undefined when
- * the provider path or Droid's input count does not establish it. Droid fills
- * a missing input count with 0, so 0 input stays unknown.
- */
-function inputIncludingCache(
-  convention: DroidInputConvention | undefined,
-  inputTokens: number,
-  cacheReadTokens: number,
-  cacheWriteTokens: number,
-): number | undefined {
-  if (inputTokens === 0) return undefined;
-  switch (convention) {
-    case "excludes_cache":
-      return inputTokens + cacheReadTokens + cacheWriteTokens;
-    // The Gemini and Chat Completions handlers never record cache writes. The
-    // Responses handler records a nonstandard write count without subtracting
-    // it, so whether input already includes those writes is not established.
-    case "excludes_cache_reads":
-      return cacheWriteTokens === 0 ? inputTokens + cacheReadTokens : undefined;
-    case "includes_cache_reads":
-      return cacheWriteTokens === 0 ? inputTokens : undefined;
-    default:
-      return undefined;
+/** Keep the terminal turn's literal aggregate; it cannot prove call coverage. */
+function normalizeUsage(
+  value: unknown,
+  convention: DroidUsageConvention | undefined,
+  model?: string,
+): AgentUsage {
+  if (value === null || value === undefined) {
+    return usageFromObservations([{ reported: {}, gap: "missing_usage" }]);
   }
-}
-
-function normalizeUsage(value: unknown, convention: DroidUsageConvention | undefined): AgentUsage | undefined {
-  if (value === null || value === undefined) return undefined;
   if (typeof value !== "object") {
     throw new LifecycleError("droid_malformed_result", "Droid returned malformed usage metadata");
   }
   const usage = value as Partial<DroidTokenUsage>;
-  const counts = [
-    usage.inputTokens,
-    usage.outputTokens,
-    usage.cacheCreationTokens,
-    usage.cacheReadTokens,
-    usage.thinkingTokens,
-  ];
+  const counts = [usage.inputTokens, usage.outputTokens, usage.cacheCreationTokens, usage.cacheReadTokens, usage.thinkingTokens];
   if (!counts.every(validTokenCount) || (usage.factoryCredits !== undefined && !validNonNegativeNumber(usage.factoryCredits))) {
     throw new LifecycleError("droid_malformed_result", "Droid returned malformed usage metadata");
   }
-  const { inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, thinkingTokens, factoryCredits } =
-    usage as DroidTokenUsage;
-  // Droid stores a count the provider omitted as 0, so a 0 count is unknown.
-  // Output includes reasoning on every provider path.
-  const output = outputTokens > 0 ? outputTokens : undefined;
-  // A 0 cache read count is a real 0 only on paths that report cache reads on
-  // every response; elsewhere it may hide cache hits that belong in the input.
-  const cacheReadsKnown = cacheReadTokens > 0 || convention?.reportsCacheReads === true;
-  const inclusiveInput = cacheReadsKnown
-    ? inputIncludingCache(convention?.input, inputTokens, cacheReadTokens, cacheCreationTokens)
-    : undefined;
-  // Without an inclusive count, report Droid's own input count, leave its
-  // cache convention unset, and derive no total: the input may leave out cache.
-  const input = inclusiveInput ?? (inputTokens > 0 ? inputTokens : undefined);
-  const total = inclusiveInput === undefined || output === undefined ? undefined : inclusiveInput + output;
-  if ((input !== undefined && !Number.isSafeInteger(input)) || (total !== undefined && !Number.isSafeInteger(total))) {
-    throw new LifecycleError("droid_malformed_result", "Droid returned malformed usage metadata");
+  const reported: UsageObservation["reported"] = {};
+  for (const [source, destination] of [
+    ["inputTokens", "input_tokens"], ["outputTokens", "output_tokens"],
+    ["cacheReadTokens", "cached_input_tokens"], ["cacheCreationTokens", "cache_write_input_tokens"],
+  ] as const) {
+    const count = usage[source];
+    // Droid zero-fills provider omissions before summing the turn. A positive
+    // aggregate is evidence, but cannot certify that every call reported it.
+    if (typeof count === "number" && count > 0) reported[destination] = count;
   }
-  const inputUsage: JsonObject = {
-    ...(input === undefined ? {} : { input_tokens: input }),
-    ...(cacheReadTokens > 0 || inclusiveInput !== undefined ? { cached_input_tokens: cacheReadTokens } : {}),
-    ...(inclusiveInput === undefined ? {} : { input_tokens_include_cache: true }),
-  };
-  const detailed: JsonObject = {
-    ...inputUsage,
-    ...(cacheCreationTokens > 0 ? { cache_write_input_tokens: cacheCreationTokens } : {}),
-    ...(output === undefined ? {} : { output_tokens: output, output_tokens_include_reasoning: true }),
-  };
-  const extensions: JsonObject = {
-    ...(Object.keys(detailed).length === 0 ? {} : { [DETAILED_TOKEN_USAGE_KEY]: detailed }),
-    ...(thinkingTokens > 0 ? { thinking_tokens: thinkingTokens } : {}),
-    ...(factoryCredits === undefined || factoryCredits === 0 ? {} : { factory_credits: factoryCredits }),
-  };
-  if (Object.keys(extensions).length === 0) return undefined;
-  return {
-    ...inputUsage,
-    ...(output === undefined ? {} : { output_tokens: output }),
-    ...(total === undefined ? {} : { total_tokens: total }),
-    extensions,
-  };
+  if (reported.input_tokens !== undefined) {
+    if (convention?.input === "excludes_cache") reported.input_tokens_include_cache = false;
+    else if (convention?.input === "includes_cache") {
+      reported.input_tokens_include_cache = true;
+    }
+    // Responses subtracts reads but may preserve nonstandard writes. The shared
+    // binary cache flag cannot express that partial convention, so leave it unset.
+  }
+  if (reported.output_tokens !== undefined) reported.output_tokens_include_reasoning = true;
+  const result = usageFromObservations([{ reported, ...(model === undefined ? {} : { model }), gap: "scope_unverified" }]);
+  // Keep Factory's native diagnostics separate from measured reasoning or USD.
+  if (usage.thinkingTokens !== undefined && usage.thinkingTokens > 0) result.extensions!.thinking_tokens = usage.thinkingTokens;
+  if (usage.factoryCredits !== undefined && usage.factoryCredits > 0) result.extensions!.factory_credits = usage.factoryCredits;
+  return result;
 }
 
-function normalizeResult(value: unknown, convention: DroidUsageConvention | undefined): DroidPromptOutcome {
+function normalizeResult(
+  value: unknown,
+  convention: DroidUsageConvention | undefined,
+  model?: string,
+): DroidPromptOutcome {
   if (typeof value !== "object" || value === null) {
     throw new LifecycleError("droid_malformed_result", "Droid did not return a terminal result");
   }
@@ -731,7 +684,7 @@ function normalizeResult(value: unknown, convention: DroidUsageConvention | unde
   ) {
     throw new LifecycleError("droid_malformed_result", "Droid returned a malformed terminal result");
   }
-  const usage = normalizeUsage(result.tokenUsage, convention);
+  const usage = normalizeUsage(result.tokenUsage, convention, model);
   const extensions: JsonObject = {
     session_id: result.sessionId,
     finish_reason: String(result.subtype),
@@ -880,6 +833,8 @@ interface TurnObservation {
   models: Set<string>;
   /** The turn's completion reported usage from Task subagents. */
   childUsage: boolean;
+  completions: number;
+  tokenUsage?: unknown;
 }
 
 class DroidSdkSessionHandle implements DroidSessionHandle {
@@ -888,6 +843,7 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
   private readonly configuredModel: string;
   private readonly conventions: DroidUsageConventions;
   private stopped = false;
+  private readonly completedTurnIds = new Set<string>();
 
   constructor(
     session: DroidSdkSession,
@@ -913,7 +869,7 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
    * child usage.
    */
   private observeTurn(): { observation: TurnObservation; stop(): void } {
-    const observation: TurnObservation = { models: new Set([this.currentModel()]), childUsage: false };
+    const observation: TurnObservation = { models: new Set([this.currentModel()]), childUsage: false, completions: 0 };
     if (typeof this.session.onNotification !== "function") {
       observation.childUsage = true;
       return { observation, stop: () => undefined };
@@ -925,8 +881,13 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
       if (inner.type === "settings_updated") {
         const modelId = (inner.settings as { modelId?: unknown } | undefined)?.modelId;
         if (typeof modelId === "string" && modelId.length > 0) observation.models.add(modelId);
-      } else if (inner.type === "agent_turn_completed" && hasTokenCounts(inner.childTokenUsage)) {
-        observation.childUsage = true;
+      } else if (inner.type === "agent_turn_completed") {
+        const turnId = typeof inner.turnId === "string" ? inner.turnId : undefined;
+        if (turnId === undefined || this.completedTurnIds.has(turnId)) return;
+        this.completedTurnIds.add(turnId);
+        observation.completions++;
+        observation.tokenUsage = inner.tokenUsage;
+        if (hasTokenCounts(inner.childTokenUsage)) observation.childUsage = true;
       }
     });
     return { observation, stop };
@@ -954,13 +915,19 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
         retryable: true,
       });
     }
-    // Droid adds subagent usage to the turn's counters, and a subagent can use
-    // another model; a model change mixes conventions too. Such a turn keeps
-    // the reported counters without a cache convention.
+    // The SDK's matching terminal turn includes descendants. Keep their usage
+    // once; mixed models prevent assigning the aggregate to the parent model.
     turn.observation.models.add(this.currentModel());
     const conventions = new Set([...turn.observation.models].map((model) => this.conventions.forModel(model)));
     const convention = conventions.size === 1 && !turn.observation.childUsage ? [...conventions][0] : undefined;
-    return normalizeResult(terminal, convention);
+    const model = turn.observation.models.size === 1 && !turn.observation.childUsage && !ROUTER_MODELS.has(this.currentModel())
+      ? [...turn.observation.models][0] : undefined;
+    // The SDK falls back to a session-lifetime update when the completion has
+    // no usage. Only an explicit newly completed turn is invocation evidence.
+    const source = typeof terminal === "object" && terminal !== null ? {
+      ...terminal, tokenUsage: turn.observation.completions === 1 ? turn.observation.tokenUsage : null,
+    } : terminal;
+    return normalizeResult(source, convention, model);
   }
 
   async stop(): Promise<void> {

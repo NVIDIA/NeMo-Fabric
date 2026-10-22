@@ -65,6 +65,12 @@ INSTALL_ENV_NAMES = {
 HARBOR_ARTIFACT_ROOT = "/logs/agent/fabric-artifacts"
 HARBOR_DEFAULT_WORKSPACE = "/testbed"
 _DETAILED_TOKEN_USAGE_V1_KEY = "nemo_fabric.detailed_token_usage.v1"
+# Evidence the bridge records beside the result, kept when result metadata is replaced.
+_BRIDGE_EVIDENCE_KEYS = (
+    "atif_final_metrics",
+    "harbor_atif_validation",
+    "telemetry_validation",
+)
 
 try:
     from harbor.agents.base import BaseAgent
@@ -614,6 +620,8 @@ else:
 
             if self._result_path is not None:
                 populate_context_from_result(context, self._result_path)
+            else:
+                _clear_accounting(context)
             populate_context_from_trajectory(context, self.logs_dir / "trajectory.json")
             populate_context_from_telemetry_summary(
                 context,
@@ -884,26 +892,33 @@ def populate_context_from_result(
     document = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(document, dict) and "runner_error" in document:
         failure = FabricRunnerFailure.model_validate(document)
-        if context.metadata is None:
-            context.metadata = {}
-        context.metadata["fabric"] = failure.model_dump()
+        _replace_result_metadata(context, failure.model_dump())
+        _clear_accounting(context)
         return failure
     result = RunResult.from_mapping(document)
     mapping = result.to_mapping()
-    if context.metadata is None:
-        context.metadata = {}
-    context.metadata["fabric"] = {
-        "status": mapping["status"],
-        "runtime_id": mapping["runtime_id"],
-        "invocation_id": mapping["invocation_id"],
-        "request_id": mapping["request_id"],
-        "harness": mapping["harness"],
-        "adapter_id": mapping.get("adapter_id"),
-        "artifacts": mapping["artifacts"],
-        "telemetry": mapping["telemetry"],
-        "error": mapping.get("error"),
-        "usage": mapping.get("usage"),
-    }
+    _replace_result_metadata(
+        context,
+        {
+            "status": mapping["status"],
+            "runtime_id": mapping["runtime_id"],
+            "invocation_id": mapping["invocation_id"],
+            "request_id": mapping["request_id"],
+            "harness": mapping["harness"],
+            "adapter_id": mapping.get("adapter_id"),
+            "artifacts": mapping["artifacts"],
+            "telemetry": mapping["telemetry"],
+            "error": mapping.get("error"),
+            "usage": mapping.get("usage"),
+        },
+    )
+    # Fabric results supply Harbor's accounting fields; an unknown dimension
+    # clears any value an earlier pass left in the context. ATIF metrics stay
+    # separate as evidence with unverified coverage.
+    input_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: float | None = None
     if result.usage is not None:
         usage = result.usage
         detailed_usage = _detailed_token_usage(usage)
@@ -959,19 +974,39 @@ def populate_context_from_result(
             )
         else:
             output_tokens = usage.get("output_tokens")
-        if input_tokens is not None:
-            context.n_input_tokens = input_tokens
-        if cached_input_tokens is not None:
-            context.n_cache_tokens = cached_input_tokens
-        if output_tokens is not None:
-            context.n_output_tokens = output_tokens
-        if usage.get("cost_usd") is not None:
-            context.cost_usd = usage["cost_usd"]
+        cost_usd = usage.get("cost_usd")
+    context.n_input_tokens = input_tokens
+    context.n_cache_tokens = cached_input_tokens
+    context.n_output_tokens = output_tokens
+    context.cost_usd = cost_usd
     return result
 
 
+def _replace_result_metadata(context: AgentContext, fields: dict[str, Any]) -> None:
+    """Replace one pass's result fields while keeping the bridge's own evidence."""
+
+    if context.metadata is None:
+        context.metadata = {}
+    previous = context.metadata.get("fabric")
+    evidence = (
+        {key: previous[key] for key in _BRIDGE_EVIDENCE_KEYS if key in previous}
+        if isinstance(previous, dict)
+        else {}
+    )
+    context.metadata["fabric"] = {**fields, **evidence}
+
+
+def _clear_accounting(context: AgentContext) -> None:
+    """Without a Fabric result, no source can vouch for Harbor's accounting fields."""
+
+    context.n_input_tokens = None
+    context.n_cache_tokens = None
+    context.n_output_tokens = None
+    context.cost_usd = None
+
+
 def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
-    """Validate canonical ATIF with Harbor and backfill usage fields when present."""
+    """Validate canonical ATIF with Harbor and keep its totals as separate evidence."""
 
     if not path.is_file():
         return
@@ -986,15 +1021,23 @@ def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
     metrics = trajectory.final_metrics
     if metrics is None:
         return
-    # These are two views of one invocation, not additive accounting sources.
-    if context.n_input_tokens is None:
-        context.n_input_tokens = metrics.total_prompt_tokens
-    if context.n_cache_tokens is None:
-        context.n_cache_tokens = metrics.total_cached_tokens
-    if context.n_output_tokens is None:
-        context.n_output_tokens = metrics.total_completion_tokens
-    if context.cost_usd is None:
-        context.cost_usd = metrics.total_cost_usd
+    # ATIF totals can cover a different scope (for example subagents) and cache
+    # convention than the invocation, so they never fill Harbor's accounting.
+    _record_atif_final_metrics(context, metrics.model_dump(mode="json"))
+
+
+def _record_atif_final_metrics(
+    context: AgentContext, final_metrics: dict[str, Any]
+) -> None:
+    if context.metadata is None:
+        context.metadata = {}
+    fabric = context.metadata.setdefault("fabric", {})
+    if isinstance(fabric, dict):
+        fabric["atif_final_metrics"] = {
+            "source": "atif",
+            "coverage": "unverified",
+            "final_metrics": final_metrics,
+        }
 
 
 def _record_host_atif_validation(
