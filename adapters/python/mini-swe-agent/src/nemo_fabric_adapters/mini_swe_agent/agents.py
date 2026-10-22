@@ -12,7 +12,7 @@ from typing import Any
 from minisweagent.agents.default import DefaultAgent
 from minisweagent.exceptions import InterruptAgentFlow
 from minisweagent.exceptions import Submitted
-from minisweagent.models.litellm_model import LitellmModel
+from nemo_fabric_adapters.mini_swe_agent.usage import UsageRecordingLitellmModel
 
 
 def _error_text(error: BaseException) -> str:
@@ -28,60 +28,16 @@ def _submitted_output(error: Submitted) -> dict[str, Any]:
     }
 
 
-class UsageRecordingLitellmModel(LitellmModel):
-    """Keep each response's provider usage from before LiteLLM normalizes it.
-
-    LiteLLM's Anthropic and Bedrock conversions fill omitted counts with 0, so
-    the stored response cannot tell an omitted count from a reported 0. LiteLLM
-    passes the raw provider body to the per-call ``logger_fn`` after the API
-    call. ``provider_usage`` maps each response id to that body's ``usage``.
-    """
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self.provider_usage: dict[str, dict[str, Any]] = {}
-
-    def _query(self, messages: list[dict[str, str]], **kwargs: Any) -> Any:
-        bodies: list[str] = []
-
-        def record_body(details: dict[str, Any]) -> None:
-            body = details.get("original_response")
-            if details.get("log_event_type") == "post_api_call" and isinstance(
-                body, str
-            ):
-                bodies.append(body)
-
-        response = super()._query(messages, logger_fn=record_body, **kwargs)
-        usage = _body_usage(bodies[-1]) if bodies else None
-        if usage is not None:
-            self.provider_usage[response.id] = usage
-        return response
-
-
-def _body_usage(body: str) -> dict[str, Any] | None:
-    try:
-        parsed = json.loads(body)
-    except ValueError:
-        return None
-    usage = parsed.get("usage") if isinstance(parsed, dict) else None
-    return usage if isinstance(usage, dict) else None
-
-
 class RetainingDefaultAgent(DefaultAgent):
     """Preserve mini-SWE-agent history across ordered Fabric invocations.
 
     Before a later run, remove the prior terminal exit message, append the new
     task as a user message, and suppress ``DefaultAgent`` history
     initialization. History remains in memory without truncation until the
-    runtime stops. ``invocation_responses`` holds the LiteLLM response of each
-    model call in the current run.
+    runtime stops.
     """
 
     _retain_messages = _skip_initial_messages = False
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.invocation_responses: list[Any] = []
-        super().__init__(*args, **kwargs)
 
     @property
     def messages(self) -> list[dict[str, Any]]:
@@ -99,18 +55,9 @@ class RetainingDefaultAgent(DefaultAgent):
         if self._skip_initial_messages:
             self._skip_initial_messages = False
             return []
-        added = super().add_messages(*messages)
-        # Model calls, including ones that fail tool-call parsing, reach history
-        # here with the LiteLLM response under ``extra.response``.
-        self.invocation_responses.extend(
-            message["extra"]["response"]
-            for message in added
-            if "response" in (message.get("extra") or {})
-        )
-        return added
+        return super().add_messages(*messages)
 
     def run(self, task: str = "", **kwargs: Any) -> dict[str, Any]:
-        self.invocation_responses = []
         if self.messages:
             self.n_calls = self.cost = self.n_consecutive_format_errors = 0
             self.messages.pop()

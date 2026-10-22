@@ -1332,8 +1332,10 @@ async def test_relay_initializes_v4_atof_atif_config(
     }
     common_utils.validate_relay_observability(plugin_config)
     assert plugin.validate_exact(plugin_config)["config"]["diagnostics"] == []
+    # Activation includes discovered host plugins, so compare the same layers.
+    expected_diagnostics = plugin.validate(plugin_config)["config"]["diagnostics"]
     async with plugin.activate(plugin_config) as activation:
-        assert activation.report["config"]["diagnostics"] == []
+        assert activation.report["config"]["diagnostics"] == expected_diagnostics
 
 
 def test_relay_validates_all_v4_otlp_fields():

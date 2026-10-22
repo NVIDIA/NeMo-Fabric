@@ -103,30 +103,40 @@ async def main():
 result = asyncio.run(main())
 ```
 
-The result includes the submitted final output, the API-call count, and token
-usage summed from the LiteLLM responses of the invocation's model calls.
-Input tokens include cached prompt tokens. A count that any call did not
-report stays unknown, and so does an invalid count.
+The result includes the submitted final output. `output.usage.api_calls` counts
+mini-SWE-agent model queries, including queries that retry their provider call. Raw provider usage is captured per LiteLLM attempt in the declared
+`nemo_fabric.usage_accounting.v1` extension, before omitted fields can become
+zeros. A count the provider omitted stays unknown; a reported zero stays zero.
+Fabric's shared normalizer combines these observations, accounts for cache
+and reasoning conventions, and exposes complete counts separately from observed
+subtotals in `RunResult.model_usage`.
 
-For OpenAI-compatible responses, LiteLLM records an omitted input, output or
-total count as 0, so such a 0 is unknown. A reported cached count of 0 is kept.
-For Anthropic and Bedrock responses, the adapter reads the provider's own usage
-from LiteLLM's per-call `logger_fn`, before LiteLLM fills omitted counts with
-0, so a count is known only when the provider reported it. Anthropic input is
-known when the uncached input and both cache counts are reported. Bedrock's
-cache counts are optional, so its cached count is unknown when Bedrock omits
-it. When the provider's raw usage cannot be captured, counts whose completeness
-cannot be established stay unknown. A total that the provider reported is kept even when input or output
-is unknown, and a missing total is the sum of known input and output. Cost is
-not reported, because mini-SWE-agent's cost is a LiteLLM price-table estimate.
+The collector is qualified with mini-SWE-agent 2.4.6 and LiteLLM 1.89.3,
+1.96.2 and 1.100.1 for OpenAI Chat Completions, LiteLLM's Responses bridge,
+and Anthropic's default Python Messages transport. It follows the installed
+version's routing rule. Older qualified LiteLLM versions can reject partial
+Responses usage during response conversion; independently reported raw counts
+remain available even when that conversion fails.
+OpenAI uses an adapter-owned client with passive HTTP hooks that preserve SDK
+retries. A failed HTTP attempt, missing usage, or unfinished call leaves the
+affected complete totals unknown while retaining observed counts. mini-SWE's
+own retry loop is observed at each attempt. HTTP status never establishes zero
+spend. A final-response parsing failure or task failure alone does not erase
+usable reported usage. Other package versions, provider transports, external
+clients and LiteLLM's opt-in Rust path retain available raw observations with
+an unverified-scope gap until qualified. Existing external clients and network
+mock settings are preserved.
 
-Usage covers stored model responses only. mini-SWE-agent retries a failed
-request inside one model call and stores no response for the failed attempts,
-so reported usage can be lower than the billed work. If any model call stores
-no response, as mini-SWE-agent releases before 2.3.1 do when tool-call parsing
-fails, every token count for the invocation is unknown. A failed result keeps
-the usage gathered before the failure. An invocation that raises returns no
-usage.
+Each attempt belongs to the invocation that started it. The accounting snapshot
+freezes before return. A cancelled worker may continue running, so that runtime
+cannot accept another invocation; late usage never transfers to a later result.
+
+LiteLLM's price-table estimate is not provider-reported `cost_usd`. Missing
+LiteLLM pricing does not fail a run or hide its tokens. Fabric can estimate
+separately when the model, provider route and price catalog are established.
+A custom endpoint does not establish native-provider prices; it needs an
+applicable user catalog. Retained conversation history and Relay traces are
+independent of the accounting source.
 
 ## Continue a Task Across Invocations
 

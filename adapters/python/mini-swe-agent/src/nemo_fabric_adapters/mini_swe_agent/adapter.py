@@ -25,13 +25,6 @@ on the following lines. The command output after the first line is submitted as
 your final response, so include it in the same command.
 """
 _UNREADABLE = object()
-_MAX_TOKEN_COUNT = (1 << 64) - 1
-_USAGE_FIELDS = (
-    "input_tokens",
-    "cached_input_tokens",
-    "output_tokens",
-    "total_tokens",
-)
 
 
 def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
@@ -53,6 +46,8 @@ class MiniSweAgentRuntime:
         self._relay_plugin = self._relay_scope = self._relay_scope_type = None
         self._relay_plugin_config: dict[str, Any] | None = None
         self._telemetry_quarantine: str | None = None
+        self._run_error: Exception | None = None
+        self._unusable = False
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
@@ -64,9 +59,7 @@ class MiniSweAgentRuntime:
         from minisweagent.environments.local import LocalEnvironment
         from nemo_fabric_adapters.mini_swe_agent.agents import (
             RelayRetainingDefaultAgent,
-        )
-        from nemo_fabric_adapters.mini_swe_agent.agents import RetainingDefaultAgent
-        from nemo_fabric_adapters.mini_swe_agent.agents import (
+            RetainingDefaultAgent,
             UsageRecordingLitellmModel,
         )
 
@@ -114,6 +107,11 @@ class MiniSweAgentRuntime:
                 model.model if "/" in model.model else f"{model.provider}/{model.model}"
             ),
             model_kwargs=model_kwargs,
+            # mini-SWE-agent looks up each call's cost in LiteLLM's price table
+            # after the call returns and, by default, raises when the model is
+            # not listed. The adapter reports no cost, so a missing price must
+            # not fail the run or hide the call's tokens.
+            cost_tracking="ignore_errors",
         )
         self._environment = LocalEnvironment(
             **(config.harness.settings if config.harness else {})
@@ -136,17 +134,35 @@ class MiniSweAgentRuntime:
         request: contract.AgentRunRequest,
         context: contract.RuntimeContext,
     ) -> contract.AgentRunResult:
+        if self._unusable:
+            raise lifecycle.LifecycleError(
+                "mini_swe_agent_unusable",
+                "a cancelled worker may still be running; start a new runtime",
+            )
+        from nemo_fabric_adapters.mini_swe_agent.usage import MiniInvocationUsage
+
         task = common_utils.normalize_user_input(request.input)
         inherited_quarantine = self._telemetry_quarantine is not None
         telemetry_errors: list[str] = []
-        self._model.provider_usage.clear()
-        if self._relay_enabled:
-            result, telemetry_errors = await self._run_with_relay(
-                task, context, request.relay_session_root
-            )
-        else:
-            result = await self._run_agent(task)
-        failed = result.get("exit_status") != "Submitted"
+        owner = MiniInvocationUsage()
+        self._run_error = None
+        try:
+            with owner.scope():
+                if self._relay_enabled:
+                    result, telemetry_errors = await self._run_with_relay(
+                        task, context, request.relay_session_root
+                    )
+                else:
+                    result = await self._run_agent(task)
+        except BaseException:
+            # asyncio.to_thread cannot cancel a running model/shell operation.
+            # A later invocation must not share its agent or late responses.
+            self._unusable = True
+            raise
+        finally:
+            usage = owner.finish(no_calls=self._agent.n_calls == 0)
+        run_error = self._run_error
+        failed = run_error is not None or result.get("exit_status") != "Submitted"
         output: dict[str, Any] = {
             "output": result.get("submission", ""),
             "usage": {"api_calls": self._agent.n_calls},
@@ -172,15 +188,19 @@ class MiniSweAgentRuntime:
                         "error": "; ".join(telemetry_errors),
                     }
                 )
-        error = (
-            contract.AgentRunError(
+        error = None
+        if run_error is not None:
+            error = contract.AgentRunError(
+                code="mini_swe_agent_error",
+                message=f"mini-SWE-agent raised {type(run_error).__name__}",
+                retryable=False,
+            )
+        elif failed:
+            error = contract.AgentRunError(
                 code="mini_swe_agent_incomplete",
                 message="mini-SWE-agent stopped before submitting a final output",
                 retryable=False,
             )
-            if failed
-            else None
-        )
         return contract.AgentRunResult(
             status=(
                 contract.AgentRunStatus.FAILED
@@ -189,17 +209,21 @@ class MiniSweAgentRuntime:
             ),
             output=output,
             error=error,
-            usage=_invocation_usage(
-                self._agent.invocation_responses,
-                self._agent.n_calls,
-                self._model.provider_usage,
-            ),
+            usage=usage,
         )
 
     async def _run_agent(self, task: str) -> dict[str, Any]:
-        return await asyncio.to_thread(
-            self._agent.run, task, system_instruction=self._system_instruction
-        )
+        try:
+            return await asyncio.to_thread(
+                self._agent.run, task, system_instruction=self._system_instruction
+            )
+        except Exception as error:
+            # mini-SWE-agent re-raises a model call error that it does not
+            # retry, such as a context-window rejection, or that fails every
+            # retry. Earlier calls stored their responses, so the failed result
+            # keeps their usage.
+            self._run_error = error
+            return {}
 
     async def _run_with_relay(
         self,
@@ -257,185 +281,9 @@ class MiniSweAgentRuntime:
         return result, telemetry_errors
 
     async def stop(self) -> None:
+        if self._model is not None:
+            self._model.close_usage_client()
         self.__init__()
-
-
-def _invocation_usage(
-    responses: list[Any],
-    model_calls: int,
-    provider_usage: dict[str, dict[str, Any]],
-) -> contract.AgentUsage | None:
-    """Sum the LiteLLM usage of one invocation's model calls.
-
-    A count is known only when every model call stored a response that reported
-    it, so a call without a stored response leaves every count unknown. LiteLLM
-    returns OpenAI-shaped usage, where ``prompt_tokens`` includes cached tokens;
-    its Anthropic conversion adds cache reads and writes to ``prompt_tokens``.
-    ``provider_usage`` maps response ids to the provider's own usage, recorded
-    before that conversion. mini-SWE-agent's cost is a LiteLLM price-table estimate, so it is not
-    reported as ``cost_usd``.
-    """
-
-    if not responses or len(responses) != model_calls:
-        return None
-    calls = [_call_usage(response, provider_usage) for response in responses]
-    totals: dict[str, int | None] = {}
-    for field in _USAGE_FIELDS:
-        values = [call[field] for call in calls]
-        total = None if None in values else sum(values)
-        totals[field] = total if _is_count(total) else None
-    if all(value is None for value in totals.values()):
-        return None
-    return contract.AgentUsage(
-        **totals,
-        input_tokens_include_cache=(
-            True
-            if totals["input_tokens"] is not None
-            or totals["cached_input_tokens"] is not None
-            else None
-        ),
-    )
-
-
-def _call_usage(
-    response: Any, provider_usage: dict[str, dict[str, Any]]
-) -> dict[str, int | None]:
-    usage = response.get("usage") if isinstance(response, dict) else None
-    if not isinstance(usage, dict):
-        return dict.fromkeys(_USAGE_FIELDS)
-    if any(
-        usage.get(key) is not None
-        for key in ("cache_read_input_tokens", "cache_creation_input_tokens")
-    ):
-        # LiteLLM's Anthropic and Bedrock conversions zero-fill omitted counts,
-        # add cache reads and writes to ``prompt_tokens``, and may compute the
-        # total, so read the provider's own usage instead. An OpenAI-shaped
-        # body that carries these keys keeps the OpenAI rules below.
-        raw = provider_usage.get(response.get("id"))
-        raw = raw if isinstance(raw, dict) else {}
-        if raw.keys() & {"input_tokens", "output_tokens", "iterations"}:
-            return _anthropic_usage(raw)
-        if raw.keys() & {"inputTokens", "outputTokens"}:
-            return _bedrock_usage(raw)
-        if "prompt_tokens" not in raw:
-            return _normalized_cache_usage(usage)
-    # LiteLLM stores an omitted prompt, completion, or total count as 0, so a
-    # 0 from a call that ran is unknown. It keeps a cached count only when the
-    # provider reported one, so a cached 0 is known.
-    input_tokens = _nonzero_count(usage.get("prompt_tokens"))
-    output_tokens = _nonzero_count(usage.get("completion_tokens"))
-    details = usage.get("prompt_tokens_details")
-    cached = details.get("cached_tokens") if isinstance(details, dict) else None
-    reported_total = usage.get("total_tokens")
-    # A valid reported total is kept on its own. A missing or zero-filled total
-    # is derived only from two known parts, and an invalid one stays unknown.
-    total_tokens = _nonzero_count(reported_total)
-    if reported_total is None or (_is_count(reported_total) and reported_total == 0):
-        total_tokens = _sum_known(input_tokens, output_tokens)
-    return {
-        "input_tokens": input_tokens,
-        "cached_input_tokens": cached if _is_count(cached) else None,
-        "output_tokens": output_tokens,
-        "total_tokens": total_tokens,
-    }
-
-
-def _anthropic_usage(raw: dict[str, Any]) -> dict[str, int | None]:
-    iterations = raw.get("iterations")
-    if not iterations:
-        return _anthropic_counts(raw)
-    # LiteLLM sums the per-iteration counts instead of the top-level ones.
-    if not isinstance(iterations, list) or not all(
-        isinstance(iteration, dict) for iteration in iterations
-    ):
-        return dict.fromkeys(_USAGE_FIELDS)
-    counts = [_anthropic_counts(iteration) for iteration in iterations]
-    return {
-        field: _sum_known(*(count[field] for count in counts))
-        for field in _USAGE_FIELDS
-    }
-
-
-def _anthropic_counts(raw: dict[str, Any]) -> dict[str, int | None]:
-    # Anthropic always sends all four counts; cache counts may be null. Input
-    # is known only when its uncached part and both cache parts are reported.
-    cache_read = _count(raw.get("cache_read_input_tokens"))
-    input_tokens = _sum_known(
-        _count(raw.get("input_tokens")),
-        cache_read,
-        _count(raw.get("cache_creation_input_tokens")),
-    )
-    output_tokens = _count(raw.get("output_tokens"))
-    return {
-        "input_tokens": input_tokens,
-        "cached_input_tokens": cache_read,
-        "output_tokens": output_tokens,
-        "total_tokens": _sum_known(input_tokens, output_tokens),
-    }
-
-
-def _bedrock_usage(raw: dict[str, Any]) -> dict[str, int | None]:
-    # Bedrock Converse always sends input, output, and total, and its cache
-    # counts are optional, so an omitted cache count adds nothing to input but
-    # leaves the cached count unknown.
-    cache_parts = [
-        raw[key]
-        for key in ("cacheReadInputTokens", "cacheWriteInputTokens")
-        if raw.get(key) is not None
-    ]
-    input_tokens = _sum_known(
-        _count(raw.get("inputTokens")), *(_count(part) for part in cache_parts)
-    )
-    output_tokens = _count(raw.get("outputTokens"))
-    reported_total = raw.get("totalTokens")
-    return {
-        "input_tokens": input_tokens,
-        "cached_input_tokens": _count(raw.get("cacheReadInputTokens")),
-        "output_tokens": output_tokens,
-        "total_tokens": (
-            _sum_known(input_tokens, output_tokens)
-            if reported_total is None
-            else _count(reported_total)
-        ),
-    }
-
-
-def _normalized_cache_usage(usage: dict[str, Any]) -> dict[str, int | None]:
-    # Without the provider's usage, LiteLLM's zero-filled parts hide whether a
-    # cache count was omitted, so inclusive input and its total stay unknown,
-    # and only a nonzero cached or output count is known.
-    details = usage.get("prompt_tokens_details")
-    details = details if isinstance(details, dict) else {}
-    return {
-        "input_tokens": None,
-        "cached_input_tokens": _nonzero_count(details.get("cached_tokens")),
-        "output_tokens": _nonzero_count(usage.get("completion_tokens")),
-        "total_tokens": None,
-    }
-
-
-def _sum_known(*values: int | None) -> int | None:
-    known = [value for value in values if value is not None]
-    if len(known) != len(values):
-        return None
-    total = sum(known)
-    return total if _is_count(total) else None
-
-
-def _count(value: Any) -> int | None:
-    return value if _is_count(value) else None
-
-
-def _nonzero_count(value: Any) -> int | None:
-    return value if _is_count(value) and value > 0 else None
-
-
-def _is_count(value: Any) -> bool:
-    return (
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and 0 <= value <= _MAX_TOKEN_COUNT
-    )
 
 
 def _error_text(error: BaseException) -> str:
