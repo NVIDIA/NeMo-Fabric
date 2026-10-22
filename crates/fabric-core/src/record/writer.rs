@@ -16,6 +16,8 @@ use super::lines::RecordLine;
 
 /// File name of the record inside the invocation folder.
 pub(crate) const RECORD_FILE_NAME: &str = "run-record.jsonl";
+/// Maximum serialized JSON size of one line, excluding its newline.
+const MAX_LINE_BYTES: usize = 64 * 1024;
 
 /// Appends lines to one invocation's record.
 #[derive(Debug)]
@@ -46,6 +48,12 @@ impl RecordWriter {
         #[cfg(test)]
         test_hooks::fail_append(&line.body)?;
         let mut bytes = serde_json::to_vec(line).map_err(io::Error::other)?;
+        if bytes.len() > MAX_LINE_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("run record line exceeds {MAX_LINE_BYTES} bytes"),
+            ));
+        }
         bytes.push(b'\n');
         self.file.write_all(&bytes)
     }
@@ -86,7 +94,6 @@ pub(crate) mod test_hooks {
         match body {
             LineBody::Start(_) => fail_if(Fault::StartAppend),
             LineBody::End(_) => fail_if(Fault::EndAppend),
-            LineBody::Sample(_) => Ok(()),
         }
     }
 
@@ -104,10 +111,13 @@ mod tests {
 
     fn temp_folder(name: &str) -> std::path::PathBuf {
         let folder = std::env::temp_dir().join(format!(
-            "fabric-record-writer-{name}-{}",
-            std::process::id()
+            "fabric-record-writer-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
-        let _ = std::fs::remove_dir_all(&folder);
         std::fs::create_dir_all(&folder).expect("create temp folder");
         folder
     }
@@ -131,7 +141,6 @@ mod tests {
             assert!(RecordWriter::create(&linked.join(RECORD_FILE_NAME)).is_err());
             assert!(!target.exists());
         }
-        let _ = std::fs::remove_dir_all(folder);
     }
 
     #[cfg(unix)]
@@ -145,6 +154,50 @@ mod tests {
         let mode = std::fs::metadata(&path).expect("stat").permissions().mode();
 
         assert_eq!(mode & 0o777, 0o600);
-        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn line_byte_limit_accepts_exact_boundary_and_rejects_oversize_without_appending() {
+        use crate::record::lines::{EndLine, LineBody, RecordSchema, RecordVersion, ResourceScope};
+        use crate::runtime::RunStatus;
+
+        let folder = temp_folder("line-size");
+        let path = folder.join(RECORD_FILE_NAME);
+        let mut writer = RecordWriter::create(&path).expect("writer");
+        let mut line = RecordLine {
+            schema: RecordSchema::RunRecord,
+            version: RecordVersion::V1Alpha1,
+            runtime_id: "rt".to_string(),
+            invocation_id: "inv".to_string(),
+            request_id: "req".to_string(),
+            time: "2026-10-21T00:00:00.000Z".to_string(),
+            body: LineBody::End(Box::new(EndLine {
+                outcome_scope: "invocation",
+                result: None,
+                status: RunStatus::Succeeded,
+                elapsed_ms: 0,
+                exchange_elapsed_ms: None,
+                resource_scope: ResourceScope::RuntimeAdapterHostProcessTree,
+                resources_before: crate::ResourceObservation::NotCollected,
+                resources: crate::ResourceObservation::NotCollected,
+                model_usage: None,
+                error: None,
+                usage: None,
+                artifacts: Vec::new(),
+            })),
+        };
+        let overhead = serde_json::to_vec(&line).expect("line JSON").len();
+        line.request_id
+            .push_str(&"a".repeat(MAX_LINE_BYTES - overhead));
+        assert_eq!(serde_json::to_vec(&line).unwrap().len(), MAX_LINE_BYTES);
+        writer.append(&line).expect("exact limit is valid");
+        let before = std::fs::read(&path).expect("written line");
+        assert_eq!(before.len(), MAX_LINE_BYTES + 1);
+        assert_eq!(before.last(), Some(&b'\n'));
+
+        line.request_id.push('a');
+        let error = writer.append(&line).expect_err("one byte too large");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
     }
 }

@@ -149,8 +149,8 @@ output tokens.
 Harbor accounting reads these counters before any ATIF trajectory. With the
 input counters present, Harbor sets `n_input_tokens` to input plus cache reads
 plus cache writes and `n_cache_tokens` to cache reads, from the same main-loop
-scope as `n_output_tokens`. A Relay trajectory then fills only the counts the
-result leaves unknown.
+scope as `n_output_tokens`. Counts the result leaves unknown stay unknown in
+Harbor; a Relay trajectory's totals are recorded separately and never fill them.
 
 ## Relay Observability
 
@@ -169,7 +169,7 @@ config.enable_relay(
 ```
 
 For each Relay-enabled Claude runtime, NeMo Fabric starts one `nemo-relay` gateway,
-waits for its health endpoint, and stops it with the runtime. NeMo Fabric passes the
+waits up to 30 seconds for its health endpoint, and stops it with the runtime. NeMo Fabric passes the
 gateway URL to the connected Claude Code process through `ANTHROPIC_BASE_URL`
 and `NEMO_RELAY_GATEWAY_URL`, and passes the selected explicit model endpoint to
 the gateway as its Anthropic upstream. It also stages a runtime-scoped Claude

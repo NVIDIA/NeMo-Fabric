@@ -131,8 +131,7 @@ one of:
 - `mistral-conversations`
 - `pi-messages`
 
-The remaining Pi-specific model fields are optional and set directly on the
-model alongside `api`:
+The following Pi-specific model fields are set directly on the model alongside `api`:
 
 - `context_window` — the model's context window, in tokens.
 - `max_tokens` — the maximum response length, in tokens.
@@ -142,14 +141,7 @@ model alongside `api`:
 - `input` — the accepted input modalities, a list of `"text"` and/or `"image"`.
 - `name` — a display name for the model.
 
-Any field you set overrides. For a Pi-known model, any field you omit keeps that
-model's existing catalog value; the adapter supplies no defaults of its own. A
-gateway model Pi does not ship has no existing entry to fall back on, so a
-complete definition is required — `api`, `base_url`, `context_window`, and
-`max_tokens` — and adapter startup fails fast otherwise; `cost`, `reasoning`, `input`,
-and `name` remain optional. The example below registers an NVIDIA Nemotron model
-from the OpenAI-compatible [NVIDIA Build](https://build.nvidia.com) API, which Pi
-does not ship:
+Any field you set overrides. For a Pi-known model, any field you omit keeps that model's existing catalog value; the adapter supplies no defaults of its own. A gateway model Pi does not ship has no existing entry to fall back on, so a complete definition is required: `api`, `base_url`, `context_window`, `max_tokens`, `input`, and `cost`. Adapter startup rejects missing required metadata before invoking the model. The `reasoning` and `name` fields remain optional. The example below registers an NVIDIA Nemotron model from the OpenAI-compatible [NVIDIA Build](https://build.nvidia.com) API, which Pi does not ship:
 
 ```python
 from nemo_fabric import ModelConfig
@@ -166,11 +158,12 @@ ModelConfig(
     max_tokens=32_768,
     reasoning=True,
     input=["text"],
+    cost={"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
     name="Nemotron 3 Super 120B (NVIDIA Build)",
 )
 ```
 
-The `reasoning`, `input`, `cost`, and `name` fields are optional; omit any you don't need.
+The example uses zero cost rates, so Pi calculates zero token cost. Set the rates for your endpoint when you need cost estimates.
 
 ## Configure Skills and Extensions
 

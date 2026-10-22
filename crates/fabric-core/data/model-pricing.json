@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "provider": "anthropic",
+      "model_id": "claude-opus-4-5",
+      "aliases": ["claude-opus-4-5-20251101"],
+      "currency": "USD",
+      "unit": "per_token",
+      "rates": {
+        "input_per_million": 5.0,
+        "output_per_million": 25.0,
+        "cache_read_per_million": 0.5,
+        "cache_write_per_million": 6.25
+      },
+      "prompt_cache": {"read_accounting": "separate"},
+      "pricing_as_of": "2026-10-08",
+      "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    {
+      "provider": "anthropic",
+      "model_id": "claude-sonnet-4-5",
+      "aliases": ["claude-sonnet-4-5-20250929"],
+      "currency": "USD",
+      "unit": "per_token",
+      "rates": {
+        "input_per_million": 3.0,
+        "output_per_million": 15.0,
+        "cache_read_per_million": 0.3,
+        "cache_write_per_million": 3.75
+      },
+      "prompt_cache": {"read_accounting": "separate"},
+      "pricing_as_of": "2026-10-08",
+      "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    {
+      "provider": "openai",
+      "model_id": "gpt-5.4",
+      "aliases": ["gpt-5.4-2026-03-05"],
+      "currency": "USD",
+      "unit": "per_token",
+      "rate_schedule": {
+        "type": "prompt_token_threshold",
+        "applies_to": "full_request",
+        "tiers": [
+          {
+            "max_prompt_tokens": 272000,
+            "rates": {
+              "input_per_million": 2.5,
+              "output_per_million": 15.0,
+              "cache_read_per_million": 0.25,
+              "cache_write_per_million": 2.5
+            }
+          },
+          {
+            "min_prompt_tokens": 272001,
+            "rates": {
+              "input_per_million": 5.0,
+              "output_per_million": 22.5,
+              "cache_read_per_million": 0.5,
+              "cache_write_per_million": 5.0
+            }
+          }
+        ]
+      },
+      "prompt_cache": {"read_accounting": "included_in_prompt_tokens"},
+      "pricing_as_of": "2026-10-08",
+      "pricing_source": "https://developers.openai.com/api/docs/pricing"
+    }
+  ]
+}

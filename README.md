@@ -35,6 +35,7 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 | [Factory Droid](adapters/typescript/droid/README.md) | ✅ | ✅ | ✅ | — |
 | [Hermes Agent](adapters/python/hermes/README.md) | ✅ | ✅ | ✅ | ✅ |
 | [Kilo Code](adapters/typescript/kilo/README.md) | ✅ | ✅ | ✅ | — |
+| [Kiro](adapters/typescript/kiro/README.md) | — | ✅ | — | — |
 | [LangChain Deep Agents](adapters/python/deepagents/README.md) | ✅ | ✅ | ✅ | ✅ |
 | [mini-SWE-agent](adapters/python/mini-swe-agent/README.md) | — | — | — | ✅ |
 | [NOOA](adapters/python/nooa/README.md) | — | ✅ | ✅ | ✅ |
@@ -46,6 +47,13 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 | [Remote Agent](adapters/python/remote-agent/README.md) | — | — | — | ✅ |
 
 ✅ Supported · — Not supported. Support may come through normalized configuration, native harness behavior, or a specific target. Refer to each adapter guide or the [complete compatibility matrix](adapters/README.md#configuration-compatibility) for details and limitations.
+
+Opt in to local run evidence with `runtime.record.enabled` and an artifact root,
+or use `nemo-fabric run --preset scripted --record --artifacts ./runs`.
+Recording saves a bounded invocation record and the finalized full result.
+Inspect a saved result with `python -m nemo_fabric.reporting <run-result.json>`;
+add `--details` for resources and pricing evidence or `--json` for exact values.
+See [run recording](docs/sdk/python.mdx#opt-in-run-recording) for boundaries and limitations.
 
 ## NVIDIA Ecosystem
 
@@ -61,6 +69,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 ## Documentation
 
 - [Quickstart](docs/getting-started/quickstart.mdx): Run a first agent through the Python SDK.
+- [Invocation system stats](docs/sdk/python.mdx#invocation-system-stats): Select per-invocation metric groups, sampled peaks, and cgroup conditions; disable collection independently of sampling.
 - [Conversation telemetry](docs/sdk/python.mdx): Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent turns under one NeMo Relay session.
 - [Installation](docs/getting-started/install.mdx): Install the runtime, adapters, harness dependencies, and telemetry components, and choose a deployment scenario.
 - [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.

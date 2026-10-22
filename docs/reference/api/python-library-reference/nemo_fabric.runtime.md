@@ -204,6 +204,7 @@ The snapshot covers the local adapter host process and its live descendants. It 
 
 ---
 
+
 ### <kbd>method</kbd> `stop`
 
 ```python

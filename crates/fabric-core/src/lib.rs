@@ -10,12 +10,20 @@ pub mod config;
 pub mod doctor;
 mod environment;
 pub mod error;
+mod measurement;
+pub mod model_usage;
+pub mod price_catalog;
+pub mod pricing;
 mod record;
 pub mod resource_snapshot;
 pub mod runtime;
 pub mod schema;
+pub mod system_stats;
 mod task_command;
 mod time;
+pub mod usage_accounting;
+mod usage_normalization;
+pub use record::run_record_folder;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
 pub use agent_execution::{
@@ -33,7 +41,7 @@ pub use config::{
     EnvironmentOwnership, EnvironmentPlan, FabricConfig, HarnessConfig, InstructionConfig,
     InstructionMode, InstructionsConfig, McpAuthenticationConfig, McpConfig, McpExposure,
     McpServerPlan, McpTransport, MetadataConfig, ModelConfig, OAuthTokenEndpointAuthMethod,
-    RecordConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor,
+    PricingConfig, RecordConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor,
     ResolvedAdapterTargetDescriptor, RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig,
     TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig,
     ToolDefinitionConfig, ToolsConfig, WorkflowConfig, WorkflowEntrypointConfig,
@@ -59,6 +67,11 @@ pub use runtime::{
 };
 pub use schema::{
     SchemaName, generate_all_schemas, generate_schema, generate_schema_json, write_schema_snapshots,
+};
+pub use system_stats::{
+    CgroupObservation, CgroupSnapshot, CgroupStats, GaugeSummary, InvocationSystemStats,
+    Measurement, ResourceObservation, SampleSummary, SystemStatsConfig, SystemStatsMetricGroup,
+    SystemStatsSamplingConfig,
 };
 
 /// Returns the crate version compiled into this build.

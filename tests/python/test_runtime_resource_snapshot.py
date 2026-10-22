@@ -17,6 +17,8 @@ from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric import FabricConfigError
 from nemo_fabric import FabricRuntimeError
+from nemo_fabric import InvocationSystemStats
+from nemo_fabric import ResourceObservation
 from nemo_fabric import ResourceObservationUnavailableError
 from nemo_fabric import ResourceObservationUnsupportedError
 from nemo_fabric import RunRequest
@@ -147,6 +149,57 @@ def test_run_result_resource_snapshot_is_typed_or_none():
     assert isinstance(with_snapshot.resource_snapshot, RuntimeResourceSnapshot)
     assert with_snapshot.resource_snapshot.process_count == 3
     assert without_snapshot.resource_snapshot is None
+    assert without_snapshot.system_stats is None
+
+
+@pytest.mark.parametrize("status", ["unavailable", "unsupported"])
+def test_system_stats_preserve_missing_readings_without_inventing_zero(status):
+    stats = InvocationSystemStats.from_mapping(
+        {
+            "elapsed_seconds": 2.5,
+            "before": {"status": "available", "snapshot": _SNAPSHOT},
+            "after": {"status": status, "reason": "no process reader"},
+        }
+    )
+    assert isinstance(stats.before, ResourceObservation)
+    assert stats.before.snapshot.cpu_time_seconds == 1.25
+    assert stats.before.reason is None
+    assert stats.after.snapshot is None
+    assert stats.after.reason == "no process reader"
+    assert stats.cpu_time_seconds_estimate is None
+    assert stats.to_mapping()["after"] == {
+        "status": status,
+        "reason": "no process reader",
+    }
+
+
+@pytest.mark.parametrize(
+    "observation",
+    [
+        {"status": "available"},
+        {"status": "available", "snapshot": _SNAPSHOT, "reason": "contradiction"},
+        {"status": "unavailable", "reason": "missing", "snapshot": _SNAPSHOT},
+        {"status": "unsupported", "reason": ""},
+        {"status": "unknown"},
+    ],
+)
+def test_resource_observation_rejects_invalid_states(observation):
+    with pytest.raises(FabricConfigError):
+        ResourceObservation.from_mapping(observation)
+
+
+@pytest.mark.parametrize("field", ["elapsed_seconds", "cpu_time_seconds_estimate"])
+@pytest.mark.parametrize("value", [-1, True, float("nan"), float("inf")])
+def test_system_stats_reject_invalid_measurements(field, value):
+    with pytest.raises(FabricConfigError):
+        InvocationSystemStats.from_mapping(
+            {
+                "elapsed_seconds": 2.5,
+                "before": {"status": "available", "snapshot": _SNAPSHOT},
+                "after": {"status": "available", "snapshot": _SNAPSHOT},
+                field: value,
+            }
+        )
 
 
 @pytest.mark.parametrize(
@@ -213,6 +266,17 @@ async def test_resource_snapshot_reads_active_runtime_and_final_result(
     assert isinstance(result.resource_snapshot, RuntimeResourceSnapshot)
     assert result.resource_snapshot.runtime_id == runtime.runtime_id
     assert result.resource_snapshot.started_at == live.started_at
+    stats = result.system_stats
+    assert isinstance(stats, InvocationSystemStats)
+    assert stats.elapsed_seconds >= 2
+    assert stats.before.snapshot.runtime_id == runtime.runtime_id
+    assert stats.after.snapshot == result.resource_snapshot
+    serialized = result.to_mapping()
+    assert (
+        serialized["system_stats"]["after"]["snapshot"]
+        == serialized["resource_snapshot"]
+    )
+    assert RunResult.from_mapping(serialized).system_stats == stats
     with pytest.raises(ResourceObservationUnavailableError):
         await runtime.resource_snapshot()
 
@@ -233,3 +297,6 @@ async def test_resource_snapshot_on_unsupported_platform_raises_unsupported(
         await runtime.stop()
 
     assert result.resource_snapshot is None
+    assert result.system_stats.before.status == "unsupported"
+    assert result.system_stats.after.status == "unsupported"
+    assert result.system_stats.cpu_time_seconds_estimate is None

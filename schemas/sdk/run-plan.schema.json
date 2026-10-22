@@ -894,6 +894,21 @@
       ],
       "type": "object"
     },
+    "CacheReadAccounting": {
+      "description": "Whether a provider's prompt token count includes cached reads.",
+      "oneOf": [
+        {
+          "const": "included_in_prompt_tokens",
+          "description": "Prompt tokens include cached reads.",
+          "type": "string"
+        },
+        {
+          "const": "separate",
+          "description": "Prompt tokens exclude cached reads.",
+          "type": "string"
+        }
+      ]
+    },
     "CapabilityKind": {
       "description": "Capability kind.",
       "oneOf": [
@@ -1341,6 +1356,17 @@
           "description": "Named model roles.",
           "type": "object"
         },
+        "pricing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PricingConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional catalog override for central token-price estimates."
+        },
         "relay": {
           "anyOf": [
             {
@@ -1370,6 +1396,25 @@
             }
           ],
           "description": "Skill capability configuration."
+        },
+        "system_stats": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SystemStatsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": {
+            "collect": [
+              "process",
+              "cgroup.cpu",
+              "cgroup.memory",
+              "cgroup.pressure"
+            ]
+          },
+          "description": "Invocation stats: omitted means all endpoint groups, explicit null disables."
         },
         "telemetry": {
           "anyOf": [
@@ -1906,6 +1951,80 @@
       ],
       "type": "object"
     },
+    "ModelPricing": {
+      "additionalProperties": false,
+      "description": "Prices of one model, in `currency` per million tokens.",
+      "properties": {
+        "aliases": {
+          "default": [],
+          "description": "Other identifiers of the same model, such as dated snapshots.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "currency": {
+          "default": "USD",
+          "description": "ISO 4217 currency of the rates. NeMo Fabric estimates cost only from\n`USD` entries.",
+          "type": "string"
+        },
+        "model_id": {
+          "description": "Canonical model identifier.",
+          "type": "string"
+        },
+        "pricing_as_of": {
+          "description": "Date the price was taken from `pricing_source`, as `YYYY-MM-DD` in\nthe bundled catalog.",
+          "type": "string"
+        },
+        "pricing_source": {
+          "description": "Where the price was taken from, such as the provider's pricing page.",
+          "type": "string"
+        },
+        "prompt_cache": {
+          "$ref": "#/$defs/PromptCachePricing",
+          "description": "How the provider counts cached prompt tokens. NeMo Relay uses it to\nsplit provider usage; NeMo Fabric prices usage that is already\nnormalized, so it does not read it."
+        },
+        "provider": {
+          "description": "Provider that sets the price, such as `anthropic` or `openai`.",
+          "type": "string"
+        },
+        "rate_schedule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TokenRateSchedule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Rates that depend on the number of prompt tokens in a request."
+        },
+        "rates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TokenPricingRates"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Flat rates. Ignored when `rate_schedule` is set."
+        },
+        "unit": {
+          "$ref": "#/$defs/PricingUnit",
+          "default": "per_token",
+          "description": "What a rate is charged per. NeMo Fabric estimates cost only from\n`per_token` entries."
+        }
+      },
+      "required": [
+        "provider",
+        "model_id",
+        "prompt_cache",
+        "pricing_as_of",
+        "pricing_source"
+      ],
+      "type": "object"
+    },
     "OAuthTokenEndpointAuthMethod": {
       "description": "OAuth client authentication method used at the token endpoint.",
       "oneOf": [
@@ -1926,16 +2045,99 @@
         }
       ]
     },
+    "PricingCatalog": {
+      "additionalProperties": false,
+      "description": "A model price catalog in the NeMo Relay model pricing catalog format,\nversion 1.\n\nNeMo Fabric reads and writes the format unchanged, with one extra check:\nevery rate must be below one million US dollars per million tokens.",
+      "properties": {
+        "entries": {
+          "description": "Price entries. Lookup uses the first entry that matches.",
+          "items": {
+            "$ref": "#/$defs/ModelPricing"
+          },
+          "type": "array"
+        },
+        "version": {
+          "description": "Catalog format version. Must be `1`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "entries"
+      ],
+      "type": "object"
+    },
+    "PricingConfig": {
+      "additionalProperties": true,
+      "description": "Central token-price configuration; never changes provider requests.",
+      "properties": {
+        "catalog_path": {
+          "description": "Relay-compatible v1 catalog, resolved relative to the config base directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "PricingUnit": {
+      "description": "What a model price is charged per.",
+      "oneOf": [
+        {
+          "const": "per_token",
+          "description": "Per token.",
+          "type": "string"
+        },
+        {
+          "const": "per_request",
+          "description": "Per request.",
+          "type": "string"
+        },
+        {
+          "const": "per_second",
+          "description": "Per second.",
+          "type": "string"
+        },
+        {
+          "const": "gpu_hour",
+          "description": "Per GPU hour, for self-hosted models.",
+          "type": "string"
+        }
+      ]
+    },
+    "PromptCachePricing": {
+      "additionalProperties": false,
+      "description": "How a provider counts cached prompt tokens in its usage reports.",
+      "properties": {
+        "read_accounting": {
+          "$ref": "#/$defs/CacheReadAccounting",
+          "description": "Whether the provider's prompt token count includes cached reads."
+        }
+      },
+      "required": [
+        "read_accounting"
+      ],
+      "type": "object"
+    },
+    "RateScheduleApplication": {
+      "description": "How a chosen rate tier applies to a request.",
+      "oneOf": [
+        {
+          "const": "full_request",
+          "description": "The tier's rates apply to every token of the request.",
+          "type": "string"
+        }
+      ]
+    },
     "RecordConfig": {
       "additionalProperties": false,
-      "description": "Per-invocation run record settings.\n\nWhen enabled, core appends a start line, sample lines about every 10\nseconds while the adapter host works on the request, and an end line for\neach local invocation to\n`<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`.",
+      "description": "Per-invocation run record settings.\n\nWhen enabled, core appends a start line and an end line for each local\ninvocation to `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`.",
       "properties": {
         "enabled": {
           "description": "Whether to write a run record for each invocation. Requires an\nartifact root, the `local` environment provider, and a `process` or\n`python` adapter.",
-          "type": "boolean"
-        },
-        "exclusive_container": {
-          "description": "Whether nothing else runs in the container during an invocation,\nincluding other runtimes in the same process, so a rise in the\ncontainer's out-of-memory kill count reads `sandbox_failed` in the\nrecord. Unset means false.",
           "type": "boolean"
         }
       },
@@ -2827,6 +3029,87 @@
       },
       "type": "object"
     },
+    "SystemStatsConfig": {
+      "additionalProperties": false,
+      "description": "Native invocation collection, independent of Relay and recording.\nOmitted configuration collects all supported groups at the endpoints.\nExplicit null disables invocation stats, preserving the existing final\n`resource_snapshot` contract. Periodic sampling is independently opt-in.",
+      "properties": {
+        "collect": {
+          "default": [
+            "process",
+            "cgroup.cpu",
+            "cgroup.memory",
+            "cgroup.pressure"
+          ],
+          "description": "Groups to collect and persist. Omission selects all supported groups.",
+          "items": {
+            "$ref": "#/$defs/SystemStatsMetricGroup"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "sampling": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SystemStatsSamplingConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional bounded periodic collection; absence means endpoints only."
+        }
+      },
+      "type": "object"
+    },
+    "SystemStatsMetricGroup": {
+      "description": "Resource groups supported by the native invocation collector.",
+      "oneOf": [
+        {
+          "const": "process",
+          "description": "Adapter host process-tree CPU, resident memory, and process count.",
+          "type": "string"
+        },
+        {
+          "const": "cgroup.cpu",
+          "description": "Cgroup CPU capacity, usage, and throttling.",
+          "type": "string"
+        },
+        {
+          "const": "cgroup.memory",
+          "description": "Cgroup memory capacity, usage, swap, and OOM kills.",
+          "type": "string"
+        },
+        {
+          "const": "cgroup.pressure",
+          "description": "Cgroup CPU, memory, and I/O pressure counters.",
+          "type": "string"
+        }
+      ]
+    },
+    "SystemStatsSamplingConfig": {
+      "additionalProperties": false,
+      "description": "Bounded periodic collection within an enabled invocation stats configuration.",
+      "properties": {
+        "interval_ms": {
+          "default": 1000,
+          "description": "Target sample cadence, in milliseconds. Actual cadence is reported.",
+          "format": "uint32",
+          "maximum": 60000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "max_samples": {
+          "default": 10000,
+          "description": "Maximum retained readings, including both endpoints. Intermediate\nreadings are dropped at this bound; the final reading is preserved.",
+          "format": "uint32",
+          "maximum": 100000,
+          "minimum": 2,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "TelemetryConfig": {
       "additionalProperties": true,
       "description": "Telemetry configuration.",
@@ -2912,6 +3195,107 @@
           "description": "Provider-specific pass-through config."
         }
       },
+      "type": "object"
+    },
+    "TokenPricingRates": {
+      "additionalProperties": false,
+      "description": "Token rates in currency units per million tokens.",
+      "properties": {
+        "cache_read_per_million": {
+          "description": "Rate for input tokens read from the prompt cache. Without it, cached\nreads cannot be priced; set `0.0` when they are free.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cache_write_per_million": {
+          "description": "Rate for input tokens written to the prompt cache. Without it, cache\nwrites cannot be priced; set `0.0` when they are free.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "input_per_million": {
+          "description": "Rate for input tokens that were neither read from nor written to the\nprompt cache.",
+          "format": "double",
+          "type": "number"
+        },
+        "output_per_million": {
+          "description": "Rate for output tokens, including reasoning tokens.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "input_per_million",
+        "output_per_million"
+      ],
+      "type": "object"
+    },
+    "TokenRateSchedule": {
+      "description": "Rates that depend on the size of a request.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "One tier's rates apply to a whole request, chosen by the request's\nprompt tokens.",
+          "properties": {
+            "applies_to": {
+              "$ref": "#/$defs/RateScheduleApplication",
+              "default": "full_request",
+              "description": "How the chosen tier's rates apply."
+            },
+            "tiers": {
+              "description": "Tiers in the order they are tried. The first tier whose bounds\ncontain a request's prompt tokens applies to it.",
+              "items": {
+                "$ref": "#/$defs/TokenRateTier"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "prompt_token_threshold",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tiers"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TokenRateTier": {
+      "additionalProperties": false,
+      "description": "Rates for requests whose prompt tokens fall within inclusive bounds.",
+      "properties": {
+        "max_prompt_tokens": {
+          "description": "Largest number of prompt tokens in the tier, or no upper bound.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "min_prompt_tokens": {
+          "description": "Smallest number of prompt tokens in the tier, or no lower bound.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rates": {
+          "$ref": "#/$defs/TokenPricingRates",
+          "description": "Rates of the tier."
+        }
+      },
+      "required": [
+        "rates"
+      ],
       "type": "object"
     },
     "ToolDefinitionConfig": {
@@ -3001,6 +3385,29 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "UserPriceCatalog": {
+      "description": "A price catalog the caller supplied, read and validated when the run plan\nis resolved.",
+      "properties": {
+        "catalog": {
+          "$ref": "#/$defs/PricingCatalog",
+          "description": "The validated catalog."
+        },
+        "path": {
+          "description": "Absolute path the catalog was read from.",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "`sha256:` followed by the lowercase hexadecimal SHA-256 of the file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "catalog"
+      ],
       "type": "object"
     },
     "WorkflowConfig": {
@@ -3164,6 +3571,17 @@
         }
       ],
       "description": "Resolved telemetry pass-through plan."
+    },
+    "user_price_catalog": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/UserPriceCatalog"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Catalog bytes are frozen during planning."
     }
   },
   "required": [

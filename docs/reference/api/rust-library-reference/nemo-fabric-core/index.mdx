@@ -66,6 +66,7 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::MetadataConfig;`
 - `pub use config::ModelConfig;`
 - `pub use config::OAuthTokenEndpointAuthMethod;`
+- `pub use config::PricingConfig;`
 - `pub use config::RecordConfig;`
 - `pub use config::ResolutionStrategy;`
 - `pub use config::ResolveContext;`
@@ -144,6 +145,17 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use schema::generate_schema;`
 - `pub use schema::generate_schema_json;`
 - `pub use schema::write_schema_snapshots;`
+- `pub use system_stats::CgroupObservation;`
+- `pub use system_stats::CgroupSnapshot;`
+- `pub use system_stats::CgroupStats;`
+- `pub use system_stats::GaugeSummary;`
+- `pub use system_stats::InvocationSystemStats;`
+- `pub use system_stats::Measurement;`
+- `pub use system_stats::ResourceObservation;`
+- `pub use system_stats::SampleSummary;`
+- `pub use system_stats::SystemStatsConfig;`
+- `pub use system_stats::SystemStatsMetricGroup;`
+- `pub use system_stats::SystemStatsSamplingConfig;`
 
 ## Modules
 
@@ -153,10 +165,16 @@ Core config and runtime contract for NeMo Fabric.
 - [config](config/index.mdx): NeMo Fabric config models and loading helpers.
 - [doctor](doctor/index.mdx): Plan diagnostics for NeMo Fabric.
 - [error](error/index.mdx): Error types for NeMo Fabric core.
+- [model_usage](model-usage/index.mdx): Invocation-owned normalized counts and separately identified costs.
+- [price_catalog](price-catalog/index.mdx): Model price catalogs for estimating token cost.
+- [pricing](pricing/index.mdx): Catalog prices are estimates, separate from provider-reported amounts.
 - [resource_snapshot](resource-snapshot/index.mdx): Resource snapshots of a runtime's local adapter host and its descendants.
 - [runtime](runtime/index.mdx): Runtime invocation helpers.
 - [schema](schema/index.mdx): JSON Schema generation for the public NeMo Fabric contract.
+- [system_stats](system-stats/index.mdx): Invocation measurements collected by NeMo Fabric in the executing runtime.
+- [usage_accounting](usage-accounting/index.mdx): Validated accounting evidence carried through the existing usage extension.
 
 ## Functions
 
+- [run_record_folder](fn-run-record-folder.mdx): The recording root. This is known before startup and requires no inner IDs.
 - [version](fn-version.mdx): Returns the crate version compiled into this build.

@@ -152,6 +152,29 @@ fn run_config(
     to_json(&result)
 }
 
+/// Execute an already resolved one-shot plan, including final result recording.
+#[pyfunction(name = "run_plan")]
+fn run_resolved_plan(py: Python<'_>, plan_json: String, request_json: String) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let request = parse_run_request(request_json)?;
+    let result = match py.detach(|| run_plan(&plan, request)) {
+        Ok(result) => result,
+        Err(error) => {
+            let stage = match &error {
+                FabricError::AdapterLifecycleOperation { operation, .. } => Some(*operation),
+                _ => None,
+            };
+            let failure = to_py_error(error);
+            if let Some(stage) = stage {
+                // Preserve lifecycle stage without parsing diagnostic text.
+                failure.value(py).setattr("fabric_stage", stage)?;
+            }
+            return Err(failure);
+        }
+    };
+    to_json(&result)
+}
+
 /// Start a runtime for a resolved run plan and return its RuntimeHandle JSON.
 #[pyfunction]
 fn start_runtime(py: Python<'_>, plan_json: String) -> PyResult<String> {
@@ -338,6 +361,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(inspect_adapter_metadata, m)?)?;
     m.add_function(wrap_pyfunction!(doctor_config, m)?)?;
     m.add_function(wrap_pyfunction!(run_config, m)?)?;
+    m.add_function(wrap_pyfunction!(run_resolved_plan, m)?)?;
     m.add_function(wrap_pyfunction!(start_runtime, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_environment, m)?)?;
     m.add_function(wrap_pyfunction!(attach_environment, m)?)?;

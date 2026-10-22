@@ -4,21 +4,19 @@
 //! Line types of `run-record.jsonl`, schema `nemo.fabric.run_record` version
 //! `v1alpha1`.
 //!
-//! Every field is typed. A line holds identifiers, names, numbers, closed codes
-//! and the values of a few allowlisted request context keys. It never holds a
-//! value outside that allowlist: no prompt, output, error message or metadata.
+//! Every field is typed. A line holds identifiers, configuration names, normalized
+//! accounting, resource observations, closed codes and allowlisted request context
+//! values. It never captures prompts, output, exception messages or arbitrary
+//! adapter metadata.
 
 use std::collections::BTreeMap;
 
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::error::{FabricError, Result};
-use crate::resource_snapshot::RuntimeResourceSnapshot;
 use crate::runtime::{ErrorStage, RunStatus};
+use crate::system_stats::ResourceObservation;
 
-/// Interval between sample lines while an invocation runs.
-pub(crate) const SAMPLE_INTERVAL_MS: u64 = 10_000;
 /// Longest value a line keeps from config or the request, in characters.
 /// Model role and context key names are kept whole, so map keys stay distinct.
 const MAX_VALUE_CHARS: usize = 256;
@@ -33,8 +31,7 @@ const UNRECOGNIZED_CODE: &str = "unrecognized";
 pub(crate) struct RecordLine {
     /// Always `nemo.fabric.run_record`.
     pub schema: RecordSchema,
-    /// Line format version. `v1alpha1` may change until the `nemo-fabric report`
-    /// command ships.
+    /// Line format version. `v1alpha1` may change until a record reader ships.
     pub version: RecordVersion,
     /// Runtime id.
     pub runtime_id: String,
@@ -72,13 +69,8 @@ pub(crate) enum RecordVersion {
 pub(crate) enum LineBody {
     /// Written once, before core sends the request to the adapter host.
     Start(StartLine),
-    /// Written about every 10 s until the exchange with the adapter host
-    /// ends, when the start line has `sample_interval_ms`. A recent sample
-    /// shows that Fabric observed the record recently, not that the agent is
-    /// making progress.
-    Sample(SampleLine),
     /// Written once, after the invocation returned a result or failed.
-    End(EndLine),
+    End(Box<EndLine>),
 }
 
 /// Fields of the start line.
@@ -98,12 +90,6 @@ pub(crate) struct StartLine {
     pub fabric_version: String,
     /// Host invocation timeout that applied, in milliseconds.
     pub timeout_ms: u64,
-    /// Interval between sample lines, in milliseconds. Absent when this
-    /// process has no sample thread, so the record gets no sample lines.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sample_interval_ms: Option<u64>,
-    /// The runtime's process values when the invocation started.
-    pub resources: Resources,
     /// `RunRequest.context`. Allowlisted identity and Harbor link keys keep a
     /// string or integer value; every other key is listed by name only.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -112,11 +98,6 @@ pub(crate) struct StartLine {
     /// recorded.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub override_keys: Vec<String>,
-    /// `runtime.record.exclusive_container`: whether a rise in
-    /// `container_oom_kills` can set the `sandbox_failed` cause.
-    pub exclusive_container: bool,
-    /// The container's cgroup v2 `oom_kill` count when the invocation started.
-    pub container_oom_kills: OomKills,
 }
 
 /// One configured model.
@@ -155,191 +136,46 @@ impl NotRecorded {
 /// Fields of the end line.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub(crate) struct EndLine {
+    /// This line observes the invocation, before one-shot runtime shutdown.
+    #[schemars(extend("const" = "invocation"))]
+    pub outcome_scope: &'static str,
+    /// Expected full-result file next to this record; absence means not saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
     /// Final status. A Fabric lifecycle error, such as a host timeout, reads `failed`.
     pub status: RunStatus,
     /// Monotonic time from the start line to the end line, in milliseconds.
     pub elapsed_ms: u64,
+    /// Adapter exchange only, excluding queue, record I/O, preparation,
+    /// normalization and result persistence. Absent if dispatch never began.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exchange_elapsed_ms: Option<u64>,
+    /// Scope of the resource observations, never causal invocation usage.
+    pub resource_scope: ResourceScope,
+    /// Same process endpoint as invocation stats, frozen before adapter exchange.
+    pub resources_before: ResourceObservation,
+    /// Same process endpoint as invocation stats, frozen before timeout cleanup.
+    pub resources: ResourceObservation,
     /// Error code, stage and retryable flag, without the message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<EndError>,
     /// Numeric usage counters, without adapter metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<EndUsage>,
+    /// Validated normalized accounting frozen at the invocation boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_usage: Option<crate::model_usage::ModelUsage>,
     /// Result artifacts, with paths relative to the artifact root.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<EndArtifact>,
-    /// The runtime's process values when the invocation ended, read under
-    /// the runtime's host lock right after the adapter host answered or the
-    /// timeout fired.
-    pub resources: Resources,
-    /// The container's cgroup v2 `oom_kill` count, read with `resources`.
-    /// After a crashed host's exit, a larger count read then replaces it.
-    /// Best effort: the kernel can count a kill after the host's exit is
-    /// seen.
-    pub container_oom_kills: OomKills,
-    /// Why the invocation stopped; absent when it holds nothing, as on success.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stop: Option<Stop>,
 }
 
-/// Fields of a sample line.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
-pub(crate) struct SampleLine {
-    /// Monotonic time since the start line, in milliseconds.
-    pub elapsed_ms: u64,
-    /// The runtime's process values now.
-    pub resources: Resources,
-}
-
-/// A runtime resource snapshot, or the error code that explains why none
-/// could be read.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
-#[serde(untagged)]
-pub(crate) enum Resources {
-    /// The snapshot.
-    Snapshot(RuntimeResourceSnapshot),
-    /// No snapshot could be read.
-    Error {
-        /// Why no snapshot could be read.
-        error: ResourcesError,
-    },
-}
-
-impl Resources {
-    /// No snapshot, for a read that did not happen or did not finish.
-    pub(crate) const UNAVAILABLE: Self = Self::Error {
-        error: ResourcesError::ResourceObservationUnavailable,
-    };
-}
-
-impl From<&Result<RuntimeResourceSnapshot>> for Resources {
-    /// Keep the snapshot, or only the error's code: never its message.
-    fn from(read: &Result<RuntimeResourceSnapshot>) -> Self {
-        match read {
-            Ok(snapshot) => Self::Snapshot(snapshot.clone()),
-            Err(FabricError::ResourceObservationUnsupported { .. }) => Self::Error {
-                error: ResourcesError::ResourceObservationUnsupported,
-            },
-            Err(_) => Self::UNAVAILABLE,
-        }
-    }
-}
-
-/// Error codes for a snapshot that could not be read.
+/// A resource observation covers the runtime host tree, including background
+/// work, and excludes any shared service outside that tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ResourcesError {
-    /// The runtime stopped or is stopping, its adapter host exited, a live
-    /// process in its tree or the process table cannot be read, or the
-    /// process tree kept changing during the read.
-    ResourceObservationUnavailable,
-    /// The adapter kind, environment provider, or operating system has no
-    /// resource reader.
-    ResourceObservationUnsupported,
-}
-
-/// The cgroup v2 `memory.events` `oom_kill` count of the container Fabric
-/// runs in, or why it could not be read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(untagged)]
-pub(crate) enum OomKills {
-    /// The count.
-    Count(u64),
-    /// The count could not be read.
-    Unavailable {
-        /// Why the count could not be read.
-        reason: OomKillsUnavailable,
-    },
-}
-
-/// Why the container's `oom_kill` count could not be read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum OomKillsUnavailable {
-    /// The operating system has no cgroup v2 source.
-    Platform,
-    /// The host uses cgroup v1.
-    CgroupV1,
-    /// Fabric does not run at the root of its own cgroup, or the cgroup files
-    /// cannot be read.
-    NoOwnedCgroup,
-}
-
-/// Why an invocation stopped.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, JsonSchema)]
-pub(crate) struct Stop {
-    /// Fabric's failure cause; absent on a cancel alone.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cause: Option<StopCause>,
-    /// What stopped the invocation, when a limit did.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reason: Option<StopReason>,
-    /// Whether Fabric force-stopped the adapter host. After a forced stop on
-    /// Linux and macOS, `exit_signal` is usually the signal Fabric sent (9),
-    /// unless the host exited by itself during the 2-second grace period.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub forced: Option<bool>,
-    /// The limit that ended the invocation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<StopLimit>,
-    /// The adapter host's exit code, when it exited.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exit_code: Option<i32>,
-    /// The signal that ended the adapter host, when one did.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exit_signal: Option<i32>,
-}
-
-/// Fabric's own closed list of failure causes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum StopCause {
-    /// Core or the adapter host raised an error other than a timeout or a
-    /// host exit, such as an invalid adapter result or an adapter crash
-    /// inside the host. An error from the exchange with the host during an
-    /// out-of-memory rise in an exclusive container reads `SandboxFailed`.
-    FabricFailed,
-    /// The container's `oom_kill` count rose and
-    /// `runtime.record.exclusive_container` is set.
-    SandboxFailed,
-    /// A limit ended the invocation, such as Fabric's timeout.
-    AgentExhaustedBudget,
-    /// The adapter host exited, or nothing else matched.
-    Unclassified,
-    /// The adapter returned a failed result.
-    AgentFailed,
-}
-
-/// What stopped an invocation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum StopReason {
-    /// The invocation reached its time limit.
-    Timeout,
-}
-
-/// The limit that ended an invocation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
-pub(crate) struct StopLimit {
-    /// The kind of limit.
-    #[serde(rename = "type")]
-    pub limit_type: LimitType,
-    /// The configured limit, in milliseconds for `time`: the invoke timeout
-    /// that applied, `runtime.timeout_seconds` or 1 hour when it is unset.
-    /// Core gives the adapter an earlier deadline, the timeout less
-    /// 10 seconds and at least half of it.
-    pub value: u64,
-    /// What the invocation used when it stopped, in the same unit. For a
-    /// forced stop, the time until core's timeout fired.
-    pub usage: u64,
-}
-
-/// Kinds of limit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum LimitType {
-    /// Wall-clock time.
-    Time,
+pub(crate) enum ResourceScope {
+    RuntimeAdapterHostProcessTree,
 }
 
 /// The end line's error.

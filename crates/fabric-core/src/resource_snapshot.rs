@@ -75,6 +75,14 @@ pub(crate) struct LocalHostProcess {
 }
 
 impl LocalHostProcess {
+    pub(crate) fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    pub(crate) fn is_current(&self) -> bool {
+        self.identity.is_some() && platform::start_identity(self.pid) == self.identity
+    }
+
     /// Record the host `pid`, started by NeMo Fabric at `started_at`.
     pub(crate) fn new(pid: u32, started_at: SystemTime) -> Self {
         Self {

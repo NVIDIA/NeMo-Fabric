@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Restrict the code-review sandbox while the provider profile supplies egress.
+version: 1
+filesystem_policy:
+  include_workdir: false
+  read_only: [/usr, /bin, /sbin, /lib, /lib64, /etc, /opt, /app, /proc, /dev/urandom]
+  read_write: [/sandbox, /tmp, /dev/null, /home/sandbox]
+landlock:
+  compatibility: best_effort
+process:
+  run_as_user: "1000"
+  run_as_group: "1000"
+# The attached provider profile contributes its restricted NVIDIA egress rule.
+# Duplicating that endpoint here can conflict with the provider composition.
+network_policies: {}

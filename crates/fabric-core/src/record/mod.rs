@@ -4,30 +4,24 @@
 //! The opt-in per-invocation run record, `run-record.jsonl`.
 //!
 //! When `runtime.record.enabled` is set, core appends one start line before it
-//! sends the request to the adapter host, a sample line about every 10 seconds
-//! until the exchange with the host ends, and one end line after the
-//! invocation returns or fails.
-//! Recording is synchronous and best-effort: record I/O errors do not replace
-//! the invocation result. A failed write stops the record and becomes a
-//! `record_write_failed` event on the result, and slow storage delays the
-//! invocation.
+//! sends the request to the adapter host and one end line after the invocation
+//! returns or fails. Recording is synchronous and best-effort: record I/O
+//! errors do not replace the invocation result. A failed write stops the
+//! record and becomes a `record_write_failed` event on the result, and slow
+//! storage delays the invocation.
 //!
 //! Everything here is crate-private. The line format is public only through
 //! the `run-record-line` JSON Schema, version `v1alpha1`.
 
-mod cgroup;
-mod file;
 mod invocation;
 mod lines;
-mod sampler;
-mod stop;
 mod writer;
 
-pub(crate) use cgroup::CgroupReader;
-pub(crate) use invocation::{HostExit, InvocationRecorder, RecordStart};
+pub(crate) use invocation::{InvocationRecorder, RecordStart};
 pub(crate) use lines::RecordLine;
-pub(crate) use sampler::SampleTicker;
-#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
-pub(crate) use sampler::test_hooks as sampler_test_hooks;
 #[cfg(test)]
 pub(crate) use writer::test_hooks;
+
+mod results;
+pub(crate) use results::persist_result;
+pub use results::run_record_folder;
