@@ -1385,491 +1385,125 @@ async function promptWithSessionUsage(sessions, options) {
   }
 }
 
-test("counts cached input and reasoning output in OpenCode usage", async () => {
-  // Second invocation of a session: three model calls, each with 1k uncached
-  // input, 500 visible output and 2k reasoning; the first call wrote 20k
-  // tokens to the prompt cache and the next two read them.
-  const priorTurn = [
-    { id: "user-1", type: "user", text: "first" },
-    { ...TERMINAL_ASSISTANT, id: "assistant-prior", tokens: openCodeTokens(1_200, 300, 800, 0, 18_000) },
-  ];
+const ACCOUNTING = "nemo_fabric.usage_accounting.v1";
+function accounting(usage) {
+  assert.equal(usage.input_tokens, undefined);
+  assert.equal(usage.output_tokens, undefined);
+  assert.equal(usage.cost_usd, undefined);
+  const evidence = usage.extensions[ACCOUNTING];
+  assert.ok(evidence.gaps.some(gap => gap.reason === "scope_unverified"));
+  return evidence;
+}
+function reports(usage) { return [accounting(usage).observed]; }
+function root(tokens, messages = [TERMINAL_ASSISTANT], prior = []) {
+  return rootSession(NO_TOKENS, tokens, messages, prior);
+}
+
+test("fallback retains split counters without treating zero-filled fields as reports", async () => {
+  const outcome = await promptWithSessionUsage({[ROOT_SESSION]: root(openCodeTokens(3000, 1500, 6000, 40000, 20000))});
+  assert.equal(outcome.text, "done");
+  assert.deepEqual(reports(outcome.usage), [{input_tokens: 3000, input_tokens_include_cache: false,
+    cached_input_tokens: 40000, cache_write_input_tokens: 20000, output_tokens: 1500,
+    output_tokens_include_reasoning: false, reasoning_tokens: 6000}]);
+});
+
+test("fallback includes compaction and child growth hidden from compacted context", async () => {
+  const compaction = {id: "compact", type: "compaction", status: "completed", reason: "auto", tokens: openCodeTokens(100,20,0,0,0)};
+  const terminal = {...TERMINAL_ASSISTANT, tokens: openCodeTokens(50,10,0,0,0)};
   const outcome = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(
-      openCodeTokens(1_200, 300, 800, 0, 18_000),
-      openCodeTokens(4_200, 1_800, 6_800, 40_000, 38_000),
-      [
-        { id: "user-2", type: "user", text: "second" },
-        assistantCall("call-1", openCodeTokens(1_000, 500, 2_000, 0, 20_000)),
-        assistantCall("call-2", openCodeTokens(1_000, 500, 2_000, 20_000, 0)),
-        TERMINAL_ASSISTANT,
-      ],
-      priorTurn,
-    ),
-  });
-
-  assert.deepEqual(outcome, {
-    text: "done",
-    usage: {
-      input_tokens: 63_000,
-      cached_input_tokens: 40_000,
-      input_tokens_include_cache: true,
-      output_tokens: 7_500,
-      total_tokens: 70_500,
-    },
-  });
+    [ROOT_SESSION]: root(openCodeTokens(180,40,0,0,0), [subagentCall("sub", "child", openCodeTokens(30,10,0,0,0)),compaction,terminal]),
+    child: {parentID: ROOT_SESSION, after: {session: openCodeSession(openCodeTokens(400,60,40,0,0),"child",ROOT_SESSION),history:[assistantCall("child-call",openCodeTokens(400,60,40,0,0))]}}
+  }, {context:[compaction,terminal]});
+  assert.equal(outcome.text,"done");
+  assert.deepEqual(reports(outcome.usage).map(report=>[report.input_tokens,report.output_tokens,report.reasoning_tokens]), [[580,100,40]]);
 });
 
-test("counts subagent sessions and model calls that a compaction hides from the session context", async () => {
-  // After a compaction completes, the session context starts at it, so it no
-  // longer lists the prompt's earlier subagent call. The full history does.
-  const compaction = {
-    id: "compaction-1",
-    type: "compaction",
-    status: "completed",
-    reason: "auto",
-    summary: "Earlier work summarized.",
-    recent: "",
-    tokens: openCodeTokens(100, 20, 0, 0, 0),
-  };
-  const terminal = { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(50, 10, 0, 0, 0) };
-  const outcome = await promptWithSessionUsage(
-    {
-      [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(180, 40, 0, 0, 0), [
-        { id: "user-1", type: "user", text: "fix the failing test" },
-        subagentCall("assistant-subagent", "session-child", openCodeTokens(30, 10, 0, 0, 0)),
-        compaction,
-        terminal,
-      ]),
-      "session-child": ({
-        parentID: ROOT_SESSION,
-        after: {
-          session: openCodeSession(openCodeTokens(400, 60, 40, 0, 0), "session-child", ROOT_SESSION),
-          history: [{ id: "child-user", type: "user", text: "look" }, assistantCall("child-call", openCodeTokens(400, 60, 40, 0, 0))],
-        },
-      }),
-    },
-    { context: [compaction, terminal] },
-  );
-
-  assert.deepEqual(outcome, {
-    text: "done",
-    usage: {
-      input_tokens: 580,
-      cached_input_tokens: 0,
-      input_tokens_include_cache: true,
-      output_tokens: 140,
-      total_tokens: 720,
-    },
-  });
-});
-
-test("counts only the new usage of a reused subagent session", async () => {
-  const priorChildCall = assistantCall("child-call-1", openCodeTokens(10, 5, 0, 0, 0));
-  const outcome = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(100, 20, 0, 0, 0), [
-      subagentCall("assistant-subagent", "session-child", openCodeTokens(50, 10, 0, 0, 0)),
-      { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(50, 10, 0, 0, 0) },
-    ]),
-    "session-child": ({
-      parentID: ROOT_SESSION,
-      before: {
-        session: openCodeSession(openCodeTokens(10, 5, 0, 0, 0), "session-child", ROOT_SESSION),
-        history: [priorChildCall],
-      },
-      after: {
-        session: openCodeSession(openCodeTokens(50, 15, 0, 0, 0), "session-child", ROOT_SESSION),
-        history: [priorChildCall, assistantCall("child-call-2", openCodeTokens(40, 10, 0, 0, 0))],
-      },
-    }),
-  });
-
-  assert.deepEqual(outcome.usage, {
-    input_tokens: 140,
-    cached_input_tokens: 0,
-    input_tokens_include_cache: true,
-    output_tokens: 30,
-    total_tokens: 170,
-  });
-});
-
-test("leaves OpenCode usage unknown when a subagent session was running at either end or reported only zeros", async () => {
-  const sessions = (child) => ({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(100, 20, 0, 0, 0), [
-      subagentCall("assistant-subagent", "session-child", openCodeTokens(50, 10, 0, 0, 0)),
-      { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(50, 10, 0, 0, 0) },
-    ]),
-    "session-child": ({ parentID: ROOT_SESSION, after: child }),
-  });
-  const childSession = openCodeSession(openCodeTokens(40, 10, 0, 0, 0), "session-child", ROOT_SESSION);
-  const reported = assistantCall("child-call", openCodeTokens(40, 10, 0, 0, 0));
-
-  assert.deepEqual(
-    await promptWithSessionUsage(sessions({ session: childSession, history: [reported], active: true })),
-    { text: "done" },
-  );
-  assert.deepEqual(
-    await promptWithSessionUsage(
-      sessions({ session: childSession, history: [reported, assistantCall("child-zero", NO_TOKENS)] }),
-    ),
-    { text: "done" },
-  );
-});
-
-test("leaves out a background subagent that an earlier invocation started", async () => {
-  // The child was still running when this invocation began, so its growth
-  // belongs to the earlier invocation, which reported no usage.
-  const earlierChild = {
-    parentID: ROOT_SESSION,
-    before: { session: openCodeSession(NO_TOKENS, "session-child", ROOT_SESSION), history: [], active: true },
-    after: {
-      session: openCodeSession(openCodeTokens(7, 3, 0, 0, 0), "session-child", ROOT_SESSION),
-      history: [assistantCall("child-call", openCodeTokens(7, 3, 0, 0, 0))],
-    },
-  };
-  const notice = {
-    id: "notice",
-    type: "synthetic",
-    text: "<subagent ...>",
-    metadata: { source: "subagent", childID: "session-child", state: "completed" },
-  };
-  const ownCall = { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(50, 10, 0, 0, 0) };
-  const prompt = (newMessages) =>
-    promptWithSessionUsage({
-      [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(50, 10, 0, 0, 0), newMessages),
-      "session-child": earlierChild,
+test("fallback reused child keeps only growth and excludes an earlier running subtree", async () => {
+  for (const running of [false,true]) {
+    const old=assistantCall("old",openCodeTokens(10,5,0,0,0));
+    const outcome=await promptWithSessionUsage({
+      [ROOT_SESSION]:root(openCodeTokens(100,20,0,0,0)),
+      child:{parentID:ROOT_SESSION,before:{session:openCodeSession(openCodeTokens(10,5,0,0,0),"child",ROOT_SESSION),history:[old],active:running},after:{session:openCodeSession(openCodeTokens(50,15,0,0,0),"child",ROOT_SESSION),history:[old,assistantCall("new",openCodeTokens(40,10,0,0,0))]}}
     });
-
-  assert.deepEqual((await prompt([ownCall])).usage, {
-    input_tokens: 50,
-    cached_input_tokens: 0,
-    input_tokens_include_cache: true,
-    output_tokens: 10,
-    total_tokens: 60,
-  });
-  assert.equal((await prompt([ownCall, notice])).usage?.total_tokens, 60);
-  // A call after the completion notice may answer it, and a subagent call can
-  // continue the earlier child, so neither can be separated.
-  assert.equal((await prompt([notice, ownCall])).usage, undefined);
-  assert.equal(
-    (await prompt([
-      { ...TERMINAL_ASSISTANT, content: [{ type: "tool", id: "t", name: "subagent", state: { status: "completed", input: { sessionID: "session-child" } } }], tokens: openCodeTokens(50, 10, 0, 0, 0) },
-    ])).usage,
-    undefined,
-  );
-});
-
-test("leaves OpenCode usage unknown when a compaction hides a failed call without usage", async () => {
-  const compaction = {
-    id: "compaction-1",
-    type: "compaction",
-    status: "completed",
-    reason: "auto",
-    summary: "Earlier work summarized.",
-    recent: "",
-    tokens: openCodeTokens(100, 20, 0, 0, 0),
-  };
-  const terminal = { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(50, 10, 0, 0, 0) };
-  const failed = { id: "assistant-failed", type: "assistant", content: [], error: { type: "provider.error" } };
-  const outcome = await promptWithSessionUsage(
-    { [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(150, 30, 0, 0, 0), [failed, compaction, terminal]) },
-    { context: [compaction, terminal] },
-  );
-
-  assert.deepEqual(outcome, { text: "done" });
-});
-
-test("checks every page of the session history", async () => {
-  const calls = Array.from({ length: 150 }, (_, index) => assistantCall(`call-${index}`, openCodeTokens(1, 1, 0, 0, 0)));
-  const failed = { id: "assistant-failed", type: "assistant", content: [], error: { type: "provider.error" } };
-  const prior = [{ id: "prior-user", type: "user", text: "earlier" }];
-  const counted = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(150, 150, 0, 0, 0), calls, prior),
-  });
-  const withFailure = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(150, 150, 0, 0, 0), [failed, ...calls], prior),
-  });
-
-  assert.deepEqual(counted.usage, {
-    input_tokens: 150,
-    cached_input_tokens: 0,
-    input_tokens_include_cache: true,
-    output_tokens: 150,
-    total_tokens: 300,
-  });
-  assert.equal(withFailure.usage, undefined);
-});
-
-test("keeps OpenCode usage when the prompt produced no assistant message", async () => {
-  const compactionCall = openCodeTokens(30_000, 2_000, 0, 0, 0);
-  const outcome = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, compactionCall, [
-      {
-        id: "compaction-1",
-        type: "compaction",
-        status: "failed",
-        reason: "auto",
-        error: { type: "aborted" },
-        tokens: compactionCall,
-      },
-    ]),
-  });
-
-  assert.deepEqual(outcome, {
-    usage: {
-      input_tokens: 30_000,
-      cached_input_tokens: 0,
-      input_tokens_include_cache: true,
-      output_tokens: 2_000,
-      total_tokens: 32_000,
-    },
-  });
-});
-
-test("leaves OpenCode usage unknown when model calls added only zeros", async () => {
-  // OpenCode records a model call whose provider sent no usage report as
-  // zeros, so zero growth after a model call is not a measured zero.
-  const counters = openCodeTokens(1_000, 200, 50, 300, 0);
-  const outcome = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(counters, counters, [{ ...TERMINAL_ASSISTANT, tokens: NO_TOKENS }]),
-  });
-
-  assert.deepEqual(outcome, { text: "done" });
-});
-
-test("leaves OpenCode usage unknown when one of several model calls reported only zeros", async () => {
-  const outcome = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(100, 20, 0, 0, 0), [
-      assistantCall("assistant-reported", openCodeTokens(100, 20, 0, 0, 0)),
-      { ...TERMINAL_ASSISTANT, tokens: NO_TOKENS },
-    ]),
-  });
-
-  assert.deepEqual(outcome, { text: "done" });
-});
-
-test("leaves OpenCode usage unknown when an idle earlier subagent's completion notice arrives", async () => {
-  // The child finished before this invocation started, but OpenCode delivered
-  // its completion notice during it, and the next call may answer the notice.
-  const idleChild = {
-    parentID: ROOT_SESSION,
-    before: {
-      session: openCodeSession(openCodeTokens(7, 3, 0, 0, 0), "session-child", ROOT_SESSION),
-      history: [assistantCall("child-call", openCodeTokens(7, 3, 0, 0, 0))],
-    },
-    after: {
-      session: openCodeSession(openCodeTokens(7, 3, 0, 0, 0), "session-child", ROOT_SESSION),
-      history: [assistantCall("child-call", openCodeTokens(7, 3, 0, 0, 0))],
-    },
-  };
-  const notice = {
-    id: "notice",
-    type: "synthetic",
-    text: "<subagent ...>",
-    metadata: { source: "subagent", childID: "session-child", state: "completed" },
-  };
-  const delayed = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(150, 30, 0, 0, 0), [
-      assistantCall("own-call", openCodeTokens(100, 20, 0, 0, 0)),
-      notice,
-      { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(50, 10, 0, 0, 0) },
-    ]),
-    "session-child": idleChild,
-  });
-  // The parent answers the earlier notice, then resumes the same child. The
-  // resume does not make the earlier notice this invocation's work.
-  const resumeCall = {
-    ...assistantCall("resume-child", openCodeTokens(100, 20, 0, 0, 0)),
-    content: [
-      {
-        type: "tool",
-        id: "t",
-        name: "subagent",
-        state: { status: "completed", input: { sessionID: "session-child" }, metadata: { sessionID: "session-child" } },
-      },
-    ],
-  };
-  const answeredThenResumed = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(250, 50, 0, 0, 0), [
-      notice,
-      assistantCall("answer-notice", openCodeTokens(100, 20, 0, 0, 0)),
-      resumeCall,
-      { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(50, 10, 0, 0, 0) },
-    ]),
-    "session-child": {
-      ...idleChild,
-      after: {
-        session: openCodeSession(openCodeTokens(14, 6, 0, 0, 0), "session-child", ROOT_SESSION),
-        history: [...idleChild.after.history, assistantCall("child-call-2", openCodeTokens(7, 3, 0, 0, 0))],
-      },
-    },
-  });
-
-  assert.equal(delayed.usage, undefined);
-  assert.equal(answeredThenResumed.usage, undefined);
-});
-
-test("leaves out total_tokens when the sum is past the safe integer range", async () => {
-  const large = Number.MAX_SAFE_INTEGER - 5;
-  const outcome = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(large, 10, 0, 0, 0), [
-      { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(large, 10, 0, 0, 0) },
-    ]),
-  });
-
-  assert.deepEqual(outcome.usage, {
-    input_tokens: large,
-    cached_input_tokens: 0,
-    input_tokens_include_cache: true,
-    output_tokens: 10,
-  });
-});
-
-test("leaves a side unknown when a model call reported none of it", async () => {
-  // OpenCode stores a count the provider left out as 0, and a real call always
-  // has input, so a call with no output tokens leaves output unknown.
-  const promptOnly = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(100, 0, 0, 0, 0), [
-      { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(100, 0, 0, 0, 0) },
-    ]),
-  });
-  const mixed = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(150, 20, 0, 0, 0), [
-      assistantCall("call-reported", openCodeTokens(100, 20, 0, 0, 0)),
-      { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(50, 0, 0, 0, 0) },
-    ]),
-  });
-  const cachedOnly = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(0, 20, 0, 100, 0), [
-      { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(0, 20, 0, 100, 0) },
-    ]),
-  });
-
-  const inputOnly = (input) => ({ input_tokens: input, cached_input_tokens: 0, input_tokens_include_cache: true });
-  assert.deepEqual(promptOnly.usage, inputOnly(100));
-  assert.deepEqual(mixed.usage, inputOnly(150));
-  assert.deepEqual(cachedOnly.usage, {
-    input_tokens: 100,
-    cached_input_tokens: 100,
-    input_tokens_include_cache: true,
-    output_tokens: 20,
-    total_tokens: 120,
-  });
-});
-
-test("leaves OpenCode usage unknown when a failed compaction recorded no usage", async () => {
-  const failedCompaction = {
-    id: "compaction-failed",
-    type: "compaction",
-    status: "failed",
-    reason: "auto",
-    error: { type: "provider.error", message: "upstream connection reset" },
-  };
-
-  assert.deepEqual(
-    await promptWithSessionUsage({ [ROOT_SESSION]: rootSession(NO_TOKENS, NO_TOKENS, [failedCompaction]) }),
-    {},
-  );
-  assert.deepEqual(
-    await promptWithSessionUsage({
-      [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(100, 20, 0, 0, 0), [
-        { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(100, 20, 0, 0, 0) },
-        failedCompaction,
-      ]),
-    }),
-    { text: "done" },
-  );
-});
-
-test("leaves OpenCode usage unknown when a failed model call recorded no usage", async () => {
-  const outcome = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(900, 300, 0, 0, 0), [
-      assistantCall("assistant-tool-call", openCodeTokens(900, 300, 0, 0, 0)),
-      {
-        id: "assistant-failed",
-        type: "assistant",
-        content: [],
-        error: { type: "provider.error", message: "upstream connection reset" },
-      },
-    ]),
-  });
-
-  assert.deepEqual(outcome, { errorMessage: "OpenCode model invocation failed" });
-});
-
-test("leaves OpenCode token counts unknown when a session counter is missing", async () => {
-  // OpenCode 2.0.23 always returns every counter; these shapes check that a
-  // malformed session never reads as a measured count.
-  const before = openCodeTokens(100, 20, 5, 0, 0);
-  const terminal = [{ ...TERMINAL_ASSISTANT, tokens: openCodeTokens(300, 50, 10, 0, 0) }];
-
-  assert.deepEqual(
-    (await promptWithSessionUsage({ [ROOT_SESSION]: rootSession(before, { input: 400, output: 70, reasoning: 15 }, terminal) }))
-      .usage,
-    { output_tokens: 60 },
-  );
-  assert.deepEqual(
-    (await promptWithSessionUsage({
-      [ROOT_SESSION]: rootSession(before, { input: 400, output: 70, cache: { read: 0, write: 0 } }, terminal),
-    })).usage,
-    { input_tokens: 300, cached_input_tokens: 0, input_tokens_include_cache: true },
-  );
-});
-
-test("leaves OpenCode token counts unknown for malformed counters and records", async () => {
-  // OpenCode 2.0.23 validates these shapes; the checks keep a malformed or
-  // future shape from turning into a measured count.
-  const terminal = [{ ...TERMINAL_ASSISTANT, tokens: openCodeTokens(100, 20, 0, 0, 0) }];
-  const outputOnly = { output_tokens: 20 };
-  for (const input of [null, "100", -1, 1.5, Number.MAX_SAFE_INTEGER + 1, true]) {
-    const outcome = await promptWithSessionUsage({
-      [ROOT_SESSION]: rootSession(NO_TOKENS, { ...openCodeTokens(100, 20, 0, 0, 0), input }, terminal),
-    });
-    assert.deepEqual(outcome.usage, outputOnly, `session input ${String(input)}`);
-  }
-  for (const tokens of [undefined, null, { ...openCodeTokens(100, 20, 0, 0, 0), output: "20" }, openCodeTokens(100, -20, 0, 0, 0)]) {
-    const outcome = await promptWithSessionUsage({
-      [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(100, 20, 0, 0, 0), [{ ...TERMINAL_ASSISTANT, tokens }]),
-    });
-    assert.equal(outcome.usage, undefined, `record tokens ${JSON.stringify(tokens)}`);
+    assert.deepEqual(reports(outcome.usage).map(report=>report.input_tokens),running?[100]:[140]);
   }
 });
 
-test("leaves OpenCode usage unknown for unsafe sums and malformed listings", async () => {
-  const large = Number.MAX_SAFE_INTEGER - 10;
-  const outcome = await promptWithSessionUsage({
-    [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(large, 20, 0, 0, 0), [
-      subagentCall("assistant-subagent", "session-child", openCodeTokens(large, 10, 0, 0, 0)),
-      { ...TERMINAL_ASSISTANT, tokens: openCodeTokens(1, 10, 0, 0, 0) },
-    ]),
-    "session-child": {
-      parentID: ROOT_SESSION,
-      after: {
-        session: openCodeSession(openCodeTokens(100, 10, 0, 0, 0), "session-child", ROOT_SESSION),
-        history: [assistantCall("child-call", openCodeTokens(100, 10, 0, 0, 0))],
-      },
-    },
+test("unfinished children keep available observations and add an unfinished gap", async () => {
+  const outcome=await promptWithSessionUsage({
+    [ROOT_SESSION]:root(openCodeTokens(100,20,0,0,0)),
+    child:{parentID:ROOT_SESSION,after:{session:openCodeSession(openCodeTokens(40,10,0,0,0),"child",ROOT_SESSION),history:[assistantCall("child",openCodeTokens(40,10,0,0,0))],active:true}}
   });
-  assert.deepEqual(outcome.usage, { output_tokens: 30 });
-
-  const normal = { [ROOT_SESSION]: rootSession(NO_TOKENS, openCodeTokens(1_000, 500, 2_000, 20_000, 0)) };
-  assert.equal((await promptWithSessionUsage(normal, { withoutCursors: true })).usage, undefined);
-  assert.equal((await promptWithSessionUsage(normal, { active: null })).usage, undefined);
+  assert.ok(accounting(outcome.usage).gaps.some(gap=>gap.reason==="unfinished_work"));
+  assert.deepEqual(reports(outcome.usage).map(report=>report.input_tokens),[140]);
 });
 
-test("leaves OpenCode usage unknown when the session counters reset or cannot be read", async () => {
-  const before = openCodeTokens(5_000, 900, 100, 2_000, 0);
-  const unreadable = (state) => ({ ...state, session: new Error("session unavailable") });
-  const root = rootSession(before, openCodeTokens(10, 5, 0, 0, 0));
+test("no HTTP status is inferred to mean a free model call in the projected fallback", async () => {
+  for(const status of [400,401,408,413,429,500,503,undefined]) {
+    const failed={id:"failed",type:"assistant",content:[],error:{type:"provider.error",status}};
+    const outcome=await promptWithSessionUsage({[ROOT_SESSION]:root(openCodeTokens(100,20,0,0,0),[TERMINAL_ASSISTANT,failed])});
+    assert.equal(outcome.errorMessage,"OpenCode model invocation failed");
+    assert.deepEqual(reports(outcome.usage).map(report=>report.input_tokens),[100]);
+  }
+});
 
-  assert.deepEqual(await promptWithSessionUsage({ [ROOT_SESSION]: root }), { text: "done" });
-  assert.deepEqual(
-    await promptWithSessionUsage({ [ROOT_SESSION]: { ...root, before: unreadable(root.before) } }),
-    { text: "done" },
-  );
-  assert.deepEqual(
-    await promptWithSessionUsage({ [ROOT_SESSION]: { ...root, after: unreadable(root.after) } }),
-    { text: "done" },
-  );
+test("full paginated history keeps the boundary and malformed pagination fails closed", async () => {
+  const calls=Array.from({length:150},(_,i)=>assistantCall(`call-${i}`,openCodeTokens(1,1,0,0,0)));
+  const sessions={[ROOT_SESSION]:root(openCodeTokens(150,150,0,0,0),calls,[{id:"prior",type:"user"}])};
+  assert.deepEqual(reports((await promptWithSessionUsage(sessions)).usage).map(report=>report.input_tokens),[150]);
+  const malformed=await promptWithSessionUsage(sessions,{withoutCursors:true});
+  assert.equal((accounting(malformed.usage).models ?? []).length,0);
+});
+
+test("failed compaction without a final assistant retains positive projected usage", async () => {
+  const tokens=openCodeTokens(30000,2000,0,0,0);
+  const outcome=await promptWithSessionUsage({[ROOT_SESSION]:root(tokens,[{id:"compact",type:"compaction",status:"failed",error:{type:"aborted"},tokens}])});
+  assert.equal(outcome.text,undefined);
+  assert.deepEqual(reports(outcome.usage).map(report=>[report.input_tokens,report.output_tokens]),[[30000,2000]]);
+});
+
+test("zero-filled reports stay absent while positive partial dimensions survive", async () => {
+  for(const [tokens,expected] of [
+    [NO_TOKENS,{}],
+    [openCodeTokens(100,0,0,0,0),{input_tokens:100}],
+    [openCodeTokens(0,20,0,100,0),{cached_input_tokens:100,output_tokens:20}]
+  ]) {
+    const outcome=await promptWithSessionUsage({[ROOT_SESSION]:root(tokens)});
+    const [report]=reports(outcome.usage);
+    assert.deepEqual(Object.fromEntries(Object.entries(report).filter(([key])=>!key.includes("include_"))),expected);
+  }
+});
+
+test("an earlier child's completion notice cannot transfer ambiguous parent counter growth", async () => {
+  const old=assistantCall("old",openCodeTokens(7,3,0,0,0));
+  const state={session:openCodeSession(openCodeTokens(7,3,0,0,0),"child",ROOT_SESSION),history:[old]};
+  const notice={id:"notice",type:"synthetic",metadata:{source:"subagent",childID:"child",state:"completed"}};
+  const outcome=await promptWithSessionUsage({[ROOT_SESSION]:root(openCodeTokens(100,20,0,0,0),[notice,TERMINAL_ASSISTANT]),child:{parentID:ROOT_SESSION,before:state,after:state}});
+  assert.equal(outcome.text,"done");
+  assert.deepEqual(accounting(outcome.usage).observed,{});
+});
+
+test("malformed counters keep independent valid dimensions without certifying totals", async () => {
+  for(const input of [null,"100",-1,1.5,Number.MAX_SAFE_INTEGER+1,true]) {
+    const outcome=await promptWithSessionUsage({[ROOT_SESSION]:root({...openCodeTokens(100,20,0,0,0),input})});
+    const [report]=reports(outcome.usage);
+    assert.equal(report.input_tokens,undefined);
+    assert.equal(report.output_tokens,20);
+  }
+});
+
+test("counter reset or failed reads cannot become a complete usage report", async () => {
+  const baseline=openCodeTokens(5000,900,100,2000,0);
+  const state=rootSession(baseline,openCodeTokens(10,5,0,0,0));
+  for(const sessions of [
+    {[ROOT_SESSION]:state},
+    {[ROOT_SESSION]:{...state,before:{...state.before,session:new Error("unreadable")}}},
+    {[ROOT_SESSION]:{...state,after:{...state.after,session:new Error("unreadable")}}},
+  ]) {
+    const outcome=await promptWithSessionUsage(sessions);
+    assert.equal(outcome.text,"done");
+    accounting(outcome.usage);
+  }
 });
 
 test("preserves a redacted OpenCode terminal error and handles malformed assistant output", () => {
@@ -1908,17 +1542,9 @@ test("collects usage and a diff after a terminal model error", async () => {
     { diff: [{ file: "example.txt", patch: "diff --git a/example.txt b/example.txt\n+changed\n" }] },
   );
 
-  assert.deepEqual(outcome, {
-    errorMessage: "OpenCode model invocation failed",
-    patch: "diff --git a/example.txt b/example.txt\n+changed\n",
-    usage: {
-      input_tokens: 5,
-      cached_input_tokens: 0,
-      input_tokens_include_cache: true,
-      output_tokens: 7,
-      total_tokens: 12,
-    },
-  });
+  assert.equal(outcome.errorMessage, "OpenCode model invocation failed");
+  assert.equal(outcome.patch, "diff --git a/example.txt b/example.txt\n+changed\n");
+  assert.deepEqual(reports(outcome.usage).map(report => [report.input_tokens, report.output_tokens]), [[5,7]]);
 });
 
 test("does not return a prior assistant response for a new prompt", async () => {
@@ -1960,7 +1586,9 @@ test("does not return a prior assistant response for a new prompt", async () => 
   }));
 
   const handle = await factory.create(startInput());
-  assert.deepEqual(await handle.prompt("second"), {});
+  const result = await handle.prompt("second");
+    accounting(result.usage);
+    assert.deepEqual({...result, usage: undefined}, {usage: undefined});
   assert.equal(contextCalls, 2);
   await handle.stop();
 });
@@ -2009,7 +1637,9 @@ test("finds a new assistant response after OpenCode compacts session history", a
   }));
 
   const handle = await factory.create(startInput());
-  assert.deepEqual(await handle.prompt("continue"), { text: "compacted answer" });
+  const outcome = await handle.prompt("continue");
+  assert.equal(outcome.text, "compacted answer");
+  accounting(outcome.usage);
   await handle.stop();
 });
 
@@ -2061,14 +1691,16 @@ test("creates, invokes, and cleans up one embedded OpenCode session", async () =
 
     const handle = await factory.create(startInput());
     assert.equal(handle.id, "session-1");
-    assert.deepEqual(await handle.prompt("hello"), {
-      text: "done",
-      patch: "diff --git a/example.txt b/example.txt\n+added\n",
-    });
+    const outcome = await handle.prompt("hello");
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.patch, "diff --git a/example.txt b/example.txt\n+added\n");
+    accounting(outcome.usage);
     await handle.stop();
 
     assert.equal(closed, true);
     assert.equal(process.env.OPENCODE_TEST_KEY, undefined);
+    assert.equal(calls[0][1].plugins.length, 1);
+    assert.equal(calls[0][1].plugins[0].id, "nemo-fabric-usage");
     assert.deepEqual(calls, [
       [
         "create",
@@ -2082,6 +1714,7 @@ test("creates, invokes, and cleans up one embedded OpenCode session", async () =
           },
           fs: { filewatcher: false },
           models: { fetch: false },
+          plugins: calls[0][1].plugins,
         },
         "test-secret",
       ],
@@ -2386,4 +2019,35 @@ test("restores the environment lease when startup cleanup also fails", async () 
       process.env[ambientName] = previousAmbient;
     }
   }
+});
+
+
+test("SDK failure after an observed request freezes owned evidence on its typed error", async () => {
+  const sessions = {[ROOT_SESSION]:root(openCodeTokens(10,2,0,0,0))};
+  const callbacks = new Map();
+  const factory = new OpenCodeSdkSessionFactory(async()=>({OpenCode:{async create(options) {
+    await options.plugins[0].setup({session:{get:async()=>({}),hook:async(name,callback)=>{callbacks.set(name,callback);return {dispose:async()=>{}};}}});
+    const client=usageClient(sessions);
+    const submit=client.sessions.prompt;
+    client.sessions.prompt=async()=>{
+      await submit();
+      const request=new Request("https://custom.invalid/v1/chat/completions",{method:"POST",body:JSON.stringify({model:"fixture"})});
+      await callbacks.get("http.request")({sessionID:ROOT_SESSION,request});
+      const event={sessionID:ROOT_SESSION,request,response:new Response(JSON.stringify({model:"fixture",usage:{prompt_tokens:10,completion_tokens:2,total_tokens:12}}))};
+      await callbacks.get("http.response")(event);
+      await event.response.text();
+    };
+    client.sessions.wait=async()=>{throw new Error("private transport details");};
+    return client;
+  }}}));
+  const handle=await factory.create(startInput());
+  await assert.rejects(handle.prompt("work"), error=>{
+    assert.equal(error.code,"opencode_session_failed");
+    assert.equal(error.retryable,false);
+    assert.equal(error.usage.input_tokens,undefined);
+    assert.equal(error.usage.extensions[ACCOUNTING].observed.input_tokens,10);
+    assert.ok(!error.message.includes("private"));
+    return true;
+  });
+  await handle.stop();
 });

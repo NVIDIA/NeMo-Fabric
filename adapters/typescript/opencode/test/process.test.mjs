@@ -300,13 +300,12 @@ test("runs two real OpenCode SDK prompts through the process host", async () => 
     assert.equal(responses[2].outcome.output.output.response, "reply:user_count=2 latest=second");
     const reportedUsage = {
       input_tokens: 100,
-      cached_input_tokens: 0,
       input_tokens_include_cache: true,
       output_tokens: 20,
       total_tokens: 120,
     };
-    assert.deepEqual(responses[1].outcome.output.usage, reportedUsage);
-    assert.deepEqual(responses[2].outcome.output.usage, reportedUsage);
+    assert.deepEqual(Object.fromEntries(Object.entries(responses[1].outcome.output.usage).filter(([key])=>key!=="extensions")), reportedUsage);
+    assert.deepEqual(Object.fromEntries(Object.entries(responses[2].outcome.output.usage).filter(([key])=>key!=="extensions")), reportedUsage);
     assert.equal(responses[3].outcome.status, "succeeded");
     assert.ok(prompts >= 2);
     assert.ok(providerRequests.length >= 2);
@@ -595,9 +594,8 @@ test("adds a real OpenCode subagent session to invocation usage", async () => {
 
   assert.equal(output.output.response, "parent done");
   // Two parent calls and one child call.
-  assert.deepEqual(output.usage, {
+  assert.deepEqual(Object.fromEntries(Object.entries(output.usage).filter(([key])=>key!=="extensions")), {
     input_tokens: 207,
-    cached_input_tokens: 0,
     input_tokens_include_cache: true,
     output_tokens: 43,
     total_tokens: 250,
@@ -634,10 +632,11 @@ test("charges a real background subagent to the invocation that started it", asy
     },
   });
 
-  assert.equal(outputs[0].usage, undefined);
-  assert.deepEqual(outputs[1].usage, {
+  assert.equal(outputs[0].usage.input_tokens, undefined);
+  assert.equal(outputs[0].usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 150);
+  assert.ok(outputs[0].usage.extensions["nemo_fabric.usage_accounting.v1"].gaps.some(gap=>gap.reason==="unfinished_work"));
+  assert.deepEqual(Object.fromEntries(Object.entries(outputs[1].usage).filter(([key])=>key!=="extensions")), {
     input_tokens: 50,
-    cached_input_tokens: 0,
     input_tokens_include_cache: true,
     output_tokens: 10,
     total_tokens: 60,
@@ -647,5 +646,5 @@ test("charges a real background subagent to the invocation that started it", asy
 test("leaves real OpenCode output unknown when the provider reports only prompt tokens", async () => {
   const [output] = await invokeScriptedOpenCode(() => openAiStream("done", { prompt_tokens: 100 }), ["hello"]);
 
-  assert.deepEqual(output.usage, { input_tokens: 100, cached_input_tokens: 0, input_tokens_include_cache: true });
+  assert.deepEqual(Object.fromEntries(Object.entries(output.usage).filter(([key])=>key!=="extensions")), { input_tokens: 100, input_tokens_include_cache: true });
 });

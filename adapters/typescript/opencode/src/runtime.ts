@@ -18,6 +18,13 @@ export interface OpenCodePromptOutcome {
   usage?: AgentUsage;
 }
 
+/** Transport failure after submission, with the owned evidence frozen at return. */
+export class OpenCodePromptFailure extends LifecycleError {
+  constructor(readonly usage: AgentUsage) {
+    super("opencode_session_failed", "OpenCode session communication failed", { retryable: false });
+  }
+}
+
 export interface OpenCodeSessionHandle {
   id: string;
   prompt(text: string): Promise<OpenCodePromptOutcome>;
@@ -109,12 +116,24 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
       outcome = await session.prompt(request.input);
     } catch (error) {
       await this.invalidate(session);
+      if (error instanceof OpenCodePromptFailure) {
+        return failed(error.code, error.message, error.usage);
+      }
       if (error instanceof LifecycleError) {
         throw error;
       }
       throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", { retryable: true });
     }
-    const artifacts = outcome.patch === undefined ? undefined : await this.writePatch(outcome.patch, context);
+    let artifacts: AgentArtifact[] | undefined;
+    try {
+      artifacts = outcome.patch === undefined ? undefined : await this.writePatch(outcome.patch, context);
+    } catch (error) {
+      if (error instanceof LifecycleError && error.code === "opencode_artifact_write_failed") {
+        // Storage failure does not invalidate settled model usage or replay the task.
+        return failed(error.code, error.message, outcome.usage);
+      }
+      throw error;
+    }
     if (outcome.errorMessage !== undefined) {
       return failed("opencode_model_error", outcome.errorMessage, outcome.usage, artifacts);
     }

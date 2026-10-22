@@ -160,49 +160,31 @@ supply. These rules are not a filesystem sandbox and do not prevent shell tools
 from reading files in the workspace.
 
 The adapter accepts plain-text input and returns the final response in
-`output.response`. Streaming, Relay, tool policy, NeMo Fabric subagent
-configuration, provider-specific model settings, and `max_tokens` are not
-supported. The model can still call OpenCode's built-in `subagent` tool, and
-the adapter counts that usage as described below.
+`output.response`. Streaming, Relay, tool policy, subagents,
+provider-specific model settings, and `max_tokens` are not supported.
 
 ## Understand the Runtime Lifecycle
 
 The adapter runs in a persistent Bun process. `start` creates one embedded
 OpenCode host and one OpenCode session for the NeMo Fabric runtime. Ordered
 plain-text invocations reuse that session and its conversation history. A
-successful result has `output.response`. `stop` removes the OpenCode session
-and closes the embedded host.
+successful result has `output.response`.
 
-Each result's `usage` is the growth of OpenCode's session token counters
-during the invocation, including context compaction calls. The adapter adds
-the growth of every subagent session below the NeMo Fabric session, because a
-subagent runs in a child session with its own counters. `input_tokens`
-includes cache reads and cache writes, with `input_tokens_include_cache` set to
-`true` and the cache reads in `cached_input_tokens`. `output_tokens` includes
-reasoning tokens, and `total_tokens` is their sum. The adapter does not report
-OpenCode's catalog-rate cost as `cost_usd`.
+Usage comes from OpenCode's public physical HTTP hooks before session counters
+zero-fill omitted fields. Reported zeros stay zero; omitted counts stay unknown.
+OpenAI Chat Completions, Responses, and Anthropic Messages reports cover main,
+compaction, and child sessions. Complete totals require settled owned work and
+usable reports. Failed requests, malformed streams, unfinished children, and
+WebSocket calls retain available observations with accounting gaps. Session
+counter fallback preserves positive observations with unverified scope.
 
-The adapter checks new assistant and compaction records that the invocation
-added to each session's full message history. OpenCode stores a count the provider
-left out as 0. A real model call always has input, so a call with no input
-tokens leaves `input_tokens` unknown, and a call with no output or reasoning
-tokens leaves `output_tokens` unknown. Either case also leaves out
-`total_tokens`, and so does a session counter that is missing or goes down. A
-`total_tokens` past JavaScript's safe integer range is left out.
-
-Counter growth from earlier background work is excluded. Usage remains unknown
-when a delayed completion or resumed child prevents reliable attribution. A
-result has no `usage` when a model call or compaction failed without recorded
-usage, when a subagent session that the invocation started was still running
-when it ended, when the NeMo Fabric session was already running when it started,
-when the invocation continued a subagent that was still running from earlier
-work, when it made a model call after the completion notice of a subagent that
-existed before the invocation, or when the counters or message history cannot
-be read.
-
-OpenCode replaces individual missing counters with zero before the adapter sees
-them. Those omissions and internal retries without recorded usage can still
-undercount totals.
+The `nemo_fabric.usage_accounting.v1` extension preserves raw provider conventions
+for core normalization and central pricing. OpenCode's client-side cost estimate
+is not `cost_usd`. Custom endpoints cannot inherit native-provider pricing
+identity. Usage freezes at return; late child usage never moves to the next
+invocation. Transport failure after submission invalidates the session and
+returns a failed result with its frozen evidence. Retry and delegation behavior
+remain controlled by OpenCode.
 
 ```mermaid
 flowchart LR
@@ -223,3 +205,19 @@ invocation-scoped path beneath `opencode/` and returns it as a `patch` artifact.
 Without an artifact root, it returns no patch artifact.
 
 Create a new runtime to change the selected model or workspace.
+
+A new completion notice from an earlier background child can wake the parent
+inside a later invocation. Requests proven to precede that notice remain
+observations. Ambiguous parent continuations and subsequent descendant requests
+are excluded, with an unverified-scope gap. Notices already present when the
+invocation starts do not disable otherwise attributable work. The adapter checks
+this boundary only when earlier child sessions exist; an unreadable or stalled
+context read also leaves attribution unverified.
+
+A patch-artifact write failure returns its existing storage error with settled
+usage intact, no claimed artifact and no automatic task replay. The healthy
+OpenCode session remains available for an explicit later invocation.
+
+Native billing identity requires both the requested route and the visible final
+response URL to qualify the same provider. A redirect to a custom endpoint
+keeps the model and token reports without inheriting native-provider prices.

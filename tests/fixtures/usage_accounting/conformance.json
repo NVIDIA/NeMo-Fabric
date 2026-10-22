@@ -1,0 +1,488 @@
+[
+  {
+    "name": "reported_zero",
+    "usage": {
+      "input_tokens": 0,
+      "input_tokens_include_cache": true
+    },
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": []
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": 0,
+        "observed": 0
+      }
+    }
+  },
+  {
+    "name": "nonexhaustive_models_do_not_certify_aggregate",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": [],
+      "models": [
+        {
+          "model": "a",
+          "gaps": [],
+          "reported": {
+            "input_tokens": 100,
+            "input_tokens_include_cache": true
+          }
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": 100
+      }
+    }
+  },
+  {
+    "name": "contradictory_aggregate",
+    "usage": {
+      "input_tokens": 100,
+      "input_tokens_include_cache": true
+    },
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": [],
+      "models": [
+        {
+          "model": "a",
+          "gaps": [],
+          "reported": {
+            "input_tokens": 120,
+            "input_tokens_include_cache": true
+          }
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": null
+      }
+    }
+  },
+  {
+    "name": "preserve_model_observations",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": true,
+      "gaps": [],
+      "models": [
+        {
+          "model": "a",
+          "gaps": [],
+          "reported": {
+            "input_tokens": 100,
+            "input_tokens_include_cache": true
+          }
+        },
+        {
+          "model": "b",
+          "gaps": [
+            {
+              "dimensions": [
+                "input_tokens"
+              ],
+              "reason": "missing_usage"
+            }
+          ],
+          "observed": {
+            "input_tokens": 50,
+            "input_tokens_include_cache": true
+          }
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": 150
+      }
+    }
+  },
+  {
+    "name": "root_observation_not_added_to_models",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": [],
+      "observed": {
+        "input_tokens": 100,
+        "input_tokens_include_cache": true
+      },
+      "models": [
+        {
+          "model": "a",
+          "gaps": [],
+          "observed": {
+            "input_tokens": 50,
+            "input_tokens_include_cache": true
+          }
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": 100
+      }
+    }
+  },
+  {
+    "name": "independent_cache_observation",
+    "usage": {
+      "cached_input_tokens": 5
+    },
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": []
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": null
+      },
+      "cached_input_tokens": {
+        "complete": 5,
+        "observed": 5
+      }
+    }
+  },
+  {
+    "name": "raw_observation_scope_is_not_guessed",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": [],
+      "observed": {
+        "input_tokens": 100,
+        "cached_input_tokens": 50,
+        "cache_write_input_tokens": 0,
+        "input_tokens_include_cache": false
+      }
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": null
+      },
+      "cached_input_tokens": {
+        "complete": null,
+        "observed": 50
+      }
+    }
+  },
+  {
+    "name": "normalize_all_independent_dimensions",
+    "usage": {
+      "input_tokens": 3,
+      "extensions": {
+        "nemo_fabric.detailed_token_usage.v1": {
+          "input_tokens": 20,
+          "cached_input_tokens": 5,
+          "cache_write_input_tokens": 3,
+          "input_tokens_include_cache": false,
+          "output_tokens": 5,
+          "reasoning_tokens": 4,
+          "output_tokens_include_reasoning": false,
+          "peak_request_input_tokens": 18
+        }
+      }
+    },
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": []
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": 28,
+        "observed": 28
+      },
+      "cached_input_tokens": {
+        "complete": 5,
+        "observed": 5
+      },
+      "cache_write_input_tokens": {
+        "complete": 3,
+        "observed": 3
+      },
+      "output_tokens": {
+        "complete": 9,
+        "observed": 9
+      },
+      "reasoning_tokens": {
+        "complete": 4,
+        "observed": 4
+      },
+      "total_tokens": {
+        "complete": 37,
+        "observed": 37
+      },
+      "peak_request_input_tokens": {
+        "complete": 18,
+        "observed": 18
+      }
+    }
+  },
+  {
+    "name": "inclusive_input_cannot_be_smaller_than_its_cache_component",
+    "usage": {
+      "input_tokens": 100,
+      "cached_input_tokens": 120,
+      "input_tokens_include_cache": true,
+      "extensions": {
+        "nemo_fabric.detailed_token_usage.v1": {
+          "output_tokens": 5,
+          "output_tokens_include_reasoning": true
+        }
+      }
+    },
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": []
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": null
+      },
+      "cached_input_tokens": {
+        "complete": 120,
+        "observed": 120
+      },
+      "output_tokens": {
+        "complete": 5,
+        "observed": 5
+      },
+      "total_tokens": {
+        "complete": null,
+        "observed": null
+      }
+    }
+  },
+  {
+    "name": "reasoning_cannot_exceed_complete_output",
+    "usage": {
+      "extensions": {
+        "nemo_fabric.detailed_token_usage.v1": {
+          "output_tokens": 5,
+          "reasoning_tokens": 6,
+          "output_tokens_include_reasoning": true
+        }
+      }
+    },
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": []
+    },
+    "expected": {
+      "output_tokens": {
+        "complete": null,
+        "observed": null
+      },
+      "reasoning_tokens": {
+        "complete": 6,
+        "observed": 6
+      }
+    }
+  },
+  {
+    "name": "peak_cannot_exceed_complete_input",
+    "usage": {
+      "input_tokens": 100,
+      "input_tokens_include_cache": true,
+      "extensions": {
+        "nemo_fabric.detailed_token_usage.v1": {
+          "peak_request_input_tokens": 101
+        }
+      }
+    },
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": [],
+      "observed": {
+        "input_tokens": 100,
+        "input_tokens_include_cache": true
+      }
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": null
+      },
+      "peak_request_input_tokens": {
+        "complete": 101,
+        "observed": 101
+      }
+    }
+  },
+  {
+    "name": "inconsistent_model_components_do_not_certify_aggregate",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": true,
+      "gaps": [],
+      "models": [
+        {
+          "model": "a",
+          "reported": {
+            "input_tokens": 5,
+            "cached_input_tokens": 6,
+            "input_tokens_include_cache": true
+          },
+          "observed": {
+            "input_tokens": 5,
+            "input_tokens_include_cache": true
+          },
+          "gaps": []
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": null
+      },
+      "cached_input_tokens": {
+        "complete": 6,
+        "observed": 6
+      }
+    }
+  },
+  {
+    "name": "aligned_exclusive_input_observations_can_be_normalized",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": [],
+      "models": [
+        {
+          "model": "a",
+          "gaps": [],
+          "observed_tokens_aligned": true,
+          "observed": {
+            "input_tokens": 100,
+            "cached_input_tokens": 20,
+            "cache_write_input_tokens": 0,
+            "input_tokens_include_cache": false,
+            "output_tokens": 5,
+            "output_tokens_include_reasoning": true,
+            "peak_request_input_tokens": 120
+          }
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": 120
+      },
+      "cached_input_tokens": {
+        "complete": null,
+        "observed": 20
+      },
+      "output_tokens": {
+        "complete": null,
+        "observed": 5
+      },
+      "total_tokens": {
+        "complete": null,
+        "observed": 125
+      }
+    }
+  },
+  {
+    "name": "unconvertible_aggregate_keeps_normalizable_model_subset",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": [
+        {
+          "dimensions": [
+            "input_tokens",
+            "output_tokens"
+          ],
+          "reason": "scope_unverified"
+        }
+      ],
+      "observed": {
+        "input_tokens": 30,
+        "input_tokens_include_cache": false,
+        "output_tokens": 3,
+        "output_tokens_include_reasoning": true
+      },
+      "models": [
+        {
+          "model": "root-model",
+          "reported": {
+            "input_tokens": 20,
+            "input_tokens_include_cache": false,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 2,
+            "output_tokens_include_reasoning": true
+          },
+          "gaps": []
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": 20
+      },
+      "output_tokens": {
+        "complete": null,
+        "observed": 3
+      },
+      "total_tokens": {
+        "complete": null,
+        "observed": 23
+      }
+    }
+  },
+  {
+    "name": "unconvertible_model_observation_keeps_normalizable_request_subset",
+    "usage": {},
+    "accounting": {
+      "models_exhaustive": false,
+      "gaps": [],
+      "models": [
+        {
+          "model": "root-model",
+          "reported": {},
+          "gaps": [],
+          "observed": {
+            "input_tokens": 30,
+            "input_tokens_include_cache": false
+          },
+          "observed_tokens_aligned": false,
+          "requests_exhaustive": false,
+          "requests": [
+            {
+              "usage": {
+                "input_tokens": 20,
+                "input_tokens_include_cache": false,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0
+              },
+              "tokens_aligned": true
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "input_tokens": {
+        "complete": null,
+        "observed": 20
+      }
+    }
+  }
+]

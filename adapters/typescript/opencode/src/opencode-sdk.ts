@@ -5,7 +5,8 @@
 // one native session, and the temporary credential environment required by the
 // upstream SDK.
 
-import type { AgentUsage } from "nemo-fabric-adapter-contract";
+import type { AgentUsage, UsageObservation } from "nemo-fabric-adapter-contract";
+import { usageFromObservations } from "nemo-fabric-adapter-contract";
 import type { AdapterStartInput } from "nemo-fabric-adapters-common";
 import { LifecycleError } from "nemo-fabric-adapters-common";
 import { randomUUID } from "node:crypto";
@@ -15,7 +16,8 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { selectModel, selectSystemInstruction } from "./configuration.js";
 import { ModelEndpointProxy } from "./model-endpoint-proxy.js";
-import type { OpenCodePromptOutcome, OpenCodeSessionFactory, OpenCodeSessionHandle } from "./runtime.js";
+import { OpenCodeUsageCollector, type OpenCodeInvocationEvidence } from "./usage.js";
+import { OpenCodePromptFailure, type OpenCodePromptOutcome, type OpenCodeSessionFactory, type OpenCodeSessionHandle } from "./runtime.js";
 
 type OpenCodeClient = Awaited<ReturnType<(typeof import("@opencode/sdk"))["OpenCode"]["create"]>>;
 type OpenCodeEmbedOptions = { overrides?: unknown[] };
@@ -579,46 +581,8 @@ function counterDelta(before: number | undefined, after: number | undefined): nu
   return before === undefined || after === undefined || after < before ? undefined : after - before;
 }
 
-/** The sum, unknown when a value is unknown or the sum is past the safe integer range. */
-function sumDefined(values: (number | undefined)[]): number | undefined {
-  if (!values.every((value) => value !== undefined)) {
-    return undefined;
-  }
-  const sum = values.reduce((total: number, value) => total + value, 0);
-  return Number.isSafeInteger(sum) ? sum : undefined;
-}
-
-/** Which sides of the counter growth every new model call measured. */
-interface CallCoverage {
-  input: boolean;
-  output: boolean;
-}
-
 function isCallRecord(message: unknown): message is Record<string, unknown> {
   return isRecord(message) && (message.type === "assistant" || message.type === "compaction");
-}
-
-/**
- * Which sides the session counters measure for the model calls in `messages`,
- * or undefined when a call has no complete token report. OpenCode adds nothing
- * for a failed call or compaction without usage, and it stores a count the
- * provider left out as 0. A real call has input, so a call with no input
- * leaves input unknown; one with no output, which is rare, leaves output
- * unknown.
- */
-function callCoverage(messages: unknown[]): CallCoverage | undefined {
-  const coverage = { input: true, output: true };
-  for (const record of messages.filter(isCallRecord)) {
-    const tokens = tokenCounters(record);
-    const input = sumDefined([tokens.input, tokens.cacheRead, tokens.cacheWrite]);
-    const output = sumDefined([tokens.output, tokens.reasoning]);
-    if (input === undefined || output === undefined) {
-      return undefined;
-    }
-    coverage.input &&= input > 0;
-    coverage.output &&= output > 0;
-  }
-  return coverage;
 }
 
 /** The session IDs that subagent calls in `messages` started or continued. */
@@ -682,6 +646,7 @@ const PAGE_SIZE = 100;
  */
 async function* listedItems(fetchPage: (cursor?: string) => Promise<unknown>): AsyncGenerator<unknown> {
   let cursor: string | undefined;
+  const cursors = new Set<string>();
   for (;;) {
     const page = await fetchPage(cursor);
     const items = isRecord(page) ? page.data : undefined;
@@ -696,33 +661,23 @@ async function* listedItems(fetchPage: (cursor?: string) => Promise<unknown>): A
     if (typeof next !== "string") {
       throw new Error("OpenCode returned a page without a cursor");
     }
+    if (cursors.has(next)) throw new Error("OpenCode repeated a pagination cursor");
+    cursors.add(next);
     cursor = next;
   }
 }
 
-/**
- * Invocation usage from the summed counter growth of the prompted session and
- * its subagent sessions. OpenCode splits input into uncached input, cache reads
- * and cache writes, and output into visible output and reasoning; the result
- * counts the parts together, so input includes the cache and output includes
- * reasoning. A side that a call did not measure, or whose counter is missing or
- * went down, is unknown, and so is the total.
- */
-function usageFromGrowth(growth: TokenCounters[], coverage: CallCoverage): AgentUsage | undefined {
-  const part = (key: keyof TokenCounters) => sumDefined(growth.map((counters) => counters[key]));
-  const cacheRead = part("cacheRead");
-  const input = coverage.input ? sumDefined([part("input"), cacheRead, part("cacheWrite")]) : undefined;
-  const output = coverage.output ? sumDefined([part("output"), part("reasoning")]) : undefined;
-  if (input === undefined && output === undefined) {
-    return undefined;
-  }
-  const total = sumDefined([input, output]);
+/** Positive source counters survive zero-filling; zero presence is unrecoverable. */
+function growthObservation(counters: TokenCounters): UsageObservation {
+  const positive = (value: number | undefined) => value === 0 ? undefined : value;
   return {
-    ...(input === undefined
-      ? {}
-      : { input_tokens: input, cached_input_tokens: cacheRead, input_tokens_include_cache: true }),
-    ...(output === undefined ? {} : { output_tokens: output }),
-    ...(total === undefined ? {} : { total_tokens: total }),
+    reported: {
+      ...(positive(counters.input) === undefined ? {} : {input_tokens: positive(counters.input)!}), input_tokens_include_cache: false,
+      ...(positive(counters.cacheRead) === undefined ? {} : {cached_input_tokens: positive(counters.cacheRead)!}),
+      ...(positive(counters.cacheWrite) === undefined ? {} : {cache_write_input_tokens: positive(counters.cacheWrite)!}),
+      ...(positive(counters.output) === undefined ? {} : {output_tokens: positive(counters.output)!}), output_tokens_include_reasoning: false,
+      ...(positive(counters.reasoning) === undefined ? {} : {reasoning_tokens: positive(counters.reasoning)!}),
+    }, gap: "scope_unverified", tokens_aligned: true,
   };
 }
 
@@ -753,7 +708,7 @@ async function observeUsage<T>(read: () => Promise<T>): Promise<T | undefined> {
  * message history of every session, which, unlike the session context, does
  * not start at the latest compaction.
  */
-class OpenCodeUsageReader {
+export class OpenCodeUsageReader {
   private readonly client: OpenCodeClient;
   private readonly sessionID: string;
 
@@ -790,43 +745,45 @@ class OpenCodeUsageReader {
    * session or makes a call after an earlier session's notice, or when one of
    * its own sessions is still running.
    */
-  async usageSince(before: Map<string, SessionUsageSnapshot>): Promise<AgentUsage | undefined> {
-    const after = await this.snapshot();
-    if (before.get(this.sessionID)?.running !== false || [...before.keys()].some((id) => !after.has(id))) {
-      return undefined;
-    }
-    const excluded = new Set([...before].filter(([, snapshot]) => snapshot.running).map(([sessionID]) => sessionID));
-    const growth: TokenCounters[] = [];
-    const added: unknown[] = [];
-    // The tree lists every parent before its children.
+  async usageSince(before: Map<string, SessionUsageSnapshot>, evidence?: OpenCodeInvocationEvidence): Promise<AgentUsage> {
+    const fallback: UsageObservation[] = [];
+    const gap = (reason: "scope_unverified" | "unfinished_work" | "missing_usage"): void => {
+      const observation: UsageObservation = {reported: {}, gap: reason};
+      if (evidence === undefined) fallback.push(observation); else evidence.observations.push(observation);
+    };
+    let after: Map<string, SessionUsageSnapshot>;
+    try { after = await this.snapshot(); }
+    catch { gap("scope_unverified"); return evidence?.finish() ?? usageFromObservations(fallback); }
+    if (before.get(this.sessionID)?.running !== false) { gap("scope_unverified"); return evidence?.finish() ?? usageFromObservations(fallback); }
+    if ([...before.keys()].some(id => !after.has(id))) gap("scope_unverified");
+    const excluded = new Set([...before].filter(([id, snapshot]) => snapshot.running && id !== this.sessionID).map(([id]) => id));
     for (const [sessionID, current] of after) {
-      if (excluded.has(sessionID) || (current.parentID !== undefined && excluded.has(current.parentID))) {
-        excluded.add(sessionID);
-        continue;
-      }
+      if (excluded.has(sessionID) || (current.parentID !== undefined && excluded.has(current.parentID))) { excluded.add(sessionID); continue; }
       const previous = before.get(sessionID) ?? NEW_SESSION;
-      const messages = await this.messagesSince(sessionID, previous.newestMessageId);
-      if (current.running || messages === undefined) {
-        return undefined;
+      const messages = await observeUsage(() => this.messagesSince(sessionID, previous.newestMessageId));
+      if (current.running) gap("unfinished_work");
+      if (messages === undefined) { gap("scope_unverified"); continue; }
+      const earlierChildren = new Set([...before.keys(), ...excluded].filter(id => id !== sessionID));
+      const ambiguousOwnership = [...subagentSessionIDs(messages)].some(id => excluded.has(id)) || answersCompletionNotice(messages, earlierChildren);
+      if (ambiguousOwnership) gap("scope_unverified");
+      const growth = counterGrowth(previous.counters, current.counters);
+      if (Object.values(growth).some(value => value === undefined)) gap("scope_unverified");
+      const sourceCalls = messages.filter(isCallRecord);
+      if (evidence?.hasCalls(sessionID)) {
+        if (sourceCalls.length > evidence.callCount(sessionID)) gap("scope_unverified");
+      } else if (!ambiguousOwnership && (sourceCalls.length || Object.values(growth).some(value => value !== undefined && value > 0))) {
+        // Never add a projected subtotal to an already observed physical call.
+        const observation = growthObservation(growth);
+        if (evidence === undefined) fallback.push(observation); else evidence.observations.push(observation);
       }
-      // A session ID cannot tell one run of a child from the next, so a notice
-      // for a child that existed before the invocation always counts as
-      // earlier work.
-      const earlierChildren = new Set([...before.keys(), ...excluded].filter((childID) => childID !== sessionID));
-      const continuesExcluded = [...subagentSessionIDs(messages)].some((childID) => excluded.has(childID));
-      if (continuesExcluded || answersCompletionNotice(messages, earlierChildren)) {
-        return undefined;
-      }
-      added.push(...messages);
-      growth.push(counterGrowth(previous.counters, current.counters));
     }
-    const coverage = callCoverage(added);
-    return coverage === undefined ? undefined : usageFromGrowth(growth, coverage);
+    return evidence?.finish() ?? usageFromObservations(fallback);
   }
 
   /** The prompted session followed by every session below it, each after its parent. */
   private async sessionTree(): Promise<{ sessionID: string; parentID?: string }[]> {
     const tree: { sessionID: string; parentID?: string }[] = [{ sessionID: this.sessionID }];
+    const seen = new Set([this.sessionID]);
     // The array iterator also visits entries pushed during the loop.
     for (const { sessionID: parentID } of tree) {
       const children = listedItems((cursor) =>
@@ -836,6 +793,8 @@ class OpenCodeUsageReader {
         if (!isRecord(child) || typeof child.id !== "string") {
           throw new Error("OpenCode returned a malformed session");
         }
+        if (seen.has(child.id)) throw new Error("OpenCode repeated a session in its tree");
+        seen.add(child.id);
         tree.push({ sessionID: child.id, parentID });
       }
     }
@@ -1043,6 +1002,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
   private readonly endpointProxy?: EndpointProxy;
   private readonly skillsRoot?: string;
   private stopped = false;
+  private readonly usageCollector: OpenCodeUsageCollector;
 
   constructor(
     id: string,
@@ -1050,21 +1010,28 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
     environment: EnvironmentLease,
     endpointProxy?: EndpointProxy,
     skillsRoot?: string,
+    usageCollector = new OpenCodeUsageCollector(),
   ) {
     this.id = id;
     this.client = client;
     this.environment = environment;
     this.endpointProxy = endpointProxy;
     this.skillsRoot = skillsRoot;
+    this.usageCollector = usageCollector;
   }
 
   async prompt(text: string): Promise<OpenCodePromptOutcome> {
     let promptMayHaveBeenSubmitted = false;
+    let evidence: OpenCodeInvocationEvidence | undefined;
+    let usageReader: OpenCodeUsageReader | undefined;
+    let usageBeforePrompt: Map<string, SessionUsageSnapshot> | undefined;
     try {
       const historyBeforePrompt = await this.client.sessions.context({ sessionID: this.id });
       const existingMessageIds = messageIds(historyBeforePrompt);
-      const usageReader = new OpenCodeUsageReader(this.client, this.id);
-      const usageBeforePrompt = await observeUsage(() => usageReader.snapshot());
+      usageReader = new OpenCodeUsageReader(this.client, this.id);
+      usageBeforePrompt = await observeUsage(() => usageReader!.snapshot());
+      evidence = this.usageCollector.begin(this.id, usageBeforePrompt ?? new Map(), existingMessageIds);
+      if (usageBeforePrompt === undefined) evidence.gap("scope_unverified");
       promptMayHaveBeenSubmitted = true;
       await this.client.sessions.prompt({ sessionID: this.id, text });
       await this.client.sessions.wait({ sessionID: this.id });
@@ -1072,9 +1039,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
       const outcome = extractOpenCodePromptOutcome(
         historyAfterPrompt,
         existingMessageIds,
-        usageBeforePrompt === undefined
-          ? undefined
-          : await observeUsage(() => usageReader.usageSince(usageBeforePrompt)),
+        await usageReader.usageSince(usageBeforePrompt ?? new Map(), evidence),
       );
       try {
         const sessionPatch = patch(await this.client.sessions.diff({ sessionID: this.id }));
@@ -1083,6 +1048,11 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
         return outcome;
       }
     } catch {
+      if (promptMayHaveBeenSubmitted && evidence !== undefined && usageReader !== undefined) {
+        evidence.gap("scope_unverified");
+        const usage = await usageReader.usageSince(usageBeforePrompt ?? new Map(), evidence);
+        throw new OpenCodePromptFailure(usage);
+      }
       throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", {
         retryable: !promptMayHaveBeenSubmitted,
       });
@@ -1165,7 +1135,9 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
         this.sdkLoader === loadOpenCodeSdk
           ? await loadEmbeddedOpenCodeCreate()
           : (sdk.OpenCode.create as EmbeddedOpenCodeCreate);
+      const usageCollector = new OpenCodeUsageCollector();
       client = await createEmbeddedClient({
+        plugins: [usageCollector.plugin()],
         config: { directory: workspace, project: false, content: configContent },
         fs: { filewatcher: false },
         models: { fetch: false },
@@ -1179,7 +1151,7 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
       });
       sessionId = session.id;
       await waitForMcpConnections(client, workspace, Object.keys(mcpServers));
-      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy, runtimeSkills.root);
+      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy, runtimeSkills.root, usageCollector);
     } catch (error) {
       if (client !== undefined) {
         if (sessionId !== undefined) {

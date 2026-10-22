@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { OpenCodeAdapterRuntime } from "../dist/runtime.js";
+import { OpenCodeAdapterRuntime, OpenCodePromptFailure } from "../dist/runtime.js";
+import { OpenCodeUsageCollector } from "../dist/usage.js";
 import { LifecycleError } from "nemo-fabric-adapters-common";
 
 function startInput(runtimeId = "runtime-1") {
@@ -190,24 +191,50 @@ test("returns a successful result without an artifact when no artifact root is c
   assert.equal(result.artifacts, undefined);
 });
 
-test("reports a stable error when it cannot write an artifact", async () => {
+test("artifact failure preserves collected usage without a replay or accounting gap", async () => {
   const root = await mkdtemp(join(tmpdir(), "fabric-opencode-artifact-file-"));
   const artifactFile = join(root, "not-a-directory");
   await writeFile(artifactFile, "file", "utf8");
+  let prompts = 0;
+  const collector = new OpenCodeUsageCollector();
+  const callbacks = new Map();
+  const cleanup = await collector.plugin().setup({session: {
+    get: async () => ({}),
+    hook: async (name, callback) => {callbacks.set(name, callback);return {dispose: async () => {}};},
+  }});
+  let lastUsage;
   try {
-    const runtime = new OpenCodeAdapterRuntime({
-      async create() {
-        return { id: "session-1", async prompt() { return { text: "done", patch: "diff" }; }, async stop() {} };
-      },
-    });
+    const runtime = new OpenCodeAdapterRuntime({async create() {
+      return {id: "session-1", async prompt() {
+        prompts++;
+        const owner = collector.begin("session-1", new Map([["session-1", {running: false}]]));
+        const request = new Request("https://fixture.invalid/v1/chat/completions", {method: "POST", body: '{"model":"fixture"}'});
+        await callbacks.get("http.request")({sessionID: "session-1", request});
+        const event = {sessionID: "session-1", request, response: new Response(JSON.stringify({model: "fixture", usage: {prompt_tokens: prompts*10, completion_tokens: 2, total_tokens: prompts*10+2}}))};
+        await callbacks.get("http.response")(event);
+        await event.response.text();
+        lastUsage = owner.finish();
+        return {text: "done", patch: "diff", usage: lastUsage};
+      }, async stop() {}};
+    }});
     await runtime.start(startInput());
-
-    await assert.rejects(
-      runtime.invoke({ input: "edit" }, { ...context, artifacts: { root: artifactFile } }),
-      (error) => error.code === "opencode_artifact_write_failed",
-    );
+    const result = await runtime.invoke({input: "edit"}, {...context, artifacts: {root: artifactFile}});
+    assert.equal(result.status, "failed");
+    assert.deepEqual(result.error, {code: "opencode_artifact_write_failed", message: "OpenCode could not write its session diff artifact", retryable: false});
+    assert.equal(result.artifacts, undefined);
+    assert.equal(result.usage.input_tokens, 10);
+    assert.deepEqual(result.usage, lastUsage);
+    assert.equal(prompts, 1);
+    const frozen = structuredClone(result.usage);
+    const later = await runtime.invoke({input: "follow-up"}, context);
+    assert.equal(later.status, "succeeded");
+    assert.equal(later.usage.input_tokens, 20);
+    assert.deepEqual(result.usage, frozen);
+    assert.equal(prompts, 2);
+    await runtime.stop();
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await cleanup();
+    await rm(root, {recursive: true, force: true});
   }
 });
 
@@ -300,4 +327,18 @@ test("invalidates a runtime after an OpenCode session transport failure", async 
     (error) => error.code === "opencode_not_started",
   );
   assert.equal(stops, 1);
+});
+
+
+test("post-submission transport failure keeps frozen usage and invalidates the session", async () => {
+  const usage = {extensions: {"nemo_fabric.usage_accounting.v1": {models_exhaustive: false, observed: {input_tokens: 10}, gaps: [{reason: "unfinished_work", dimensions: ["input_tokens"]}]}}};
+  let stops = 0;
+  const runtime = new OpenCodeAdapterRuntime({async create() {return {id: "owned", async prompt() {throw new OpenCodePromptFailure(usage);}, async stop() {stops++;}};}});
+  await runtime.start(startInput());
+  const result = await runtime.invoke({input: "do work"}, context);
+  assert.equal(result.status, "failed");
+  assert.equal(result.error.code, "opencode_session_failed");
+  assert.deepEqual(result.usage, usage);
+  assert.equal(stops, 1);
+  await assert.rejects(runtime.invoke({input: "later"}, context), error=>error.code==="opencode_not_started");
 });
