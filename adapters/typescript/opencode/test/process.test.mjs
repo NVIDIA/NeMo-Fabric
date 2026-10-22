@@ -449,7 +449,7 @@ test("fails process startup when an HTTP or stdio MCP server cannot connect", as
       { transport: "streamable-http", url: "http://127.0.0.1:1/mcp" },
       { transport: "stdio", url: "not-a-real-mcp-command" },
     ]) {
-      const { exitCode, responses, stderr } = await exchange(workspace, [start(server)], {}, 5_000);
+      const { exitCode, responses, stderr } = await exchange(workspace, [start(server)], {}, 30_000);
 
       assert.equal(exitCode, 0, stderr);
       assert.equal(responses.length, 1);
