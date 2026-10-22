@@ -58,7 +58,7 @@ Environment the runtime ran in.
 
 ### `what_ran_truncated: Option<TruncatedEntries>`
 
-Present only on a minimal object: every section was dropped to keep the object within 128 KiB, with reason `byte_budget` and a dropped count of 1.
+Present only on a minimal object: every section was dropped to fit its containing record's byte budget, with reason `byte_budget` and a dropped count of 1. The full-result object uses a 128 KiB budget.
 
 ## Trait Implementations
 

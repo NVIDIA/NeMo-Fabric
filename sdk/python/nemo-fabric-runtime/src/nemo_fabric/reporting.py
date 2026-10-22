@@ -22,6 +22,7 @@ from nemo_fabric.types import (
     ResourceObservation,
     ModelUsage,
     RuntimeResourceSnapshot,
+    _readable_what_ran,
 )
 
 MAX_RESULT_BYTES = 16 * 1024 * 1024
@@ -144,6 +145,7 @@ def summarize_result(result: Mapping[str, Any]) -> dict[str, Any]:
         except (FabricConfigError, TypeError, ValueError):
             stats = None
             stats_error = "invalid_system_stats"
+    what_ran = _readable_what_ran(document.get("what_ran"))
     refs = document.get("artifacts")
     refs = refs.get("artifacts", []) if isinstance(refs, Mapping) else []
     artifacts = (
@@ -202,8 +204,10 @@ def summarize_result(result: Mapping[str, Any]) -> dict[str, Any]:
         )
         if stats is not None
         else None,
-        "what_ran": None,
-        "provenance_error": None,
+        "what_ran": what_ran,
+        "provenance_error": "unreadable_what_ran"
+        if document.get("what_ran") is not None and what_ran is None
+        else None,
         "artifacts": artifacts,
         "telemetry": document["telemetry"]
         if isinstance(document.get("telemetry"), list)
@@ -459,7 +463,12 @@ def read_invocation_record(path: Path) -> dict[str, Any]:
         "usage": usage,
         "accounting_error": accounting_error,
         "legacy_usage": end.get("usage") if end else None,
-        "what_ran": None,
+        "what_ran": _readable_what_ran(end.get("what_ran")) if end else None,
+        "provenance_error": "unreadable_what_ran"
+        if end
+        and end.get("what_ran") is not None
+        and _readable_what_ran(end["what_ran"]) is None
+        else None,
         "elapsed_ms": end["elapsed_ms"] if end else None,
         "exchange_elapsed_ms": end.get("exchange_elapsed_ms") if end else None,
         "resource_window": None,
@@ -499,6 +508,7 @@ def render_invocation_record_summary(
         "Invocation outcome before runtime shutdown: "
         + (summary["status"] or "unavailable"),
     ]
+    lines.extend(_render_provenance(summary.get("what_ran"), details=details))
     if summary.get("provenance_error"):
         lines.append(
             "Saved execution facts were unreadable; status and accounting are retained."
@@ -526,6 +536,61 @@ def render_invocation_record_summary(
         "Saved evidence: " + json.dumps(summary["evidence_path"], ensure_ascii=True)
     )
     return "\n".join(lines)
+
+
+def _render_provenance(
+    what_ran: Mapping[str, Any] | None, *, details: bool = False
+) -> list[str]:
+    """Render only bounded public identities, keeping requested and served separate."""
+    if what_ran is None:
+        return []
+    if what_ran.get("what_ran_truncated") is not None:
+        return ["Execution facts: record exceeded its byte budget."]
+    lines = []
+
+    def value(fact: Any) -> str | None:
+        return (
+            fact.get("value")
+            if isinstance(fact, Mapping) and isinstance(fact.get("value"), str)
+            else None
+        )
+
+    harness = what_ran.get("harness", {})
+    version = value(harness.get("version"))
+    name = value(harness.get("name"))
+    if version is not None:
+        # JSON quoting keeps terminal control characters from escaping the value.
+        lines.append(
+            "Harness identity (adapter reported): "
+            + json.dumps({"name": name, "version": version}, ensure_ascii=True)
+        )
+    models = what_ran.get("models", {})
+    if not details and len(models) > 1:
+        label = "Additional model roles" if "default" in models else "Model roles"
+        lines.append(
+            f"{label}: {len(models) - (1 if 'default' in models else 0)} (see --details)."
+        )
+    for role, facts in models.items():
+        if not details and len(models) > 1 and role != "default":
+            continue
+        requested, served = value(facts.get("requested")), value(facts.get("served"))
+        if requested is not None or served is not None:
+            lines.append(
+                "Model role "
+                + json.dumps(role, ensure_ascii=True)
+                + ": "
+                + json.dumps(
+                    {"requested": requested, "served": served}, ensure_ascii=True
+                )
+            )
+    if (
+        what_ran.get("models_truncated") is not None
+        or what_ran.get("mcp", {}).get("servers_truncated") is not None
+    ):
+        lines.append(
+            "Execution facts: entries were omitted; inspect truncation markers in JSON."
+        )
+    return lines
 
 
 def _render_tokens(dimensions: Mapping[str, Any]) -> list[str]:
@@ -622,6 +687,11 @@ def render_result_summary(summary: Mapping[str, Any], *, details: bool = False) 
         lines.append(
             f"Runtime process-tree snapshot: CPU {resource['cpu_time_seconds']:.3f} s since host start; "
             f"RSS {format_bytes(resource['resident_memory_bytes'])}; live processes {resource['process_count']}"
+        )
+    lines.extend(_render_provenance(summary.get("what_ran"), details=details))
+    if summary.get("provenance_error"):
+        lines.append(
+            "Saved execution facts were unreadable; status and accounting are retained."
         )
     normalized = summary.get("model_usage")
     models = normalized.get("models", []) if normalized is not None else []

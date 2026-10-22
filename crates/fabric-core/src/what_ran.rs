@@ -316,9 +316,9 @@ pub struct WhatRan {
     )]
     #[schemars(with = "EnvironmentFacts")]
     pub environment: Option<EnvironmentFacts>,
-    /// Present only on a minimal object: every section was dropped to keep
-    /// the object within 128 KiB, with reason `byte_budget` and a dropped
-    /// count of 1.
+    /// Present only on a minimal object: every section was dropped to fit
+    /// its containing record's byte budget, with reason `byte_budget` and
+    /// a dropped count of 1. The full-result object uses a 128 KiB budget.
     #[serde(
         default,
         deserialize_with = "present",
@@ -622,7 +622,7 @@ impl WhatRan {
 
     /// The object left when every section had to go: the schema name, the
     /// version and a `what_ran_truncated` marker.
-    fn minimal() -> Self {
+    pub(crate) fn minimal() -> Self {
         Self {
             schema: WHAT_RAN_SCHEMA.to_string(),
             version: WHAT_RAN_VERSION.to_string(),

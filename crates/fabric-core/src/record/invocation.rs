@@ -20,7 +20,7 @@ use super::lines::{
     ContextValue, EndArtifact, EndError, EndLine, EndUsage, LineBody, ModelName, NotRecorded,
     RecordLine, RecordSchema, RecordVersion, StartLine, cut_text, recorded_code,
 };
-use super::writer::{RECORD_FILE_NAME, RecordWriter};
+use super::writer::{MAX_LINE_BYTES, RECORD_FILE_NAME, RecordWriter};
 use crate::config::RunPlan;
 use crate::error::{FabricError, Result};
 use crate::runtime::{
@@ -159,7 +159,7 @@ impl InvocationRecorder {
         let Some(writer) = self.writer.as_mut() else {
             return;
         };
-        let line = RecordLine {
+        let mut line = RecordLine {
             schema: RecordSchema::RunRecord,
             version: RecordVersion::V1Alpha1,
             runtime_id: self.runtime_id.clone(),
@@ -168,11 +168,38 @@ impl InvocationRecorder {
             time: rfc3339_millis(SystemTime::now()),
             body,
         };
-        if let Err(error) = writer.append(&line) {
+        if let Err(error) =
+            fit_execution_facts_to_line_budget(&mut line).and_then(|()| writer.append(&line))
+        {
             self.failure = Some(error);
             self.writer = None;
         }
     }
+}
+
+/// Optional facts must not discard an otherwise valid accounting end line.
+/// The full result keeps the complete bounded object and remains authoritative.
+fn fit_execution_facts_to_line_budget(line: &mut RecordLine) -> io::Result<()> {
+    if !matches!(&line.body, LineBody::End(end) if end.what_ran.is_some()) {
+        return Ok(());
+    }
+    let serialized_len = |line: &RecordLine| {
+        serde_json::to_vec(line)
+            .map(|bytes| bytes.len())
+            .map_err(io::Error::other)
+    };
+    if serialized_len(line)? <= MAX_LINE_BYTES {
+        return Ok(());
+    }
+    if let LineBody::End(end) = &mut line.body {
+        end.what_ran = Some(crate::what_ran::WhatRan::minimal());
+    }
+    if serialized_len(line)? > MAX_LINE_BYTES
+        && let LineBody::End(end) = &mut line.body
+    {
+        end.what_ran = None;
+    }
+    Ok(())
 }
 
 fn start_line(start: &RecordStart<'_>) -> StartLine {
@@ -243,6 +270,7 @@ fn result_end_line(result: &RunResult, elapsed_ms: u64) -> EndLine {
         error: result.error.as_ref().map(result_error),
         usage: result.usage.as_ref().map(end_usage),
         model_usage: result.model_usage.clone(),
+        what_ran: result.what_ran.clone(),
         artifacts: end_artifacts(&result.artifacts),
     }
 }
@@ -272,6 +300,7 @@ fn error_end_line(error: &FabricError, elapsed_ms: u64) -> EndLine {
         }),
         usage: None,
         model_usage: None,
+        what_ran: None,
         artifacts: Vec::new(),
     }
 }
@@ -491,6 +520,177 @@ mod tests {
             "request_id": invocation.request_id, "status": "succeeded", "output": "done",
         }))
         .expect("result")
+    }
+
+    #[test]
+    fn end_line_keeps_bounded_execution_facts_without_changing_status() {
+        let (_, _, invocation) = record_test_fixture();
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../../../../tests/fixtures/what_ran/reader-vectors.json"
+        ))
+        .expect("reader vectors");
+        let mut result = succeeded_result(&invocation);
+        result.what_ran = serde_json::from_value(vectors["base"].clone()).expect("what_ran");
+        let end = serde_json::to_value(result_end_line(&result, 25)).expect("end line");
+        assert_eq!(end["what_ran"], vectors["base"]);
+        assert_eq!(end["status"], "succeeded");
+        assert_eq!(end["elapsed_ms"], 25);
+        assert_eq!(result.status, RunStatus::Succeeded);
+    }
+
+    #[test]
+    fn oversized_execution_facts_keep_the_end_line_and_full_result() {
+        let (plan, runtime, invocation) = record_test_fixture();
+        let folder = temp_folder("large-execution-facts");
+        let request = RunRequest::text("input");
+        let recorder = InvocationRecorder::start(RecordStart {
+            plan: &plan,
+            runtime: &runtime,
+            invocation: &invocation,
+            request: &request,
+            fabric_home: &folder,
+            timeout: Duration::from_secs(5),
+        });
+        // Character bounds differ from byte bounds for valid Unicode values.
+        let (mut facts_plan, _, _) = record_test_fixture();
+        let model = facts_plan.config.models["default"].clone();
+        facts_plan.config.models = (0..16)
+            .map(|index| {
+                let role = format!("role-{index:02}-{}", "🧪".repeat(120));
+                let mut model = model.clone();
+                model.model = "🧪".repeat(256);
+                (role, model)
+            })
+            .collect();
+        facts_plan.capability_plan.mcp_servers = (0..32)
+            .map(|index| {
+                let name = format!("mcp-{index:02}-{}", "🧪".repeat(121));
+                let server = serde_json::from_value(serde_json::json!({
+                    "transport": "stdio", "url": "🧪".repeat(256), "exposure": "harness_native",
+                }))
+                .expect("MCP server plan");
+                (name, server)
+            })
+            .collect();
+        let what_ran = crate::what_ran::collect_before_request(
+            &facts_plan,
+            Some("nvidia.fabric.hermes".to_string()),
+            "local",
+        );
+        let facts = serde_json::to_value(&what_ran).expect("collected facts");
+        assert_eq!(facts["models"].as_object().expect("models").len(), 16);
+        assert_eq!(
+            facts["mcp"]["servers"].as_object().expect("servers").len(),
+            32
+        );
+        assert!(facts.get("models_truncated").is_none());
+        assert!(facts["mcp"].get("servers_truncated").is_none());
+        let facts_bytes = serde_json::to_vec(&facts).expect("facts JSON").len();
+        assert!(
+            facts_bytes > MAX_LINE_BYTES && facts_bytes <= 128 * 1024,
+            "{facts_bytes}"
+        );
+        let mut result = succeeded_result(&invocation);
+        result.what_ran = Some(what_ran);
+        result.usage = Some(RunUsage {
+            input_tokens: Some(3),
+            ..RunUsage::default()
+        });
+        let source: crate::AgentUsage = serde_json::from_value(serde_json::json!({
+            "input_tokens": 3, "input_tokens_include_cache": true,
+            "extensions": {"nemo_fabric.usage_accounting.v1": {"gaps": [], "models_exhaustive": false}},
+        })).expect("valid accounting source");
+        result.model_usage = crate::model_usage::normalize_model_usage(&source, None, false)
+            .expect("normalize accounting");
+        let accounting = serde_json::to_value(&result.model_usage).expect("accounting JSON");
+        assert_eq!(accounting["input_tokens"], 3);
+        let finished = recorder.finish(Ok(result)).expect("finished result");
+        let record = std::fs::read_to_string(folder.join(RECORD_FILE_NAME)).expect("record");
+        let rows: Vec<Value> = record
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("line"))
+            .collect();
+        assert_eq!(
+            rows.len(),
+            2,
+            "large execution facts must not discard the end line"
+        );
+        assert_eq!(rows[1]["status"], "succeeded");
+        assert_eq!(rows[1]["usage"]["input_tokens"], 3);
+        assert_eq!(rows[1]["model_usage"], accounting);
+        assert_eq!(
+            serde_json::to_value(&finished.model_usage).expect("returned accounting"),
+            accounting
+        );
+        assert_eq!(
+            rows[1]["what_ran"]["what_ran_truncated"],
+            serde_json::json!({"reason": "byte_budget", "dropped": 1})
+        );
+        assert_eq!(
+            serde_json::to_value(finished.what_ran).expect("full facts"),
+            facts
+        );
+        assert!(
+            !finished
+                .events
+                .iter()
+                .any(|event| event.kind == RECORD_WRITE_FAILED)
+        );
+    }
+
+    #[test]
+    fn record_facts_respect_exact_budget_and_never_hide_base_overflow() {
+        let (_, _, invocation) = record_test_fixture();
+        let result = succeeded_result(&invocation);
+        let mut line = RecordLine {
+            schema: RecordSchema::RunRecord,
+            version: RecordVersion::V1Alpha1,
+            runtime_id: invocation.runtime_id.clone(),
+            invocation_id: invocation.invocation_id.clone(),
+            request_id: invocation.request_id.clone(),
+            time: "2026-10-21T00:00:00.000Z".to_string(),
+            body: LineBody::End(Box::new(result_end_line(&result, 0))),
+        };
+        if let LineBody::End(end) = &mut line.body {
+            end.what_ran = Some(crate::what_ran::WhatRan::minimal());
+        }
+        let overhead = serde_json::to_vec(&line).expect("line JSON").len();
+        line.request_id
+            .push_str(&"a".repeat(MAX_LINE_BYTES - overhead));
+        let exact = line.clone();
+        fit_execution_facts_to_line_budget(&mut line).expect("exact line");
+        assert_eq!(line, exact, "a line exactly at the limit keeps its facts");
+
+        if let LineBody::End(end) = &mut line.body {
+            end.what_ran = None;
+        }
+        let overhead = serde_json::to_vec(&line).expect("base JSON").len();
+        line.request_id
+            .push_str(&"b".repeat(MAX_LINE_BYTES - overhead));
+        let exact_base = line.clone();
+        if let LineBody::End(end) = &mut line.body {
+            end.what_ran = Some(crate::what_ran::WhatRan::minimal());
+        }
+        fit_execution_facts_to_line_budget(&mut line).expect("omit optional facts");
+        assert_eq!(
+            line, exact_base,
+            "even a marker must not discard an otherwise valid line"
+        );
+        line.request_id.push('x');
+        if let LineBody::End(end) = &mut line.body {
+            end.what_ran = Some(crate::what_ran::WhatRan::minimal());
+        }
+        fit_execution_facts_to_line_budget(&mut line).expect("base remains oversized");
+        let folder = temp_folder("base-overflow");
+        let mut writer = RecordWriter::create(&folder.join(RECORD_FILE_NAME)).expect("writer");
+        assert!(
+            writer.append(&line).is_err(),
+            "existing base overflow must remain an error"
+        );
+        assert_eq!(
+            serde_json::to_vec(&line).expect("overflow JSON").len(),
+            MAX_LINE_BYTES + 1
+        );
     }
 
     #[test]

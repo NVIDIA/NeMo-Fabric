@@ -1,5 +1,25 @@
 {
   "$defs": {
+    "AdapterFacts": {
+      "description": "Adapter facts.",
+      "properties": {
+        "id": {
+          "description": "Adapter ID from the plan, when an adapter was resolved.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "package_version": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "Version of the adapter package, as the adapter reports it."
+        }
+      },
+      "required": [
+        "package_version"
+      ],
+      "type": "object"
+    },
     "AppliedPricing": {
       "additionalProperties": false,
       "description": "Persisted entry and selected rates, so saved prices remain reproducible.",
@@ -203,6 +223,17 @@
             }
           ],
           "description": "Numeric usage counters, without adapter metadata."
+        },
+        "what_ran": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WhatRan"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Bounded execution facts frozen with the finalized invocation result."
         }
       },
       "required": [
@@ -270,6 +301,19 @@
       },
       "type": "object"
     },
+    "EnvironmentFacts": {
+      "description": "Environment facts.",
+      "properties": {
+        "provider": {
+          "description": "Environment provider, such as `local`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
     "ErrorStage": {
       "description": "NeMo Fabric lifecycle stage associated with an error.",
       "oneOf": [
@@ -315,6 +359,108 @@
         }
       ]
     },
+    "FabricFacts": {
+      "description": "NeMo Fabric core facts.",
+      "properties": {
+        "core_version": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "Version of the core that ran the adapter."
+        },
+        "host_core_version": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "Version of the host core that relayed the result from a task core\nin another environment. `not_applicable` for a local run."
+        }
+      },
+      "required": [
+        "core_version",
+        "host_core_version"
+      ],
+      "type": "object"
+    },
+    "FactSource": {
+      "description": "How NeMo Fabric learned a fact.",
+      "oneOf": [
+        {
+          "const": "observed",
+          "description": "NeMo Fabric core saw it itself.",
+          "type": "string"
+        },
+        {
+          "const": "reported",
+          "description": "The adapter, the harness, an MCP server or a remote service said so.",
+          "type": "string"
+        },
+        {
+          "const": "configured",
+          "description": "It comes from the resolved run plan.",
+          "type": "string"
+        }
+      ]
+    },
+    "FactState": {
+      "description": "Why a fact has no value. A collector picks the first state that matches,\nin declaration order.",
+      "oneOf": [
+        {
+          "const": "not_applicable",
+          "description": "The fact cannot exist for this run.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported",
+          "description": "The adapter or environment provider has no source for the fact.",
+          "type": "string"
+        },
+        {
+          "const": "collection_failed",
+          "description": "A source exists, but it failed, timed out, returned an invalid report\nor never returned.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "NeMo Fabric holds no value and no evidence for the other states.",
+          "type": "string"
+        }
+      ]
+    },
+    "Fact_for_Array_of_string": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/KnownFact_for_Array_of_string",
+          "description": "The fact has a value."
+        },
+        {
+          "$ref": "#/$defs/MissingFact",
+          "description": "The fact has no value."
+        }
+      ],
+      "description": "One fact: a `value`, or a `state` with a `reason`, never both."
+    },
+    "Fact_for_boolean": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/KnownFact_for_boolean",
+          "description": "The fact has a value."
+        },
+        {
+          "$ref": "#/$defs/MissingFact",
+          "description": "The fact has no value."
+        }
+      ],
+      "description": "One fact: a `value`, or a `state` with a `reason`, never both."
+    },
+    "Fact_for_string": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/KnownFact_for_string",
+          "description": "The fact has a value."
+        },
+        {
+          "$ref": "#/$defs/MissingFact",
+          "description": "The fact has no value."
+        }
+      ],
+      "description": "One fact: a `value`, or a `state` with a `reason`, never both."
+    },
     "GapReason": {
       "description": "Categories that affect whether a consumer can treat a value as complete.",
       "oneOf": [
@@ -334,6 +480,323 @@
           "type": "string"
         }
       ]
+    },
+    "HarnessFacts": {
+      "description": "Harness facts.",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "Name of the harness program that ran, as the adapter reports it.\nCore never derives it from the adapter ID."
+        },
+        "version": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "Version of the harness program that ran, as the adapter reports it."
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "KnownFact_for_Array_of_string": {
+      "description": "A fact with a value.",
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "required": [
+              "reason"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "collected_by": {
+          "description": "Component that collected the fact, such as `host_core`, `task_core`\nor `adapter`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        },
+        "method": {
+          "description": "How the collector got the fact, such as `crate_version`,\n`resolved_plan` or `adapter_report`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/FactSource",
+          "description": "How NeMo Fabric learned the fact."
+        },
+        "value": {
+          "description": "The fact itself: a string, a boolean or a list of strings.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "collected_by",
+        "method"
+      ],
+      "type": "object"
+    },
+    "KnownFact_for_boolean": {
+      "description": "A fact with a value.",
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "required": [
+              "reason"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "collected_by": {
+          "description": "Component that collected the fact, such as `host_core`, `task_core`\nor `adapter`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        },
+        "method": {
+          "description": "How the collector got the fact, such as `crate_version`,\n`resolved_plan` or `adapter_report`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/FactSource",
+          "description": "How NeMo Fabric learned the fact."
+        },
+        "value": {
+          "description": "The fact itself: a string, a boolean or a list of strings.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "collected_by",
+        "method"
+      ],
+      "type": "object"
+    },
+    "KnownFact_for_string": {
+      "description": "A fact with a value.",
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "required": [
+              "reason"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "collected_by": {
+          "description": "Component that collected the fact, such as `host_core`, `task_core`\nor `adapter`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        },
+        "method": {
+          "description": "How the collector got the fact, such as `crate_version`,\n`resolved_plan` or `adapter_report`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/FactSource",
+          "description": "How NeMo Fabric learned the fact."
+        },
+        "value": {
+          "description": "The fact itself: a string, a boolean or a list of strings.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "collected_by",
+        "method"
+      ],
+      "type": "object"
+    },
+    "McpFacts": {
+      "description": "MCP facts.",
+      "properties": {
+        "servers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/McpServerFacts"
+          },
+          "description": "Servers keyed by name. Empty when the plan configures no MCP server\nand the harness reports none. At most 32 servers, in sorted key\norder, each key at most 128 characters.",
+          "type": "object"
+        },
+        "servers_truncated": {
+          "$ref": "#/$defs/TruncatedEntries",
+          "description": "Servers dropped from `servers`. Absent when none was dropped, never\n`null`."
+        }
+      },
+      "required": [
+        "servers"
+      ],
+      "type": "object"
+    },
+    "McpRuntimeFacts": {
+      "description": "What the harness learned about one MCP server when it connected.",
+      "properties": {
+        "connected": {
+          "$ref": "#/$defs/Fact_for_boolean",
+          "description": "Whether the harness connected to the server."
+        },
+        "protocol_version": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "MCP protocol version negotiated with the server."
+        },
+        "server_name": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "Name the server reports for itself."
+        },
+        "server_version": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "Version the server reports for itself."
+        },
+        "tool_names": {
+          "$ref": "#/$defs/Fact_for_Array_of_string",
+          "description": "Raw tool names the server lists, each bounded by the string length\nrule."
+        }
+      },
+      "required": [
+        "connected",
+        "protocol_version",
+        "server_name",
+        "server_version",
+        "tool_names"
+      ],
+      "type": "object"
+    },
+    "McpServerFacts": {
+      "description": "Facts about one MCP server.\n\nAn entry with origin `harness` is a server the harness reports and the\nplan does not configure. It has the same shape: its `endpoint` reads\n`not_applicable` with reason `not_configured`, and runtime facts the\nadapter did not collect read `unavailable` with reason `not_collected`.\nOnly a `plan` entry must name its transport. An entry of any other\norigin may leave it out.",
+      "if": {
+        "properties": {
+          "origin": {
+            "const": "plan"
+          }
+        }
+      },
+      "properties": {
+        "endpoint": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "Configured endpoint without secrets: the lowercase scheme and host\nand the port for a network server, or the executable's file name for\na `stdio` server."
+        },
+        "origin": {
+          "description": "Where the entry comes from: `plan` for a server the plan configures,\n`harness` for one only the harness reports.",
+          "type": "string"
+        },
+        "runtime": {
+          "$ref": "#/$defs/McpRuntimeFacts",
+          "description": "What the harness learned when it connected, as the adapter reports it."
+        },
+        "transport": {
+          "description": "Transport, such as `stdio` or `streamable-http`. Required for a\n`plan` entry, and optional for any other origin.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "origin",
+        "endpoint",
+        "runtime"
+      ],
+      "then": {
+        "properties": {
+          "transport": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "transport"
+        ]
+      },
+      "type": "object"
+    },
+    "MissingFact": {
+      "description": "A fact without a value.",
+      "not": {
+        "required": [
+          "value"
+        ]
+      },
+      "properties": {
+        "collected_by": {
+          "description": "Component that collected the fact, such as `host_core`, `task_core`\nor `adapter`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        },
+        "method": {
+          "description": "How the collector got the fact, such as `crate_version`,\n`resolved_plan` or `adapter_report`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Short code that explains the state, such as `key_not_declared`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/FactSource",
+          "description": "How NeMo Fabric learned the fact."
+        },
+        "state": {
+          "$ref": "#/$defs/FactState",
+          "description": "Why the fact has no value."
+        }
+      },
+      "required": [
+        "state",
+        "reason",
+        "source",
+        "collected_by",
+        "method"
+      ],
+      "type": "object"
+    },
+    "ModelFacts": {
+      "description": "Facts about one model role.",
+      "properties": {
+        "provider": {
+          "description": "Provider from the plan.",
+          "type": "string"
+        },
+        "requested": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "Model the plan requested."
+        },
+        "served": {
+          "$ref": "#/$defs/Fact_for_string",
+          "description": "Model that served, as the harness or provider reports it."
+        }
+      },
+      "required": [
+        "provider",
+        "requested",
+        "served"
+      ],
+      "type": "object"
     },
     "ModelName": {
       "description": "One configured model.",
@@ -819,6 +1282,28 @@
       },
       "type": "object"
     },
+    "TruncatedEntries": {
+      "description": "Entries core dropped to keep `what_ran` within its bounds: next to a\nmap for the entries dropped from it, or as `what_ran_truncated` for the\nwhole object.",
+      "properties": {
+        "dropped": {
+          "description": "How many entries were dropped. A JSON integer: the Rust and Python\nreaders reject `1.0`, although a JSON Schema validator may accept it.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "reason": {
+          "description": "Why the entries were dropped: `key_too_long` for a key longer than\n128 characters, `entry_cap` for an entry past the map's cap, or\n`byte_budget` for an entry dropped to keep the whole object within\n128 KiB. One marker covers a map: when more than one rule dropped\nentries from it, `reason` names the last rule applied, in that\norder, and `dropped` counts them all. An open code like a fact's\n`reason`.",
+          "pattern": "^[a-z0-9_.:#+/-]{1,128}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "dropped"
+      ],
+      "type": "object"
+    },
     "UsageDimension": {
       "description": "Dimensions whose complete values can be unavailable independently.",
       "oneOf": [
@@ -887,6 +1372,78 @@
       "required": [
         "dimensions",
         "reason"
+      ],
+      "type": "object"
+    },
+    "WhatRan": {
+      "anyOf": [
+        {
+          "required": [
+            "what_ran_truncated"
+          ]
+        },
+        {
+          "required": [
+            "fabric",
+            "adapter",
+            "harness",
+            "models",
+            "mcp",
+            "environment"
+          ]
+        }
+      ],
+      "description": "What executed for one invocation.\n\nEvery section is present, unless `what_ran_truncated` is present: then\nthe object is a minimal one that the byte budget left with only its\nschema name and version, and every section may be absent.\n\nDecoding a `WhatRan` directly checks the shape of every section and\nfact, and that no section is `null`. `RunResult` also checks the schema\nname and version, that every section is present unless\n`what_ran_truncated` is, and that every `plan` MCP entry names its\ntransport.",
+      "properties": {
+        "adapter": {
+          "$ref": "#/$defs/AdapterFacts",
+          "description": "Adapter that ran."
+        },
+        "environment": {
+          "$ref": "#/$defs/EnvironmentFacts",
+          "description": "Environment the runtime ran in."
+        },
+        "fabric": {
+          "$ref": "#/$defs/FabricFacts",
+          "description": "NeMo Fabric core that ran the adapter."
+        },
+        "harness": {
+          "$ref": "#/$defs/HarnessFacts",
+          "description": "Harness behind the adapter."
+        },
+        "mcp": {
+          "$ref": "#/$defs/McpFacts",
+          "description": "MCP server facts."
+        },
+        "models": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ModelFacts"
+          },
+          "description": "Model facts keyed by the role names of the plan's `models` settings.\nAt most 16 roles, in sorted key order, each key at most 128\ncharacters.",
+          "type": "object"
+        },
+        "models_truncated": {
+          "$ref": "#/$defs/TruncatedEntries",
+          "description": "Model roles dropped from `models`. Absent when none was dropped,\nnever `null`."
+        },
+        "schema": {
+          "const": "nemo.fabric.what_ran",
+          "description": "Schema name, `nemo.fabric.what_ran`.",
+          "type": "string"
+        },
+        "version": {
+          "const": "v1alpha1",
+          "description": "Contract version, `v1alpha1`.",
+          "type": "string"
+        },
+        "what_ran_truncated": {
+          "$ref": "#/$defs/TruncatedEntries",
+          "description": "Present only on a minimal object: every section was dropped to fit\nits containing record's byte budget, with reason `byte_budget` and\na dropped count of 1. The full-result object uses a 128 KiB budget."
+        }
+      },
+      "required": [
+        "schema",
+        "version"
       ],
       "type": "object"
     }

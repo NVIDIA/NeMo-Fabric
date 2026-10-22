@@ -3,6 +3,7 @@
 
 from copy import deepcopy
 import json
+from pathlib import Path
 
 import pytest
 
@@ -568,3 +569,71 @@ def test_details_retain_resource_scope_while_overview_stays_compact(result):
     assert "Invocation:" in detail
     assert "System stats collected groups" in detail
     assert "bytes" not in detail  # Human-readable memory uses binary units.
+
+
+def _execution_facts():
+    path = Path(__file__).parents[1] / "fixtures/what_ran/reader-vectors.json"
+    return json.loads(path.read_text())["base"]
+
+
+def test_full_result_keeps_execution_facts_without_recording(result):
+    result["what_ran"] = _execution_facts()
+    summary = summarize_result(result)
+    assert summary["what_ran"] == result["what_ran"]
+    assert summary["provenance_error"] is None
+    text = render_result_summary(summary)
+    assert '"requested": "claude-sonnet-4-5", "served": null' in text
+    assert "Accounted models" not in text
+
+
+def test_record_only_keeps_bounded_execution_facts(tmp_path, record_lines):
+    record_lines[1]["what_ran"] = _execution_facts()
+    path = tmp_path / "run-record.jsonl"
+    write_record(path, record_lines)
+    summary = read_evidence(path)
+    assert summary["what_ran"] == record_lines[1]["what_ran"]
+    assert summary["status"] == "succeeded"
+    assert summary["elapsed_ms"] == 123
+
+
+def test_unreadable_execution_facts_keep_execution_and_accounting(result):
+    result["what_ran"] = {"schema": "nemo.fabric.what_ran", "version": "future"}
+    summary = summarize_result(result)
+    assert summary["what_ran"] is None
+    assert summary["provenance_error"] == "unreadable_what_ran"
+    assert summary["status"] == "succeeded"
+    assert summary["usage"]["dimensions"]["input_tokens"]["complete_total"] == 100
+    assert "facts were unreadable" in render_result_summary(summary)
+
+
+def test_full_result_facts_remain_authoritative_over_sibling_record(
+    tmp_path, record_lines, result
+):
+    record_lines[1]["what_ran"] = _execution_facts()
+    write_record(tmp_path / "run-record.jsonl", record_lines)
+    result["what_ran"] = {"schema": "unreadable"}
+    path = tmp_path / "run-result.json"
+    path.write_text(json.dumps(result))
+    summary = read_evidence(path)
+    assert summary["what_ran"] is None
+    assert summary["provenance_error"] == "unreadable_what_ran"
+
+
+def test_minimal_execution_facts_show_byte_budget_omission(result):
+    result["what_ran"] = {
+        "schema": "nemo.fabric.what_ran",
+        "version": "v1alpha1",
+        "what_ran_truncated": {"reason": "byte_budget", "dropped": 1},
+    }
+    summary = summarize_result(result)
+    assert summary["what_ran"] == result["what_ran"]
+    assert "Execution facts: record exceeded its byte budget." in render_result_summary(
+        summary
+    )
+
+
+def test_absent_execution_facts_are_not_malformed(result):
+    summary = summarize_result(result)
+    assert summary["what_ran"] is None
+    assert summary["provenance_error"] is None
+    assert "facts were unreadable" not in render_result_summary(summary)

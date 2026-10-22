@@ -17,7 +17,7 @@ use super::lines::RecordLine;
 /// File name of the record inside the invocation folder.
 pub(crate) const RECORD_FILE_NAME: &str = "run-record.jsonl";
 /// Maximum serialized JSON size of one line, excluding its newline.
-const MAX_LINE_BYTES: usize = 64 * 1024;
+pub(super) const MAX_LINE_BYTES: usize = 64 * 1024;
 
 /// Appends lines to one invocation's record.
 #[derive(Debug)]
@@ -179,6 +179,7 @@ mod tests {
                 error: None,
                 usage: None,
                 model_usage: None,
+                what_ran: None,
                 artifacts: Vec::new(),
             })),
         };

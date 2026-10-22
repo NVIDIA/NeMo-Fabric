@@ -2113,7 +2113,7 @@
         },
         "what_ran_truncated": {
           "$ref": "#/$defs/TruncatedEntries",
-          "description": "Present only on a minimal object: every section was dropped to keep\nthe object within 128 KiB, with reason `byte_budget` and a dropped\ncount of 1."
+          "description": "Present only on a minimal object: every section was dropped to fit\nits containing record's byte budget, with reason `byte_budget` and\na dropped count of 1. The full-result object uses a 128 KiB budget."
         }
       },
       "required": [

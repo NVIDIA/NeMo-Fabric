@@ -154,6 +154,9 @@ pub(crate) struct EndLine {
     /// Validated normalized accounting frozen at the invocation boundary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_usage: Option<crate::model_usage::ModelUsage>,
+    /// Bounded execution facts frozen with the finalized invocation result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub what_ran: Option<crate::what_ran::WhatRan>,
     /// Result artifacts, with paths relative to the artifact root.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<EndArtifact>,

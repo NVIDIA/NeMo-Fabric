@@ -1596,8 +1596,12 @@ The start/end record's elapsed time covers its invocation window, including star
 record I/O and core preparation. It excludes end-record writes, full-result
 persistence and one-shot runtime startup/shutdown. It is not pure model time or
 the caller's task schedule interval. Record I/O is synchronous and best effort.
-Each record line is limited to 64 KiB; oversized lines stop that record without
-replacing the available execution result.
+Each record line is limited to 64 KiB. The end line copies bounded `what_ran`
+from the finalized invocation result. If those optional facts would exceed the
+line budget, the record keeps a minimal `what_ran_truncated` marker with reason
+`byte_budget` and `dropped: 1`. If even that marker does not fit, the record omits
+`what_ran`. The separate full result keeps its original facts. Other oversized
+lines stop that record without replacing the available execution result.
 
 ### Inspect a saved run
 
