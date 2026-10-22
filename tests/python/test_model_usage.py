@@ -486,9 +486,13 @@ def test_applied_pricing_accepts_schema_optional_cache_rates(cache_rates):
             "rates": {"input": 10, "output": 20, **cache_rates},
         }
     )
-    assert parsed.rates == {
+    expected = {
         "input": 10,
         "output": 20,
         "cache_read": cache_rates.get("cache_read"),
         "cache_write": cache_rates.get("cache_write"),
     }
+    rates = parsed.rates
+    assert json.loads(json.dumps(rates)) == expected
+    rates["input"] = 999
+    assert parsed.rates == expected
