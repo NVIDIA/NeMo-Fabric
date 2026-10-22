@@ -20,7 +20,7 @@ The following table shows which components each installation provides:
 | `pip install "nemo-fabric-adapters-codex[harness]"` | No | Yes | Yes | Yes |
 | `pip install nemo-fabric-adapters-codex` | No | Yes | No | No |
 
-For an environment-managed SDK, use `openai-codex==0.144.4`. For split runtime
+For an environment-managed SDK, use `openai-codex==0.154.0`. For split runtime
 and adapter environments, configure `ADAPTER_PYTHON` and use matching NeMo
 Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
@@ -79,7 +79,13 @@ The result includes the SDK's typed terminal response, turn status, token
 usage, timing, and completed thread items. It does not expose CLI commands,
 return codes, stdout, or stderr.
 
-Normalized `usage` contains invocation-local token counts from the SDK's cumulative thread totals, including cached input tokens. Input tokens already include cached tokens (`input_tokens_include_cache=True`). Reused threads report the difference from the previous invocation rather than counting the thread total again. Missing, invalid, or reset counters remain unknown; a missing snapshot requires a new baseline before differences can be reported. The adapter preserves native usage in `output.usage`, does not infer cost, and retains available usage on unsuccessful results. When Codex completes a turn with a failed status, usage covers the snapshots that Codex sent before the failure. Codex sends a response's usage after its tool calls finish, so when a turn times out, loses its connection, or ends without Codex completing it, a response may still have been running and normalized usage is unknown. The last snapshot stays in `output.usage`, and the runtime accepts no further invocations, so that turn's usage never moves into a later invocation. A failure before Codex sends any usage leaves usage unknown. When Codex exceeds the model context window, it replaces the thread total with the window size before it fails the turn; the adapter ignores that snapshot. A request rejected before its turn starts, such as non-text input, keeps the baseline for the next invocation.
+Normalized `usage` comes from the original per-response reports in Codex's raw completion notifications. Input includes cache reads and writes; output includes reasoning. A reported zero stays zero and an omitted count stays unknown, independently for each dimension. The adapter deduplicates response IDs and reduces their frozen records through `usage.extensions["nemo_fabric.usage_accounting.v1"]`. Codex's cumulative thread snapshot remains in `output.usage` as a diagnostic. It cannot establish completeness because an omitted response report leaves the thread total unchanged.
+
+A completed failed turn keeps accounted usage. Without `turn/completed`, completed-call observations remain available and complete totals are unknown. Reported retries, ambiguous model errors, missing response usage, or conflicting duplicate response records create gaps. A sandbox or thread-rollback error alone does not erase accounted model usage. Interrupted turns quarantine the runtime, including unexpected exceptions and cancellation, so late usage cannot transfer to another invocation.
+
+The adapter requests `experimentalRawEvents` when starting its thread through the SDK's generic request API. This observational flag and the private turn collector are qualified against `openai-codex==0.154.0` and its matching app-server. Raw `usageMetadata.metadata` preserves the provider's field presence before Codex zero-fills optional details. If no raw report arrives, the adapter does not certify a cumulative snapshot as complete usage. Recheck these boundaries when either pinned component changes.
+
+An actual subagent dispatch leaves that invocation's descendant coverage unverified. This gap does not invalidate independent later parent turns. Raw reports for another turn are ignored, and returned results remain frozen. Automatic child completion requests no new turn (`trigger_turn=false`); Codex can still start pending work when a durable sleep is outstanding. Unused delegation capabilities do not create gaps. Model calls hidden inside external tools and unreported internal attempts remain outside this notification boundary. The qualified accounting boundary is the parent turn initiated by the Fabric invocation. The SDK can also join an already-active regular turn, and its response does not expose a joined-turn flag. Independently running parent turns that can be joined are outside this qualified ownership boundary. An exact `turnId` filters other turns; it does not establish who initiated a pre-existing turn. The reports do not identify each served model, so the adapter supplies no per-model allocation or provider cost. Core does not price this evidence using the requested model.
 
 ## Configuration
 
@@ -101,7 +107,7 @@ Use normalized `FabricConfig` fields for portable configuration:
   select matching skills through its normal discovery behavior.
 - `telemetry` enables native OpenTelemetry or NeMo Relay observability.
 
-Invocation deadlines return the normalized error code `timeout`, including when the deadline expires during MCP authentication; a Codex SDK request that times out earlier returns `codex_timed_out`. The adapter interrupts the active turn and closes the SDK before returning either outcome. With a timeout under 10 seconds, NeMo Fabric's own timeout can stop the adapter host before the interrupt finishes, which fails the invocation with a core `host_timeout` error instead.
+Invocation deadlines return the normalized error code `timeout`, including when the deadline expires during MCP authentication; a Codex SDK request that times out earlier returns `codex_timed_out`. After either timeout, the adapter requests an interrupt and rejects further invocations on that runtime. `Runtime.stop()` closes the SDK. With a timeout under 10 seconds, NeMo Fabric's own timeout can stop the adapter host before the interrupt finishes, which fails the invocation with a core `host_timeout` error instead.
 
 The Codex adapter does not declare `tools.blocked` support. The current Codex
 runtime has per-MCP-server tool filters, but it does not provide one complete
@@ -154,7 +160,9 @@ Codex adapter does not provide a separate `relay` extra; its `harness` and
 
 Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the
 installed `nemo-relay` CLI as a supervised sidecar; do not start the gateway
-separately.
+separately. Gateway readiness has a 30-second budget covering configuration
+validation and required worker initialization. Startup fails on early process exit
+or an expired budget, and the gateway log is retained for diagnosis.
 NeMo Fabric routes the selected Responses-compatible provider through the
 gateway and passes its explicit `base_url` to Relay as the upstream endpoint.
 

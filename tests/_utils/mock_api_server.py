@@ -4,6 +4,7 @@
 import json
 import threading
 import time
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -538,7 +539,7 @@ def _responses_response(
     payload: dict[str, object], output: list[dict[str, object]]
 ) -> dict[str, object]:
     return {
-        "id": "resp_fabric_test",
+        "id": f"resp_{uuid.uuid4().hex}",
         "object": "response",
         "created_at": 0,
         "status": "completed",

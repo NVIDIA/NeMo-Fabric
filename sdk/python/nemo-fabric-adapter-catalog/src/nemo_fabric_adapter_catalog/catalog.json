@@ -377,6 +377,343 @@
               }
             },
             "type": "object"
+          },
+          "usage": {
+            "$defs": {
+              "AccountedModel": {
+                "additionalProperties": false,
+                "description": "Evidence for one literal provider/model identity.",
+                "properties": {
+                  "gaps": {
+                    "description": "Gaps affecting this model.",
+                    "items": {
+                      "$ref": "#/$defs/UsageGap"
+                    },
+                    "type": "array"
+                  },
+                  "model": {
+                    "description": "Model identity as reported by the source.",
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "observed": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/ReportedUsage"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Valid deduplicated observations, potentially incomplete."
+                  },
+                  "observed_tokens_aligned": {
+                    "default": false,
+                    "description": "Every present observed token dimension describes the same source-call subset.\nFalse unless the producer establishes this, including peak and normalization components.",
+                    "type": "boolean"
+                  },
+                  "provider": {
+                    "description": "Literal provider identity, when available.",
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "reported": {
+                    "$ref": "#/$defs/ReportedUsage",
+                    "default": {},
+                    "description": "Complete per-model evidence; absent fields are unreported."
+                  },
+                  "requests": {
+                    "description": "Optional per-call evidence for exact request-tier pricing.",
+                    "items": {
+                      "$ref": "#/$defs/UsageRequest"
+                    },
+                    "type": "array"
+                  },
+                  "requests_exhaustive": {
+                    "default": false,
+                    "description": "The request list covers every source unit contributing to this model.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "model",
+                  "gaps"
+                ],
+                "type": "object"
+              },
+              "GapReason": {
+                "description": "Categories that affect whether a consumer can treat a value as complete.",
+                "oneOf": [
+                  {
+                    "const": "unfinished_work",
+                    "description": "Owned work was still running at the return boundary.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "missing_usage",
+                    "description": "A completed call did not provide usable usage.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "scope_unverified",
+                    "description": "The supported source does not establish coverage of owned work.",
+                    "type": "string"
+                  }
+                ]
+              },
+              "ReportedUsage": {
+                "additionalProperties": false,
+                "description": "Raw counts in provider/harness conventions. Missing values are never zero.",
+                "properties": {
+                  "cache_write_input_tokens": {
+                    "description": "Cache writes, independently reported.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "cached_input_tokens": {
+                    "description": "Cache reads, independently reported.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "cost_usd": {
+                    "description": "Provider-reported USD, never a client-side price estimate.",
+                    "format": "double",
+                    "minimum": 0.0,
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "input_tokens": {
+                    "description": "Raw input count.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "input_tokens_include_cache": {
+                    "description": "Whether input includes both cache categories.",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "output_tokens": {
+                    "description": "Raw output count.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "output_tokens_include_reasoning": {
+                    "description": "Whether output includes reasoning.",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "peak_request_input_tokens": {
+                    "description": "Largest request's cache-inclusive input.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "reasoning_tokens": {
+                    "description": "Reasoning count, independently reported.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "total_tokens": {
+                    "description": "Provider-reported total, independent of normalized input plus output.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              "UsageDimension": {
+                "description": "A dimension in raw adapter evidence.",
+                "oneOf": [
+                  {
+                    "const": "input_tokens",
+                    "description": "Input tokens.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "cached_input_tokens",
+                    "description": "Cache reads.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "cache_write_input_tokens",
+                    "description": "Cache writes.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "output_tokens",
+                    "description": "Output tokens.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "reasoning_tokens",
+                    "description": "Reasoning tokens.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "total_tokens",
+                    "description": "Provider-reported total.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "peak_request_input_tokens",
+                    "description": "Largest request input.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "cost_usd",
+                    "description": "Provider-reported USD.",
+                    "type": "string"
+                  }
+                ]
+              },
+              "UsageGap": {
+                "additionalProperties": false,
+                "description": "Missing evidence for one or more raw dimensions.",
+                "properties": {
+                  "dimensions": {
+                    "description": "Nonempty, unique set of affected dimensions.",
+                    "items": {
+                      "$ref": "#/$defs/UsageDimension"
+                    },
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "reason": {
+                    "$ref": "#/$defs/GapReason",
+                    "description": "Why those dimensions are incomplete."
+                  }
+                },
+                "required": [
+                  "dimensions",
+                  "reason"
+                ],
+                "type": "object"
+              },
+              "UsageRequest": {
+                "additionalProperties": false,
+                "description": "One model call retained for request-tier pricing and evidence reconciliation.",
+                "properties": {
+                  "gap": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/GapReason"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Known incompleteness of this call's source coverage."
+                  },
+                  "tokens_aligned": {
+                    "default": false,
+                    "description": "Present observed fields describe the same request/subset.",
+                    "type": "boolean"
+                  },
+                  "usage": {
+                    "$ref": "#/$defs/ReportedUsage",
+                    "description": "One deduplicated model-call snapshot, never a session/model aggregate."
+                  }
+                },
+                "required": [
+                  "usage"
+                ],
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.detailed_token_usage.v1": {
+                "$ref": "#/$defs/ReportedUsage"
+              },
+              "nemo_fabric.usage_accounting.v1": {
+                "additionalProperties": false,
+                "description": "The declared adapter transport for invocation accounting.",
+                "properties": {
+                  "gaps": {
+                    "description": "Invocation-wide gaps.",
+                    "items": {
+                      "$ref": "#/$defs/UsageGap"
+                    },
+                    "type": "array"
+                  },
+                  "models": {
+                    "description": "One entry per literal provider/model pair.",
+                    "items": {
+                      "$ref": "#/$defs/AccountedModel"
+                    },
+                    "type": "array"
+                  },
+                  "models_exhaustive": {
+                    "description": "Every model identity used by owned work is represented; this alone does\nnot certify that any dimension is complete.",
+                    "type": "boolean"
+                  },
+                  "observed": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/ReportedUsage"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Valid deduplicated observations, not a promised mathematical lower bound."
+                  }
+                },
+                "required": [
+                  "models_exhaustive",
+                  "gaps"
+                ],
+                "title": "UsageAccounting",
+                "type": "object"
+              }
+            },
+            "type": "object"
           }
         },
         "model_schema": {
@@ -530,7 +867,7 @@
         "name": "nemo-fabric-adapters-codex",
         "version": "0.6.0"
       },
-      "sha256": "f66fb66d3a366977619bc9e88a4d926e0b71bbc28ac965b9a416bf2559106ce5",
+      "sha256": "0e7d627db7fdcb05492348ca661cb250cb933f14a5a2134376716b411fea89c7",
       "source": "adapters/python/codex/codex.fabric-adapter.json"
     },
     "nvidia.fabric.droid": {
@@ -884,6 +1221,116 @@
       "sha256": "608aeacfa0cfa5ff7ccd28e3f66cadd53f82780bc882b8577e7e8687dfd3dd07",
       "source": "adapters/typescript/kilo/kilo.fabric-adapter.json"
     },
+    "nvidia.fabric.kiro": {
+      "descriptor": {
+        "adapter_id": "nvidia.fabric.kiro",
+        "adapter_kind": "process",
+        "capabilities": {
+          "cancellation": false,
+          "service": false,
+          "streaming": false,
+          "updates": false
+        },
+        "config": {
+          "accepts": [
+            "models",
+            "mcp"
+          ]
+        },
+        "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "session_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "stop_reason": {
+                "enum": [
+                  "end_turn",
+                  "max_tokens",
+                  "max_turn_requests",
+                  "refusal",
+                  "cancelled"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "session_id",
+              "stop_reason"
+            ],
+            "type": "object"
+          }
+        },
+        "model_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "api_key_env": {
+              "const": "KIRO_API_KEY"
+            },
+            "model": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "provider": {
+              "const": "kiro"
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ],
+          "type": "object"
+        },
+        "requirements": {
+          "binaries": [
+            "node",
+            "kiro-cli"
+          ]
+        },
+        "runner": {
+          "command": "node",
+          "script": "dist/cli.js"
+        },
+        "settings_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "mode_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "permission_mode": {
+              "enum": [
+                "deny",
+                "allow_once"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "ecosystem": "typescript",
+      "package": {
+        "name": "nemo-fabric-adapters-kiro",
+        "version": "0.6.0"
+      },
+      "sha256": "bd84a149c0114be483b129da5937b3e540816d1c8fe9708663e5cb46417362aa",
+      "source": "adapters/typescript/kiro/kiro.fabric-adapter.json"
+    },
     "nvidia.fabric.langchain.deepagents": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.langchain.deepagents",
@@ -907,6 +1354,345 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "usage": {
+            "$defs": {
+              "AccountedModel": {
+                "additionalProperties": false,
+                "description": "Evidence for one literal provider/model identity.",
+                "properties": {
+                  "gaps": {
+                    "description": "Gaps affecting this model.",
+                    "items": {
+                      "$ref": "#/$defs/UsageGap"
+                    },
+                    "type": "array"
+                  },
+                  "model": {
+                    "description": "Model identity as reported by the source.",
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "observed": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/ReportedUsage"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Valid deduplicated observations, potentially incomplete."
+                  },
+                  "observed_tokens_aligned": {
+                    "default": false,
+                    "description": "Every present observed token dimension describes the same source-call subset.\nFalse unless the producer establishes this, including peak and normalization components.",
+                    "type": "boolean"
+                  },
+                  "provider": {
+                    "description": "Literal provider identity, when available.",
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "reported": {
+                    "$ref": "#/$defs/ReportedUsage",
+                    "default": {},
+                    "description": "Complete per-model evidence; absent fields are unreported."
+                  },
+                  "requests": {
+                    "description": "Optional per-call evidence for exact request-tier pricing.",
+                    "items": {
+                      "$ref": "#/$defs/UsageRequest"
+                    },
+                    "type": "array"
+                  },
+                  "requests_exhaustive": {
+                    "default": false,
+                    "description": "The request list covers every source unit contributing to this model.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "model",
+                  "gaps"
+                ],
+                "type": "object"
+              },
+              "GapReason": {
+                "description": "Categories that affect whether a consumer can treat a value as complete.",
+                "oneOf": [
+                  {
+                    "const": "unfinished_work",
+                    "description": "Owned work was still running at the return boundary.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "missing_usage",
+                    "description": "A completed call did not provide usable usage.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "scope_unverified",
+                    "description": "The supported source does not establish coverage of owned work.",
+                    "type": "string"
+                  }
+                ]
+              },
+              "ReportedUsage": {
+                "additionalProperties": false,
+                "description": "Raw counts in provider/harness conventions. Missing values are never zero.",
+                "properties": {
+                  "cache_write_input_tokens": {
+                    "description": "Cache writes, independently reported.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "cached_input_tokens": {
+                    "description": "Cache reads, independently reported.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "cost_usd": {
+                    "description": "Provider-reported USD, never a client-side price estimate.",
+                    "format": "double",
+                    "minimum": 0.0,
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "input_tokens": {
+                    "description": "Raw input count.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "input_tokens_include_cache": {
+                    "description": "Whether input includes both cache categories.",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "output_tokens": {
+                    "description": "Raw output count.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "output_tokens_include_reasoning": {
+                    "description": "Whether output includes reasoning.",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "peak_request_input_tokens": {
+                    "description": "Largest request's cache-inclusive input.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "reasoning_tokens": {
+                    "description": "Reasoning count, independently reported.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "total_tokens": {
+                    "description": "Provider-reported total, independent of normalized input plus output.",
+                    "format": "uint64",
+                    "maximum": 18446744073709551615,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              "UsageDimension": {
+                "description": "A dimension in raw adapter evidence.",
+                "oneOf": [
+                  {
+                    "const": "input_tokens",
+                    "description": "Input tokens.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "cached_input_tokens",
+                    "description": "Cache reads.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "cache_write_input_tokens",
+                    "description": "Cache writes.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "output_tokens",
+                    "description": "Output tokens.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "reasoning_tokens",
+                    "description": "Reasoning tokens.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "total_tokens",
+                    "description": "Provider-reported total.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "peak_request_input_tokens",
+                    "description": "Largest request input.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "cost_usd",
+                    "description": "Provider-reported USD.",
+                    "type": "string"
+                  }
+                ]
+              },
+              "UsageGap": {
+                "additionalProperties": false,
+                "description": "Missing evidence for one or more raw dimensions.",
+                "properties": {
+                  "dimensions": {
+                    "description": "Nonempty, unique set of affected dimensions.",
+                    "items": {
+                      "$ref": "#/$defs/UsageDimension"
+                    },
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "reason": {
+                    "$ref": "#/$defs/GapReason",
+                    "description": "Why those dimensions are incomplete."
+                  }
+                },
+                "required": [
+                  "dimensions",
+                  "reason"
+                ],
+                "type": "object"
+              },
+              "UsageRequest": {
+                "additionalProperties": false,
+                "description": "One model call retained for request-tier pricing and evidence reconciliation.",
+                "properties": {
+                  "gap": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/GapReason"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Known incompleteness of this call's source coverage."
+                  },
+                  "tokens_aligned": {
+                    "default": false,
+                    "description": "Present observed fields describe the same request/subset.",
+                    "type": "boolean"
+                  },
+                  "usage": {
+                    "$ref": "#/$defs/ReportedUsage",
+                    "description": "One deduplicated model-call snapshot, never a session/model aggregate."
+                  }
+                },
+                "required": [
+                  "usage"
+                ],
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.detailed_token_usage.v1": {
+                "$ref": "#/$defs/ReportedUsage"
+              },
+              "nemo_fabric.usage_accounting.v1": {
+                "additionalProperties": false,
+                "description": "The declared adapter transport for invocation accounting.",
+                "properties": {
+                  "gaps": {
+                    "description": "Invocation-wide gaps.",
+                    "items": {
+                      "$ref": "#/$defs/UsageGap"
+                    },
+                    "type": "array"
+                  },
+                  "models": {
+                    "description": "One entry per literal provider/model pair.",
+                    "items": {
+                      "$ref": "#/$defs/AccountedModel"
+                    },
+                    "type": "array"
+                  },
+                  "models_exhaustive": {
+                    "description": "Every model identity used by owned work is represented; this alone does\nnot certify that any dimension is complete.",
+                    "type": "boolean"
+                  },
+                  "observed": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/ReportedUsage"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Valid deduplicated observations, not a promised mathematical lower bound."
+                  }
+                },
+                "required": [
+                  "models_exhaustive",
+                  "gaps"
+                ],
+                "title": "UsageAccounting",
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1164,7 +1950,7 @@
         "name": "nemo-fabric-adapters-deepagents",
         "version": "0.6.0"
       },
-      "sha256": "819b1f9747af83011c98d5889c56dac9a735008b25e93bbc94c1cfde3050a44e",
+      "sha256": "9e6272ba5196168dec13499f9a8d79fc7fa68860eb16330cb6f64f7209f0be73",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {

@@ -27,7 +27,8 @@ from openai_codex import TransportClosedError
 from openai_codex.generated.v2_all import ItemCompletedNotification
 from openai_codex.generated.v2_all import ThreadTokenUsageUpdatedNotification
 from openai_codex.generated.v2_all import TurnCompletedNotification
-from openai_codex.models import Notification
+from openai_codex.models import Notification, UnknownNotification
+from nemo_fabric_adapter_contract.usage import UsageObservation
 
 
 def lifecycle_start_payload(payload):
@@ -181,9 +182,43 @@ def turn_completed(error=None):
     )
 
 
-def turn_events(response="done", *, usage=None):
-    """Return the SDK notifications Codex sends for one completed turn."""
-    events = [usage_event(token_usage(10, 3) if usage is None else usage)]
+def raw_response_event(input_tokens, output_tokens, *, cached_input_tokens=0):
+    return Notification(
+        method="rawResponse/completed",
+        payload=UnknownNotification(
+            {
+                "threadId": "thread-123",
+                "turnId": "turn-1",
+                "responseId": "response-1",
+                "usageMetadata": {
+                    "metadata": {
+                        "input_tokens": input_tokens,
+                        "input_tokens_details": {"cached_tokens": cached_input_tokens},
+                        "output_tokens": output_tokens,
+                        "total_tokens": input_tokens + output_tokens,
+                    }
+                },
+            }
+        ),
+    )
+
+
+def turn_events(response="done", *, usage=None, raw_usage=None):
+    """The SDK emits raw per-response evidence separately from thread counters."""
+    if usage is None:
+        usage = token_usage(10, 3)
+    if raw_usage is None:
+        raw_usage = (
+            usage["last"]["inputTokens"],
+            usage["last"]["outputTokens"],
+            usage["last"]["cachedInputTokens"],
+        )
+    events = [
+        raw_response_event(
+            raw_usage[0], raw_usage[1], cached_input_tokens=raw_usage[2]
+        ),
+        usage_event(usage),
+    ]
     if response is not None:
         events.append(
             Notification(
@@ -207,34 +242,38 @@ def turn_events(response="done", *, usage=None):
     return events
 
 
-def test_agent_run_result_discards_oversized_token_count():
-    result = adapter._agent_run_result(
-        {"response": "done", "usage": {"input_tokens": 1 << 64}}
-    )
+def usage_counts(usage):
+    assert "nemo_fabric.usage_accounting.v1" in usage.extensions
+    return {
+        key: value for key, value in usage.to_mapping().items() if key != "extensions"
+    }
 
-    assert result.usage is None
+
+def accounted_result(raw, *, failed=False):
+    return adapter._agent_run_result(
+        {
+            "failed": failed,
+            "usage_observations": [
+                UsageObservation(
+                    reported=adapter._response_usage(raw), is_model_call=True
+                )
+            ],
+        }
+    )
 
 
 @pytest.mark.parametrize("failed", [False, True])
-def test_native_usage_preserves_known_counters_without_inventing_cost(failed):
-    output = {
-        "response": "done",
-        "failed": failed,
-        "usage": {
-            "total": {
-                "inputTokens": 40,
-                "cachedInputTokens": 10,
-                "outputTokens": 8,
-                "totalTokens": 48,
-            },
-            "last": {"inputTokens": 3, "outputTokens": 1, "totalTokens": 4},
-            "estimated_cost_usd": 0.25,
+def test_native_response_usage_preserves_fields_and_never_invents_cost(failed):
+    result = accounted_result(
+        {
+            "input_tokens": 40,
+            "input_tokens_details": {"cached_tokens": 10},
+            "output_tokens": 8,
+            "total_tokens": 48,
         },
-    }
-
-    result = adapter._agent_run_result(output)
-
-    assert result.usage.to_mapping() == {
+        failed=failed,
+    )
+    assert usage_counts(result.usage) == {
         "input_tokens": 40,
         "cached_input_tokens": 10,
         "input_tokens_include_cache": True,
@@ -242,84 +281,41 @@ def test_native_usage_preserves_known_counters_without_inventing_cost(failed):
         "total_tokens": 48,
     }
     assert result.usage.cost_usd is None
-    assert result.output["usage"] == output["usage"]
 
 
-def test_cumulative_usage_is_invocation_local_and_missing_counts_are_not_guessed():
-    totals = dict.fromkeys(
-        ("input_tokens", "cached_input_tokens", "output_tokens", "total_tokens"), 0
-    )
-    first = adapter._agent_run_result(
-        {"usage": {"total": {"inputTokens": 40, "outputTokens": 8}}}, totals
-    )
-    second = adapter._agent_run_result(
+@pytest.mark.parametrize("invalid", [True, -1, 1.5, "2", 1 << 64, float("inf")])
+def test_native_response_usage_rejects_invalid_dimensions_independently(invalid):
+    result = accounted_result({"input_tokens": invalid, "output_tokens": 5})
+    assert result.usage.input_tokens is None
+    assert result.usage.input_tokens_include_cache is None
+    assert result.usage.output_tokens == 5
+
+
+def test_provider_reported_zero_is_not_treated_as_an_omitted_count():
+    result = accounted_result(
         {
-            "usage": {
-                "total": {"inputTokens": 60, "outputTokens": 12, "cachedInputTokens": 5}
-            }
-        },
-        totals,
-    )
-    assert first.usage.input_tokens == 40
-    assert second.usage.input_tokens == 20
-    assert second.usage.output_tokens == 4
-    assert second.usage.cached_input_tokens is None
-    assert second.usage.total_tokens is None
-    adapter._agent_run_result({}, totals)
-    missing_baseline = adapter._agent_run_result(
-        {"usage": {"total": {"inputTokens": 90}}}, totals
-    )
-    assert missing_baseline.usage is None
-    resumed = adapter._agent_run_result(
-        {"usage": {"total": {"inputTokens": 100}}}, totals
-    )
-    assert resumed.usage.input_tokens == 10
-
-
-@pytest.mark.parametrize("invalid", [-1, 1 << 64, True, 1.5, "20", None])
-def test_native_usage_rejects_invalid_counters_independently(invalid):
-    result = adapter._agent_run_result(
-        {
-            "usage": {"total": {"inputTokens": invalid, "outputTokens": 8}},
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "input_tokens_details": {"cached_tokens": 0},
         }
     )
-    assert result.usage.input_tokens is None
-    assert result.usage.output_tokens == 8
-    assert result.usage.cost_usd is None
-
-
-def test_reset_cumulative_counter_rebaselines_without_negative_usage():
-    totals = {"input_tokens": 40, "output_tokens": 8}
-    reset = adapter._agent_run_result(
-        {"usage": {"total": {"inputTokens": 10, "outputTokens": 12}}}, totals
-    )
-    assert reset.usage.input_tokens is None
-    assert reset.usage.output_tokens == 4
-    resumed = adapter._agent_run_result(
-        {"usage": {"total": {"inputTokens": 20, "outputTokens": 14}}}, totals
-    )
-    assert resumed.usage.input_tokens == 10
-    assert resumed.usage.output_tokens == 2
-
-
-def test_usage_keeps_reported_zeros():
-    """Pins existing behavior: counters Codex reports as zero stay zero."""
-    total = {
-        "inputTokens": 0,
-        "cachedInputTokens": 0,
-        "outputTokens": 0,
-        "totalTokens": 0,
-    }
-
-    result = adapter._agent_run_result({"usage": {"total": total}})
-
-    assert result.usage.to_mapping() == {
+    assert usage_counts(result.usage) == {
         "input_tokens": 0,
         "cached_input_tokens": 0,
         "input_tokens_include_cache": True,
         "output_tokens": 0,
         "total_tokens": 0,
     }
+
+
+def test_thread_snapshot_alone_does_not_certify_omitted_response_usage():
+    result = adapter._agent_run_result({"usage": token_usage(40, 8)})
+    assert result.usage.input_tokens is None
+    assert (
+        "input_tokens"
+        not in result.usage.extensions["nemo_fabric.usage_accounting.v1"]["observed"]
+    )
 
 
 def mock_turn_handle(events=None):
@@ -458,18 +454,25 @@ def mock_codex_fixture(monkeypatch):
         mock_client.config = config
         mock_client.closed = False
         mock_client.thread = None
-        mock_client._client = SimpleNamespace(
-            request=mock_codex.skill_request,
-            next_notification=mock_codex.next_notification,
-        )
+        mock_client.start_options = None
+        mock_client.start_request = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
 
-        async def close():
-            if mock_codex.close_error is not None:
-                raise mock_codex.close_error
-            mock_client.closed = True
-
-        async def thread_start(**kwargs):
-            config = kwargs.get("config") or {}
+        async def request(method, params, *, response_model):
+            if method != "thread/start":
+                if mock_codex.skill_request is None:
+                    raise AssertionError("missing protocol support")
+                return await mock_codex.skill_request(
+                    method, params, response_model=response_model
+                )
+            assert params["experimentalRawEvents"] is True
+            await mock_client.start_request(
+                method, params, response_model=response_model
+            )
+            mock_client.start_options = adapter.ThreadStartParams.model_validate(
+                params
+            ).model_dump(mode="json", by_alias=False, exclude_none=True)
+            config = params.get("config") or {}
             for name, server in config.get("mcp_servers", {}).items():
                 if (
                     server.get("auth") == "oauth"
@@ -483,13 +486,29 @@ def mock_codex_fixture(monkeypatch):
                 if mock_codex.next_thread is not None
                 else mock_thread(mock_codex.next_thread_id, mock_codex.next_result)
             )
-            return mock_client.thread
+            return SimpleNamespace(thread=SimpleNamespace(id=mock_client.thread.id))
+
+        mock_client._client = SimpleNamespace(
+            request=AsyncMock(side_effect=request)
+            if mock_codex.skill_request is not None
+            else None,
+            next_notification=mock_codex.next_notification,
+        )
+
+        async def close():
+            if mock_codex.close_error is not None:
+                raise mock_codex.close_error
+            mock_client.closed = True
 
         mock_client.close.side_effect = close
-        mock_client.thread_start.side_effect = thread_start
         mock_codex.instances.append(mock_client)
         return mock_client
 
+    monkeypatch.setattr(
+        adapter,
+        "AsyncThread",
+        MagicMock(side_effect=lambda client, thread_id: client.thread),
+    )
     mock_codex.side_effect = build_client
     monkeypatch.setattr(adapter, "AsyncCodex", mock_codex)
     return mock_codex
@@ -617,20 +636,21 @@ def test_single_invocation_uses_native_thread_and_turn_contract(
     )
     assert client.config.env["FABRIC_UNRELATED_SECRET"] == ""
     assert client.config.env["XDG_RUNTIME_DIR"] == "/run/user/1000"
-    start = client.thread_start.await_args.kwargs
+    start = client.start_options
     assert start["model"] == "gpt-5.4"
     assert start["model_provider"] == "openai"
     assert start["base_instructions"] == "Review carefully."
-    assert start["sandbox"] == adapter.Sandbox.workspace_write
+    assert start["sandbox"] == "workspace-write"
     assert start["config"] == {
         "features": {"web_search": False},
+        "mcp_optional_startup_grace_ms": 0,
         "model_reasoning_effort": "high",
     }
     client.thread.turn.assert_awaited_once_with(
         "Inspect the change.", effort=None, output_schema=None
     )
     client.models.assert_not_awaited()
-    client._client.request.assert_not_awaited()
+    client.start_request.assert_awaited_once()
 
 
 def test_runtime_stop_reports_close_failure_after_completed_turn(
@@ -730,7 +750,8 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
     output = invoke_once(codex_payload)
 
     assert output["completed"] is True
-    config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    config = mock_codex.instances[0].start_options["config"]
+    assert config["mcp_optional_startup_grace_ms"] == 0
     assert config["mcp_servers"] == {
         "remote": {
             "url": "https://mcp.example.test/mcp",
@@ -1170,7 +1191,7 @@ def test_sdk_registers_native_skill_roots(codex_payload, mock_codex, tmp_path):
         output_schema=None,
     )
     mock_codex.instances[0].models.assert_awaited_once_with()
-    mock_codex.instances[0]._client.request.assert_awaited_once_with(
+    mock_codex.skill_request.assert_awaited_once_with(
         "skills/extraRoots/set",
         {"extraRoots": [str(review), str(test)]},
         response_model=adapter.SkillsExtraRootsSetResponse,
@@ -1193,7 +1214,7 @@ def test_sdk_closes_when_skill_registration_is_unavailable(
 
     assert error.code == "codex_invalid_configuration"
     client = mock_codex.instances[0]
-    client.thread_start.assert_not_awaited()
+    client.start_request.assert_not_awaited()
     assert client.closed is True
 
 
@@ -1299,7 +1320,7 @@ async def test_persistent_runtime_reuses_one_client_and_thread(
     assert first["thread_id"] == second["thread_id"] == "thread-123"
     assert len(mock_codex.instances) == 1
     client = mock_codex.instances[0]
-    client.thread_start.assert_awaited_once()
+    client.start_request.assert_awaited_once()
     assert client.thread.turn.await_count == 2
     assert client.thread.turn.await_args_list[1].args[0] == "Continue."
     assert second["state_dir"] == str(second_artifacts / ".fabric" / "codex")
@@ -1324,10 +1345,7 @@ async def test_runtime_ignores_legacy_plan_fields(codex_payload, mock_codex):
 
     output = await invoke_once_async(codex_payload)
 
-    assert (
-        "mcp_servers"
-        not in mock_codex.instances[0].thread_start.await_args.kwargs["config"]
-    )
+    assert "mcp_servers" not in mock_codex.instances[0].start_options["config"]
     assert "relay_runtime" not in output
 
 
@@ -1362,12 +1380,12 @@ async def test_persistent_runtime_registers_skills_once_and_maps_mcp(
 
     client = mock_codex.instances[0]
     client.models.assert_awaited_once_with()
-    client._client.request.assert_awaited_once_with(
+    mock_codex.skill_request.assert_awaited_once_with(
         "skills/extraRoots/set",
         {"extraRoots": [str(skill)]},
         response_model=adapter.SkillsExtraRootsSetResponse,
     )
-    assert client.thread_start.await_args.kwargs["config"]["mcp_servers"] == {
+    assert client.start_options["config"]["mcp_servers"] == {
         "review": {"url": "https://mcp.example.test/review"}
     }
     assert client.thread.turn.await_count == 2
@@ -1575,6 +1593,7 @@ async def test_failed_turn_keeps_usage_codex_reported_before_turn_completed(
         (
             "Continue.",
             [
+                raw_response_event(30, 5, cached_input_tokens=4),
                 usage_event(token_usage(40, 8, cached_input_tokens=6)),
                 turn_completed(error="model request failed"),
             ],
@@ -1583,7 +1602,7 @@ async def test_failed_turn_keeps_usage_codex_reported_before_turn_completed(
 
     assert failed.status is AgentRunStatus.FAILED
     assert failed.error.code == "codex_turn_failed"
-    assert failed.usage.to_mapping() == {
+    assert usage_counts(failed.usage) == {
         "input_tokens": 30,
         "cached_input_tokens": 4,
         "input_tokens_include_cache": True,
@@ -1607,7 +1626,10 @@ async def test_turn_without_turn_completed_reports_unknown_usage(
     codex_payload, mock_codex, failure, code
 ):
     """A response may still have been running, so the last snapshot is not complete."""
-    unsettled = [usage_event(token_usage(40, 8, cached_input_tokens=6))]
+    unsettled = [
+        raw_response_event(30, 5, cached_input_tokens=4),
+        usage_event(token_usage(40, 8, cached_input_tokens=6)),
+    ]
     if failure is not None:
         unsettled.append(failure)
     first, failed, after = await invoke_turns(
@@ -1621,7 +1643,11 @@ async def test_turn_without_turn_completed_reports_unknown_usage(
     assert first.usage.input_tokens == 10
     assert failed.status is AgentRunStatus.FAILED
     assert failed.error.code == code
-    assert failed.usage is None
+    assert failed.usage.input_tokens is None
+    observed = failed.usage.extensions["nemo_fabric.usage_accounting.v1"]
+    assert observed["observed"]["input_tokens"] == 30
+    assert observed["observed"]["output_tokens"] == 5
+    assert any(gap["reason"] == "unfinished_work" for gap in observed["gaps"])
     assert failed.output["usage"]["total"]["inputTokens"] == 40
     assert "usage_complete" not in failed.output
     # The interrupted turn's usage never reaches a later invocation.
@@ -1646,6 +1672,7 @@ async def test_context_window_overflow_reports_usage_before_codex_fills_the_wind
         (
             "Inspect.",
             [
+                raw_response_event(40, 8),
                 usage_event(token_usage(40, 8)),
                 usage_event(
                     {
@@ -1660,7 +1687,7 @@ async def test_context_window_overflow_reports_usage_before_codex_fills_the_wind
     )
 
     assert failed.error.code == "codex_turn_failed"
-    assert failed.usage.to_mapping() == {
+    assert usage_counts(failed.usage) == {
         "input_tokens": 40,
         "cached_input_tokens": 0,
         "input_tokens_include_cache": True,
@@ -1669,19 +1696,21 @@ async def test_context_window_overflow_reports_usage_before_codex_fills_the_wind
     }
 
 
-async def test_rejected_request_keeps_the_usage_baseline(codex_payload, mock_codex):
+async def test_rejected_request_does_not_affect_the_next_invocation_usage(
+    codex_payload, mock_codex
+):
     first, rejected, third = await invoke_turns(
         codex_payload,
         mock_codex,
         ("Inspect.", turn_events(usage=token_usage(10, 3))),
         ({"messages": []}, None),
-        ("Continue.", turn_events(usage=token_usage(25, 7))),
+        ("Continue.", turn_events(usage=token_usage(25, 7), raw_usage=(15, 4, 0))),
     )
 
     assert first.usage.input_tokens == 10
     assert rejected.error.code == "codex_invalid_request"
     assert rejected.usage is None
-    assert third.usage.to_mapping() == {
+    assert usage_counts(third.usage) == {
         "input_tokens": 15,
         "cached_input_tokens": 0,
         "input_tokens_include_cache": True,
@@ -1726,7 +1755,7 @@ def test_custom_provider_uses_responses_api_and_configured_credential(
     assert output["completed"] is True
     client = mock_codex.instances[0]
     assert client.config.env["ACME_API_KEY"] == "acme-secret"
-    start = client.thread_start.await_args.kwargs
+    start = client.start_options
     assert start["model"] == "acme/code-model"
     assert start["model_provider"] == "acme"
     assert Path(client.config.env["CODEX_HOME"]).parts[-3:] == (
@@ -1841,7 +1870,7 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
     output = invoke_once(codex_payload)
 
     client = mock_codex.instances[0]
-    start = client.thread_start.await_args.kwargs
+    start = client.start_options
     config = start["config"]
     assert start["model_provider"] == "openai"
     assert client.config.env["NEMO_RELAY_GATEWAY_URL"] == gateway.url
@@ -2115,8 +2144,8 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
 
     assert output["failed"] is False
     client = mock_codex.instances[0]
-    start = client.thread_start.await_args.kwargs
-    assert start["personality"] == adapter.Personality.pragmatic
+    start = client.start_options
+    assert start["personality"] == "pragmatic"
     assert "service_name" not in start
     assert start["config"]["otel"] == {
         "environment": "test",
@@ -2328,3 +2357,131 @@ def test_main_serves_persistent_runtime(monkeypatch):
     serve.assert_called_once_with(
         adapter.CodexRuntime, config_loader=AgentConfig.from_mapping
     )
+
+
+@pytest.mark.parametrize(
+    "error", [ValueError("unsupported SDK event"), asyncio.CancelledError()]
+)
+async def test_unexpected_stream_error_quarantines_the_runtime_before_another_turn(
+    codex_payload, mock_codex, error
+):
+    mock_codex.next_thread = mock_thread("thread-123")
+    mock_codex.next_thread.turn.side_effect = [
+        mock_turn_handle([usage_event(token_usage(40, 8)), error]),
+        mock_turn_handle(turn_events(usage=token_usage(60, 10))),
+    ]
+    runtime = adapter.CodexRuntime()
+    start_payload = dict(codex_payload)
+    start_payload.pop("request")
+    await runtime.start(lifecycle_start_payload(start_payload))
+    try:
+        with pytest.raises(type(error), match=str(error) or None):
+            await runtime.invoke(*lifecycle_invocation(codex_payload))
+        after = await runtime.invoke(*lifecycle_invocation(codex_payload))
+        assert after.error.code == "codex_runtime_unavailable"
+        assert mock_codex.next_thread.turn.await_count == 1
+    finally:
+        await runtime.stop()
+
+
+async def test_reported_model_retry_keeps_observations_without_certifying_total(
+    codex_payload, mock_codex
+):
+    from openai_codex.generated.v2_all import ErrorNotification
+
+    retry = Notification(
+        method="error",
+        payload=ErrorNotification.model_validate(
+            {
+                "threadId": "thread-123",
+                "turnId": "turn-1",
+                "willRetry": True,
+                "error": {"message": "retrying model request"},
+            }
+        ),
+    )
+    first, second = await invoke_turns(
+        codex_payload,
+        mock_codex,
+        ("Inspect.", [retry, *turn_events(usage=token_usage(40, 8))]),
+        ("Next.", turn_events(usage=token_usage(60, 10), raw_usage=(20, 2, 0))),
+    )
+    assert first.usage.input_tokens is None
+    assert (
+        first.usage.extensions["nemo_fabric.usage_accounting.v1"]["observed"][
+            "input_tokens"
+        ]
+        == 40
+    )
+    assert second.usage.input_tokens == 20
+
+
+async def test_child_scope_gap_does_not_discard_an_independent_next_turn(
+    codex_payload, mock_codex
+):
+    from openai_codex.generated.v2_all import ItemStartedNotification
+
+    child = Notification(
+        method="item/started",
+        payload=ItemStartedNotification.model_validate(
+            {
+                "startedAtMs": 100000,
+                "threadId": "thread-123",
+                "turnId": "turn-1",
+                "item": {
+                    "type": "collabAgentToolCall",
+                    "id": "child",
+                    "tool": "spawnAgent",
+                    "status": "inProgress",
+                    "agentsStates": {},
+                    "receiverThreadIds": ["child-thread"],
+                    "senderThreadId": "thread-123",
+                },
+            }
+        ),
+    )
+    next_events = []
+    for event in turn_events(usage=token_usage(60, 10), raw_usage=(20, 2, 0)):
+        payload = event.payload
+        if isinstance(payload, UnknownNotification):
+            payload = UnknownNotification({**payload.params, "turnId": "turn-2"})
+        elif isinstance(payload, TurnCompletedNotification):
+            payload = payload.model_copy(
+                update={"turn": payload.turn.model_copy(update={"id": "turn-2"})}
+            )
+        else:
+            payload = payload.model_copy(update={"turn_id": "turn-2"})
+        next_events.append(Notification(method=event.method, payload=payload))
+    # A late report for the old parent turn cannot enter the new turn's usage.
+    next_events.insert(0, raw_response_event(999, 999))
+    next_events.insert(0, usage_event(token_usage(999, 999)))
+    first_handle = mock_turn_handle([child, *turn_events(usage=token_usage(40, 8))])
+    next_handle = mock_turn_handle(next_events)
+    next_handle.id = "turn-2"
+    mock_codex.next_thread = mock_thread("thread-123")
+    mock_codex.next_thread.turn.side_effect = [first_handle, next_handle]
+    runtime = adapter.CodexRuntime()
+    await runtime.start(lifecycle_start_payload(codex_payload))
+    try:
+        first = await runtime.invoke(*lifecycle_invocation(codex_payload))
+        frozen = first.to_mapping()
+        codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
+        second = await runtime.invoke(*lifecycle_invocation(codex_payload))
+    finally:
+        await runtime.stop()
+    assert first.usage.input_tokens is None
+    assert (
+        first.usage.extensions["nemo_fabric.usage_accounting.v1"]["observed"][
+            "input_tokens"
+        ]
+        == 40
+    )
+    assert first.to_mapping() == frozen
+    assert usage_counts(second.usage) == {
+        "input_tokens": 20,
+        "cached_input_tokens": 0,
+        "input_tokens_include_cache": True,
+        "output_tokens": 2,
+        "total_tokens": 22,
+    }
+    assert second.output["usage"]["total"]["inputTokens"] == 60
