@@ -180,7 +180,7 @@ pub struct AppliedPricing {
 }
 
 impl RateSnapshot {
-    fn from_rates(rates: TokenPricingRates) -> Result<Self, &'static str> {
+    pub(crate) fn from_rates(rates: TokenPricingRates) -> Result<Self, &'static str> {
         let convert = |rate| {
             nano_usd_per_million_tokens(rate)
                 .and_then(|value| u64::try_from(value).ok())
