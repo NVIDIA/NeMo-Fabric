@@ -44,6 +44,42 @@ function validate(record: UsageObservation): void {
   }
 }
 
+// Keep low-order cost contributions until the final round, matching math.fsum.
+// Inputs have already passed the finite, nonnegative cost validation.
+function sumCosts(values: readonly number[]): number {
+  const partials: number[] = [];
+  for (let high of values) {
+    let retained = 0;
+    for (let low of partials) {
+      if (Math.abs(high) < Math.abs(low)) [high, low] = [low, high];
+      const sum = high + low;
+      const residual = low - (sum - high);
+      if (residual !== 0) partials[retained++] = residual;
+      high = sum;
+    }
+    partials.length = retained;
+    partials.push(high);
+  }
+  let index = partials.length;
+  let total = index === 0 ? 0 : partials[--index]!;
+  let residual = 0;
+  while (index > 0) {
+    const high = total;
+    const low = partials[--index]!;
+    total = high + low;
+    residual = low - (total - high);
+    if (residual !== 0) break;
+  }
+  // Preserve round-to-even when the remaining low-order terms share a sign.
+  if (index > 0 && ((residual < 0 && partials[index - 1]! < 0) ||
+      (residual > 0 && partials[index - 1]! > 0))) {
+    const correction = residual * 2;
+    const rounded = total + correction;
+    if (correction === rounded - total) total = rounded;
+  }
+  return total;
+}
+
 function reduce(records: readonly UsageObservation[]): { reported: ReportedUsage; observed: ReportedUsage; gaps: UsageGap[] } {
   const reported: ReportedUsage = {};
   const observed: ReportedUsage = {};
@@ -58,7 +94,7 @@ function reduce(records: readonly UsageObservation[]): { reported: ReportedUsage
     let value: number | undefined;
     if (values.length) {
       if (key === "cost_usd") {
-        const total = values.reduce((sum, item) => sum + item, 0);
+        const total = sumCosts(values);
         if (Number.isFinite(total) && total * 1e9 < 2 ** 64) value = total;
       } else if (key === "peak_request_input_tokens") {
         value = values.reduce((maximum, item) => Math.max(maximum, item));
