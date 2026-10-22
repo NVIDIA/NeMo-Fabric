@@ -191,7 +191,7 @@ zero-filled terminal usage and process-cumulative `modelUsage` remain diagnostic
 in `output`; they do not fill missing provider fields.
 
 The adapter sends these observations through
-`nemo_fabric.usage_accounting.v1`. Fabric's shared accounting code normalizes
+`nemo_fabric.usage_accounting.v1`. NeMo Fabric's shared accounting code normalizes
 input to include cache reads and writes, keeps independently known counters,
 and separates complete totals from observations with accounting gaps. A failed
 terminal result can still have complete usage. A missing terminal result or a
@@ -214,8 +214,8 @@ Claude Code's `total_cost_usd` is a CLI estimate, not provider-reported cost.
 `usage.cost_usd` stays unknown. The existing `output.cost_usd` diagnostic keeps a
 per-invocation CLI estimate when a cumulative baseline is valid. A crash invalidates
 the baseline; an actual background task disables these diagnostic deltas for the
-rest of that runtime because late work can cross invocation boundaries. Fabric
-can separately estimate cost from qualified model usage and an applicable price
-catalog. Custom endpoints do not establish native Anthropic pricing identity. With Relay enabled,
+rest of that runtime because late work can cross invocation boundaries.
+This collector does not populate `model_usage.cost.estimated`.
+Custom endpoints do not establish native Anthropic pricing identity. With Relay enabled,
 pricing identity follows its launched upstream, including
 `NEMO_RELAY_ANTHROPIC_BASE_URL` when no explicit model endpoint overrides it.
