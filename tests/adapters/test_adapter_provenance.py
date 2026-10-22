@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -22,6 +23,12 @@ from nemo_fabric_adapter_contract.models import (
 from nemo_fabric_adapters.common import provenance
 
 
+_NOOA_PYTHON = pytest.mark.skipif(
+    not ((3, 12) <= sys.version_info[:2] < (3, 14)),
+    reason="NOOA requires Python 3.12 or 3.13",
+)
+
+
 @pytest.mark.parametrize(
     ("module", "runtime_type"),
     [
@@ -30,8 +37,8 @@ from nemo_fabric_adapters.common import provenance
         ("deepagents", "DeepAgentsRuntime"),
         ("hermes", "HermesRuntime"),
         ("mini_swe_agent", "MiniSweAgentRuntime"),
-        ("nooa", "NooaRuntime"),
-        ("nooa.bench", "BenchRuntime"),
+        pytest.param("nooa", "NooaRuntime", marks=_NOOA_PYTHON),
+        pytest.param("nooa.bench", "BenchRuntime", marks=_NOOA_PYTHON),
         ("openhands", "OpenHandsRuntime"),
         ("remote_agent", "RemoteAgentRuntime"),
     ],
