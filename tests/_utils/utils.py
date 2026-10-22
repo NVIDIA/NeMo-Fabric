@@ -22,11 +22,17 @@ def assert_atof_skill_selection(
     output: Mapping[str, Any], expected_skill: str | None
 ) -> None:
     records = atof_records(output)
-    tool_records = [record for record in records if record["category"] == "tool"]
+    tool_records = [
+        record
+        for record in records
+        if record["kind"] == "scope" and record["category"] == "tool"
+    ]
     llm_end_records = [
         record
         for record in records
-        if record["category"] == "llm" and record["scope_category"] == "end"
+        if record["kind"] == "scope"
+        and record["category"] == "llm"
+        and record["scope_category"] == "end"
     ]
     serialized_tool_records = json.dumps(tool_records).replace("\\\\", "/")
     serialized_skill_calls = json.dumps(tool_records + llm_end_records).replace(
@@ -55,7 +61,9 @@ def assert_atof_model(output: Mapping[str, Any], expected_model: str) -> None:
     llm_starts = [
         record
         for record in events
-        if record["category"] == "llm" and record["scope_category"] == "start"
+        if record["kind"] == "scope"
+        and record["category"] == "llm"
+        and record["scope_category"] == "start"
     ]
     assert llm_starts, events
     assert {record["data"]["content"]["model"] for record in llm_starts} == {
@@ -81,7 +89,9 @@ def assert_semantic_relay_artifacts(
     llm_starts = [
         event
         for event in events
-        if event.get("category") == "llm" and event.get("scope_category") == "start"
+        if event["kind"] == "scope"
+        and event["category"] == "llm"
+        and event["scope_category"] == "start"
     ]
     assert llm_starts, events
     assert all(
@@ -92,7 +102,9 @@ def assert_semantic_relay_artifacts(
     llm_ends = [
         event
         for event in events
-        if event.get("category") == "llm" and event.get("scope_category") == "end"
+        if event["kind"] == "scope"
+        and event["category"] == "llm"
+        and event["scope_category"] == "end"
     ]
     assert llm_ends, events
     assert any(_relay_event_total_tokens(event) > 0 for event in llm_ends)

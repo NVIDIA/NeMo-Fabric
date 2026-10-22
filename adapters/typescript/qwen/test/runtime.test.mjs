@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { QwenAdapterRuntime } from "../dist/runtime.js";
+import { QwenAdapterRuntime, QwenPromptError } from "../dist/runtime.js";
 
 function startInput(id = "runtime-1") {
   return {
@@ -71,4 +71,36 @@ test("invalidates a broken session and keeps stop safe", async () => {
     (error) => error.code === "qwen_session_failed" && !error.message.includes("secret"));
   await runtime.stop();
   assert.equal(closes, 1);
+});
+
+
+test("terminal failures retire the query before another invocation can receive late counters", async () => {
+  let closes = 0;
+  const runtime = new QwenAdapterRuntime({ async create() { return {
+    async prompt() { return { error: "error_during_execution", usage: { extensions: { "nemo_fabric.usage_accounting.v1": { models_exhaustive: false, observed: { input_tokens: 40 }, gaps: [] } } } }; },
+    async close() { closes++; },
+  }; } });
+  await runtime.start(startInput());
+  const result = await runtime.invoke({ input: "one" }, startInput().runtimeContext);
+  assert.equal(result.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 40);
+  assert.equal(closes, 1);
+  await assert.rejects(runtime.invoke({ input: "two" }, startInput().runtimeContext), error => error.code === "qwen_not_started");
+});
+
+test("a raised stream returns received observations and invalidates its runtime", async () => {
+  let closes = 0;
+  const usage = { extensions: { "nemo_fabric.usage_accounting.v1": { models_exhaustive: false,
+    observed: { input_tokens: 40 }, gaps: [{ reason: "unfinished_work", dimensions: ["input_tokens"] }] } } };
+  const runtime = new QwenAdapterRuntime({ async create() { return {
+    async prompt() { throw new QwenPromptError(usage, new Error("private transport detail")); },
+    async close() { closes++; },
+  }; } });
+  await runtime.start(startInput());
+  const result = await runtime.invoke({ input: "one" }, startInput().runtimeContext);
+  assert.equal(result.status, "failed");
+  assert.equal(result.error.retryable, true);
+  assert.equal(result.error.message.includes("private"), false);
+  assert.deepEqual(result.usage, usage);
+  assert.equal(closes, 1);
+  await assert.rejects(runtime.invoke({ input: "two" }, startInput().runtimeContext), error => error.code === "qwen_not_started");
 });

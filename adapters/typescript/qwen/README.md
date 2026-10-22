@@ -94,18 +94,8 @@ every explicitly configured server.
 
 The adapter accepts plain-text input and returns the terminal assistant text in
 `output.response`. Qwen Code reports cumulative usage for a live query, so the
-adapter returns the per-invocation difference. Input counts include cache
-reads. Cache reads are reported when the cumulative cache counter grows. Zero
-growth remains unknown because Qwen cannot distinguish a reported zero from an
-omitted cache count. An input, output, or total count that did not grow is also
-unknown, because Qwen Code records a count the provider omitted as 0 and its
-result does not show whether the model was called. For example, `/compress`
-can call the model, but Qwen reports zero turns and zero API duration for it.
-The invocation that runs `/clear` returns no usage, because Qwen Code resets
-its counters. Qwen's cumulative results do not identify individual responses
-with missing usage. If some calls report tokens and others do not, positive
-deltas can undercount the invocation. Create a new runtime to change the
-selected model, workspace, system instructions, skills, MCP servers, tool
+adapter keeps the per-invocation difference as observed usage. Create a new runtime to change
+the selected model, workspace, system instructions, skills, MCP servers, tool
 policy, or permission mode.
 
 The adapter gives the child process isolated temporary Qwen home and runtime
@@ -155,3 +145,30 @@ flowchart TB
 
 For installation, configuration, and operational guidance, refer to the
 [Qwen Code integration guide](../../../docs/integrations/harness/qwen.mdx).
+
+## Token usage
+
+Qwen's result counters cover the live CLI session. The adapter retains their
+positive differences for this invocation in `nemo_fabric.usage_accounting.v1`.
+An omitted dimension or a zero-filled counter that did not grow remains
+unknown. A session switch or counter reset establishes a new baseline;
+later warm turns retain their own differences. Cache-only growth is retained
+independently. The adapter never derives a provider total or USD cost.
+
+Complete totals remain unknown because the public terminal counters hide
+responses that omitted usage. The default Qwen0.24.6 bundled with SDK0.1.16
+also runs managed-memory extraction calls that are absent from public assistant
+messages. Compression calls can report zero turns despite calling the model.
+Counting assistant messages or terminal turns therefore cannot establish full
+coverage. These are source limitations, recorded as `scope_unverified`, while
+the observed counts remain available.
+
+A stream that ends without a terminal result keeps received assistant usage as
+unfinished observations. Failed queries are retired so late usage cannot enter
+another invocation. Successful queries retain their existing warm-session
+behavior. Memory extraction, compression and tools remain enabled according to
+the harness's existing configuration.
+
+The supported local telemetry file preserves more call detail, but its batched
+export has no SDK flush boundary at invocation return. Fabric does not infer
+completeness from a quiet file or parse that unversioned diagnostic format.

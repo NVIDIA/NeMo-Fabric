@@ -4,6 +4,12 @@
 import type { AgentRunRequest, AgentRunResult, AgentUsage, RuntimeContext } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
+export class QwenPromptError extends LifecycleError {
+  constructor(readonly usage: AgentUsage, readonly cause: unknown) {
+    super("qwen_session_failed", "Qwen session communication failed", { retryable: true });
+  }
+}
+
 export interface QwenTurn {
   text?: string;
   error?: "error_max_turns" | "error_during_execution" | "error_mcp_unavailable";
@@ -40,12 +46,20 @@ export class QwenAdapterRuntime implements AdapterRuntime {
     let turn: QwenTurn;
     try {
       turn = await session.prompt(request.input);
-    } catch {
+    } catch (error) {
       this.session = undefined;
       try { await session.close(); } catch { /* Preserve the original failure. */ }
+      if (error instanceof QwenPromptError) {
+        return { status: "failed", output: null, usage: error.usage,
+          error: { code: error.code, message: error.message, retryable: error.retryable } };
+      }
       throw new LifecycleError("qwen_session_failed", "Qwen session communication failed", { retryable: true });
     }
     if (turn.error !== undefined) {
+      // Error exits need not wait for memory tasks before their terminal usage.
+      // Retire this query so late counters cannot enter another invocation.
+      this.session = undefined;
+      try { await session.close(); } catch { /* Preserve the failed result and its evidence. */ }
       if (turn.error === "error_mcp_unavailable") {
         return failed("qwen_mcp_unavailable", "A configured Qwen MCP server was unavailable", turn.usage);
       }

@@ -5,8 +5,9 @@
 
 These tests stub the ``deepagents``/``langchain``/``langgraph`` SDKs so they run
 without the real harness installed; they assert the normalized Fabric result and
-the live runtime's thread continuity. The real SDK is exercised by the opt-in
-integration test in ``tests/e2e/test_deepagents.py``.
+the live runtime's thread continuity. Pinned model/graph boundaries also run in
+``test_deepagents_accounting.py`` against scripted transports. Credentialed
+integration coverage lives in ``tests/e2e/test_deepagents.py``.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import ANY
 
 import pytest
 from langchain_openai import ChatOpenAI as InstalledChatOpenAI
@@ -1445,7 +1447,7 @@ def test_native_telemetry_requires_mapping(tmp_path, make_payload):
         )
 
 
-async def test_relay_disabled_adds_no_scope_or_callbacks(
+async def test_relay_disabled_adds_no_relay_scope_or_callbacks(
     tmp_path, make_payload, fake_sdks
 ):
     # With telemetry disabled the invocation runs without a Relay scope, callback
@@ -1454,7 +1456,9 @@ async def test_relay_disabled_adds_no_scope_or_callbacks(
 
     assert output["completed"] is True
     assert "telemetry" not in output
-    assert (fake_sdks["config"] or {}).get("callbacks") is None
+    callbacks = fake_sdks["config"]["callbacks"]
+    assert len(callbacks) == 1
+    assert isinstance(callbacks[0], adapter.ModelCallUsage)
     assert "relay-mw" not in (fake_sdks["create_kwargs"].get("middleware") or [])
 
 
@@ -2111,8 +2115,8 @@ def test_aggregate_usage_discards_tokens_larger_than_uint64():
 async def test_replayed_state_usage_counts_current_turn_only(
     tmp_path, make_payload, monkeypatch
 ):
-    # On a later turn the final state replays prior messages; usage and
-    # cost must reflect only the message emitted this turn, not the replayed one.
+    # Existing-behavior coverage: the graph-message diagnostic excludes replayed
+    # messages. Model-call accounting is independent of this diagnostic.
     import deepagents
 
     prior = {
@@ -2428,8 +2432,8 @@ def test_deepagents_passthrough_rejects_fabric_owned_option():
 
 
 async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monkeypatch):
-    # Usage from a delegated subagent is emitted under a subgraph namespace; folding
-    # it into this turn keeps usage/cost accurate. Duplicate ids are counted once.
+    # Existing-behavior coverage: graph-message diagnostics include subgraph
+    # messages. Duplicate message ids are counted once.
     import deepagents
 
     sub_ai = {
@@ -2549,6 +2553,10 @@ async def test_openai_compatible_model_receives_normalized_sampling(
         temperature=0.2,
         top_p=0.8,
         max_completion_tokens=256,
+        http_client=ANY,
+        http_async_client=ANY,
+        metadata=ANY,
+        cache=ANY,
     )
 
 
@@ -2599,6 +2607,10 @@ async def test_unset_sampling_preserves_chat_model_defaults(
         model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
         api_key="test123",
         base_url="https://integrate.api.nvidia.com/v1",
+        http_client=ANY,
+        http_async_client=ANY,
+        metadata=ANY,
+        cache=ANY,
     )
 
 

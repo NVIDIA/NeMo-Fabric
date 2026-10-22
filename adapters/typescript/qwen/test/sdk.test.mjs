@@ -2,14 +2,43 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, mkdir, rename, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { QwenSdkSessionFactory, QwenUsageTracker } from "../dist/qwen-sdk.js";
+
+async function archiveTemporary(path) {
+  const trash = join(homedir(), "trash", "nemo-fabric");
+  await mkdir(trash, { recursive: true });
+  try { await rename(path, join(trash, `${basename(path)}-${randomUUID()}`)); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
+}
+
+const key = "nemo_fabric.usage_accounting.v1";
+function observedUsage(usage) {
+  for (const field of ["input_tokens", "cached_input_tokens", "output_tokens", "total_tokens", "cost_usd"]) {
+    assert.equal(usage?.[field], undefined, `aggregate cannot certify ${field}`);
+  }
+  const raw = usage?.extensions?.[key]?.observed ?? {};
+  const reported = Object.fromEntries(Object.entries(raw).filter(([field]) =>
+    ["input_tokens", "cached_input_tokens", "input_tokens_include_cache", "output_tokens", "total_tokens"].includes(field)));
+  return Object.keys(reported).length ? reported : undefined;
+}
+function createTracker() {
+  const source = new QwenUsageTracker();
+  return { next(value) { return observedUsage(source.next(value)); } };
+}
+function sourceSession(session) {
+  return { async prompt(input) {
+    const result = await session.prompt(input);
+    return { ...result, usage: observedUsage(result.usage) };
+  }, close() { return session.close(); } };
+}
 
 const mcpServerPath = fileURLToPath(new URL("./fixtures/mcp-server.mjs", import.meta.url));
 
@@ -19,8 +48,8 @@ function qwenResult(usage, session = "session-1") {
   return { session_id: session, num_turns: 0, duration_api_ms: 0, usage };
 }
 
-test("Qwen usage reports growth and leaves counters that did not grow unknown", () => {
-  const tracker = new QwenUsageTracker();
+test("Qwen usage preserves observed growth and leaves no-growth dimensions absent", () => {
+  const tracker = createTracker();
   assert.deepEqual(
     tracker.next(qwenResult({ input_tokens: 20, output_tokens: 8, cache_read_input_tokens: 6, total_tokens: 28 })),
     { input_tokens: 20, input_tokens_include_cache: true, cached_input_tokens: 6, output_tokens: 8, total_tokens: 28 },
@@ -39,7 +68,7 @@ test("Qwen usage reports growth and leaves counters that did not grow unknown", 
 });
 
 test("Qwen usage is unknown when the session ID changes", () => {
-  const tracker = new QwenUsageTracker();
+  const tracker = createTracker();
   tracker.next(qwenResult({ input_tokens: 10, output_tokens: 4, total_tokens: 14 }));
   // A resumed session replays its history into the counters, so they grow.
   assert.equal(tracker.next(qwenResult({ input_tokens: 90, output_tokens: 30, total_tokens: 120 }, "session-2")), undefined);
@@ -53,7 +82,7 @@ test("Qwen usage leaves counters that Qwen Code corrupted unknown", () => {
   // Raw result shapes from the bundled CLI when a provider sends a string, a
   // negative, or an unsafe prompt_tokens value on each of two requests.
   for (const input_tokens of ["0055", -10, 18014398509481984]) {
-    const tracker = new QwenUsageTracker();
+    const tracker = createTracker();
     assert.deepEqual(
       tracker.next(qwenResult({ input_tokens, output_tokens: 4, cache_read_input_tokens: 0, total_tokens: 14 })),
       { output_tokens: 4, total_tokens: 14 },
@@ -61,16 +90,16 @@ test("Qwen usage leaves counters that Qwen Code corrupted unknown", () => {
   }
 });
 
-test("Qwen usage leaves a derived total above the safe integer range unknown", () => {
-  const tracker = new QwenUsageTracker();
+test("Qwen usage retains safe source dimensions without deriving an overflowing total", () => {
+  const tracker = createTracker();
   assert.deepEqual(
     tracker.next(qwenResult({ input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: 2, cache_read_input_tokens: 0 })),
     { input_tokens: Number.MAX_SAFE_INTEGER, input_tokens_include_cache: true, output_tokens: 2 },
   );
 });
 
-test("Qwen usage derives a total only from known parts", () => {
-  const tracker = new QwenUsageTracker();
+test("Qwen usage leaves an omitted provider total absent", () => {
+  const tracker = createTracker();
   assert.equal(tracker.next(qwenResult({ input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0 })), undefined);
   assert.deepEqual(
     tracker.next(qwenResult({ input_tokens: 7, output_tokens: 0, cache_read_input_tokens: 0 })),
@@ -96,7 +125,7 @@ test("bundled Qwen CLI keeps context across two SDK prompts", { timeout: 45_000 
   let session;
   try {
     const port = server.address().port;
-    session = await new QwenSdkSessionFactory().create({
+    session = sourceSession(await new QwenSdkSessionFactory().create({
       agentName: "qwen-test", baseDir: process.cwd(),
       config: {
         models: { default: { provider: "openai", model: "fabric-test-model", api_key_env: "FABRIC_QWEN_TEST_KEY", base_url: `http://127.0.0.1:${port}/v1` } },
@@ -106,7 +135,7 @@ test("bundled Qwen CLI keeps context across two SDK prompts", { timeout: 45_000 
         artifacts: {}, environment: { control_location: "external_control", env: { FABRIC_QWEN_TEST_KEY: "local-test-key" }, environment_id: "env-1", ownership: "caller_owned", provider: "local", workspace: process.cwd() },
         invocation_id: "start", request_id: "start", runtime_id: "runtime-1",
       },
-    });
+    }));
     const first = await session.prompt("Remember token cobalt");
     const second = await session.prompt("Which token did I ask you to remember?");
     assert.equal(first.text, "turn-1", JSON.stringify(first));
@@ -141,14 +170,14 @@ async function withFakeQwen(usageForRequest, runtimeId, run) {
   let session;
   try {
     const port = server.address().port;
-    session = await new QwenSdkSessionFactory().create({
+    session = sourceSession(await new QwenSdkSessionFactory().create({
       agentName: runtimeId, baseDir: process.cwd(),
       config: { models: { default: { provider: "openai", model: "fabric-test-model", api_key_env: "FABRIC_QWEN_TEST_KEY", base_url: `http://127.0.0.1:${port}/v1` } } },
       runtimeContext: {
         artifacts: {}, environment: { control_location: "external_control", env: { FABRIC_QWEN_TEST_KEY: "local-test-key" }, environment_id: "env-1", ownership: "caller_owned", provider: "local", workspace: process.cwd() },
         invocation_id: "start", request_id: "start", runtime_id: runtimeId,
       },
-    });
+    }));
     await run(session, requests);
   } finally {
     await session?.close();
@@ -165,7 +194,7 @@ function compressionRequests(requests) {
 
 // A normal run: every response reports usage, and only the second prompt
 // hits the prompt cache.
-test("Qwen SDK reports known counts for every prompt of a normal run", { timeout: 60_000 }, async () => {
+test("Qwen SDK preserves observations for every prompt of a normal run", { timeout: 60_000 }, async () => {
   let cached = 0;
   const usageForRequest = () => ({ prompt_tokens: 5, completion_tokens: 2, total_tokens: 7, prompt_tokens_details: { cached_tokens: cached } });
   await withFakeQwen(usageForRequest, "runtime-normal-run", async (session, requests) => {
@@ -224,7 +253,7 @@ test("Qwen SDK leaves usage unknown for the invocation that resets its counters"
   });
 });
 
-test("Qwen SDK reports no usage when the provider reports none", { timeout: 45_000 }, async () => {
+test("Qwen SDK records no observed counts when the provider reports none", { timeout: 45_000 }, async () => {
   await withFakeQwen(() => undefined, "runtime-no-usage", async (session) => {
     const turn = await session.prompt("Question without usage");
     assert.equal(turn.text, "done", JSON.stringify(turn));
@@ -296,7 +325,7 @@ test("Qwen SDK exposes an explicit skill", { timeout: 45_000 }, async () => {
   let session;
   try {
     const port = server.address().port;
-    session = await new QwenSdkSessionFactory().create({
+    session = sourceSession(await new QwenSdkSessionFactory().create({
       agentName: "qwen-capabilities", baseDir: workspace,
       config: {
         models: { default: { provider: "openai", model: "fabric-test-model", api_key_env: "FABRIC_QWEN_TEST_KEY", base_url: `http://127.0.0.1:${port}/v1` } },
@@ -306,7 +335,7 @@ test("Qwen SDK exposes an explicit skill", { timeout: 45_000 }, async () => {
         artifacts: {}, environment: { control_location: "external_control", env: { FABRIC_QWEN_TEST_KEY: "local-test-key" }, environment_id: "env-1", ownership: "caller_owned", provider: "local", workspace },
         invocation_id: "start", request_id: "start", runtime_id: "runtime-capabilities",
       },
-    });
+    }));
     assert.equal((await session.prompt("List capabilities")).text, "ready");
     assert.match(JSON.stringify(requests), /fabric-probe-skill/);
     // Qwen lists workspace files in a separate system reminder, so test the
@@ -318,7 +347,7 @@ test("Qwen SDK exposes an explicit skill", { timeout: 45_000 }, async () => {
     await session?.close();
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
-    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await archiveTemporary(workspace);
   }
 });
 
@@ -386,7 +415,7 @@ test("Qwen SDK discovers and executes normalized MCP servers", { timeout: 45_000
   try {
     const port = server.address().port;
     const mcpPort = mcpEndpoint.address().port;
-    session = await new QwenSdkSessionFactory().create({
+    session = sourceSession(await new QwenSdkSessionFactory().create({
       agentName: "qwen-mcp", baseDir: process.cwd(),
       config: {
         models: { default: { provider: "openai", model: "fabric-test-model", api_key_env: "FABRIC_QWEN_TEST_KEY", base_url: `http://127.0.0.1:${port}/v1` } },
@@ -404,7 +433,7 @@ test("Qwen SDK discovers and executes normalized MCP servers", { timeout: 45_000
         artifacts: {}, environment: { control_location: "external_control", env: { FABRIC_QWEN_TEST_KEY: "local-test-key", MCP_TOKEN: "mcp-test-token" }, environment_id: "env-1", ownership: "caller_owned", provider: "local", workspace: process.cwd() },
         invocation_id: "start", request_id: "start", runtime_id: "runtime-mcp",
       },
-    });
+    }));
     assert.equal((await session.prompt("Use the MCP server if needed")).text, "mcp-ready");
     const serialized = JSON.stringify(requests);
     assert.match(serialized, /mcp__probe__echo/);
@@ -435,7 +464,7 @@ test("Qwen SDK reports an unavailable configured MCP server", { timeout: 45_000 
   let session;
   try {
     const port = server.address().port;
-    session = await new QwenSdkSessionFactory().create({
+    session = sourceSession(await new QwenSdkSessionFactory().create({
       agentName: "qwen-mcp-failure", baseDir: process.cwd(),
       config: {
         models: { default: { provider: "openai", model: "fabric-test-model", api_key_env: "FABRIC_QWEN_TEST_KEY", base_url: `http://127.0.0.1:${port}/v1` } },
@@ -447,7 +476,7 @@ test("Qwen SDK reports an unavailable configured MCP server", { timeout: 45_000 
         artifacts: {}, environment: { control_location: "external_control", env: { FABRIC_QWEN_TEST_KEY: "local-test-key" }, environment_id: "env-1", ownership: "caller_owned", provider: "local", workspace: process.cwd() },
         invocation_id: "start", request_id: "start", runtime_id: "runtime-mcp-failure",
       },
-    });
+    }));
     assert.equal((await session.prompt("Use the unavailable MCP server")).error, "error_mcp_unavailable");
   } finally {
     await session?.close();

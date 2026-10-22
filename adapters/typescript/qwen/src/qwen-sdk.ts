@@ -9,12 +9,12 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
-import type { AgentUsage } from "nemo-fabric-adapter-contract";
+import { usageFromObservations, type UsageObservation, type AgentUsage } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
 import type { Query, SDKResultMessage, SDKUserMessage } from "@qwen-code/sdk";
 
 import { rejectUnclaimedConfig, selectBlockedTools, selectMcpServers, selectModel, selectPermissionMode, selectSkillPaths, selectSystemPrompt } from "./configuration.js";
-import type { QwenSession, QwenSessionFactory, QwenTurn } from "./runtime.js";
+import { QwenPromptError, type QwenSession, type QwenSessionFactory, type QwenTurn } from "./runtime.js";
 
 const STREAM_CLOSE_TIMEOUT_MS = 10;
 const MCP_FAILURE_MARKER = "Warning: MCP server(s) failed to start:";
@@ -87,75 +87,76 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
   }
 }
 
-interface UsageCounters {
-  input?: number;
-  cachedInput?: number;
-  output?: number;
-  total?: number;
-  totalDerived: boolean;
-}
-
-function count(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
-}
-
-function usageCounters(usage: SDKResultMessage["usage"]): UsageCounters {
-  const input = count(usage.input_tokens);
-  const output = count(usage.output_tokens);
-  const reportedTotal = count(usage.total_tokens);
-  // Qwen Code omits total_tokens while its running total is still 0.
-  const total = reportedTotal ?? (input === undefined || output === undefined ? undefined : count(input + output));
-  return { input, cachedInput: count(usage.cache_read_input_tokens), output, total, totalDerived: reportedTotal === undefined };
-}
-
-function growth(current: number | undefined, previous: number | undefined): number | undefined {
-  return current === undefined || previous === undefined ? undefined : current - previous;
-}
-
-function usageSince(current: UsageCounters, previous: UsageCounters): AgentUsage | undefined {
-  const grown = [
-    growth(current.input, previous.input),
-    growth(current.cachedInput, previous.cachedInput),
-    growth(current.output, previous.output),
-    growth(current.total, previous.total),
-  ];
-  // Qwen Code resets all of its counters together, so one counter going down
-  // means no part of this invocation's usage can be measured.
-  if (grown.some((part) => part !== undefined && part < 0)) return undefined;
-  // Qwen Code records a count the provider omitted as 0, and its result does
-  // not show whether the model was called: slash commands such as /compress
-  // report zero turns and API duration although they can call the model. So a
-  // counter that did not grow is unknown.
-  const [input, cachedInput, output, grownTotal] = grown.map((part) => (part === 0 ? undefined : part));
-  const total = current.totalDerived && (input === undefined || output === undefined) ? undefined : grownTotal;
-  if (input === undefined && output === undefined && total === undefined) return undefined;
-  return {
-    // Qwen Code counts prompt tokens with their cache reads included.
-    ...(input === undefined ? {} : { input_tokens: input, input_tokens_include_cache: true }),
-    ...(cachedInput === undefined ? {} : { cached_input_tokens: cachedInput }),
-    ...(output === undefined ? {} : { output_tokens: output }),
-    ...(total === undefined ? {} : { total_tokens: total }),
-  };
-}
-
 type UsageResult = Pick<SDKResultMessage, "session_id" | "usage">;
+type Counters = UsageObservation["reported"];
 
-/** Turns Qwen Code's cumulative result usage into usage for each invocation. */
+const count = (value: unknown): number | undefined => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+function sourceCounters(value: unknown): Counters {
+  const usage = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+  const result: Counters = {};
+  for (const [source, destination] of [["input_tokens", "input_tokens"], ["cache_read_input_tokens", "cached_input_tokens"],
+    ["output_tokens", "output_tokens"], ["total_tokens", "total_tokens"]] as const) {
+    const measured = count(usage[source]);
+    if (measured !== undefined) result[destination] = measured;
+  }
+  if (!Object.hasOwn(usage, "total_tokens")) result.total_tokens = 0; // Native computeUsageFromMetrics omits only a zero cumulative total.
+  return result;
+}
+
+/** Source cumulative deltas remain observations: the CLI hides mixed omissions. */
 export class QwenUsageTracker {
-  private previousUsage: UsageCounters = { input: 0, cachedInput: 0, output: 0, total: 0, totalDerived: false };
-  private previousSessionId?: string;
+  private previous: Counters = { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+  private sessionId?: string;
 
-  next(result: UsageResult): AgentUsage | undefined {
-    const current = usageCounters(result.usage);
-    const previous = this.previousUsage;
-    // Qwen Code resets its counters on /clear and replays a resumed session's
-    // history into them, so after a new session ID the difference does not
-    // describe this invocation.
-    const sessionChanged = this.previousSessionId !== undefined && this.previousSessionId !== result.session_id;
-    this.previousUsage = current;
-    this.previousSessionId = result.session_id;
-    if (sessionChanged) return undefined;
-    return usageSince(current, previous);
+  next(result: UsageResult): AgentUsage {
+    const current = sourceCounters(result.usage);
+    const previous = this.previous;
+    const changed = this.sessionId !== undefined && this.sessionId !== result.session_id;
+    this.previous = current;
+    this.sessionId = result.session_id;
+    const fields = ["input_tokens", "cached_input_tokens", "output_tokens", "total_tokens"] as const;
+    if (changed || fields.some(field => current[field] !== undefined && previous[field] !== undefined && current[field]! < previous[field]!)) {
+      return usageFromObservations([{ reported: {}, gap: "scope_unverified" }]);
+    }
+    const reported: Counters = {};
+    for (const field of fields) {
+      if (current[field] !== undefined && previous[field] !== undefined && current[field]! > previous[field]!) {
+        reported[field] = current[field]! - previous[field]!;
+      }
+    }
+    if (reported.input_tokens !== undefined) reported.input_tokens_include_cache = true;
+    if (reported.output_tokens !== undefined) reported.output_tokens_include_reasoning = true;
+    return usageFromObservations([{ reported, gap: "scope_unverified" }]);
+  }
+}
+
+/** Final assistant messages preserve useful evidence if no terminal arrives. */
+export class QwenStreamUsage {
+  private readonly messages = new Map<string, Counters>();
+  private conflict = false;
+
+  consume(value: unknown): void {
+    if (typeof value !== "object" || value === null || !("type" in value) || value.type !== "assistant" || !("message" in value)) return;
+    const message = value.message as { id?: unknown; usage?: unknown } | null;
+    if (message === null || typeof message !== "object" || typeof message.id !== "string" || !message.id) return;
+    const raw = sourceCounters(message.usage);
+    const reported: Counters = {};
+    for (const field of ["input_tokens", "cached_input_tokens", "output_tokens", "total_tokens"] as const) {
+      if (raw[field] !== undefined && raw[field]! > 0) reported[field] = raw[field];
+    }
+    if (reported.input_tokens !== undefined) reported.input_tokens_include_cache = true;
+    if (reported.output_tokens !== undefined) reported.output_tokens_include_reasoning = true;
+    const previous = this.messages.get(message.id);
+    if (previous !== undefined) {
+      if (JSON.stringify(previous) !== JSON.stringify(reported)) this.conflict = true;
+    } else this.messages.set(message.id, reported);
+  }
+
+  finish(): AgentUsage {
+    const records: UsageObservation[] = [...this.messages.values()].map(reported => ({ reported, gap: "unfinished_work" }));
+    if (!records.length) records.push({ reported: {}, gap: "unfinished_work" });
+    if (this.conflict) records.push({ reported: {}, gap: "scope_unverified" });
+    return usageFromObservations(records);
   }
 }
 
@@ -180,18 +181,24 @@ class QwenSdkSession implements QwenSession {
       message: { role: "user", content: input },
       parent_tool_use_id: null,
     });
-    while (true) {
-      const next = await this.query.next();
-      if (next.done) throw new LifecycleError("qwen_session_ended", "Qwen session ended before a result");
-      if (next.value.type !== "result") continue;
-      const result = next.value;
-      const turnUsage = this.usage.next(result);
-      if (this.diagnostics.hasMcpFailure()) {
-        return { error: "error_mcp_unavailable", usage: turnUsage };
+    const evidence = new QwenStreamUsage();
+    try {
+      while (true) {
+        const next = await this.query.next();
+        evidence.consume(next.value);
+        if (next.done) throw new LifecycleError("qwen_session_ended", "Qwen session ended before a result");
+        if (next.value.type !== "result") continue;
+        const result = next.value;
+        const turnUsage = this.usage.next(result);
+        if (this.diagnostics.hasMcpFailure()) {
+          return { error: "error_mcp_unavailable", usage: turnUsage };
+        }
+        return result.subtype === "success"
+          ? { text: result.result, usage: turnUsage }
+          : { error: result.subtype, usage: turnUsage };
       }
-      return result.subtype === "success"
-        ? { text: result.result, usage: turnUsage }
-        : { error: result.subtype, usage: turnUsage };
+    } catch (error) {
+      throw new QwenPromptError(evidence.finish(), error);
     }
   }
 

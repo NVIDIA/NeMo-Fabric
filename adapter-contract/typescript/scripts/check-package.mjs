@@ -48,6 +48,11 @@ try {
     "dist/index.js",
     "dist/json.d.ts",
     "dist/json.js",
+    "dist/usage.js",
+    "dist/usage.d.ts",
+    "dist/generated/usage-accounting.js",
+    "dist/generated/usage-accounting.d.ts",
+    "schemas/usage-accounting.schema.json",
     "dist/version.d.ts",
     "dist/version.js",
     "package.json",
@@ -120,12 +125,14 @@ try {
   );
   await writeFile(
     join(consumerRoot, "index.ts"),
-    `import { ADAPTER_CONTRACT_VERSION } from "nemo-fabric-adapter-contract";
+    `import { usageFromObservations, ADAPTER_CONTRACT_VERSION } from "nemo-fabric-adapter-contract";
 import agentConfigSchema from "nemo-fabric-adapter-contract/schemas/agent-config" with { type: "json" };
 import type { AdapterDescriptor } from "nemo-fabric-adapter-contract";
 import type { AdapterTargetDescriptor } from "nemo-fabric-adapter-contract";
 import type { AgentRunResult } from "nemo-fabric-adapter-contract";
 
+const usage = usageFromObservations([{reported: {input_tokens: 0, input_tokens_include_cache: true, output_tokens: 0, output_tokens_include_reasoning: true}}]);
+if (usage.input_tokens !== 0 || usage.output_tokens !== 0) throw new Error("Reported zero did not round-trip through the installed helper");
 const descriptor: AdapterDescriptor = {
   adapter_id: "example",
   adapter_kind: "process",
