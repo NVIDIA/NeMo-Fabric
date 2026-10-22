@@ -56,10 +56,10 @@ def reply(usage, *, command="echo done", response_id="scripted"):
     }
 
 
-@pytest_asyncio.fixture(autouse=True)
+@pytest_asyncio.fixture(autouse=True, loop_scope="function")
 async def deny_outbound_fixture(monkeypatch):
-    # Windows needs a loopback socketpair while creating its event loop. Apply
-    # guards after loop creation and restore them before the runner tears down.
+    # Use the test runner so Windows creates its loopback socketpair before
+    # these guards apply, and restores them before that runner tears down.
     with monkeypatch.context() as patch:
         patch.setattr(
             "socket.getaddrinfo",
