@@ -1,5 +1,44 @@
 {
   "$defs": {
+    "AppliedPricing": {
+      "additionalProperties": false,
+      "description": "Persisted entry and selected rates, so saved prices remain reproducible.",
+      "properties": {
+        "catalog_sha256": {
+          "description": "Exact catalog containing this entry.",
+          "type": "string"
+        },
+        "model_id": {
+          "description": "Entry's model identity, which may match an explicit alias.",
+          "type": "string"
+        },
+        "pricing_as_of": {
+          "description": "Date recorded by the catalog author.",
+          "type": "string"
+        },
+        "pricing_source": {
+          "description": "Source recorded by the catalog author.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Entry's provider, without rewriting the observed identity.",
+          "type": "string"
+        },
+        "rates": {
+          "$ref": "#/$defs/RateSnapshot",
+          "description": "One selected rate set; distinct selections are retained in `model_usage::TokenCost.applied_rates`."
+        }
+      },
+      "required": [
+        "catalog_sha256",
+        "provider",
+        "model_id",
+        "pricing_as_of",
+        "pricing_source",
+        "rates"
+      ],
+      "type": "object"
+    },
     "ContextValue": {
       "anyOf": [
         {
@@ -17,6 +56,32 @@
         }
       ],
       "description": "A request context value as the start line keeps it."
+    },
+    "CostAmount": {
+      "description": "Complete and observed amounts in integer nano-USD.",
+      "properties": {
+        "amount_nano_usd": {
+          "description": "Complete amount for this invocation/model scope.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "observed_nano_usd": {
+          "description": "Valid observed contributions, not a guaranteed bound or invoice.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "EndArtifact": {
       "description": "One result artifact on the end line.",
@@ -101,6 +166,29 @@
           ],
           "description": "Error code, stage and retryable flag, without the message."
         },
+        "model_usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelUsage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Validated normalized accounting frozen at the invocation boundary."
+        },
+        "outcome_scope": {
+          "const": "invocation",
+          "description": "This line observes the invocation, before one-shot runtime shutdown.",
+          "type": "string"
+        },
+        "result": {
+          "description": "Expected full-result file next to this record; absence means not saved.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "status": {
           "$ref": "#/$defs/RunStatus",
           "description": "Final status. A Fabric lifecycle error, such as a host timeout, reads `failed`."
@@ -118,6 +206,7 @@
         }
       },
       "required": [
+        "outcome_scope",
         "status",
         "elapsed_ms"
       ],
@@ -226,6 +315,26 @@
         }
       ]
     },
+    "GapReason": {
+      "description": "Categories that affect whether a consumer can treat a value as complete.",
+      "oneOf": [
+        {
+          "const": "unfinished_work",
+          "description": "Owned work was still running at the return boundary.",
+          "type": "string"
+        },
+        {
+          "const": "missing_usage",
+          "description": "A completed call did not provide usable usage.",
+          "type": "string"
+        },
+        {
+          "const": "scope_unverified",
+          "description": "The supported source does not establish coverage of owned work.",
+          "type": "string"
+        }
+      ]
+    },
     "ModelName": {
       "description": "One configured model.",
       "properties": {
@@ -244,6 +353,94 @@
       ],
       "type": "object"
     },
+    "ModelUsage": {
+      "description": "Normalized accounting frozen at return. Late usage never moves to a later invocation.",
+      "properties": {
+        "cache_write_input_tokens": {
+          "description": "Independently known cache writes.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cached_input_tokens": {
+          "description": "Independently known cache reads.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cost": {
+          "$ref": "#/$defs/TokenCost",
+          "description": "Separately typed provider-reported amounts and catalog estimates."
+        },
+        "gaps": {
+          "description": "Dimension-specific completeness gaps.",
+          "items": {
+            "$ref": "#/$defs/UsageGap"
+          },
+          "type": "array"
+        },
+        "input_tokens": {
+          "description": "Cache-inclusive input.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "models": {
+          "description": "Literal per-model breakdown, when the source establishes attribution.",
+          "items": {
+            "$ref": "#/$defs/PerModelUsage"
+          },
+          "type": "array"
+        },
+        "models_exhaustive": {
+          "description": "Whether all model identities used by owned work are represented.",
+          "type": "boolean"
+        },
+        "observed": {
+          "$ref": "#/$defs/TokenCounts",
+          "description": "Available deduplicated observations; these are not guaranteed lower bounds."
+        },
+        "output_tokens": {
+          "description": "Reasoning-inclusive output.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total_tokens": {
+          "description": "Input plus output; the independent provider total remains raw evidence.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "observed",
+        "gaps",
+        "models_exhaustive",
+        "cost"
+      ],
+      "type": "object"
+    },
     "NotRecorded": {
       "description": "Marks a key whose value the record leaves out.",
       "properties": {
@@ -255,6 +452,180 @@
       },
       "required": [
         "recorded"
+      ],
+      "type": "object"
+    },
+    "PerModelUsage": {
+      "description": "Normalized usage for one literal model/provider identity.",
+      "properties": {
+        "cache_write_input_tokens": {
+          "description": "Independently known cache writes.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cached_input_tokens": {
+          "description": "Independently known cache reads.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cost": {
+          "$ref": "#/$defs/TokenCost",
+          "description": "Provider-reported and catalog-estimated cost."
+        },
+        "gaps": {
+          "description": "Dimension-specific gaps.",
+          "items": {
+            "$ref": "#/$defs/UsageGap"
+          },
+          "type": "array"
+        },
+        "input_tokens": {
+          "description": "Cache-inclusive input.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "Source-established accounting model identity. A configured identity\nrequires proof that all included work used that model; an outer requested\nalias alone is insufficient. This is not served-model provenance.",
+          "type": "string"
+        },
+        "observed": {
+          "$ref": "#/$defs/TokenCounts",
+          "description": "Available deduplicated observations, possibly incomplete."
+        },
+        "output_tokens": {
+          "description": "Reasoning-inclusive output.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "provider": {
+          "description": "Literal provider identity when established.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "total_tokens": {
+          "description": "Input plus output; the independent provider total remains raw evidence.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "model",
+        "observed",
+        "gaps",
+        "cost"
+      ],
+      "type": "object"
+    },
+    "PricingBasis": {
+      "additionalProperties": false,
+      "description": "Fields that must agree before a report combines catalog estimates.",
+      "properties": {
+        "assumption_policy": {
+          "description": "No missing count is assumed zero.",
+          "type": "string"
+        },
+        "basis": {
+          "description": "`catalog`; provider-reported cost has a different basis.",
+          "type": "string"
+        },
+        "bundled_catalog_sha256": {
+          "description": "Exact bundled catalog bytes.",
+          "type": "string"
+        },
+        "currency": {
+          "description": "`USD` in this implementation.",
+          "type": "string"
+        },
+        "normalization_version": {
+          "description": "Version of normalization and monetary rounding.",
+          "type": "string"
+        },
+        "user_catalog_sha256": {
+          "description": "Exact override bytes, when supplied.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "basis",
+        "currency",
+        "normalization_version",
+        "assumption_policy",
+        "bundled_catalog_sha256"
+      ],
+      "type": "object"
+    },
+    "RateSnapshot": {
+      "additionalProperties": false,
+      "description": "Integer rates selected for a model, in nano-USD per million tokens.",
+      "properties": {
+        "cache_read": {
+          "description": "Cache read rate; absent is not zero.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cache_write": {
+          "description": "Cache write rate; absent is not zero.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "input": {
+          "description": "Uncached input rate.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output": {
+          "description": "Reasoning-inclusive output rate.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "output"
       ],
       "type": "object"
     },
@@ -353,6 +724,169 @@
         "harness",
         "fabric_version",
         "timeout_ms"
+      ],
+      "type": "object"
+    },
+    "TokenCost": {
+      "description": "Provider-reported amounts stay separate from reproducible catalog estimates.",
+      "properties": {
+        "applied_rates": {
+          "description": "Distinct selected rate sets, rather than one duplicate snapshot per call.",
+          "items": {
+            "$ref": "#/$defs/AppliedPricing"
+          },
+          "type": "array"
+        },
+        "estimated": {
+          "$ref": "#/$defs/CostAmount",
+          "description": "Catalog estimates; incomplete tariff evidence affects only these amounts."
+        },
+        "pricing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PricingBasis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required basis for any estimated amount."
+        },
+        "reported": {
+          "$ref": "#/$defs/CostAmount",
+          "description": "Provider-reported amounts, never a harness estimate."
+        }
+      },
+      "required": [
+        "reported",
+        "estimated"
+      ],
+      "type": "object"
+    },
+    "TokenCounts": {
+      "description": "Token counts for one fixed invocation scope. Missing values never imply zero.",
+      "properties": {
+        "cache_write_input_tokens": {
+          "description": "Independently known cache writes.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cached_input_tokens": {
+          "description": "Independently known cache reads.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "input_tokens": {
+          "description": "Cache-inclusive input.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output_tokens": {
+          "description": "Reasoning-inclusive output.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total_tokens": {
+          "description": "Input plus output; the independent provider total remains raw evidence.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "UsageDimension": {
+      "description": "Dimensions whose complete values can be unavailable independently.",
+      "oneOf": [
+        {
+          "const": "input_tokens",
+          "description": "Input tokens.",
+          "type": "string"
+        },
+        {
+          "const": "cached_input_tokens",
+          "description": "Cache reads.",
+          "type": "string"
+        },
+        {
+          "const": "cache_write_input_tokens",
+          "description": "Cache writes.",
+          "type": "string"
+        },
+        {
+          "const": "output_tokens",
+          "description": "Output tokens.",
+          "type": "string"
+        },
+        {
+          "const": "total_tokens",
+          "description": "Input plus output.",
+          "type": "string"
+        },
+        {
+          "const": "reported_cost",
+          "description": "Provider-reported cost.",
+          "type": "string"
+        },
+        {
+          "const": "estimated_cost",
+          "description": "Applicable catalog estimate.",
+          "type": "string"
+        }
+      ]
+    },
+    "UsageGap": {
+      "description": "A completeness gap. Diagnostics never change the dimension or reason semantics.",
+      "properties": {
+        "code": {
+          "description": "Bounded stable diagnostic; never an exception message.",
+          "maxLength": 64,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dimensions": {
+          "description": "Nonempty set of affected dimensions.",
+          "items": {
+            "$ref": "#/$defs/UsageDimension"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "reason": {
+          "$ref": "#/$defs/GapReason",
+          "description": "Why complete accounting is unavailable."
+        }
+      },
+      "required": [
+        "dimensions",
+        "reason"
       ],
       "type": "object"
     }

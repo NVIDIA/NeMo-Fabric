@@ -112,11 +112,17 @@ impl InvocationRecorder {
             Ok(result) => result_end_line(result, elapsed_ms),
             Err(error) => error_end_line(error, elapsed_ms),
         };
-        self.append(LineBody::End(end));
+        self.append(LineBody::End(Box::new(end)));
         if let Some(writer) = &self.writer
             && let Err(error) = writer.sync()
         {
             self.failure = Some(error);
+        }
+        if outcome.is_err()
+            && let Some(error) = &self.failure
+        {
+            // There is no returned result to carry the recording event.
+            eprintln!("nemo-fabric: invocation recording failed: {error}");
         }
         let mut result = outcome?;
         if self.wrote_start {
@@ -230,10 +236,13 @@ fn context_value(key: &str, value: &Value) -> ContextValue {
 
 fn result_end_line(result: &RunResult, elapsed_ms: u64) -> EndLine {
     EndLine {
+        outcome_scope: "invocation",
+        result: Some("run-result.json".to_string()),
         status: result.status,
         elapsed_ms,
         error: result.error.as_ref().map(result_error),
         usage: result.usage.as_ref().map(end_usage),
+        model_usage: result.model_usage.clone(),
         artifacts: end_artifacts(&result.artifacts),
     }
 }
@@ -252,6 +261,8 @@ fn error_end_line(error: &FabricError, elapsed_ms: u64) -> EndLine {
         _ => (FABRIC_ERROR, ErrorStage::Invoke),
     };
     EndLine {
+        outcome_scope: "invocation",
+        result: None,
         status: RunStatus::Failed,
         elapsed_ms,
         error: Some(EndError {
@@ -260,6 +271,7 @@ fn error_end_line(error: &FabricError, elapsed_ms: u64) -> EndLine {
             retryable: false,
         }),
         usage: None,
+        model_usage: None,
         artifacts: Vec::new(),
     }
 }
@@ -460,9 +472,14 @@ mod tests {
     }
 
     fn temp_folder(name: &str) -> PathBuf {
-        let folder =
-            std::env::temp_dir().join(format!("fabric-recorder-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&folder);
+        let folder = std::env::temp_dir().join(format!(
+            "fabric-recorder-{name}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         std::fs::create_dir_all(&folder).expect("folder");
         folder
     }
@@ -508,7 +525,6 @@ mod tests {
             .collect();
         assert_eq!(names, ["record", "record_2"]);
         assert_eq!(finished.artifacts.artifacts[1].kind, RECORD_ARTIFACT_KIND);
-        let _ = std::fs::remove_dir_all(folder);
     }
 
     #[test]
@@ -537,7 +553,6 @@ mod tests {
             std::fs::read_to_string(folder.join(RECORD_FILE_NAME)).expect("read"),
             "planted"
         );
-        let _ = std::fs::remove_dir_all(folder);
     }
 
     fn failed_result_with_usage(invocation: &InvocationHandle) -> RunResult {
@@ -580,7 +595,6 @@ mod tests {
             .lines()
             .map(|line| serde_json::from_str(line).expect("record line"))
             .collect();
-        let _ = std::fs::remove_dir_all(folder);
         (finished, lines)
     }
 

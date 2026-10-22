@@ -23,6 +23,8 @@ pub use crate::agent_config::{
 use crate::agent_execution::{AgentRunRequest, AgentRunResult};
 use crate::error::{FabricError, Result};
 
+use crate::price_catalog::UserPriceCatalog;
+
 /// Versioned NVIDIA NeMo Fabric agent config.
 ///
 /// NeMo Fabric-owned fields apply uniformly, while adapter-translated fields are
@@ -66,10 +68,27 @@ pub struct FabricConfig {
     /// Telemetry configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<TelemetryConfig>,
+    /// Invocation stats: omitted means all endpoint groups, explicit null disables.
+    #[serde(default = "crate::system_stats::default_system_stats")]
+    pub system_stats: Option<crate::system_stats::SystemStatsConfig>,
     /// First-class NeMo Relay integration configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay: Option<RelayConfig>,
+    /// Optional catalog override for central token-price estimates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pricing: Option<PricingConfig>,
     /// Additive fields not yet recognized by this core version.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// Central token-price configuration; never changes provider requests.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PricingConfig {
+    /// Relay-compatible v1 catalog, resolved relative to the config base directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_path: Option<PathBuf>,
+    /// Additive pricing configuration, preserved for future versions.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
 }
@@ -1889,6 +1908,9 @@ pub fn load_adapter_target_descriptor(path: impl AsRef<Path>) -> Result<AdapterT
 }
 
 pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
+    if let Some(stats) = &config.system_stats {
+        stats.validate()?;
+    }
     if config.harness.is_none() && config.workflow.is_none() {
         return invalid_config(
             "harness",
@@ -2662,7 +2684,9 @@ fn resolve_selected_descriptors(
         descriptor,
         adapter_target_descriptor.as_ref(),
     );
+    let user_price_catalog = resolve_user_price_catalog(&config, &base_dir)?;
     Ok(RunPlan {
+        user_price_catalog,
         agent_name: config.metadata.name.clone(),
         base_dir,
         config,
@@ -2675,6 +2699,33 @@ fn resolve_selected_descriptors(
         capabilities,
         telemetry_plan,
     })
+}
+
+fn resolve_user_price_catalog(
+    config: &FabricConfig,
+    base_dir: &Path,
+) -> Result<Option<UserPriceCatalog>> {
+    let Some(path) = config
+        .pricing
+        .as_ref()
+        .and_then(|p| p.catalog_path.as_ref())
+    else {
+        return Ok(None);
+    };
+    if path.as_os_str().to_string_lossy().trim().is_empty() {
+        return invalid_config("pricing.catalog_path", "must not be blank");
+    }
+    let path = resolve_path(base_dir, path);
+    let bytes = std::fs::read(&path).map_err(|error| FabricError::InvalidConfig {
+        field: "pricing.catalog_path".into(),
+        reason: format!("cannot read {}: {error}", path.display()),
+    })?;
+    UserPriceCatalog::from_bytes(path, &bytes)
+        .map(Some)
+        .map_err(|error| FabricError::InvalidConfig {
+            field: "pricing.catalog_path".into(),
+            reason: error.to_string(),
+        })
 }
 
 fn validate_capability_plan_compatibility(
@@ -4086,6 +4137,9 @@ fn normalize_path(path: PathBuf) -> PathBuf {
 /// Resolved NeMo Fabric run plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunPlan {
+    /// Catalog bytes are frozen during planning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_price_catalog: Option<UserPriceCatalog>,
     /// Stable agent name.
     pub agent_name: String,
     /// Base directory used to resolve relative NeMo Fabric paths.
@@ -7498,7 +7552,56 @@ mod tests {
                 && paths.len() == 2
         ));
     }
-
+    #[test]
+    fn remote_environment_paths_are_not_resolved_on_the_host() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        let environment = config.environment.as_mut().expect("environment");
+        environment.provider = "openshell".to_string();
+        environment.workspace = Some(PathBuf::from("/sandbox/workspace"));
+        environment.artifacts = Some(PathBuf::from("/sandbox/artifacts"));
+        let plan =
+            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
+        assert_eq!(plan.workspace, Some(PathBuf::from("/sandbox/workspace")));
+        assert_eq!(plan.artifacts, Some(PathBuf::from("/sandbox/artifacts")));
+        config.environment.as_mut().expect("environment").workspace =
+            Some(PathBuf::from("relative/task/workspace"));
+        let plan =
+            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
+        assert_eq!(
+            plan.workspace,
+            Some(PathBuf::from("relative/task/workspace"))
+        );
+    }
+    #[test]
+    fn remote_environment_does_not_use_the_host_artifact_destination() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        let environment = config.environment.as_mut().expect("environment");
+        environment.provider = "openshell".to_string();
+        environment.artifacts = None;
+        config.runtime.artifacts = Some(PathBuf::from("host/review-results"));
+        let plan =
+            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
+        assert_eq!(plan.artifacts, None);
+    }
+    #[test]
+    fn openshell_paths_reject_host_syntax_and_parent_traversal() {
+        for value in [
+            "relative",
+            "C:/workspace",
+            "/sandbox/../host",
+            "/sandbox\\workspace",
+            "/sandbox\0workspace",
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            let environment = config.environment.as_mut().expect("environment");
+            environment.provider = "openshell".to_string();
+            environment.workspace = Some(PathBuf::from(value));
+            let error = validate_config(&config).expect_err("invalid task path");
+            assert!(
+                matches!(error, FabricError::InvalidConfig {field, ..} if field == "environment.workspace")
+            );
+        }
+    }
     fn record_error(config: &FabricConfig) -> Option<(String, String)> {
         match validate_config(config) {
             Err(FabricError::InvalidConfig { field, reason }) => Some((field, reason)),
@@ -7592,57 +7695,6 @@ mod tests {
             assert!(
                 serde_json::from_value::<FabricConfig>(value).is_err(),
                 "{runtime}"
-            );
-        }
-    }
-
-    #[test]
-    fn remote_environment_paths_are_not_resolved_on_the_host() {
-        let mut config = typed_config("nvidia.fabric.hermes");
-        let environment = config.environment.as_mut().expect("environment");
-        environment.provider = "openshell".to_string();
-        environment.workspace = Some(PathBuf::from("/sandbox/workspace"));
-        environment.artifacts = Some(PathBuf::from("/sandbox/artifacts"));
-        let plan =
-            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
-        assert_eq!(plan.workspace, Some(PathBuf::from("/sandbox/workspace")));
-        assert_eq!(plan.artifacts, Some(PathBuf::from("/sandbox/artifacts")));
-        config.environment.as_mut().expect("environment").workspace =
-            Some(PathBuf::from("relative/task/workspace"));
-        let plan =
-            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
-        assert_eq!(
-            plan.workspace,
-            Some(PathBuf::from("relative/task/workspace"))
-        );
-    }
-    #[test]
-    fn remote_environment_does_not_use_the_host_artifact_destination() {
-        let mut config = typed_config("nvidia.fabric.hermes");
-        let environment = config.environment.as_mut().expect("environment");
-        environment.provider = "openshell".to_string();
-        environment.artifacts = None;
-        config.runtime.artifacts = Some(PathBuf::from("host/review-results"));
-        let plan =
-            resolve_environment_plan(&config, Path::new("host/base")).expect("environment plan");
-        assert_eq!(plan.artifacts, None);
-    }
-    #[test]
-    fn openshell_paths_reject_host_syntax_and_parent_traversal() {
-        for value in [
-            "relative",
-            "C:/workspace",
-            "/sandbox/../host",
-            "/sandbox\\workspace",
-            "/sandbox\0workspace",
-        ] {
-            let mut config = typed_config("nvidia.fabric.hermes");
-            let environment = config.environment.as_mut().expect("environment");
-            environment.provider = "openshell".to_string();
-            environment.workspace = Some(PathBuf::from(value));
-            let error = validate_config(&config).expect_err("invalid task path");
-            assert!(
-                matches!(error, FabricError::InvalidConfig {field, ..} if field == "environment.workspace")
             );
         }
     }

@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from copy import deepcopy
 from enum import Enum
+from pathlib import Path
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
@@ -22,13 +23,21 @@ from nemo_fabric.errors import (
     FabricCapabilityError,
     FabricConfigError,
     FabricError,
+    FabricRuntimeError,
     FabricStateError,
+    ResourceObservationUnavailableError,
+    ResourceObservationUnsupportedError,
     _runtime_error,
 )
 from nemo_fabric.models import RunRequest
 from nemo_fabric.openai_streaming import OpenAIInvokeStream
 from nemo_fabric.streaming import InvokeStream
-from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
+from nemo_fabric.types import (
+    RunPlan,
+    RunResult,
+    RuntimeHandle,
+    RuntimeResourceSnapshot,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -731,6 +740,43 @@ class Runtime:
         if self._current_task is not None:
             raise FabricStateError("runtime is already running an invocation")
 
+    async def resource_snapshot(self) -> RuntimeResourceSnapshot:
+        """Return a timestamped resource snapshot of this runtime.
+
+        The snapshot covers the local adapter host process and its live
+        descendants. It does not wait for a running invocation, so it can be
+        called while ``invoke()`` is in flight. It observes resources only and
+        enforces no limits.
+
+        Raises:
+            ResourceObservationUnavailableError: If the runtime stopped, is
+                stopping, its adapter host process exited, a live process in
+                its tree or the process table cannot be read, or the process
+                tree kept changing during the read.
+            ResourceObservationUnsupportedError: If the runtime's adapter
+                kind, environment provider, or operating system has no
+                resource reader.
+            FabricNativeUnavailableError: If the native extension is missing.
+            FabricRuntimeError: If the native snapshot call fails otherwise.
+        """
+
+        native = self._client._require_native_module("resource_snapshot")
+
+        def snapshot() -> Any:
+            return json.loads(
+                native.runtime_resource_snapshot(
+                    json.dumps(self._plan.to_mapping()),
+                    json.dumps(self._runtime.to_mapping()),
+                )
+            )
+
+        try:
+            return RuntimeResourceSnapshot.from_mapping(await _call_blocking(snapshot))
+        except FabricError:
+            raise
+        except Exception as error:
+            raise _resource_snapshot_error(native, error) from error
+
     async def stop(self) -> None:
         """Destroy an idle runtime exactly once.
 
@@ -927,11 +973,62 @@ def _run_request_payload(
     return payload
 
 
+def _record_root(
+    plan: Mapping[str, Any], runtime_config: Mapping[str, Any]
+) -> str | None:
+    environment_plan = plan.get("environment_plan", {})
+    artifact_root = runtime_config.get("artifacts") or (
+        environment_plan.get("artifacts")
+        if isinstance(environment_plan, Mapping)
+        else None
+    )
+    if artifact_root is None:
+        return None
+    root = Path(artifact_root)
+    if not root.is_absolute():
+        root = Path(plan["base_dir"]) / root
+    return str(root / ".fabric")
+
+
 async def _run_native_lifecycle(
     native: Any,
     plan: Mapping[str, Any],
     request: Mapping[str, Any],
 ) -> dict[str, Any]:
+    config = plan.get("config", {})
+    runtime_config = config.get("runtime", {}) if isinstance(config, Mapping) else {}
+    record = (
+        runtime_config.get("record", {}) if isinstance(runtime_config, Mapping) else {}
+    )
+    if isinstance(record, Mapping) and record.get("enabled") is True:
+        # Core owns the final snapshot after shutdown. Saving an invocation-only
+        # snapshot here would omit stop events and a possible stop failure.
+        try:
+            return json.loads(
+                await _call_blocking(
+                    lambda: native.run_plan(
+                        json.dumps(dict(plan)), json.dumps(dict(request))
+                    )
+                )
+            )
+        except asyncio.CancelledError as error:
+            root = _record_root(plan, runtime_config)
+            if root is not None:
+                error.add_note(f"Run evidence location: {root}")
+            raise
+        except Exception as error:
+            stage = getattr(error, "fabric_stage", "run")
+            if stage not in {"start", "invoke", "stop"}:
+                stage = "run"
+            failure = _runtime_error(error, stage=stage)
+            root = _record_root(plan, runtime_config)
+            if root is not None:
+                failure.details["record_root"] = root
+                failure.add_note(f"Run evidence location: {root}")
+            if failure is error:
+                raise
+            raise failure from error
+
     def run() -> dict[str, Any]:
         plan_json = json.dumps(dict(plan))
         try:
@@ -983,6 +1080,26 @@ async def _run_native_lifecycle(
         raise
     except Exception as error:
         raise _runtime_error(error, stage="run") from error
+
+
+def _resource_snapshot_error(native: Any, error: Exception) -> FabricRuntimeError:
+    """Map the native resource-observation errors to their SDK types."""
+    typed_errors: tuple[tuple[str, type[FabricRuntimeError], str], ...] = (
+        (
+            "ResourceObservationUnavailableError",
+            ResourceObservationUnavailableError,
+            "resource_observation_unavailable",
+        ),
+        (
+            "ResourceObservationUnsupportedError",
+            ResourceObservationUnsupportedError,
+            "resource_observation_unsupported",
+        ),
+    )
+    for native_name, sdk_type, code in typed_errors:
+        if isinstance(error, getattr(native, native_name, ())):
+            return sdk_type(str(error), stage="resource_snapshot", code=code)
+    return _runtime_error(error, stage="resource_snapshot")
 
 
 async def _call_blocking(func: Any) -> Any:

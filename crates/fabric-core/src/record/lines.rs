@@ -4,9 +4,10 @@
 //! Line types of `run-record.jsonl`, schema `nemo.fabric.run_record` version
 //! `v1alpha1`.
 //!
-//! Every field is typed. A line holds identifiers, names, numbers, closed codes
-//! and the values of a few allowlisted request context keys. It never holds a
-//! value outside that allowlist: no prompt, output, error message or metadata.
+//! Every field is typed. A line holds identifiers, configuration names, normalized
+//! accounting, resource observations, closed codes and allowlisted request context
+//! values. It never captures prompts, output, exception messages or arbitrary
+//! adapter metadata.
 
 use std::collections::BTreeMap;
 
@@ -68,7 +69,7 @@ pub(crate) enum LineBody {
     /// Written once, before core sends the request to the adapter host.
     Start(StartLine),
     /// Written once, after the invocation returned a result or failed.
-    End(EndLine),
+    End(Box<EndLine>),
 }
 
 /// Fields of the start line.
@@ -134,6 +135,12 @@ impl NotRecorded {
 /// Fields of the end line.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub(crate) struct EndLine {
+    /// This line observes the invocation, before one-shot runtime shutdown.
+    #[schemars(extend("const" = "invocation"))]
+    pub outcome_scope: &'static str,
+    /// Expected full-result file next to this record; absence means not saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
     /// Final status. A Fabric lifecycle error, such as a host timeout, reads `failed`.
     pub status: RunStatus,
     /// Monotonic time from the start line to the end line, in milliseconds.
@@ -144,6 +151,9 @@ pub(crate) struct EndLine {
     /// Numeric usage counters, without adapter metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<EndUsage>,
+    /// Validated normalized accounting frozen at the invocation boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_usage: Option<crate::model_usage::ModelUsage>,
     /// Result artifacts, with paths relative to the artifact root.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<EndArtifact>,

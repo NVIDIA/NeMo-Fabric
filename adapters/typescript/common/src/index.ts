@@ -15,3 +15,16 @@ export {
 } from "./lifecycle.js";
 
 export { insecureHttpModelHosts, modelEndpointAllowed } from "./model-endpoint.js";
+
+export {
+  AcpRunnerError,
+  startAcpSession,
+  type AcpConfigOption,
+  type AcpMcpServer,
+  type AcpPermissionDecision,
+  type AcpPermissionResolver,
+  type AcpPromptResult,
+  type AcpSession,
+  type AcpSessionOptions,
+  type AcpSessionReadinessNotification,
+} from "./acp-runner.js";

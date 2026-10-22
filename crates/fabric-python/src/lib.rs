@@ -25,6 +25,18 @@ pyo3::create_exception!(
     PyRuntimeError,
     "Raised when a service release is rejected because runtimes are still active."
 );
+pyo3::create_exception!(
+    _native,
+    ResourceObservationUnavailableError,
+    PyRuntimeError,
+    "Raised when a runtime stopped, is stopping, its adapter host exited, a live process in its tree or the process table cannot be read, or the process tree kept changing during the read."
+);
+pyo3::create_exception!(
+    _native,
+    ResourceObservationUnsupportedError,
+    PyRuntimeError,
+    "Raised when a runtime's adapter kind, environment provider, or operating system has no resource reader."
+);
 
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const PYTHON_DATA_PATH_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -137,6 +149,29 @@ fn run_config(
     let result = py
         .detach(|| run_plan(&plan, request))
         .map_err(to_py_error)?;
+    to_json(&result)
+}
+
+/// Execute an already resolved one-shot plan, including final result recording.
+#[pyfunction(name = "run_plan")]
+fn run_resolved_plan(py: Python<'_>, plan_json: String, request_json: String) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let request = parse_run_request(request_json)?;
+    let result = match py.detach(|| run_plan(&plan, request)) {
+        Ok(result) => result,
+        Err(error) => {
+            let stage = match &error {
+                FabricError::AdapterLifecycleOperation { operation, .. } => Some(*operation),
+                _ => None,
+            };
+            let failure = to_py_error(error);
+            if let Some(stage) = stage {
+                // Preserve lifecycle stage without parsing diagnostic text.
+                failure.value(py).setattr("fabric_stage", stage)?;
+            }
+            return Err(failure);
+        }
+    };
     to_json(&result)
 }
 
@@ -295,14 +330,38 @@ fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyRe
     to_json(&events)
 }
 
+/// Read a resource snapshot of a started runtime and return RuntimeResourceSnapshot JSON.
+#[pyfunction]
+fn runtime_resource_snapshot(
+    py: Python<'_>,
+    plan_json: String,
+    runtime_json: String,
+) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let snapshot = py
+        .detach(|| nemo_fabric_core::runtime_resource_snapshot(&plan, &runtime))
+        .map_err(to_py_error)?;
+    to_json(&snapshot)
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ServiceInUseError", m.py().get_type::<ServiceInUseError>())?;
+    m.add(
+        "ResourceObservationUnavailableError",
+        m.py().get_type::<ResourceObservationUnavailableError>(),
+    )?;
+    m.add(
+        "ResourceObservationUnsupportedError",
+        m.py().get_type::<ResourceObservationUnsupportedError>(),
+    )?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(plan_config, m)?)?;
     m.add_function(wrap_pyfunction!(inspect_adapter_metadata, m)?)?;
     m.add_function(wrap_pyfunction!(doctor_config, m)?)?;
     m.add_function(wrap_pyfunction!(run_config, m)?)?;
+    m.add_function(wrap_pyfunction!(run_resolved_plan, m)?)?;
     m.add_function(wrap_pyfunction!(start_runtime, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_environment, m)?)?;
     m.add_function(wrap_pyfunction!(attach_environment, m)?)?;
@@ -315,6 +374,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(invoke_runtime, m)?)?;
     m.add_function(wrap_pyfunction!(invoke_openai_stream, m)?)?;
     m.add_function(wrap_pyfunction!(stop_runtime, m)?)?;
+    m.add_function(wrap_pyfunction!(runtime_resource_snapshot, m)?)?;
     Ok(())
 }
 
@@ -326,13 +386,18 @@ where
 }
 
 fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
-    if matches!(
-        &error,
-        FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"
-    ) {
-        return PyTimeoutError::new_err(error.to_string());
+    match &error {
+        FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout" => {
+            PyTimeoutError::new_err(error.to_string())
+        }
+        FabricError::ResourceObservationUnavailable { .. } => {
+            ResourceObservationUnavailableError::new_err(error.to_string())
+        }
+        FabricError::ResourceObservationUnsupported { .. } => {
+            ResourceObservationUnsupportedError::new_err(error.to_string())
+        }
+        _ => PyRuntimeError::new_err(error.to_string()),
     }
-    PyRuntimeError::new_err(error.to_string())
 }
 
 fn resolve_context(
