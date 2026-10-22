@@ -2079,12 +2079,22 @@ async def test_claude_real_sdk_mock_cli_keeps_accounting_contract(
     turn,
     expected_output,
 ):
-    # This executes the SDK's control protocol against our credential-free CLI
-    # fixture. It does not launch the native Claude binary or any model API.
-    monkeypatch.setenv(
-        "FABRIC_TEST_CLAUDE_CLI_PATH",
-        str(ROOT / "tests/fixtures/claude/mock-claude-cli.py"),
+    from claude_agent_sdk._internal.transport.subprocess_cli import (
+        SubprocessCLITransport,
     )
+
+    # Execute the real SDK protocol with Python explicitly, including on Windows
+    # where CreateProcess cannot launch the fixture through its shebang.
+    fixture_path = str(ROOT / "tests/fixtures/claude/mock-claude-cli.py")
+    build_command = SubprocessCLITransport._build_command
+
+    def python_cli_command(transport):
+        command = build_command(transport)
+        assert command[0] == fixture_path
+        return [sys.executable, *command]
+
+    monkeypatch.setattr(SubprocessCLITransport, "_build_command", python_cli_command)
+    monkeypatch.setenv("FABRIC_TEST_CLAUDE_CLI_PATH", fixture_path)
     monkeypatch.setenv("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", "1")
     env = claude_payload["runtime_context"]["environment"]["env"]
     env.update(
