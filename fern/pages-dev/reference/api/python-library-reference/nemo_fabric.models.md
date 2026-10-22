@@ -2336,6 +2336,150 @@ Return the tool mapping without collapsing an explicit empty policy.
 ---
 
 
+## <kbd>class</kbd> `SystemStatsSamplingConfig`
+
+Opt-in periodic collection; bounds include both endpoint samples.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `interval_ms` | `int` | No | `1000` | `Strict(strict=True), Ge(ge=100), Le(le=60000)` | — |
+| `max_samples` | `int` | No | `10000` | `Strict(strict=True), Ge(ge=2), Le(le=100000)` | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
+## <kbd>class</kbd> `SystemStatsConfig`
+
+Native invocation stats selection, independent of Relay and recording.
+
+All supported groups are selected by default. sampling=None collects only endpoints. Set FabricConfig.system_stats=None to disable invocation stats; the independent final resource_snapshot contract is preserved.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `collect` | `list[Literal['process', 'cgroup.cpu', 'cgroup.memory', 'cgroup.pressure']]` | No | `<generated>` | `MinLen(min_length=1)` | — |
+| `sampling` | `SystemStatsSamplingConfig \| None` | No | `None` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
 ## <kbd>class</kbd> `FabricConfig`
 
 SDK-facing typed NeMo Fabric agent configuration.
@@ -2361,6 +2505,7 @@ The model defines the following fields:
 | `instructions` | `InstructionsConfig \| None` | No | `None` | — | — |
 | `mcp` | `McpConfig \| None` | No | `None` | — | — |
 | `skills` | `SkillConfig \| None` | No | `None` | — | — |
+| `system_stats` | `SystemStatsConfig \| None` | No | `SystemStatsConfig()` | — | — |
 | `telemetry` | `TelemetryConfig \| None` | No | `None` | — | — |
 | `relay` | `RelayConfig \| None` | No | `None` | — | — |
 | `tools` | `ToolsConfig \| None` | No | `None` | — | — |

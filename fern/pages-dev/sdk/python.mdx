@@ -786,13 +786,141 @@ as another user. On a kernel without children lists, every snapshot is
 unavailable under those mount options, because hidden processes are missing
 from the process table that the snapshot reads to find the tree.
 
-Each `RunResult` from a local runtime also carries `resource_snapshot`, read
-once after the adapter returned the result. It is `None` when the read failed;
-a failed read never fails the invocation. To estimate one invocation's CPU time,
-take a snapshot before it and subtract its `cpu_time_seconds` from the
-result's snapshot. CPU time can drop when a descendant is reparented out of the
-tree, so treat a difference as an estimate and a negative difference as
-unknown.
+By default, each `RunResult` from a local runtime carries `system_stats` with before/after observations and a monotonic duration for the adapter exchange. Both observations run under the invocation lock, so queued invocations cannot contaminate the baseline. Runtime startup, endpoint collection, artifact preparation, and teardown are excluded from `elapsed_seconds`. Optional periodic sampling runs concurrently and can affect execution; the elapsed measurement does not subtract that effect. The existing `resource_snapshot` field retains its independent final process-tree reading even when invocation stats or the process group is disabled. When the process group is selected, it reuses `system_stats.after.snapshot`, or is `None` if unavailable.
+
+### Invocation System Stats
+
+**Identical configs can produce different amounts of agent work and encounter different system conditions. Stats should help separate those two.**
+
+Omitting `system_stats` selects every supported metric group at the invocation endpoints. Explicit `None` disables invocation stats, including before/after collection and stats artifacts. The SDK preserves that explicit null across planning and task-runner serialization.
+
+```python
+from nemo_fabric import SystemStatsConfig, SystemStatsSamplingConfig
+
+config.system_stats = None  # Disable invocation stats.
+config.system_stats = SystemStatsConfig()  # All groups, endpoints only.
+config.system_stats = SystemStatsConfig(
+    collect=["process", "cgroup.cpu"],
+    sampling=SystemStatsSamplingConfig(interval_ms=1000, max_samples=10_000),
+)
+config.system_stats.sampling = None  # Endpoints only for subsequent runs.
+```
+
+| `collect` group | Measurements |
+| --- | --- |
+| `process` | Adapter-host tree CPU time, RSS, and process count. |
+| `cgroup.cpu` | Visible CPU limits, usage, and throttling. |
+| `cgroup.memory` | Visible memory limits, accounted memory, provider peak, swap, and OOM kills. |
+| `cgroup.pressure` | CPU, memory, and I/O pressure counters. |
+
+Omit `collect` for all supported groups. Empty lists, duplicates, and unknown names are rejected; use `system_stats=None` to disable stats. The invocation stats collector skips excluded groups in both endpoints and periodic samples. `collected_groups` records the selected groups, including those unavailable on the current platform. A `not_collected` status identifies excluded process observations and cgroup measurements; it differs from `unavailable` and `unsupported`, and never substitutes zero. Unselected process gauge reductions and an entirely excluded cgroup block are omitted. Identity, duration, scope, and sampling-quality metadata remain available. Metric selection does not change the separate `resource_snapshot` contract.
+
+```python
+result = await runtime.invoke(input="Fix the failing test")
+stats = result.system_stats
+if stats is not None:
+    print(stats.elapsed_seconds, stats.cpu_time_seconds_estimate)
+    if stats.after.status == "available":
+        print(stats.after.snapshot.resident_memory_bytes)
+    elif stats.after.status in {"unavailable", "unsupported"}:
+        print(stats.after.status, stats.after.reason)
+    else:
+        print(stats.after.status)
+```
+
+For example, a serialized `RunResult` contains this fragment. The IDs already associate the measurements with one invocation; no additional identity file is required.
+
+```json
+{
+  "runtime_id": "runtime-1",
+  "invocation_id": "invocation-2",
+  "request_id": "trial-42",
+  "system_stats": {
+    "elapsed_seconds": 8.0,
+    "before": {
+      "status": "available",
+      "snapshot": {
+        "runtime_id": "runtime-1",
+        "started_at": "2026-10-21T09:00:00.000Z",
+        "observed_at": "2026-10-21T09:01:00.000Z",
+        "resident_memory_bytes": 52428800,
+        "process_count": 1,
+        "cpu_time_seconds": 12.0
+      }
+    },
+    "after": {
+      "status": "available",
+      "snapshot": {
+        "runtime_id": "runtime-1",
+        "started_at": "2026-10-21T09:00:00.000Z",
+        "observed_at": "2026-10-21T09:01:08.000Z",
+        "resident_memory_bytes": 83886080,
+        "process_count": 1,
+        "cpu_time_seconds": 14.5
+      }
+    },
+    "cpu_time_seconds_estimate": 2.5
+  }
+}
+```
+
+The CPU estimate is 2.5 seconds for this invocation, excluding the warm runtime's previous 12 seconds. It is omitted when either reading is missing, runtime identities differ, or the counter decreases. Process reaping and reparenting can distort even a positive difference; this is an estimate, not exact accounting. Background work in the same process tree also contributes; the difference does not isolate agent-only CPU. Endpoint memory and process counts are instantaneous gauges, not peaks, averages, or invocation allocations.
+
+For Harbor, these measurements come from the adapter host inside the task runner, even when a separate host selects the task and capabilities. Harbor's existing result JSON carries the new field without a new stats file. For a model team comparing identical configs, pair `usage` with these measurements: more tokens or tool calls can explain more agent work; similar work with longer elapsed time warrants investigating execution conditions. Endpoint observations alone miss intermediate peaks and cannot explain every source of latency. Enable sampled stats and inspect native cgroup evidence below; remote inference latency requires serving-side evidence.
+
+A failed read appears as `{"status": "unavailable", "reason": "..."}`; an unsupported provider or operating system uses `"unsupported"`. Collection failures preserve the adapter outcome, including a normalized failed result. Disabled collection, older results, and execution backends without collection have `system_stats=None`. Protocol failures and timeouts that raise without a `RunResult` still raise. When sampling is enabled, NeMo Fabric retains sample and summary artifacts where possible even if the adapter exchange fails. These measurements require neither NeMo Relay collection nor invocation recording.
+
+
+### Sampled Peaks and Means
+
+A process can allocate 400 MiB during execution and return to 80 MiB before the final reading. Endpoints miss that spike. Enable native sampling independently of Relay or invocation recording:
+
+```python
+from nemo_fabric import SystemStatsConfig, SystemStatsSamplingConfig
+
+config.system_stats = SystemStatsConfig(
+    sampling=SystemStatsSamplingConfig(interval_ms=1000, max_samples=10_000),
+)
+config.runtime.artifacts = "artifacts"
+result = await Fabric().run(config, input="Fix the failing test")
+stats = result.system_stats
+sampled = None if stats is None else stats.sampled
+if sampled is not None:
+    rss = sampled.resident_memory_bytes
+    if rss is not None:
+        print(rss.sampled_peak, rss.time_weighted_mean, rss.covered_fraction)
+    if sampled.samples is not None:
+        print(sampled.samples.path)
+
+```
+
+The mean holds the preceding reading across adjacent valid observations and excludes missing readings or gaps larger than twice cadence. Retained JSONL offsets allow benchmark tooling to correlate samples with trajectory events and select its own analysis windows. Temporal overlap with a span does not prove exclusive attribution.
+
+For readings **80 MiB → 400 MiB → 80 MiB** at 0, 1, and 2 seconds, the final value is 80 MiB, sampled peak is 400 MiB, range is 80–400 MiB, and hold-last-value mean is 240 MiB. A sampled maximum can miss brief spikes between observations. It is not a true high-water mark.
+
+Sampling uses one process-wide scheduler, retains both endpoints, and bounds intermediate retention with `max_samples`. The result exposes retained/dropped sample counts, collection time, largest gap, truncation, per-gauge covered time, diagnostics, and artifact references. Late samples are discarded after invocation closes. A full series preserves the final endpoint rather than silently reporting an old value as final. Counter resets, changed targets, missing observations, and long gaps invalidate affected sampled CPU estimates. Sampling does not replace endpoint-derived CPU or cgroup deltas; collection quality and continuity are reported under `sampled`.
+
+With an artifact root, the layout is:
+
+```text
+artifacts/.fabric/<runtime_id>/<invocation_id>/
+  adapter-invocation.json
+  system-stats.jsonl
+  system-stats-summary.json
+  stdout.txt
+```
+
+Every sample and saved summary carries the existing runtime, invocation, and request IDs. `RunResult.artifacts` references both stats files. Without an explicit artifact root, these files use the runtime's temporary `.fabric` directory. Optional stats persistence failures produce diagnostics and preserve the agent outcome. A known series write failure suppresses its artifact reference while retaining in-memory reductions and a `sample_write_failed` diagnostic. Samples and a summary are retained even if the adapter protocol raises without a normalized result; they do not invent a terminal agent status or a second lifecycle journal. Consumers should handle an interrupted last JSONL line explicitly.
+
+### Native Cgroup Constraints
+
+On Linux cgroup v2, `result.system_stats.cgroup` contains before/after observations for the **adapter host's cgroup**, plus CPU-use, throttled-time, and OOM-kill deltas. Snapshots expose visible CPU/memory limits, container-accounted current memory, swap, provider memory high-water, and CPU/memory/I/O pressure totals. Missing limit sources report `unsupported`. Visible numeric limits take precedence over `max`; `unlimited` requires an explicit `max` source with no numeric bound. Individual missing measurements remain explicit; unsupported platforms do not substitute host-wide readings.
+
+This cgroup can contain the NeMo Fabric runner, the adapter tree, and other workloads. Its totals overlap process-tree totals and must not be added to them. Limits account for visible ancestors only; namespaces can hide additional restrictions. `memory_peak_bytes` covers cgroup lifetime or an external reset, not one invocation. The collector does not reset shared counters or write to cgroup control files.
+
+Pair these observations with `usage` and reward: more tokens/tool calls can explain more agent work; similar work with throttled CPU and a lower visible limit suggests a constrained execution environment. These signals support investigation and do not establish causality. Remote inference-server GPU usage still requires serving-side telemetry.
+
+The [native stats example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/system_stats) produces a transient memory spike and retained artifacts without model credentials.
 
 Snapshots observe resources only. They do not enforce limits, stop runtimes, or
 queue requests. Use the operating system or execution environment, such as
@@ -1028,6 +1156,7 @@ Important fields:
 | `output` | Harness output normalized to the configured output schema. |
 | `error` | Structured failure metadata when available. |
 | `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
+| `system_stats` | Optional `InvocationSystemStats`: monotonic adapter exchange duration, before/after observations with availability, and an optional CPU counter difference estimate. |
 | `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. |
 | `artifacts` | Output files, logs, patches, native artifacts, and other materialized references. |
 | `telemetry` | References to NeMo Relay or other telemetry streams produced by the run. |

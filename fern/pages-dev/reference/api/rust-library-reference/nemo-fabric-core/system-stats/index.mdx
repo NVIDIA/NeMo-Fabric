@@ -1,0 +1,37 @@
+---
+title: "Module system_stats"
+sidebar-title: "system_stats"
+slug: "/reference/api/rust-library-reference/nemo-fabric-core/system_stats"
+description: "Invocation measurements collected by NeMo Fabric in the executing runtime."
+position: 151
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+Invocation measurements collected by NeMo Fabric in the executing runtime.
+
+## Re-exports
+
+- `pub use cgroup::CgroupObservation;`
+- `pub use cgroup::CgroupSnapshot;`
+- `pub use cgroup::Measurement;`
+
+## Modules
+
+- [cgroup](cgroup/index.mdx): Native, read-only cgroup v2 observations of the executing adapter host. A cgroup is a scope, not a claim of exclusive ownership by this invocation.
+
+## Structs
+
+- [CgroupStats](struct-cgroupstats.mdx): Native cgroup observations and counter deltas over an invocation. Values identify the adapter host's cgroup, without claiming container exclusivity.
+- [GaugeSummary](struct-gaugesummary.mdx): A sampled gauge over the invocation window. Min/max cover retained valid samples. Mean holds the previous value only across adjacent valid samples no more than twice the requested cadence apart. Missing intervals never contribute zero. No sampled maximum claims a true process high-water mark.
+- [InvocationSystemStats](struct-invocationsystemstats.mdx): System measurements around one invocation, collected inside the executing runner. Process-tree observations cover its adapter host and descendants, excluding the orchestrator and remote model/service processes. The separate cgroup observations may include other workloads in the same cgroup.
+- [SampleSummary](struct-samplesummary.mdx): Resource series retention, reductions, and collection quality. Resource samples remain in the referenced JSONL artifact for interval selection.
+- [SystemStatsConfig](struct-systemstatsconfig.mdx): Native invocation collection, independent of Relay and recording. Omitted configuration collects all supported groups at the endpoints. Explicit null disables invocation stats, preserving the existing final `resource_snapshot` contract. Periodic sampling is independently opt-in.
+- [SystemStatsSamplingConfig](struct-systemstatssamplingconfig.mdx): Bounded periodic collection within an enabled invocation stats configuration.
+
+## Enums
+
+- [ResourceObservation](enum-resourceobservation.mdx): One attempt to observe the adapter host process tree. Missing readings are explicit; an unavailable observation never stands for zero resource usage.
+- [SystemStatsMetricGroup](enum-systemstatsmetricgroup.mdx): Resource groups supported by the native invocation collector.
