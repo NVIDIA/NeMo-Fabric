@@ -844,6 +844,8 @@ def thread_config(
     mcp_servers = _native_mcp_servers(config)
     if mcp_servers:
         result["mcp_servers"] = mcp_servers
+    # Keep the pre-0.154 behavior of waiting for configured MCP servers.
+    result["mcp_optional_startup_grace_ms"] = 0
     if callback_url := _mcp_oauth_callback_url(config):
         result["mcp_oauth_callback_url"] = callback_url
     overrides = _mapping(

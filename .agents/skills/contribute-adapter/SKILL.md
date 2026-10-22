@@ -57,7 +57,11 @@ Keep descriptor claims, implementation, focused tests, public documentation,
 catalog entries, and packaged metadata synchronized. Start with the narrowest
 truthful capability set.
 
-For usage changes, verify invocation-local accounting through the adapter contract and consumer SDK, including warm-session deltas, unknown counters, cache semantics, and unsuccessful results. Keep generated schemas and language bindings in parity. Preserve the closed `fabric.adapter/v1alpha2` `AgentUsage` shape; carry detailed cache-write, reasoning, peak request, and per-model data in the descriptor-declared `usage.extensions["nemo_fabric.detailed_token_usage.v1"]` object until a new adapter contract revision negotiates those fields. Consumers treat any detailed field for an input or output dimension as selecting the detailed counters for that dimension, so require complete, internally consistent counters instead of relying on the top-level view as a fallback.
+For usage changes, verify invocation-local accounting through the adapter contract and consumer SDK, including warm-session deltas, omitted fields, cache semantics and unsuccessful results. Keep generated schemas and language bindings in parity. Preserve the closed `fabric.adapter/v1alpha2` `AgentUsage` shape.
+
+For a collector using shared accounting, declare `usage.extensions["nemo_fabric.usage_accounting.v1"]` in the descriptor and use Python `usage_from_observations` or TypeScript `usageFromObservations`. Keep source parsing, deduplication and invocation ownership in the collector; core normalizes counts and applies qualified pricing. An omitted count stays unknown and a reported zero stays zero. Freeze observations at return; late usage cannot move to a later invocation. An execution failure alone does not erase settled usage.
+
+The shared helper also supplies the legacy `nemo_fabric.detailed_token_usage.v1` projection for older consumers. Keep its descriptor declaration and inclusion flags consistent. Detailed legacy counters select their dimension without falling back to top-level counters. Do not replace incomplete shared accounting with legacy fields, logs or Relay totals, and do not promote client estimates to provider-reported cost.
 
 For `instructions.system`, keep `config.system_instruction_modes`, planning
 behavior, direct adapter validation, and target-native composition synchronized.
