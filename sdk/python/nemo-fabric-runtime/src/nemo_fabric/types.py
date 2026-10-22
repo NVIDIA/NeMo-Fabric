@@ -2587,8 +2587,11 @@ class AppliedPricing(FabricMapping):
         if re.fullmatch(r"sha256:[0-9a-f]{64}", data["catalog_sha256"]) is None:
             raise FabricConfigError("invalid applied pricing fingerprint")
         rates = _mapping(data["rates"], "pricing rates")
-        if set(rates) != {"input", "output", "cache_read", "cache_write"}:
+        allowed = {"input", "output", "cache_read", "cache_write"}
+        if not {"input", "output"} <= set(rates) <= allowed:
             raise FabricConfigError("incomplete pricing rates")
+        rates.setdefault("cache_read", None)
+        rates.setdefault("cache_write", None)
         for key, value in rates.items():
             if value is not None or key in {"input", "output"}:
                 _usage_counter(value, "pricing rate")
@@ -2902,6 +2905,8 @@ class RunResult(FabricMapping):
             are preserved as-is.
         error: Structured failure, or ``None`` on success.
         usage: Normalized invocation usage, or ``None`` when unavailable.
+        model_usage: Complete counts, observations and accounting gaps, or
+            ``None`` when supported accounting evidence is unavailable.
         resource_snapshot: Runtime resource snapshot read once after the
             adapter returned this result, or ``None`` when the runtime's
             resources could not be observed.
