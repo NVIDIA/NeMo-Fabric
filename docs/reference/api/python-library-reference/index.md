@@ -12,6 +12,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 - [`nemo_fabric.accounting`](./nemo_fabric.accounting.md#module-nemo_fabricaccounting): Typed model accounting and invocation summaries with explicit coverage.
 - [`nemo_fabric.reporting`](./nemo_fabric.reporting.md#module-nemo_fabricreporting): Inspect saved invocation evidence without a benchmark manifest or trace import.
+- [`nemo_fabric.comparisons`](./nemo_fabric.comparisons.md#module-nemo_fabriccomparisons): Compare caller-defined task attempts using saved Fabric invocation evidence.
 - [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 - [`nemo_fabric.capabilities`](./nemo_fabric.capabilities.md#module-nemo_fabriccapabilities): Metadata-only adapter inspection for host-side admission.
 - [`nemo_fabric.runtime`](./nemo_fabric.runtime.md#module-nemo_fabricruntime): Runtime lifecycle support for the NVIDIA NeMo Fabric Python SDK.
@@ -126,6 +127,10 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`reporting.render_result_summary`](./nemo_fabric.reporting.md#function-render_result_summary): Render a concise overview; details add resource evidence.
 - [`reporting.summarize_request`](./nemo_fabric.reporting.md#function-summarize_request): Describe outer dispatch evidence without fabricating an invocation result.
 - [`reporting.summarize_result`](./nemo_fabric.reporting.md#function-summarize_result): Describe one returned invocation, preserving independent usable evidence.
+- [`comparisons.main`](./nemo_fabric.comparisons.md#function-main): Print an explicit comparison manifest as a table or JSON without running agents.
+- [`comparisons.read_comparison_manifest`](./nemo_fabric.comparisons.md#function-read_comparison_manifest): Read a bounded manifest; evidence paths are relative to its explicit root.
+- [`comparisons.render_comparison_summary`](./nemo_fabric.comparisons.md#function-render_comparison_summary): Render per-metric coverage; details retain identities and pricing evidence.
+- [`comparisons.summarize_attempts`](./nemo_fabric.comparisons.md#function-summarize_attempts): Summarize an explicit inventory of scheduled custom-task attempts.
 - [`capabilities.inspect_adapter`](./nemo_fabric.capabilities.md#function-inspect_adapter): Inspect a standalone runtime using descriptor metadata without loading its SDK.
 
 

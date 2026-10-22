@@ -24,6 +24,7 @@ PYTHONPATH="sdk/python/nemo-fabric-runtime/src" lazydocs \
   --overview-file "index.md" \
   "nemo_fabric.accounting" \
   "nemo_fabric.reporting" \
+  "nemo_fabric.comparisons" \
   "nemo_fabric.client" \
   "nemo_fabric.capabilities" \
   "nemo_fabric.runtime" \
@@ -130,6 +131,11 @@ add_frontmatter \
   "Run Evidence Reporting" \
   "Inspect saved invocation results, accounting coverage, and diagnostic references." \
   "/reference/api/python-library-reference/reporting"
+add_frontmatter \
+  "$out/nemo_fabric.comparisons.md" \
+  "Task Comparisons" \
+  "Compare caller-defined task attempts with explicit evidence coverage." \
+  "/reference/api/python-library-reference/comparisons"
 add_frontmatter \
   "$out/nemo_fabric.errors.md" \
   "Errors" \

@@ -1562,3 +1562,23 @@ reference automatically or treats it as proof that publication succeeded. An
 outer timeout does not establish that inner or remote work stopped. Existing
 invocation status and error stage/code remain the stop evidence for returned
 results; this adds no competing stop-reason field.
+
+
+### Compare Your Own Tasks
+
+The comparison module works with your own task runner, test suite or benchmark framework. Ordinary recording needs no task labels. For a comparison, the caller supplies an explicit inventory of attempts, task revisions, configuration IDs and expected request IDs with relative saved-evidence paths:
+
+```python
+from pathlib import Path
+
+from nemo_fabric.comparisons import summarize_attempts, render_comparison_summary
+
+report = summarize_attempts(attempts, root=Path("./runs"), inventory_complete=True)
+print(render_comparison_summary(report))
+```
+
+Set `inventory_complete=True` only when every scheduled attempt, including retries and attempts with no returned result, is listed. Each attempt separately declares `requests_complete`. Missing evidence stays in the denominator. An optional named and versioned evaluator supplies task verdicts; execution success never supplies one. Caller-measured elapsed time requires its own scope, and parallel invocation times and resource windows are not summed.
+
+The summary separates complete totals, observed contributions, accounting gaps and result availability. A request can explicitly name an invocation-record fallback when its full result is unavailable. A valid full result remains authoritative even when its accounting is unknown. Accounting recovered from a record is labeled `core_invocation`; it does not establish the outer execution outcome. Incompatible price catalogs remain separate groups. The comparison table labels each configuration's contributing pricing bases and warns when they differ or are unverified. A complete estimate establishes accounting coverage within its configuration, not cost comparability across different tariffs. Different task/revision inventories are shown without selecting a cohort or ranking partial spend.
+
+Use `python -m nemo_fabric.comparisons manifest.json` for an overview, add `--details` for all token dimensions and pricing evidence, or add `--json` for structured output. The SDK renderer accepts `render_comparison_summary(report, details=True)` for the same detailed view. Each displayed usage metric retains its own complete/expected-request coverage. Caller timing reports the median of available attempt observations only when their measured scopes agree; it never sums overlapping invocation intervals. Partial timing retains its observation count. Task inventories, evaluators and pricing compatibility remain independent requirements for a fair comparison. The [custom-task example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/attempt_comparison) documents the manifest and produces explicitly synthetic evidence without model calls. Logs and optional Relay traces remain references, never accounting backfill.

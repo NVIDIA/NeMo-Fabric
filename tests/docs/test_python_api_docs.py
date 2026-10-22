@@ -39,6 +39,7 @@ NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.accounting": "/reference/api/python-library-reference/accounting",
     "nemo_fabric.reporting": "/reference/api/python-library-reference/reporting",
+    "nemo_fabric.comparisons": "/reference/api/python-library-reference/comparisons",
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
     "nemo_fabric.capabilities": "/reference/api/python-library-reference/capabilities",
     "nemo_fabric.runtime": "/reference/api/python-library-reference/runtime",
@@ -51,7 +52,7 @@ MODULE_SLUGS = {
     "nemo_fabric.types": "/reference/api/python-library-reference/types",
     "nemo_fabric.errors": "/reference/api/python-library-reference/errors",
 }
-PUBLIC_SUBMODULES = ("nemo_fabric.reporting",)
+PUBLIC_SUBMODULES = ("nemo_fabric.reporting", "nemo_fabric.comparisons")
 MEMBER_SIGNATURE = re.compile(
     r"^### <kbd>(?:method|classmethod)</kbd> `([^`]+)`\n\n"
     r"```python\n(.*?)\n```",

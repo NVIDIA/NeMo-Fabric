@@ -13,7 +13,6 @@ Inspect saved invocation evidence without a benchmark manifest or trace import.
 **Global Variables**
 ---------------
 - **MAX_RESULT_BYTES**
-- **RESOURCE_SCOPE**
 
 ---
 
@@ -110,7 +109,7 @@ Describe the invocation interval without assuming whole-runtime success.
 def render_result_summary(summary: Mapping[str, Any], *, details: bool = False) -> str
 ```
 
-Render a concise overview; details add resource evidence.
+Render a concise overview; details add resource and pricing evidence.
 
 Token and cost completeness remain separate. JSON quantities and accounting semantics are unchanged by this presentation.
 

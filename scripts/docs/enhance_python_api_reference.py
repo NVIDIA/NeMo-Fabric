@@ -18,6 +18,7 @@ from pydantic import BaseModel
 MODULE_NAMES = (
     "nemo_fabric.accounting",
     "nemo_fabric.reporting",
+    "nemo_fabric.comparisons",
     "nemo_fabric.client",
     "nemo_fabric.capabilities",
     "nemo_fabric.runtime",
