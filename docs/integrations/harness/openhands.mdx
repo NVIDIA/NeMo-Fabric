@@ -119,19 +119,13 @@ closes the conversation and removes the adapter-owned temporary profile state.
 Create a new runtime to change the model, workspace, tools, MCP servers, or
 skills.
 
-Usage counts the tokens OpenHands records for the invocation's model calls. A
-token counter is reported only when every model response supplies enough
-information to determine it. Cache reads are known when every response reported
-a cache-read count, including 0. For native Gemini models using LiteLLM's
-`gemini` or `vertex_ai` providers, an omitted cache-read count means zero.
-OpenAI-compatible proxy routes keep it unknown. Input and output are known when
-every response reported them above 0, because LiteLLM stores an omitted count as
-zero. A count above the uint64 maximum is unknown. Cache reads above a
-response's own input, or above the summed input, are unknown. Usage is unknown
-when a model response reported neither prompt nor completion tokens. Failed
-model attempts that OpenHands retries are not counted. OpenHands combines a
-LiteLLM proxy cost header or a locally calculated cost into one counter without
-recording which one it used, so the adapter does not report `cost_usd`.
+## Token Usage
+
+The adapter reports invocation-owned primary and condenser observations through the shared usage reducer. `RunResult.model_usage` separates complete counts, observations, accounting gaps, provider-reported cost and catalog estimates. Missing or ambiguous counters stay unknown; they do not become zero.
+
+The completion-log callback supplies per-response evidence; the SDK's retry listener exposes intermediate failures. A model attempt without usable usage or an interrupted invocation withholds complete counts while preserving settled observations. An ordinary failed invocation keeps complete usage when its model calls were accounted for. Snapshots freeze at return, and late callbacks never transfer to another invocation.
+
+LiteLLM zero-fills omitted main token counts, so a main counter of 0 cannot establish a literal provider zero at this boundary. Cache counts remain independent of those main counts where field presence survives normalization. On the Anthropic path, LiteLLM fills omitted cache buckets with 0, so this callback cannot certify a zero cache count. Positive cache buckets remain useful; inclusive input and its derived total remain incomplete until all constituent buckets are established. Normalized positive input remains an observation and positive output stays known. LiteLLM's estimated or clamped reasoning breakdown is not published as provider-reported reasoning. Server-iteration aggregates retain observations with an unverified-scope gap. Dispatching the SDK's separate profile-backed vision client makes full scope unknown. OpenHands' unlabeled cost accumulator is not published as provider-reported cost. See the [adapter accounting details](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/openhands#token-usage) for source boundaries and route-qualified pricing and explicit user-catalog assumptions.
 
 ## Run the Code Review Example
 

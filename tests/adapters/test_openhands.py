@@ -24,6 +24,12 @@ from nemo_fabric_adapters.openhands import adapter
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _base_usage(usage):
+    return {
+        key: value for key, value in usage.to_mapping().items() if key != "extensions"
+    }
+
+
 class MockStatus(str, Enum):
     FINISHED = "finished"
     ERROR = "error"
@@ -108,7 +114,7 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
         accumulated_token_usage=usage,
         accumulated_cost=0.25,
         token_usages=[usage],
-        response_latencies=[SimpleNamespace(latency=0.5)],
+        response_latencies=[SimpleNamespace(latency=0.5, response_id="resp-1")],
     )
     metrics = MagicMock()
     metrics.deep_copy.return_value = object()
@@ -427,7 +433,7 @@ ALL_COUNTS = ("input", "cached", "output")
             12,
             lambda call: _litellm_usage(10, 1, cached=8),
             _litellm_usage(1000, 100, cached=600),
-            ALL_COUNTS,
+            None,
         ),
         (
             None,
@@ -501,6 +507,7 @@ async def test_invoke_condenses_history_and_counts_summary_usage(
     agent_usage: Callable[[int], dict],
     summary_usage: dict | None,
     known: tuple[str, ...] | None,
+    tmp_path: Path,
 ):
     pytest.importorskip("openhands.sdk")
     pytest.importorskip("openhands.tools")
@@ -508,6 +515,12 @@ async def test_invoke_condenses_history_and_counts_summary_usage(
     from litellm.types.utils import ModelResponse
     from openhands.sdk.event import Condensation
     from openhands.sdk.llm import llm as openhands_llm
+    from openhands.sdk.llm import llm_profile_store
+
+    # Isolate automatic vision-profile discovery from the user's saved models.
+    monkeypatch.setattr(
+        llm_profile_store, "_DEFAULT_PROFILE_DIR", tmp_path / "profiles"
+    )
 
     calls = {"agent": 0, "summary": 0}
     sent = {"input": 0, "cached": 0, "output": 0}
@@ -583,7 +596,8 @@ async def test_invoke_condenses_history_and_counts_summary_usage(
     assert calls["agent"] == expected_agent_calls
     assert sum(isinstance(event, Condensation) for event in events) == 1
     if known is None:
-        assert result.usage is None
+        assert result.usage.input_tokens is None
+        assert result.usage.output_tokens is None
         return
     expected = {name: sent[name] if name in known else None for name in sent}
     assert result.usage.input_tokens == expected["input"]
@@ -592,11 +606,9 @@ async def test_invoke_condenses_history_and_counts_summary_usage(
         True if "input" in known else None
     )
     assert result.usage.output_tokens == expected["output"]
-    assert result.usage.total_tokens == (
-        expected["input"] + expected["output"]
-        if "input" in known and "output" in known
-        else None
-    )
+    # Core derives the normalized total; LiteLLM's synthesized total is not
+    # promoted as an independent provider report.
+    assert result.usage.total_tokens is None
     # LiteLLM cannot price the test model, and OpenHands costs are estimates.
     assert result.usage.cost_usd is None
 
@@ -653,12 +665,11 @@ async def test_repeated_invocation_returns_only_current_turn_and_usage(
     assert first.output == {"response": "first response"}
     assert second.output == {"response": "second response"}
     assert second.usage is not None
-    assert second.usage.to_mapping() == {
+    assert _base_usage(second.usage) == {
         "input_tokens": 11,
         "cached_input_tokens": 3,
         "input_tokens_include_cache": True,
         "output_tokens": 5,
-        "total_tokens": 16,
     }
     assert mock_openhands["conversation"].send_message.call_args_list[0].args == (
         "first",
@@ -674,8 +685,8 @@ async def test_repeated_invocation_returns_only_current_turn_and_usage(
     ("provider", "model", "expected_cached"),
     [
         ("nvidia", "nvidia/test-model", None),
-        ("gemini", "gemini-2.5-flash", 3),
-        ("vertex_ai", "gemini-2.5-pro", 3),
+        ("gemini", "gemini-2.5-flash", 0),
+        ("vertex_ai", "gemini-2.5-pro", 0),
     ],
     ids=["openai-compatible", "gemini", "vertex-ai-gemini"],
 )
@@ -691,6 +702,8 @@ async def test_invoke_without_cache_details_depends_on_provider(
     openhands_payload["config"]["models"]["default"].update(
         provider=provider, model=model
     )
+    if provider in {"gemini", "vertex_ai"}:
+        openhands_payload["config"]["models"]["default"].pop("base_url")
     mock_openhands["usage_log"].clear()
     runtime = adapter.OpenHandsRuntime()
     await runtime.start(_start_payload(openhands_payload))
@@ -715,7 +728,7 @@ async def test_invoke_without_cache_details_depends_on_provider(
             {"input_tokens": (1 << 64) - 1, "total_tokens": None},
         ),
         ({"cache_read_tokens": 12}, {"input_tokens": 11, "cached_input_tokens": None}),
-        ({"response_id": "other"}, {"input_tokens": 11, "cached_input_tokens": None}),
+        ({"response_id": "other"}, {"input_tokens": None, "cached_input_tokens": None}),
     ],
     ids=[
         "input-past-uint64",
@@ -735,13 +748,15 @@ async def test_invoke_leaves_inconsistent_counts_unknown(
     delta = mock_openhands["metrics"].diff.return_value
     usage = SimpleNamespace(**{**vars(delta.token_usages[0]), **record})
     delta.token_usages = [usage]
+    if "cache_read_tokens" in record:
+        mock_openhands["usage_log"]["cached_tokens"] = record["cache_read_tokens"]
     runtime = adapter.OpenHandsRuntime()
     await runtime.start(_start_payload(openhands_payload))
 
     result = await runtime.invoke(*_invocation(openhands_payload, "review"))
 
     assert result.status is AgentRunStatus.SUCCEEDED
-    usage_mapping = result.usage.to_mapping()
+    usage_mapping = _base_usage(result.usage)
     for name, value in expected.items():
         assert usage_mapping.get(name) == value
 
@@ -782,7 +797,9 @@ async def test_invoke_checks_each_response_separately(
     ]
     delta = mock_openhands["metrics"].diff.return_value
     delta.token_usages = records
-    delta.response_latencies = [SimpleNamespace(latency=0.5) for _ in records]
+    delta.response_latencies = [
+        SimpleNamespace(latency=0.5, response_id=r.response_id) for r in records
+    ]
     telemetry = mock_openhands["telemetry"]
     state = mock_openhands["conversation"].state
 
@@ -812,7 +829,7 @@ async def test_invoke_checks_each_response_separately(
     result = await runtime.invoke(*_invocation(openhands_payload, "review"))
 
     assert result.status is AgentRunStatus.SUCCEEDED
-    assert result.usage.to_mapping() == expected
+    assert _base_usage(result.usage) == expected
 
 
 def _completion_log(response_id: str, usage: dict) -> str:
@@ -821,53 +838,6 @@ def _completion_log(response_id: str, usage: dict) -> str:
 
 # LiteLLM declares cached_tokens as optional, so a null count is unreported.
 # The Responses API carries cache reads in input_tokens_details instead.
-@pytest.mark.parametrize(
-    ("usage", "reported"),
-    [
-        ({"prompt_tokens_details": {"cached_tokens": 0}}, True),
-        ({"prompt_tokens_details": {"cached_tokens": None}}, False),
-        ({"prompt_tokens_details": {"audio_tokens": 0}}, False),
-        (
-            {"prompt_tokens_details": {}, "input_tokens_details": {"cached_tokens": 4}},
-            True,
-        ),
-        (
-            {
-                "prompt_tokens_details": {"text_tokens": 10},
-                "input_tokens_details": {"cached_tokens": 4},
-            },
-            True,
-        ),
-        ({"input_tokens_details": {"cached_tokens": None}}, False),
-    ],
-    ids=[
-        "zero",
-        "null",
-        "sibling-detail-only",
-        "empty-prompt-details-with-input-details",
-        "prompt-details-without-cache-with-input-details",
-        "null-input-details",
-    ],
-)
-def test_completion_log_reports_cache_reads_only_when_counted(
-    usage: dict, reported: bool
-):
-    reports = adapter._CacheReadReports()
-
-    reports.record("test-model.json", _completion_log("resp-1", usage))
-
-    assert reports.reported == [("resp-1", reported)]
-
-
-def test_completion_log_ignores_failed_request_logs():
-    reports = adapter._CacheReadReports()
-    cached = {"prompt_tokens_details": {"cached_tokens": 3}}
-
-    reports.record("test-model.json", _completion_log("resp-1", cached))
-    reports.record("test-model-error.json", json.dumps({"error": "boom"}))
-    reports.record("test-model.json", _completion_log("resp-2", cached))
-
-    assert reports.reported == [("resp-1", True), ("resp-2", True)]
 
 
 async def test_failed_invocation_reports_usage_from_its_own_responses(
@@ -898,12 +868,11 @@ async def test_failed_invocation_reports_usage_from_its_own_responses(
     assert result.status is AgentRunStatus.FAILED
     assert result.error.code == "openhands_invocation_failed"
     # Only the second invocation's report counts, so cache reads are known.
-    assert result.usage.to_mapping() == {
+    assert _base_usage(result.usage) == {
         "input_tokens": 11,
         "cached_input_tokens": 3,
         "input_tokens_include_cache": True,
         "output_tokens": 5,
-        "total_tokens": 16,
     }
 
 
@@ -933,7 +902,8 @@ async def test_invoke_without_model_response_reports_unknown_usage(
     result = await runtime.invoke(*_invocation(openhands_payload, "review"))
 
     assert result.status is AgentRunStatus.SUCCEEDED
-    assert result.usage is None
+    assert result.usage.input_tokens is None
+    assert result.usage.output_tokens is None
 
 
 async def test_nonfinished_conversation_returns_failed_result(
@@ -1087,9 +1057,7 @@ async def test_start_rejects_unapplied_mcp_extensions(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
-    openhands_payload["config"]["mcp"]["extensions"] = {
-        "example.test/option": True
-    }
+    openhands_payload["config"]["mcp"]["extensions"] = {"example.test/option": True}
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
@@ -1152,3 +1120,27 @@ async def test_start_rejects_empty_mcp_target(
         await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
 
     assert caught.value.code == "openhands_mcp_target_invalid"
+
+
+@pytest.mark.parametrize("override", ["global", "environment"])
+async def test_custom_gemini_route_does_not_infer_omitted_cache_zero(
+    openhands_payload, mock_openhands, monkeypatch, override
+):
+    litellm = pytest.importorskip("litellm")
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    model = openhands_payload["config"]["models"]["default"]
+    model.update(provider="gemini", model="gemini-2.5-flash")
+    model.pop("base_url")
+    if override == "global":
+        monkeypatch.setattr(litellm, "api_base", "https://custom.test/v1")
+    else:
+        monkeypatch.setenv("GEMINI_API_BASE", "https://custom.test/v1")
+    mock_openhands["usage_log"].clear()
+    runtime = adapter.OpenHandsRuntime()
+    await runtime.start(_start_payload(openhands_payload))
+    try:
+        result = await runtime.invoke(*_invocation(openhands_payload, "review"))
+    finally:
+        await runtime.stop()
+    assert result.usage.input_tokens == 11
+    assert result.usage.cached_input_tokens is None
