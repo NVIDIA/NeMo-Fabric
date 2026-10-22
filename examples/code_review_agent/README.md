@@ -501,4 +501,4 @@ export NVIDIA_API_KEY="<your-key>"
 .venv/bin/python -m examples.code_review_agent --variant strands --input "Review the workspace changes."
 ```
 
-This variant uses the NVIDIA model configured in `strands_config()`, append-only review instructions, and native shell/read/write/edit tools. Tool calls run with the task environment's permissions. Normalized skills and Relay telemetry are unsupported. For Bedrock or a keyless custom endpoint, update the default `ModelConfig` as shown in the [adapter guide](../../adapters/typescript/strands/README.md). No Dockerfile is required.
+This variant uses the NVIDIA model configured in `strands_config()`, append-only review instructions, and the native read tool. Tool calls run with the task environment's permissions. Normalized skills and Relay telemetry are unsupported. For Bedrock or a keyless custom endpoint, update the default `ModelConfig` as shown in the [adapter guide](../../adapters/typescript/strands/README.md). No Dockerfile is required.

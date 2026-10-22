@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Strands ACP Adapter
 
-Run the standard [Strands harness](https://github.com/strands-agents/harness-sdk/tree/main/strands-cli) through NVIDIA NeMo Fabric. The `nvidia.fabric.strands` adapter launches `strands --acp-server` using the [shared ACP runner](../common/acp-runner.md), retains one conversation per Fabric runtime, and submits ordered text invocations.
+Run the standard [Strands harness](https://github.com/strands-agents/harness-sdk/tree/main/strands-cli) through NVIDIA NeMo Fabric. The `nvidia.fabric.strands` adapter launches `strands --acp-server` using the [shared ACP runner](../common/acp-runner.md), retains one conversation per NeMo Fabric runtime, and submits ordered text invocations.
 
 ```mermaid
 flowchart LR
@@ -34,7 +34,7 @@ npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-comm
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-strands
 ```
 
-The published adapter package is `nemo-fabric-adapters-strands`. Its descriptor is `strands.fabric-adapter.json` in the installed package. Fabric's Python adapter catalog also includes the descriptor; source development can select it explicitly as below.
+The published adapter package is `nemo-fabric-adapters-strands`. Its descriptor is `strands.fabric-adapter.json` in the installed package. NeMo Fabric's Python adapter catalog also includes the descriptor; source development can select it explicitly as below.
 
 ## Configure an Agent Invocation
 
@@ -53,7 +53,7 @@ config = FabricConfig(
     discovery=DiscoveryConfig(local_paths=[
         root / "adapters/typescript/strands/strands.fabric-adapter.json",
     ]),
-    harness=HarnessConfig(adapter_id="nvidia.fabric.strands"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.strands", settings={"builtin_tools": ["read"]}),
     models={"default": ModelConfig(
         provider="nvidia",
         model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
@@ -75,7 +75,7 @@ async def main():
 asyncio.run(main())
 ```
 
-Only the `default` model role is supported. With no configured model, Strands selects its native Bedrock default. To select a Bedrock model explicitly, use `ModelConfig(provider="bedrock", model="<Bedrock model ID>")` without `base_url` or `api_key_env`. Configure the AWS SDK credential chain and region before starting Fabric. AWS profiles and SSO caches remain accessible through the runtime's isolated home.
+Only the `default` model role is supported. With no configured model, Strands selects its native Bedrock default. To select a Bedrock model explicitly, use `ModelConfig(provider="bedrock", model="<Bedrock model ID>")` without `base_url` or `api_key_env`. Configure the AWS SDK credential chain and region before starting NeMo Fabric. AWS profiles and SSO caches remain accessible through the runtime's isolated home.
 
 For Chat Completions endpoints, use provider `openai` or `nvidia` and an explicit `base_url`. Both map to Strands' native `litellm/` profile, which creates a direct OpenAI-compatible Chat Completions client; a LiteLLM proxy is not required. The model ID is passed unchanged after the profile prefix. The CLI's `openai/` profile uses the Responses API, so it is not used for this mapping.
 
@@ -96,13 +96,13 @@ Query the endpoint's model catalog for its served ID. Strands does not provide a
 
 | Harness setting | Default | Behavior |
 | --- | --- | --- |
-| `builtin_tools` | `shell`, `read`, `write`, `edit` | Select from these tools and `web_fetch`; an empty list disables built-in tools. |
+| `builtin_tools` | `shell`, `read`, `write`, `edit` | Select from these tools and `web_fetch`; an empty list disables these tools. |
 | `max_invocations` | `100` | Maximum dispatched invocations in one conversation, from 1 to 10,000. Start a new runtime when exhausted; history is not silently reset. |
 | `insecure_http_model_hosts` | `[]` | Explicit hostnames or IPs allowed for HTTP model endpoints outside loopback. |
 
-The standard Strands ACP server executes enabled tools with the task environment's permissions. There is no adapter permission mode or normalized tool-policy support. Tool selection is not an operating-system sandbox; use an appropriate Fabric environment when running untrusted tasks.
+The standard Strands ACP server executes enabled tools with the task environment's permissions. There is no adapter permission mode or normalized tool-policy support. Tool selection is not an operating-system sandbox; use an appropriate NeMo Fabric environment when running untrusted tasks.
 
-Configure MCP through Fabric's normalized `mcp.servers`, not harness settings:
+Configure MCP through NeMo Fabric's normalized `mcp.servers`, not harness settings:
 
 ```python
 import sys

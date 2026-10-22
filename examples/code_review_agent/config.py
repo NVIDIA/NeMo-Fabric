@@ -275,7 +275,9 @@ def strands_config() -> FabricConfig:
     config = kiro_config()
     config.discovery = DiscoveryConfig(local_paths=[STRANDS_DESCRIPTOR])
     config.harness = HarnessConfig(
-        adapter_id="nvidia.fabric.strands", resolution="preinstalled"
+        adapter_id="nvidia.fabric.strands",
+        resolution="preinstalled",
+        settings={"builtin_tools": ["read"]},
     )
     config.models = {"default": _nvidia_code_review_model()}
     config.instructions = InstructionsConfig(

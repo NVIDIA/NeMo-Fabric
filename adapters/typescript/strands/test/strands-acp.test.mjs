@@ -78,6 +78,12 @@ test("preserves real ACP session history, isolates runtime state, and uses per-i
   input.config.instructions = {
     system: { mode: "append", content: "--instruction-text" },
   };
+  const previousSecret = process.env.TEST_UNRELATED_SECRET;
+  process.env.TEST_UNRELATED_SECRET = "must-not-leak";
+  t.after(() => {
+    if (previousSecret === undefined) delete process.env.TEST_UNRELATED_SECRET;
+    else process.env.TEST_UNRELATED_SECRET = previousSecret;
+  });
   const factory = new StrandsAcpSessionFactory();
   const first = await factory.create(input);
   t.after(() => first.stop());

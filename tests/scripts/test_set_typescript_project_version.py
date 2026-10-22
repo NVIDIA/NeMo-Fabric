@@ -293,6 +293,9 @@ def test_updates_the_complete_typescript_package_graph(
     kiro = json.loads(
         (typescript_project / "adapters/typescript/kiro/package.json").read_text()
     )
+    strands = json.loads(
+        (typescript_project / "adapters/typescript/strands/package.json").read_text()
+    )
 
     assert contract["version"] == version
     assert contract_lock["version"] == version
@@ -336,6 +339,9 @@ def test_updates_the_complete_typescript_package_graph(
     assert kiro["version"] == version
     assert kiro["dependencies"]["nemo-fabric-adapter-contract"] == version
     assert kiro["dependencies"]["nemo-fabric-adapters-common"] == version
+    assert strands["version"] == version
+    assert strands["dependencies"]["nemo-fabric-adapter-contract"] == version
+    assert strands["dependencies"]["nemo-fabric-adapters-common"] == version
     assert (
         adapters_lock["packages"]["common"]["dependencies"][
             "nemo-fabric-adapter-contract"
@@ -367,6 +373,10 @@ def test_updates_the_complete_typescript_package_graph(
         "nemo-fabric-adapters-common": version,
     }
     assert adapters_lock["packages"]["kiro"]["dependencies"] == {
+        "nemo-fabric-adapter-contract": version,
+        "nemo-fabric-adapters-common": version,
+    }
+    assert adapters_lock["packages"]["strands"]["dependencies"] == {
         "nemo-fabric-adapter-contract": version,
         "nemo-fabric-adapters-common": version,
     }
