@@ -282,6 +282,7 @@ fn config(
             .unwrap_or_default(),
         instructions: None,
         runtime: RuntimeConfig {
+            record: None,
             input_schema: "text".to_string(),
             output_schema: "message".to_string(),
             artifacts: None,
@@ -308,6 +309,7 @@ fn config(
         telemetry: None,
         system_stats: Some(Default::default()),
         relay: None,
+        pricing: None,
         extensions: BTreeMap::new(),
     }
 }

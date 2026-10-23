@@ -1,0 +1,1112 @@
+{
+  "$defs": {
+    "AppliedPricing": {
+      "additionalProperties": false,
+      "description": "Persisted entry and selected rates, so saved prices remain reproducible.",
+      "properties": {
+        "catalog_sha256": {
+          "description": "Exact catalog containing this entry.",
+          "type": "string"
+        },
+        "model_id": {
+          "description": "Entry's model identity, which may match an explicit alias.",
+          "type": "string"
+        },
+        "pricing_as_of": {
+          "description": "Date recorded by the catalog author.",
+          "type": "string"
+        },
+        "pricing_source": {
+          "description": "Source recorded by the catalog author.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Entry's provider, without rewriting the observed identity.",
+          "type": "string"
+        },
+        "rates": {
+          "$ref": "#/$defs/RateSnapshot",
+          "description": "One selected rate set; distinct selections are retained in `model_usage::TokenCost.applied_rates`."
+        }
+      },
+      "required": [
+        "catalog_sha256",
+        "provider",
+        "model_id",
+        "pricing_as_of",
+        "pricing_source",
+        "rates"
+      ],
+      "type": "object"
+    },
+    "ContextValue": {
+      "anyOf": [
+        {
+          "description": "An allowlisted key's string value, cut to 256 characters.",
+          "type": "string"
+        },
+        {
+          "description": "An allowlisted key's integer value.",
+          "format": "int64",
+          "type": "integer"
+        },
+        {
+          "$ref": "#/$defs/NotRecorded",
+          "description": "Any other key or value: the key name only."
+        }
+      ],
+      "description": "A request context value as the start line keeps it."
+    },
+    "CostAmount": {
+      "description": "Complete and observed amounts in integer nano-USD.",
+      "properties": {
+        "amount_nano_usd": {
+          "description": "Complete amount for this invocation/model scope.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "observed_nano_usd": {
+          "description": "Valid observed contributions, not a guaranteed bound or invoice.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "EndArtifact": {
+      "description": "One result artifact on the end line.",
+      "properties": {
+        "kind": {
+          "description": "Artifact kind.",
+          "type": "string"
+        },
+        "media_type": {
+          "description": "Media type.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Logical artifact name.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Path relative to the artifact root; absent for a path outside it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "EndError": {
+      "description": "The end line's error.",
+      "properties": {
+        "code": {
+          "description": "Error code matching `^[a-z0-9_.:-]{1,128}$`, else `unrecognized`.",
+          "pattern": "^[a-z0-9_.:-]{1,128}$",
+          "type": "string"
+        },
+        "retryable": {
+          "description": "Whether a consumer-level retry is considered safe.",
+          "type": "boolean"
+        },
+        "stage": {
+          "$ref": "#/$defs/ErrorStage",
+          "description": "Lifecycle stage where the failure surfaced."
+        }
+      },
+      "required": [
+        "code",
+        "stage",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "EndLine": {
+      "description": "Fields of the end line.",
+      "properties": {
+        "artifacts": {
+          "description": "Result artifacts, with paths relative to the artifact root.",
+          "items": {
+            "$ref": "#/$defs/EndArtifact"
+          },
+          "type": "array"
+        },
+        "elapsed_ms": {
+          "description": "Monotonic time from the start line to the end line, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EndError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Error code, stage and retryable flag, without the message."
+        },
+        "exchange_elapsed_ms": {
+          "description": "Adapter exchange only, excluding queue, record I/O, preparation,\nnormalization and result persistence. Absent if dispatch never began.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model_usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelUsage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Validated normalized accounting frozen at the invocation boundary."
+        },
+        "outcome_scope": {
+          "const": "invocation",
+          "description": "This line observes the invocation, before one-shot runtime shutdown.",
+          "type": "string"
+        },
+        "resource_scope": {
+          "$ref": "#/$defs/ResourceScope",
+          "description": "Scope of the resource observations, never causal invocation usage."
+        },
+        "resources": {
+          "$ref": "#/$defs/ResourceObservation",
+          "description": "Same process endpoint as invocation stats, frozen before timeout cleanup."
+        },
+        "resources_before": {
+          "$ref": "#/$defs/ResourceObservation",
+          "description": "Same process endpoint as invocation stats, frozen before adapter exchange."
+        },
+        "result": {
+          "description": "Expected full-result file next to this record; absence means not saved.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus",
+          "description": "Final status. A Fabric lifecycle error, such as a host timeout, reads `failed`."
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EndUsage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Numeric usage counters, without adapter metadata."
+        }
+      },
+      "required": [
+        "outcome_scope",
+        "status",
+        "elapsed_ms",
+        "resource_scope",
+        "resources_before",
+        "resources"
+      ],
+      "type": "object"
+    },
+    "EndUsage": {
+      "description": "The end line's usage: the numeric `RunUsage` fields.",
+      "properties": {
+        "cached_input_tokens": {
+          "description": "Cached input tokens.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cost_usd": {
+          "description": "Reported cost in US dollars.",
+          "format": "double",
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "input_tokens": {
+          "description": "Input tokens.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "input_tokens_include_cache": {
+          "description": "Whether `input_tokens` includes `cached_input_tokens`; absent means unknown.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "output_tokens": {
+          "description": "Output tokens.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total_tokens": {
+          "description": "Total tokens reported by the provider.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ErrorStage": {
+      "description": "NeMo Fabric lifecycle stage associated with an error.",
+      "oneOf": [
+        {
+          "const": "config",
+          "description": "Configuration resolution failed.",
+          "type": "string"
+        },
+        {
+          "const": "plan",
+          "description": "Effective config planning failed.",
+          "type": "string"
+        },
+        {
+          "const": "prepare",
+          "description": "Environment preparation failed.",
+          "type": "string"
+        },
+        {
+          "const": "start",
+          "description": "Runtime start/connect failed.",
+          "type": "string"
+        },
+        {
+          "const": "invoke",
+          "description": "Runtime invocation failed.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "Runtime stop/detach failed.",
+          "type": "string"
+        },
+        {
+          "const": "release",
+          "description": "Environment release failed.",
+          "type": "string"
+        },
+        {
+          "const": "artifact",
+          "description": "Artifact collection or writing failed.",
+          "type": "string"
+        }
+      ]
+    },
+    "GapReason": {
+      "description": "Categories that affect whether a consumer can treat a value as complete.",
+      "oneOf": [
+        {
+          "const": "unfinished_work",
+          "description": "Owned work was still running at the return boundary.",
+          "type": "string"
+        },
+        {
+          "const": "missing_usage",
+          "description": "A completed call did not provide usable usage.",
+          "type": "string"
+        },
+        {
+          "const": "scope_unverified",
+          "description": "The supported source does not establish coverage of owned work.",
+          "type": "string"
+        }
+      ]
+    },
+    "ModelName": {
+      "description": "One configured model.",
+      "properties": {
+        "model": {
+          "description": "Provider model identifier.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Model provider name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "model"
+      ],
+      "type": "object"
+    },
+    "ModelUsage": {
+      "description": "Normalized accounting frozen at return. Late usage never moves to a later invocation.",
+      "properties": {
+        "cache_write_input_tokens": {
+          "description": "Independently known cache writes.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cached_input_tokens": {
+          "description": "Independently known cache reads.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cost": {
+          "$ref": "#/$defs/TokenCost",
+          "description": "Separately typed provider-reported amounts and catalog estimates."
+        },
+        "gaps": {
+          "description": "Dimension-specific completeness gaps.",
+          "items": {
+            "$ref": "#/$defs/UsageGap"
+          },
+          "type": "array"
+        },
+        "input_tokens": {
+          "description": "Cache-inclusive input.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "models": {
+          "description": "Literal per-model breakdown, when the source establishes attribution.",
+          "items": {
+            "$ref": "#/$defs/PerModelUsage"
+          },
+          "type": "array"
+        },
+        "models_exhaustive": {
+          "description": "Whether all model identities used by owned work are represented.",
+          "type": "boolean"
+        },
+        "observed": {
+          "$ref": "#/$defs/TokenCounts",
+          "description": "Available deduplicated observations; these are not guaranteed lower bounds."
+        },
+        "output_tokens": {
+          "description": "Reasoning-inclusive output.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total_tokens": {
+          "description": "Input plus output; the independent provider total remains raw evidence.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "observed",
+        "gaps",
+        "models_exhaustive",
+        "cost"
+      ],
+      "type": "object"
+    },
+    "NotRecorded": {
+      "description": "Marks a key whose value the record leaves out.",
+      "properties": {
+        "recorded": {
+          "const": false,
+          "description": "Always `false`.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "recorded"
+      ],
+      "type": "object"
+    },
+    "PerModelUsage": {
+      "description": "Normalized usage for one literal model/provider identity.",
+      "properties": {
+        "cache_write_input_tokens": {
+          "description": "Independently known cache writes.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cached_input_tokens": {
+          "description": "Independently known cache reads.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cost": {
+          "$ref": "#/$defs/TokenCost",
+          "description": "Provider-reported and catalog-estimated cost."
+        },
+        "gaps": {
+          "description": "Dimension-specific gaps.",
+          "items": {
+            "$ref": "#/$defs/UsageGap"
+          },
+          "type": "array"
+        },
+        "input_tokens": {
+          "description": "Cache-inclusive input.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "Source-established accounting model identity. A configured identity\nrequires proof that all included work used that model; an outer requested\nalias alone is insufficient. This is not served-model provenance.",
+          "type": "string"
+        },
+        "observed": {
+          "$ref": "#/$defs/TokenCounts",
+          "description": "Available deduplicated observations, possibly incomplete."
+        },
+        "output_tokens": {
+          "description": "Reasoning-inclusive output.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "provider": {
+          "description": "Literal provider identity when established.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "total_tokens": {
+          "description": "Input plus output; the independent provider total remains raw evidence.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "model",
+        "observed",
+        "gaps",
+        "cost"
+      ],
+      "type": "object"
+    },
+    "PricingBasis": {
+      "additionalProperties": false,
+      "description": "Fields that must agree before a report combines catalog estimates.",
+      "properties": {
+        "assumption_policy": {
+          "description": "No missing count is assumed zero.",
+          "type": "string"
+        },
+        "basis": {
+          "description": "`catalog`; provider-reported cost has a different basis.",
+          "type": "string"
+        },
+        "bundled_catalog_sha256": {
+          "description": "Exact bundled catalog bytes.",
+          "type": "string"
+        },
+        "currency": {
+          "description": "`USD` in this implementation.",
+          "type": "string"
+        },
+        "normalization_version": {
+          "description": "Version of normalization and monetary rounding.",
+          "type": "string"
+        },
+        "user_catalog_sha256": {
+          "description": "Exact override bytes, when supplied.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "basis",
+        "currency",
+        "normalization_version",
+        "assumption_policy",
+        "bundled_catalog_sha256"
+      ],
+      "type": "object"
+    },
+    "RateSnapshot": {
+      "additionalProperties": false,
+      "description": "Integer rates selected for a model, in nano-USD per million tokens.",
+      "properties": {
+        "cache_read": {
+          "description": "Cache read rate; absent is not zero.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cache_write": {
+          "description": "Cache write rate; absent is not zero.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "input": {
+          "description": "Uncached input rate.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output": {
+          "description": "Reasoning-inclusive output rate.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "type": "object"
+    },
+    "RecordSchema": {
+      "description": "The record's schema name.",
+      "oneOf": [
+        {
+          "const": "nemo.fabric.run_record",
+          "description": "`nemo.fabric.run_record`.",
+          "type": "string"
+        }
+      ]
+    },
+    "RecordVersion": {
+      "description": "The record's line format version.",
+      "oneOf": [
+        {
+          "const": "v1alpha1",
+          "description": "`v1alpha1`.",
+          "type": "string"
+        }
+      ]
+    },
+    "ResourceObservation": {
+      "description": "One attempt to observe the adapter host process tree. Missing readings are\nexplicit; an unavailable observation never stands for zero resource usage.",
+      "oneOf": [
+        {
+          "description": "The process group was explicitly excluded from collection.",
+          "properties": {
+            "status": {
+              "const": "not_collected",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The process tree was read successfully.",
+          "properties": {
+            "snapshot": {
+              "$ref": "#/$defs/RuntimeResourceSnapshot",
+              "description": "Timestamped cumulative counters and instantaneous gauges."
+            },
+            "status": {
+              "const": "available",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "snapshot"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The reader supports this runtime, but could not read its process tree.",
+          "properties": {
+            "reason": {
+              "description": "Why this observation could not be collected.",
+              "type": "string"
+            },
+            "status": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The runtime's provider or operating system has no reader.",
+          "properties": {
+            "reason": {
+              "description": "Which collection capability is missing.",
+              "type": "string"
+            },
+            "status": {
+              "const": "unsupported",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ResourceScope": {
+      "description": "A resource observation covers the runtime host tree, including background\nwork, and excludes any shared service outside that tree.",
+      "enum": [
+        "runtime_adapter_host_process_tree"
+      ],
+      "type": "string"
+    },
+    "RunStatus": {
+      "description": "Runtime completion status.",
+      "oneOf": [
+        {
+          "const": "succeeded",
+          "description": "The harness completed successfully.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "The harness completed with a non-zero status.",
+          "type": "string"
+        },
+        {
+          "const": "cancelled",
+          "description": "The invocation or runtime was cancelled.",
+          "type": "string"
+        }
+      ]
+    },
+    "RuntimeResourceSnapshot": {
+      "description": "Timestamped resource usage of one runtime's local adapter host process tree.\n\nMemory, process count, and CPU time cover the adapter host process and its\nlive descendants. For a runtime started on a service, the shared service\nprocess is not included. Values NeMo Fabric cannot read are returned as an\nerror, never as zero.",
+      "properties": {
+        "cpu_time_seconds": {
+          "description": "CPU time consumed by the tree since the adapter host started, in seconds,\nincluding exited descendants. It can drop when a descendant leaves the\ntree.",
+          "format": "double",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "observed_at": {
+          "description": "When NeMo Fabric read these values, as an RFC 3339 UTC timestamp.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "process_count": {
+          "description": "Live processes in the tree, including the adapter host. Exited processes\nthat are not yet reaped are not counted.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resident_memory_bytes": {
+          "description": "Sum of the resident set sizes of the live processes, in bytes. Pages\nshared between processes count once per process.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runtime_id": {
+          "description": "Runtime this snapshot describes.",
+          "type": "string"
+        },
+        "started_at": {
+          "description": "When NeMo Fabric started the runtime's adapter host, as an RFC 3339 UTC timestamp.",
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime_id",
+        "started_at",
+        "observed_at",
+        "resident_memory_bytes",
+        "process_count",
+        "cpu_time_seconds"
+      ],
+      "type": "object"
+    },
+    "StartLine": {
+      "description": "Fields of the start line.",
+      "properties": {
+        "adapter_id": {
+          "description": "Adapter implementation id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agent_name": {
+          "description": "Config name (`metadata.name`).",
+          "type": "string"
+        },
+        "context": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ContextValue"
+          },
+          "description": "`RunRequest.context`. Allowlisted identity and Harbor link keys keep a\nstring or integer value; every other key is listed by name only.",
+          "type": "object"
+        },
+        "fabric_version": {
+          "description": "NeMo Fabric version that wrote the record.",
+          "type": "string"
+        },
+        "harness": {
+          "description": "Harness identifier.",
+          "type": "string"
+        },
+        "models": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ModelName"
+          },
+          "description": "Configured models by role: provider and model name only.",
+          "type": "object"
+        },
+        "override_keys": {
+          "description": "Top-level key names of `RunRequest.overrides`, sorted. Values are never\nrecorded.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout_ms": {
+          "description": "Host invocation timeout that applied, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agent_name",
+        "harness",
+        "fabric_version",
+        "timeout_ms"
+      ],
+      "type": "object"
+    },
+    "TokenCost": {
+      "description": "Provider-reported amounts stay separate from reproducible catalog estimates.",
+      "properties": {
+        "applied_rates": {
+          "description": "Distinct selected rate sets, rather than one duplicate snapshot per call.",
+          "items": {
+            "$ref": "#/$defs/AppliedPricing"
+          },
+          "type": "array"
+        },
+        "estimated": {
+          "$ref": "#/$defs/CostAmount",
+          "description": "Catalog estimates; incomplete tariff evidence affects only these amounts."
+        },
+        "pricing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PricingBasis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required basis for any estimated amount."
+        },
+        "reported": {
+          "$ref": "#/$defs/CostAmount",
+          "description": "Provider-reported amounts, never a harness estimate."
+        }
+      },
+      "required": [
+        "reported",
+        "estimated"
+      ],
+      "type": "object"
+    },
+    "TokenCounts": {
+      "description": "Token counts for one fixed invocation scope. Missing values never imply zero.",
+      "properties": {
+        "cache_write_input_tokens": {
+          "description": "Independently known cache writes.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cached_input_tokens": {
+          "description": "Independently known cache reads.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "input_tokens": {
+          "description": "Cache-inclusive input.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output_tokens": {
+          "description": "Reasoning-inclusive output.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total_tokens": {
+          "description": "Input plus output; the independent provider total remains raw evidence.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "UsageDimension": {
+      "description": "Dimensions whose complete values can be unavailable independently.",
+      "oneOf": [
+        {
+          "const": "input_tokens",
+          "description": "Input tokens.",
+          "type": "string"
+        },
+        {
+          "const": "cached_input_tokens",
+          "description": "Cache reads.",
+          "type": "string"
+        },
+        {
+          "const": "cache_write_input_tokens",
+          "description": "Cache writes.",
+          "type": "string"
+        },
+        {
+          "const": "output_tokens",
+          "description": "Output tokens.",
+          "type": "string"
+        },
+        {
+          "const": "total_tokens",
+          "description": "Input plus output.",
+          "type": "string"
+        },
+        {
+          "const": "reported_cost",
+          "description": "Provider-reported cost.",
+          "type": "string"
+        },
+        {
+          "const": "estimated_cost",
+          "description": "Applicable catalog estimate.",
+          "type": "string"
+        }
+      ]
+    },
+    "UsageGap": {
+      "description": "A completeness gap. Diagnostics never change the dimension or reason semantics.",
+      "properties": {
+        "code": {
+          "description": "Bounded stable diagnostic; never an exception message.",
+          "maxLength": 64,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dimensions": {
+          "description": "Nonempty set of affected dimensions.",
+          "items": {
+            "$ref": "#/$defs/UsageDimension"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "reason": {
+          "$ref": "#/$defs/GapReason",
+          "description": "Why complete accounting is unavailable."
+        }
+      },
+      "required": [
+        "dimensions",
+        "reason"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "One line of a run record.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/StartLine",
+      "description": "Written once, before core sends the request to the adapter host.",
+      "properties": {
+        "kind": {
+          "const": "start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "$ref": "#/$defs/EndLine",
+      "description": "Written once, after the invocation returned a result or failed.",
+      "properties": {
+        "kind": {
+          "const": "end",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    }
+  ],
+  "properties": {
+    "invocation_id": {
+      "description": "Invocation id.",
+      "type": "string"
+    },
+    "request_id": {
+      "description": "Request id.",
+      "type": "string"
+    },
+    "runtime_id": {
+      "description": "Runtime id.",
+      "type": "string"
+    },
+    "schema": {
+      "$ref": "#/$defs/RecordSchema",
+      "description": "Always `nemo.fabric.run_record`."
+    },
+    "time": {
+      "description": "UTC wall-clock time the line was written, RFC 3339 with milliseconds.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "version": {
+      "$ref": "#/$defs/RecordVersion",
+      "description": "Line format version. `v1alpha1` may change until a record reader ships."
+    }
+  },
+  "required": [
+    "schema",
+    "version",
+    "runtime_id",
+    "invocation_id",
+    "request_id",
+    "time"
+  ],
+  "title": "RunRecordLine",
+  "type": "object"
+}

@@ -14,7 +14,6 @@ Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 
 ---
 
-
 ## <kbd>class</kbd> `Fabric`
 
 Primary Python entrypoint for NeMo Fabric.
@@ -24,7 +23,6 @@ Every config-dependent lifecycle method accepts a complete, typed ``FabricConfig
 ``Fabric`` uses the native Rust extension. SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
 
 See the Getting Started overview for runnable single-invocation, typed-config, and multi-turn examples.
-
 
 ### <kbd>method</kbd> `__init__`
 
@@ -40,7 +38,6 @@ def __init__() -> None
 
 
 ---
-
 
 ### <kbd>method</kbd> `attach_environment`
 
@@ -80,7 +77,6 @@ Attachment does not create the provider resource and does not grant Fabric delet
 
 ---
 
-
 ### <kbd>method</kbd> `attach_service`
 
 ```python
@@ -119,7 +115,6 @@ The adapter validates the reference against the normalized configuration and wri
 
 ---
 
-
 ### <kbd>method</kbd> `doctor`
 
 ```python
@@ -155,7 +150,6 @@ Doctor checks the resolved adapter, capability mappings, and declared environmen
 
 ---
 
-
 ### <kbd>method</kbd> `plan`
 
 ```python
@@ -190,7 +184,6 @@ Planning resolves the selected adapter and reports optional runtime capabilities
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
 
 ---
-
 
 ### <kbd>method</kbd> `prepare_environment`
 
@@ -228,7 +221,6 @@ The returned local handle is independent of any runtime session. The caller owns
 
 ---
 
-
 ### <kbd>method</kbd> `prepare_service`
 
 ```python
@@ -265,7 +257,6 @@ The selected adapter maps the normalized configuration into its service configur
 
 ---
 
-
 ### <kbd>method</kbd> `release_environment`
 
 ```python
@@ -291,7 +282,6 @@ Local and externally owned environments detach without deletion. Provider-manage
  - <b>`FabricRuntimeError`</b>:  If release or detach fails.
 
 ---
-
 
 ### <kbd>method</kbd> `run`
 
@@ -334,7 +324,6 @@ Execute one complete start, invoke, and stop lifecycle.
  - <b>`FabricRuntimeError`</b>:  If the native runtime lifecycle fails before a  normalized result can be returned.
 
 ---
-
 
 ### <kbd>method</kbd> `start_runtime`
 
@@ -384,7 +373,6 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
 
 ---
 
-
 ### <kbd>method</kbd> `start_runtime_in`
 
 ```python
@@ -400,7 +388,7 @@ async def start_runtime_in(
 
 Start one stateful runtime in an explicitly prepared or attached environment.
 
-Starting or stopping the runtime does not release ``environment``. Runtime and reuse limits depend on the provider. Release the environment separately after stopping the runtime and collecting results. Runtime startup is currently implemented for local environments.
+Starting or stopping the runtime does not release ``environment``. Runtime and reuse limits depend on the provider. Release the environment separately after stopping the runtime and collecting results. Runtime startup is supported by local environments and the OpenShell command bridge. OpenShell invocation is buffered and supports multiple runtime IDs per sandbox.
 
 
 
