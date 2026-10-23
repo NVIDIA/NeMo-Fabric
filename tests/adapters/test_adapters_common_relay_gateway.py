@@ -239,6 +239,19 @@ def test_wait_for_relay_gateway_reports_early_exit():
         )
 
 
+def test_wait_for_relay_gateway_rejects_exit_during_successful_probe(monkeypatch):
+    process = MagicMock()
+    process.poll.side_effect = [None, 17]
+    response = MagicMock()
+    response.__enter__.return_value.status = 200
+    monkeypatch.setattr(
+        relay_gateway.urllib.request, "urlopen", MagicMock(return_value=response)
+    )
+
+    with pytest.raises(relay_gateway.RelayGatewayError, match="status 17"):
+        relay_gateway.wait_for_relay_gateway(process, "http://127.0.0.1:43210/healthz")
+
+
 def test_wait_for_relay_gateway_times_out():
     process = MagicMock()
     process.poll.return_value = None
