@@ -12,6 +12,10 @@ for (const vector of cases) {
     const usage = usageFromObservations(vector.records);
     const accounting = usage.extensions[USAGE_ACCOUNTING_KEY];
     for (const [field, value] of Object.entries(vector.expected)) {
+      if (field === "gap_reason") {
+        assert.deepEqual(accounting.gaps.map(gap => gap.reason), [value]);
+        continue;
+      }
       const actual = field === "exhaustive" ? accounting.models_exhaustive
         : field.startsWith("observed_") ? accounting.observed[field.slice(9) + "_tokens"]
         : field === "peak_request_input_tokens" ? usage.extensions["nemo_fabric.detailed_token_usage.v1"][field]
