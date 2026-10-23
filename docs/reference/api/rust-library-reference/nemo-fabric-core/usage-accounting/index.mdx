@@ -1,0 +1,31 @@
+---
+title: "Module usage_accounting"
+sidebar-title: "usage_accounting"
+slug: "/reference/api/rust-library-reference/nemo-fabric-core/usage_accounting"
+description: "Validated accounting evidence carried through the existing usage extension."
+position: 154
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+Validated accounting evidence carried through the existing usage extension.
+
+## Structs
+
+- [AccountedModel](struct-accountedmodel.mdx): Evidence for one literal provider/model identity.
+- [AccountingError](struct-accountingerror.mdx): Invalid accounting evidence uses the existing invalid-result path.
+- [ReportedUsage](struct-reportedusage.mdx): Raw counts in provider/harness conventions. Missing values are never zero.
+- [UsageAccounting](struct-usageaccounting.mdx): The declared adapter transport for invocation accounting.
+- [UsageGap](struct-usagegap.mdx): Missing evidence for one or more raw dimensions.
+- [UsageRequest](struct-usagerequest.mdx): One model call retained for request-tier pricing and evidence reconciliation.
+
+## Enums
+
+- [GapReason](enum-gapreason.mdx): Categories that affect whether a consumer can treat a value as complete.
+- [UsageDimension](enum-usagedimension.mdx): A dimension in raw adapter evidence.
+
+## Constants
+
+- [USAGE_ACCOUNTING_EXTENSION](constant-usage-accounting-extension.mdx): Descriptor-declared transport key. This does not change the closed AgentUsage wire shape.

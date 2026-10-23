@@ -1,0 +1,26 @@
+---
+title: "Module model_usage"
+sidebar-title: "model_usage"
+slug: "/reference/api/rust-library-reference/nemo-fabric-core/model_usage"
+description: "Invocation-owned normalized counts and separately identified costs."
+position: 148
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+Invocation-owned normalized counts and separately identified costs.
+
+## Structs
+
+- [CostAmount](struct-costamount.mdx): Complete and observed amounts in integer nano-USD.
+- [ModelUsage](struct-modelusage.mdx): Normalized accounting frozen at return. Late usage never moves to a later invocation.
+- [PerModelUsage](struct-permodelusage.mdx): Normalized usage for one literal model/provider identity.
+- [TokenCost](struct-tokencost.mdx): Provider-reported amounts stay separate from reproducible catalog estimates.
+- [TokenCounts](struct-tokencounts.mdx): Token counts for one fixed invocation scope. Missing values never imply zero.
+- [UsageGap](struct-usagegap.mdx): A completeness gap. Diagnostics never change the dimension or reason semantics.
+
+## Enums
+
+- [UsageDimension](enum-usagedimension.mdx): Dimensions whose complete values can be unavailable independently.
