@@ -907,7 +907,7 @@ pub fn run_plan_with_stage(
     plan: &RunPlan,
     request: RunRequest,
 ) -> std::result::Result<RunResult, (FabricError, ErrorStage)> {
-    let runtime = start_runtime(plan).map_err(|error| (error, ErrorStage::Start))?;
+    let runtime = start_runtime_staged(plan)?;
     let mut result = match invoke_runtime_unpersisted(plan, &runtime, request) {
         Ok(result) => result,
         Err(error) => {
@@ -1191,15 +1191,24 @@ fn validate_start_plan(plan: &RunPlan) -> Result<()> {
 /// For a non-local provider, prepare or attach to the environment explicitly
 /// and call [`start_runtime_in`] with the returned handle.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
-    validate_start_plan(plan)?;
+    start_runtime_staged(plan).map_err(|(error, _)| error)
+}
+
+fn start_runtime_staged(
+    plan: &RunPlan,
+) -> std::result::Result<RuntimeHandle, (FabricError, ErrorStage)> {
+    validate_start_plan(plan).map_err(|error| (error, ErrorStage::Plan))?;
     let provider = planned_environment_provider(plan);
     if provider != "local" {
-        return Err(FabricError::EnvironmentHandleRequired {
-            provider: provider.to_string(),
-        });
+        return Err((
+            FabricError::EnvironmentHandleRequired {
+                provider: provider.to_string(),
+            },
+            ErrorStage::Prepare,
+        ));
     }
-    let environment = prepare_environment(plan)?;
-    start_runtime_in_validated(plan, &environment)
+    let environment = prepare_environment(plan).map_err(|error| (error, ErrorStage::Prepare))?;
+    start_runtime_in_validated(plan, &environment).map_err(|error| (error, ErrorStage::Start))
 }
 
 /// Invoke a started harness runtime.
@@ -5758,11 +5767,32 @@ for line in sys.stdin:
     fn local_host_start_failure_preserves_stage_and_diagnostics() {
         let (root, plan) = local_host_plan("start_failure");
 
-        let error = start_runtime(&plan).expect_err("start must fail");
+        let (error, stage) =
+            run_plan_with_stage(&plan, RunRequest::text("input")).expect_err("start must fail");
+        assert_eq!(stage, ErrorStage::Start);
         let message = error.to_string();
         assert!(message.contains("lifecycle start"), "{message}");
         assert!(message.contains("fake_start"), "{message}");
         assert!(message.contains("start diagnostic"), "{message}");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn one_shot_reports_prepare_stage_when_environment_is_required() {
+        let (root, mut plan) = local_host_plan("success");
+        plan.environment_plan
+            .as_mut()
+            .expect("resolved environment plan")
+            .provider = "docker".to_string();
+
+        let (error, stage) = run_plan_with_stage(&plan, RunRequest::text("input"))
+            .expect_err("non-local provider needs an environment handle");
+        assert!(matches!(
+            error,
+            FabricError::EnvironmentHandleRequired { .. }
+        ));
+        assert_eq!(stage, ErrorStage::Prepare);
 
         let _ = fs::remove_dir_all(root);
     }
