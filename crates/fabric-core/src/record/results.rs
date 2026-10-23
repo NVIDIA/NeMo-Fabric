@@ -259,7 +259,7 @@ impl RequestRecorder {
         };
         let value = self.line(RequestBody::End { outcome });
         if let Err(error) = publish_request(&directory.join("request-end.json"), &value) {
-            self.failure = Some(error);
+            self.failure.get_or_insert(error);
         }
     }
 }
@@ -444,6 +444,42 @@ mod tests {
                 .count(),
             0
         );
+    }
+
+    #[test]
+    fn returned_keeps_the_first_recording_failure_when_end_publication_also_fails() {
+        let (root, _, mut result) = fixture();
+        let directory = root.join("request");
+        std::fs::create_dir_all(&directory).expect("request directory");
+        let end = directory.join("request-end.json");
+        std::fs::write(&end, "existing end record").expect("existing evidence");
+        let original = result.clone();
+        let recorder = RequestRecorder {
+            directory: Some(directory),
+            request_id: result.request_id.clone(),
+            failure: Some(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "start record permission denied",
+            )),
+        };
+
+        recorder.returned(&mut result);
+
+        assert_eq!(result.events.len(), original.events.len() + 1);
+        let failure = result.events.last().expect("recording diagnostic");
+        assert_eq!(failure.kind, WRITE_FAILED);
+        assert_eq!(
+            failure.message,
+            "could not save request record: start record permission denied"
+        );
+        assert_eq!(failure.metadata["artifact"], "request record");
+        let mut expected = original;
+        expected.events.clone_from(&result.events);
+        assert_eq!(
+            serde_json::to_value(&result).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        assert_eq!(std::fs::read_to_string(end).unwrap(), "existing end record");
     }
 
     #[test]

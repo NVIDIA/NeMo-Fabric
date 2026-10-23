@@ -3,10 +3,10 @@
 
 //! The run record file: created once, owner-only, appended one line per write.
 //!
-//! Each line is one `write_all` on an unbuffered file, so a SIGKILL of Fabric
-//! or the adapter host keeps every line whose write returned. Only the end
-//! line is synced, once, so the record survives a crash of the machine only
-//! up to its last synced line.
+//! Each line uses `write_all` on an unbuffered file. If the Fabric process
+//! terminates, lines whose writes completed remain in the file. The end line
+//! is synced once. Durability after a machine crash or power loss is not
+//! guaranteed because the containing directory is not synced.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
