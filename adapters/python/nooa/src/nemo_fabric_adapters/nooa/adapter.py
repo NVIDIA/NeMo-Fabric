@@ -31,6 +31,11 @@ from nemo_fabric_adapters.nooa.model_support import build_models
 from nemo_fabric_adapters.nooa.model_support import close_models
 from nemo_fabric_adapters.nooa.telemetry import RelayReport
 from nemo_fabric_adapters.nooa.telemetry import RelayTelemetry
+from nemo_fabric_adapters.nooa.usage import InvocationUsage
+from nemo_fabric_adapters.nooa.usage import owned_work_pending
+from nemo_fabric_adapters.nooa.usage import running_jobs
+from nemo_fabric_adapters.nooa.usage import unowned_call_snapshot
+from nemo_fabric_adapters.nooa.usage import unowned_calls_since
 
 ADAPTER = "python"
 HARNESS = "nooa"
@@ -607,7 +612,11 @@ class NooaRuntime:
         telemetry = self._telemetry
         assert telemetry is not None
 
-        async def invoke_target() -> AgentRunResult:
+        owner = InvocationUsage()
+        unowned_before = unowned_call_snapshot(self._models)
+        jobs_before = running_jobs(agent)
+
+        async def run_target() -> AgentRunResult:
             messages: list[dict[str, str]] = []
 
             def capture_message(event: Any) -> None:
@@ -646,6 +655,15 @@ class NooaRuntime:
                         )
 
             return _success_output(messages, reason, explanation)
+
+        async def invoke_target() -> AgentRunResult:
+            with owner.scope():
+                result = await run_target()
+            result.usage = owner.finish(
+                unfinished=owned_work_pending(agent, owner, jobs_before),
+                scope_unverified=unowned_calls_since(unowned_before),
+            )
+            return result
 
         relay_invocation = await telemetry.invoke(
             agent=agent,

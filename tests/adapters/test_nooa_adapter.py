@@ -461,7 +461,12 @@ def test_interactive_runtime_registers_and_invokes_mcp_in_subprocess(
     tmp_path: Path,
 ):
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(ROOT / "tests" / "fixtures" / "nooa" / "src")
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [
+            str(ROOT / "tests" / "fixtures" / "nooa" / "src"),
+            environment.get("PYTHONPATH", ""),
+        ]
+    )
 
     completed = subprocess.run(
         [sys.executable, "-m", "fabric_nooa_mcp_runtime", str(tmp_path)],

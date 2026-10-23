@@ -32,6 +32,21 @@ artifact root, workflow settings, and exact skill paths.
 The descriptor accepts normalized models, model endpoint and temperature fields,
 `instructions.system`, `skills`, and whole MCP server configurations.
 
+## Model usage
+
+Calls through `context.models` are attributed separately to their initiating
+invocation, including calls from copied task contexts. The adapter detects
+owned pending history summaries and queue jobs before their first model call.
+It returns their available observations with an unfinished-work gap, without
+changing scheduling. A managed client call from an existing job without an
+invocation owner makes the current invocation's complete totals unknown if it
+runs while that invocation is active. Its tokens are not assigned to the
+current invocation or carried into another invocation.
+
+A custom target that makes no managed client call has unknown usage because its
+factory can construct other clients. See [model usage](../README.md#model-usage)
+for source coverage, omissions, retries and cost behavior.
+
 ## Terminal Behavior
 
 `WAIT` pauses the dispatcher until another NOOA channel wakes within the same
