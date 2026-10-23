@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from typing import Any
 
 from minisweagent.agents.default import DefaultAgent
 from minisweagent.exceptions import InterruptAgentFlow
 from minisweagent.exceptions import Submitted
+from nemo_fabric_adapters.mini_swe_agent.usage import UsageRecordingLitellmModel
 
 
 def _error_text(error: BaseException) -> str:

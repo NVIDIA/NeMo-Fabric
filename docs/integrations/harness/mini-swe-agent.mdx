@@ -103,7 +103,39 @@ async def main():
 result = asyncio.run(main())
 ```
 
-The result includes the submitted final output and API-call usage.
+The result includes the submitted final output. `output.usage.api_calls` counts
+mini-SWE-agent model queries, including queries that retry their provider call. Raw provider usage is captured per LiteLLM attempt in the declared
+`nemo_fabric.usage_accounting.v1` extension, before omitted fields can become
+zeros. A count the provider omitted stays unknown; a reported zero stays zero.
+NeMo Fabric's shared normalizer combines these observations, accounts for cache
+and reasoning conventions, and exposes complete counts separately from observed
+subtotals in `RunResult.model_usage`.
+
+The collector is qualified with mini-SWE-agent 2.4.6 and LiteLLM 1.89.3,
+1.96.2 and 1.100.1 for OpenAI Chat Completions, LiteLLM's Responses bridge,
+and Anthropic's default Python Messages transport. It follows the installed
+version's routing rule. Older qualified LiteLLM versions can reject partial
+Responses usage during response conversion; independently reported raw counts
+remain available even when that conversion fails.
+OpenAI uses an adapter-owned client with passive HTTP hooks that preserve SDK
+retries. A failed HTTP attempt, missing usage, or unfinished call leaves the
+affected complete totals unknown while retaining observed counts. mini-SWE's
+own retry loop is observed at each attempt. HTTP status never establishes zero
+spend. A final-response parsing failure or task failure alone does not erase
+usable reported usage. Other package versions, provider transports, external
+clients and LiteLLM's opt-in Rust path retain available raw observations with
+an unverified-scope gap until qualified. Existing external clients and network
+mock settings are preserved.
+
+Each attempt belongs to the invocation that started it. The accounting snapshot
+freezes before return. A cancelled worker may continue running, so that runtime
+cannot accept another invocation; late usage never transfers to a later result.
+
+LiteLLM's price-table estimate is not provider-reported `cost_usd`. Missing
+LiteLLM pricing does not fail a run or hide its tokens. The adapter retains
+model and provider evidence for separate pricing; it does not compute catalog
+estimates. A custom endpoint does not establish native-provider pricing identity. Retained conversation history and Relay traces are
+independent of the accounting source.
 
 ## Continue a Task Across Invocations
 

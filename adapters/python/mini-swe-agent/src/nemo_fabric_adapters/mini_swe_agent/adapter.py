@@ -46,6 +46,8 @@ class MiniSweAgentRuntime:
         self._relay_plugin = self._relay_scope = self._relay_scope_type = None
         self._relay_plugin_config: dict[str, Any] | None = None
         self._telemetry_quarantine: str | None = None
+        self._run_error: Exception | None = None
+        self._unusable = False
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
@@ -55,11 +57,11 @@ class MiniSweAgentRuntime:
             supported_modes={"replace"},
         )
         from minisweagent.environments.local import LocalEnvironment
-        from minisweagent.models.litellm_model import LitellmModel
         from nemo_fabric_adapters.mini_swe_agent.agents import (
             RelayRetainingDefaultAgent,
+            RetainingDefaultAgent,
+            UsageRecordingLitellmModel,
         )
-        from nemo_fabric_adapters.mini_swe_agent.agents import RetainingDefaultAgent
 
         runtime_context = contract.RuntimeContext.from_mapping(
             payload.get("runtime_context")
@@ -100,11 +102,16 @@ class MiniSweAgentRuntime:
             model_kwargs["top_p"] = model.top_p
         if model.max_tokens is not None:
             model_kwargs["max_tokens"] = model.max_tokens
-        self._model = LitellmModel(
+        self._model = UsageRecordingLitellmModel(
             model_name=(
                 model.model if "/" in model.model else f"{model.provider}/{model.model}"
             ),
             model_kwargs=model_kwargs,
+            # mini-SWE-agent looks up each call's cost in LiteLLM's price table
+            # after the call returns and, by default, raises when the model is
+            # not listed. The adapter reports no cost, so a missing price must
+            # not fail the run or hide the call's tokens.
+            cost_tracking="ignore_errors",
         )
         self._environment = LocalEnvironment(
             **(config.harness.settings if config.harness else {})
@@ -127,16 +134,39 @@ class MiniSweAgentRuntime:
         request: contract.AgentRunRequest,
         context: contract.RuntimeContext,
     ) -> contract.AgentRunResult:
+        if self._unusable:
+            raise lifecycle.LifecycleError(
+                "mini_swe_agent_unusable",
+                "a cancelled worker may still be running; start a new runtime",
+            )
+        from nemo_fabric_adapters.mini_swe_agent.usage import MiniInvocationUsage
+
         task = common_utils.normalize_user_input(request.input)
         inherited_quarantine = self._telemetry_quarantine is not None
         telemetry_errors: list[str] = []
-        if self._relay_enabled:
-            result, telemetry_errors = await self._run_with_relay(
-                task, context, request.relay_session_root
-            )
-        else:
-            result = await self._run_agent(task)
-        failed = result.get("exit_status") != "Submitted"
+        owner = MiniInvocationUsage()
+        self._run_error = None
+        try:
+            with owner.scope():
+                if self._relay_enabled:
+                    result, telemetry_errors = await self._run_with_relay(
+                        task, context, request.relay_session_root
+                    )
+                else:
+                    result = await self._run_agent(task)
+        except Exception:
+            # Ordinary errors propagate only before a worker starts or after
+            # it returns, so the agent remains safe for another invocation.
+            raise
+        except BaseException:
+            # asyncio.to_thread cannot cancel a running model/shell operation.
+            # A later invocation must not share its agent or late responses.
+            self._unusable = True
+            raise
+        finally:
+            usage = owner.finish(no_calls=self._agent.n_calls == 0)
+        run_error = self._run_error
+        failed = run_error is not None or result.get("exit_status") != "Submitted"
         output: dict[str, Any] = {
             "output": result.get("submission", ""),
             "usage": {"api_calls": self._agent.n_calls},
@@ -162,15 +192,19 @@ class MiniSweAgentRuntime:
                         "error": "; ".join(telemetry_errors),
                     }
                 )
-        error = (
-            contract.AgentRunError(
+        error = None
+        if run_error is not None:
+            error = contract.AgentRunError(
+                code="mini_swe_agent_error",
+                message=f"mini-SWE-agent raised {type(run_error).__name__}",
+                retryable=False,
+            )
+        elif failed:
+            error = contract.AgentRunError(
                 code="mini_swe_agent_incomplete",
                 message="mini-SWE-agent stopped before submitting a final output",
                 retryable=False,
             )
-            if failed
-            else None
-        )
         return contract.AgentRunResult(
             status=(
                 contract.AgentRunStatus.FAILED
@@ -179,12 +213,21 @@ class MiniSweAgentRuntime:
             ),
             output=output,
             error=error,
+            usage=usage,
         )
 
     async def _run_agent(self, task: str) -> dict[str, Any]:
-        return await asyncio.to_thread(
-            self._agent.run, task, system_instruction=self._system_instruction
-        )
+        try:
+            return await asyncio.to_thread(
+                self._agent.run, task, system_instruction=self._system_instruction
+            )
+        except Exception as error:
+            # mini-SWE-agent re-raises a model call error that it does not
+            # retry, such as a context-window rejection, or that fails every
+            # retry. Earlier calls stored their responses, so the failed result
+            # keeps their usage.
+            self._run_error = error
+            return {}
 
     async def _run_with_relay(
         self,
@@ -242,6 +285,8 @@ class MiniSweAgentRuntime:
         return result, telemetry_errors
 
     async def stop(self) -> None:
+        if self._model is not None:
+            self._model.close_usage_client()
         self.__init__()
 
 

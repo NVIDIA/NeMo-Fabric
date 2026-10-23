@@ -100,7 +100,10 @@ def mock_mini_fixture(monkeypatch):
     monkeypatch.setattr(
         "minisweagent.environments.local.LocalEnvironment", environment_factory
     )
-    monkeypatch.setattr("minisweagent.models.litellm_model.LitellmModel", model_factory)
+    monkeypatch.setattr(
+        "nemo_fabric_adapters.mini_swe_agent.agents.UsageRecordingLitellmModel",
+        model_factory,
+    )
     return {
         "environment_factory": environment_factory,
         "model": model,
@@ -255,6 +258,10 @@ def test_mini_swe_agent_descriptor_is_narrow_and_versioned():
         ).read_text(encoding="utf-8")
     )
 
+    assert (
+        "nemo_fabric.usage_accounting.v1"
+        in descriptor["extension_schemas"]["usage"]["properties"]
+    )
     assert descriptor["contract_version"] == "fabric.adapter/v1alpha2"
     assert descriptor["adapter_id"] == "nvidia.fabric.mini-swe-agent"
     assert descriptor["runner"] == {
@@ -316,6 +323,7 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
             "top_p": 0.8,
             "max_tokens": 256,
         },
+        cost_tracking="ignore_errors",
     )
     mock_mini["environment_factory"].assert_called_once_with(timeout=45)
 

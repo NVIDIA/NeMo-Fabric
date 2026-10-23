@@ -2089,6 +2089,7 @@ name = "nemo-fabric-adapters-mini-swe-agent"
 version = "0.6.0"
 source = { editable = "../../../adapters/python/mini-swe-agent" }
 dependencies = [
+    { name = "httpx" },
     { name = "nemo-fabric-adapter-contract" },
     { name = "nemo-fabric-adapters-common" },
 ]
@@ -2103,6 +2104,7 @@ harness = [
 requires-dist = [
     { name = "fsspec", marker = "extra == 'full'", specifier = ">=2026.6.0" },
     { name = "fsspec", marker = "extra == 'harness'", specifier = ">=2026.6.0" },
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "mini-swe-agent", marker = "extra == 'full'", specifier = ">=2.0,<3" },
     { name = "mini-swe-agent", marker = "extra == 'harness'", specifier = ">=2.0,<3" },
     { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
