@@ -3,6 +3,16 @@
 
 """Python SDK surface for NeMo Fabric."""
 
+from nemo_fabric.accounting import summarize_usage
+from nemo_fabric.models import PricingConfig
+from nemo_fabric.types import ModelUsage
+from nemo_fabric.types import PerModelUsage
+from nemo_fabric.types import PricingBasis
+from nemo_fabric.types import AppliedPricing
+from nemo_fabric.types import TokenCounts
+from nemo_fabric.types import TokenCost
+from nemo_fabric.types import CostAmount
+from nemo_fabric.types import UsageGap
 from nemo_fabric.client import Fabric
 from nemo_fabric.capabilities import AdapterCapabilityProfile
 from nemo_fabric.capabilities import inspect_adapter
@@ -83,6 +93,16 @@ from nemo_fabric.types import ServiceReference
 from nemo_fabric.types import TelemetryRef
 
 __all__ = [
+    "summarize_usage",
+    "PricingConfig",
+    "ModelUsage",
+    "PerModelUsage",
+    "PricingBasis",
+    "AppliedPricing",
+    "TokenCounts",
+    "TokenCost",
+    "CostAmount",
+    "UsageGap",
     "AdapterCapabilityProfile",
     "AdapterInfo",
     "ArtifactManifest",

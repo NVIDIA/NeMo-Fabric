@@ -308,6 +308,7 @@ fn config(
         telemetry: None,
         system_stats: Some(Default::default()),
         relay: None,
+        pricing: None,
         extensions: BTreeMap::new(),
     }
 }

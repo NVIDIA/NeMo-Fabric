@@ -23,6 +23,8 @@ pub use crate::agent_config::{
 use crate::agent_execution::{AgentRunRequest, AgentRunResult};
 use crate::error::{FabricError, Result};
 
+use crate::price_catalog::UserPriceCatalog;
+
 /// Versioned NVIDIA NeMo Fabric agent config.
 ///
 /// NeMo Fabric-owned fields apply uniformly, while adapter-translated fields are
@@ -72,7 +74,21 @@ pub struct FabricConfig {
     /// First-class NeMo Relay integration configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay: Option<RelayConfig>,
+    /// Optional catalog override for central token-price estimates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pricing: Option<PricingConfig>,
     /// Additive fields not yet recognized by this core version.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// Central token-price configuration; never changes provider requests.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PricingConfig {
+    /// Relay-compatible v1 catalog, resolved relative to the config base directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_path: Option<PathBuf>,
+    /// Additive pricing configuration, preserved for future versions.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
 }
@@ -2449,6 +2465,8 @@ pub fn inspect_adapter_config(
         );
     }
     config.discovery = None;
+    // Inspection returns metadata only; catalog paths belong to the execution host.
+    config.pricing = None;
     validate_config(&config)?;
     let path = descriptor_path
         .canonicalize()
@@ -2597,7 +2615,9 @@ fn resolve_selected_descriptors(
         descriptor,
         adapter_target_descriptor.as_ref(),
     );
+    let user_price_catalog = resolve_user_price_catalog(&config, &base_dir)?;
     Ok(RunPlan {
+        user_price_catalog,
         agent_name: config.metadata.name.clone(),
         base_dir,
         config,
@@ -2610,6 +2630,33 @@ fn resolve_selected_descriptors(
         capabilities,
         telemetry_plan,
     })
+}
+
+fn resolve_user_price_catalog(
+    config: &FabricConfig,
+    base_dir: &Path,
+) -> Result<Option<UserPriceCatalog>> {
+    let Some(path) = config
+        .pricing
+        .as_ref()
+        .and_then(|p| p.catalog_path.as_ref())
+    else {
+        return Ok(None);
+    };
+    if path.as_os_str().to_string_lossy().trim().is_empty() {
+        return invalid_config("pricing.catalog_path", "must not be blank");
+    }
+    let path = resolve_path(base_dir, path);
+    let bytes = std::fs::read(&path).map_err(|error| FabricError::InvalidConfig {
+        field: "pricing.catalog_path".into(),
+        reason: format!("cannot read {}: {error}", path.display()),
+    })?;
+    UserPriceCatalog::from_bytes(path, &bytes)
+        .map(Some)
+        .map_err(|error| FabricError::InvalidConfig {
+            field: "pricing.catalog_path".into(),
+            reason: error.to_string(),
+        })
 }
 
 fn validate_capability_plan_compatibility(
@@ -4026,6 +4073,9 @@ fn normalize_path(path: PathBuf) -> PathBuf {
 /// Resolved NeMo Fabric run plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunPlan {
+    /// Catalog bytes are frozen during planning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_price_catalog: Option<UserPriceCatalog>,
     /// Stable agent name.
     pub agent_name: String,
     /// Base directory used to resolve relative NeMo Fabric paths.
@@ -4323,6 +4373,10 @@ mod tests {
         let mut config = typed_config("nvidia.fabric.hermes");
         config.discovery = Some(DiscoveryConfig {
             local_paths: vec![PathBuf::from("/task-only/nonexistent-descriptor")],
+            ..Default::default()
+        });
+        config.pricing = Some(PricingConfig {
+            catalog_path: Some(PathBuf::from("/task-only/nonexistent-pricing-catalog.json")),
             ..Default::default()
         });
         let inspection = inspect_adapter_config(config.clone(), &path).expect("host inspection");

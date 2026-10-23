@@ -1118,6 +1118,19 @@ class SystemStatsConfig(FabricBaseModel):
         return value
 
 
+class PricingConfig(FabricBaseModel):
+    """Frozen Relay-compatible price-catalog override, read during planning."""
+
+    catalog_path: str | Path | None = None
+
+    @field_validator("catalog_path")
+    @classmethod
+    def _validate_catalog_path(cls, value: str | Path | None) -> str | Path | None:
+        if value is not None and not str(value).strip():
+            raise ValueError("pricing catalog path must not be empty")
+        return value
+
+
 class FabricConfig(FabricBaseModel):
     """SDK-facing typed NeMo Fabric agent configuration.
 
@@ -1141,6 +1154,7 @@ class FabricConfig(FabricBaseModel):
     system_stats: SystemStatsConfig | None = Field(default_factory=SystemStatsConfig)
     telemetry: TelemetryConfig | None = None
     relay: RelayConfig | None = None
+    pricing: PricingConfig | None = None
     tools: ToolsConfig | None = None
 
     @model_serializer(mode="wrap")

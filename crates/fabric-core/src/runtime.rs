@@ -148,6 +148,9 @@ pub struct RunResult {
     /// Normalized invocation usage when reported by the adapter target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<RunUsage>,
+    /// Complete and observed usage normalized from supported accounting evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_usage: Option<crate::model_usage::ModelUsage>,
     /// Resource snapshot of the runtime, read once after the adapter returned this
     /// result. Absent when the runtime's resources could not be observed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -870,6 +873,7 @@ struct LocalAdapterHost {
     relay_config: Option<RelayRuntimeConfig>,
     // Adapter startup values stay in memory, never in a serialized handle or plan.
     environment_env: BTreeMap<String, String>,
+    bundled_pricing_allowed: crate::pricing::NativePricingRoutes,
 }
 
 struct LocalServiceRecord {
@@ -2138,6 +2142,7 @@ fn run_local_host_invocation_with_timeout(
                     relay_config,
                     fabric_home,
                     fabric_invocation,
+                    host_guard.bundled_pricing_allowed.clone(),
                 ))
             }
             Err(error) => {
@@ -2163,6 +2168,7 @@ fn run_local_host_invocation_with_timeout(
         relay_config,
         fabric_home,
         fabric_invocation,
+        bundled_pricing_allowed,
     ) = exchange_result?;
 
     let agent_result: AgentRunResult = serde_json::from_value(adapter_output).map_err(|error| {
@@ -2315,6 +2321,31 @@ fn run_local_host_invocation_with_timeout(
             serde_json::to_value(&agent_result.extensions).map_err(FabricError::SerializeJson)?,
         );
     }
+    // Accounting is observational after structural adapter validation. A
+    // contradictory aggregate must not replace a valid execution outcome or
+    // invite callers to replay work that already ran.
+    let model_usage = match agent_result
+        .usage
+        .as_ref()
+        .map(|raw| {
+            crate::model_usage::normalize_model_usage_for_routes(
+                raw,
+                plan.user_price_catalog.as_ref(),
+                |provider, model| bundled_pricing_allowed.allows(provider, model),
+            )
+        })
+        .transpose()
+    {
+        Ok(usage) => usage.flatten(),
+        Err(_) => {
+            events.push(event_with_metadata(
+                "model_usage_invalid",
+                "model accounting could not be normalized; execution outcome and raw usage were retained".to_string(),
+                BTreeMap::new(),
+            ));
+            None
+        }
+    };
     Ok(RunResult {
         agent_name: plan.agent_name.clone(),
         harness: harness(plan),
@@ -2327,6 +2358,7 @@ fn run_local_host_invocation_with_timeout(
         output,
         error,
         usage: agent_result.usage.as_ref().map(run_usage),
+        model_usage,
         resource_snapshot,
         system_stats,
         artifacts,
@@ -2561,6 +2593,10 @@ fn spawn_local_host(
     if let Some(root) = artifacts.root.as_ref() {
         command.env("FABRIC_ARTIFACTS", root);
     }
+    let bundled_pricing_allowed =
+        snapshot_pricing_route(&plan.config.models, &mut command, |name| {
+            std::env::var_os(name)
+        });
     // Start suspended so the host joins its job before it can start a process.
     #[cfg(windows)]
     std::os::windows::process::CommandExt::creation_flags(
@@ -2659,7 +2695,44 @@ fn spawn_local_host(
         artifacts,
         relay_config,
         environment_env,
+        bundled_pricing_allowed,
     })
+}
+
+// Freeze endpoint inheritance on the command itself so pricing describes the
+// persistent child's startup route, not a later mutation of the controller's env.
+fn snapshot_pricing_route(
+    models: &BTreeMap<String, crate::ModelConfig>,
+    command: &mut Command,
+    inherited: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> crate::pricing::NativePricingRoutes {
+    let mut endpoints = BTreeMap::new();
+    for name in crate::pricing::OPENAI_ENDPOINT_ENV_KEYS
+        .into_iter()
+        .chain(crate::pricing::ANTHROPIC_ENDPOINT_ENV_KEYS)
+    {
+        let value = command
+            .get_envs()
+            .find_map(|(key, value)| {
+                let matches = if cfg!(windows) {
+                    key.to_string_lossy().eq_ignore_ascii_case(name)
+                } else {
+                    key == name
+                };
+                matches.then(|| value.map(std::ffi::OsStr::to_owned))
+            })
+            .unwrap_or_else(|| inherited(name));
+        match value {
+            Some(value) => {
+                endpoints.insert(name.to_string(), value.to_string_lossy().into_owned());
+                command.env(name, value);
+            }
+            None => {
+                command.env_remove(name);
+            }
+        }
+    }
+    crate::pricing::NativePricingRoutes::from_models(models, &endpoints)
 }
 
 fn local_host_command(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<(Command, String)> {
@@ -4095,6 +4168,7 @@ mod tests {
       "type": "object",
       "properties": {
         "provider": {"type": "string"},
+        "nemo_fabric.usage_accounting.v1": {"type": "object"},
         "nemo_fabric.detailed_token_usage.v1": {
           "type": "object",
           "properties": {
@@ -4346,6 +4420,38 @@ for line in sys.stdin:
                 }],
                 "extensions": {"trace_id": "trace-1"},
             }
+        elif MODE in ("accounted_usage_result", "accounted_partial_usage_result", "accounted_conflict_usage_result", "accounted_conflict_failed_usage_result", "accounted_undeclared_usage_result", "accounted_schema_invalid_usage_result"):
+            counts = {
+                "input_tokens": 100, "cached_input_tokens": 20,
+                "cache_write_input_tokens": 0, "input_tokens_include_cache": True,
+                "output_tokens": 5, "output_tokens_include_reasoning": True,
+                "peak_request_input_tokens": 100,
+            }
+            result = {
+                "status": "succeeded",
+                "output": {**output, "pricing_route": __import__("os").environ.get("OPENAI_BASE_URL")},
+                "usage": {"extensions": {"nemo_fabric.usage_accounting.v1": {
+                    "models_exhaustive": True, "gaps": [], "models": [{
+                        "model": "gpt-5.4", "provider": "openai", "reported": counts, "gaps": [],
+                    }],
+                }}},
+            }
+            if MODE == "accounted_partial_usage_result":
+                result["usage"]["extensions"]["nemo_fabric.usage_accounting.v1"]["gaps"] = [{
+                    "dimensions": ["input_tokens"], "reason": "unfinished_work",
+                }]
+            if MODE in ("accounted_conflict_usage_result", "accounted_conflict_failed_usage_result"):
+                model = result["usage"]["extensions"]["nemo_fabric.usage_accounting.v1"]["models"][0]
+                model["model"] = "private-accounting-identity"
+                model["requests_exhaustive"] = True
+                model["requests"] = [{"usage": {**counts, "input_tokens": 200, "peak_request_input_tokens": 200}}]
+                if MODE == "accounted_conflict_failed_usage_result":
+                    result["status"] = "failed"
+                    result["error"] = {"code": "original_failure", "message": "execution failed", "retryable": False}
+            if MODE == "accounted_undeclared_usage_result":
+                result["usage"]["extensions"]["undeclared_accounting"] = {}
+            if MODE == "accounted_schema_invalid_usage_result":
+                result["usage"]["extensions"]["nemo_fabric.usage_accounting.v1"] = "not an object"
         elif MODE == "detailed_usage_result":
             result = {
                 "status": "succeeded",
@@ -4581,6 +4687,7 @@ for line in sys.stdin:
             output: Value::Null,
             error: None,
             usage: None,
+            model_usage: None,
             resource_snapshot: None,
             system_stats: None,
             artifacts: ArtifactManifest::default(),
@@ -6056,6 +6163,55 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn unused_custom_model_does_not_disable_native_call_pricing() {
+        let models = serde_json::from_value(serde_json::json!({
+            "default": {"provider": "openai", "model": "gpt-5.4"},
+            "unused": {
+                "provider": "openai", "model": "other-model",
+                "base_url": "https://custom.invalid/v1"
+            }
+        }))
+        .expect("model roles");
+        let allowed = snapshot_pricing_route(&models, &mut Command::new("unused"), |_| None);
+        let raw = serde_json::from_value(serde_json::json!({
+            "extensions": {"nemo_fabric.usage_accounting.v1": {
+                "models_exhaustive": true, "gaps": [], "models": [{
+                    "provider": "openai", "model": "gpt-5.4", "gaps": [],
+                    "reported": {
+                        "input_tokens": 100, "cached_input_tokens": 20,
+                        "cache_write_input_tokens": 0, "input_tokens_include_cache": true,
+                        "output_tokens": 5, "output_tokens_include_reasoning": true
+                    }
+                }]
+            }}
+        }))
+        .expect("source-established usage");
+        let usage =
+            crate::model_usage::normalize_model_usage_for_routes(&raw, None, |provider, model| {
+                allowed.allows(provider, model)
+            })
+            .expect("valid accounting")
+            .expect("normalized accounting");
+        assert!(usage.cost.estimated.amount_nano_usd.is_some());
+    }
+
+    #[test]
+    fn local_host_returns_flat_supported_accounting_with_the_normalized_result() {
+        let (root, plan) = local_host_plan("accounted_usage_result");
+        let result = run_plan(&plan, RunRequest::text("accounted")).expect("normalized result");
+        assert_eq!(result.status, RunStatus::Succeeded);
+        let usage = result.model_usage.expect("supported accounting");
+        assert_eq!(usage.tokens.input_tokens, Some(100));
+        assert_eq!(usage.tokens.cached_input_tokens, Some(20));
+        assert_eq!(usage.tokens.output_tokens, Some(5));
+        assert_eq!(usage.tokens.total_tokens, Some(105));
+        assert!(usage.models_exhaustive);
+        assert_eq!(usage.models[0].model, "gpt-5.4");
+        assert_eq!(usage.observed.input_tokens, Some(100));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn local_host_enriches_typed_usage_artifacts_and_extensions() {
         let (root, plan) = local_host_plan("typed_result");
 
@@ -6580,5 +6736,39 @@ for line in sys.stdin:
             } if provider == "docker"
         ));
         let _ = fs::remove_dir_all(root);
+    }
+    #[test]
+    fn semantic_accounting_conflict_preserves_execution_and_raw_evidence() {
+        for (mode, status) in [
+            ("accounted_conflict_usage_result", RunStatus::Succeeded),
+            ("accounted_conflict_failed_usage_result", RunStatus::Failed),
+        ] {
+            let (root, plan) = local_host_plan(mode);
+            let result = run_plan(&plan, RunRequest::text("preserve execution"))
+                .expect("accounting must not replace execution outcome");
+            assert_eq!(result.status, status);
+            assert_eq!(result.output["input"], "preserve execution");
+            if status == RunStatus::Failed {
+                assert_eq!(result.error.as_ref().unwrap().code, "original_failure");
+            } else {
+                assert!(result.error.is_none());
+            }
+            assert!(result.model_usage.is_none());
+            let raw = &result.usage.as_ref().expect("raw usage").metadata;
+            assert_eq!(
+                raw["nemo_fabric.usage_accounting.v1"]["models"][0]["model"],
+                "private-accounting-identity"
+            );
+            let events: Vec<_> = result
+                .events
+                .iter()
+                .filter(|event| event.kind == "model_usage_invalid")
+                .collect();
+            assert_eq!(events.len(), 1);
+            let diagnostic = serde_json::to_string(events[0]).unwrap();
+            assert!(!diagnostic.contains("private-accounting-identity"));
+            assert!(!diagnostic.contains("request totals"));
+            let _ = fs::remove_dir_all(root);
+        }
     }
 }

@@ -17,10 +17,10 @@ Metadata-only adapter inspection for host-side admission.
 ## <kbd>function</kbd> `inspect_adapter`
 
 ```python
-inspect_adapter(
-    config: 'FabricConfig',
-    descriptor: 'Mapping[str, Any] | None'
-) → AdapterCapabilityProfile
+def inspect_adapter(
+    config: FabricConfig,
+    descriptor: Mapping[str, Any] | None,
+) -> AdapterCapabilityProfile
 ```
 
 Inspect a standalone runtime using descriptor metadata without loading its SDK.
