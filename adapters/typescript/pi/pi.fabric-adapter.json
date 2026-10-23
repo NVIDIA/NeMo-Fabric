@@ -7,7 +7,9 @@
     "script": "dist/cli.js"
   },
   "requirements": {
-    "binaries": ["node"]
+    "binaries": [
+      "node"
+    ]
   },
   "config": {
     "accepts": [
@@ -21,7 +23,9 @@
       "mcp",
       "mcp.tool_filters"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": [
+      "replace"
+    ]
   },
   "settings_schema": {
     "type": "object",
@@ -45,12 +49,31 @@
   "model_schema": {
     "type": "object",
     "properties": {
-      "provider": {"type": "string", "minLength": 1},
-      "model": {"type": "string", "minLength": 1},
-      "api_key_env": {"type": "string", "minLength": 1},
-      "base_url": {"type": ["string", "null"], "format": "uri"}
+      "provider": {
+        "type": "string",
+        "minLength": 1
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "api_key_env": {
+        "type": "string",
+        "minLength": 1
+      },
+      "base_url": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      }
     },
-    "required": ["provider", "model", "api_key_env"],
+    "required": [
+      "provider",
+      "model",
+      "api_key_env"
+    ],
     "additionalProperties": false
   },
   "extension_schemas": {
@@ -74,33 +97,80 @@
           ],
           "description": "The wire protocol Pi uses to talk to this model."
         },
-        "context_window": {"type": "integer", "minimum": 1},
-        "max_tokens": {"type": "integer", "minimum": 1},
+        "context_window": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
         "cost": {
           "type": "object",
           "description": "Per-million-token pricing. All four rates are required and non-negative.",
           "properties": {
-            "input": {"type": "number", "minimum": 0},
-            "output": {"type": "number", "minimum": 0},
-            "cacheRead": {"type": "number", "minimum": 0},
-            "cacheWrite": {"type": "number", "minimum": 0}
+            "input": {
+              "type": "number",
+              "minimum": 0
+            },
+            "output": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cacheRead": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cacheWrite": {
+              "type": "number",
+              "minimum": 0
+            }
           },
-          "required": ["input", "output", "cacheRead", "cacheWrite"],
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite"
+          ],
           "additionalProperties": false
         },
-        "reasoning": {"type": "boolean"},
-        "input": {"type": "array", "items": {"type": "string", "enum": ["text", "image"]}},
-        "name": {"type": "string"}
+        "reasoning": {
+          "type": "boolean"
+        },
+        "input": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image"
+            ]
+          }
+        },
+        "name": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
     "run_result": {
       "type": "object",
       "properties": {
-        "pi_turn_count": {"type": "integer", "minimum": 0},
-        "pi_turn_started": {"type": "boolean"}
+        "nemo_fabric.versions.v1": {
+          "type": "object"
+        },
+        "pi_turn_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pi_turn_started": {
+          "type": "boolean"
+        }
       },
-      "required": ["pi_turn_count", "pi_turn_started"],
+      "required": [
+        "pi_turn_count",
+        "pi_turn_started"
+      ],
       "additionalProperties": false
     }
   },
@@ -108,21 +178,32 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "kind": {"const": "module"},
+      "kind": {
+        "const": "module"
+      },
       "ref": {
         "type": "string",
         "minLength": 1,
         "pattern": "^[^#]+(?:#[A-Za-z_$][A-Za-z0-9_$]*)?$"
       },
-      "settings": {"type": "object"}
+      "settings": {
+        "type": "object"
+      }
     },
-    "required": ["kind", "ref"],
+    "required": [
+      "kind",
+      "ref"
+    ],
     "additionalProperties": false
   },
   "telemetry": {
     "providers": {
       "relay": {
-        "outputs": ["atif", "otel", "openinference"]
+        "outputs": [
+          "atif",
+          "otel",
+          "openinference"
+        ]
       }
     }
   },

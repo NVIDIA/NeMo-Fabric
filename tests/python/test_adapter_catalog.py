@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from importlib.resources import files
 from pathlib import Path
 from unittest.mock import Mock
@@ -84,3 +85,91 @@ def test_invalid_resources_fail_clearly(
     monkeypatch.setattr(catalog, "files", Mock(return_value=resource))
     with pytest.raises(error):
         catalog.get_adapter_descriptor("not.a.bundled.id")
+
+
+def test_every_bundled_descriptor_declares_the_versions_report(bundle):
+    adapters = bundle["adapters"]
+
+    assert adapters
+    for adapter_id, entry in adapters.items():
+        run_result = entry["descriptor"]["extension_schemas"]["run_result"]
+        assert run_result["properties"]["nemo_fabric.versions.v1"] == {
+            "type": "object"
+        }, adapter_id
+        assert "nemo_fabric.versions.v1" not in run_result.get("required", []), (
+            adapter_id
+        )
+
+
+def _descriptors_on_disk(repo_root: Path) -> list[Path]:
+    found = []
+    for directory, subdirectories, filenames in os.walk(repo_root):
+        # Installed dependencies are not part of the source tree.
+        subdirectories[:] = [
+            name for name in subdirectories if name not in {".git", "node_modules"}
+        ]
+        found.extend(
+            Path(directory) / filename
+            for filename in filenames
+            if filename.endswith(".fabric-adapter.json")
+        )
+    return found
+
+
+def _checked_in_descriptors(repo_root: Path) -> list[Path]:
+    """Every tracked descriptor, or every descriptor on disk outside a git checkout."""
+
+    try:
+        listed = subprocess.run(
+            ["git", "-C", str(repo_root), "ls-files", "-z", "*.fabric-adapter.json"],
+            capture_output=True,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return _descriptors_on_disk(repo_root)
+    return [
+        repo_root / name
+        for name in listed.decode("utf-8").split("\0")
+        if name and (repo_root / name).is_file()
+    ]
+
+
+def test_every_checked_in_copy_of_a_bundled_descriptor_matches_its_source(
+    bundle, repo_root: Path
+):
+    # Bundled adapters always attach the versions report, and core fails a run
+    # whose result carries an undeclared key, so a copy used by an example or a
+    # CLI preset must stay byte-identical to the descriptor it copies, as the
+    # CLI's packaged-descriptor test already requires for its own copies.
+    sources_by_id: dict[str, Path] = {}
+    sources_by_module: dict[str, Path] = {}
+    sources_by_script: dict[str, list[Path]] = {}
+    for adapter_id, entry in bundle["adapters"].items():
+        source = repo_root / entry["source"]
+        runner = entry["descriptor"]["runner"]
+        sources_by_id[adapter_id] = source
+        if "module" in runner:
+            sources_by_module[runner["module"]] = source
+        if "script" in runner:
+            sources_by_script.setdefault(runner["script"], []).append(source)
+
+    copies = []
+    for path in _checked_in_descriptors(repo_root):
+        descriptor = json.loads(path.read_bytes())
+        runner = descriptor.get("runner", {})
+        if descriptor.get("adapter_id") in sources_by_id:
+            candidates = [sources_by_id[descriptor["adapter_id"]]]
+        elif runner.get("module") in sources_by_module:
+            candidates = [sources_by_module[runner["module"]]]
+        elif runner.get("script") in sources_by_script:
+            # Several TypeScript adapters share one script path.
+            candidates = sources_by_script[runner["script"]]
+        else:
+            continue
+        copies.append(path)
+        assert any(path.read_bytes() == source.read_bytes() for source in candidates), (
+            f"{path} drifted from {[str(source) for source in candidates]}"
+        )
+
+    sources = {path.resolve() for path in sources_by_id.values()}
+    assert {path.resolve() for path in copies} - sources

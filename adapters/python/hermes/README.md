@@ -122,6 +122,52 @@ method, closes the session database, and releases the Relay plugin context when
 enabled. Relay subscriber work is flushed after each invocation so ATIF output
 is complete before the result returns.
 
+## Token Usage
+
+Hermes reports invocation-owned model evidence through the shared
+`nemo_fabric.usage_accounting.v1` extension. An omitted count stays unknown;
+a reported 0 stays 0. Core normalizes cache and reasoning conventions.
+Catalog estimation is a separate shared feature. Hermes' session cost estimate
+is not reported as provider `cost_usd`. Only an observed native HTTPS provider
+endpoint establishes native-provider pricing identity; a custom endpoint retains
+its actual model identity without claiming native-provider prices.
+
+For Hermes revision `a62979dc`, NeMo Fabric observes the HTTP clients it owns through
+one qualified per-agent client-construction override. It preserves Hermes'
+client settings, connection-pool lifecycle, retries and lazy stream consumption.
+The observer reads usage before response normalization, including replies that
+Hermes later rejects or truncates, and iteration-limit summaries. Each physical
+request contributes once. A silent stream end without its terminal marker or a
+malformed/oversized event leaves complete totals unknown and retains the last
+readable observation. A failed request without usable usage makes complete
+totals unknown and retains other observed counts. HTTP status alone never
+establishes zero spend.
+
+Public execution middleware supplies observations for transports outside that
+HTTP seam, including native Anthropic and delegated agents. Their physical
+attempt coverage remains unverified. Public auxiliary hooks retain positive
+normalized counts, but their zero-filled counters cannot establish a reported
+zero or recover cache fields lost before the hook. Only the affected dimensions
+remain unknown. Compression through an opaque plugin engine records an explicit
+scope gap when its compression method actually runs. A shared or immutable
+plugin engine cannot be safely instrumented and remains unverified.
+
+An unfinished request or child at return creates an accounting gap. Results
+freeze at that boundary; late completion cannot change them or transfer tokens
+to the next invocation. Task delegation remains asynchronous where Hermes
+schedules it asynchronously. Cancellation still propagates through NeMo Fabric's
+existing lifecycle; a cancelled call that produces no result has no returned
+usage payload.
+
+NeMo Fabric disables automatic post-turn memory/skill review with
+`skip_background_review`, and disables model-generated title upgrades with
+`auxiliary.title_generation.model_upgrade_enabled=false`. Local title generation
+remains enabled without Relay; Relay runs retain their existing title disablement.
+The applied settings appear in `output.skip_background_review` and
+`output.hermes_native_config.title_generation`. These housekeeping controls do
+not disable task delegation. Other Hermes revisions keep execution and available
+middleware observations, but do not receive qualified transport completeness.
+
 ## Maintaining The Adapter
 
 Keep `hermes.fabric-adapter.json` aligned with the Python implementation:

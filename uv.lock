@@ -2506,12 +2506,14 @@ name = "nemo-fabric-adapters-hermes"
 version = "0.6.0"
 source = { editable = "adapters/python/hermes" }
 dependencies = [
+    { name = "httpx" },
     { name = "nemo-fabric-adapter-contract" },
     { name = "nemo-fabric-adapters-common" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/python/common" },
     { name = "nemo-relay", marker = "extra == 'full'", specifier = ">=0.9,<0.11" },

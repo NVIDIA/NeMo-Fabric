@@ -110,9 +110,11 @@ def build_hermes_config(
         ),
     }
 
+    # Keep Hermes' local title without scheduling a model upgrade after return.
+    title_generation = {"model_upgrade_enabled": False}
     if relay_enabled:
-        # Hermes makes an extra model call for titles, which skews Relay telemetry.
-        config["auxiliary"] = {"title_generation": {"enabled": False}}
+        title_generation["enabled"] = False
+    config["auxiliary"] = {"title_generation": title_generation}
 
     skill_dirs = (
         [str(path) for path in agent_config.skills.paths]
@@ -226,6 +228,7 @@ def hermes_mcp_server_config(
 def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "model": config.get("model", {}),
+        "title_generation": (config.get("auxiliary") or {}).get("title_generation", {}),
         "terminal": config.get("terminal", {}),
         "skill_dirs": (config.get("skills") or {}).get("external_dirs", []),
         "mcp_servers": sorted((config.get("mcp_servers") or {}).keys()),

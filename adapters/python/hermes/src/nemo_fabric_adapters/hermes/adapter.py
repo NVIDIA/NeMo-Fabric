@@ -15,6 +15,7 @@ import inspect
 import logging
 import os
 import sys
+from collections.abc import Callable
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -28,16 +29,74 @@ from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
+from nemo_fabric_adapter_contract.models import ReportedUsage
+from nemo_fabric_adapter_contract.models import GapReason
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import telemetry
+from nemo_fabric_adapters.hermes import usage as usage_evidence
 
 # Default agent loop budget when FabricConfig.runtime.max_turns is unset.
 # The actual internal hermes default  as of v0.21 is `sys.maxsize`
 DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-hermes"
+_HARNESS_NAME = "hermes-agent"
+_METHOD_HARNESS_API = "harness_api"
 hermes_mcp_server_config = configuration.hermes_mcp_server_config
+
+
+class HermesVersionCallMissingError(Exception):
+    """The installed Hermes Agent predates its version call."""
+
+
+def hermes_version() -> str:
+    """The running Hermes Agent's version from its version call.
+
+    Returns the same ``derived_version`` that ``hermes --version`` prints, which
+    keeps the commit and dirty marker of a source checkout. ``get_version_info()``
+    can run several ``git`` commands, so callers run it through a
+    :class:`provenance.BlockingProbe`. Raises
+    :class:`HermesVersionCallMissingError` only when the version call itself
+    can't be imported; an error raised inside the call propagates unchanged.
+    """
+
+    try:
+        from hermes_cli.version_info import get_version_info
+    except ImportError as error:
+        raise HermesVersionCallMissingError from error
+
+    return get_version_info().derived_version
+
+
+async def probe_hermes_version(
+    probe: provenance.BlockingProbe,
+    version_call: Callable[[], str] = hermes_version,
+    timeout: float = provenance.PROBE_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Hermes's version as a reported fact, bounded by the probe time limit."""
+
+    try:
+        version = await probe.call(version_call, timeout=timeout)
+    except TimeoutError:
+        return provenance.missing_fact(
+            "collection_failed", "timeout", _METHOD_HARNESS_API
+        )
+    except HermesVersionCallMissingError:
+        return provenance.no_source_fact()
+    except Exception:
+        # Provenance never fails a run, whatever Hermes's version call raises.
+        LOGGER.exception("Hermes version call failed")
+        return provenance.missing_fact(
+            "collection_failed", "no_result", _METHOD_HARNESS_API
+        )
+    if not isinstance(version, str) or not version or version == "unknown":
+        return provenance.missing_fact(
+            "unavailable", "empty_response", _METHOD_HARNESS_API
+        )
+    return provenance.known_fact(version, _METHOD_HARNESS_API)
 
 
 def main() -> None:
@@ -51,6 +110,9 @@ class HermesRuntime:
 
     def __init__(self) -> None:
         self._started = False
+        self._usage_registration_tag = object()
+        self._usage_registrations: list[Any] = []
+        self._usage_scope_unverified = False
         self._agent_config: AgentConfig | None = None
         self._runtime_id: str | None = None
         self._settings: dict[str, Any] = {}
@@ -66,6 +128,11 @@ class HermesRuntime:
         self._relay_plugin_config: dict[str, Any] | None = None
         self._relay_plugin_config_path: Path | None = None
         self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
+        self._version_probe = provenance.BlockingProbe()
+        self._harness_version = provenance.missing_fact(
+            "unavailable", "not_collected", _METHOD_HARNESS_API
+        )
+        self._package_version = provenance.package_version_fact(_PACKAGE_DISTRIBUTION)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -151,6 +218,7 @@ class HermesRuntime:
             from hermes_state import SessionDB
             from run_agent import AIAgent
 
+            self._harness_version = await probe_hermes_version(self._version_probe)
             with redirect_stdout(StringIO()):
                 if relay_enabled:
                     common_utils.reject_ambient_relay_plugin_config()
@@ -189,7 +257,11 @@ class HermesRuntime:
                     )
                     if value is not None
                 }
-                self._agent = AIAgent(
+                self._usage_registrations = usage_evidence.install_observer(
+                    self._usage_registration_tag
+                )
+                observed_agent = usage_evidence.observed_agent_type(AIAgent)
+                self._agent = observed_agent(
                     **filter_supported_kwargs(
                         AIAgent,
                         base_url=model_config.base_url,
@@ -203,6 +275,7 @@ class HermesRuntime:
                         quiet_mode=True,
                         skip_context_files=True,
                         skip_memory=True,
+                        skip_background_review=True,
                         save_trajectories=bool(
                             self._settings.get("save_trajectories", False)
                         ),
@@ -217,13 +290,47 @@ class HermesRuntime:
                         session_db=self._session_db,
                     )
                 )
+            engine_observation = usage_evidence.observe_context_engine(
+                self._agent, self._usage_registration_tag
+            )
+            if engine_observation is not None:
+                self._usage_registrations.append(engine_observation)
+                self._usage_scope_unverified = engine_observation.scope_unverified
             self._agent_config = agent_config
             self._started = True
         except BaseException:
             await self.stop()
             raise
 
+    def _versions_extensions(self) -> dict[str, Any]:
+        return {
+            provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
+                package_version=self._package_version,
+                harness_name=provenance.known_fact(
+                    "hermes-agent", provenance.METHOD_ADAPTER_REPORT
+                ),
+                harness_version=self._harness_version,
+                served_models={
+                    role: provenance.no_source_fact()
+                    for role in (
+                        self._agent_config.models
+                        if self._agent_config is not None
+                        else ()
+                    )
+                },
+            )
+        }
+
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        result = await self._invoke(request, runtime_context)
+        result.extensions.update(self._versions_extensions())
+        return result
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
@@ -256,17 +363,27 @@ class HermesRuntime:
 
         await self._authenticate_mcp_servers()
 
+        invocation_usage = usage_evidence.InvocationUsage(self._usage_registration_tag)
+        if self._usage_scope_unverified:
+            invocation_usage.settle(
+                invocation_usage.start(),
+                ReportedUsage(),
+                gap=GapReason.SCOPE_UNVERIFIED,
+            )
+        pre_turn_call_count = len(invocation_usage.calls)
+
         def run_hermes_turn() -> tuple[dict[str, Any], str]:
             if self._relay_plugin_config is not None:
                 common_utils.reject_ambient_relay_plugin_config()
             try:
-                return _invoke_hermes_turn(
-                    agent=self._agent,
-                    system_prompt=system_prompt,
-                    user_message=user_message,
-                    conversation_history=self._conversation_history,
-                    task_id=runtime_context.request_id,
-                )
+                with invocation_usage.activate():
+                    return _invoke_hermes_turn(
+                        agent=self._agent,
+                        system_prompt=system_prompt,
+                        user_message=user_message,
+                        conversation_history=self._conversation_history,
+                        task_id=runtime_context.request_id,
+                    )
             finally:
                 if self._relay_plugin_config is not None:
                     # Hermes writes TOML-configured ATIF at its session-finalization
@@ -296,6 +413,20 @@ class HermesRuntime:
         invoke_task.add_done_callback(clear_active_invoke_task)
         try:
             result, adapter_stdout = await asyncio.shield(invoke_task)
+        except asyncio.CancelledError:
+            invocation_usage.finish()
+            raise
+        except Exception as error:
+            if len(invocation_usage.calls) == pre_turn_call_count:
+                raise
+            return AgentRunResult(
+                status=AgentRunStatus.FAILED,
+                error=AgentRunError(
+                    code="hermes_invocation_failed",
+                    message=str(error) or type(error).__name__,
+                ),
+                usage=invocation_usage.finish(),
+            )
         finally:
             if invoke_task.done() and self._active_invoke_task is invoke_task:
                 self._active_invoke_task = None
@@ -334,6 +465,10 @@ class HermesRuntime:
                 self._hermes_config
             ),
             "enabled_toolsets": self._enabled_toolsets,
+            "skip_background_review": getattr(
+                self._agent, "skip_background_review", False
+            )
+            is True,
         }
         if self._relay_plugin_config is not None:
             output["relay_runtime"] = {
@@ -368,10 +503,13 @@ class HermesRuntime:
                     code="hermes_reported_failure",
                     message="Hermes did not complete the invocation",
                 )
+        accounted_usage = invocation_usage.finish()
         return AgentRunResult(
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
             output=output,
             error=error,
+            usage=accounted_usage,
+            extensions={},
         )
 
     async def _authenticate_mcp_servers(self) -> None:
@@ -487,6 +625,13 @@ class HermesRuntime:
                 if self._active_invoke_task is active_invoke_task:
                     self._active_invoke_task = None
 
+        for registration in self._usage_registrations:
+            try:
+                registration.dispose()
+            except BaseException as error:
+                errors.append(error)
+        self._usage_registrations = []
+        self._usage_scope_unverified = False
         agent = self._agent
         session_db = self._session_db
         had_mcp_servers = bool(self._hermes_config.get("mcp_servers"))
