@@ -7,7 +7,9 @@
 //! one file can configure both tools. NVIDIA NeMo Fabric parses the format itself and
 //! does not depend on NeMo Relay. Names are trimmed and compared case-insensitively.
 //! An explicit provider restricts aliases and model-path suffixes to that provider.
-//! Without a provider, model-only lookup uses the first matching entry in listed order.
+//! Without a provider, lookup tries provider-qualified keys from the model path
+//! before model-only suffixes. For each candidate key, the first matching
+//! catalog entry wins.
 //!
 //! NeMo Fabric ships one catalog, embedded at build time, with the list prices
 //! of models that its presets, docs, and examples use. Each entry cites the
@@ -59,7 +61,7 @@ struct BundledCatalog {
 pub struct PricingCatalog {
     /// Catalog format version. Must be `1`.
     pub version: u32,
-    /// Price entries. Lookup uses the first entry that matches.
+    /// Price entries. For each lookup key, the first matching entry wins.
     pub entries: Vec<ModelPricing>,
 }
 
