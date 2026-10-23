@@ -16,6 +16,9 @@ from nemo_fabric.reporting import (
 from nemo_fabric.types import RunResult
 
 
+RESOURCE_SCOPE = "runtime_adapter_host_process_tree"
+
+
 @pytest.fixture(name="result")
 def result_fixture():
     return {
@@ -631,3 +634,244 @@ def test_request_result_reference_is_not_followed_or_treated_as_saved(tmp_path):
     summary = read_evidence(path)
     assert summary["result_reference"] == "../../sensitive.json"
     assert "does not confirm" in render_request_summary(summary)
+
+
+def test_invalid_accounting_preserves_execution_and_evidence_references(result):
+    result["model_usage"]["input_tokens"] = -1
+    result["telemetry"] = [{"provider": "relay", "uri": "events.jsonl"}]
+    summary = summarize_result(result)
+    assert summary["status"] == "succeeded"
+    assert summary["accounting_error"] == "invalid_model_usage"
+    assert summary["telemetry"] == result["telemetry"]
+    assert summary["what_ran"] is None
+    assert summary["usage"]["dimensions"]["input_tokens"]["complete_total"] is None
+
+
+def test_typed_sdk_result_uses_the_same_summary_without_losing_accounting(result):
+    returned = RunResult.from_mapping(
+        {
+            **result,
+            "agent_name": "test",
+            "harness": "deepagents",
+            "adapter_kind": "python",
+            "adapter_id": "deepagents",
+            "output": {"text": "ok"},
+        }
+    )
+    summary = summarize_result(returned)
+    assert summary["model_usage"] == returned.model_usage.to_mapping()
+    assert summary["usage"]["dimensions"]["input_tokens"]["complete_total"] == 100
+
+
+def test_typed_result_preserves_json_references_resources_and_outcome_boundary(result):
+    result.update(
+        agent_name="test",
+        harness="deepagents",
+        adapter_kind="python",
+        adapter_id="deepagents",
+        output={"text": "ok"},
+        usage={"input_tokens": 100, "output_tokens": 2},
+        resource_snapshot={
+            "runtime_id": "runtime",
+            "started_at": "2026-10-21T00:00:00Z",
+            "observed_at": "2026-10-21T00:00:01Z",
+            "resident_memory_bytes": 4096,
+            "process_count": 1,
+            "cpu_time_seconds": 0.25,
+        },
+        telemetry=[{"provider": "relay", "kind": "trace", "uri": "trace.jsonl"}],
+    )
+    result["artifacts"]["artifacts"] = [
+        {
+            "name": "result",
+            "kind": "run_result",
+            "path": "run-result.json",
+            "metadata": {"boundary": "one_shot_lifecycle"},
+        }
+    ]
+    typed = RunResult.from_mapping(result)
+    summary = summarize_result(typed)
+    assert summary == summarize_result(typed.to_mapping())
+    assert summary["artifacts"][0]["path"] == "run-result.json"
+    assert summary["outcome_boundary"] == "one_shot_lifecycle"
+    assert summary["resource_snapshot"]["cpu_time_seconds"] == 0.25
+    assert summary["telemetry"][0]["uri"] == "trace.jsonl"
+    assert json.loads(json.dumps(summary)) == summary
+
+
+def resource_record(record_lines, before, after):
+    rows = deepcopy(record_lines)
+    for row, snapshot in zip(rows, (before, after), strict=True):
+        row.update(resource_scope=RESOURCE_SCOPE, resources=snapshot)
+    rows[1]["exchange_elapsed_ms"] = 10
+    return rows
+
+
+def test_resource_window_and_exchange_interval_keep_distinct_boundaries(
+    tmp_path, result, record_lines
+):
+    before = resource_snapshot(1)
+    after = resource_snapshot(3, observed="2026-10-21T00:00:03Z", rss=30)
+    rows = resource_record(record_lines, before, after)
+    record = tmp_path / "run-record.jsonl"
+    write_record(record, rows)
+    result["resource_snapshot"] = after
+    path = tmp_path / "run-result.json"
+    path.write_text(json.dumps(result))
+    summary = read_result(path)
+    assert summary["execution_interval"]["elapsed_ms"] == 123
+    assert summary["adapter_exchange"]["elapsed_ms"] == 10
+    assert summary["resource_window"]["scope"] == RESOURCE_SCOPE
+    assert summary["resource_window"]["cpu_counter_change_seconds"] == 2
+    assert summary["resource_snapshot"] == after
+    text = render_result_summary(summary, details=True)
+    assert "Elapsed (adapter exchange): 10 ms" in text
+    assert "not invocation CPU" in text and "not a peak" in text
+    assert summary["usage"]["dimensions"]["input_tokens"]["complete_total"] == 100
+
+
+@pytest.mark.parametrize(
+    ("change", "reason"),
+    [
+        ({"runtime_id": "other"}, "runtime_mismatch"),
+        ({"started_at": "2026-10-20T00:00:00Z"}, "host_changed"),
+        ({"cpu_time_seconds": 0.5}, "counter_decreased"),
+        ({"observed_at": "2026-10-20T00:00:00Z"}, "time_reversed"),
+        ({"observed_at": "bad-time"}, "invalid_snapshot"),
+        ({"cpu_time_seconds": True}, "invalid_snapshot"),
+    ],
+)
+def test_incomparable_resources_do_not_erase_valid_exchange_time(
+    tmp_path, record_lines, change, reason
+):
+    before = resource_snapshot(1)
+    after = {**resource_snapshot(3, observed="2026-10-21T00:00:03Z"), **change}
+    path = tmp_path / "run-record.jsonl"
+    write_record(path, resource_record(record_lines, before, after))
+    summary = read_evidence(path)
+    assert summary["exchange_elapsed_ms"] == 10
+    assert summary["resource_window"]["cpu_counter_change_seconds"] is None
+    assert summary["resource_window"]["delta_reason"] == reason
+
+
+def test_snapshot_failure_is_unavailable_not_zero_and_keeps_timing(
+    tmp_path, record_lines
+):
+    path = tmp_path / "run-record.jsonl"
+    write_record(
+        path,
+        resource_record(
+            record_lines,
+            resource_snapshot(1),
+            {"error": "resource_observation_unavailable"},
+        ),
+    )
+    summary = read_evidence(path)
+    assert summary["resource_window"]["end"] is None
+    assert summary["resource_window"]["cpu_counter_change_seconds"] is None
+    assert (
+        summary["resource_window"]["delta_reason"] == "resource_observation_unavailable"
+    )
+    assert summary["exchange_elapsed_ms"] == 10
+
+
+def test_full_result_resource_snapshot_cannot_be_replaced_by_sibling(
+    tmp_path, result, record_lines
+):
+    before = resource_snapshot(1)
+    recorded_end = resource_snapshot(3, observed="2026-10-21T00:00:03Z")
+    result["resource_snapshot"] = resource_snapshot(7, observed="2026-10-21T00:00:04Z")
+    write_record(
+        tmp_path / "run-record.jsonl",
+        resource_record(record_lines, before, recorded_end),
+    )
+    path = tmp_path / "run-result.json"
+    path.write_text(json.dumps(result))
+    summary = read_result(path)
+    assert summary["resource_snapshot"] == result["resource_snapshot"]
+    assert summary["resource_window"]["cpu_counter_change_seconds"] is None
+    assert (
+        summary["resource_window"]["delta_reason"] == "end_snapshot_differs_from_result"
+    )
+    assert summary["usage"]["dimensions"]["input_tokens"]["complete_total"] == 100
+
+
+def test_warm_resource_windows_do_not_repeat_lifetime_cpu(tmp_path, record_lines):
+    changes = []
+    for index, (before, after) in enumerate(((1, 3), (3.25, 3.75))):
+        path = tmp_path / f"record-{index}.jsonl"
+        write_record(
+            path,
+            resource_record(
+                record_lines,
+                resource_snapshot(before),
+                resource_snapshot(after, observed="2026-10-21T00:00:03Z"),
+            ),
+        )
+        changes.append(
+            read_evidence(path)["resource_window"]["cpu_counter_change_seconds"]
+        )
+    assert changes == [2, 0.5]
+
+
+def test_parallel_and_shared_resource_windows_remain_separate(tmp_path, record_lines):
+    windows = []
+    for index, (before, after) in enumerate(((1, 3), (2, 4))):
+        rows = resource_record(
+            record_lines,
+            resource_snapshot(before),
+            resource_snapshot(after, observed="2026-10-21T00:00:03Z"),
+        )
+        for row in rows:
+            row["invocation_id"] = f"parallel-{index}"
+        path = tmp_path / f"record-{index}.jsonl"
+        write_record(path, rows)
+        windows.append(read_evidence(path))
+    assert [
+        summary["resource_window"]["cpu_counter_change_seconds"] for summary in windows
+    ] == [2, 2]
+    assert [summary["invocation_id"] for summary in windows] == [
+        "parallel-0",
+        "parallel-1",
+    ]
+    assert all("cpu_total_seconds" not in summary for summary in windows)
+
+
+@pytest.mark.parametrize("error_code", [{"invalid": "shape"}, ["invalid"]])
+def test_malformed_sibling_resource_error_keeps_full_execution_and_accounting(
+    tmp_path, result, record_lines, error_code
+):
+    record_lines[0]["resources"] = {"error": error_code}
+    record_lines[0]["resource_scope"] = "runtime_adapter_host_process_tree"
+    record_lines[1]["resource_scope"] = "runtime_adapter_host_process_tree"
+    write_record(tmp_path / "run-record.jsonl", record_lines)
+    path = tmp_path / "run-result.json"
+    path.write_text(json.dumps(result))
+    summary = read_evidence(path)
+    assert summary["status"] == "succeeded"
+    assert summary["usage"]["dimensions"]["input_tokens"]["complete_total"] == 100
+    assert summary["resource_window"]["start"] is None
+    assert summary["resource_window"]["delta_reason"] == "invalid_snapshot"
+    assert "input 100" in render_result_summary(summary)
+
+
+def test_absent_provenance_is_not_reported_as_malformed(result):
+    summary = summarize_result(result)
+    assert summary["what_ran"] is None
+    assert summary["provenance_error"] is None
+    assert "facts were unreadable" not in render_result_summary(summary)
+
+
+def test_record_projection_reads_canonical_process_endpoints(tmp_path, record_lines):
+    before, after = resource_snapshot(1), resource_snapshot(3)
+    record_lines[1].update(
+        resources_before={"status": "available", "snapshot": before},
+        resources={"status": "available", "snapshot": after},
+        resource_scope=RESOURCE_SCOPE,
+    )
+    path = tmp_path / "run-record.jsonl"
+    write_record(path, record_lines)
+    summary = read_evidence(path)
+    assert summary["resource_window"]["start"] == before
+    assert summary["resource_window"]["end"] == after
+    assert summary["resource_window"]["cpu_counter_change_seconds"] == 2

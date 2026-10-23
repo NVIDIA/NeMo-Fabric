@@ -2126,6 +2126,15 @@ fn local_host_invocation_result(
                 StatsSession::prepare(config, &invocation, reader.clone(), before, &fabric_home)
             });
         let invocation_started = Instant::now();
+        if let Some(recorder) = recorder.as_mut() {
+            recorder.exchange_started(
+                invocation_started,
+                &before
+                    .as_ref()
+                    .map(|reading| reading.adapter_tree.clone())
+                    .unwrap_or(crate::ResourceObservation::NotCollected),
+            );
+        }
         if let Some(sampling) = &sampling {
             sampling.start(invocation_started);
         }
@@ -2140,10 +2149,22 @@ fn local_host_invocation_result(
         if let Some(sampling) = &sampling {
             sampling.close();
         }
-        let elapsed_seconds = invocation_started.elapsed().as_secs_f64();
+        let exchange_ended_at = Instant::now();
+        let elapsed_seconds = exchange_ended_at
+            .duration_since(invocation_started)
+            .as_secs_f64();
         // Endpoint collection and final artifact writes are outside elapsed time,
         // and still under the host lock to exclude the next invocation.
         let after = stats_config.map(|_| reader.read());
+        if let Some(recorder) = recorder.as_mut() {
+            recorder.exchange_ended(
+                exchange_ended_at,
+                &after
+                    .as_ref()
+                    .map(|reading| reading.adapter_tree.clone())
+                    .unwrap_or(crate::ResourceObservation::NotCollected),
+            );
+        }
         // Keep the independent final resource_snapshot contract even when the
         // invocation stats block or its process group is disabled.
         let resource_snapshot = if stats_config

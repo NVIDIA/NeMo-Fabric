@@ -166,6 +166,15 @@
           ],
           "description": "Error code, stage and retryable flag, without the message."
         },
+        "exchange_elapsed_ms": {
+          "description": "Adapter exchange only, excluding queue, record I/O, preparation,\nnormalization and result persistence. Absent if dispatch never began.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "model_usage": {
           "anyOf": [
             {
@@ -181,6 +190,18 @@
           "const": "invocation",
           "description": "This line observes the invocation, before one-shot runtime shutdown.",
           "type": "string"
+        },
+        "resource_scope": {
+          "$ref": "#/$defs/ResourceScope",
+          "description": "Scope of the resource observations, never causal invocation usage."
+        },
+        "resources": {
+          "$ref": "#/$defs/ResourceObservation",
+          "description": "Same process endpoint as invocation stats, frozen before timeout cleanup."
+        },
+        "resources_before": {
+          "$ref": "#/$defs/ResourceObservation",
+          "description": "Same process endpoint as invocation stats, frozen before adapter exchange."
         },
         "result": {
           "description": "Expected full-result file next to this record; absence means not saved.",
@@ -208,7 +229,10 @@
       "required": [
         "outcome_scope",
         "status",
-        "elapsed_ms"
+        "elapsed_ms",
+        "resource_scope",
+        "resources_before",
+        "resources"
       ],
       "type": "object"
     },
@@ -649,6 +673,85 @@
         }
       ]
     },
+    "ResourceObservation": {
+      "description": "One attempt to observe the adapter host process tree. Missing readings are\nexplicit; an unavailable observation never stands for zero resource usage.",
+      "oneOf": [
+        {
+          "description": "The process group was explicitly excluded from collection.",
+          "properties": {
+            "status": {
+              "const": "not_collected",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The process tree was read successfully.",
+          "properties": {
+            "snapshot": {
+              "$ref": "#/$defs/RuntimeResourceSnapshot",
+              "description": "Timestamped cumulative counters and instantaneous gauges."
+            },
+            "status": {
+              "const": "available",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "snapshot"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The reader supports this runtime, but could not read its process tree.",
+          "properties": {
+            "reason": {
+              "description": "Why this observation could not be collected.",
+              "type": "string"
+            },
+            "status": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The runtime's provider or operating system has no reader.",
+          "properties": {
+            "reason": {
+              "description": "Which collection capability is missing.",
+              "type": "string"
+            },
+            "status": {
+              "const": "unsupported",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ResourceScope": {
+      "description": "A resource observation covers the runtime host tree, including background\nwork, and excludes any shared service outside that tree.",
+      "enum": [
+        "runtime_adapter_host_process_tree"
+      ],
+      "type": "string"
+    },
     "RunStatus": {
       "description": "Runtime completion status.",
       "oneOf": [
@@ -668,6 +771,52 @@
           "type": "string"
         }
       ]
+    },
+    "RuntimeResourceSnapshot": {
+      "description": "Timestamped resource usage of one runtime's local adapter host process tree.\n\nMemory, process count, and CPU time cover the adapter host process and its\nlive descendants. For a runtime started on a service, the shared service\nprocess is not included. Values NeMo Fabric cannot read are returned as an\nerror, never as zero.",
+      "properties": {
+        "cpu_time_seconds": {
+          "description": "CPU time consumed by the tree since the adapter host started, in seconds,\nincluding exited descendants. It can drop when a descendant leaves the\ntree.",
+          "format": "double",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "observed_at": {
+          "description": "When NeMo Fabric read these values, as an RFC 3339 UTC timestamp.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "process_count": {
+          "description": "Live processes in the tree, including the adapter host. Exited processes\nthat are not yet reaped are not counted.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resident_memory_bytes": {
+          "description": "Sum of the resident set sizes of the live processes, in bytes. Pages\nshared between processes count once per process.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runtime_id": {
+          "description": "Runtime this snapshot describes.",
+          "type": "string"
+        },
+        "started_at": {
+          "description": "When NeMo Fabric started the runtime's adapter host, as an RFC 3339 UTC timestamp.",
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime_id",
+        "started_at",
+        "observed_at",
+        "resident_memory_bytes",
+        "process_count",
+        "cpu_time_seconds"
+      ],
+      "type": "object"
     },
     "StartLine": {
       "description": "Fields of the start line.",

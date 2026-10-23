@@ -15,6 +15,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::runtime::{ErrorStage, RunStatus};
+use crate::system_stats::ResourceObservation;
 
 /// Longest value a line keeps from config or the request, in characters.
 /// Model role and context key names are kept whole, so map keys stay distinct.
@@ -145,6 +146,16 @@ pub(crate) struct EndLine {
     pub status: RunStatus,
     /// Monotonic time from the start line to the end line, in milliseconds.
     pub elapsed_ms: u64,
+    /// Adapter exchange only, excluding queue, record I/O, preparation,
+    /// normalization and result persistence. Absent if dispatch never began.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exchange_elapsed_ms: Option<u64>,
+    /// Scope of the resource observations, never causal invocation usage.
+    pub resource_scope: ResourceScope,
+    /// Same process endpoint as invocation stats, frozen before adapter exchange.
+    pub resources_before: ResourceObservation,
+    /// Same process endpoint as invocation stats, frozen before timeout cleanup.
+    pub resources: ResourceObservation,
     /// Error code, stage and retryable flag, without the message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<EndError>,
@@ -157,6 +168,14 @@ pub(crate) struct EndLine {
     /// Result artifacts, with paths relative to the artifact root.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<EndArtifact>,
+}
+
+/// A resource observation covers the runtime host tree, including background
+/// work, and excludes any shared service outside that tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ResourceScope {
+    RuntimeAdapterHostProcessTree,
 }
 
 /// The end line's error.

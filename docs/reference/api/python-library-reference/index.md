@@ -124,7 +124,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`reporting.read_result`](./nemo_fabric.reporting.md#function-read_result): Read one saved full result without requiring task labels or a manifest.
 - [`reporting.render_invocation_record_summary`](./nemo_fabric.reporting.md#function-render_invocation_record_summary): Describe the invocation interval without assuming whole-runtime success.
 - [`reporting.render_request_summary`](./nemo_fabric.reporting.md#function-render_request_summary): Explain missing execution evidence without assigning zero spend.
-- [`reporting.render_result_summary`](./nemo_fabric.reporting.md#function-render_result_summary): Render a concise overview; details add resource evidence.
+- [`reporting.render_result_summary`](./nemo_fabric.reporting.md#function-render_result_summary): Render a concise overview; details add resource and pricing evidence.
 - [`reporting.summarize_request`](./nemo_fabric.reporting.md#function-summarize_request): Describe outer dispatch evidence without fabricating an invocation result.
 - [`reporting.summarize_result`](./nemo_fabric.reporting.md#function-summarize_result): Describe one returned invocation, preserving independent usable evidence.
 - [`comparisons.main`](./nemo_fabric.comparisons.md#function-main): Print an explicit comparison manifest as a table or JSON without running agents.

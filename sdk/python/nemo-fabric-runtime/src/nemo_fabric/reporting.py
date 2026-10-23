@@ -244,6 +244,19 @@ def _attach_invocation_interval(summary: dict[str, Any], result_path: Path) -> N
                 "elapsed_ms": record["exchange_elapsed_ms"],
                 "source": str(record_path),
             }
+        window = record["resource_window"]
+        if window is not None:
+            if (
+                summary.get("resource_snapshot") is not None
+                and window["end"] is not None
+                and window["end"] != summary["resource_snapshot"]
+            ):
+                # The returned full result remains authoritative. A conflicting
+                # bounded observation cannot supply a trustworthy delta.
+                window["cpu_counter_change_seconds"] = None
+                window["delta_reason"] = "end_snapshot_differs_from_result"
+            if summary.get("system_stats") is None:
+                summary["resource_window"] = window
     except (OSError, ValueError, UnicodeError):
         summary["record_error"] = "invalid_or_unreadable_sibling_record"
 
@@ -534,7 +547,7 @@ def read_invocation_record(path: Path) -> dict[str, Any]:
         "what_ran": None,
         "elapsed_ms": end["elapsed_ms"] if end else None,
         "exchange_elapsed_ms": end.get("exchange_elapsed_ms") if end else None,
-        "resource_window": None,
+        "resource_window": _resource_window(rows[0], end, identity["runtime_id"]),
         "outcome_boundary": "invocation",
         "truncated_tail": truncated,
         "evidence_path": str(path),
@@ -585,6 +598,8 @@ def render_invocation_record_summary(
         lines.append(
             "No complete end record; elapsed time and final usage are unknown."
         )
+    if details and summary.get("resource_window") is not None:
+        lines.extend(_render_resource_window(summary["resource_window"]))
     if summary["truncated_tail"]:
         lines.append(
             "A truncated final line was ignored; complete lines were retained."
@@ -853,7 +868,7 @@ def main() -> None:
     parser.add_argument("result", type=Path)
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument(
-        "--details", action="store_true", help="include resource and pricing details"
+        "--details", action="store_true", help="include resource and provenance details"
     )
     args = parser.parse_args()
     try:

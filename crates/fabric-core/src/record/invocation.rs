@@ -18,16 +18,19 @@ use serde_json::Value;
 
 use super::lines::{
     ContextValue, EndArtifact, EndError, EndLine, EndUsage, LineBody, ModelName, NotRecorded,
-    RecordLine, RecordSchema, RecordVersion, StartLine, cut_text, recorded_code,
+    RecordLine, RecordSchema, RecordVersion, ResourceScope, StartLine, cut_text, recorded_code,
 };
 use super::writer::{RECORD_FILE_NAME, RecordWriter};
 use crate::config::RunPlan;
 use crate::error::{FabricError, Result};
+#[cfg(test)]
+use crate::resource_snapshot::RuntimeResourceSnapshot;
 use crate::runtime::{
     ArtifactManifest, ArtifactRef, ErrorInfo, ErrorStage, INVALID_AGENT_RUN_RESULT,
     InvocationHandle, RunRequest, RunResult, RunStatus, RunUsage, RuntimeHandle,
     event_with_metadata, unique_artifact_name,
 };
+use crate::system_stats::ResourceObservation;
 use crate::time::rfc3339_millis;
 
 /// Name of the result artifact that points at the record.
@@ -73,6 +76,10 @@ pub(crate) struct InvocationRecorder {
     request_id: String,
     path: PathBuf,
     started: Instant,
+    exchange_started: Option<Instant>,
+    exchange_elapsed_ms: Option<u64>,
+    start_resources: ResourceObservation,
+    end_resources: ResourceObservation,
     writer: Option<RecordWriter>,
     wrote_start: bool,
     failure: Option<io::Error>,
@@ -87,6 +94,10 @@ impl InvocationRecorder {
             invocation_id: start.invocation.invocation_id.clone(),
             request_id: start.invocation.request_id.clone(),
             started: Instant::now(),
+            exchange_started: None,
+            exchange_elapsed_ms: None,
+            start_resources: ResourceObservation::NotCollected,
+            end_resources: ResourceObservation::NotCollected,
             writer: None,
             wrote_start: false,
             failure: None,
@@ -103,15 +114,32 @@ impl InvocationRecorder {
         recorder
     }
 
+    /// Start timing only the adapter exchange, after preparation/record I/O.
+    pub(crate) fn exchange_started(&mut self, at: Instant, resources: &ResourceObservation) {
+        self.exchange_started = Some(at);
+        self.start_resources = record_resource(resources);
+    }
+
+    /// Freeze the end observation before releasing the host lock or cleanup.
+    pub(crate) fn exchange_ended(&mut self, at: Instant, resources: &ResourceObservation) {
+        self.exchange_elapsed_ms = self.exchange_started.map(|started| {
+            u64::try_from(at.saturating_duration_since(started).as_millis()).unwrap_or(u64::MAX)
+        });
+        self.end_resources = record_resource(resources);
+    }
+
     /// Write and sync the end line for `outcome`, then return it. A result
     /// gains the `record` artifact when the start line was written, and a
     /// `record_write_failed` event when any write or the sync failed.
     pub(crate) fn finish(mut self, outcome: Result<RunResult>) -> Result<RunResult> {
         let elapsed_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let end = match &outcome {
+        let mut end = match &outcome {
             Ok(result) => result_end_line(result, elapsed_ms),
             Err(error) => error_end_line(error, elapsed_ms),
         };
+        end.exchange_elapsed_ms = self.exchange_elapsed_ms;
+        end.resources_before = self.start_resources.clone();
+        end.resources = self.end_resources.clone();
         self.append(LineBody::End(Box::new(end)));
         if let Some(writer) = &self.writer
             && let Err(error) = writer.sync()
@@ -172,6 +200,21 @@ impl InvocationRecorder {
             self.failure = Some(error);
             self.writer = None;
         }
+    }
+}
+
+// Bounded records retain availability without copying arbitrary OS diagnostics.
+fn record_resource(observation: &ResourceObservation) -> ResourceObservation {
+    match observation {
+        ResourceObservation::Available { .. } | ResourceObservation::NotCollected => {
+            observation.clone()
+        }
+        ResourceObservation::Unavailable { .. } => ResourceObservation::Unavailable {
+            reason: "resource_observation_unavailable".to_string(),
+        },
+        ResourceObservation::Unsupported { .. } => ResourceObservation::Unsupported {
+            reason: "resource_observation_unsupported".to_string(),
+        },
     }
 }
 
@@ -240,6 +283,10 @@ fn result_end_line(result: &RunResult, elapsed_ms: u64) -> EndLine {
         result: Some("run-result.json".to_string()),
         status: result.status,
         elapsed_ms,
+        exchange_elapsed_ms: None,
+        resource_scope: ResourceScope::RuntimeAdapterHostProcessTree,
+        resources_before: ResourceObservation::NotCollected,
+        resources: ResourceObservation::NotCollected,
         error: result.error.as_ref().map(result_error),
         usage: result.usage.as_ref().map(end_usage),
         model_usage: result.model_usage.clone(),
@@ -265,6 +312,10 @@ fn error_end_line(error: &FabricError, elapsed_ms: u64) -> EndLine {
         result: None,
         status: RunStatus::Failed,
         elapsed_ms,
+        exchange_elapsed_ms: None,
+        resource_scope: ResourceScope::RuntimeAdapterHostProcessTree,
+        resources_before: ResourceObservation::NotCollected,
+        resources: ResourceObservation::NotCollected,
         error: Some(EndError {
             code: recorded_code(code),
             stage,
@@ -694,5 +745,137 @@ mod tests {
                 "{fault:?}: {error}"
             );
         }
+    }
+
+    fn resource_fixture(cpu: f64) -> RuntimeResourceSnapshot {
+        RuntimeResourceSnapshot {
+            runtime_id: "rt".to_string(),
+            started_at: "2026-10-21T00:00:00.000Z".to_string(),
+            observed_at: "2026-10-21T00:00:01.000Z".to_string(),
+            resident_memory_bytes: 1024,
+            process_count: 1,
+            cpu_time_seconds: cpu,
+        }
+    }
+
+    #[test]
+    fn warm_runtime_snapshot_windows_freeze_before_record_finish() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        let counter = AtomicU64::new(1_000);
+        let (plan, runtime, invocation) = record_test_fixture();
+        let request = RunRequest::text("work");
+        let mut starts = Vec::new();
+        let mut ends = Vec::new();
+        let mut changes = Vec::new();
+        for (name, burn_ms) in [("warm-window-1", 2_000), ("warm-window-2", 500)] {
+            let folder = temp_folder(name);
+            let mut recorder = InvocationRecorder::start(RecordStart {
+                plan: &plan,
+                runtime: &runtime,
+                invocation: &invocation,
+                request: &request,
+                fabric_home: &folder,
+                timeout: Duration::from_secs(5),
+            });
+            let began = Instant::now();
+            recorder.exchange_started(
+                began,
+                &ResourceObservation::Available {
+                    snapshot: resource_fixture(counter.load(Ordering::SeqCst) as f64 / 1000.0),
+                },
+            );
+            counter.fetch_add(burn_ms, Ordering::SeqCst);
+            let end_snapshot = resource_fixture(counter.load(Ordering::SeqCst) as f64 / 1000.0);
+            recorder.exchange_ended(
+                began + Duration::from_millis(12),
+                &ResourceObservation::Available {
+                    snapshot: end_snapshot.clone(),
+                },
+            );
+            // Host work after exchange completion must not change this record.
+            counter.fetch_add(250, Ordering::SeqCst);
+            let mut result = succeeded_result(&invocation);
+            result.resource_snapshot = Some(end_snapshot.clone());
+            let finished = recorder.finish(Ok(result)).expect("result");
+            let lines: Vec<Value> = std::fs::read_to_string(folder.join(RECORD_FILE_NAME))
+                .expect("record")
+                .lines()
+                .map(|line| serde_json::from_str(line).expect("line"))
+                .collect();
+            let start = lines[1]["resources_before"]["snapshot"]["cpu_time_seconds"]
+                .as_f64()
+                .expect("start CPU");
+            let end = lines[1]["resources"]["snapshot"]["cpu_time_seconds"]
+                .as_f64()
+                .expect("end CPU");
+            assert_eq!(lines[1]["exchange_elapsed_ms"], 12);
+            assert_eq!(
+                lines[1]["resource_scope"],
+                "runtime_adapter_host_process_tree"
+            );
+            assert_eq!(
+                lines[1]["resources"]["snapshot"],
+                serde_json::to_value(finished.resource_snapshot.expect("returned snapshot"))
+                    .expect("snapshot")
+            );
+            starts.push(start);
+            ends.push(end);
+            changes.push(end - start);
+        }
+        assert_eq!(starts, [1.0, 3.25]);
+        assert_eq!(ends, [3.0, 3.75]);
+        assert_eq!(changes, [2.0, 0.5]);
+    }
+
+    #[test]
+    fn exchange_interval_excludes_record_preparation_and_keeps_snapshot_errors_nonfatal() {
+        let (plan, runtime, invocation) = record_test_fixture();
+        let folder = temp_folder("exchange-boundary");
+        let request = RunRequest::text("work");
+        let mut recorder = InvocationRecorder::start(RecordStart {
+            plan: &plan,
+            runtime: &runtime,
+            invocation: &invocation,
+            request: &request,
+            fabric_home: &folder,
+            timeout: Duration::from_secs(5),
+        });
+        let now = Instant::now();
+        recorder.started = now - Duration::from_secs(1);
+        recorder.exchange_started(
+            now - Duration::from_millis(20),
+            &ResourceObservation::Unsupported {
+                reason: "start secret".to_string(),
+            },
+        );
+        recorder.exchange_ended(
+            now - Duration::from_millis(5),
+            &ResourceObservation::Unavailable {
+                reason: "end secret".to_string(),
+            },
+        );
+        let original = succeeded_result(&invocation);
+        let result = recorder
+            .finish(Ok(original.clone()))
+            .expect("execution retained");
+        assert_eq!(result.status, original.status);
+        assert_eq!(result.output, original.output);
+        assert_eq!(result.usage, original.usage);
+        let text = std::fs::read_to_string(folder.join(RECORD_FILE_NAME)).expect("record");
+        let rows: Vec<Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("line"))
+            .collect();
+        assert_eq!(rows[1]["exchange_elapsed_ms"], 15);
+        assert!(rows[1]["elapsed_ms"].as_u64().expect("record interval") >= 1000);
+        assert_eq!(
+            rows[1]["resources_before"]["reason"],
+            "resource_observation_unsupported"
+        );
+        assert_eq!(
+            rows[1]["resources"]["reason"],
+            "resource_observation_unavailable"
+        );
+        assert!(!text.contains("secret"));
     }
 }

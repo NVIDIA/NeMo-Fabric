@@ -1507,6 +1507,12 @@ The start/end record's elapsed time covers its invocation window, including star
 record I/O and core preparation. It excludes end-record writes, full-result
 persistence and one-shot runtime startup/shutdown. It is not pure model time or
 the caller's task schedule interval. Record I/O is synchronous and best effort.
+Record end lines copy the adapter exchange's before/after resource observations
+and elapsed milliseconds from `system_stats`. These endpoints exclude recording
+and result persistence. The inspector validates their runtime identity and time
+order before showing a CPU counter difference. Missing or incompatible observations
+stay unavailable; cumulative counters and endpoint memory are not interval peaks.
+
 Each record line is limited to 64 KiB; oversized lines stop that record without
 replacing the available execution result.
 

@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn line_byte_limit_accepts_exact_boundary_and_rejects_oversize_without_appending() {
-        use crate::record::lines::{EndLine, LineBody, RecordSchema, RecordVersion};
+        use crate::record::lines::{EndLine, LineBody, RecordSchema, RecordVersion, ResourceScope};
         use crate::runtime::RunStatus;
 
         let folder = temp_folder("line-size");
@@ -176,9 +176,13 @@ mod tests {
                 result: None,
                 status: RunStatus::Succeeded,
                 elapsed_ms: 0,
+                exchange_elapsed_ms: None,
+                resource_scope: ResourceScope::RuntimeAdapterHostProcessTree,
+                resources_before: crate::ResourceObservation::NotCollected,
+                resources: crate::ResourceObservation::NotCollected,
+                model_usage: None,
                 error: None,
                 usage: None,
-                model_usage: None,
                 artifacts: Vec::new(),
             })),
         };
