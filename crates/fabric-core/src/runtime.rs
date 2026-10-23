@@ -897,7 +897,16 @@ enum LocalServiceState {
 }
 
 /// Invoke a NeMo Fabric run plan.
-pub fn run_plan(plan: &RunPlan, mut request: RunRequest) -> Result<RunResult> {
+pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
+    run_plan_with_stage(plan, request).map_err(|(error, _)| error)
+}
+
+/// Preserve the phase of a one-shot failure for language bindings.
+#[doc(hidden)]
+pub fn run_plan_with_stage(
+    plan: &RunPlan,
+    mut request: RunRequest,
+) -> std::result::Result<RunResult, (FabricError, ErrorStage)> {
     if request.request_id.is_empty() {
         request.request_id = new_id("request");
     }
@@ -906,7 +915,7 @@ pub fn run_plan(plan: &RunPlan, mut request: RunRequest) -> Result<RunResult> {
         Ok(runtime) => runtime,
         Err(error) => {
             outer_record.no_result(crate::record::RequestStage::Start);
-            return Err(error);
+            return Err((error, ErrorStage::Start));
         }
     };
     let mut result = match invoke_runtime_unpersisted(plan, &runtime, request) {
@@ -914,7 +923,7 @@ pub fn run_plan(plan: &RunPlan, mut request: RunRequest) -> Result<RunResult> {
         Err(error) => {
             let _ = stop_runtime(plan, &runtime);
             outer_record.no_result(crate::record::RequestStage::Invoke);
-            return Err(error);
+            return Err((error, ErrorStage::Invoke));
         }
     };
     match stop_runtime(plan, &runtime) {
