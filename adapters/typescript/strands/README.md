@@ -30,6 +30,7 @@ For a source checkout, run from the repository root:
 
 ```bash
 just install-typescript-strands
+npm run build --prefix adapter-contract/typescript
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-strands
 ```
@@ -121,7 +122,7 @@ Each runtime owns one child process, an isolated temporary CLI home, and one liv
 
 Warm invocations retain conversation history without saving it to the workspace. Deadline expiry attempts ACP cancellation, invalidates the session, and terminates its process group. Stop is idempotent. The adapter supports text input and returns `{ "response": "..." }`, with ACP session ID and stop reason in result metadata. Non-success stop reasons become failed or cancelled results.
 
-Strands CLI usage is invocation-local and is not differenced across turns. Inclusive input, output, total, and cached-read counters are normalized when valid. Cache writes are retained in `nemo_fabric.detailed_token_usage.v1`. Missing or malformed usage remains unknown without discarding a completed response. Cost is not estimated. Public cancellation, native OpenAI streaming, live updates, services, Relay telemetry, normalized runtime limits, and normalized skills are not advertised.
+Strands CLI usage is invocation-local and is not differenced across turns. Inclusive input, output, total, and cached-read counters are normalized when valid. Cache writes are retained in `nemo_fabric.detailed_token_usage.v1`. Missing or malformed usage remains unknown without discarding a completed response. Strands CLI 0.2.1 reports zero cache counters even when the provider omitted them. The adapter therefore omits zero cache-read and cache-write counts, including genuine zeros, preserves positive counts, and retains inclusive input/output totals. This workaround is specific to Strands; it does not change other adapters’ handling of reported zeros. Cost is not estimated. Public cancellation, native OpenAI streaming, live updates, services, Relay telemetry, normalized runtime limits, and normalized skills are not advertised.
 
 ## Validate
 

@@ -494,6 +494,7 @@ Run the standard AWS Strands harness through the shared ACP runner. From the rep
 ```bash
 npm install --global @strands-agents/cli@0.2.1
 just install-typescript-strands
+npm run build --prefix adapter-contract/typescript
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-strands
 export NVIDIA_API_KEY="<your-key>"

@@ -176,3 +176,25 @@ test("removes temporary CLI state after partial startup and keeps diagnostics pr
   );
   await assert.rejects(access(state.home), { code: "ENOENT" });
 });
+
+test("omits ambiguous zero cache counts while preserving positive counts and token totals", () => {
+  for (const [read, write] of [[0, 0], [2, 0], [0, 3], [2, 3]]) {
+    const usage = normalizeUsage({
+      inputTokens: 10, outputTokens: 5, totalTokens: 15,
+      cachedReadTokens: read, cachedWriteTokens: write,
+    });
+    const detail = usage.extensions["nemo_fabric.detailed_token_usage.v1"];
+    assert.equal(usage.input_tokens, 10);
+    assert.equal(usage.output_tokens, 5);
+    assert.equal(usage.total_tokens, 15);
+    assert.equal(usage.input_tokens_include_cache, true);
+    assert.equal(Object.hasOwn(usage, "cached_input_tokens"), read > 0);
+    assert.equal(Object.hasOwn(detail, "cached_input_tokens"), read > 0);
+    assert.equal(Object.hasOwn(detail, "cache_write_input_tokens"), write > 0);
+    if (read > 0) {
+      assert.equal(usage.cached_input_tokens, read);
+      assert.equal(detail.cached_input_tokens, read);
+    }
+    if (write > 0) assert.equal(detail.cache_write_input_tokens, write);
+  }
+});

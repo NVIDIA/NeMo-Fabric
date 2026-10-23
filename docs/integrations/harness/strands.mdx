@@ -10,6 +10,7 @@ Install Node.js 22.19 or newer and the separately managed CLI:
 ```bash
 npm install --global @strands-agents/cli@0.2.1
 just install-typescript-strands
+npm run build --prefix adapter-contract/typescript
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
 npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-strands
 ```
@@ -29,6 +30,8 @@ The code-review example enables only `read`. Select native tools for other appli
 The adapter supports text invocations, invocation-local token usage, deadline cleanup, and independent runtimes.
 
 ## Limitations
+
+Strands CLI 0.2.1 reports zero cache counters even when the provider did not report them. The adapter omits these ambiguous zero cache counts and preserves positive counts and inclusive input/output totals. Genuine zero cache counts cannot be distinguished from missing counts.
 
 The adapter does not advertise custom source agents, native streaming, public cancellation, services, Relay telemetry, or normalized skills and tool policy.
 

@@ -162,21 +162,22 @@ export function normalizeUsage(
   )
     return undefined;
   if ((cache ?? 0) + (write ?? 0) > input) return undefined;
-  // The pinned Strands CLI normalizes provider-specific cache semantics into inclusive input tokens.
+  // Strands CLI 0.2.1 defaults missing cache counts to zero; only positive counts are known.
+  // Keep inclusive input/output totals even when cache details are unknown.
   return {
     input_tokens: input,
     output_tokens: output,
     total_tokens: total,
     input_tokens_include_cache: true,
-    ...(cache == null ? {} : { cached_input_tokens: cache }),
+    ...((cache ?? 0) > 0 ? { cached_input_tokens: cache } : {}),
     extensions: {
       "nemo_fabric.detailed_token_usage.v1": {
         input_tokens: input,
         output_tokens: output,
         total_tokens: total,
         input_tokens_include_cache: true,
-        ...(cache == null ? {} : { cached_input_tokens: cache }),
-        ...(write == null ? {} : { cache_write_input_tokens: write }),
+        ...((cache ?? 0) > 0 ? { cached_input_tokens: cache } : {}),
+        ...((write ?? 0) > 0 ? { cache_write_input_tokens: write } : {}),
       },
     },
   };
