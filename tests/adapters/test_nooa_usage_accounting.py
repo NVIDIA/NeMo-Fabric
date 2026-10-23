@@ -384,9 +384,11 @@ def test_messages_cache_convention_does_not_depend_on_cache_fields_being_present
     assert report.cached_input_tokens is None
 
 
-def test_no_call_requires_source_proof():
+def test_no_call_zero_requires_source_proof_and_settled_work():
     assert InvocationUsage().finish().input_tokens is None
     assert InvocationUsage().finish(no_calls_verified=True).input_tokens == 0
+    usage = InvocationUsage().finish(no_calls_verified=True, unfinished=True)
+    assert usage.input_tokens is None
 
 
 @pytest.mark.parametrize("interactive", [False, True])
