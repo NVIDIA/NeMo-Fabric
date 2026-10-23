@@ -168,8 +168,24 @@ provider-specific model settings, and `max_tokens` are not supported.
 The adapter runs in a persistent Bun process. `start` creates one embedded
 OpenCode host and one OpenCode session for the NeMo Fabric runtime. Ordered
 plain-text invocations reuse that session and its conversation history. A
-successful result has `output.response`. Usage fields are present when OpenCode
-reports them. `stop` removes the OpenCode session and closes the embedded host.
+successful result has `output.response`.
+
+Usage comes from OpenCode's public physical HTTP hooks before session counters
+zero-fill omitted fields. Reported zeros stay zero; omitted counts stay unknown.
+OpenAI Chat Completions, Responses, and Anthropic Messages reports cover main,
+compaction, and child sessions. Complete totals require settled owned work and
+usable reports. Failed requests, malformed streams, unfinished children, and
+WebSocket calls retain available observations with accounting gaps. Session
+counter fallback preserves positive observations with unverified scope.
+
+The `nemo_fabric.usage_accounting.v1` extension preserves raw provider conventions
+for core normalization and separate pricing. This collector does not compute
+catalog estimates. OpenCode's client-side cost estimate
+is not `cost_usd`. Custom endpoints cannot inherit native-provider pricing
+identity. Usage freezes at return; late child usage never moves to the next
+invocation. Transport failure after submission invalidates the session and
+returns a failed result with its frozen evidence. Retry and delegation behavior
+remain controlled by OpenCode.
 
 ```mermaid
 flowchart LR
@@ -190,3 +206,19 @@ invocation-scoped path beneath `opencode/` and returns it as a `patch` artifact.
 Without an artifact root, it returns no patch artifact.
 
 Create a new runtime to change the selected model or workspace.
+
+A new completion notice from an earlier background child can wake the parent
+inside a later invocation. Requests proven to precede that notice remain
+observations. Ambiguous parent continuations and subsequent descendant requests
+are excluded, with an unverified-scope gap. Notices already present when the
+invocation starts do not disable otherwise attributable work. The adapter checks
+this boundary only when earlier child sessions exist; an unreadable or stalled
+context read also leaves attribution unverified.
+
+A patch-artifact write failure returns its existing storage error with settled
+usage intact, no claimed artifact and no automatic task replay. The healthy
+OpenCode session remains available for an explicit later invocation.
+
+Native billing identity requires both the requested route and the visible final
+response URL to qualify the same provider. A redirect to a custom endpoint
+keeps the model and token reports without inheriting native-provider prices.

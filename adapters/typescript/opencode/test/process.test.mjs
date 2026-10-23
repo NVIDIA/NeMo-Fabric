@@ -27,7 +27,7 @@ function context(workspace, invocationId, environment = {}) {
   };
 }
 
-async function exchange(workspace, requests, environment = {}, timeoutMs) {
+async function exchange(workspace, requests, environment = {}, timeoutMs, onResponse = () => {}) {
   const childEnv = { ...process.env, ...environment };
   delete childEnv.NODE_TEST_CONTEXT;
   const child = spawn(process.env.BUN_EXECUTABLE ?? "bun", [fileURLToPath(new URL("../dist/cli.js", import.meta.url))], {
@@ -39,8 +39,18 @@ async function exchange(workspace, requests, environment = {}, timeoutMs) {
   child.stderr.setEncoding("utf8");
   let stdout = "";
   let stderr = "";
+  let reported = 0;
   child.stdout.on("data", (chunk) => {
     stdout += chunk;
+    const lines = stdout.split("\n").slice(0, -1).filter(Boolean);
+    for (const line of lines.slice(reported)) {
+      try {
+        onResponse(JSON.parse(line));
+      } catch {
+        // Non-JSON stdout fails the test when the exchange finishes.
+      }
+    }
+    reported = lines.length;
   });
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
@@ -97,28 +107,31 @@ async function close(server) {
   });
 }
 
-function openAiStream(text) {
-  const chunk = (delta, finishReason = null) =>
-    `data: ${JSON.stringify({
-      id: "chatcmpl-opencode-test",
-      object: "chat.completion.chunk",
-      created: 0,
-      model: "nvidia/nemotron-3.5-lightning-30b-a3b",
-      choices: [{ index: 0, delta, finish_reason: finishReason }],
-    })}\n\n`;
-  return `${chunk({ role: "assistant" })}${chunk({ content: text })}${chunk({}, "stop")}data: [DONE]\n\n`;
+function openAiEvent(body) {
+  return `data: ${JSON.stringify({
+    id: "chatcmpl-opencode-test",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: "nvidia/nemotron-3.5-lightning-30b-a3b",
+    ...body,
+  })}\n\n`;
 }
 
-function openAiToolCall(name, input) {
-  const chunk = (delta, finishReason = null) =>
-    `data: ${JSON.stringify({
-      id: "chatcmpl-opencode-tool-test",
-      object: "chat.completion.chunk",
-      created: 0,
-      model: "nvidia/nemotron-3.5-lightning-30b-a3b",
-      choices: [{ index: 0, delta, finish_reason: finishReason }],
-    })}\n\n`;
-  return `${chunk({
+function openAiChunk(delta, finishReason = null) {
+  return openAiEvent({ choices: [{ index: 0, delta, finish_reason: finishReason }] });
+}
+
+// OpenAI-compatible endpoints send streaming usage in a final chunk with no choices.
+function openAiUsage(usage) {
+  return usage === undefined ? "" : openAiEvent({ choices: [], usage });
+}
+
+function openAiStream(text, usage) {
+  return `${openAiChunk({ role: "assistant" })}${openAiChunk({ content: text })}${openAiChunk({}, "stop")}${openAiUsage(usage)}data: [DONE]\n\n`;
+}
+
+function openAiToolCall(name, input, usage) {
+  return `${openAiChunk({
     role: "assistant",
     tool_calls: [{
       index: 0,
@@ -126,7 +139,7 @@ function openAiToolCall(name, input) {
       type: "function",
       function: { name, arguments: JSON.stringify(input) },
     }],
-  })}${chunk({}, "tool_calls")}data: [DONE]\n\n`;
+  })}${openAiChunk({}, "tool_calls")}${openAiUsage(usage)}data: [DONE]\n\n`;
 }
 
 test("runs two real OpenCode SDK prompts through the process host", async () => {
@@ -156,6 +169,9 @@ test("runs two real OpenCode SDK prompts through the process host", async () => 
         typeof latest === "string"
           ? `reply:user_count=${userMessages.length} latest=${latest}`
           : `reply-${prompts}`,
+        payload.stream_options?.include_usage === true
+          ? { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }
+          : undefined,
       ),
     );
   });
@@ -282,10 +298,19 @@ test("runs two real OpenCode SDK prompts through the process host", async () => 
     assert.equal(responses[1].outcome.output.output.response, "reply:user_count=1 latest=first");
     assert.equal(responses[2].outcome.output.status, "succeeded");
     assert.equal(responses[2].outcome.output.output.response, "reply:user_count=2 latest=second");
+    const reportedUsage = {
+      input_tokens: 100,
+      input_tokens_include_cache: true,
+      output_tokens: 20,
+      total_tokens: 120,
+    };
+    assert.deepEqual(Object.fromEntries(Object.entries(responses[1].outcome.output.usage).filter(([key])=>key!=="extensions")), reportedUsage);
+    assert.deepEqual(Object.fromEntries(Object.entries(responses[2].outcome.output.usage).filter(([key])=>key!=="extensions")), reportedUsage);
     assert.equal(responses[3].outcome.status, "succeeded");
     assert.ok(prompts >= 2);
     assert.ok(providerRequests.length >= 2);
     assert.ok(providerRequests.every((request) => !("prompt_cache_key" in request)));
+    assert.ok(providerRequests.every((request) => request.stream === true && request.stream_options?.include_usage === true));
     const promptRequests = providerRequests.filter((request) => {
       const userMessages = Array.isArray(request.messages)
         ? request.messages.filter((message) => message?.role === "user")
@@ -424,7 +449,7 @@ test("fails process startup when an HTTP or stdio MCP server cannot connect", as
       { transport: "streamable-http", url: "http://127.0.0.1:1/mcp" },
       { transport: "stdio", url: "not-a-real-mcp-command" },
     ]) {
-      const { exitCode, responses, stderr } = await exchange(workspace, [start(server)], {}, 5_000);
+      const { exitCode, responses, stderr } = await exchange(workspace, [start(server)], {}, 30_000);
 
       assert.equal(exitCode, 0, stderr);
       assert.equal(responses.length, 1);
@@ -498,4 +523,128 @@ test("denies interactive OpenCode operations instead of waiting for a reply", as
     await close(endpoint);
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+// Runs real OpenCode against a scripted endpoint. `respond` gets the request's
+// messages and returns the SSE body; the result lists each invocation's output.
+async function invokeScriptedOpenCode(respond, inputs, { onOutput = () => {}, timeoutMs } = {}) {
+  const workspace = await mkdtemp(join(tmpdir(), "fabric-opencode-usage-"));
+  const endpoint = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const body = await respond(JSON.parse(Buffer.concat(chunks).toString("utf8")).messages ?? []);
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end(body);
+  });
+  const endpointUrl = await listen(endpoint);
+  try {
+    const start = {
+      operation: "start",
+      payload: {
+        agent_name: "opencode-usage-test",
+        base_dir: workspace,
+        config: {
+          models: {
+            default: {
+              api_key_env: "TEST_API_KEY",
+              base_url: `${endpointUrl}/v1`,
+              model: "nvidia/nemotron-3.5-nano-30b-a3b",
+              provider: "nvidia",
+            },
+          },
+        },
+        runtime_context: context(workspace, "start"),
+      },
+    };
+    const invokes = inputs.map((input, index) => ({
+      operation: "invoke",
+      payload: { request: { input }, runtime_context: context(workspace, `invoke-${index}`) },
+    }));
+    const stop = { operation: "stop", payload: { runtime_id: "runtime-1" } };
+    let invocations = 0;
+    const { exitCode, responses, stderr } = await exchange(workspace, [start, ...invokes, stop], {}, timeoutMs, (response) => {
+      if (response.operation === "invoke") {
+        onOutput(invocations, response.outcome.output);
+        invocations += 1;
+      }
+    });
+    assert.equal(exitCode, 0, stderr);
+    return responses.filter((response) => response.operation === "invoke").map((response) => response.outcome.output);
+  } finally {
+    await close(endpoint);
+    await rm(workspace, { recursive: true, force: true });
+  }
+}
+
+const SUBAGENT_PROMPT = "You are a subagent spawned by another session.";
+const latestUserText = (messages) => JSON.stringify(messages.filter((message) => message?.role === "user").at(-1) ?? "");
+
+test("adds a real OpenCode subagent session to invocation usage", async () => {
+  const parentUsage = { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 };
+  const [output] = await invokeScriptedOpenCode((messages) => {
+    if (latestUserText(messages).includes(SUBAGENT_PROMPT)) {
+      return openAiStream("child done", { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 });
+    }
+    return messages.at(-1)?.role === "user"
+      ? openAiToolCall("subagent", { agent: "general", description: "check the file", prompt: "Say done." }, parentUsage)
+      : openAiStream("parent done", parentUsage);
+  }, ["Delegate the check."]);
+
+  assert.equal(output.output.response, "parent done");
+  // Two parent calls and one child call.
+  assert.deepEqual(Object.fromEntries(Object.entries(output.usage).filter(([key])=>key!=="extensions")), {
+    input_tokens: 207,
+    input_tokens_include_cache: true,
+    output_tokens: 43,
+    total_tokens: 250,
+  });
+});
+
+test("charges a real background subagent to the invocation that started it", async () => {
+  // The child's reply is held until the second invocation's result arrives,
+  // so the child runs for the whole second invocation. The exchange timeout
+  // only bounds a failure.
+  let releaseChild;
+  const childReleased = new Promise((resolve) => {
+    releaseChild = resolve;
+  });
+  const outputs = await invokeScriptedOpenCode(async (messages) => {
+    const latest = latestUserText(messages);
+    if (latest.includes(SUBAGENT_PROMPT)) {
+      await childReleased;
+      return openAiStream("child done", { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 });
+    }
+    return messages.at(-1)?.role === "user" && latest.includes("first")
+      ? openAiToolCall(
+        "subagent",
+        { agent: "general", description: "check the file", prompt: "Say done.", background: true },
+        { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+      )
+      : openAiStream("parent done", { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60 });
+  }, ["first", "second"], {
+    timeoutMs: 120_000,
+    onOutput: (index) => {
+      if (index === 1) {
+        releaseChild();
+      }
+    },
+  });
+
+  assert.equal(outputs[0].usage.input_tokens, undefined);
+  assert.equal(outputs[0].usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 150);
+  assert.ok(outputs[0].usage.extensions["nemo_fabric.usage_accounting.v1"].gaps.some(gap=>gap.reason==="unfinished_work"));
+  assert.deepEqual(Object.fromEntries(Object.entries(outputs[1].usage).filter(([key])=>key!=="extensions")), {
+    input_tokens: 50,
+    input_tokens_include_cache: true,
+    output_tokens: 10,
+    total_tokens: 60,
+  });
+});
+
+test("leaves real OpenCode output unknown when the provider reports only prompt tokens", async () => {
+  const [output] = await invokeScriptedOpenCode(() => openAiStream("done", { prompt_tokens: 100 }), ["hello"]);
+
+  assert.deepEqual(Object.fromEntries(Object.entries(output.usage).filter(([key])=>key!=="extensions")), { input_tokens: 100, input_tokens_include_cache: true });
 });

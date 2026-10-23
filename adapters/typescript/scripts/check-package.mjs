@@ -78,6 +78,8 @@ const expectedByPackage = {
     "pi.fabric-adapter.json",
   ],
   "nemo-fabric-adapters-opencode": [
+    "dist/usage.d.ts",
+    "dist/usage.js",
     "LICENSE",
     "README.md",
     "dist/bun-version.d.ts",

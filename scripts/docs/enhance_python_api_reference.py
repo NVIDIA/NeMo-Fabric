@@ -11,11 +11,12 @@ import inspect
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, get_type_hints, is_typeddict
 
 from pydantic import BaseModel
 
 MODULE_NAMES = (
+    "nemo_fabric.accounting",
     "nemo_fabric.client",
     "nemo_fabric.capabilities",
     "nemo_fabric.runtime",
@@ -27,6 +28,7 @@ MODULE_NAMES = (
     "nemo_fabric.errors",
 )
 CLASS_HEADING = re.compile(r"^## <kbd>class</kbd> `([^`]+)`$")
+FUNCTION_HEADING = re.compile(r"^## <kbd>function</kbd> `([^`]+)`$")
 MEMBER_HEADING = re.compile(r"^### <kbd>(?:method|classmethod)</kbd> `([^`]+)`$")
 
 
@@ -127,11 +129,16 @@ def _replace_signature_fences(text: str, module: Any) -> str:
             class_name = class_match.group(1)
             pending_member = None
 
+        function_match = FUNCTION_HEADING.match(line)
+        if function_match:
+            class_name = None
+            pending_member = function_match.group(1)
+
         member_match = MEMBER_HEADING.match(line)
         if member_match:
             pending_member = member_match.group(1)
 
-        if line == "```python" and class_name and pending_member:
+        if line == "```python" and pending_member:
             closing = index + 1
             while closing < len(lines) and lines[closing] != "```":
                 closing += 1
@@ -140,8 +147,8 @@ def _replace_signature_fences(text: str, module: Any) -> str:
                     f"unterminated signature fence for {class_name}.{pending_member}"
                 )
 
-            exported_class = getattr(module, class_name)
-            member = getattr(exported_class, pending_member)
+            owner = getattr(module, class_name) if class_name else module
+            member = getattr(owner, pending_member)
             output.extend(
                 [
                     "```python",
@@ -207,7 +214,11 @@ def _model_fields_table(model: type[BaseModel]) -> str:
 
 
 def _typed_fields_table(exported_class: type[Any]) -> str:
-    annotations = inspect.get_annotations(exported_class, eval_str=False)
+    annotations = (
+        get_type_hints(exported_class, include_extras=True)
+        if is_typeddict(exported_class)
+        else inspect.get_annotations(exported_class, eval_str=False)
+    )
     if not annotations:
         return ""
 
@@ -266,7 +277,9 @@ def _class_supplement(exported_class: type[Any]) -> str:
         sections.append(_inheritance_section(exported_class))
     if issubclass(exported_class, BaseModel):
         sections.append(_model_fields_table(exported_class))
-    elif exported_class.__module__ == "nemo_fabric.types":
+    elif exported_class.__module__ == "nemo_fabric.types" or is_typeddict(
+        exported_class
+    ):
         sections.append(_typed_fields_table(exported_class))
     if issubclass(exported_class, Enum):
         sections.append(_enum_values_table(exported_class))

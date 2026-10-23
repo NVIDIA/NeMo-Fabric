@@ -62,7 +62,28 @@ def config(
 def test_opencode_descriptor_declares_the_minimum_supported_surface():
     descriptor = json.loads(DESCRIPTOR.read_text(encoding="utf-8"))
 
+    accounting_schema = json.loads(
+        (ROOT / "schemas/extensions/usage-accounting.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    definitions = accounting_schema.pop("$defs")
+    accounting_schema.pop("$schema")
+
     assert descriptor == {
+        "extension_schemas": {
+            "usage": {
+                "type": "object",
+                "properties": {
+                    "nemo_fabric.usage_accounting.v1": accounting_schema,
+                    "nemo_fabric.detailed_token_usage.v1": {
+                        "$ref": "#/$defs/ReportedUsage"
+                    },
+                },
+                "additionalProperties": False,
+                "$defs": definitions,
+            }
+        },
         "contract_version": "fabric.adapter/v1alpha2",
         "adapter_id": "nvidia.fabric.opencode",
         "adapter_kind": "process",

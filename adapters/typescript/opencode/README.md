@@ -96,3 +96,42 @@ When OpenCode reports a diff for an invocation and the runtime has an artifact
 root, the adapter writes it to a runtime- and invocation-scoped path beneath
 `opencode/` and returns it as a `patch` artifact. Without an artifact root, it
 returns no patch artifact.
+
+## Model usage
+
+NeMo Fabric observes physical HTTP requests through OpenCode 2.0.23's public session
+hooks, before OpenCode replaces omitted provider counts with zero. Supported
+OpenAI Chat Completions, Responses, and Anthropic Messages reports retain field
+presence: a reported zero stays zero and an omitted count stays unknown. Main,
+compaction, and child-session requests share the initiating invocation's owner.
+
+An unfinished request, malformed report, failed HTTP attempt without usage, or
+WebSocket request leaves affected complete totals unknown. Positive session
+counter growth remains an observation when raw HTTP evidence is unavailable;
+the projected counters cannot prove completeness or a reported zero. Accounting
+observations and gaps travel in `nemo_fabric.usage_accounting.v1`. Core normalizes
+provider conventions. Catalog estimation is a separate shared feature. OpenCode's local
+cost estimate is not provider-reported `cost_usd`. Custom endpoints retain their
+actual model identifier without inheriting native-provider pricing identity.
+
+Results freeze at return. A background child's late usage stays with its
+initiating invocation and never transfers to a later one. NeMo Fabric retains the
+existing fixed session title; it does not change OpenCode's retry, compaction,
+or delegation behavior. A transport failure after submission invalidates the
+session and returns its frozen usage evidence with a failed result.
+
+A new completion notice from an earlier background child can wake the parent
+inside a later invocation. Requests proven to precede that notice remain
+observations. Ambiguous parent continuations and subsequent descendant requests
+are excluded, with an unverified-scope gap. Notices already present when the
+invocation starts do not disable otherwise attributable work. The adapter checks
+this boundary only when earlier child sessions exist; an unreadable or stalled
+context read also leaves attribution unverified.
+
+A patch-artifact write failure returns its existing storage error with settled
+usage intact, no claimed artifact and no automatic task replay. The healthy
+OpenCode session remains available for an explicit later invocation.
+
+Native billing identity requires both the requested route and the visible final
+response URL to qualify the same provider. A redirect to a custom endpoint
+keeps the model and token reports without inheriting native-provider prices.
