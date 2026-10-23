@@ -137,6 +137,8 @@ def wait_for_relay_gateway(
                         raise RelayGatewayError(
                             f"NeMo Relay gateway exited with status {returncode} before becoming ready"
                         )
+                    if time.monotonic() >= deadline:
+                        break
                     return
         except (OSError, urllib.error.URLError):
             pass
