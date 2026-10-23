@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.comparisons`
 
-Compare caller-defined task attempts using saved Fabric invocation evidence.
+Compare caller-defined task attempts using saved NeMo Fabric invocation evidence.
 
 **Global Variables**
 ---------------

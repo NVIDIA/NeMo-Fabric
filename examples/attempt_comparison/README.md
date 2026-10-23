@@ -5,10 +5,10 @@ SPDX-License-Identifier: Apache-2.0
 
 # Compare Your Own Task Attempts
 
-Use saved Fabric evidence to compare your tasks across harnesses or model
-configurations. Task IDs, revisions and configuration labels are caller-defined.
+Use saved NVIDIA NeMo Fabric evidence to compare your tasks across harnesses or
+model configurations. Task IDs, revisions and configuration labels are caller-defined.
 A task can be a code review, document review, investigation or benchmark problem.
-An ordinary Fabric run does not require these labels.
+An ordinary NeMo Fabric run does not require these labels.
 
 ## Try the Example
 
@@ -29,7 +29,7 @@ The report does not choose a matched subset or rank partial spend.
 ## Capture a Real Task
 
 List every scheduled attempt, including retries, before dispatch. Give each
-expected Fabric request a distinct `request_id`. Recording saves full results
+expected NeMo Fabric request a distinct `request_id`. Recording saves full results
 and request evidence under the configured artifact directory. Keep missing
 requests in the inventory when startup, timeout or recording prevents a result.
 
@@ -82,7 +82,7 @@ selects another root. Paths cannot escape that root, including through symlinks.
 
 ## Interpret the Report
 
-- Execution status describes Fabric execution. It does not establish that your
+- Execution status describes NeMo Fabric execution. It does not establish that your
   task was solved. Add an optional caller verdict as
   `"evaluation": {"status": "passed", "evaluator": "my-tests", "version": "v1"}`
   or use `failed`. Otherwise the task remains `not_evaluated`. Mixed evaluator
@@ -99,7 +99,7 @@ selects another root. Paths cannot escape that root, including through symlinks.
   available configuration and artifact evidence when checking conditions.
 
 Logs, telemetry and Relay references remain links to supporting evidence. Their
-payloads are not read or used to fill missing Fabric accounting. Harbor,
+payloads are not read or used to fill missing NeMo Fabric accounting. Harbor,
 OpenShell, a benchmark runner and a telemetry backend are not required.
 
 ## Use a Bounded Invocation Record When the Full Result Is Missing

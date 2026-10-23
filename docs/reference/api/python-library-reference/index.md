@@ -12,7 +12,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 - [`nemo_fabric.accounting`](./nemo_fabric.accounting.md#module-nemo_fabricaccounting): Typed model accounting and invocation summaries with explicit coverage.
 - [`nemo_fabric.reporting`](./nemo_fabric.reporting.md#module-nemo_fabricreporting): Inspect saved invocation evidence without a benchmark manifest or trace import.
-- [`nemo_fabric.comparisons`](./nemo_fabric.comparisons.md#module-nemo_fabriccomparisons): Compare caller-defined task attempts using saved Fabric invocation evidence.
+- [`nemo_fabric.comparisons`](./nemo_fabric.comparisons.md#module-nemo_fabriccomparisons): Compare caller-defined task attempts using saved NeMo Fabric invocation evidence.
 - [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 - [`nemo_fabric.capabilities`](./nemo_fabric.capabilities.md#module-nemo_fabriccapabilities): Metadata-only adapter inspection for host-side admission.
 - [`nemo_fabric.runtime`](./nemo_fabric.runtime.md#module-nemo_fabricruntime): Runtime lifecycle support for the NVIDIA NeMo Fabric Python SDK.
