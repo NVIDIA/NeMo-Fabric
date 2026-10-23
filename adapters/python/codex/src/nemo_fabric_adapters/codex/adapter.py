@@ -17,7 +17,8 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import asdict, dataclass, is_dataclass
+from collections.abc import AsyncIterator
+from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -25,20 +26,35 @@ from typing import Any
 from openai_codex import (
     ApprovalMode,
     AsyncCodex,
+    AsyncThread,
     CodexConfig,
     CodexError,
     JsonRpcError,
     Sandbox,
     TransportClosedError,
+    TurnResult,
     is_retryable_error,
 )
 from openai_codex.generated.v2_all import (
+    ErrorNotification,
+    ItemStartedNotification,
+    ItemCompletedNotification,
     ListMcpServerStatusResponse,
+    RawResponseCompletedNotification,
     McpAuthStatus,
     McpServerOauthLoginCompletedNotification,
     McpServerOauthLoginResponse,
     SkillsExtraRootsSetResponse,
+    ThreadTokenUsage,
+    ThreadStartParams,
+    ThreadStartResponse,
+    ThreadTokenUsageUpdatedNotification,
+    TurnCompletedNotification,
 )
+
+# Private: the collector AsyncTurnHandle.run uses; recheck it on every openai-codex bump.
+from openai_codex._run import _collect_async_turn_result
+from openai_codex.models import Notification, UnknownNotification
 from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
 from nemo_fabric_adapter_contract.codec import ContractValidationError
@@ -48,18 +64,21 @@ from nemo_fabric_adapter_contract.models import AgentRunError
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
-from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import McpAuthenticationConfig
 from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
+from nemo_fabric_adapter_contract.models import (
+    GapReason,
+    ReportedUsage,
+)
+from nemo_fabric_adapter_contract.usage import UsageObservation, usage_from_observations
 from nemo_fabric_adapters.common import instructions as common_instructions
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 import nemo_fabric_adapters.common.relay_artifacts as relay_artifacts
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.common import lifecycle
-
 
 INTERRUPT_TIMEOUT_SECONDS = 5.0
 CLOCK_RESOLUTION_SECONDS = time.get_clock_info("monotonic").resolution
@@ -136,12 +155,6 @@ INHERITED_ENV_NAMES = {
     "no_proxy",
 }
 LOGGER = logging.getLogger(__name__)
-USAGE_FIELDS = {
-    "input_tokens": "inputTokens",
-    "cached_input_tokens": "cachedInputTokens",
-    "output_tokens": "outputTokens",
-    "total_tokens": "totalTokens",
-}
 
 
 @dataclass(frozen=True)
@@ -358,7 +371,7 @@ def _codex_protocol_client(codex: AsyncCodex) -> Any:
     ):
         raise AdapterConfigError(
             "codex_invalid_configuration",
-            "Codex SDK does not expose the required MCP OAuth requests",
+            "Codex SDK does not expose the required app-server requests",
         )
     return client
 
@@ -1047,44 +1060,38 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
     )
 
 
-def _normalize_usage(
-    value: Any, cumulative_totals: dict[str, int]
-) -> AgentUsage | None:
-    """Difference thread totals, never the last model response, into invocation usage."""
+def _response_usage(value: Any) -> ReportedUsage:
+    """Read the pinned app-server's original Responses usage before zero filling."""
     if not isinstance(value, dict):
-        cumulative_totals.clear()
-        return None
-    cumulative = isinstance(value.get("total"), dict)
-    counters = value["total"] if cumulative else value
-    observed = {
-        name: count
-        for name, alias in USAGE_FIELDS.items()
-        if isinstance((count := counters.get(name, counters.get(alias))), int)
-        and not isinstance(count, bool)
-        and 0 <= count <= (1 << 64) - 1
+        return ReportedUsage()
+    paths = {
+        "input_tokens": ("input_tokens",),
+        "cached_input_tokens": ("input_tokens_details", "cached_tokens"),
+        "cache_write_input_tokens": ("input_tokens_details", "cache_write_tokens"),
+        "output_tokens": ("output_tokens",),
+        "reasoning_tokens": ("output_tokens_details", "reasoning_tokens"),
+        "total_tokens": ("total_tokens",),
     }
-    if cumulative:
-        tokens = {
-            name: count - cumulative_totals[name]
-            for name, count in observed.items()
-            if name in cumulative_totals and count >= cumulative_totals[name]
-        }
-    else:
-        tokens = observed
-    # Missing snapshots invalidate the baseline; the next snapshot only rebaselines.
-    cumulative_totals.clear()
-    if cumulative:
-        cumulative_totals.update(observed)
-    if not tokens:
-        return None
-    return AgentUsage(**tokens, input_tokens_include_cache=True)
+    counts = {}
+    for name, path in paths.items():
+        count = value
+        for key in path:
+            count = count.get(key) if isinstance(count, dict) else None
+        if type(count) is int and 0 <= count <= (1 << 64) - 1:
+            counts[name] = count
+    return ReportedUsage(
+        **counts,
+        input_tokens_include_cache=True if "input_tokens" in counts else None,
+        output_tokens_include_reasoning=True if "output_tokens" in counts else None,
+    )
 
 
-def _agent_run_result(
-    output: dict[str, Any], cumulative_totals: dict[str, int] | None = None
-) -> AgentRunResult:
+def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
+    usage_complete = normalized.pop("usage_complete", True)
+    source_gaps = normalized.pop("usage_gaps", [])
+    observations = normalized.pop("usage_observations", [])
     reported_error = normalized.pop("error", None)
     error = None
     if failed:
@@ -1096,12 +1103,20 @@ def _agent_run_result(
             retryable=bool(reported.get("retryable", False)),
             extensions=metadata if isinstance(metadata, dict) else {},
         )
-    baseline = (
-        dict.fromkeys(USAGE_FIELDS, 0)
-        if cumulative_totals is None
-        else cumulative_totals
+    # Frozen per-response records are authoritative. Thread totals can conceal
+    # omitted reports and are retained only as native diagnostics.
+    observations = list(observations)
+    if not usage_complete:
+        source_gaps = [*source_gaps, GapReason.UNFINISHED_WORK.value]
+    observations.extend(
+        UsageObservation(reported=ReportedUsage(), gap=GapReason(reason))
+        for reason in source_gaps
     )
-    agent_usage = _normalize_usage(normalized.get("usage"), baseline)
+    agent_usage = (
+        usage_from_observations(observations)
+        if observations or "turn_id" in normalized or "usage" in normalized
+        else None
+    )
     return AgentRunResult(
         status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
         output=normalized,
@@ -1157,6 +1172,129 @@ def normalize_result(
     }
 
 
+@dataclass
+class _TurnUsage:
+    """Invocation-owned per-response records and the native thread diagnostic."""
+
+    snapshot: ThreadTokenUsage | None = None
+    # Codex ends every response of a turn before it sends turn/completed.
+    turn_completed: bool = False
+    gaps: set[str] = field(default_factory=set)
+    responses: dict[str, UsageObservation] = field(default_factory=dict)
+
+    def annotate(self, output: dict[str, Any]) -> dict[str, Any]:
+        output["usage_observations"] = tuple(self.responses.values())
+        if not self.responses:
+            self.gaps.add(GapReason.SCOPE_UNVERIFIED.value)
+        if self.gaps:
+            output["usage_gaps"] = sorted(self.gaps)
+        return output
+
+
+def _fills_context_window(usage: ThreadTokenUsage) -> bool:
+    """Detect Codex's context-window marker, which replaces the counted thread totals.
+
+    On a context-window overflow, Codex sets the thread total to the window size with
+    every other counter at zero and then fails the turn.
+    """
+    total = usage.total
+    return (
+        total.total_tokens == usage.model_context_window
+        and total.input_tokens == 0
+        and total.output_tokens == 0
+    )
+
+
+async def _turn_notifications(
+    handle: Any, usage: _TurnUsage
+) -> AsyncIterator[Notification]:
+    stream = handle.stream()
+    try:
+        async for event in stream:
+            payload = event.payload
+            if (
+                isinstance(payload, ThreadTokenUsageUpdatedNotification)
+                and payload.turn_id == handle.id
+                and not _fills_context_window(payload.token_usage)
+            ):
+                usage.snapshot = payload.token_usage
+            elif (
+                isinstance(payload, TurnCompletedNotification)
+                and payload.turn.id == handle.id
+            ):
+                usage.turn_completed = True
+            elif (
+                event.method == "rawResponse/completed"
+                and isinstance(payload, UnknownNotification)
+                and payload.params.get("turnId") == handle.id
+            ):
+                # The pinned SDK routes this internal app-server event as unknown.
+                # Unlike thread totals, it exposes a completed response with no usage.
+                response = RawResponseCompletedNotification.model_validate(
+                    payload.params
+                )
+                metadata = response.usage_metadata
+                raw_usage = metadata.metadata if metadata is not None else None
+                record = UsageObservation(
+                    reported=_response_usage(raw_usage),
+                    gap=GapReason.MISSING_USAGE
+                    if not isinstance(raw_usage, dict)
+                    else None,
+                    tokens_aligned=True,
+                    is_model_call=True,
+                )
+                previous = usage.responses.get(response.response_id)
+                if previous is None:
+                    usage.responses[response.response_id] = record
+                elif previous != record:
+                    usage.gaps.add(GapReason.SCOPE_UNVERIFIED.value)
+            elif (
+                isinstance(payload, ErrorNotification) and payload.turn_id == handle.id
+            ):
+                # A model error can be retried inside a successful turn. Terminal
+                # success does not establish usage for the unsuccessful attempt.
+                info = _json_safe(payload.error.codex_error_info)
+                if payload.will_retry or info not in (
+                    "sandboxError",
+                    "threadRollbackFailed",
+                ):
+                    usage.gaps.add(GapReason.MISSING_USAGE.value)
+            elif (
+                isinstance(
+                    payload, (ItemStartedNotification, ItemCompletedNotification)
+                )
+                and payload.turn_id == handle.id
+            ):
+                item = getattr(payload.item, "root", payload.item)
+                if (
+                    getattr(item, "type", None) == "collabAgentToolCall"
+                    and item.receiver_thread_ids
+                    and _json_safe(item.tool)
+                    in {
+                        "spawnAgent",
+                        "sendInput",
+                        "resumeAgent",
+                        "sendMessage",
+                        "followupTask",
+                    }
+                ):
+                    # This parent-turn stream does not establish coverage of
+                    # model calls in the dispatched child's separate thread.
+                    usage.gaps.add(GapReason.SCOPE_UNVERIFIED.value)
+            yield event
+    finally:
+        await stream.aclose()
+
+
+async def _run_turn(handle: Any, usage: _TurnUsage) -> TurnResult:
+    """Collect the turn as ``AsyncTurnHandle.run`` does, keeping usage if the turn fails."""
+    events = _turn_notifications(handle, usage)
+    try:
+        return await _collect_async_turn_result(events, turn_id=handle.id)
+    finally:
+        await events.aclose()
+
+
 async def _interrupt_turn(handle: Any) -> None:
     if handle is None:
         return
@@ -1195,6 +1333,35 @@ def _thread_options(
     }
 
 
+def _thread_start_params(
+    config: AgentConfig,
+    context: RuntimeContext,
+    base_dir: str,
+    relay: CodexRelaySettings | None,
+) -> dict[str, Any]:
+    """Use generated fields, plus the pinned observational raw-event flag."""
+    options = _thread_options(config, context, base_dir, relay)
+    mode = options.pop("approval_mode")
+    sandbox_mode = options.pop("sandbox")
+    params = ThreadStartParams.model_validate(
+        {
+            **options,
+            "approval_policy": "never"
+            if mode is ApprovalMode.deny_all
+            else "on-request",
+            "approvals_reviewer": None
+            if mode is ApprovalMode.deny_all
+            else "auto_review",
+            "sandbox": "danger-full-access"
+            if sandbox_mode is Sandbox.full_access
+            else sandbox_mode.value,
+        }
+    ).model_dump(mode="json", by_alias=True, exclude_none=True)
+    # SDK0.154 omits this app-server field. It changes notifications only.
+    params["experimentalRawEvents"] = True
+    return params
+
+
 async def _open_thread(
     codex: AsyncCodex,
     config: AgentConfig,
@@ -1202,9 +1369,12 @@ async def _open_thread(
     base_dir: str,
     *,
     relay: CodexRelaySettings | None,
-) -> Any:
-    options = _thread_options(config, context, base_dir, relay)
-    return await codex.thread_start(**options)
+) -> AsyncThread:
+    params = _thread_start_params(config, context, base_dir, relay)
+    started = await _codex_protocol_client(codex).request(
+        "thread/start", params, response_model=ThreadStartResponse
+    )
+    return AsyncThread(codex, started.thread.id)
 
 
 async def _invoke_thread(
@@ -1218,6 +1388,7 @@ async def _invoke_thread(
     """Run one turn and report whether the connected SDK transport remains usable."""
 
     handle = None
+    usage = _TurnUsage()
     deadline = asyncio.timeout_at(invocation_deadline)
     try:
         async with deadline:
@@ -1226,22 +1397,32 @@ async def _invoke_thread(
                 effort=_reasoning_effort(config),
                 output_schema=_output_schema(config),
             )
-            result = await handle.run()
+            result = await _run_turn(handle, usage)
             return (
-                normalize_result(
-                    config, context, base_dir, thread_id=thread.id, result=result
+                usage.annotate(
+                    normalize_result(
+                        config, context, base_dir, thread_id=thread.id, result=result
+                    )
                 ),
                 True,
             )
     except TimeoutError as error:
         await _interrupt_turn(handle)
         if deadline.expired():
-            return _failure("timeout", "Codex invocation timed out"), False
-        return sdk_failure(error), False
+            failure = _failure("timeout", "Codex invocation timed out")
+        else:
+            failure = sdk_failure(error)
     except CodexAdapterError:
         raise
     except (CodexError, RuntimeError, OSError) as error:
-        return sdk_failure(error), False
+        failure = sdk_failure(error)
+    if usage.snapshot is not None:
+        failure["usage"] = _json_safe(usage.snapshot)
+        # Codex sends a response's usage after its tool calls finish. Without
+        # turn/completed, a response may still have been running, so the last
+        # snapshot is not the invocation's complete total.
+    failure["usage_complete"] = usage.turn_completed
+    return usage.annotate(failure), False
 
 
 def _relay_output(
@@ -1339,7 +1520,6 @@ class CodexRuntime:
         self._api_key_home: tempfile.TemporaryDirectory | None = None
         self._mcp_authentication_checked = False
         self._unusable = False
-        self._usage_totals: dict[str, int] = dict.fromkeys(USAGE_FIELDS, 0)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1391,6 +1571,7 @@ class CodexRuntime:
                 )
             client = AsyncCodex(config=client_config)
             self._client = client
+            await client.__aenter__()
             if api_key is not None:
                 await client.login_api_key(api_key)
             await _register_skill_roots(
@@ -1424,7 +1605,6 @@ class CodexRuntime:
         self._base_dir = base_dir
         self._fabric_runtime_id = fabric_runtime_id
         self._thread = thread
-        self._usage_totals = dict.fromkeys(USAGE_FIELDS, 0)
 
     async def invoke(
         self,
@@ -1460,6 +1640,7 @@ class CodexRuntime:
             )
 
         invocation_deadline = lifecycle.invocation_deadline(runtime_context)
+        turn_requested = False
         try:
             request_prompt(request)
             _reasoning_effort(config)
@@ -1479,6 +1660,10 @@ class CodexRuntime:
                 and relay_artifacts.expects_local_atif(relay.plugin_config)
                 else None
             )
+            turn_requested = True
+            # Only a fully handled turn result can restore reuse. Unexpected
+            # SDK exceptions and cancellation must leave this runtime quarantined.
+            self._unusable = True
             output, usable = await _invoke_thread(
                 config,
                 runtime_context,
@@ -1509,20 +1694,27 @@ class CodexRuntime:
                         )
                     )
                     failure["usage"] = output.get("usage")
+                    for key in (
+                        "usage_complete",
+                        "usage_gaps",
+                        "usage_observations",
+                    ):
+                        if key in output:
+                            failure[key] = output[key]
                     return _agent_run_result(
-                        _relay_output(failure, relay, artifacts=[]), self._usage_totals
+                        _relay_output(failure, relay, artifacts=[])
                     )
         except AdapterRelayError as error:
             output = adapter_failure(error)
             usable = False
         except CodexAdapterError as error:
             output = adapter_failure(error)
-            usable = True
+            usable = not turn_requested
 
         self._unusable = not usable
         if self._relay is not None:
             output = _relay_output(output, self._relay)
-        return _agent_run_result(output, self._usage_totals)
+        return _agent_run_result(output)
 
     async def stop(self) -> None:
         client = self._client
@@ -1534,7 +1726,6 @@ class CodexRuntime:
         self._fabric_runtime_id = None
         self._mcp_authentication_checked = False
         self._unusable = True
-        self._usage_totals.clear()
 
         close_error: BaseException | None = None
         try:

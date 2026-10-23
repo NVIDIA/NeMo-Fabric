@@ -136,6 +136,20 @@ The Codex SDK installs and selects its matching app-server runtime. NeMo Fabric
 does not declare or select the runtime package separately. A `codex` command on
 `PATH` does not replace the SDK-owned runtime.
 
+## Token Usage
+
+The adapter reads original per-response usage from Codex's raw completion notifications and preserves the cumulative thread snapshot in `output.usage` for diagnosis. Input includes cache reads and writes; output includes reasoning. A reported zero stays zero; an omitted count stays unknown. Cache and reasoning details use the original provider fields before Codex zero-fills them.
+
+The `nemo_fabric.usage_accounting.v1` usage extension separates complete counts from observations and accounting gaps. A completed failed turn keeps accounted usage. A timeout, closed connection, or missing terminal event retains completed-call observations and makes complete totals unknown. The runtime rejects further invocations after an interrupted turn. Reported retries, ambiguous model failures, missing response usage, and conflicting duplicate reports create gaps. Cumulative thread totals cannot fill a gap because missing response usage can leave those totals unchanged.
+
+The adapter requests the observational `experimentalRawEvents` thread flag through the SDK's generic request API. The raw notification shape, original `usageMetadata.metadata`, and private turn collector are qualified against `openai-codex==0.154.0` and its matching app-server. If no raw report arrives, complete usage remains unknown. Requalify this source when either pinned component changes.
+
+Actual subagent dispatch creates a descendant coverage gap for its initiating invocation. Independent later parent turns retain their own reported usage. Raw reports from a different turn are ignored, and earlier returned results remain frozen. Automatic child completion requests no new turn (`trigger_turn=false`); Codex can still start pending work when a durable sleep is outstanding. Unused delegation capabilities do not create gaps. Unreported internal attempts and model calls inside external tools are outside the notification boundary.
+
+The qualified scope is a parent turn initiated by the NeMo Fabric invocation. The SDK can join an already-active regular turn, and its response does not expose whether a turn was joined. Independently running parent turns that can be joined are outside this qualified ownership boundary. An exact `turnId` does not prove who initiated a pre-existing turn.
+
+Raw reports preserve request boundaries but provide no served-model allocation. Core does not estimate cost from the requested model. The adapter reports no provider cost.
+
 ## Choose an Authentication Mode
 
 Codex supports the following OpenAI authentication modes:
