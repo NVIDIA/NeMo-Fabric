@@ -34,6 +34,8 @@ from nemo_fabric_adapters.nooa.telemetry import RelayTelemetry
 from nemo_fabric_adapters.nooa.usage import InvocationUsage
 from nemo_fabric_adapters.nooa.usage import owned_work_pending
 from nemo_fabric_adapters.nooa.usage import running_jobs
+from nemo_fabric_adapters.nooa.usage import unowned_call_snapshot
+from nemo_fabric_adapters.nooa.usage import unowned_calls_since
 
 ADAPTER = "python"
 HARNESS = "nooa"
@@ -611,6 +613,7 @@ class NooaRuntime:
         assert telemetry is not None
 
         owner = InvocationUsage()
+        unowned_before = unowned_call_snapshot(self._models)
         jobs_before = running_jobs(agent)
 
         async def run_target() -> AgentRunResult:
@@ -658,6 +661,7 @@ class NooaRuntime:
                 result = await run_target()
             result.usage = owner.finish(
                 unfinished=owned_work_pending(agent, owner, jobs_before),
+                scope_unverified=unowned_calls_since(unowned_before),
             )
             return result
 

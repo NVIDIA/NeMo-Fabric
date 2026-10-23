@@ -32,6 +32,48 @@ _OWNER: ContextVar[InvocationUsage | None] = ContextVar(
 )
 _CALL: ContextVar[_Call | None] = ContextVar("fabric_nooa_call", default=None)
 _ATTEMPT = "nemo_fabric.nooa_usage_attempt"
+_OBSERVER = "_nemo_fabric_usage_observer"
+
+
+@dataclass
+class _ModelObserver:
+    unowned_calls: int = 0
+    active_unowned_calls: int = 0
+    lock: RLock = field(default_factory=RLock)
+
+    def snapshot(self) -> tuple[int, int]:
+        with self.lock:
+            return self.unowned_calls, self.active_unowned_calls
+
+    def note_unowned_call(self) -> None:
+        with self.lock:
+            self.unowned_calls += 1
+            self.active_unowned_calls += 1
+
+    def finish_unowned_call(self) -> None:
+        with self.lock:
+            self.active_unowned_calls -= 1
+
+
+def unowned_call_snapshot(
+    models: dict[str, Any],
+) -> list[tuple[_ModelObserver, tuple[int, int]]]:
+    """Watch only the model clients constructed for this runtime."""
+    snapshot = []
+    for model in models.values():
+        observer = getattr(model, _OBSERVER, None)
+        if isinstance(observer, _ModelObserver):
+            snapshot.append((observer, observer.snapshot()))
+    return snapshot
+
+
+def unowned_calls_since(
+    snapshot: list[tuple[_ModelObserver, tuple[int, int]]],
+) -> bool:
+    return any(
+        active_at_start > 0 or observer.snapshot()[0] != started_before
+        for observer, (started_before, active_at_start) in snapshot
+    )
 
 
 def _count(value: Any) -> int | None:
@@ -338,11 +380,17 @@ def install_model_observer(model: Any) -> None:
     original_acall = getattr(model, "acall", None)
     if not callable(original_call) or not callable(original_acall):
         return
+    observer = _ModelObserver()
+    setattr(model, _OBSERVER, observer)
 
     def invoke(*args: Any, **kwargs: Any) -> Any:
         owner = _OWNER.get()
         if owner is None:
-            return original_call(*args, **kwargs)
+            observer.note_unowned_call()
+            try:
+                return original_call(*args, **kwargs)
+            finally:
+                observer.finish_unowned_call()
         call = owner.start(configured)
         token = _CALL.set(call)
         try:
@@ -355,7 +403,11 @@ def install_model_observer(model: Any) -> None:
     async def ainvoke(*args: Any, **kwargs: Any) -> Any:
         owner = _OWNER.get()
         if owner is None:
-            return await original_acall(*args, **kwargs)
+            observer.note_unowned_call()
+            try:
+                return await original_acall(*args, **kwargs)
+            finally:
+                observer.finish_unowned_call()
         call = owner.start(configured)
         token = _CALL.set(call)
         try:

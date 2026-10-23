@@ -4,6 +4,7 @@
 """Pinned NOOA clients with in-memory HTTP; no external model requests."""
 
 import asyncio
+from contextvars import Context
 from copy import deepcopy
 import json
 import os
@@ -26,6 +27,8 @@ from nemo_fabric_adapters.nooa.usage import (
     install_model_observer,
     owned_work_pending,
     running_jobs,
+    unowned_call_snapshot,
+    unowned_calls_since,
 )
 
 KEY = "nemo_fabric.usage_accounting.v1"
@@ -310,6 +313,59 @@ async def test_pending_summary_task_is_owned_before_its_first_call():
     assert not owned_work_pending(agent, InvocationUsage(), [])
     release.set()
     await task
+
+
+async def test_managed_call_without_invocation_context_marks_scope_unverified(
+    make_client,
+):
+    client, _ = make_client(
+        usages=[_counts(False), _counts(False)], statuses=[200, 200]
+    )
+    other, _ = make_client()
+    owner = InvocationUsage()
+    watched = unowned_call_snapshot({"model": client})
+    with owner.scope():
+        # A job started before the invocation keeps its original context.
+        await asyncio.create_task(client.acall(MESSAGES), context=Context())
+    assert unowned_calls_since(watched)
+    usage = owner.finish(
+        scope_unverified=unowned_calls_since(watched), no_calls_verified=True
+    )
+    assert usage.input_tokens is None
+    assert usage.output_tokens is None
+    assert any(
+        gap["reason"] == "scope_unverified"
+        for gap in usage.extensions[KEY]["gaps"]
+    )
+
+    unrelated = unowned_call_snapshot({"model": other})
+    await client.acall(MESSAGES)
+    assert not unowned_calls_since(unrelated)
+
+
+async def test_unowned_call_already_running_at_invocation_start_is_a_scope_gap():
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class BlockingClient:
+        model = "fixture-model"
+
+        def call(self):
+            raise AssertionError("unexpected synchronous call")
+
+        async def acall(self):
+            started.set()
+            await release.wait()
+
+    client = BlockingClient()
+    install_model_observer(client)
+    task = asyncio.create_task(client.acall())
+    await started.wait()
+    watched = unowned_call_snapshot({"model": client})
+    assert unowned_calls_since(watched)
+    release.set()
+    await task
+    assert unowned_calls_since(watched)
 
 
 @pytest.mark.parametrize("value", [-1, True, 1 << 64, 1.5])
