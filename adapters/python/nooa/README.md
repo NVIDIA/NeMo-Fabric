@@ -101,4 +101,4 @@ Accounting model identity comes from each HTTP request, including call-level
 model overrides. The native provider identity is recorded only for the native
 OpenAI and Anthropic hosts; custom routes do not inherit native catalog prices.
 Provider-reported cost is not inferred from tokens or LiteLLM estimates. Shared
-Fabric normalization and pricing preserve tokens independently of cost.
+NeMo Fabric normalization preserves tokens independently of cost.
