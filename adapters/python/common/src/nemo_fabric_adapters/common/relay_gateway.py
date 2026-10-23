@@ -132,6 +132,11 @@ def wait_for_relay_gateway(
                 health_url, timeout=min(1.0, remaining)
             ) as response:
                 if 200 <= response.status < 300:
+                    returncode = process.poll()
+                    if returncode is not None:
+                        raise RelayGatewayError(
+                            f"NeMo Relay gateway exited with status {returncode} before becoming ready"
+                        )
                     return
         except (OSError, urllib.error.URLError):
             pass
