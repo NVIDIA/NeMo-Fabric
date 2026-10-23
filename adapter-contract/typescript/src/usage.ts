@@ -144,7 +144,12 @@ function aligned(records: readonly UsageObservation[]): boolean {
 
 function requestUsage(record: UsageObservation): ReportedUsage {
   // Retain uncertain literal counts in model observations, not complete calls.
-  const fields = { ...record.reported };
+  const fields: ReportedUsage = {};
+  const keys = [...dimensions, "input_tokens_include_cache", "output_tokens_include_reasoning"] as const;
+  for (const key of keys) {
+    const value = record.reported[key];
+    if (value !== undefined) (fields as Record<string, unknown>)[key] = value;
+  }
   for (const gap of record.gaps ?? []) for (const dimension of gap.dimensions) delete fields[dimension];
   return fields;
 }
