@@ -110,7 +110,7 @@ Input includes cache reads and writes; output includes reasoning. Positive cache
 remain in `nemo_fabric.usage_accounting.v1`; they are not certified complete
 values in the detailed-usage projection. The shared accounting
 contract retains observations and gaps in `nemo_fabric.usage_accounting.v1`;
-Fabric core normalizes totals and applies the selected pricing catalog.
+NeMo Fabric core normalizes totals. Catalog estimation is a separate shared feature.
 Cline's `totalCost` can contain a client estimate and is not provider-reported
 `cost_usd`. A custom endpoint keeps the literal model but does not
 claim the configured API protocol as its billing provider.
