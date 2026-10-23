@@ -496,3 +496,42 @@ def test_applied_pricing_accepts_schema_optional_cache_rates(cache_rates):
     assert json.loads(json.dumps(rates)) == expected
     rates["input"] = 999
     assert parsed.rates == expected
+
+
+@pytest.mark.parametrize(
+    "provider", [{}, {"provider": None}, {"provider": "fixture-provider"}]
+)
+def test_per_model_optional_provider_attribute_preserves_source_presence(
+    per_model_usage, provider
+):
+    from nemo_fabric.types import PerModelUsage
+
+    per_model_usage.update(provider)
+    parsed = PerModelUsage.from_mapping(per_model_usage)
+    assert parsed.provider == provider.get("provider")
+    serialized = parsed.to_mapping()
+    assert ("provider" in serialized) == ("provider" in provider)
+    if "provider" in provider:
+        assert serialized["provider"] == provider["provider"]
+
+
+@pytest.mark.parametrize(
+    "user_catalog",
+    [{}, {"user_catalog_sha256": None}, {"user_catalog_sha256": "sha256:" + "b" * 64}],
+)
+def test_pricing_basis_optional_user_catalog_attribute_preserves_source_presence(
+    user_catalog,
+):
+    from nemo_fabric.types import PricingBasis
+
+    source = {
+        "basis": "catalog",
+        "currency": "USD",
+        "normalization_version": "cache_reasoning_inclusive_v1",
+        "assumption_policy": "applicable_tariff_no_missing_counts_v1",
+        "bundled_catalog_sha256": "sha256:" + "a" * 64,
+        **user_catalog,
+    }
+    parsed = PricingBasis.from_mapping(source)
+    assert parsed.user_catalog_sha256 == user_catalog.get("user_catalog_sha256")
+    assert parsed.to_mapping() == source
