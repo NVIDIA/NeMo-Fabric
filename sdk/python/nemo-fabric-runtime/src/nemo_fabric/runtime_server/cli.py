@@ -88,6 +88,7 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
             "--config",
             "--input",
             "--request",
+            "--timeout-seconds",
         ):
             if index + 1 == len(arguments) or arguments[index + 1].startswith("--"):
                 raise ProtocolError()
@@ -103,6 +104,8 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
     if operation in CONFIG_OPERATIONS:
         required.add("--config")
     allowed = required.copy()
+    if operation == "check":
+        allowed.add("--timeout-seconds")
     if operation == "invoke":
         payload_flags = flags.keys() & {"--input", "--request"}
         if len(payload_flags) != 1:
@@ -114,6 +117,11 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         "interface_version": INTERFACE_VERSION,
         "operation": operation,
     }
+    if "--timeout-seconds" in flags:
+        try:
+            request["timeout_seconds"] = float(flags["--timeout-seconds"])
+        except ValueError as error:
+            raise ProtocolError() from error
     for flag in (
         "--agent",
         "--runtime-id",
@@ -148,7 +156,8 @@ def main(arguments: list[str] | None = None) -> int:
             print(
                 str(error)
                 if isinstance(error, ProtocolError)
-                and error.code in (
+                and error.code
+                in (
                     "platform_unsupported",
                     "cleanup_unconfirmed",
                     "runtime_busy",

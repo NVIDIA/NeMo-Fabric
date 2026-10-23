@@ -1340,6 +1340,7 @@ dependencies = [
 name = "nemo-fabric-core"
 version = "0.6.0"
 dependencies = [
+ "chrono",
  "jsonschema",
  "libc",
  "schemars",

@@ -9,6 +9,8 @@ Dependency-free TypeScript types for implementing adapters against the NVIDIA
 NeMo Fabric adapter contract. The package is generated from the versioned JSON
 Schemas maintained in the NeMo Fabric repository.
 
+`AdapterCheckRequest` and `AdapterCheckResult` describe health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source IDs.
+
 ## Install
 
 Install the package from the public npm registry:

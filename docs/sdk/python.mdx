@@ -229,7 +229,35 @@ root is separate. OpenShell invocation is buffered; streaming and shared-service
 hosting remain local SDK capabilities. Commands with uncertain outcomes are
 never replayed; an uncertain start blocks further starts in that sandbox.
 
+### Runtime Health
+
+Use `Fabric.check(environment=..., request=CheckRequest(scope="server"))` to
+check the NeMo Fabric runtime server in an OpenShell environment. The SDK maps this
+request to `fabric-agent-ctl check` inside the selected sandbox:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+report = await Fabric().check(
+    environment=environment,
+    request=CheckRequest(scope="server", timeout_seconds=3.0),
+)
+print(report.outcome)
+```
+
+Server checks work before a runtime starts and during an invocation. A
+responding server passes; a stopping server reports `failed/server_stopping`.
+A timeout reports `unknown/probe_timeout`, and an invalid or unavailable
+transport reports `unknown/probe_error`. Reports are immutable
+`fabric.check/v1alpha1` mappings with fixed reason and source identifiers.
+One positive, finite deadline covers SDK routing, gateway calls, the command
+bridge, and response decoding. The default timeout is three seconds.
+
+Local server checks and runtime requests return `unsupported/unsupported_scope`.
+
 ### Sandbox Command Bridge
+
+`fabric-agent-ctl check` checks server responsiveness with a three-second default deadline. Use `--timeout-seconds SECONDS` to set another positive, finite budget. Checks work before a runtime exists and during an invocation. Completed checks return a `fabric.check/v1alpha1` server report in `result`, with `changed: false`; passed health exits 0, while a stopping server or a timeout exits 1. The public `Fabric.check()` method maps OpenShell server requests to this command.
 
 `fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, and `stop` commands call the existing `Fabric.start_runtime()`, `Runtime.invoke()`, and `Runtime.stop()` methods. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
 

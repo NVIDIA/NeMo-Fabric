@@ -28,6 +28,8 @@ An adapter descriptor opts into the southbound configuration with
 `config.input=agent_config`. Python adapters using the optional common
 lifecycle host pass `AgentConfig.from_mapping` as the `config_loader`.
 
+`AdapterCheckRequest` and `AdapterCheckResult` define health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source identifiers.
+
 ## Install
 
 Install the package directly when developing a Python adapter:

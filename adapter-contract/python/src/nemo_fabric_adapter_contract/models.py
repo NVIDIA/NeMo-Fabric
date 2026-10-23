@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import math
+import re
+from datetime import datetime
 from collections.abc import Mapping
 from dataclasses import MISSING
 from dataclasses import dataclass
@@ -112,6 +115,82 @@ class ContractModel:
         """Return a detached JSON-compatible adapter wire mapping."""
 
         return encode_dataclass(self)
+
+
+CheckLevel = Literal["live", "active", "ready"]
+CheckReason = Literal[
+    "server_stopping",
+    "capabilities_unverified",
+    "runtime_unavailable",
+    "agent_exited",
+    "session_closed",
+    "endpoint_unavailable",
+    "health_failed",
+    "probe_timeout",
+    "probe_error",
+    "observation_changed",
+    "unsupported_adapter",
+    "unsupported_level",
+    "unsupported_scope",
+]
+
+
+@dataclass(slots=True, kw_only=True)
+class AdapterCheckRequest(ContractModel):
+    """Request for one native adapter health probe."""
+
+    runtime_id: str
+    level: CheckLevel
+    timeout_seconds: float
+
+    def _validate(self) -> None:
+        _nonblank(self.runtime_id, "runtime_id")
+        if "\x00" in self.runtime_id:
+            raise ContractValidationError("must not contain NUL", path=("runtime_id",))
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
+            raise ContractValidationError(
+                "must be positive and finite", path=("timeout_seconds",)
+            )
+
+
+@dataclass(slots=True, kw_only=True)
+class AdapterCheckResult(ContractModel):
+    """Result of one adapter health probe; null fields are required."""
+
+    outcome: Literal["passed", "failed", "unknown", "unsupported"]
+    reason_code: CheckReason | None
+    activity: Literal["idle", "busy", "stopping", "stopped", "unknown"]
+    source: Literal[
+        "fabric.runtime_server",
+        "fabric.runtime_server.transport",
+        "fabric.adapter",
+        "fabric.adapter.pi.session",
+        "fabric.adapter.pi.interface",
+        "fabric.adapter.pi.setup",
+    ]
+    observed_at: str | None
+
+    def _validate(self) -> None:
+        if (self.outcome == "passed") != (self.reason_code is None):
+            raise ContractValidationError(
+                "inconsistent health outcome", path=("reason_code",)
+            )
+        if self.outcome == "passed" and self.observed_at is None:
+            raise ContractValidationError(
+                "passing requires fresh evidence", path=("observed_at",)
+            )
+        if self.observed_at is not None:
+            try:
+                if not re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)",
+                    self.observed_at,
+                ):
+                    raise ValueError()
+                datetime.fromisoformat(self.observed_at)
+            except ValueError:
+                raise ContractValidationError(
+                    "must be a UTC timestamp", path=("observed_at",)
+                ) from None
 
 
 @dataclass(slots=True, kw_only=True)

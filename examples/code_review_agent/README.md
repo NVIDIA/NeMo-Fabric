@@ -219,6 +219,8 @@ OpenShell sandbox; the host uses OpenShell's Python SDK to invoke
 sandbox. This example bypasses NeMo Fabric's environment provider and
 host-side lifecycle SDK. The SDK example above demonstrates that full path.
 
+After the server socket appears, callers can run `fabric-agent-ctl check` inside the sandbox to check server responsiveness before starting a runtime. The server check also works during invocations.
+
 Prerequisites are Docker with Linux containers, the OpenShell CLI, and a registered OpenShell gateway. Match the OpenShell CLI and Python SDK to the gateway version; this example was tested with `0.1.2`. Build from the NeMo Fabric repository root so the image contains the current native extension, server, adapter, code-review skill, and sample repository. The Dockerfile uses public, digest-pinned Python, Node, OpenClaw, Rust, and uv images:
 
 ```sh
@@ -229,7 +231,7 @@ uv pip install --python .venv/bin/python openshell==0.1.2
 
 The image records its installed descriptor inventory in `/opt/fabric/runtime-server.json`. It advertises interface version 2.
 
-The current CLI exposes `serve`, `start`, `invoke`, and `stop`. The example waits for the socket, then starts, invokes, and stops using the returned runtime ID. A sandbox can own multiple runtime IDs; invoking or stopping one does not affect the others. Rebuild the image and create a new sandbox after updating the CLI; an existing sandbox keeps its original image and command protocol.
+The current CLI exposes `serve`, `check`, `start`, `invoke`, and `stop`. The example waits for the socket, then starts, invokes, and stops using the returned runtime ID. A sandbox can own multiple runtime IDs; invoking or stopping one does not affect the others. Rebuild the image and create a new sandbox after updating the CLI; an existing sandbox keeps its original image and command protocol.
 
 Select a registered test gateway using `OPENSHELL_GATEWAY` and set `OPENSHELL_WORKSPACE` to the test workspace. The real `OPENAI_API_KEY` belongs in the environment of the workstation shell running `openshell provider create`, outside the sandbox. OpenShell stores that credential at the gateway and supplies a shadow credential to processes inside the sandbox.
 

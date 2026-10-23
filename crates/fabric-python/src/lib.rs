@@ -260,6 +260,22 @@ fn release_environment(py: Python<'_>, environment_json: String) -> PyResult<()>
         .map_err(to_py_error)
 }
 
+/// Check health in the selected environment.
+#[pyfunction]
+fn check_environment(
+    py: Python<'_>,
+    environment_json: String,
+    request_json: String,
+) -> PyResult<String> {
+    let environment = parse_environment_handle(environment_json)?;
+    let request: nemo_fabric_core::CheckRequest = serde_json::from_str(&request_json)
+        .map_err(|_| pyo3::exceptions::PyValueError::new_err("The check request is invalid."))?;
+    let report = py
+        .detach(|| nemo_fabric_core::check_environment(&environment, &request))
+        .map_err(to_py_error)?;
+    to_json(&report)
+}
+
 /// Invoke a previously started runtime and return RunResult JSON.
 #[pyfunction]
 fn invoke_runtime(
@@ -324,6 +340,7 @@ fn runtime_resource_snapshot(
 
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(check_environment, m)?)?;
     m.add("ServiceInUseError", m.py().get_type::<ServiceInUseError>())?;
     m.add(
         "ResourceObservationUnavailableError",

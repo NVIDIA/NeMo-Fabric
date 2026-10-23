@@ -29,6 +29,8 @@ schemas/
 └── adapter-contract/          # Southbound adapter-facing contract
     ├── adapter-descriptor.schema.json
     ├── adapter-target-descriptor.schema.json
+    ├── adapter-check-request.schema.json
+    ├── adapter-check-result.schema.json
     ├── agent-config.schema.json
     ├── agent-run-request.schema.json
     ├── agent-run-result.schema.json
@@ -65,6 +67,7 @@ these related representations do not drift.
 
 ## Adapter Contract
 
+- `adapter-contract/adapter-check-request` and `adapter-check-result`: a health-probe request and its observation. These closed objects preserve required null fields and use fixed reason codes and evidence-source identifiers.
 - `adapter-contract/adapter-descriptor`: adapter identity, runner,
   requirements, accepted normalized fields, schemas, telemetry support, and
   runtime capability claims.
@@ -117,6 +120,7 @@ descriptor schema.
 
 ### Runtime Lifecycle
 
+- `sdk/check-request` and `check-report`: server or runtime target selection, the shared deadline, and ordered health evidence. Runtime checks default to `live`. All health reports use `fabric.check/v1alpha1`.
 - `sdk/environment-handle`: prepared execution environment context.
 - `sdk/environment-reference`: provider-specific identity of an existing caller-owned environment.
 - `sdk/runtime-handle`: active harness runtime identity and opaque adapter binding.

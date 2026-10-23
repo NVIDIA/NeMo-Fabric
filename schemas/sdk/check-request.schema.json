@@ -1,0 +1,103 @@
+{
+  "$defs": {
+    "CheckLevel": {
+      "description": "Agent health level.",
+      "oneOf": [
+        {
+          "const": "live",
+          "description": "Observe the native process or session.",
+          "type": "string"
+        },
+        {
+          "const": "active",
+          "description": "Observe the initialized request interface.",
+          "type": "string"
+        },
+        {
+          "const": "ready",
+          "description": "Observe required local model, tool, and connection setup.",
+          "type": "string"
+        }
+      ]
+    },
+    "CheckVersion": {
+      "description": "Version of the health request and report contract.",
+      "oneOf": [
+        {
+          "const": "fabric.check/v1alpha1",
+          "description": "Health contract version `fabric.check/v1alpha1`.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Select server or runtime health; the environment is supplied separately.",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "description": "Check runtime server responsiveness.",
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/CheckVersion",
+          "default": "fabric.check/v1alpha1",
+          "description": "Version of this contract."
+        },
+        "scope": {
+          "const": "server",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "default": 3.0,
+          "description": "One budget for all routing and probes.",
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "scope"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Check the agent owned by one exact runtime ID.",
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/CheckLevel",
+          "default": "live",
+          "description": "Highest requested level; earlier levels run first."
+        },
+        "runtime_id": {
+          "description": "Runtime returned by startup in the selected environment.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "schema_version": {
+          "$ref": "#/$defs/CheckVersion",
+          "default": "fabric.check/v1alpha1",
+          "description": "Version of this contract."
+        },
+        "scope": {
+          "const": "runtime",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "default": 3.0,
+          "description": "One budget for all routing and probes.",
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "scope",
+        "runtime_id"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "CheckRequest"
+}

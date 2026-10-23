@@ -3,7 +3,7 @@
 
 //! Private command contract between the host runtime and environment provider.
 //!
-//! `TaskCommand` names the task-side start, invoke, and stop operations while
+//! `TaskCommand` names the task-side check, start, invoke, and stop operations while
 //! carrying the full public SDK config or request as JSON. The provider returns
 //! either the SDK value or a normalized diagnostic through `TaskCommandResponse`.
 //! Command execution and task-runtime state live outside this module.
@@ -14,6 +14,9 @@ use serde_json::Value;
 #[derive(Debug, Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub(crate) enum TaskCommand {
+    Check {
+        timeout_seconds: f64,
+    },
     Start {
         agent: String,
         config: Value,
