@@ -106,7 +106,10 @@ def _source_units(attempts: list[_Attempt]) -> list[tuple[_Attempt, bool]]:
         if previous != attempt:
             # Keep one genuine snapshot, without summing ambiguous repeated IDs
             # or certifying either snapshot as this call's complete usage.
-            units[index] = (previous if previous.usage is not None else attempt, True)
+            previous_has_usage = (
+                previous.usage is not None and previous.usage != ReportedUsage()
+            )
+            units[index] = (previous if previous_has_usage else attempt, True)
     return units
 
 
@@ -285,6 +288,8 @@ def _unverified_response(response: httpx.Response) -> None:
 
 
 def _response(response: httpx.Response) -> None:
+    if not 200 <= response.status_code < 300:
+        _unverified_response(response)
     if "application/json" in response.headers.get("content-type", ""):
         response.read()
         _record_response(response)
@@ -297,6 +302,8 @@ async def _async_request(request: httpx.Request) -> None:
 
 
 async def _async_response(response: httpx.Response) -> None:
+    if not 200 <= response.status_code < 300:
+        _unverified_response(response)
     if "application/json" in response.headers.get("content-type", ""):
         await response.aread()
         _record_response(response)

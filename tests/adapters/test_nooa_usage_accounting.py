@@ -421,6 +421,31 @@ async def test_http_rejection_without_usage_does_not_fabricate_zero(
     assert usage.total_tokens is None
 
 
+@pytest.mark.parametrize("responses", [False, True])
+async def test_http_error_usage_is_observed_but_not_complete(make_client, responses):
+    from litellm.exceptions import BadRequestError
+
+    def respond(request, index):
+        body = {
+            "error": {"message": "scripted", "type": "invalid_request_error"},
+            "usage": _counts(responses),
+        }
+        return httpx.Response(400, json=body)
+
+    client, _ = make_client(responses=responses, handler=respond)
+    owner = InvocationUsage()
+    with owner.scope(), pytest.raises(BadRequestError):
+        await client.acall(MESSAGES)
+    usage = owner.finish()
+    assert usage.input_tokens is None
+    assert usage.output_tokens is None
+    assert usage.extensions[KEY]["observed"]["input_tokens"] == 40
+    assert any(
+        gap["reason"] == "scope_unverified"
+        for gap in usage.extensions[KEY]["gaps"]
+    )
+
+
 async def test_client_callback_and_existing_http_hooks_are_preserved(make_client):
     calls = []
     client, _ = make_client()
@@ -639,6 +664,41 @@ async def test_repeated_response_id_deduplicates_only_identical_reports(
     else:
         assert usage.input_tokens == 40
         assert usage.output_tokens == 8
+
+
+async def test_repeated_response_id_keeps_later_report_after_empty_usage(make_client):
+    def respond(request, index):
+        body = _body(
+            False,
+            {} if index == 1 else _counts(False),
+            "same-response",
+        )
+        if index == 1:
+            body["choices"][0]["message"] = {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "reason",
+            }
+        return httpx.Response(200, json=body)
+
+    client, requests = make_client(handler=respond)
+    client.retry_config = RetryConfig(
+        max_retries=1,
+        rate_limit_extra_retries=0,
+        base_delay=0,
+        jitter_factor=0,
+        retry_on_empty_content=True,
+    )
+    owner = InvocationUsage()
+    with owner.scope():
+        await client.acall(MESSAGES)
+    usage = owner.finish()
+    assert len(requests) == 2
+    assert usage.input_tokens is None
+    assert usage.extensions[KEY]["observed"]["input_tokens"] == 40
+    assert any(
+        gap["reason"] == "scope_unverified" for gap in usage.extensions[KEY]["gaps"]
+    )
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
