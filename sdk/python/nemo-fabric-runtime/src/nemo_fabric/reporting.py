@@ -545,7 +545,7 @@ def _render_provenance(
     if what_ran is None:
         return []
     if what_ran.get("what_ran_truncated") is not None:
-        return ["Execution facts: record exceeded its byte budget."]
+        return ["Execution facts were truncated to fit a byte budget."]
     lines = []
 
     def value(fact: Any) -> str | None:

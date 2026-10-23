@@ -627,7 +627,7 @@ def test_minimal_execution_facts_show_byte_budget_omission(result):
     }
     summary = summarize_result(result)
     assert summary["what_ran"] == result["what_ran"]
-    assert "Execution facts: record exceeded its byte budget." in render_result_summary(
+    assert "Execution facts were truncated to fit a byte budget." in render_result_summary(
         summary
     )
 
