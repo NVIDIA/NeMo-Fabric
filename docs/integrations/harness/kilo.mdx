@@ -161,8 +161,8 @@ is unavailable, no subtotal is invented. The prompt is never replayed.
 
 Each assistant message supplies its own accounting model/provider identity.
 A custom configured endpoint does not establish native provider pricing.
-Fabric can separately estimate cost when the source identity, usage and price
-catalog establish an applicable basis.
+The adapter retains source-established model and provider evidence for separate
+pricing; it does not compute catalog estimates.
 
 Ordered invocations reuse one warm session and its conversation history. A
 prompt has a 30-minute deadline; on timeout the adapter asks Kilo Code to abort
