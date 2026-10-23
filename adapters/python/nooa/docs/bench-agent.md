@@ -31,9 +31,10 @@ that `_run_evaluation()` replaces. During runtime shutdown, it closes the
 active shell and model. Native errors are not copied into the public result
 because they can contain model, tool, or environment details.
 
-BenchAgent accepts one Fabric-constructed model client. A task that attempts no
-model call reports zero tokens. It does not use the task token accumulator,
-which loses original provider field presence. See [model usage](../README.md#model-usage)
+BenchAgent accepts one model client constructed by NeMo Fabric. A task with
+no model calls and no unfinished owned work reports zero tokens. It does not
+use the task token accumulator, which loses original provider field presence.
+See [model usage](../README.md#model-usage)
 for the shared completeness, background-work and transport boundaries.
 
 ## Run with Harbor

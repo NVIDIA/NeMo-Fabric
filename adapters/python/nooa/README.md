@@ -70,7 +70,7 @@ environment provider with the isolation required by your workload.
 
 ## Model usage
 
-The NOOA Bench adapter collects calls through the model clients Fabric constructs.
+The NOOA Bench adapter collects calls through the model clients NeMo Fabric constructs.
 For NOOA 0.0.10's managed JSON HTTP paths, the collector reads the original
 response before LiteLLM can fill omitted fields with zero. It observes both
 Completion and Responses clients, including sync and async calls, retries,
