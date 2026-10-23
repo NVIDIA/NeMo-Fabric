@@ -302,6 +302,28 @@ test("internal retries retain an aligned final-attempt snapshot for observed pri
   assert.equal(group.requests[0].gap, "scope_unverified");
 });
 
+test("cache-warm replay keeps a stable caller fetch outside the invocation", async () => {
+  let replayFetch;
+  let requests = 0;
+  const ownFetch = async () => {
+    requests += 1;
+    return new Response("", { status: 200 });
+  };
+  const harness = source(async (selected, _context, options) => {
+    replayFetch = options.fetch;
+    await replayFetch("data:,initial");
+    await options.onPayload({}, selected);
+    await options.onProviderStreamEvent(raw(), selected);
+    return { result: async () => message() };
+  });
+  await harness.collector.prompt(() => harness.call(model, { fetch: ownFetch }), harness.events);
+  await replayFetch("data:,warm");
+  const firstFetch = replayFetch;
+  await harness.collector.prompt(() => harness.call(model, { fetch: ownFetch }), harness.events);
+  assert.equal(replayFetch, firstFetch);
+  assert.equal(requests, 3);
+});
+
 test("Pi's actual resolved result promise is recorded before message_end without a timing wait", async () => {
   const harness = source(async (selected, _context, options) => {
     await options.onPayload({}, selected);

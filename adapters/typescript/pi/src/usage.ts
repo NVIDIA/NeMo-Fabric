@@ -54,6 +54,20 @@ const observedFetch: typeof globalThis.fetch = async (input, init) => {
   call.attempts[index] = response.status;
   return response;
 };
+const observedFetches = new WeakMap<typeof globalThis.fetch, typeof globalThis.fetch>();
+const observedDelegates = new WeakMap<typeof globalThis.fetch, typeof globalThis.fetch>();
+
+function observedFetchFor(delegate: typeof globalThis.fetch | undefined): typeof globalThis.fetch {
+  if (delegate === undefined) return observedFetch;
+  let wrapper = observedFetches.get(delegate);
+  if (wrapper === undefined) {
+    wrapper = (input, init) => attemptScope.getStore() === undefined
+      ? delegate(input, init) : observedFetch(input, init);
+    observedFetches.set(delegate, wrapper);
+    observedDelegates.set(wrapper, delegate);
+  }
+  return wrapper;
+}
 const text = (value: unknown): string | undefined => typeof value === "string" && value.trim() ? value : undefined;
 const count = (value: unknown): number | undefined => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const object = (value: unknown): Record<string, unknown> => typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
@@ -228,11 +242,12 @@ export class PiUsageCollector {
       let current = initial;
       let payloads = 0;
       const ownFetch = options?.fetch;
-      const scope: AttemptScope = { delegate: ownFetch === undefined || ownFetch === observedFetch ? globalThis.fetch : ownFetch, current: () => current };
+      const delegate = ownFetch === undefined || ownFetch === observedFetch ? undefined : observedDelegates.get(ownFetch) ?? ownFetch;
+      const scope: AttemptScope = { delegate: delegate ?? globalThis.fetch, current: () => current };
       try {
         const response = await attemptScope.run(scope, () => stream(model, context, {
           ...options,
-          ...(FETCH_PROTOCOLS.has(model.api) ? { fetch: observedFetch } : {}),
+          ...(FETCH_PROTOCOLS.has(model.api) ? { fetch: observedFetchFor(delegate) } : {}),
           onPayload: async (payload, payloadModel) => {
             if (++payloads > 1) {
               // Pi replays these options for a cache warm-up outside streamFunction.
