@@ -106,7 +106,25 @@ async def test_qwen_doctor_and_run_against_local_provider(
     assert "user_count=1" in first["output"]["response"]
     assert "second" in second["output"]["response"]
     assert "user_count=2" in second["output"]["response"]
-    assert second["usage"]["input_tokens"] >= 0
+    # The local provider reports zero, but Qwen's CLI zero-fills omitted usage.
+    # Its unchanged cumulative counters cannot prove a reported zero per turn.
+    for result in (single, first, second):
+        usage = result["usage"]
+        for dimension in (
+            "input_tokens",
+            "cached_input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "cost_usd",
+        ):
+            assert usage.get(dimension) is None
+        accounting = usage["metadata"]["nemo_fabric.usage_accounting.v1"]
+        assert accounting["observed"] == {}
+        assert any(
+            gap["reason"] == "scope_unverified"
+            and "input_tokens" in gap["dimensions"]
+            for gap in accounting["gaps"]
+        )
 
     captured = requests.get(f"{api_server}/_requests", timeout=5).json()
     evidence = [
