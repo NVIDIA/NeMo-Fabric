@@ -132,10 +132,9 @@ freezes before return. A cancelled worker may continue running, so that runtime
 cannot accept another invocation; late usage never transfers to a later result.
 
 LiteLLM's price-table estimate is not provider-reported `cost_usd`. Missing
-LiteLLM pricing does not fail a run or hide its tokens. Fabric can estimate
-separately when the model, provider route and price catalog are established.
-A custom endpoint does not establish native-provider prices; it needs an
-applicable user catalog. Retained conversation history and Relay traces are
+LiteLLM pricing does not fail a run or hide its tokens. The adapter retains
+model and provider evidence for separate pricing; it does not compute catalog
+estimates. A custom endpoint does not establish native-provider pricing identity. Retained conversation history and Relay traces are
 independent of the accounting source.
 
 ## Continue a Task Across Invocations
