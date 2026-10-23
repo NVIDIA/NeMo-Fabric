@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
+import importlib.metadata
 import json
 import os
 import shutil
@@ -396,7 +397,27 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     request = json.loads(request_capture.read_text(encoding="utf-8"))
     assert result.status == "succeeded"
     assert result.output == {"response": "OpenClaw response"}
-    assert result.usage.total_tokens == 5
+    assert result.usage.total_tokens is None
+    assert (
+        result.usage.extensions["nemo_fabric.usage_accounting.v1"]["observed"][
+            "total_tokens"
+        ]
+        == 5
+    )
+    assert result.extensions["nemo_fabric.versions.v1"]["harness"] == {
+        "name": {
+            "value": "openclaw",
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "adapter_report",
+        },
+        "version": {
+            "value": "2026.9.4",
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "harness_probe",
+        },
+    }
     assert request == {
         "model": "openclaw/default",
         "messages": [
@@ -1148,6 +1169,38 @@ async def test_openclaw_process_exit_fails_active_invocation(
     assert mock_invoke.await_count == 1
 
 
+async def test_openclaw_process_exit_preserves_usage_seen_before_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    context = _context(tmp_path)
+    runtime = adapter.OpenClawRuntime()
+    runtime._client = MagicMock(spec=adapter.httpx.AsyncClient)
+    runtime._config = _config(tmp_path / "openclaw")
+    runtime._context = context
+    runtime._port = 12345
+    seen = asyncio.Event()
+    usage = adapter.openai_chat._usage(
+        {"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24},
+        zero_filled_counts=True,
+    )
+    assert usage is not None
+
+    async def report_then_wait(*_args, **kwargs):
+        kwargs["on_usage"](usage)
+        seen.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(adapter, "_invoke_gateway", report_then_wait)
+    invoke_task = asyncio.create_task(runtime.invoke(AgentRunRequest(input="Hello."), context))
+    await seen.wait()
+    runtime._record_gateway_failure("openclaw_gateway_exited", "Gateway exited")
+
+    result = await asyncio.wait_for(invoke_task, timeout=1)
+    assert result.status == "failed"
+    assert result.error.code == "openclaw_gateway_exited"
+    assert result.usage is usage
+
+
 async def test_openclaw_health_monitor_detects_unresponsive_gateway(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -1595,6 +1648,12 @@ async def test_openclaw_plan_doctor_and_run_without_credentials(
     assert report.status == "pass"
     assert result.status == "succeeded"
     assert result.output == {"response": "OpenClaw response"}
+    # Core moved the adapter's versions report into what_ran.
+    assert "adapter" not in result.metadata
+    assert result.what_ran["harness"]["version"]["value"] == "2026.9.4"
+    assert result.what_ran["adapter"]["package_version"]["value"] == (
+        importlib.metadata.version("nemo-fabric-adapters-openclaw")
+    )
 
 
 @pytest.mark.skipif(

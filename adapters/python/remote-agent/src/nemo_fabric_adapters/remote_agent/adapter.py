@@ -9,15 +9,19 @@ from __future__ import annotations
 import json
 import math
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
+from nemo_fabric_adapter_contract.usage import UsageObservation, usage_from_observations
+
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-remote-agent"
 
 
 DEFAULT_API_TYPE = "openai-responses"
@@ -127,9 +131,11 @@ class RemoteAgentRuntime:
         self._api_type = DEFAULT_API_TYPE
         self._messages: list[dict[str, str]] = []
         self._relay_streaming = False
+        self._model_roles: list[str] = []
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
+        self._model_roles = list(config.models)
         context = contract.RuntimeContext.from_mapping(payload["runtime_context"])
         settings = config.harness.settings if config.harness is not None else {}
         self._api_type = settings.get("api_type", DEFAULT_API_TYPE)
@@ -211,6 +217,19 @@ class RemoteAgentRuntime:
         request: contract.AgentRunRequest,
         context: contract.RuntimeContext,
     ) -> contract.AgentRunResult:
+        """Run one invocation and report this adapter's package version."""
+
+        result = await self._invoke(request, context)
+        result.extensions[provenance.VERSIONS_REPORT_KEY] = (
+            provenance.package_version_report(_PACKAGE_DISTRIBUTION, self._model_roles)
+        )
+        return result
+
+    async def _invoke(
+        self,
+        request: contract.AgentRunRequest,
+        context: contract.RuntimeContext,
+    ) -> contract.AgentRunResult:
         if self._client is None or self._config is None:
             raise lifecycle.LifecycleError(
                 "remote_agent_not_started", "Remote agent runtime is not started"
@@ -227,27 +246,67 @@ class RemoteAgentRuntime:
             if self._relay_streaming
             else None
         )
+        observed: contract.AgentUsage | None = None
+
+        def remember_usage(value: contract.AgentUsage) -> None:
+            nonlocal observed
+            observed = value
+
+        def partial_failure(
+            code: str, message: str, *, retryable: bool = False
+        ) -> contract.AgentRunResult:
+            return contract.AgentRunResult(
+                status=contract.AgentRunStatus.FAILED,
+                output={},
+                error=contract.AgentRunError(
+                    code=code, message=message, retryable=retryable
+                ),
+                usage=observed,
+            )
+
         try:
             if self._api_type == "openai-responses":
-                text, usage = await self._invoke_responses(user_text, metadata)
+                text, usage = await self._invoke_responses(
+                    user_text, metadata, on_usage=remember_usage
+                )
             elif self._api_type == "openai-completions":
-                text, usage = await self._invoke_completions(user_text, metadata)
+                text, usage = await self._invoke_completions(
+                    user_text, metadata, on_usage=remember_usage
+                )
             else:
-                text, usage = await self._invoke_messages(user_text, metadata)
+                text, usage = await self._invoke_messages(
+                    user_text, metadata, on_usage=remember_usage
+                )
         except httpx.HTTPStatusError as error:
             return self._result_error(error.response.status_code)
         except httpx.RequestError as error:
+            if observed is not None:
+                return partial_failure(
+                    "remote_agent_transport_failed",
+                    "Remote agent request could not be completed",
+                    retryable=True,
+                )
             raise lifecycle.LifecycleError(
                 "remote_agent_transport_failed",
                 "Remote agent request could not be completed",
                 retryable=True,
             ) from error
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            if observed is not None:
+                return partial_failure(
+                    "remote_agent_invalid_response",
+                    "Remote agent returned an invalid response",
+                )
             raise lifecycle.LifecycleError(
                 "remote_agent_invalid_response",
                 "Remote agent returned an invalid response",
             ) from error
         except RuntimeError as error:
+            if observed is not None:
+                return partial_failure(
+                    "remote_agent_invalid_response",
+                    "Remote agent returned an invalid response",
+                )
             raise lifecycle.LifecycleError(
                 "remote_agent_invalid_response",
                 "Remote agent returned an invalid response",
@@ -279,6 +338,8 @@ class RemoteAgentRuntime:
         self,
         user_text: str,
         metadata: dict[str, str] | None,
+        *,
+        on_usage: Callable[[contract.AgentUsage], None] | None = None,
     ) -> tuple[str, contract.AgentUsage | None]:
         config = self._config
         if config is None:
@@ -304,13 +365,33 @@ class RemoteAgentRuntime:
         ) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
+                value = _event_object(value, "event")
+                report = value.get("response")
+                if (
+                    isinstance(report, dict)
+                    and isinstance(report.get("usage"), dict)
+                    and on_usage is not None
+                ):
+                    raw = report["usage"]
+                    details = _usage_object(raw.get("input_tokens_details"))
+                    on_usage(
+                        _usage(
+                            raw.get("input_tokens"),
+                            raw.get("output_tokens"),
+                            raw.get("total_tokens"),
+                            cached_input_tokens=details.get("cached_tokens"),
+                        )
+                    )
                 if event == "response.completed":
-                    completed = value["response"]
-                    usage = completed.get("usage", {})
+                    completed = _event_object(value["response"], "response")
+                    usage = _usage_object(completed.get("usage"))
+                    details = _usage_object(usage.get("input_tokens_details"))
                     return _response_text(completed), _usage(
                         usage.get("input_tokens"),
                         usage.get("output_tokens"),
                         usage.get("total_tokens"),
+                        cached_input_tokens=details.get("cached_tokens"),
+                        input_tokens_include_cache=True,
                     )
         raise RuntimeError("remote agent response ended without completion")
 
@@ -318,6 +399,8 @@ class RemoteAgentRuntime:
         self,
         user_text: str,
         metadata: dict[str, str] | None,
+        *,
+        on_usage: Callable[[contract.AgentUsage], None] | None = None,
     ) -> tuple[str, contract.AgentUsage | None]:
         config = self._config
         if config is None:
@@ -338,12 +421,15 @@ class RemoteAgentRuntime:
             top_p=model.top_p,
             max_tokens=model.max_tokens,
             metadata=metadata,
+            on_usage=on_usage,
         )
 
     async def _invoke_messages(
         self,
         user_text: str,
         metadata: dict[str, str] | None,
+        *,
+        on_usage: Callable[[contract.AgentUsage], None] | None = None,
     ) -> tuple[str, contract.AgentUsage | None]:
         config = self._config
         if config is None:
@@ -365,22 +451,63 @@ class RemoteAgentRuntime:
         if metadata is not None:
             payload["metadata"] = metadata
         text = ""
-        input_tokens = output_tokens = None
+        counts: dict[str, Any] = {}
         async with self._client.stream(
             "POST", self._endpoint, json=payload
         ) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
                 if event == "message_start":
-                    input_tokens = value["message"]["usage"].get("input_tokens")
+                    raw = _usage_object(
+                        _event_object(value["message"], "message").get("usage")
+                    )
+                    counts.update(
+                        {
+                            key: raw[key]
+                            for key in (
+                                "input_tokens",
+                                "output_tokens",
+                                "cache_read_input_tokens",
+                                "cache_creation_input_tokens",
+                            )
+                            if key in raw
+                        }
+                    )
                 elif event == "content_block_delta":
                     delta = value["delta"]
                     if delta["type"] == "text_delta":
                         text += delta["text"]
                 elif event == "message_delta":
-                    output_tokens = value["usage"].get("output_tokens")
+                    # Message deltas are cumulative snapshots, not additive calls.
+                    counts.update(_usage_object(value.get("usage")))
                 elif event == "message_stop":
-                    return text, _usage(input_tokens, output_tokens, None)
+                    return text, _usage(
+                        counts.get("input_tokens"),
+                        counts.get("output_tokens"),
+                        None,
+                        cached_input_tokens=counts.get("cache_read_input_tokens"),
+                        cache_write_input_tokens=counts.get(
+                            "cache_creation_input_tokens"
+                        ),
+                        input_tokens_include_cache=False,
+                    )
+                if (
+                    on_usage is not None
+                    and counts
+                    and event in ("message_start", "message_delta")
+                ):
+                    on_usage(
+                        _usage(
+                            counts.get("input_tokens"),
+                            counts.get("output_tokens"),
+                            None,
+                            cached_input_tokens=counts.get("cache_read_input_tokens"),
+                            cache_write_input_tokens=counts.get(
+                                "cache_creation_input_tokens"
+                            ),
+                            input_tokens_include_cache=False,
+                        )
+                    )
         raise RuntimeError("remote agent response ended without completion")
 
     def _result_error(self, status_code: int) -> contract.AgentRunResult:
@@ -395,17 +522,45 @@ class RemoteAgentRuntime:
         )
 
 
+def _event_object(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise TypeError(f"remote agent {name} must be an object")
+    return value
+
+
+def _usage_object(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise TypeError("remote agent usage must be an object")
+    return value
+
+
 def _usage(
     input_tokens: int | None,
     output_tokens: int | None,
     total_tokens: int | None,
-) -> contract.AgentUsage | None:
-    if input_tokens is None and output_tokens is None and total_tokens is None:
-        return None
-    return contract.AgentUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
+    *,
+    cached_input_tokens: int | None = None,
+    cache_write_input_tokens: int | None = None,
+    input_tokens_include_cache: bool = True,
+) -> contract.AgentUsage:
+    return usage_from_observations(
+        [
+            UsageObservation(
+                reported=contract.ReportedUsage(
+                    input_tokens=input_tokens,
+                    cached_input_tokens=cached_input_tokens,
+                    cache_write_input_tokens=cache_write_input_tokens,
+                    input_tokens_include_cache=input_tokens_include_cache,
+                    output_tokens=output_tokens,
+                    output_tokens_include_reasoning=True,
+                    total_tokens=total_tokens,
+                ),
+                gap=contract.GapReason.SCOPE_UNVERIFIED,
+                tokens_aligned=True,
+            )
+        ]
     )
 
 

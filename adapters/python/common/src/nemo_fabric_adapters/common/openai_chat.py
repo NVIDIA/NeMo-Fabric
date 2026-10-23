@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from types import TracebackType
 from typing import Any, Protocol
 
 from nemo_fabric_adapter_contract import models as contract
+from nemo_fabric_adapter_contract.usage import UsageObservation, usage_from_observations
 
 
 class AsyncStreamResponse(Protocol):
@@ -63,6 +64,8 @@ async def invoke(
     max_tokens: int | None = None,
     metadata: dict[str, str] | None = None,
     user: str | None = None,
+    zero_filled_counts: bool = False,
+    on_usage: Callable[[contract.AgentUsage], None] | None = None,
 ) -> tuple[str, contract.AgentUsage | None]:
     """Consume a Chat Completions SSE stream and aggregate its result."""
 
@@ -101,6 +104,8 @@ async def invoke(
                 if not isinstance(event_usage, dict):
                     raise TypeError("Chat Completions usage must be an object")
                 usage = event_usage
+                if on_usage is not None:
+                    on_usage(_usage(usage, zero_filled_counts=zero_filled_counts))
 
             choices = value.get("choices", [])
             if not isinstance(choices, list):
@@ -122,11 +127,7 @@ async def invoke(
     if not completed:
         raise ValueError("Chat Completions stream ended without [DONE]")
 
-    return "".join(text), _usage(
-        usage.get("prompt_tokens"),
-        usage.get("completion_tokens"),
-        usage.get("total_tokens"),
-    )
+    return "".join(text), _usage(usage, zero_filled_counts=zero_filled_counts)
 
 
 async def _sse_data(response: AsyncStreamResponse) -> AsyncIterator[str]:
@@ -150,14 +151,47 @@ def _json_object(data: str) -> dict[str, Any]:
 
 
 def _usage(
-    input_tokens: int | None,
-    output_tokens: int | None,
-    total_tokens: int | None,
-) -> contract.AgentUsage | None:
-    if input_tokens is None and output_tokens is None and total_tokens is None:
-        return None
-    return contract.AgentUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
+    raw: dict[str, Any], *, zero_filled_counts: bool = False
+) -> contract.AgentUsage:
+    details = raw.get("prompt_tokens_details")
+    if details is None:
+        details = {}
+    if not isinstance(details, dict):
+        raise TypeError("Chat Completions prompt_tokens_details must be an object")
+    reported = contract.ReportedUsage(
+        input_tokens=raw.get("prompt_tokens"),
+        input_tokens_include_cache=None if zero_filled_counts else True,
+        cached_input_tokens=details.get("cached_tokens"),
+        output_tokens=raw.get("completion_tokens"),
+        output_tokens_include_reasoning=True,
+        total_tokens=raw.get("total_tokens"),
+    )
+    if zero_filled_counts:
+        # OpenClaw's documented gateway counters lose zero field presence.
+        # Other compatible endpoints retain literal reported zero.
+        from dataclasses import replace
+
+        reported = replace(
+            reported,
+            **{
+                name: None
+                for name in (
+                    "input_tokens",
+                    "cached_input_tokens",
+                    "output_tokens",
+                    "total_tokens",
+                )
+                if getattr(reported, name) == 0
+            },
+        )
+    # A remote agent's terminal response cannot establish its internal model,
+    # retry or descendant coverage. Do not allocate it to the requested alias.
+    return usage_from_observations(
+        [
+            UsageObservation(
+                reported=reported,
+                gap=contract.GapReason.SCOPE_UNVERIFIED,
+                tokens_aligned=True,
+            )
+        ]
     )

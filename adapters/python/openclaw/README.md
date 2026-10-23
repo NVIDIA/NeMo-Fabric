@@ -293,3 +293,9 @@ output after the Gateway and channel stop at the end of that interval.
 For Harbor, use managed mode so the Gateway and agent tools share the task
 workspace, as shown in the
 [calculator example](../../../examples/harbor/calculator/README.md#4-openclaw).
+
+## Usage evidence
+
+OpenClaw 2026.9.4 forwards an aggregate usage snapshot, falling back to its latest model-call snapshot. The Gateway zero-fills missing counts and can hide a model call that reported no usage. NeMo Fabric retains positive source reports as observations with `scope_unverified`; zero-filled zeros remain unknown. Complete invocation totals are unavailable from this endpoint.
+
+The Gateway's `prompt_tokens` includes cache reads but excludes cache writes. That partial convention does not establish NeMo Fabric's cache-inclusive input. The adapter preserves the literal prompt and independent cache/total reports in `nemo_fabric.usage_accounting.v1` without guessing missing cache writes. Positive output observations survive independently. A stream failure retains a previously received usage snapshot. The selected agent name does not allocate aggregate spend to a billing model, so no provider cost or catalog estimate is manufactured.
