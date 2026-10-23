@@ -156,7 +156,7 @@ later warm turns retain their own differences. Cache-only growth is retained
 independently. The adapter never derives a provider total or USD cost.
 
 Complete totals remain unknown because the public terminal counters hide
-responses that omitted usage. The default Qwen0.24.6 bundled with SDK0.1.16
+responses that omitted usage. The default Qwen 0.24.6 bundled with SDK 0.1.16
 also runs managed-memory extraction calls that are absent from public assistant
 messages. Compression calls can report zero turns despite calling the model.
 Counting assistant messages or terminal turns therefore cannot establish full
@@ -170,5 +170,5 @@ behavior. Memory extraction, compression and tools remain enabled according to
 the harness's existing configuration.
 
 The supported local telemetry file preserves more call detail, but its batched
-export has no SDK flush boundary at invocation return. Fabric does not infer
+export has no SDK flush boundary at invocation return. NeMo Fabric does not infer
 completeness from a quiet file or parse that unversioned diagnostic format.
