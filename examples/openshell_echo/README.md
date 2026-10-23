@@ -33,4 +33,4 @@ The consumer writes the server health report and two normalized results to
 invocation returns a declared receipt; the provider collects it into the
 host-side artifact directory.
 
-The server check uses `Fabric.check(environment=environment, request=CheckRequest(scope="server"))`, which maps to `fabric-agent-ctl check` inside the sandbox.
+The server check uses `Fabric.check(environment=environment, request=CheckRequest(scope="server"))`, which maps to `fabric-agent-ctl check` inside the sandbox. Use the Pi adapter to exercise runtime `live`, `active`, and `ready` checks.

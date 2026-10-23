@@ -16,6 +16,12 @@ use serde_json::Value;
 pub(crate) enum TaskCommand {
     Check {
         timeout_seconds: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        agent: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        runtime_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        level: Option<crate::check::CheckLevel>,
     },
     Start {
         agent: String,

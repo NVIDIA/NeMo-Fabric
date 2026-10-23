@@ -16,6 +16,8 @@ from nemo_fabric import (
     Fabric,
     FabricConfig,
     FabricConfigError,
+    CheckRequest,
+    EnvironmentHandle,
     RunRequest,
     Runtime,
     RuntimeStatus,
@@ -26,7 +28,11 @@ from nemo_fabric.runtime_server.protocol import (
     envelope,
     validate_request,
 )
-from nemo_fabric.runtime_server.health import server_report
+from nemo_fabric.runtime_server.health import (
+    check_response,
+    runtime_report,
+    server_report,
+)
 
 MAX_STOPPED_RUNTIME_RECORDS = 128
 
@@ -37,6 +43,7 @@ class OwnedRuntime:
     agent: str
     state: str = "running"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    generation: int = 0
 
 
 class RuntimeServer:
@@ -66,6 +73,7 @@ class RuntimeServer:
         return owned
 
     async def _stop(self, owned: OwnedRuntime) -> None:
+        owned.generation += 1
         owned.state = "unknown"
         runtime = owned.runtime
         if runtime is not None:
@@ -100,6 +108,8 @@ class RuntimeServer:
             if operation == "serve":
                 raise ProtocolError()
             if operation == "check":
+                if "runtime_id" in request:
+                    return await self._check_runtime(request, started)
                 return envelope(
                     operation,
                     server_report(
@@ -157,6 +167,9 @@ class RuntimeServer:
                     return response
 
             owned = self._owned(request)
+            if operation == "stop" and owned.state != "stopped":
+                owned.generation += 1
+                owned.state = "stopping"
             async with owned.lock:
                 if self.shutting_down:
                     raise ProtocolError("host_stopping")
@@ -200,6 +213,60 @@ class RuntimeServer:
             return envelope(
                 operation, result, changed=changed, error=error, effects=effects
             )
+
+    async def _check_runtime(
+        self, command: dict[str, Any], started: float
+    ) -> dict[str, Any]:
+        request = CheckRequest(
+            scope="runtime",
+            runtime_id=command["runtime_id"],
+            level=command.get("level", "live"),
+            timeout_seconds=command.get("timeout_seconds", 3.0),
+        )
+        owned = self.runtimes.get(request.runtime_id)
+        if owned is None:
+            return check_response(
+                runtime_report(request, "runtime_unavailable", started)
+            )
+        if owned.agent != command["agent"]:
+            raise ProtocolError("wrong_agent", "check")
+        runtime = owned.runtime
+        if (
+            self.shutting_down
+            or owned.state != "running"
+            or runtime is None
+            or runtime.status != RuntimeStatus.ACTIVE
+        ):
+            return check_response(
+                runtime_report(request, "runtime_unavailable", started)
+            )
+        generation = owned.generation
+        remaining = request.timeout_seconds - (time.monotonic() - started)
+        if remaining <= 0:
+            return check_response(runtime_report(request, "probe_timeout", started))
+        try:
+            report = await asyncio.wait_for(
+                self.fabric.check(
+                    environment=EnvironmentHandle.from_mapping(
+                        runtime.handle.environment
+                    ),
+                    request=request.model_copy(update={"timeout_seconds": remaining}),
+                ),
+                remaining,
+            )
+            report = report._complete(started).to_mapping()
+        except Exception:
+            report = runtime_report(request, "probe_error", started)
+        if (
+            self.shutting_down
+            or self.runtimes.get(request.runtime_id) is not owned
+            or owned.runtime is not runtime
+            or owned.generation != generation
+        ):
+            report = runtime_report(request, "observation_changed", started)
+        elif time.monotonic() - started >= request.timeout_seconds:
+            report = runtime_report(request, "probe_timeout", started)
+        return check_response(report)
 
     async def shutdown(self) -> None:
         """Stop idle runtimes. The enclosing sandbox owns descendant cleanup."""

@@ -20,8 +20,8 @@ import type {
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti/static";
-import type { AgentConfig, AgentModelConfig, AgentToolDefinition, JsonObject } from "nemo-fabric-adapter-contract";
-import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import type { AdapterCheckResult, CheckLevel, CheckSource, AgentConfig, AgentModelConfig, AgentToolDefinition, JsonObject } from "nemo-fabric-adapter-contract";
+import { LifecycleError, unobservedHealth, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import {
   PiRelayFactory,
@@ -366,6 +366,7 @@ function isolatedMcpCredentials(): McpCredentials {
 }
 
 interface McpReadiness {
+  healthy: boolean;
   fail(): void;
   ready(): void;
   result: Promise<boolean>;
@@ -383,7 +384,13 @@ function mcpReadiness(): McpReadiness {
       settle(ready);
     }
   };
-  return { fail: () => finish(false), ready: () => finish(true), result };
+  const status: McpReadiness = {
+    healthy: false,
+    fail: () => { status.healthy = false; finish(false); },
+    ready: () => { status.healthy = true; finish(true); },
+    result,
+  };
+  return status;
 }
 
 function trackedMcpTransport(transport: McpTransport, readiness: McpReadiness): McpTransport {
@@ -408,7 +415,7 @@ function trackedMcpTransport(transport: McpTransport, readiness: McpReadiness): 
         throw error;
       }
     },
-    close: () => transport.close(),
+    close: () => { readiness.fail(); return transport.close(); },
     onMessage: (listener) => transport.onMessage((message) => {
       if ("id" in message && toolListRequests.has(message.id)) {
         toolListRequests.delete(message.id);
@@ -868,12 +875,24 @@ class PiSdkSessionHandle implements PiSessionHandle {
   private stopped = false;
   private cumulativeTurnCount = 0;
   private readonly runtimeDir: string;
+  private initialized = false;
+  private requiredTools: readonly string[] = [];
+  private readonly nativeSessionId: string;
+  private readonly modelRuntime: PiModelRuntime;
+  private readonly expectedModel: { id: string; provider: string };
+  private readonly connections: Map<string, McpReadiness>;
 
-  constructor(session: AgentSession, state: { shutdownRequested: boolean }, runtimeDir: string, relay?: PiRelayRuntime) {
+  constructor(session: AgentSession, state: { shutdownRequested: boolean }, runtimeDir: string,
+    modelRuntime: PiModelRuntime, expectedModel: { id: string; provider: string },
+    connections: Map<string, McpReadiness>, relay?: PiRelayRuntime) {
     this.session = session;
     this.state = state;
     this.runtimeDir = runtimeDir;
     this.relay = relay;
+    this.modelRuntime = modelRuntime;
+    this.expectedModel = expectedModel;
+    this.connections = connections;
+    this.nativeSessionId = session.sessionId;
     this.unsubscribeTurnCounter = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         this.cumulativeTurnCount += 1;
@@ -883,6 +902,43 @@ class PiSdkSessionHandle implements PiSessionHandle {
 
   get turnCount(): number {
     return this.cumulativeTurnCount;
+  }
+
+  initialize(requiredTools: readonly string[]): void {
+    this.requiredTools = [...requiredTools];
+    this.initialized = true;
+  }
+
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    if (this.stopped) return { ...unobservedHealth("session_closed"), outcome: "failed", activity: "stopped" };
+    if (!this.initialized) return unobservedHealth("capabilities_unverified");
+    if (this.session.sessionId !== this.nativeSessionId) return unobservedHealth("observation_changed");
+    try {
+      // The native context checks that its runner has not been disposed.
+      // Both idle and busy responses are current liveness evidence.
+      const idle = this.session.extensionRunner.createContext().isIdle();
+      if (typeof idle !== "boolean") return unobservedHealth("probe_error");
+      const activity = idle ? "idle" : "busy";
+      const source: CheckSource = level === "live" ? "fabric.adapter.pi.session"
+        : level === "active" ? "fabric.adapter.pi.interface" : "fabric.adapter.pi.setup";
+      const observed_at = new Date().toISOString();
+      if (level !== "live" && this.state.shutdownRequested) return {
+        outcome: "failed", reason_code: "endpoint_unavailable", activity: "stopping", source, observed_at,
+      };
+      if (level === "ready") {
+        const model = this.session.model;
+        const available = new Set([
+          ...this.session.getActiveToolNames(), ...this.session.getCallableToolNames(),
+        ]);
+        if (model?.id !== this.expectedModel.id || model.provider !== this.expectedModel.provider
+          || this.modelRuntime.getModel(model.provider, model.id) === undefined
+          || this.requiredTools.some((name) => !available.has(name))
+          || [...this.connections.values()].some((connection) => !connection.healthy)) {
+          return { outcome: "failed", reason_code: "health_failed", activity, source, observed_at };
+        }
+      }
+      return { outcome: "passed", reason_code: null, activity, source, observed_at };
+    } catch { return unobservedHealth("probe_error"); }
   }
 
   async prompt(text: string): Promise<PiPromptOutcome> {
@@ -1169,7 +1225,8 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         tools: enabled === null ? undefined : enabled,
         excludeTools: blocked,
       });
-      handle = new PiSdkSessionHandle(session, state, runtimeDir, relay);
+      handle = new PiSdkSessionHandle(session, state, runtimeDir, modelRuntime,
+        { id: model.id, provider: model.provider }, mcpConnections, relay);
       const blockedNames = new Set(blocked);
       const availableNames = new Set(session.getAllTools().map((tool) => tool.name));
       const missing = (enabled ?? []).filter((name) => !blockedNames.has(name) && !availableNames.has(name));
@@ -1202,6 +1259,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         },
       });
       await requireMcpConnections(mcpConnections);
+      handle.initialize((enabled ?? session.getActiveToolNames()).filter((name) => !blockedNames.has(name)));
       // bindExtensions emits session_start; emitting it here would create a
       // duplicate Relay session scope.
       return handle;

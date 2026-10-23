@@ -225,5 +225,9 @@ independently instrumented service publishes correlated ATOF to the collector
 base URL shared by its Relay configuration and `FabricConfig`. The collector can
 serve multiple runtimes when each request ID is unique.
 
+Local Pi runtimes also support `Fabric.check()` at the `live`, `active`, and
+`ready` levels. These observations can run during an invocation and inspect
+native session and local setup state. Refer to the [Pi health contract](typescript/pi/README.md#runtime-health).
+
 Shared lifecycle, Relay gateway, hook, and payload helpers are documented in
 the [adapter utilities guide](python/common/README.md).

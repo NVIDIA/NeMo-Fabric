@@ -128,7 +128,7 @@ async def check(*, environment: EnvironmentHandle, request: CheckRequest) -> Che
 
 Check server or runtime health in the selected environment.
 
-OpenShell server checks execute ``fabric-agent-ctl check`` inside the selected sandbox. Checks work before a runtime starts and while an invocation is running. Local server and runtime checks return ``unsupported_scope``. The request's single deadline covers routing, all levels, and decoding. Timeouts return ``unknown`` with reason ``probe_timeout``.
+OpenShell checks execute ``fabric-agent-ctl check`` inside the selected sandbox. Runtime checks then use the local SDK and an independent adapter health channel. Local server checks return unsupported. The request's single deadline covers routing, all levels, and decoding. Timeouts return ``unknown`` with reason ``probe_timeout``.
 
 
 

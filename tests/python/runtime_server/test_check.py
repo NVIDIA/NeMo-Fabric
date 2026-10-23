@@ -39,7 +39,6 @@ def test_server_check_command_defaults_and_timeout():
     [
         ["--agent", "researcher"],
         ["--runtime-id", "r"],
-        ["--agent", "researcher", "--runtime-id", "r"],
         ["--timeout-seconds", "0"],
         ["--timeout-seconds", "-1"],
         ["--timeout-seconds", "nan"],
@@ -67,7 +66,7 @@ def test_invalid_server_check_does_not_connect(flags, monkeypatch, capsys):
 @pytest.mark.parametrize(
     "fields",
     [
-        {"runtime_id": "r"},
+        {"runtime_id": "r", "agent": None},
         {"level": "ready"},
         {"agent": "researcher"},
         {"surprise": "PRIVATE"},

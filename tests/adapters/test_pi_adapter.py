@@ -89,6 +89,7 @@ def test_pi_descriptor_declares_the_supported_surface():
         }
     }
     assert descriptor["capabilities"] == {
+        "metadata": {"health_checks": ["live", "active", "ready"]},
         "streaming": False,
         "cancellation": False,
         "updates": False,

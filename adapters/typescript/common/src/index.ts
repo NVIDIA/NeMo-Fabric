@@ -28,3 +28,4 @@ export {
   type AcpSessionOptions,
   type AcpSessionReadinessNotification,
 } from "./acp-runner.js";
+export { unobservedHealth } from "./health.js";

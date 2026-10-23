@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from nemo_fabric.check import CheckRequest
+
 from nemo_fabric.runtime_server.protocol import (
     CALL_SECONDS,
     LIFECYCLE_OPERATIONS,
@@ -33,7 +35,12 @@ from nemo_fabric.runtime_server.protocol import (
     validate_response,
 )
 from nemo_fabric.runtime_server.state import RuntimeServer
-from nemo_fabric.runtime_server.health import CHECK_SECONDS, server_report
+from nemo_fabric.runtime_server.health import (
+    CHECK_SECONDS,
+    check_response,
+    runtime_report,
+    server_report,
+)
 
 if sys.platform != "win32":
     import fcntl
@@ -104,6 +111,11 @@ async def client(
             reader, writer = await asyncio.open_unix_connection(
                 socket_path, limit=RESPONSE_LIMIT
             )
+            if operation == "check":
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError()
+                encoded = encode_request({**request, "timeout_seconds": remaining})
             writer.write(encoded)
             sent = True
             await writer.drain()
@@ -115,6 +127,20 @@ async def client(
                     raise TimeoutError()
                 report = response["result"]
                 if report is not None:
+                    runtime_id = request.get("runtime_id")
+                    expected = (
+                        "runtime" if runtime_id is not None else "server",
+                        runtime_id,
+                        request.get("level", "live")
+                        if runtime_id is not None
+                        else None,
+                    )
+                    if (
+                        report["scope"],
+                        report["runtime_id"],
+                        report["requested_level"],
+                    ) != expected:
+                        raise ProtocolError("invalid_response", "transport")
                     report["elapsed_ms"] = max(0.0, (finished - started) * 1000)
                     report["completed_at"] = (
                         datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -122,6 +148,21 @@ async def client(
             return response
     except (OSError, ValueError, TypeError, KeyError, TimeoutError) as error:
         if operation == "check" and isinstance(error, TimeoutError):
+            if "runtime_id" in request:
+                return check_response(
+                    runtime_report(
+                        CheckRequest(
+                            scope="runtime",
+                            runtime_id=request["runtime_id"],
+                            level=request.get("level", "live"),
+                            timeout_seconds=request.get(
+                                "timeout_seconds", CHECK_SECONDS
+                            ),
+                        ),
+                        "probe_timeout",
+                        started,
+                    )
+                )
             return envelope(
                 operation,
                 server_report("unknown", started),

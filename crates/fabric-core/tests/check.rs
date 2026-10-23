@@ -45,12 +45,12 @@ fn check_request_defaults_and_invalid_combinations() {
 }
 
 #[test]
-fn runtime_scope_and_local_server_are_unsupported() {
+fn a_missing_runtime_is_unknown_and_a_local_server_is_unsupported() {
     let request =
         serde_json::from_value(json!({"scope":"runtime", "runtime_id":"missing"})).unwrap();
     let report = check_environment(&environment(), &request).unwrap();
-    assert_eq!(report.outcome, CheckOutcome::Unsupported);
-    assert_eq!(report.reason_code, Some(CheckReason::UnsupportedScope));
+    assert_eq!(report.outcome, CheckOutcome::Unknown);
+    assert_eq!(report.reason_code, Some(CheckReason::RuntimeUnavailable));
     assert!(report.checks.is_empty());
     assert!(report.runtime.is_none());
     assert!(report.server.is_none());

@@ -8,7 +8,7 @@ import sys
 from typing import Any
 
 from nemo_fabric import FabricConfigError, RunResult, RuntimeHandle
-from nemo_fabric.runtime_server.health import validate_server_response
+from nemo_fabric.runtime_server.health import validate_check_response
 
 INTERFACE_VERSION = 2
 REQUEST_LIMIT = 512 * 1024
@@ -48,6 +48,16 @@ MESSAGES = {
     "invalid_input": "Input must contain one bounded UTF-8 JSON value.",
     "server_stopping": "The Fabric runtime server is stopping.",
     "probe_timeout": "The Fabric runtime server check exceeded its deadline.",
+    "probe_error": "The health probe could not provide valid evidence.",
+    "observation_changed": "Runtime ownership changed during the health check.",
+    "unsupported_adapter": "This adapter does not implement health checks.",
+    "unsupported_level": "The requested health level is unsupported.",
+    "unsupported_scope": "The requested health scope is unsupported.",
+    "capabilities_unverified": "The health capability could not be verified.",
+    "agent_exited": "The agent process has exited.",
+    "session_closed": "The native session has closed.",
+    "endpoint_unavailable": "The native request interface is unavailable.",
+    "health_failed": "Required agent setup did not pass the health check.",
 }
 
 
@@ -119,6 +129,16 @@ def validate_request(request: Any) -> str:
     allowed = required.copy()
     if operation == "check":
         allowed.add("timeout_seconds")
+        if request.keys() & {"agent", "runtime_id"}:
+            required.update({"agent", "runtime_id"})
+            allowed.update(required)
+            allowed.add("level")
+            if "level" in request and request["level"] not in (
+                "live",
+                "active",
+                "ready",
+            ):
+                raise ProtocolError()
         if "timeout_seconds" in request and (
             type(request["timeout_seconds"]) not in (int, float)
             or not 0 < request["timeout_seconds"] <= sys.float_info.max
@@ -250,7 +270,7 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
     result = response["result"]
     try:
         if operation == "check":
-            validate_server_response(response)
+            validate_check_response(response)
         elif operation == "invoke":
             RunResult.from_mapping(result)
             if response["changed"] is not None:
