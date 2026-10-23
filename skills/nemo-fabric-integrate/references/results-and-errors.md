@@ -55,7 +55,7 @@ Complete counts cover invocation-owned work at return. Observations can be incom
 Legacy usage remains available when a target has no supported accounting evidence:
 
 ```python
-if result.usage is not None:
+if result.model_usage is None and result.usage is not None:
     record_usage(
         input_tokens=result.usage.get("input_tokens"),
         output_tokens=result.usage.get("output_tokens"),
