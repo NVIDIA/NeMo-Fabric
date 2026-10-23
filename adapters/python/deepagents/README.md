@@ -241,6 +241,13 @@ The descriptor declares `nemo_fabric.usage_accounting.v1` for complete dimension
 observations and gaps, and `nemo_fabric.detailed_token_usage.v1` for raw cache and
 reasoning conventions. An omitted count stays unknown; a reported zero stays zero.
 
+**Upgrade note:** For providers whose usage is visible only in LangGraph
+messages, `RunResult.usage.input_tokens` and `output_tokens` can now be `null`.
+The previous graph-message subtotal remains in `RunResult.output.usage`, labeled
+`usage_source: graph_state_messages`. It is a diagnostic subtotal, not a
+complete invocation count; consumers that previously read the top-level fields
+should handle unknown counts rather than substituting this subtotal.
+
 For adapter-created OpenAI-compatible clients, the collector observes sync and
 async calls and their HTTP attempts without changing requests or retries. Normal
 reported calls stay known. An actual failed or unfinished attempt without usable
