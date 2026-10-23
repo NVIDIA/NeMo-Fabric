@@ -24,6 +24,7 @@ from inspect import (
     signature,
 )
 from pathlib import Path
+from typing import get_type_hints, is_typeddict
 
 import nemo_fabric
 from pydantic import BaseModel
@@ -36,6 +37,8 @@ INSTALL_PAGE = ROOT / "docs" / "getting-started" / "install.mdx"
 QUICKSTART_PAGE = ROOT / "docs" / "getting-started" / "quickstart.mdx"
 NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
+    "nemo_fabric.accounting": "/reference/api/python-library-reference/accounting",
+    "nemo_fabric.reporting": "/reference/api/python-library-reference/reporting",
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
     "nemo_fabric.capabilities": "/reference/api/python-library-reference/capabilities",
     "nemo_fabric.runtime": "/reference/api/python-library-reference/runtime",
@@ -48,8 +51,14 @@ MODULE_SLUGS = {
     "nemo_fabric.types": "/reference/api/python-library-reference/types",
     "nemo_fabric.errors": "/reference/api/python-library-reference/errors",
 }
+PUBLIC_SUBMODULES = ("nemo_fabric.reporting",)
 MEMBER_SIGNATURE = re.compile(
     r"^### <kbd>(?:method|classmethod)</kbd> `([^`]+)`\n\n"
+    r"```python\n(.*?)\n```",
+    flags=re.MULTILINE | re.DOTALL,
+)
+FUNCTION_SIGNATURE = re.compile(
+    r"^## <kbd>function</kbd> `([^`]+)`\n\n"
     r"```python\n(.*?)\n```",
     flags=re.MULTILINE | re.DOTALL,
 )
@@ -71,6 +80,26 @@ def _exported_classes_by_module() -> dict[str, set[str]]:
         exported = getattr(nemo_fabric, name)
         if isclass(exported):
             exports[exported.__module__].add(name)
+    return dict(exports)
+
+
+def _exported_functions_by_module() -> dict[str, set[str]]:
+    exports: dict[str, set[str]] = defaultdict(set)
+    for name in nemo_fabric.__all__:
+        exported = getattr(nemo_fabric, name)
+        if isfunction(exported):
+            exports[exported.__module__].add(name)
+    for module_name in PUBLIC_SUBMODULES:
+        module = importlib.import_module(module_name)
+        public_names = getattr(
+            module,
+            "__all__",
+            [name for name in vars(module) if not name.startswith("_")],
+        )
+        for name in public_names:
+            exported = getattr(module, name)
+            if isfunction(exported) and exported.__module__ == module_name:
+                exports[module_name].add(name)
     return dict(exports)
 
 
@@ -149,13 +178,21 @@ def _documented_method_names(exported_class: type[object]) -> list[str]:
 
 def test_python_reference_exactly_covers_exported_sdk_classes() -> None:
     exports = _exported_classes_by_module()
-    expected_pages = {f"{module}.md" for module in exports}
+    functions = _exported_functions_by_module()
+    expected_pages = {f"{module}.md" for module in exports.keys() | functions.keys()}
     actual_pages = {page.name for page in REFERENCE_DIR.glob("nemo_fabric.*.md")}
 
     assert actual_pages == expected_pages
     for module, names in exports.items():
         page = REFERENCE_DIR / f"{module}.md"
         assert _documented_classes(page) == names
+        assert f'slug: "{MODULE_SLUGS[module]}"' in page.read_text(encoding="utf-8")
+    for module, names in functions.items():
+        page = REFERENCE_DIR / f"{module}.md"
+        documented = {
+            match.group(1) for match in FUNCTION_SIGNATURE.finditer(page.read_text(encoding="utf-8"))
+        }
+        assert names == documented
         assert f'slug: "{MODULE_SLUGS[module]}"' in page.read_text(encoding="utf-8")
 
 
@@ -245,6 +282,19 @@ def test_generated_signatures_preserve_python_callable_semantics():
                 if has_keyword_only and not has_var_positional:
                     assert re.search(r"(?:\(\*,|, \*,|\n    \*,)", rendered)
 
+    for module_name, function_names in _exported_functions_by_module().items():
+        module = importlib.import_module(module_name)
+        page = REFERENCE_DIR / f"{module_name}.md"
+        rendered = {
+            match.group(1): match.group(2)
+            for match in FUNCTION_SIGNATURE.finditer(page.read_text(encoding="utf-8"))
+        }
+        for function_name in function_names:
+            function = getattr(module, function_name)
+            prefix = "async def " if iscoroutinefunction(function) else "def "
+            expected = f"{prefix}{function_name}{signature(function)}"
+            assert _definition_ast(rendered[function_name]) == _definition_ast(expected)
+
     assert signature_count > 0
     assert async_count > 0
 
@@ -308,6 +358,27 @@ def test_generated_reference_documents_typed_mapping_fields():
         for field_name, annotation in annotations.items():
             assert rows[field_name] == _annotation_text(annotation)
         assert "from_mapping(mapping: Mapping[str, Any]) -> Self" in section
+
+
+def test_accounting_reference_documents_typed_summary_fields():
+    module = importlib.import_module("nemo_fabric.accounting")
+    page = REFERENCE_DIR / "nemo_fabric.accounting.md"
+    summary_types = {
+        name: summary_type
+        for name, summary_type in getmembers(module, is_typeddict)
+        if summary_type.__module__ == module.__name__
+    }
+    assert get_type_hints(module.summarize_usage)["return"] in summary_types.values()
+    for name, summary_type in summary_types.items():
+        section = _class_section(page, name)
+        rows = {
+            match.group("name"): match.group("annotation")
+            for match in TYPED_FIELD_ROW.finditer(section)
+        }
+        annotations = get_type_hints(summary_type, include_extras=True)
+        assert set(rows) == set(annotations)
+        for field_name, annotation in annotations.items():
+            assert rows[field_name] == _annotation_text(annotation)
 
 
 def test_generated_reference_documents_error_bases_and_enum_values():

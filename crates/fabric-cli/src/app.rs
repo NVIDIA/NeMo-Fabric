@@ -7,7 +7,7 @@ use clap::error::ErrorKind;
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use nemo_fabric_core::{
     ResolveContext, RunRequest, RunStatus, doctor_plan, resolve_diagnostic_plan_from_config,
-    resolve_run_plan_from_config, run_plan,
+    resolve_run_plan_from_config, run_plan, run_record_folder,
 };
 
 use crate::examples;
@@ -87,6 +87,35 @@ enum ExampleCommand {
     },
 }
 
+/// Config switches that turn on the run record.
+#[derive(Debug, Default, Args)]
+struct RecordSwitches {
+    /// Write a run record for each invocation (sets `runtime.record.enabled`).
+    /// Needs `--artifacts` unless the example sets an artifact root.
+    #[arg(long)]
+    record: bool,
+    /// Artifact root, resolved against the current folder (sets `runtime.artifacts`).
+    #[arg(long, value_name = "DIR")]
+    artifacts: Option<std::path::PathBuf>,
+}
+
+impl RecordSwitches {
+    /// Apply the switches to the selected config.
+    fn apply(&self, config: &mut nemo_fabric_core::FabricConfig) -> std::io::Result<()> {
+        if self.record {
+            config
+                .runtime
+                .record
+                .get_or_insert_with(nemo_fabric_core::RecordConfig::default)
+                .enabled = true;
+        }
+        if let Some(artifacts) = &self.artifacts {
+            config.runtime.artifacts = Some(std::path::absolute(artifacts)?);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Args)]
 #[command(group(
     ArgGroup::new("source")
@@ -125,6 +154,8 @@ struct Selector {
         value_parser = parse_temperature
     )]
     temperature: Option<f64>,
+    #[command(flatten)]
+    record: RecordSwitches,
 }
 
 fn parse_temperature(value: &str) -> Result<f64, String> {
@@ -147,6 +178,13 @@ impl SelectedSource {
         match self {
             Self::Preset(selected) => &selected.config,
             Self::Example(selected) => &selected.config,
+        }
+    }
+
+    fn config_mut(&mut self) -> &mut nemo_fabric_core::FabricConfig {
+        match self {
+            Self::Preset(selected) => &mut selected.config,
+            Self::Example(selected) => &mut selected.config,
         }
     }
 
@@ -251,6 +289,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 selected.config().clone(),
                 ResolveContext::new(selected.base_dir()),
             )?;
+            if let Some(folder) = run_record_folder(&plan) {
+                eprintln!("nemo-fabric: run record under {}", folder.display());
+            }
             let result = match run_plan(&plan, RunRequest::text(input)) {
                 Ok(result) => result,
                 Err(error) => {
@@ -267,6 +308,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     return Err(error.into());
                 }
             };
+            for event in result
+                .events
+                .iter()
+                .filter(|event| event.kind == "record_write_failed")
+            {
+                eprintln!("nemo-fabric: recording failed: {}", event.message);
+            }
             println!("{}", serde_json::to_string_pretty(&result)?);
             require_successful_run(result.status)?;
         }
@@ -284,17 +332,17 @@ fn require_successful_run(status: RunStatus) -> Result<(), String> {
 }
 
 fn select_source(selector: &Selector) -> Result<SelectedSource, Box<dyn std::error::Error>> {
-    if let Some(name) = &selector.preset {
+    let mut selected = if let Some(name) = &selector.preset {
         let mut selected = find_preset(name)?.stage()?;
         apply_model_overrides(&mut selected.config, selector)?;
-        return Ok(SelectedSource::Preset(selected));
-    }
-    if let Some(name) = &selector.example {
-        return Ok(SelectedSource::Example(
-            find_example(name)?.select(selector.variant.as_deref())?,
-        ));
-    }
-    unreachable!("Clap requires exactly one source selector")
+        SelectedSource::Preset(selected)
+    } else if let Some(name) = &selector.example {
+        SelectedSource::Example(find_example(name)?.select(selector.variant.as_deref())?)
+    } else {
+        unreachable!("Clap requires exactly one source selector")
+    };
+    selector.record.apply(selected.config_mut())?;
+    Ok(selected)
 }
 
 fn apply_model_overrides(
@@ -381,6 +429,7 @@ mod tests {
             variant: None,
             model: Some("meta/llama-3.3-70b-instruct".to_string()),
             temperature: Some(0.2),
+            record: RecordSwitches::default(),
         };
         let selected = select_source(&selector).expect("select preset");
         let model = selected.config().models.get("default").expect("model");
@@ -411,6 +460,7 @@ mod tests {
             variant: None,
             model: Some("other-model".to_string()),
             temperature: None,
+            record: RecordSwitches::default(),
         };
         assert_eq!(
             select_source(&selector)
@@ -476,5 +526,45 @@ mod tests {
     #[test]
     fn plan_requires_a_preset() {
         assert!(Cli::try_parse_from(["nemo-fabric", "plan"]).is_err());
+    }
+    #[test]
+    fn record_switches_parse_on_plan_doctor_and_run_and_set_the_config() {
+        let selectors: Vec<Selector> = ["plan", "doctor", "run"]
+            .into_iter()
+            .map(|command| {
+                let cli = Cli::try_parse_from([
+                    "nemo-fabric",
+                    command,
+                    "--preset",
+                    "scripted",
+                    "--record",
+                    "--artifacts",
+                    "runs",
+                ])
+                .expect("parse record switches");
+                match cli.command {
+                    Command::Plan(selector) | Command::Doctor(selector) => selector,
+                    Command::Run { selector, .. } => selector,
+                    _ => panic!("selector command expected"),
+                }
+            })
+            .collect();
+        for selector in &selectors {
+            assert!(selector.record.record);
+        }
+
+        let selected = select_source(&selectors[0]).expect("select");
+
+        let config = selected.config();
+        assert!(
+            config
+                .runtime
+                .record
+                .as_ref()
+                .is_some_and(|record| record.enabled)
+        );
+        let artifacts = config.runtime.artifacts.as_ref().expect("artifacts");
+        assert!(artifacts.is_absolute());
+        assert!(artifacts.ends_with("runs"));
     }
 }

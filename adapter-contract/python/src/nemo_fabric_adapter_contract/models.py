@@ -521,6 +521,127 @@ class AgentUsage(AgentContractBlock):
             )
 
 
+class UsageDimension(StrEnum):
+    """Raw dimensions in the declared usage-accounting extension."""
+
+    INPUT_TOKENS = "input_tokens"
+    CACHED_INPUT_TOKENS = "cached_input_tokens"
+    CACHE_WRITE_INPUT_TOKENS = "cache_write_input_tokens"
+    OUTPUT_TOKENS = "output_tokens"
+    REASONING_TOKENS = "reasoning_tokens"
+    TOTAL_TOKENS = "total_tokens"
+    PEAK_REQUEST_INPUT_TOKENS = "peak_request_input_tokens"
+    COST_USD = "cost_usd"
+
+
+class GapReason(StrEnum):
+    """Why complete accounting is unavailable."""
+
+    UNFINISHED_WORK = "unfinished_work"
+    MISSING_USAGE = "missing_usage"
+    SCOPE_UNVERIFIED = "scope_unverified"
+
+
+@dataclass(slots=True, kw_only=True)
+class ReportedUsage(ContractModel):
+    """Raw provider/harness counts, retaining independent field presence."""
+
+    input_tokens: int | None = _optional()
+    cached_input_tokens: int | None = _optional()
+    cache_write_input_tokens: int | None = _optional()
+    input_tokens_include_cache: bool | None = _optional()
+    output_tokens: int | None = _optional()
+    reasoning_tokens: int | None = _optional()
+    output_tokens_include_reasoning: bool | None = _optional()
+    total_tokens: int | None = _optional()
+    peak_request_input_tokens: int | None = _optional()
+    cost_usd: float | None = _optional()
+
+    def _validate(self) -> None:
+        import math
+
+        for dimension in UsageDimension:
+            value = getattr(self, dimension.value)
+            if dimension is not UsageDimension.COST_USD:
+                _bounded_int(value, dimension.value, (1 << 64) - 1)
+            elif value is not None and (
+                not math.isfinite(value) or value < 0 or value * 1e9 >= 1 << 64
+            ):
+                raise ContractValidationError(
+                    "cost must fit finite nonnegative nano-USD"
+                )
+
+
+@dataclass(slots=True, kw_only=True)
+class UsageGap(ContractModel):
+    """A nonempty set of incomplete raw dimensions."""
+
+    dimensions: list[UsageDimension]
+    reason: GapReason
+
+    def _validate(self) -> None:
+        if not self.dimensions or len(set(self.dimensions)) != len(self.dimensions):
+            raise ContractValidationError("gap dimensions must be nonempty and unique")
+
+
+@dataclass(slots=True, kw_only=True)
+class UsageRequest(ContractModel):
+    """One deduplicated model-call snapshot, not an aggregate."""
+
+    usage: ReportedUsage
+    gap: GapReason | None = _optional()
+    tokens_aligned: bool = False
+
+
+@dataclass(slots=True, kw_only=True)
+class AccountedModel(ContractModel):
+    """Complete and observed evidence for one literal model/provider identity."""
+
+    model: str
+    gaps: list[UsageGap]
+    provider: str | None = _optional()
+    reported: ReportedUsage = field(default_factory=ReportedUsage)
+    observed: ReportedUsage | None = _optional()
+
+    observed_tokens_aligned: bool = False
+    requests: list[UsageRequest] = _empty_list()
+    requests_exhaustive: bool = False
+
+    def _validate(self) -> None:
+        _nonblank(self.model, "model")
+        if self.requests_exhaustive and not self.requests:
+            raise ContractValidationError("exhaustive requests must be nonempty")
+        if self.provider is not None:
+            _nonblank(self.provider, "provider")
+        for gap in self.gaps:
+            if any(
+                getattr(self.reported, dimension.value) is not None
+                for dimension in gap.dimensions
+            ):
+                raise ContractValidationError(
+                    "complete value conflicts with explicit gap"
+                )
+
+
+@dataclass(slots=True, kw_only=True)
+class UsageAccounting(ContractModel):
+    """Typed nemo_fabric.usage_accounting.v1 payload.
+
+    Declare its schema in extension_schemas.usage. This does not change the
+    closed AgentUsage contract. Per-model complete counts live in reported.
+    """
+
+    models_exhaustive: bool
+    gaps: list[UsageGap]
+    observed: ReportedUsage | None = _optional()
+    models: list[AccountedModel] = _empty_list()
+
+    def _validate(self) -> None:
+        identities = [(model.provider, model.model) for model in self.models]
+        if len(set(identities)) != len(identities):
+            raise ContractValidationError("duplicate model identity")
+
+
 @dataclass(slots=True, kw_only=True)
 class AgentRunResult(AgentContractBlock):
     """Southbound terminal result returned by an adapter target."""

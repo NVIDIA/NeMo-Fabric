@@ -154,7 +154,9 @@ Codex adapter does not provide a separate `relay` extra; its `harness` and
 
 Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the
 installed `nemo-relay` CLI as a supervised sidecar; do not start the gateway
-separately.
+separately. Gateway readiness has a 30-second budget covering configuration
+validation and required worker initialization. Startup fails on early process exit
+or an expired budget, and the gateway log is retained for diagnosis.
 NeMo Fabric routes the selected Responses-compatible provider through the
 gateway and passes its explicit `base_url` to Relay as the upstream endpoint.
 

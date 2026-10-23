@@ -22,6 +22,8 @@ mkdir -p "$out"
 PYTHONPATH="sdk/python/nemo-fabric-runtime/src" lazydocs \
   --output-path "$out" \
   --overview-file "index.md" \
+  "nemo_fabric.accounting" \
+  "nemo_fabric.reporting" \
   "nemo_fabric.client" \
   "nemo_fabric.capabilities" \
   "nemo_fabric.runtime" \
@@ -79,6 +81,11 @@ add_frontmatter \
   "Complete reference for the public NeMo Fabric Python SDK." \
   "/reference/api/python-library-reference"
 add_frontmatter \
+  "$out/nemo_fabric.accounting.md" \
+  "Model Usage Accounting" \
+  "Summarize complete and observed model usage with explicit coverage." \
+  "/reference/api/python-library-reference/accounting"
+add_frontmatter \
   "$out/nemo_fabric.client.md" \
   "Client" \
   "Resolve, plan, diagnose, and run agents with NVIDIA NeMo Fabric." \
@@ -118,6 +125,11 @@ add_frontmatter \
   "Types" \
   "Typed config, request, plan, result, artifact, telemetry, and runtime contracts." \
   "/reference/api/python-library-reference/types"
+add_frontmatter \
+  "$out/nemo_fabric.reporting.md" \
+  "Run Evidence Reporting" \
+  "Inspect saved invocation results, accounting coverage, and diagnostic references." \
+  "/reference/api/python-library-reference/reporting"
 add_frontmatter \
   "$out/nemo_fabric.errors.md" \
   "Errors" \
