@@ -252,12 +252,55 @@ def _attach_invocation_interval(summary: dict[str, Any], result_path: Path) -> N
         summary["record_error"] = "invalid_or_unreadable_sibling_record"
 
 
+def summarize_request(document: Mapping[str, Any]) -> dict[str, Any]:
+    """Describe outer dispatch evidence without fabricating an invocation result.
+
+    A start alone establishes dispatch registration, not a known outcome. A
+    returned reference identifies the expected result location; this reader does
+    not follow paths from evidence or infer that publication succeeded.
+    """
+    if (document.get("schema"), document.get("version")) != (
+        "nemo.fabric.request_record",
+        "v1alpha1",
+    ):
+        raise ValueError("unsupported request record schema or version")
+    summary: dict[str, Any] = {
+        "schema": "nemo.fabric.request_summary",
+        "version": "v1alpha1",
+        "request_id": _text(document.get("request_id"), "request_id"),
+        "time": _text(document.get("time"), "time"),
+    }
+    if document.get("kind") == "start":
+        summary["state"] = "registered"
+    elif document.get("kind") == "end" and document.get("state") == "no_result":
+        if not isinstance(document.get("stage"), str) or document["stage"] not in {
+            "start",
+            "invoke",
+        }:
+            raise ValueError("invalid request failure stage")
+        summary.update(state="no_result", stage=document["stage"])
+    elif document.get("kind") == "end" and document.get("state") == "returned":
+        summary.update(
+            state="returned",
+            runtime_id=_text(document.get("runtime_id"), "runtime_id"),
+            invocation_id=_text(document.get("invocation_id"), "invocation_id"),
+            result_reference=_text(document.get("result"), "result"),
+        )
+    else:
+        raise ValueError("invalid request record kind or state")
+    return summary
+
+
 def read_evidence(path: Path) -> dict[str, Any]:
-    """Read a full result or invocation record; never follow references."""
+    """Read a full result, invocation record or outer request record; never follow references."""
     path = Path(path)
     if path.suffix == ".jsonl":
         return read_invocation_record(path)
     document = _load(path)
+    if document.get("schema") == "nemo.fabric.request_record":
+        summary = summarize_request(document)
+        summary["evidence_path"] = str(path)
+        return summary
     summary = summarize_result(document)
     summary["result_path"] = str(path)
     _attach_invocation_interval(summary, path)
@@ -377,6 +420,35 @@ def _render_resource_window(window: Mapping[str, Any]) -> list[str]:
             f"RSS observations: {format_bytes(window['start']['resident_memory_bytes'])} → {format_bytes(window['end']['resident_memory_bytes'])} (not a peak)."
         )
     return lines
+
+
+def render_request_summary(summary: Mapping[str, Any]) -> str:
+    """Explain missing execution evidence without assigning zero spend."""
+    lines = ["Request: " + json.dumps(summary["request_id"], ensure_ascii=True)]
+    state = summary["state"]
+    if state == "returned":
+        lines.append("A result was returned; inspect the separate result file.")
+        lines.append(
+            "Expected result relative to .fabric: "
+            + json.dumps(summary["result_reference"], ensure_ascii=True)
+        )
+        lines.append(
+            "This reference does not confirm that saving the result succeeded."
+        )
+    elif state == "no_result":
+        stage = "runtime startup" if summary["stage"] == "start" else "invocation"
+        lines.append(f"No invocation result was returned ({stage} failed).")
+        lines.append("Usage and spend are unknown; no task verdict is inferred.")
+    else:
+        lines.append("Dispatch was registered; this start record has no outcome.")
+        lines.append(
+            "Inspect its end record if available. Missing evidence is not zero usage."
+        )
+    if summary.get("evidence_path"):
+        lines.append(
+            "Saved evidence: " + json.dumps(summary["evidence_path"], ensure_ascii=True)
+        )
+    return "\n".join(lines)
 
 
 def read_invocation_record(path: Path) -> dict[str, Any]:
@@ -838,6 +910,8 @@ def render_result_summary(summary: Mapping[str, Any], *, details: bool = False) 
 
 
 def _render(summary: Mapping[str, Any], *, details: bool = False) -> str:
+    if summary["schema"] == "nemo.fabric.request_summary":
+        return render_request_summary(summary)
     if summary["schema"] == "nemo.fabric.invocation_record_summary":
         return render_invocation_record_summary(summary, details=details)
     return render_result_summary(summary, details=details)

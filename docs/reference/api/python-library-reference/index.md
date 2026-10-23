@@ -118,11 +118,13 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 - [`accounting.summarize_usage`](./nemo_fabric.accounting.md#function-summarize_usage): Summarize invocations against an explicit expected identity manifest.
 - [`reporting.main`](./nemo_fabric.reporting.md#function-main): Inspect a saved invocation result as a concise summary or JSON.
-- [`reporting.read_evidence`](./nemo_fabric.reporting.md#function-read_evidence): Read a full result or invocation record; never follow references.
+- [`reporting.read_evidence`](./nemo_fabric.reporting.md#function-read_evidence): Read a full result, invocation record or outer request record; never follow references.
 - [`reporting.read_invocation_record`](./nemo_fabric.reporting.md#function-read_invocation_record): Read bounded start/end evidence; a truncated tail never creates a result.
 - [`reporting.read_result`](./nemo_fabric.reporting.md#function-read_result): Read one saved full result without requiring task labels or a manifest.
 - [`reporting.render_invocation_record_summary`](./nemo_fabric.reporting.md#function-render_invocation_record_summary): Describe the invocation interval without assuming whole-runtime success.
-- [`reporting.render_result_summary`](./nemo_fabric.reporting.md#function-render_result_summary): Render a concise overview; details add resource and pricing evidence.
+- [`reporting.render_request_summary`](./nemo_fabric.reporting.md#function-render_request_summary): Explain missing execution evidence without assigning zero spend.
+- [`reporting.render_result_summary`](./nemo_fabric.reporting.md#function-render_result_summary): Render a concise overview; details add resource evidence.
+- [`reporting.summarize_request`](./nemo_fabric.reporting.md#function-summarize_request): Describe outer dispatch evidence without fabricating an invocation result.
 - [`reporting.summarize_result`](./nemo_fabric.reporting.md#function-summarize_result): Describe one returned invocation, preserving independent usable evidence.
 - [`capabilities.inspect_adapter`](./nemo_fabric.capabilities.md#function-inspect_adapter): Inspect a standalone runtime using descriptor metadata without loading its SDK.
 

@@ -41,13 +41,37 @@ Read one saved full result without requiring task labels or a manifest.
 
 ---
 
+## <kbd>function</kbd> `summarize_request`
+
+```python
+def summarize_request(document: Mapping[str, Any]) -> dict[str, Any]
+```
+
+Describe outer dispatch evidence without fabricating an invocation result.
+
+A start alone establishes dispatch registration, not a known outcome. A returned reference identifies the expected result location; this reader does not follow paths from evidence or infer that publication succeeded.
+
+
+---
+
 ## <kbd>function</kbd> `read_evidence`
 
 ```python
 def read_evidence(path: Path) -> dict[str, Any]
 ```
 
-Read a full result or invocation record; never follow references.
+Read a full result, invocation record or outer request record; never follow references.
+
+
+---
+
+## <kbd>function</kbd> `render_request_summary`
+
+```python
+def render_request_summary(summary: Mapping[str, Any]) -> str
+```
+
+Explain missing execution evidence without assigning zero spend.
 
 
 ---

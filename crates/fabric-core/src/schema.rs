@@ -13,7 +13,7 @@ use crate::config::{
     AdapterDescriptor, AdapterTargetDescriptor, AgentConfig, FabricConfig, RunPlan,
 };
 use crate::error::{FabricError, Result};
-use crate::record::RecordLine;
+use crate::record::{RecordLine, RequestRecord};
 use crate::resource_snapshot::RuntimeResourceSnapshot;
 use crate::runtime::{
     AdapterInvocation, ArtifactManifest, EnvironmentHandle, EnvironmentReference, ErrorInfo,
@@ -75,11 +75,13 @@ pub enum SchemaName {
     RuntimeResourceSnapshot,
     /// One bounded start/end invocation record line.
     RunRecordLine,
+    /// Outer request evidence, including failures before an invocation exists.
+    RequestRecord,
 }
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 26] = [
         Self::UsageAccounting,
         Self::Agent,
         Self::AgentConfig,
@@ -105,6 +107,7 @@ impl SchemaName {
         Self::FabricEvent,
         Self::RuntimeResourceSnapshot,
         Self::RunRecordLine,
+        Self::RequestRecord,
     ];
 
     /// Stable file stem for this schema.
@@ -135,6 +138,7 @@ impl SchemaName {
             Self::FabricEvent => "fabric-event",
             Self::RuntimeResourceSnapshot => "runtime-resource-snapshot",
             Self::RunRecordLine => "run-record-line",
+            Self::RequestRecord => "request-record",
         }
     }
 
@@ -195,6 +199,7 @@ impl SchemaName {
                 Ok(Self::RuntimeResourceSnapshot)
             }
             "run-record-line" | "run_record_line" => Ok(Self::RunRecordLine),
+            "request-record" | "request_record" => Ok(Self::RequestRecord),
             _ => Err(FabricError::UnknownSchema {
                 schema: value.to_string(),
                 available: Self::ALL
@@ -236,6 +241,7 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
         SchemaName::FabricEvent => to_value(schema_for!(FabricEvent)),
         SchemaName::RuntimeResourceSnapshot => to_value(schema_for!(RuntimeResourceSnapshot)),
         SchemaName::RunRecordLine => to_value(schema_for!(RecordLine)),
+        SchemaName::RequestRecord => to_value(schema_for!(RequestRecord)),
     }
 }
 

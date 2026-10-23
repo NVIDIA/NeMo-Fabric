@@ -23,5 +23,5 @@ pub(crate) use lines::RecordLine;
 pub(crate) use writer::test_hooks;
 
 mod results;
-pub(crate) use results::persist_result;
 pub use results::run_record_folder;
+pub(crate) use results::{RequestRecord, RequestRecorder, RequestStage, persist_result};

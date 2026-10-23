@@ -14,7 +14,7 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 A model price catalog in the NeMo Relay model pricing catalog format, version 1.
 
-NeMo Fabric reads and writes the format unchanged, with one extra check: every rate must be below one million US dollars per million tokens.
+NVIDIA NeMo Fabric reads and writes the format unchanged, with one extra check: every rate must be below one million US dollars per million tokens.
 
 ## Fields
 
@@ -24,7 +24,7 @@ Catalog format version. Must be `1`.
 
 ### `entries: Vec<ModelPricing>`
 
-Price entries. Lookup uses the first entry that matches.
+Price entries. For each lookup key, the first matching entry wins.
 
 ## Implementations
 

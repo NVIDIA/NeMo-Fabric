@@ -11,6 +11,7 @@ from nemo_fabric.reporting import (
     read_evidence,
     read_result,
     render_result_summary,
+    render_request_summary,
     summarize_result,
 )
 from nemo_fabric.types import RunResult
@@ -637,3 +638,65 @@ def test_absent_execution_facts_are_not_malformed(result):
     assert summary["what_ran"] is None
     assert summary["provenance_error"] is None
     assert "facts were unreadable" not in render_result_summary(summary)
+
+
+@pytest.mark.parametrize("stage", ["start", "invoke"])
+def test_request_failure_has_no_fabricated_invocation_or_zero_spend(tmp_path, stage):
+    path = tmp_path / "request-end.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "nemo.fabric.request_record",
+                "version": "v1alpha1",
+                "request_id": "request",
+                "time": "2026-10-21T00:00:00.000Z",
+                "kind": "end",
+                "state": "no_result",
+                "stage": stage,
+            }
+        )
+    )
+    summary = read_evidence(path)
+    assert summary["state"] == "no_result"
+    assert "runtime_id" not in summary and "usage" not in summary
+    assert "Usage and spend are unknown" in render_request_summary(summary)
+
+
+def test_start_record_does_not_claim_the_dispatch_finished(tmp_path):
+    path = tmp_path / "request-start.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "nemo.fabric.request_record",
+                "version": "v1alpha1",
+                "request_id": "request",
+                "time": "2026-10-21T00:00:00.000Z",
+                "kind": "start",
+            }
+        )
+    )
+    summary = read_evidence(path)
+    assert summary["state"] == "registered"
+    assert "no outcome" in render_request_summary(summary)
+
+
+def test_request_result_reference_is_not_followed_or_treated_as_saved(tmp_path):
+    path = tmp_path / "request-end.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "nemo.fabric.request_record",
+                "version": "v1alpha1",
+                "request_id": "request",
+                "time": "2026-10-21T00:00:00.000Z",
+                "kind": "end",
+                "state": "returned",
+                "runtime_id": "rt",
+                "invocation_id": "inv",
+                "result": "../../sensitive.json",
+            }
+        )
+    )
+    summary = read_evidence(path)
+    assert summary["result_reference"] == "../../sensitive.json"
+    assert "does not confirm" in render_request_summary(summary)

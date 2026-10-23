@@ -916,13 +916,24 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
 #[doc(hidden)]
 pub fn run_plan_with_stage(
     plan: &RunPlan,
-    request: RunRequest,
+    mut request: RunRequest,
 ) -> std::result::Result<RunResult, (FabricError, ErrorStage)> {
-    let runtime = start_runtime(plan).map_err(|error| (error, ErrorStage::Start))?;
+    if request.request_id.is_empty() {
+        request.request_id = new_id("request");
+    }
+    let outer_record = crate::record::RequestRecorder::start(plan, &request);
+    let runtime = match start_runtime_staged(plan) {
+        Ok(runtime) => runtime,
+        Err((error, stage)) => {
+            outer_record.no_result(crate::record::RequestStage::Start);
+            return Err((error, stage));
+        }
+    };
     let mut result = match invoke_runtime_unpersisted(plan, &runtime, request) {
         Ok(result) => result,
         Err(error) => {
             let _ = stop_runtime(plan, &runtime);
+            outer_record.no_result(crate::record::RequestStage::Invoke);
             return Err((error, ErrorStage::Invoke));
         }
     };
@@ -940,6 +951,7 @@ pub fn run_plan_with_stage(
         }
         Err(_) => {}
     }
+    outer_record.returned(&mut result);
     Ok(crate::record::persist_result(
         plan,
         result,
@@ -1202,15 +1214,24 @@ fn validate_start_plan(plan: &RunPlan) -> Result<()> {
 /// For a non-local provider, prepare or attach to the environment explicitly
 /// and call [`start_runtime_in`] with the returned handle.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
-    validate_start_plan(plan)?;
+    start_runtime_staged(plan).map_err(|(error, _)| error)
+}
+
+fn start_runtime_staged(
+    plan: &RunPlan,
+) -> std::result::Result<RuntimeHandle, (FabricError, ErrorStage)> {
+    validate_start_plan(plan).map_err(|error| (error, ErrorStage::Plan))?;
     let provider = planned_environment_provider(plan);
     if provider != "local" {
-        return Err(FabricError::EnvironmentHandleRequired {
-            provider: provider.to_string(),
-        });
+        return Err((
+            FabricError::EnvironmentHandleRequired {
+                provider: provider.to_string(),
+            },
+            ErrorStage::Prepare,
+        ));
     }
-    let environment = prepare_environment(plan)?;
-    start_runtime_in_validated(plan, &environment)
+    let environment = prepare_environment(plan).map_err(|error| (error, ErrorStage::Prepare))?;
+    start_runtime_in_validated(plan, &environment).map_err(|error| (error, ErrorStage::Start))
 }
 
 /// Invoke a started harness runtime.
@@ -5776,11 +5797,32 @@ for line in sys.stdin:
     fn local_host_start_failure_preserves_stage_and_diagnostics() {
         let (root, plan) = local_host_plan("start_failure");
 
-        let error = start_runtime(&plan).expect_err("start must fail");
+        let (error, stage) =
+            run_plan_with_stage(&plan, RunRequest::text("input")).expect_err("start must fail");
+        assert_eq!(stage, ErrorStage::Start);
         let message = error.to_string();
         assert!(message.contains("lifecycle start"), "{message}");
         assert!(message.contains("fake_start"), "{message}");
         assert!(message.contains("start diagnostic"), "{message}");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn one_shot_reports_prepare_stage_when_environment_is_required() {
+        let (root, mut plan) = local_host_plan("success");
+        plan.environment_plan
+            .as_mut()
+            .expect("resolved environment plan")
+            .provider = "docker".to_string();
+
+        let (error, stage) = run_plan_with_stage(&plan, RunRequest::text("input"))
+            .expect_err("non-local provider needs an environment handle");
+        assert!(matches!(
+            error,
+            FabricError::EnvironmentHandleRequired { .. }
+        ));
+        assert_eq!(stage, ErrorStage::Prepare);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -7392,5 +7434,73 @@ for line in sys.stdin:
         assert_eq!(decoded, result);
         assert!(saved.path.with_file_name("run-record.jsonl").is_file());
         let _ = fs::remove_dir_all(root);
+    }
+    #[test]
+    fn recorded_start_failure_keeps_outer_request_without_fake_inner_result() {
+        let (_, plan) = record_plan("start_failure");
+        let mut request = RunRequest::text("private input");
+        request.request_id = "caller-request".to_string();
+        let error = run_plan(&plan, request).expect_err("startup error");
+        assert!(error.to_string().contains("fake_start"));
+        let root = crate::run_record_folder(&plan).expect("recording root");
+        let folders: Vec<_> = fs::read_dir(root.join("requests")).unwrap().collect();
+        assert_eq!(folders.len(), 1);
+        let end: Value = serde_json::from_slice(
+            &fs::read(folders[0].as_ref().unwrap().path().join("request-end.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(end["request_id"], "caller-request");
+        assert_eq!(end["state"], "no_result");
+        assert_eq!(end["stage"], "start");
+        assert!(end.get("runtime_id").is_none());
+        assert!(end.get("usage").is_none());
+    }
+
+    #[test]
+    fn recorded_prepare_failure_keeps_specific_error_stage_and_request_boundary() {
+        let (root, mut plan) = record_plan("success");
+        plan.environment_plan
+            .as_mut()
+            .expect("resolved environment plan")
+            .provider = "docker".to_string();
+
+        let (error, stage) = run_plan_with_stage(&plan, RunRequest::text("input"))
+            .expect_err("non-local provider needs an environment handle");
+        assert!(matches!(
+            error,
+            FabricError::EnvironmentHandleRequired { .. }
+        ));
+        assert_eq!(stage, ErrorStage::Prepare);
+
+        let requests = crate::run_record_folder(&plan)
+            .expect("recording root")
+            .join("requests");
+        let folder = fs::read_dir(&requests)
+            .expect("request folder")
+            .next()
+            .expect("request record")
+            .expect("request entry")
+            .path();
+        let end: Value = serde_json::from_slice(
+            &fs::read(folder.join("request-end.json")).expect("request end record"),
+        )
+        .expect("valid request record");
+        assert_eq!(end["state"], "no_result");
+        assert_eq!(end["stage"], "start");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recorded_start_error_survives_independent_request_storage_failure() {
+        let (_, plan) = record_plan("start_failure");
+        let root = crate::run_record_folder(&plan).expect("recording root");
+        fs::create_dir_all(&root).expect("root");
+        fs::write(root.join("requests"), "existing file").expect("blocked request directory");
+        let error = run_plan(&plan, RunRequest::text("input")).expect_err("original start failure");
+        assert!(error.to_string().contains("fake_start"), "{error}");
+        assert_eq!(
+            fs::read_to_string(root.join("requests")).unwrap(),
+            "existing file"
+        );
     }
 }

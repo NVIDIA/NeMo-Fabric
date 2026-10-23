@@ -1,21 +1,28 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Full finalized invocation or one-shot results.
+//! Full finalized results and request-level evidence before a runtime exists.
 //! These files may contain result output; the bounded invocation record does not.
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
+use schemars::JsonSchema;
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::config::RunPlan;
-use crate::runtime::{ArtifactRef, RunResult, event_with_metadata, new_id, unique_artifact_name};
+use crate::runtime::{
+    ArtifactRef, RunRequest, RunResult, event_with_metadata, new_id, unique_artifact_name,
+};
+use crate::time::rfc3339_millis;
 
 pub(crate) const RESULT_FILE_NAME: &str = "run-result.json";
 const WRITE_FAILED: &str = "record_write_failed";
+const MAX_REQUEST_RECORD_BYTES: usize = 64 * 1024;
 
 /// The recording root. This is known before startup and requires no inner IDs.
 pub fn run_record_folder(plan: &RunPlan) -> Option<PathBuf> {
@@ -56,10 +63,25 @@ fn private_new_file(path: &Path) -> io::Result<File> {
 /// A failed write may leave an explicitly named staging file, never a final file.
 fn publish(path: &Path, value: &impl serde::Serialize) -> io::Result<()> {
     let bytes = serde_json::to_vec_pretty(value).map_err(io::Error::other)?;
+    publish_bytes(path, &bytes)
+}
+
+fn publish_request(path: &Path, value: &RequestRecord) -> io::Result<()> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(io::Error::other)?;
+    if bytes.len() > MAX_REQUEST_RECORD_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("request record exceeds {MAX_REQUEST_RECORD_BYTES} bytes"),
+        ));
+    }
+    publish_bytes(path, &bytes)
+}
+
+fn publish_bytes(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let pending = path.with_extension(format!("{}.pending", new_id("write")));
     let mut file = private_new_file(&pending)?;
     let published = (|| {
-        file.write_all(&bytes)?;
+        file.write_all(bytes)?;
         file.sync_all()?;
         // Unlike rename, this cannot replace an existing file or symlink.
         std::fs::hard_link(&pending, path)
@@ -123,6 +145,123 @@ pub(crate) fn persist_result(plan: &RunPlan, mut result: RunResult, boundary: &s
         add_failure(&mut result, &error, RESULT_FILE_NAME);
     }
     result
+}
+
+/// A request record does not imply a runtime or invocation was created.
+#[derive(Debug, Serialize, JsonSchema)]
+pub(crate) struct RequestRecord {
+    schema: RequestSchema,
+    version: super::lines::RecordVersion,
+    request_id: String,
+    #[schemars(extend("format" = "date-time"))]
+    time: String,
+    #[serde(flatten)]
+    body: RequestBody,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+enum RequestSchema {
+    #[serde(rename = "nemo.fabric.request_record")]
+    RequestRecord,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RequestBody {
+    Start,
+    End {
+        #[serde(flatten)]
+        outcome: RequestOutcome,
+    },
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+enum RequestOutcome {
+    Returned {
+        runtime_id: String,
+        invocation_id: String,
+        result: String,
+    },
+    NoResult {
+        stage: RequestStage,
+    },
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RequestStage {
+    Start,
+    Invoke,
+}
+
+/// Bounded outer evidence for a request that can fail before inner IDs exist.
+pub(crate) struct RequestRecorder {
+    directory: Option<PathBuf>,
+    request_id: String,
+    failure: Option<io::Error>,
+}
+
+impl RequestRecorder {
+    pub(crate) fn start(plan: &RunPlan, request: &RunRequest) -> Self {
+        let directory =
+            run_record_folder(plan).map(|root| root.join("requests").join(new_id("dispatch")));
+        let mut recorder = Self {
+            directory,
+            request_id: request.request_id.clone(),
+            failure: None,
+        };
+        if let Some(directory) = &recorder.directory {
+            let value = recorder.line(RequestBody::Start);
+            recorder.failure = std::fs::create_dir_all(directory)
+                .and_then(|()| publish_request(&directory.join("request-start.json"), &value))
+                .err();
+        }
+        recorder
+    }
+
+    pub(crate) fn returned(mut self, result: &mut RunResult) {
+        self.finish(RequestOutcome::Returned {
+            runtime_id: result.runtime_id.clone(),
+            invocation_id: result.invocation_id.clone(),
+            result: format!(
+                "{}/{}/{}",
+                result.runtime_id, result.invocation_id, RESULT_FILE_NAME
+            ),
+        });
+        if let Some(error) = self.failure {
+            add_failure(result, &error, "request record");
+        }
+    }
+
+    pub(crate) fn no_result(mut self, stage: RequestStage) {
+        self.finish(RequestOutcome::NoResult { stage });
+        // No result exists to carry an event. Keep the execution error intact
+        // and make the independent recording failure visible on stderr.
+        if let Some(error) = self.failure {
+            eprintln!("nemo-fabric: request recording failed: {error}");
+        }
+    }
+
+    fn line(&self, body: RequestBody) -> RequestRecord {
+        RequestRecord {
+            schema: RequestSchema::RequestRecord,
+            version: super::lines::RecordVersion::V1Alpha1,
+            request_id: self.request_id.clone(),
+            time: rfc3339_millis(SystemTime::now()),
+            body,
+        }
+    }
+
+    fn finish(&mut self, outcome: RequestOutcome) {
+        let Some(directory) = &self.directory else {
+            return;
+        };
+        let value = self.line(RequestBody::End { outcome });
+        if let Err(error) = publish_request(&directory.join("request-end.json"), &value) {
+            self.failure.get_or_insert(error);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -249,6 +388,126 @@ mod tests {
                 .any(|event| event.kind == WRITE_FAILED)
         );
         assert_eq!(std::fs::read_dir(folder).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn outer_start_failure_keeps_request_identity_without_inner_ids_or_input() {
+        let (root, plan, _) = fixture();
+        let mut request = RunRequest::text("private input must not be recorded");
+        request.request_id = "../../caller-id".to_string();
+        let recorder = RequestRecorder::start(&plan, &request);
+        recorder.no_result(RequestStage::Start);
+        let folders: Vec<_> = std::fs::read_dir(root.join(".fabric/requests"))
+            .unwrap()
+            .collect();
+        assert_eq!(folders.len(), 1);
+        let folder = folders[0].as_ref().unwrap().path();
+        let start: Value =
+            serde_json::from_slice(&std::fs::read(folder.join("request-start.json")).unwrap())
+                .unwrap();
+        let end: Value =
+            serde_json::from_slice(&std::fs::read(folder.join("request-end.json")).unwrap())
+                .unwrap();
+        assert_eq!(start["request_id"], "../../caller-id");
+        assert_eq!(end["state"], "no_result");
+        assert_eq!(end["stage"], "start");
+        assert!(start.get("runtime_id").is_none());
+        assert!(end.get("invocation_id").is_none());
+        assert!(end.get("usage").is_none());
+        assert!(start.get("input").is_none());
+    }
+
+    #[test]
+    fn request_records_accept_the_byte_limit_and_reject_one_byte_more() {
+        let (_, plan, _) = fixture();
+        let empty = RequestRecorder {
+            directory: None,
+            request_id: String::new(),
+            failure: None,
+        };
+        let overhead = serde_json::to_vec_pretty(&empty.line(RequestBody::Start))
+            .unwrap()
+            .len();
+        let mut request = RunRequest::text("input");
+        request.request_id = "r".repeat(64 * 1024 - overhead);
+        let recorder = RequestRecorder::start(&plan, &request);
+        assert!(recorder.failure.is_none());
+        let path = recorder.directory.unwrap().join("request-start.json");
+        assert_eq!(std::fs::metadata(path).unwrap().len(), 64 * 1024);
+
+        request.request_id.push('r');
+        let recorder = RequestRecorder::start(&plan, &request);
+        assert!(recorder.failure.is_some());
+        assert_eq!(
+            std::fs::read_dir(recorder.directory.unwrap())
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn returned_keeps_the_first_recording_failure_when_end_publication_also_fails() {
+        let (root, _, mut result) = fixture();
+        let directory = root.join("request");
+        std::fs::create_dir_all(&directory).expect("request directory");
+        let end = directory.join("request-end.json");
+        std::fs::write(&end, "existing end record").expect("existing evidence");
+        let original = result.clone();
+        let recorder = RequestRecorder {
+            directory: Some(directory),
+            request_id: result.request_id.clone(),
+            failure: Some(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "start record permission denied",
+            )),
+        };
+
+        recorder.returned(&mut result);
+
+        assert_eq!(result.events.len(), original.events.len() + 1);
+        let failure = result.events.last().expect("recording diagnostic");
+        assert_eq!(failure.kind, WRITE_FAILED);
+        assert_eq!(
+            failure.message,
+            "could not save request record: start record permission denied"
+        );
+        assert_eq!(failure.metadata["artifact"], "request record");
+        let mut expected = original;
+        expected.events.clone_from(&result.events);
+        assert_eq!(
+            serde_json::to_value(&result).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        assert_eq!(std::fs::read_to_string(end).unwrap(), "existing end record");
+    }
+
+    #[test]
+    fn oversized_request_records_preserve_the_result_and_recording_diagnostic() {
+        let (root, plan, mut result) = fixture();
+        let mut request = RunRequest::text("private input");
+        request.request_id = "r".repeat(16 * 1024 * 1024 + 1);
+        result.request_id.clone_from(&request.request_id);
+        let original = result.clone();
+        let recorder = RequestRecorder::start(&plan, &request);
+        let directory = recorder.directory.clone().expect("request directory");
+        assert!(
+            recorder.failure.is_some(),
+            "oversized request record must be rejected"
+        );
+        recorder.returned(&mut result);
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+        assert_eq!(result.status, original.status);
+        assert_eq!(result.error, original.error);
+        assert_eq!(result.usage, original.usage);
+        assert_eq!(result.output, original.output);
+        assert_eq!(result.request_id, original.request_id);
+        assert!(result.events.iter().any(|event| event.kind == WRITE_FAILED));
+
+        let returned = persist_result(&plan, result, "one_shot_lifecycle");
+        let path = root.join(".fabric/rt/inv").join(RESULT_FILE_NAME);
+        let saved: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(saved, serde_json::to_value(returned).unwrap());
     }
 
     #[test]

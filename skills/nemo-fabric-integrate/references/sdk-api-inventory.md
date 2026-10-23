@@ -90,9 +90,11 @@ another turn. For native OpenAI streaming, `result()` also finalizes and
 discards unread chunks. Relay `InvokeStream.result()` does not consume unread
 ATOF records.
 
-## Execution Model
+## Usage Summaries
 
 `summarize_usage(results, *, expected=...)` reduces normalized `RunResult.model_usage` with an explicit inventory of expected `(runtime_id, invocation_id)` pairs. It returns complete totals, observed sums and coverage without certifying legacy counters or silently dropping missing results. See [results and errors](results-and-errors.md) for field semantics and a single-invocation example.
+
+## Execution Model
 
 NVIDIA NeMo Fabric separates configuration, planning, runtime lifecycle, and
 individual invocations:

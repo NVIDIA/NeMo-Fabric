@@ -1018,7 +1018,7 @@ async def _run_native_lifecycle(
             raise
         except Exception as error:
             stage = getattr(error, "fabric_stage", "run")
-            if stage not in {"start", "invoke", "stop"}:
+            if stage not in {"plan", "prepare", "start", "invoke", "stop"}:
                 stage = "run"
             failure = _runtime_error(error, stage=stage)
             root = _record_root(plan, runtime_config)

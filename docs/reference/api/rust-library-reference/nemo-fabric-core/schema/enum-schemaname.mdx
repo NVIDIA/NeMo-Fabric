@@ -36,6 +36,7 @@ pub enum SchemaName {
     FabricEvent,
     RuntimeResourceSnapshot,
     RunRecordLine,
+    RequestRecord,
 }
 ```
 
@@ -193,6 +194,12 @@ Runtime resource snapshot schema.
 
 One bounded start/end invocation record line.
 
+### `RequestRecord`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "RequestRecord"}} /></pre>
+
+Outer request evidence, including failures before an invocation exists.
+
 ## Implementations
 
 ### `impl SchemaName`
@@ -201,7 +208,7 @@ One bounded start/end invocation record line.
 
 #### `ALL`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.1/std/primitive.array.html\">25</a>]"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.1/std/primitive.array.html\">26</a>]"}} /></pre>
 
 All public schemas in stable output order.
 

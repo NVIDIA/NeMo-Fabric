@@ -1659,3 +1659,21 @@ checks identities, skips sibling symlinks, and never opens referenced logs or
 telemetry payloads or uses them to fill missing counts. Each inspected file is
 limited to 16 MiB; larger saved results remain unchanged and can be inspected
 separately. Recording requires no benchmark framework, task labels or Relay.
+
+
+### Requests without a returned result
+
+When recording is enabled, one-shot runs also save bounded request-level evidence
+under `.fabric/requests/<dispatch_id>/`. Each request record is limited to
+64 KiB; an oversized record adds a recording diagnostic without replacing the
+execution outcome or preventing full-result publication. The request start is
+written before runtime startup. The end distinguishes a returned result reference from no
+result at the startup or invocation boundary. It retains the caller's request ID
+without inventing runtime/invocation IDs, tokens or spend.
+
+Inspect an explicit `request-start.json` or `request-end.json` path with
+`python -m nemo_fabric.reporting`. The inspector never follows a returned result
+reference automatically or treats it as proof that publication succeeded. An
+outer timeout does not establish that inner or remote work stopped. Existing
+invocation status and error stage/code remain the stop evidence for returned
+results; this adds no competing stop-reason field.
