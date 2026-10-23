@@ -23,12 +23,19 @@ One NeMo Fabric invocation maps to one BenchAgent task:
 - `instructions.system` becomes `task_input.instructions`.
 - The native `response`, `success`, and structured `result` fields become the
   normalized NeMo Fabric result.
-- NOOA's task token accumulator becomes normalized usage.
+- Calls through the supplied model client become usage evidence, including
+  calls made before a task reports failure.
 
 The adapter accepts exactly one model. Before each task, it closes the shell
 that `_run_evaluation()` replaces. During runtime shutdown, it closes the
 active shell and model. Native errors are not copied into the public result
 because they can contain model, tool, or environment details.
+
+BenchAgent accepts one model client constructed by NeMo Fabric. A task with
+no model calls and no unfinished owned work reports zero tokens. It does not
+use the task token accumulator, which loses original provider field presence.
+See [model usage](../README.md#model-usage)
+for the shared completeness, background-work and transport boundaries.
 
 ## Run with Harbor
 

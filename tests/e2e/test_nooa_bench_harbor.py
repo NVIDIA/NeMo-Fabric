@@ -149,12 +149,31 @@ async def test_harbor_fabric_agent_runs_nooa_bench_adapter(
             "command_to_verify": "test -f bench-agent-result.txt",
         },
     }
-    assert result["usage"] == {
+    expected_usage = {
         "input_tokens": 12,
+        "cached_input_tokens": 0,
+        "input_tokens_include_cache": True,
         "output_tokens": 4,
         "total_tokens": 16,
-        "metadata": {},
     }
+    usage = result["usage"]
+    assert {key: usage[key] for key in expected_usage} == expected_usage
+    accounting = usage["metadata"]["nemo_fabric.usage_accounting.v1"]
+    assert {key: accounting["observed"][key] for key in expected_usage} == (
+        expected_usage
+    )
+    assert accounting["models_exhaustive"] is True
+    assert all(
+        dimension not in expected_usage
+        for gap in accounting["gaps"]
+        for dimension in gap["dimensions"]
+    )
+    assert (
+        context.n_input_tokens,
+        context.n_cache_tokens,
+        context.n_output_tokens,
+        context.cost_usd,
+    ) == (12, 0, 4, None)
     assert (workspace / "bench-agent-result.txt").read_text(encoding="utf-8") == (
         "Create a task completion artifact.\nReturn verifiable evidence.\n"
     )

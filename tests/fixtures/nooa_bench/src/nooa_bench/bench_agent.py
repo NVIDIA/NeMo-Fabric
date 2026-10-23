@@ -24,6 +24,7 @@ class BenchAgent:
         workspace = Path(task_input["working_dir"])
         instruction = task_input["user_message"]
         system_instruction = task_input.get("instructions", "")
+        await self.llm.acall([{"role": "user", "content": instruction}])
         (workspace / "bench-agent-result.txt").write_text(
             f"{instruction}\n{system_instruction}\n",
             encoding="utf-8",
