@@ -66,13 +66,41 @@ function fakeSdk(options = {}) {
     create: [], createEnvironment: [], stream: [], close: 0, listTools: 0, updateSettings: [], listMcpTools: 0, listSkills: 0,
   };
   const results = [...(options.results ?? [result(), result({ text: "second", turnCount: 2 })])];
+  const observers = new Set();
+  let turn = 0;
   const session = {
     id: "droid-session-1",
+    settings: { modelId: options.modelId },
     async *stream(prompt) {
       calls.stream.push(prompt);
       if (options.streamError) throw options.streamError;
+      const index = turn++;
       yield { type: "assistant", text: "intermediate" };
+      options.duringTurn?.(index, session);
+      // Droid's SDK delivers the turn's completion notification before the result.
+      const notification = {
+        type: "agent_turn_completed",
+        reason: "completed",
+        turnId: options.turnIds?.[index] ?? `turn-${index}`,
+        tokenUsage: options.omitCompletionUsage ? undefined : results[0]?.tokenUsage,
+        ...(options.childUsage?.[index] === undefined ? {} : { childTokenUsage: options.childUsage[index] }),
+      };
+      for (const observer of observers) {
+        observer({ jsonrpc: "2.0", method: "droid.session_notification", params: { sessionId: session.id, notification } });
+      }
       yield results.shift();
+    },
+    onNotification(callback) {
+      observers.add(callback);
+      return () => observers.delete(callback);
+    },
+    // Droid's SDK applies settings_updated to session.settings and passes it to observers.
+    changeModel(modelId) {
+      session.settings.modelId = modelId;
+      const notification = { type: "settings_updated", settings: { modelId } };
+      for (const observer of observers) {
+        observer({ jsonrpc: "2.0", method: "droid.session_notification", params: { sessionId: session.id, notification } });
+      }
     },
     async close() { calls.close += 1; },
     async listTools() {
@@ -98,6 +126,8 @@ function fakeSdk(options = {}) {
   };
   return {
     calls,
+    observers,
+    session,
     loader: async () => ({
       async createSession(value) {
         calls.create.push(value);
@@ -125,17 +155,14 @@ test("maps model, credential, append instructions, and an exact built-in tool po
   }]);
   assert.deepEqual(sdk.calls.updateSettings, [{ disabledToolIds: ["Edit", "Execute"] }]);
   assert.deepEqual(sdk.calls.stream, ["one", "two"]);
-  assert.deepEqual(first.usage, {
-    input_tokens: 4,
-    output_tokens: 3,
-    total_tokens: 7,
-    extensions: {
-      cache_read_tokens: 2,
-      cache_write_tokens: 1,
-      thinking_tokens: 5,
-      factory_credits: 0.25,
-    },
-  });
+  assert.equal(first.usage.input_tokens, undefined);
+  assert.equal(first.usage.output_tokens, undefined);
+  const observed = first.usage.extensions["nemo_fabric.usage_accounting.v1"].observed;
+  assert.equal(observed.input_tokens, 4);
+  assert.equal(observed.output_tokens, 3);
+  assert.equal(observed.cached_input_tokens, 2);
+  assert.equal(first.usage.extensions.thinking_tokens, 5);
+  assert.equal(first.usage.extensions.factory_credits, 0.25);
   assert.deepEqual(first.extensions, {
     session_id: "droid-session-1",
     finish_reason: "success",
@@ -411,29 +438,100 @@ test("normalizes interrupted and failed terminal results", async () => {
   ] });
   const handle = await new DroidSdkSessionFactory(sdk.loader).create(input({ tools: undefined }));
   assert.equal((await handle.prompt("one")).status, "interrupted");
-  assert.deepEqual(await handle.prompt("two"), {
-    status: "failed",
-    text: "",
-    errorMessage: "provider failed",
-    usage: {
-      input_tokens: 4,
-      output_tokens: 3,
-      total_tokens: 7,
-      extensions: {
-        cache_read_tokens: 2,
-        cache_write_tokens: 1,
-        thinking_tokens: 5,
-        factory_credits: 0.25,
-      },
-    },
-    extensions: {
-      session_id: "droid-session-1",
-      finish_reason: "error_during_execution",
-      duration_ms: 12,
-      turn_count: 1,
-    },
-  });
+  const failed = await handle.prompt("two");
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.text, "");
+  assert.equal(failed.errorMessage, "provider failed");
+  assert.equal(failed.usage.extensions["nemo_fabric.usage_accounting.v1"].observed.input_tokens, 4);
+  assert.equal(failed.usage.input_tokens, undefined);
+  assert.equal(failed.extensions.finish_reason, "error_during_execution");
   await handle.stop();
+});
+
+async function usageFor(model, turns, options = {}) {
+  const configured = input({ tools: undefined });
+  configured.config.models.default.model = model;
+  const sdk = fakeSdk({ ...options, results: turns.map(tokenUsage => result({ tokenUsage: {
+    inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, thinkingTokens: 0, ...tokenUsage,
+  } })) });
+  const handle = await new DroidSdkSessionFactory(sdk.loader).create(configured);
+  try {
+    const usages = [];
+    for (let index = 0; index < turns.length; index++) usages.push((await handle.prompt(`turn ${index}`)).usage);
+    return usages;
+  } finally { await handle.stop(); }
+}
+
+const accounting = usage => usage.extensions["nemo_fabric.usage_accounting.v1"];
+
+test("terminal aggregate omissions cannot become complete positive totals", async () => {
+  // The same terminal40/8 can represent one fully measured call or an input-
+  // only call plus an output-only call. Public terminal data cannot decide.
+  const [usage] = await usageFor("gemini-3-pro-preview", [{ inputTokens: 40, outputTokens: 8, cacheReadTokens: 6 }]);
+  assert.equal(usage.input_tokens, undefined);
+  assert.equal(usage.output_tokens, undefined);
+  assert.equal(usage.total_tokens, undefined);
+  assert.equal(usage.cost_usd, undefined);
+  assert.equal(accounting(usage).observed.input_tokens, 40);
+  assert.equal(accounting(usage).observed.input_tokens_include_cache, true);
+  assert.equal(accounting(usage).observed.output_tokens, 8);
+  assert.equal(accounting(usage).observed.cached_input_tokens, 6);
+  assert.ok(accounting(usage).gaps.some(gap => gap.reason === "scope_unverified"));
+});
+
+test("literal provider conventions remain raw for core normalization", async () => {
+  const [claude] = await usageFor("claude-sonnet-4-5-20250929", [{ inputTokens: 10, outputTokens: 5, cacheReadTokens: 80, cacheCreationTokens: 20 }]);
+  assert.equal(accounting(claude).observed.input_tokens, 10);
+  assert.equal(accounting(claude).observed.input_tokens_include_cache, false);
+  const [googleTotal] = await usageFor("gemini-3-pro-preview", [{ inputTokens: 100, outputTokens: 5, cacheReadTokens: 80, cacheCreationTokens: 10 }]);
+  // Its source promptTokenCount is a total; inclusion is not inferred from a
+  // zero-filled cache-write field. No write0 is synthesized.
+  assert.equal(accounting(googleTotal).observed.input_tokens, 100);
+  assert.equal(accounting(googleTotal).observed.input_tokens_include_cache, true);
+  assert.equal(accounting(googleTotal).observed.cache_write_input_tokens, 10);
+  const [responses] = await usageFor("gpt-5.1", [{ inputTokens: 20, outputTokens: 5, cacheReadTokens: 80 }]);
+  assert.equal(accounting(responses).observed.input_tokens, 20);
+  assert.equal(accounting(responses).observed.input_tokens_include_cache, undefined);
+  const [router] = await usageFor("auto", [{ inputTokens: 100, outputTokens: 5, cacheReadTokens: 80 }]);
+  assert.equal(accounting(router).observed.input_tokens_include_cache, undefined);
+  assert.equal(accounting(router).models, undefined);
+});
+
+test("zero-filled and independently omitted dimensions remain absent", async () => {
+  const usages = await usageFor("gemini-3-pro-preview", [
+    { inputTokens: 9 }, { outputTokens: 2, cacheReadTokens: 6 }, {},
+  ]);
+  assert.equal(accounting(usages[0]).observed.input_tokens, 9);
+  assert.equal(accounting(usages[0]).observed.output_tokens, undefined);
+  assert.equal(accounting(usages[1]).observed.input_tokens, undefined);
+  assert.equal(accounting(usages[1]).observed.cached_input_tokens, 6);
+  assert.equal(accounting(usages[1]).observed.output_tokens, 2);
+  assert.deepEqual(accounting(usages[2]).observed, {});
+});
+
+test("matching terminal turns never carry a preceding turn's counts forward", async () => {
+  const usages = await usageFor("gemini-3-pro-preview", [
+    { inputTokens: 40, outputTokens: 8 }, { inputTokens: 4, outputTokens: 2 },
+  ]);
+  assert.equal(accounting(usages[0]).observed.input_tokens, 40);
+  assert.equal(accounting(usages[1]).observed.input_tokens, 4);
+});
+
+test("descendant-inclusive totals count once without allocating children to the parent model", async () => {
+  const [usage] = await usageFor("claude-sonnet-4-5-20250929", [{ inputTokens: 110, outputTokens: 15, cacheReadTokens: 80 }], {
+    childUsage: [{ inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheCreationTokens: 0, thinkingTokens: 0 }],
+  });
+  assert.equal(accounting(usage).observed.input_tokens, 110);
+  assert.equal(accounting(usage).models, undefined);
+  assert.equal(accounting(usage).observed.input_tokens_include_cache, undefined);
+});
+
+test("model changes prevent assigning mixed counters to one model", async () => {
+  const [usage] = await usageFor("claude-sonnet-4-5-20250929", [{ inputTokens: 110, outputTokens: 15, cacheReadTokens: 80 }], {
+    duringTurn(_index, session) { session.changeModel("gemini-3-pro-preview"); },
+  });
+  assert.equal(accounting(usage).observed.input_tokens, 110);
+  assert.equal(accounting(usage).models, undefined);
 });
 
 test("rejects unknown tools and cleans up after partial startup", async () => {
@@ -506,4 +604,20 @@ test("rejects invalid startup inputs and missing or malformed terminal results",
   const handle = await new DroidSdkSessionFactory(malformed.loader).create(input({ tools: undefined }));
   await assert.rejects(handle.prompt("one"), (error) => error.code === "droid_malformed_result");
   await handle.stop();
+});
+
+
+test("missing raw completion usage cannot inherit the SDK's session-lifetime fallback", async () => {
+  const [usage] = await usageFor("gemini-3-pro-preview", [{ inputTokens: 1000, outputTokens: 200 }], { omitCompletionUsage: true });
+  assert.deepEqual(accounting(usage).observed, {});
+  assert.equal(usage.input_tokens, undefined);
+  assert.ok(accounting(usage).gaps.some(gap => gap.reason === "missing_usage"));
+});
+
+test("a duplicate completion cannot move a preceding turn's usage into the next", async () => {
+  const usages = await usageFor("gemini-3-pro-preview", [
+    { inputTokens: 40, outputTokens: 8 }, { inputTokens: 40, outputTokens: 8 },
+  ], { turnIds: ["same-turn", "same-turn"] });
+  assert.equal(accounting(usages[0]).observed.input_tokens, 40);
+  assert.deepEqual(accounting(usages[1]).observed, {});
 });

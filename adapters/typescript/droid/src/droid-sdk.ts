@@ -12,6 +12,7 @@ import type {
   AgentUsage,
   JsonObject,
 } from "nemo-fabric-adapter-contract";
+import { usageFromObservations, type UsageObservation } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import type { DroidPromptOutcome, DroidSessionFactory, DroidSessionHandle } from "./runtime.js";
@@ -115,9 +116,14 @@ interface DroidMcpNetworkConfig {
 
 type DroidMcpServerConfig = DroidMcpStdioConfig | DroidMcpNetworkConfig;
 
+type DroidNotificationCallback = (notification: Record<string, unknown>) => void;
+
 interface DroidSdkSession {
   readonly id: string;
+  /** Kept current by the SDK from settings_updated notifications. */
+  readonly settings?: { modelId?: unknown };
   stream(prompt: string): AsyncGenerator<unknown, void, undefined>;
+  onNotification?(callback: DroidNotificationCallback, filter?: { type?: string }): () => void;
   close(): Promise<void>;
   listTools(): Promise<DroidToolInfo[]>;
   updateSettings(settings: { disabledToolIds: string[] }): Promise<unknown>;
@@ -329,6 +335,7 @@ interface RuntimeProfile {
   home?: string;
   entrypoints: string[];
   settingsEnvironment: Record<string, string>;
+  settingsFiles: DroidSettings[];
 }
 
 function settingsHome(input: AdapterStartInput, parentEnvironment: NodeJS.ProcessEnv): string | undefined {
@@ -343,29 +350,20 @@ function settingsHome(input: AdapterStartInput, parentEnvironment: NodeJS.Proces
   );
 }
 
-async function customModelSettingsEnvironment(
-  input: AdapterStartInput,
-  model: string,
-  sourceHome: string | undefined,
-  parentEnvironment: NodeJS.ProcessEnv,
-): Promise<Record<string, string>> {
-  if (!model.startsWith("custom:") || sourceHome === undefined) return {};
-  const modelId = model.slice("custom:".length);
-  let apiKey: unknown;
+type CustomModelSettings = Record<string, unknown>;
+
+type DroidSettings = Record<string, unknown>;
+
+/** Reads the Droid settings files in the order Droid layers them. */
+async function readDroidSettings(sourceHome: string | undefined): Promise<DroidSettings[]> {
+  if (sourceHome === undefined) return [];
+  const files: DroidSettings[] = [];
   for (const filename of ["settings.json", "settings.local.json"]) {
     try {
       const settings: unknown = JSON.parse(await readFile(join(sourceHome, ".factory", filename), "utf8"));
-      if (typeof settings !== "object" || settings === null || !("customModels" in settings)) continue;
-      const customModels = settings.customModels;
-      if (!Array.isArray(customModels)) continue;
-      const configured = customModels.find(
-        (candidate) =>
-          typeof candidate === "object" &&
-          candidate !== null &&
-          "model" in candidate &&
-          candidate.model === modelId,
-      );
-      if (configured !== undefined && "apiKey" in configured) apiKey = configured.apiKey;
+      if (typeof settings === "object" && settings !== null && !Array.isArray(settings)) {
+        files.push(settings as DroidSettings);
+      }
     } catch (error) {
       if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") continue;
       if (error instanceof SyntaxError) continue; // Droid reports malformed settings during session creation.
@@ -374,6 +372,38 @@ async function customModelSettingsEnvironment(
         "Droid settings could not be read by NeMo Fabric",
       );
     }
+  }
+  return files;
+}
+
+/** Returns the first custom model entry for `model` in each settings file. */
+function customModelSettings(settingsFiles: DroidSettings[], model: string): CustomModelSettings[] {
+  if (!model.startsWith("custom:")) return [];
+  const modelId = model.slice("custom:".length);
+  const entries: CustomModelSettings[] = [];
+  for (const settings of settingsFiles) {
+    const customModels = settings.customModels;
+    if (!Array.isArray(customModels)) continue;
+    const configured: unknown = customModels.find(
+      (candidate) =>
+        typeof candidate === "object" &&
+        candidate !== null &&
+        "model" in candidate &&
+        candidate.model === modelId,
+    );
+    if (typeof configured === "object" && configured !== null) entries.push(configured as CustomModelSettings);
+  }
+  return entries;
+}
+
+function customModelSettingsEnvironment(
+  input: AdapterStartInput,
+  customModels: CustomModelSettings[],
+  parentEnvironment: NodeJS.ProcessEnv,
+): Record<string, string> {
+  let apiKey: unknown;
+  for (const configured of customModels) {
+    if ("apiKey" in configured) apiKey = configured.apiKey;
   }
   if (typeof apiKey !== "string") return {};
   const match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(apiKey);
@@ -387,6 +417,97 @@ async function customModelSettingsEnvironment(
   return { [name]: value };
 }
 
+/**
+ * How Droid 0.233.0 fills a turn's inputTokens on the provider path it uses for
+ * the configured model. Droid routes by model provider: Google models use the
+ * Gemini handler, Anthropic and Factory-hosted models use the Anthropic
+ * Messages or Chat Completions handler, OpenAI and xAI models use the Responses
+ * handler, and Bedrock Converse custom models use the Converse handler.
+ */
+type DroidInputConvention =
+  /** Gemini: Droid keeps the provider total effective promptTokenCount. */
+  | "includes_cache"
+  /** Responses and Chat Completions: Droid subtracts cache reads from the provider input. */
+  | "excludes_cache_reads"
+  /** Anthropic Messages and Bedrock Converse: the provider input excludes cache reads and writes. */
+  | "excludes_cache";
+
+interface DroidUsageConvention {
+  input: DroidInputConvention;
+}
+
+// These source conventions describe Droid's persisted input, not a promise
+// that its aggregate includes every provider usage report.
+const GEMINI: DroidUsageConvention = { input: "includes_cache" };
+const EXCLUDES_CACHE: DroidUsageConvention = { input: "excludes_cache" };
+const EXCLUDES_CACHE_READS: DroidUsageConvention = { input: "excludes_cache_reads" };
+
+const BUILT_IN_MODEL_CONVENTIONS: ReadonlyArray<readonly [string, DroidUsageConvention]> = [
+  ["claude-", EXCLUDES_CACHE],
+  ["gemini-", GEMINI],
+  ["gpt-", EXCLUDES_CACHE_READS],
+  ["grok-", EXCLUDES_CACHE_READS],
+  // Factory-hosted models use the Anthropic Messages or Chat Completions handler;
+  // the Chat Completions handler never records cache writes.
+  ["deepseek-", EXCLUDES_CACHE],
+  ["glm-", EXCLUDES_CACHE],
+  ["kimi-", EXCLUDES_CACHE],
+  ["minimax-", EXCLUDES_CACHE],
+  ["mistral-", EXCLUDES_CACHE],
+  ["nemotron-", EXCLUDES_CACHE],
+  ["qwen", EXCLUDES_CACHE],
+];
+
+const GOOGLE_HINT = /gemini|garnet|generativelanguage\.googleapis\.com|aiplatform\.googleapis\.com/i;
+
+function customModelConvention(settings: CustomModelSettings): DroidUsageConvention | undefined {
+  switch (settings.provider) {
+    case "bedrock-converse":
+      return EXCLUDES_CACHE;
+    case "anthropic":
+      return EXCLUDES_CACHE;
+    case "openai":
+      return EXCLUDES_CACHE_READS;
+    case "generic-chat-completion-api": {
+      // Droid sends a chat-completions model to its Gemini handler when the
+      // model, base model, or base URL resolves to Google.
+      const hints = [settings.model, settings.baseModelId, settings.baseUrl].filter((value) => typeof value === "string");
+      return hints.some((value) => GOOGLE_HINT.test(value)) ? undefined : EXCLUDES_CACHE_READS;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function customConvention(customModels: CustomModelSettings[]): DroidUsageConvention | undefined {
+  const conventions = new Set(customModels.map(customModelConvention));
+  return conventions.size === 1 ? [...conventions][0] : undefined;
+}
+
+// Droid's router models pick a model per request, so their convention is unknown.
+const ROUTER_MODELS = new Set(["auto", "auto-fast"]);
+
+/** Selects the usage convention for whichever model the Droid session uses. */
+class DroidUsageConventions {
+  private readonly settingsFiles: DroidSettings[];
+  private readonly resolved = new Map<string, DroidUsageConvention | undefined>();
+
+  constructor(settingsFiles: DroidSettings[]) {
+    this.settingsFiles = settingsFiles;
+  }
+
+  forModel(model: string): DroidUsageConvention | undefined {
+    if (!this.resolved.has(model)) this.resolved.set(model, this.resolve(model));
+    return this.resolved.get(model);
+  }
+
+  private resolve(model: string): DroidUsageConvention | undefined {
+    if (ROUTER_MODELS.has(model)) return undefined;
+    if (model.startsWith("custom:")) return customConvention(customModelSettings(this.settingsFiles, model));
+    return BUILT_IN_MODEL_CONVENTIONS.find(([prefix]) => model.startsWith(prefix))?.[1];
+  }
+}
+
 async function prepareRuntimeProfile(
   input: AdapterStartInput,
   hasMcpServers: boolean,
@@ -398,8 +519,15 @@ async function prepareRuntimeProfile(
   }
   const configured = input.config.skills?.paths ?? [];
   const sourceHome = settingsHome(input, parentEnvironment);
-  const settingsEnvironment = await customModelSettingsEnvironment(input, model, sourceHome, parentEnvironment);
-  if (configured.length === 0 && !hasMcpServers) return { entrypoints: [], settingsEnvironment };
+  const settingsFiles = await readDroidSettings(sourceHome);
+  const settingsEnvironment = customModelSettingsEnvironment(
+    input,
+    customModelSettings(settingsFiles, model),
+    parentEnvironment,
+  );
+  if (configured.length === 0 && !hasMcpServers) {
+    return { entrypoints: [], settingsEnvironment, settingsFiles };
+  }
 
   const root = await mkdtemp(join(tmpdir(), "nemo-fabric-droid-"));
   const home = join(root, "home");
@@ -452,7 +580,7 @@ async function prepareRuntimeProfile(
       await cp(source, destination, { recursive: true, errorOnExist: true });
       entrypoints.push(await realpath(join(destination, "SKILL.md")));
     }
-    return { root, home, entrypoints, settingsEnvironment };
+    return { root, home, entrypoints, settingsEnvironment, settingsFiles };
   } catch (error) {
     await rm(root, { recursive: true, force: true });
     throw error;
@@ -491,40 +619,54 @@ function validTokenCount(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
-function normalizeUsage(value: unknown): AgentUsage | undefined {
-  if (value === null || value === undefined) return undefined;
+/** Keep the terminal turn's literal aggregate; it cannot prove call coverage. */
+function normalizeUsage(
+  value: unknown,
+  convention: DroidUsageConvention | undefined,
+  model?: string,
+): AgentUsage {
+  if (value === null || value === undefined) {
+    return usageFromObservations([{ reported: {}, gap: "missing_usage" }]);
+  }
   if (typeof value !== "object") {
     throw new LifecycleError("droid_malformed_result", "Droid returned malformed usage metadata");
   }
   const usage = value as Partial<DroidTokenUsage>;
-  const counts = [
-    usage.inputTokens,
-    usage.outputTokens,
-    usage.cacheCreationTokens,
-    usage.cacheReadTokens,
-    usage.thinkingTokens,
-  ];
+  const counts = [usage.inputTokens, usage.outputTokens, usage.cacheCreationTokens, usage.cacheReadTokens, usage.thinkingTokens];
   if (!counts.every(validTokenCount) || (usage.factoryCredits !== undefined && !validNonNegativeNumber(usage.factoryCredits))) {
     throw new LifecycleError("droid_malformed_result", "Droid returned malformed usage metadata");
   }
-  const total = usage.inputTokens! + usage.outputTokens!;
-  if (!Number.isSafeInteger(total)) {
-    throw new LifecycleError("droid_malformed_result", "Droid returned malformed usage metadata");
+  const reported: UsageObservation["reported"] = {};
+  for (const [source, destination] of [
+    ["inputTokens", "input_tokens"], ["outputTokens", "output_tokens"],
+    ["cacheReadTokens", "cached_input_tokens"], ["cacheCreationTokens", "cache_write_input_tokens"],
+  ] as const) {
+    const count = usage[source];
+    // Droid zero-fills provider omissions before summing the turn. A positive
+    // aggregate is evidence, but cannot certify that every call reported it.
+    if (typeof count === "number" && count > 0) reported[destination] = count;
   }
-  return {
-    input_tokens: usage.inputTokens!,
-    output_tokens: usage.outputTokens!,
-    total_tokens: total,
-    extensions: {
-      cache_read_tokens: usage.cacheReadTokens!,
-      cache_write_tokens: usage.cacheCreationTokens!,
-      thinking_tokens: usage.thinkingTokens!,
-      ...(usage.factoryCredits === undefined ? {} : { factory_credits: usage.factoryCredits }),
-    },
-  };
+  if (reported.input_tokens !== undefined) {
+    if (convention?.input === "excludes_cache") reported.input_tokens_include_cache = false;
+    else if (convention?.input === "includes_cache") {
+      reported.input_tokens_include_cache = true;
+    }
+    // Responses subtracts reads but may preserve nonstandard writes. The shared
+    // binary cache flag cannot express that partial convention, so leave it unset.
+  }
+  if (reported.output_tokens !== undefined) reported.output_tokens_include_reasoning = true;
+  const result = usageFromObservations([{ reported, ...(model === undefined ? {} : { model }), gap: "scope_unverified" }]);
+  // Keep Factory's native diagnostics separate from measured reasoning or USD.
+  if (usage.thinkingTokens !== undefined && usage.thinkingTokens > 0) result.extensions!.thinking_tokens = usage.thinkingTokens;
+  if (usage.factoryCredits !== undefined && usage.factoryCredits > 0) result.extensions!.factory_credits = usage.factoryCredits;
+  return result;
 }
 
-function normalizeResult(value: unknown): DroidPromptOutcome {
+function normalizeResult(
+  value: unknown,
+  convention: DroidUsageConvention | undefined,
+  model?: string,
+): DroidPromptOutcome {
   if (typeof value !== "object" || value === null) {
     throw new LifecycleError("droid_malformed_result", "Droid did not return a terminal result");
   }
@@ -542,7 +684,7 @@ function normalizeResult(value: unknown): DroidPromptOutcome {
   ) {
     throw new LifecycleError("droid_malformed_result", "Droid returned a malformed terminal result");
   }
-  const usage = normalizeUsage(result.tokenUsage);
+  const usage = normalizeUsage(result.tokenUsage, convention, model);
   const extensions: JsonObject = {
     session_id: result.sessionId,
     finish_reason: String(result.subtype),
@@ -677,20 +819,85 @@ async function validateMcpTools(
   }
 }
 
+function hasTokenCounts(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const usage = value as Record<string, unknown>;
+  return ["inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens", "thinkingTokens"].some(
+    (key) => typeof usage[key] === "number" && Number(usage[key]) > 0,
+  );
+}
+
+/** What the session reported during one invocation that decides its usage convention. */
+interface TurnObservation {
+  /** Models the session used during the turn, from settings_updated notifications. */
+  models: Set<string>;
+  /** The turn's completion reported usage from Task subagents. */
+  childUsage: boolean;
+  completions: number;
+  tokenUsage?: unknown;
+}
+
 class DroidSdkSessionHandle implements DroidSessionHandle {
   private readonly session: DroidSdkSession;
   private readonly runtimeRoot?: string;
+  private readonly configuredModel: string;
+  private readonly conventions: DroidUsageConventions;
   private stopped = false;
+  private readonly completedTurnIds = new Set<string>();
 
-  constructor(session: DroidSdkSession, runtimeRoot?: string) {
+  constructor(
+    session: DroidSdkSession,
+    configuredModel: string,
+    conventions: DroidUsageConventions,
+    runtimeRoot?: string,
+  ) {
     this.session = session;
+    this.configuredModel = configuredModel;
+    this.conventions = conventions;
     this.runtimeRoot = runtimeRoot;
+  }
+
+  private currentModel(): string {
+    const modelId = this.session.settings?.modelId;
+    return typeof modelId === "string" && modelId.length > 0 ? modelId : this.configuredModel;
+  }
+
+  /**
+   * Watches this session's notifications for the whole invocation: every
+   * model it switches to and whether the turn's completion carries child usage.
+   * Without notifications the turn cannot be checked, so it counts as having
+   * child usage.
+   */
+  private observeTurn(): { observation: TurnObservation; stop(): void } {
+    const observation: TurnObservation = { models: new Set([this.currentModel()]), childUsage: false, completions: 0 };
+    if (typeof this.session.onNotification !== "function") {
+      observation.childUsage = true;
+      return { observation, stop: () => undefined };
+    }
+    const stop = this.session.onNotification((notification) => {
+      const params = notification.params as { sessionId?: unknown; notification?: Record<string, unknown> } | undefined;
+      const inner = params?.notification;
+      if (inner === undefined || (params?.sessionId !== undefined && params.sessionId !== this.session.id)) return;
+      if (inner.type === "settings_updated") {
+        const modelId = (inner.settings as { modelId?: unknown } | undefined)?.modelId;
+        if (typeof modelId === "string" && modelId.length > 0) observation.models.add(modelId);
+      } else if (inner.type === "agent_turn_completed") {
+        const turnId = typeof inner.turnId === "string" ? inner.turnId : undefined;
+        if (turnId === undefined || this.completedTurnIds.has(turnId)) return;
+        this.completedTurnIds.add(turnId);
+        observation.completions++;
+        observation.tokenUsage = inner.tokenUsage;
+        if (hasTokenCounts(inner.childTokenUsage)) observation.childUsage = true;
+      }
+    });
+    return { observation, stop };
   }
 
   async prompt(text: string): Promise<DroidPromptOutcome> {
     if (this.stopped) {
       throw new LifecycleError("droid_session_stopped", "The Droid session is already stopped");
     }
+    const turn = this.observeTurn();
     let terminal: unknown;
     try {
       for await (const message of this.session.stream(text)) {
@@ -700,13 +907,27 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
       }
     } catch (error) {
       throw new LifecycleError("droid_session_failed", sdkErrorMessage(error), { retryable: true });
+    } finally {
+      turn.stop();
     }
     if (terminal === undefined) {
       throw new LifecycleError("droid_session_failed", "Droid session ended without a terminal result", {
         retryable: true,
       });
     }
-    return normalizeResult(terminal);
+    // The SDK's matching terminal turn includes descendants. Keep their usage
+    // once; mixed models prevent assigning the aggregate to the parent model.
+    turn.observation.models.add(this.currentModel());
+    const conventions = new Set([...turn.observation.models].map((model) => this.conventions.forModel(model)));
+    const convention = conventions.size === 1 && !turn.observation.childUsage ? [...conventions][0] : undefined;
+    const model = turn.observation.models.size === 1 && !turn.observation.childUsage && !ROUTER_MODELS.has(this.currentModel())
+      ? [...turn.observation.models][0] : undefined;
+    // The SDK falls back to a session-lifetime update when the completion has
+    // no usage. Only an explicit newly completed turn is invocation evidence.
+    const source = typeof terminal === "object" && terminal !== null ? {
+      ...terminal, tokenUsage: turn.observation.completions === 1 ? turn.observation.tokenUsage : null,
+    } : terminal;
+    return normalizeResult(source, convention, model);
   }
 
   async stop(): Promise<void> {
@@ -804,7 +1025,12 @@ export class DroidSdkSessionFactory implements DroidSessionFactory {
       await applyToolPolicy(session, input.config, mcpServers);
       await validateMcpTools(session, mcpServers, this.mcpStartupTimeoutMs);
       await validateSkills(session, runtimeProfile.entrypoints);
-      return new DroidSdkSessionHandle(session, runtimeProfile.root);
+      return new DroidSdkSessionHandle(
+        session,
+        selected.model,
+        new DroidUsageConventions(runtimeProfile.settingsFiles),
+        runtimeProfile.root,
+      );
     } catch (error) {
       await session?.close().catch(() => undefined);
       if (runtimeProfile.root !== undefined) {

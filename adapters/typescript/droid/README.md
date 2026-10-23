@@ -109,3 +109,27 @@ Droid custom endpoints are configured outside a session in Droid settings. It
 also does not advertise streaming, telemetry, or Relay integration. Unsupported
 normalized fields, MCP authentication and per-server tool filters, unknown
 settings, and unknown built-in tool IDs fail instead of being ignored.
+
+## Token usage
+
+The adapter retains the explicit usage on Droid's matching turn-completion
+notification. That turn aggregate includes delegated sessions and is recorded
+once. The SDK can fall back to a session-wide usage update when the completion
+omits usage; the adapter excludes that fallback so earlier turns cannot enter
+this invocation's observations.
+
+Droid fills provider omissions with zero before aggregating. A positive
+aggregate therefore establishes an observation, not a complete total for every
+model call. Complete totals remain unknown; positive independent counters are
+retained in `nemo_fabric.usage_accounting.v1` with a `scope_unverified` gap.
+Droid's debounced usage notifications have no stable model-call identity and
+cannot establish exhaustive per-call reporting.
+
+The adapter preserves the persisted provider input convention for NeMo Fabric core
+to normalize. Anthropic and Bedrock input excludes cache reads and writes;
+Gemini input includes cache reads. Responses subtracts reads without subtracting nonstandard cache writes.
+Whether input includes those writes is not established, so the shared binary
+cache-inclusion flag remains unknown. Mixed models and child sessions
+are not assigned to the parent model. Factory credits and Droid's possibly
+estimated thinking-token diagnostic remain native diagnostics, not USD or
+measured reasoning counts. No provider cost is exposed by this source.
