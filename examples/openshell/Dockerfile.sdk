@@ -20,7 +20,7 @@ FROM base AS wheels
 COPY --from=rust /usr/local/cargo /usr/local/cargo
 COPY --from=rust /usr/local/rustup /usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup PATH=/usr/local/cargo/bin:$PATH CARGO_BUILD_JOBS=4
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential=12.12 pkg-config libssl-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential=12.12 pkg-config=1.8.1-4 libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src/fabric
 COPY Cargo.toml Cargo.lock pyproject.toml LICENSE ./
