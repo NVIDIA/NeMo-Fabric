@@ -10,9 +10,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use nemo_fabric_core::{
-    EnvironmentHandle, EnvironmentReference, FabricConfig, FabricError, OpenAiStreamTransport,
-    ResolveContext, RunPlan, RunRequest, RuntimeHandle, ServiceHandle, ServiceReference,
-    doctor_plan, inspect_adapter_config,
+    EnvironmentHandle, EnvironmentReference, ErrorStage, FabricConfig, FabricError,
+    OpenAiStreamTransport, ResolveContext, RunPlan, RunRequest, RuntimeHandle, ServiceHandle,
+    ServiceReference, doctor_plan, inspect_adapter_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
@@ -157,18 +157,23 @@ fn run_config(
 fn run_resolved_plan(py: Python<'_>, plan_json: String, request_json: String) -> PyResult<String> {
     let plan = parse_run_plan(plan_json)?;
     let request = parse_run_request(request_json)?;
-    let result = match py.detach(|| run_plan(&plan, request)) {
+    let result = match py.detach(|| nemo_fabric_core::runtime::run_plan_with_stage(&plan, request))
+    {
         Ok(result) => result,
-        Err(error) => {
-            let stage = match &error {
-                FabricError::AdapterLifecycleOperation { operation, .. } => Some(*operation),
-                _ => None,
+        Err((error, stage)) => {
+            let stage = match stage {
+                ErrorStage::Config => "config",
+                ErrorStage::Plan => "plan",
+                ErrorStage::Prepare => "prepare",
+                ErrorStage::Start => "start",
+                ErrorStage::Invoke => "invoke",
+                ErrorStage::Stop => "stop",
+                ErrorStage::Release => "release",
+                ErrorStage::Artifact => "artifact",
             };
             let failure = to_py_error(error);
-            if let Some(stage) = stage {
-                // Preserve lifecycle stage without parsing diagnostic text.
-                failure.value(py).setattr("fabric_stage", stage)?;
-            }
+            // Preserve lifecycle stage without parsing diagnostic text.
+            failure.value(py).setattr("fabric_stage", stage)?;
             return Err(failure);
         }
     };

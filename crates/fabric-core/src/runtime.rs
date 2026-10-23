@@ -909,12 +909,21 @@ enum LocalServiceState {
 
 /// Invoke a NeMo Fabric run plan.
 pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
-    let runtime = start_runtime(plan)?;
+    run_plan_with_stage(plan, request).map_err(|(error, _)| error)
+}
+
+/// Preserve the phase of a one-shot failure for language bindings.
+#[doc(hidden)]
+pub fn run_plan_with_stage(
+    plan: &RunPlan,
+    request: RunRequest,
+) -> std::result::Result<RunResult, (FabricError, ErrorStage)> {
+    let runtime = start_runtime(plan).map_err(|error| (error, ErrorStage::Start))?;
     let mut result = match invoke_runtime_unpersisted(plan, &runtime, request) {
         Ok(result) => result,
         Err(error) => {
             let _ = stop_runtime(plan, &runtime);
-            return Err(error);
+            return Err((error, ErrorStage::Invoke));
         }
     };
     match stop_runtime(plan, &runtime) {
