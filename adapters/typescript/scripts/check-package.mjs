@@ -34,6 +34,8 @@ const expectedByPackage = {
     "package.json",
   ],
   "nemo-fabric-adapters-cline": [
+    "dist/usage.d.ts",
+    "dist/usage.js",
     "LICENSE",
     "README.md",
     "cline.fabric-adapter.json",

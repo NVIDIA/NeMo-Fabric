@@ -169,7 +169,7 @@ config.enable_relay(
 ```
 
 For each Relay-enabled Claude runtime, NeMo Fabric starts one `nemo-relay` gateway,
-waits for its health endpoint, and stops it with the runtime. NeMo Fabric passes the
+waits up to 30 seconds for its health endpoint, and stops it with the runtime. NeMo Fabric passes the
 gateway URL to the connected Claude Code process through `ANTHROPIC_BASE_URL`
 and `NEMO_RELAY_GATEWAY_URL`, and passes the selected explicit model endpoint to
 the gateway as its Anthropic upstream. It also stages a runtime-scoped Claude

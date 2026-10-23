@@ -14,7 +14,8 @@ import type {
 } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
-import type { ClinePromptOutcome, ClineSessionFactory, ClineSessionHandle } from "./runtime.js";
+import { ClinePromptError, type ClinePromptOutcome, type ClineSessionFactory, type ClineSessionHandle } from "./runtime.js";
+import { ClineInvocationUsage, clineUsageHooks } from "./usage.js";
 
 const CLINE_HARNESS_INSTALL_COMMAND = "npm install @cline/sdk@0.0.83";
 const CLINE_PLUGIN_NAME = "nvidia.fabric.cline";
@@ -26,7 +27,6 @@ interface ClineUsage {
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
-  totalCost?: number;
 }
 
 interface ClineResult {
@@ -134,12 +134,22 @@ async function loadClineSdk(): Promise<ClineSdkModule> {
   return sdk;
 }
 
+/**
+ * The model role Cline runs: `default`, or the only configured role. Returns
+ * `undefined` when no role or several roles without `default` are configured.
+ */
+export function selectedModelRole(config: AgentConfig): string | undefined {
+  const roles = Object.keys(config.models ?? {});
+  if (roles.includes("default")) return "default";
+  return roles.length === 1 ? roles[0] : undefined;
+}
+
 function selectModel(config: AgentConfig): AgentModelConfig {
-  const entries = Object.entries(config.models ?? {});
-  if (entries.length === 0) {
+  if (Object.keys(config.models ?? {}).length === 0) {
     throw new LifecycleError("cline_model_required", "The Cline adapter requires one configured model");
   }
-  const selected = config.models?.default ?? (entries.length === 1 ? entries[0]?.[1] : undefined);
+  const role = selectedModelRole(config);
+  const selected = role === undefined ? undefined : config.models?.[role];
   if (selected === undefined) {
     throw new LifecycleError(
       "cline_model_ambiguous",
@@ -147,6 +157,15 @@ function selectModel(config: AgentConfig): AgentModelConfig {
     );
   }
   return selected;
+}
+
+function providerKnown(model: AgentModelConfig): boolean {
+  if (model.base_url === undefined || model.base_url === null) return true;
+  const official: Record<string, string> = { openai: "api.openai.com", "openai-native": "api.openai.com", "openai-compatible": "api.openai.com", anthropic: "api.anthropic.com" };
+  try {
+    const endpoint = new URL(model.base_url);
+    return endpoint.protocol === "https:" && (endpoint.port === "" || endpoint.port === "443") && endpoint.hostname === official[model.provider];
+  } catch { return false; }
 }
 
 function credentialValue(input: AdapterStartInput, name: string): string | undefined {
@@ -368,39 +387,9 @@ async function validateRuntimePlugin(
   }
 }
 
-function normalizeUsage(usage: ClineUsage | undefined): AgentUsage | undefined {
-  if (usage === undefined) {
-    return undefined;
-  }
-  if (typeof usage !== "object" || usage === null) {
-    throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
-  }
-  for (const value of [usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens]) {
-    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
-      throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
-    }
-  }
-  if (usage.totalCost !== undefined && (!Number.isFinite(usage.totalCost) || usage.totalCost < 0)) {
-    throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
-  }
-  const input = usage.inputTokens;
-  const output = usage.outputTokens;
-  if (input !== undefined && output !== undefined && !Number.isSafeInteger(input + output)) {
-    throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
-  }
-  const extensions: JsonObject = {
-    ...(usage.cacheReadTokens === undefined ? {} : { cache_read_tokens: usage.cacheReadTokens }),
-    ...(usage.cacheWriteTokens === undefined ? {} : { cache_write_tokens: usage.cacheWriteTokens }),
-  };
-  return {
-    ...(input === undefined ? {} : { input_tokens: input }),
-    ...(output === undefined ? {} : { output_tokens: output }),
-    ...(input === undefined || output === undefined ? {} : { total_tokens: input + output }),
-    ...(usage.totalCost === undefined ? {} : { cost_usd: usage.totalCost }),
-    ...(Object.keys(extensions).length === 0 ? {} : { extensions }),
-  };
-}
-
+// Cline turns both a count the provider reported as 0 and a count it omitted
+// into 0, and its result for an aborted interactive turn reports all zeros
+// whatever the model calls used, so a count of 0 is unknown.
 function sdkErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
@@ -411,7 +400,7 @@ function sdkErrorMessage(error: unknown): string {
   return "Cline session communication failed";
 }
 
-function normalizeResult(result: ClineResult | undefined, sessionId: string): ClinePromptOutcome {
+function normalizeResult(result: ClineResult | undefined, sessionId: string, evidence: ClineInvocationUsage): ClinePromptOutcome {
   if (
     result === undefined ||
     !["completed", "aborted", "error", "mistake_limit", "max_iterations"].includes(String(result.finishReason))
@@ -438,7 +427,12 @@ function normalizeResult(result: ClineResult | undefined, sessionId: string): Cl
     }
     model = { id: result.model.id, provider: result.model.provider };
   }
-  const usage = normalizeUsage(result.usage);
+  if (result.usage !== undefined && (typeof result.usage !== "object" || result.usage === null ||
+      [result.usage.inputTokens, result.usage.outputTokens, result.usage.cacheReadTokens, result.usage.cacheWriteTokens]
+        .some(value => value !== undefined && (!Number.isSafeInteger(value) || value < 0)))) {
+    throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
+  }
+  const usage = evidence.finish(result.usage);
   const finishReason = String(result.finishReason);
   const status = finishReason === "completed" ? "completed" : finishReason === "aborted" ? "aborted" : "failed";
   return {
@@ -461,34 +455,36 @@ class ClineSdkSessionHandle implements ClineSessionHandle {
   private sessionId?: string;
   private stopped = false;
   private readonly cleanup: () => Promise<void>;
+  private readonly providerKnown: boolean;
 
-  constructor(core: ClineCoreInstance, startInput: Record<string, unknown>, cleanup: () => Promise<void>) {
+  constructor(core: ClineCoreInstance, startInput: Record<string, unknown>, cleanup: () => Promise<void>, providerKnown: boolean) {
     this.core = core;
     this.startInput = startInput;
     this.cleanup = cleanup;
+    this.providerKnown = providerKnown;
   }
 
   async prompt(text: string): Promise<ClinePromptOutcome> {
     if (this.stopped) {
       throw new LifecycleError("cline_session_stopped", "The Cline session is already stopped");
     }
+    const evidence = new ClineInvocationUsage(this.providerKnown);
     try {
-      if (this.sessionId === undefined) {
-        const started = await this.core.start({ ...this.startInput, prompt: text });
-        if (typeof started.sessionId !== "string" || started.sessionId.length === 0) {
-          throw new LifecycleError("cline_malformed_result", "Cline did not return a session identifier");
+      return await evidence.run(async () => {
+        if (this.sessionId === undefined) {
+          const started = await this.core.start({ ...this.startInput, prompt: text });
+          if (typeof started.sessionId !== "string" || started.sessionId.length === 0) {
+            throw new LifecycleError("cline_malformed_result", "Cline did not return a session identifier");
+          }
+          this.sessionId = started.sessionId;
+          return normalizeResult(started.result, this.sessionId, evidence);
         }
-        this.sessionId = started.sessionId;
-        return normalizeResult(started.result, this.sessionId);
-      }
-      return normalizeResult(await this.core.send({ sessionId: this.sessionId, prompt: text }), this.sessionId);
-    } catch (error) {
-      if (error instanceof LifecycleError) {
-        throw error;
-      }
-      throw new LifecycleError("cline_session_failed", sdkErrorMessage(error), {
-        retryable: true,
+        return normalizeResult(await this.core.send({ sessionId: this.sessionId, prompt: text }), this.sessionId, evidence);
       });
+    } catch (error) {
+      const failure = error instanceof LifecycleError ? error :
+        new LifecycleError("cline_session_failed", sdkErrorMessage(error), { retryable: true });
+      throw new ClinePromptError(failure, evidence.finish());
     }
   }
 
@@ -596,10 +592,10 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
         interactive: true,
         source: "sdk",
         toolPolicies: policies,
-        localRuntime: { configExtensions: [] },
+        localRuntime: { configExtensions: [], hooks: clineUsageHooks },
       }, async () => {
         await rm(files.root, { recursive: true, force: true });
-      });
+      }, providerKnown(selected));
     } catch (error) {
       await core?.dispose("NeMo Fabric startup failed").catch(() => undefined);
       await rm(files.root, { recursive: true, force: true });

@@ -107,6 +107,28 @@ for (const spec of schemaSpecs) {
   );
 }
 
+// Extensions retain the closed v1alpha2 transport and have their own canonical
+// schemas. Package the same bytes and generate types alongside the base models.
+const accountingBytes = await readFile(resolve(repositoryRoot, "schemas/extensions/usage-accounting.schema.json"));
+pendingFiles.set(resolve(packageRoot, "schemas/usage-accounting.schema.json"), accountingBytes);
+pendingFiles.set(resolve(packageRoot, "src/generated/usage-accounting.ts"),
+  await generateSchema(JSON.parse(accountingBytes.toString("utf8"))));
+
+const accountingVectors = JSON.parse(await readFile(
+  resolve(repositoryRoot, "tests/fixtures/usage_accounting/conformance.json"), "utf8"));
+pendingFiles.set(resolve(packageRoot, "test/generated/usage-accounting-vectors.ts"), `${banner}
+
+import type { AgentUsage, UsageAccounting } from "../../src/index.js";
+
+// Source: tests/fixtures/usage_accounting/conformance.json, shared with Rust and Python.
+export const accountingVectors = ${JSON.stringify(accountingVectors, null, 2)} satisfies {
+  name: string;
+  usage: AgentUsage;
+  accounting: UsageAccounting;
+  expected: Record<string, { complete: number | null; observed: number | null }>;
+}[];
+`);
+
 pendingFiles.set(resolve(packageRoot, "src/json.ts"), generateJsonTypes());
 pendingFiles.set(
   resolve(packageRoot, "src/version.ts"),
