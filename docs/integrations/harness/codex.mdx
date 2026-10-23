@@ -146,7 +146,7 @@ The adapter requests the observational `experimentalRawEvents` thread flag throu
 
 Actual subagent dispatch creates a descendant coverage gap for its initiating invocation. Independent later parent turns retain their own reported usage. Raw reports from a different turn are ignored, and earlier returned results remain frozen. Automatic child completion requests no new turn (`trigger_turn=false`); Codex can still start pending work when a durable sleep is outstanding. Unused delegation capabilities do not create gaps. Unreported internal attempts and model calls inside external tools are outside the notification boundary.
 
-The qualified scope is a parent turn initiated by the Fabric invocation. The SDK can join an already-active regular turn, and its response does not expose whether a turn was joined. Independently running parent turns that can be joined are outside this qualified ownership boundary. An exact `turnId` does not prove who initiated a pre-existing turn.
+The qualified scope is a parent turn initiated by the NeMo Fabric invocation. The SDK can join an already-active regular turn, and its response does not expose whether a turn was joined. Independently running parent turns that can be joined are outside this qualified ownership boundary. An exact `turnId` does not prove who initiated a pre-existing turn.
 
 Raw reports preserve request boundaries but provide no served-model allocation. Core does not estimate cost from the requested model. The adapter reports no provider cost.
 
