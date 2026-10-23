@@ -213,6 +213,8 @@ class SpawnedAcpSession implements AcpSession {
   readonly initializeResponse: InitializeResponse;
 
   private stopped = false;
+  private processTerminated = false;
+  private stopPromise: Promise<void> | undefined;
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly connection: ClientConnection;
   private readonly activeSession: ActiveSession;
@@ -267,23 +269,36 @@ class SpawnedAcpSession implements AcpSession {
   }
 
   async stop(): Promise<void> {
-    if (this.stopped) return;
-    this.stopped = true;
-    this.activeSession.dispose();
-
-    if (this.initializeResponse.agentCapabilities?.sessionCapabilities?.close != null) {
-      try {
-        await timeout(
-          this.connection.agent.request(methods.agent.session.close, { sessionId: this.sessionId }),
-          this.shutdownTimeoutMs,
-          new AcpRunnerError("acp_shutdown_timeout", "The ACP agent did not close the session before the deadline"),
-        );
-      } catch {
-        // Process termination below is the final cleanup boundary.
-      }
+    if (this.processTerminated) return;
+    if (this.stopPromise !== undefined) return this.stopPromise;
+    this.stopPromise = this.stopAttempt();
+    try {
+      await this.stopPromise;
+    } finally {
+      this.stopPromise = undefined;
     }
-    this.connection.close();
+  }
+
+  private async stopAttempt(): Promise<void> {
+    if (!this.stopped) {
+      this.stopped = true;
+      this.activeSession.dispose();
+
+      if (this.initializeResponse.agentCapabilities?.sessionCapabilities?.close != null) {
+        try {
+          await timeout(
+            this.connection.agent.request(methods.agent.session.close, { sessionId: this.sessionId }),
+            this.shutdownTimeoutMs,
+            new AcpRunnerError("acp_shutdown_timeout", "The ACP agent did not close the session before the deadline"),
+          );
+        } catch {
+          // Process termination below is the final cleanup boundary.
+        }
+      }
+      this.connection.close();
+    }
     await terminateProcessTree(this.child, this.shutdownTimeoutMs);
+    this.processTerminated = true;
   }
 }
 

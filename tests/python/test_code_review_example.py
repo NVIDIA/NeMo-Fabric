@@ -1019,3 +1019,14 @@ async def test_example_entrypoint_streams_relay_records_and_terminal_result(
     runtime.invoke_stream.assert_called_once_with(input="review this")
     stream.result.assert_awaited_once_with()
     runtime_context.__aexit__.assert_awaited_once()
+
+
+def test_strands_variant_projects_read_only_harness_tools():
+    from examples.code_review_agent import strands_config
+
+    plan = Fabric().plan(strands_config(), base_dir=BASE_DIR)
+    agent_config = plan.to_mapping()["agent_config"]
+    assert agent_config["harness"]["settings"]["builtin_tools"] == ["read"]
+    assert agent_config["instructions"]["system"]["mode"] == "append"
+    assert agent_config.get("tools") is None
+    assert agent_config.get("skills") is None
