@@ -165,7 +165,7 @@ def _operations(root: Path) -> list[dict]:
 def _run(launcher, workload, env):
     script, _, base_env = launcher
     return subprocess.run(
-        ["bash", str(script), str(workload), "--input", "words with spaces"],
+        ["/bin/bash", str(script), str(workload), "--input", "words with spaces"],
         env={**base_env, **env},
         text=True,
         capture_output=True,
@@ -385,7 +385,7 @@ def test_invalid_platform_or_mode_stops_before_building(launcher, environment, m
         "stage_workload_image() { :; }\nrun_workload_consumer() { :; }\n"
     )
     completed = subprocess.run(
-        ["bash", str(script), str(workload)],
+        ["/bin/bash", str(script), str(workload)],
         env={**base_env, **environment},
         text=True,
         capture_output=True,
