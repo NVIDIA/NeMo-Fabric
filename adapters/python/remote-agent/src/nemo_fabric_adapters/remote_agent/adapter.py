@@ -365,6 +365,7 @@ class RemoteAgentRuntime:
         ) as response:
             response.raise_for_status()
             async for event, value in _sse_events(response):
+                value = _event_object(value, "event")
                 report = value.get("response")
                 if (
                     isinstance(report, dict)
@@ -490,7 +491,11 @@ class RemoteAgentRuntime:
                         ),
                         input_tokens_include_cache=False,
                     )
-                if on_usage is not None and counts:
+                if (
+                    on_usage is not None
+                    and counts
+                    and event in ("message_start", "message_delta")
+                ):
                     on_usage(
                         _usage(
                             counts.get("input_tokens"),

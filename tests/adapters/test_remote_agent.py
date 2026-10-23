@@ -53,6 +53,50 @@ async def test_sse_events_flushes_unterminated_final_event():
     assert events == [("response.completed", {"response": {"id": "response-id"}})]
 
 
+async def test_response_stream_rejects_non_object_event(
+    monkeypatch: pytest.MonkeyPatch, repo_root: Path
+):
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    client = MagicMock()
+    client.stream.return_value.__aenter__ = AsyncMock(return_value=response)
+    client.stream.return_value.__aexit__ = AsyncMock(return_value=None)
+    client.aclose = AsyncMock()
+    monkeypatch.setattr(adapter.httpx, "AsyncClient", lambda **kwargs: client)
+
+    async def malformed_events(_response):
+        yield "response.created", []
+
+    monkeypatch.setattr(adapter, "_sse_events", malformed_events)
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {
+                "settings": {
+                    "base_url": "https://agents.example.test/v1",
+                    "api_type": "openai-responses",
+                }
+            },
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+        }
+    )
+    context = _context()
+    runtime = adapter.RemoteAgentRuntime()
+    await runtime.start(
+        {
+            "config": config,
+            "runtime_context": context.to_mapping(),
+            "base_dir": str(repo_root),
+        }
+    )
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.invoke(AgentRunRequest(input="Hello."), context)
+    finally:
+        await runtime.stop()
+
+    assert caught.value.code == "remote_agent_invalid_response"
+
+
 @pytest.mark.parametrize(
     ("api_type", "path"),
     [
