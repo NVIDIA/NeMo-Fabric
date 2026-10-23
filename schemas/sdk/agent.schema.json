@@ -558,6 +558,34 @@
         }
       ]
     },
+    "PricingConfig": {
+      "additionalProperties": true,
+      "description": "Central token-price configuration; never changes provider requests.",
+      "properties": {
+        "catalog_path": {
+          "description": "Relay-compatible v1 catalog, resolved relative to the config base directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RecordConfig": {
+      "additionalProperties": false,
+      "description": "Per-invocation run record settings.\n\nWhen enabled, core appends a start line and an end line for each local\ninvocation to `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`.",
+      "properties": {
+        "enabled": {
+          "description": "Whether to write a run record for each invocation. Requires an\nartifact root, the `local` environment provider, and a `process` or\n`python` adapter.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
     "RelayAtifConfig": {
       "additionalProperties": true,
       "description": "Relay ATIF export configuration.",
@@ -1329,6 +1357,17 @@
           "description": "Output schema label.",
           "type": "string"
         },
+        "record": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecordConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Opt-in per-invocation run record. Core-only; never sent to adapters."
+        },
         "timeout_seconds": {
           "description": "Maximum duration of one invocation in seconds.",
           "exclusiveMinimum": 0.0,
@@ -1610,6 +1649,17 @@
       },
       "description": "Named model roles.",
       "type": "object"
+    },
+    "pricing": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PricingConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional catalog override for central token-price estimates."
     },
     "relay": {
       "anyOf": [

@@ -87,3 +87,8 @@ Start with the shared setup and execution model in the
 ## Native System Stats
 
 [`system_stats`](system_stats/README.md) demonstrates a real temporary worker-memory spike, native sampled peak/mean/range, retained per-invocation artifacts, and Linux cgroup constraints without a model endpoint or Relay collector.
+
+
+## Compare Your Own Tasks
+
+[`attempt_comparison`](attempt_comparison/README.md) demonstrates complete, partial and missing evidence for caller-defined tasks. It uses synthetic saved results, makes no model calls, and shows explicit request coverage without a benchmark-runner dependency.
