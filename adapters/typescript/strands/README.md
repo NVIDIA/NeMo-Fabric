@@ -3,9 +3,9 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Strands ACP Adapter
+# AWS Strands ACP Adapter
 
-Run the standard [Strands harness](https://github.com/strands-agents/harness-sdk/tree/main/strands-cli) through NVIDIA NeMo Fabric. The `nvidia.fabric.strands` adapter launches `strands --acp-server` using the [shared ACP runner](../common/acp-runner.md), retains one conversation per NeMo Fabric runtime, and submits ordered text invocations.
+Run the standard [AWS Strands harness](https://github.com/strands-agents/harness-sdk/tree/main/strands-cli) through NVIDIA NeMo Fabric. The `nvidia.fabric.strands` adapter launches `strands --acp-server` using the [shared ACP runner](../common/acp-runner.md), retains one conversation per NeMo Fabric runtime, and submits ordered text invocations.
 
 ```mermaid
 flowchart LR

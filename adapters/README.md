@@ -62,7 +62,7 @@ build, and packaging conventions.
 | [Factory Droid](typescript/droid/README.md) | `nvidia.fabric.droid` | `nemo-fabric-adapters-droid` | Node.js 22.19+ |
 | [Kilo Code](typescript/kilo/README.md) | `nvidia.fabric.kilo` | `nemo-fabric-adapters-kilo` | Node.js 22.19+ |
 | [Kiro](typescript/kiro/README.md) | `nvidia.fabric.kiro` | `nemo-fabric-adapters-kiro` | Node.js 22.19+ |
-| [Strands](typescript/strands/README.md) | `nvidia.fabric.strands` | `nemo-fabric-adapters-strands` | Node.js 22.19+ |
+| [AWS Strands](typescript/strands/README.md) | `nvidia.fabric.strands` | `nemo-fabric-adapters-strands` | Node.js 22.19+ |
 | [OpenCode](typescript/opencode/README.md) | `nvidia.fabric.opencode` | `nemo-fabric-adapters-opencode` | Bun 1.4.2+ |
 | [Pi](typescript/pi/README.md) | `nvidia.fabric.pi` | `nemo-fabric-adapters-pi` | Node.js 22.19+ |
 | [Qwen Code](typescript/qwen/README.md) | `nvidia.fabric.qwen` | `nemo-fabric-adapters-qwen` | Node.js 22.19+ |

@@ -487,9 +487,9 @@ Set `NVIDIA_API_KEY` to run the example. The variant keeps the code-review skill
 uses Qwen's non-interactive default approval mode, and blocks shell and edit
 tools. The variant does not configure an MCP server or Relay telemetry.
 
-### Strands (`strands`)
+### AWS Strands (`strands`)
 
-Run the standard Strands harness through the shared ACP runner. From the repository root:
+Run the standard AWS Strands harness through the shared ACP runner. From the repository root:
 
 ```bash
 npm install --global @strands-agents/cli@0.2.1
