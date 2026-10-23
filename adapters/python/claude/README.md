@@ -130,27 +130,43 @@ explicitly configured `environment.env` values, and variables named by
 `environment.env_names`. Raw Claude stderr is consumed
 by the SDK and is not persisted as a NeMo Fabric artifact.
 
-## Token Usage
+## Token usage and cost
 
-The result's `usage` carries Claude Code's `input_tokens`, `output_tokens`, and
-reported `cost_usd`. Claude Code counts tokens for its main agent loop only: its
-usage leaves out Task subagent, sidechain, and auxiliary model calls.
+The adapter reads Claude Code's partial-message stream for each invocation.
+A provider-omitted count stays unknown; a reported zero stays zero. The final
+output-token delta replaces the initial streamed output count. Claude Code's
+zero-filled terminal usage and process-cumulative `modelUsage` remain diagnostics
+in `output`; they do not fill missing provider fields.
 
-Claude Code's `input_tokens` excludes cache reads and cache writes, so the
-adapter also returns the `nemo_fabric.detailed_token_usage.v1` usage extension,
-declared under `extension_schemas.usage` in the descriptor. When Claude Code
-reports input, cache reads, and cache writes, the extension carries all three as
-`input_tokens`, `cached_input_tokens`, and `cache_write_input_tokens` with
-`input_tokens_include_cache: false`. If any of the three is missing, the
-extension carries no input counters. Output is reported as `output_tokens` with
-`output_tokens_include_reasoning: true`, because Anthropic bills thinking as
-output tokens.
+The adapter sends these observations through
+`nemo_fabric.usage_accounting.v1`. NeMo Fabric's shared accounting code normalizes
+input to include cache reads and writes, keeps independently known counters,
+and separates complete totals from observations with accounting gaps. A failed
+terminal result can still have complete usage. A missing terminal result or a
+substitute crash result preserves observations without certifying complete totals.
+Raw stream fragments are not added to `output.events`.
 
-Harbor accounting reads these counters before any ATIF trajectory. With the
-input counters present, Harbor sets `n_input_tokens` to input plus cache reads
-plus cache writes and `n_cache_tokens` to cache reads, from the same main-loop
-scope as `n_output_tokens`. Counts the result leaves unknown stay unknown in
-Harbor; a Relay trajectory's totals are recorded separately and never fill them.
+In Claude Code 2.1.294 with SDK 0.2.165, foreground Agent tool results expose
+zero-filled child usage aggregates. Positive values are retained as observations;
+zeros cannot establish provider field presence. Parented child assistant messages
+can also supply observations, but their initial output count is not the final
+output total. Actual child work, compaction and reported API retries leave gaps
+where the public stream cannot establish coverage. Merely enabling a tool does
+not create a gap. The adapter does not change delegation or compaction settings.
+
+Accounting freezes when the invocation returns. Late child messages and injected
+background turns never move usage into a later invocation. The adapter skips an
+injected turn's result and continues waiting for the result of its own query.
+
+Claude Code's `total_cost_usd` is a CLI estimate, not provider-reported cost.
+`usage.cost_usd` stays unknown. The existing `output.cost_usd` diagnostic keeps a
+per-invocation CLI estimate when a cumulative baseline is valid. A crash invalidates
+the baseline; an actual background task disables these diagnostic deltas for the
+rest of that runtime because late work can cross invocation boundaries.
+This collector does not populate `model_usage.cost.estimated`.
+Custom endpoints do not establish native Anthropic pricing identity. With Relay enabled,
+pricing identity follows its launched upstream, including
+`NEMO_RELAY_ANTHROPIC_BASE_URL` when no explicit model endpoint overrides it.
 
 ## Relay Observability
 
@@ -169,7 +185,7 @@ config.enable_relay(
 ```
 
 For each Relay-enabled Claude runtime, NeMo Fabric starts one `nemo-relay` gateway,
-waits for its health endpoint, and stops it with the runtime. NeMo Fabric passes the
+waits up to 30 seconds for its health endpoint, and stops it with the runtime. NeMo Fabric passes the
 gateway URL to the connected Claude Code process through `ANTHROPIC_BASE_URL`
 and `NEMO_RELAY_GATEWAY_URL`, and passes the selected explicit model endpoint to
 the gateway as its Anthropic upstream. It also stages a runtime-scoped Claude

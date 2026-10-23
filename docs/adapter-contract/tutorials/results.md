@@ -84,6 +84,30 @@ NeMo Fabric preserves the extension at `RunResult.usage.metadata["nemo_fabric.de
 **Success Check**: `invoke` returns one typed `AgentRunResult` whose explicit
 status matches the presence or absence of an error.
 
+#### Invocation accounting evidence
+
+The closed `AgentUsage` root stays unchanged. Collectors can use
+`nemo_fabric_adapter_contract.usage.usage_from_observations` in Python or
+`usageFromObservations` in TypeScript to construct the descriptor-declared
+`nemo_fabric.usage_accounting.v1` extension. Its canonical schema is
+`schemas/extensions/usage-accounting.schema.json` in the repository. Declare it
+under `extension_schemas.usage` and keep packaged descriptor copies identical.
+
+Supply already deduplicated source units, source-established model/provider identity when known, raw inclusion flags and independent field presence. A configured client or request model can establish accounting identity when the source proves all included calls used it. An outer requested alias or role alone does not establish that allocation. Accounting identity does not replace served-model provenance.
+
+Collectors own source identity and invocation lifetime; the helper does not wait for late work or infer zero from an HTTP error. Complete fields cannot coexist with an explicit gap for that dimension. Use `unfinished_work`, `missing_usage` or `scope_unverified` only for actual missing evidence, not merely because a harness supports background work or retries. Retain raw observations when complete counts cannot be certified.
+
+A request-wide `UsageRequest.gap` affects every dimension of that call and cannot coexist with complete model or invocation totals. For a dimension-specific gap, omit the affected request fields and declare the scoped gap without setting the request-wide `gap`. Other dimensions can remain complete.
+
+A provider name must identify the source-established provider, not merely an API-compatible protocol. Custom endpoints and arbitrary gateways do not establish a native provider tariff. Preserve the model and counts when provider identity cannot be established. Catalog estimation is added separately and never changes reported usage.
+
+Core normalizes cache-inclusive input and reasoning-inclusive output once and
+returns the flat `RunResult.model_usage` view. Raw reasoning/peak/request evidence
+can support normalization and pricing without becoming mandatory public metrics.
+A model aggregate is not a single request. No adapter should fabricate call
+boundaries, hide execution features or change retry settings to make usage look
+complete. Costs computed from a price table never become `cost_usd`.
+
 ### 2. Separate Failure Classes
 
 Use these failure classes consistently:

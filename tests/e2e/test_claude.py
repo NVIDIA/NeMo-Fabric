@@ -419,6 +419,70 @@ async def test_fabric_claude_accepts_real_relay_gateway_with_mock_claude(tmp_pat
     assert os.environ["NEMO_RELAY_CONFIG_SCOPE"] == "project"
 
 
+async def invoke_mock_claude_turns(tmp_path, turns):
+    config = fabric_config(tmp_path, cli_path=MOCK_CLAUDE_CLI)
+    config.environment.env["MOCK_CLAUDE_CLI_TURNS"] = json.dumps(turns)
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        return [
+            await runtime.invoke(input=f"turn {index}") for index in range(len(turns))
+        ]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="mock CLI needs a POSIX executable")
+@pytest.mark.parametrize(
+    "turn", ["crash_after_answer", "crash_before_answer", "internal_error"]
+)
+async def test_claude_substitute_result_keeps_unknowns_and_observations(tmp_path, turn):
+    (result,) = await invoke_mock_claude_turns(tmp_path, [turn])
+    assert result.status == "failed"
+    assert result.error.code == "claude_result_failed"
+    assert result.model_usage.input_tokens is None
+    assert result.model_usage.output_tokens is None
+    assert result.model_usage.observed.output_tokens == (
+        25 if turn == "crash_after_answer" else None
+    )
+    assert result.output["usage"] is None
+    assert result.output["cost_usd"] is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="mock CLI needs a POSIX executable")
+async def test_claude_pre_query_refusal_proves_zero_model_work(tmp_path):
+    (result,) = await invoke_mock_claude_turns(tmp_path, ["sandbox_unavailable"])
+    assert result.status == "failed"
+    assert result.model_usage.input_tokens == result.model_usage.output_tokens == 0
+    assert result.model_usage.cached_input_tokens == 0
+    assert result.usage.get("cost_usd") is None
+    assert result.model_usage.cost.reported.amount_nano_usd is None
+    assert result.output["cost_usd"] == 0
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="mock CLI needs a POSIX executable")
+async def test_claude_failed_terminal_keeps_complete_stream_counts(tmp_path):
+    (result,) = await invoke_mock_claude_turns(tmp_path, ["max_turns"])
+    assert result.status == "failed"
+    assert result.model_usage.input_tokens == 3412
+    assert result.model_usage.output_tokens == 25
+    assert result.model_usage.cached_input_tokens == 3000
+    assert result.model_usage.total_tokens == 3437
+    assert result.usage.get("cost_usd") is None
+    assert result.model_usage.cost.reported.amount_nano_usd is None
+    assert result.output["cost_usd"] == 0.002
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="mock CLI needs a POSIX executable")
+async def test_claude_crash_cannot_move_estimated_spend_into_next_invocation(tmp_path):
+    results = await invoke_mock_claude_turns(
+        tmp_path, ["success", "crash_after_answer", "success"]
+    )
+    assert [result.status for result in results] == ["succeeded", "failed", "succeeded"]
+    assert [result.output["cost_usd"] for result in results] == [0.001, None, None]
+    assert (
+        results[0].model_usage.output_tokens
+        == results[2].model_usage.output_tokens
+        == 2
+    )
+
+
 @pytest.mark.skipif(
     os.environ.get("RUN_FABRIC_CLAUDE_INTEGRATION") != "1",
     reason="set RUN_FABRIC_CLAUDE_INTEGRATION=1 to run Claude Agent SDK integration",

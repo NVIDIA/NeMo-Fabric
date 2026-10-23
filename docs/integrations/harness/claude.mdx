@@ -181,3 +181,41 @@ NeMo Fabric's `relay` extra installs only the Relay Python library and does not
 install the CLI. NeMo Fabric owns sidecar supervision, Claude configuration,
 and upstream selection. Relay owns the gateway transport and semantic
 observability pipeline.
+
+## Token usage and cost
+
+The adapter reads Claude Code's partial-message stream for each invocation.
+A provider-omitted count stays unknown; a reported zero stays zero. The final
+output-token delta replaces the initial streamed output count. Claude Code's
+zero-filled terminal usage and process-cumulative `modelUsage` remain diagnostics
+in `output`; they do not fill missing provider fields.
+
+The adapter sends these observations through
+`nemo_fabric.usage_accounting.v1`. NeMo Fabric's shared accounting code normalizes
+input to include cache reads and writes, keeps independently known counters,
+and separates complete totals from observations with accounting gaps. A failed
+terminal result can still have complete usage. A missing terminal result or a
+substitute crash result preserves observations without certifying complete totals.
+Raw stream fragments are not added to `output.events`.
+
+In Claude Code 2.1.294 with SDK 0.2.165, foreground Agent tool results expose
+zero-filled child usage aggregates. Positive values are retained as observations;
+zeros cannot establish provider field presence. Parented child assistant messages
+can also supply observations, but their initial output count is not the final
+output total. Actual child work, compaction and reported API retries leave gaps
+where the public stream cannot establish coverage. Merely enabling a tool does
+not create a gap. The adapter does not change delegation or compaction settings.
+
+Accounting freezes when the invocation returns. Late child messages and injected
+background turns never move usage into a later invocation. The adapter skips an
+injected turn's result and continues waiting for the result of its own query.
+
+Claude Code's `total_cost_usd` is a CLI estimate, not provider-reported cost.
+`usage.cost_usd` stays unknown. The existing `output.cost_usd` diagnostic keeps a
+per-invocation CLI estimate when a cumulative baseline is valid. A crash invalidates
+the baseline; an actual background task disables these diagnostic deltas for the
+rest of that runtime because late work can cross invocation boundaries.
+This collector does not populate `model_usage.cost.estimated`.
+Custom endpoints do not establish native Anthropic pricing identity. With Relay enabled,
+pricing identity follows its launched upstream, including
+`NEMO_RELAY_ANTHROPIC_BASE_URL` when no explicit model endpoint overrides it.

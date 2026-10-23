@@ -19,6 +19,7 @@ from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk import ClaudeSDKClient
@@ -30,6 +31,7 @@ from claude_agent_sdk import ConversationResetMessage
 from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
+from claude_agent_sdk import StreamEvent
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapter_contract.codec import ContractValidationError
@@ -47,6 +49,14 @@ from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
 from nemo_fabric_adapters.common import utils as common_utils
+
+from nemo_fabric_adapters.claude.usage import (
+    ClaudeInvocationUsage,
+    ClaudeUsageSession,
+    injected_turn,
+    pre_query_refusal,
+    substitute_result,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -209,16 +219,21 @@ def _settings(config: AgentConfig) -> dict[str, Any]:
     return config.harness.settings if config.harness is not None else {}
 
 
+def _selected_model_role(config: AgentConfig) -> str:
+    """The model role Claude Code runs: ``default``, or the sole configured role."""
+
+    if "default" in config.models:
+        return "default"
+    if len(config.models) == 1:
+        return next(iter(config.models))
+    raise AdapterConfigError(
+        "claude_invalid_configuration",
+        "Claude requires a default model or exactly one model",
+    )
+
+
 def _selected_model_config(config: AgentConfig) -> AgentModelConfig:
-    model = config.models.get("default")
-    if model is None and len(config.models) == 1:
-        model = next(iter(config.models.values()))
-    if model is None:
-        raise AdapterConfigError(
-            "claude_invalid_configuration",
-            "Claude requires a default model or exactly one model",
-        )
-    return model
+    return config.models[_selected_model_role(config)]
 
 
 def _resolve_path(base_dir: str, value: str | Path) -> Path:
@@ -245,6 +260,42 @@ def _anthropic_base_url(model: AgentModelConfig) -> str | None:
         return None
     base_url = model.base_url.rstrip("/")
     return base_url.removesuffix("/v1") if model.provider != "anthropic" else base_url
+
+
+def _accounting_provider(
+    model: AgentModelConfig,
+    runtime_context: RuntimeContext,
+    relay: ClaudeRelaySettings | None,
+) -> str | None:
+    """Qualify the upstream selected by the launched direct client or Relay.
+
+    Fabric writes no upstream override into its generated Relay config. The
+    explicit launch argument wins over Relay's supported inherited environment
+    override; absent both, the pinned gateway defaults to native Anthropic.
+    Capture this before launching the gateway, not after awaiting SDK connect.
+    """
+    endpoint = _anthropic_base_url(model)
+    if relay is not None:
+        endpoint = relay.gateway.anthropic_base_url
+        if endpoint is None:
+            endpoint = os.environ.get("NEMO_RELAY_ANTHROPIC_BASE_URL")
+    elif endpoint is None:
+        endpoint = runtime_context.environment.env.get("ANTHROPIC_BASE_URL")
+    if model.provider != "anthropic":
+        return None
+    if endpoint is None:
+        return "anthropic"
+    try:
+        parts = urlsplit(endpoint)
+        native = (
+            parts.scheme == "https"
+            and parts.hostname == "api.anthropic.com"
+            and parts.port in (None, 443)
+            and parts.path.rstrip("/") in {"", "/v1"}
+        )
+    except ValueError:
+        native = False
+    return "anthropic" if native else None
 
 
 def _model_environment(
@@ -704,6 +755,7 @@ def build_options(
             cli_path=_resolve_path(base_dir, cli_path) if cli_path else None,
             mcp_servers=mcp.config_path if mcp is not None else {},
             strict_mcp_config=True,
+            include_partial_messages=True,
             skills="all" if has_skill_plugin else None,
             plugins=plugins,
             env=environment,
@@ -769,9 +821,9 @@ def normalize_result(messages: list[Message], result: ResultMessage) -> dict[str
         "adapter": "sdk",
         "response": result.result,
         "session_id": result.session_id,
-        "usage": _json_safe(result.usage or {}),
+        "usage": None if substitute_result(result) else _json_safe(result.usage or {}),
         "model_usage": _json_safe(result.model_usage or {}),
-        "cost_usd": result.total_cost_usd,
+        "cost_usd": None if substitute_result(result) else result.total_cost_usd,
         "duration_ms": result.duration_ms,
         "duration_api_ms": result.duration_api_ms,
         "num_turns": result.num_turns,
@@ -824,54 +876,12 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
     return _failure("claude_failed", "Claude invocation failed")
 
 
-_DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
-# Claude Code's result usage keys and the detailed input counters they fill.
-# Anthropic's input_tokens excludes cache reads and cache writes, and its
-# output_tokens includes thinking, which Anthropic bills as output.
-_DETAILED_INPUT_COUNTERS = {
-    "input_tokens": "input_tokens",
-    "cache_read_input_tokens": "cached_input_tokens",
-    "cache_creation_input_tokens": "cache_write_input_tokens",
-}
+_SYNTHETIC_MODEL = "<synthetic>"
 
 
-def _token_counter(value: Any) -> int | None:
-    if (
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and 0 <= value <= (1 << 64) - 1
-    ):
-        return value
-    return None
-
-
-def _detailed_token_usage(usage: dict[str, Any]) -> dict[str, int | bool]:
-    """Return Claude Code's counters plus the inclusion flags Anthropic fixes.
-
-    Any detailed input field makes consumers such as Harbor accounting read
-    input and cache from this object rather than the top-level counters or a
-    trajectory, so the input counters are reported only when input and both
-    cache parts are known. ``output_tokens_include_reasoning`` keeps the
-    inclusive output total equal to ``output_tokens``; without it, those
-    consumers would read output as unknown.
-    """
-    counters: dict[str, int | bool] = {}
-    inputs = {
-        counter: value
-        for key, counter in _DETAILED_INPUT_COUNTERS.items()
-        if (value := _token_counter(usage.get(key))) is not None
-    }
-    if len(inputs) == len(_DETAILED_INPUT_COUNTERS):
-        counters.update(inputs)
-        counters["input_tokens_include_cache"] = False
-    output_tokens = _token_counter(usage.get("output_tokens"))
-    if output_tokens is not None:
-        counters["output_tokens"] = output_tokens
-        counters["output_tokens_include_reasoning"] = True
-    return counters
-
-
-def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
+def _agent_run_result(
+    output: dict[str, Any], usage: AgentUsage | None = None
+) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
     reported_error = normalized.pop("error", None)
@@ -885,35 +895,11 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
             retryable=bool(reported.get("retryable", False)),
             extensions=metadata if isinstance(metadata, dict) else {},
         )
-    raw_usage = normalized.get("usage")
-    usage = raw_usage if isinstance(raw_usage, dict) else {}
-    tokens = {
-        name: value
-        for name in ("input_tokens", "output_tokens", "total_tokens")
-        if (value := _token_counter(usage.get(name))) is not None
-    }
-    cost = normalized.get("cost_usd")
-    if (
-        not isinstance(cost, (int, float))
-        or isinstance(cost, bool)
-        or not math.isfinite(cost)
-        or cost < 0
-    ):
-        cost = None
-        if "cost_usd" in normalized:
-            normalized["cost_usd"] = None
-    detailed = _detailed_token_usage(usage)
-    extensions = {_DETAILED_TOKEN_USAGE_KEY: detailed} if detailed else {}
-    agent_usage = (
-        AgentUsage(**tokens, cost_usd=cost, extensions=extensions)
-        if tokens or cost is not None or detailed
-        else None
-    )
     return AgentRunResult(
         status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
         output=normalized,
         error=error,
-        usage=agent_usage,
+        usage=usage,
     )
 
 
@@ -1068,6 +1054,7 @@ class ClaudeRuntime:
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_config_path: Path | None = None
         self._unusable = False
+        self._usage_session = ClaudeUsageSession()
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1085,6 +1072,7 @@ class ClaudeRuntime:
                 common_utils.agent_name(payload), model, runtime_context, base_dir
             )
             self._relay = relay
+            usage_provider = _accounting_provider(model, runtime_context, relay)
             self._gateway_process = _start_relay_gateway(
                 runtime_context, base_dir, relay
             )
@@ -1111,6 +1099,11 @@ class ClaudeRuntime:
         self._client = client
         # A new Claude Code process starts its running cost total at zero.
         self._cost_total = 0.0
+        self._usage_session = ClaudeUsageSession(
+            usage_provider
+            if not _settings(agent_config).get("setting_sources")
+            else None
+        )
 
     async def invoke(
         self,
@@ -1139,6 +1132,7 @@ class ClaudeRuntime:
             )
 
         invocation_deadline = lifecycle.invocation_deadline(runtime_context)
+        usage_owner: ClaudeInvocationUsage | None = None
         try:
             prompt = request_prompt(request)
         except ClaudeAdapterError as error:
@@ -1153,10 +1147,12 @@ class ClaudeRuntime:
                 and relay_artifacts.expects_local_atif(relay.plugin_config)
                 else None
             )
+            usage_owner = self._usage_session.start()
             output = await self._run_query(
                 client,
                 prompt,
                 _remaining_timeout(invocation_deadline),
+                usage_owner,
             )
             if (
                 output.get("completed")
@@ -1183,32 +1179,46 @@ class ClaudeRuntime:
                             ),
                             relay,
                             artifacts=[],
-                        )
+                        ),
+                        usage_owner.finish(),
                     )
 
         if self._relay is not None:
             output = _relay_output(output, self._relay)
-        return _agent_run_result(output)
+        return _agent_run_result(
+            output, usage_owner.finish() if usage_owner is not None else None
+        )
 
     async def _run_query(
         self,
         client: ClaudeSDKClient,
         prompt: str,
         remaining_timeout: float,
+        usage_owner: ClaudeInvocationUsage | None = None,
     ) -> dict[str, Any]:
         """Run one SDK query and normalize its terminal result."""
 
+        usage_owner = usage_owner or self._usage_session.start()
         messages: list[Message] = []
         result: ResultMessage | None = None
         deadline = asyncio.timeout(remaining_timeout)
         try:
             async with deadline:
                 await client.query(prompt)
-                async for message in client.receive_response():
-                    if isinstance(message, ResultMessage):
-                        result = message
-                    else:
-                        messages.append(message)
+                while result is None:
+                    received = False
+                    async for message in client.receive_response():
+                        received = True
+                        usage_owner.observe(message)
+                        if isinstance(message, ResultMessage):
+                            if injected_turn(message):
+                                messages.clear()
+                            else:
+                                result = message
+                        elif not isinstance(message, StreamEvent):
+                            messages.append(message)
+                    if not received:
+                        break
         except (TimeoutError, ClaudeSDKError) as error:
             self._unusable = True
             await self._interrupt_failed_invocation()
@@ -1218,7 +1228,7 @@ class ClaudeRuntime:
                 else sdk_failure(error)
             )
         except Exception:
-            # Claude Agent SDK 0.2.120 can yield an error ResultMessage and then
+            # The SDK can yield an error ResultMessage and then
             # raise a plain Exception while closing the response stream.
             self._unusable = True
             if result is None or not _result_failed(result):
@@ -1233,6 +1243,8 @@ class ClaudeRuntime:
                 )
             else:
                 output = self._normalize_invocation(messages, result)
+        finally:
+            usage_owner.finish()
         return output
 
     def _normalize_invocation(
@@ -1272,6 +1284,16 @@ class ClaudeRuntime:
         this invocation unknown and makes its total the new baseline.
         """
 
+        if self._usage_session.background_seen:
+            # Cumulative estimates can include late descendant work.
+            self._cost_total = None
+            return None
+        if substitute_result(result):
+            # The substitute zero cannot establish a session cost baseline.
+            self._cost_total = None
+            return None
+        if pre_query_refusal(result):
+            return 0.0
         previous = self._cost_total
         total = result.total_cost_usd
         if (
@@ -1282,7 +1304,9 @@ class ClaudeRuntime:
         ):
             total = None
         self._cost_total = total
-        reset = any(isinstance(message, ConversationResetMessage) for message in messages)
+        reset = any(
+            isinstance(message, ConversationResetMessage) for message in messages
+        )
         if total is None or previous is None or reset or total < previous:
             return None
         # Drop float subtraction noise such as 0.19999999999999998. A tenth of a
