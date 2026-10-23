@@ -21,7 +21,7 @@ concurrency, resource limits, sampling settings, and supported random seeds.
 Record the warmup and cache policy before either pass; preserve it in both.
 Keep failures and timeouts in the report.
 
-Before spending GPU time, install the exact PR build in the actual task-runner
+Before spending GPU time, install the NeMo Fabric build under test in the actual task-runner
 environment and run the credential-free resource probe there. Require resolved
 stats artifacts, matching invocation IDs, a retained transient peak, and explicit
 metric availability. A host-side package version alone does not establish which

@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded resource series and reductions. The single process-wide ticker,
-//! registrations, fork check, and read-outside-lock lifecycle adapt
-//! Maryam Najafian's sampler in PR #426, independently of invocation recording.
+//! Bounded resource series and reductions with a single process-wide ticker.
+//! Registrations are fork-aware, and resource reads run outside the registry lock.
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
