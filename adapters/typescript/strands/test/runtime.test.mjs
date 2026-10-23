@@ -191,3 +191,31 @@ test("bounds retained warm conversation without silently discarding history", as
   assert.equal(invoked, 1);
   await runtime.stop();
 });
+
+test("retains the session after failed stop so cleanup can be retried", async () => {
+  let attempts = 0;
+  const runtime = new StrandsAdapterRuntime({
+    create: async () => ({
+      id: "session",
+      prompt: async () => ({ text: "answer", stopReason: "end_turn" }),
+      stop: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("cleanup failed");
+      },
+    }),
+  });
+  await runtime.start({
+    agentName: "agent",
+    baseDir: ".",
+    config: {},
+    runtimeContext: context,
+  });
+  await assert.rejects(runtime.stop(), /cleanup failed/);
+  await runtime.stop();
+  await runtime.stop();
+  assert.equal(attempts, 2);
+  await assert.rejects(
+    runtime.invoke({ input: "after stop" }, context),
+    (error) => error.code === "strands_not_started",
+  );
+});

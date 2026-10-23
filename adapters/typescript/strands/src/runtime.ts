@@ -177,7 +177,9 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
 
   async stop(): Promise<void> {
     const session = this.session;
-    this.session = undefined;
-    if (session !== undefined) await session.stop();
+    if (session !== undefined) {
+      await session.stop();
+      this.session = undefined;
+    }
   }
 }

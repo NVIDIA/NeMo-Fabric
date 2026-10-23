@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # NVIDIA NeMo Fabric TypeScript Adapter Workspace
 
 This private npm workspace coordinates the independently published common,
-Cline, Pi, OpenCode, Qwen Code, Kilo Code, and Kiro adapter packages. It
+Cline, Pi, OpenCode, Qwen Code, Kilo Code, AWS Kiro, and AWS Strands adapter packages. It
 provides shared build, test, package-content, and consumer-install checks
 without becoming a published package itself.
 
