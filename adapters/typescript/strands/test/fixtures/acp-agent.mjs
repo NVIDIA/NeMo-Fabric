@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { writeFile } from "node:fs/promises";
 import { Readable, Writable } from "node:stream";
 import {
@@ -14,6 +16,15 @@ import {
 let history = [];
 let servers = [];
 const id = randomUUID();
+if (process.env.TEST_STRANDS_DESCENDANT_STATE) {
+  const child = spawn(process.execPath, ["-e", `
+    process.on("SIGTERM", () => {});
+    process.send(process.pid);
+    setInterval(() => {}, 1000);
+  `], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
+  const [pid] = await once(child, "message");
+  await writeFile(process.env.TEST_STRANDS_DESCENDANT_STATE, JSON.stringify({ pid }));
+}
 if (process.env.TEST_STRANDS_STATE) {
   await writeFile(
     process.env.TEST_STRANDS_STATE,

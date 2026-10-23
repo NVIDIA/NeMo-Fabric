@@ -15,6 +15,8 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
+import { StrandsAdapterRuntime } from "../dist/runtime.js";
 import {
   normalizeUsage,
   StrandsAcpSessionFactory,
@@ -197,4 +199,68 @@ test("omits ambiguous zero cache counts while preserving positive counts and tok
     }
     if (write > 0) assert.equal(detail.cache_write_input_tokens, write);
   }
+});
+
+test("retains a timed-out runtime session until process cleanup succeeds", { skip: process.platform === "win32" }, async (t) => {
+  const input = await fixture(t);
+  const descendantState = join(input.baseDir, "descendant.json");
+  input.runtimeContext.environment.env.TEST_STRANDS_DESCENDANT_STATE = descendantState;
+  const runtime = new StrandsAdapterRuntime(new StrandsAcpSessionFactory());
+  await runtime.start(input);
+  const { pid: parent } = JSON.parse(await readFile(input.runtimeContext.environment.env.TEST_STRANDS_STATE, "utf8"));
+  const { pid: child } = JSON.parse(await readFile(descendantState, "utf8"));
+  const originalKill = process.kill.bind(process);
+  let failTermination = true;
+  const kill = t.mock.method(process, "kill", (pid, signal) => {
+    if (pid === -parent && signal === "SIGTERM" && failTermination) {
+      failTermination = false;
+      throw Object.assign(new Error("termination denied"), { code: "EPERM" });
+    }
+    return originalKill(pid, signal);
+  });
+  t.after(async () => {
+    const cleanup = [
+      () => kill.mock.restore(),
+      ...[parent, child].map((pid) => () => {
+        try { originalKill(pid, "SIGKILL"); } catch (error) {
+          if (error.code !== "ESRCH") throw error;
+        }
+      }),
+      () => runtime.stop(),
+    ];
+    const results = await Promise.allSettled(cleanup.map(async (step) => step()));
+    const failures = results.filter((result) => result.status === "rejected");
+    if (failures.length > 0) {
+      throw new AggregateError(failures.map((result) => result.reason), "Test process cleanup failed");
+    }
+  });
+  await assert.rejects(
+    runtime.invoke({ input: "hang" }, { ...input.runtimeContext, deadline_millis: Date.now() + 50 }),
+    { code: "strands_prompt_timeout" },
+  );
+  originalKill(child, 0);
+  await assert.rejects(runtime.invoke({ input: "next" }, input.runtimeContext), { code: "strands_not_started" });
+  await assert.rejects(runtime.start(input), { code: "strands_already_started" });
+  await runtime.stop();
+  for (const pid of [parent, child]) {
+    let running = true;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      try {
+        originalKill(pid, 0);
+        if (process.platform === "linux") {
+          const status = await readFile(`/proc/${pid}/stat`, "utf8");
+          if (status.slice(status.lastIndexOf(")") + 2).startsWith("Z")) { running = false; break; }
+        }
+      } catch (error) {
+        if (error.code !== "ESRCH" && error.code !== "ENOENT") throw error;
+        running = false;
+        break;
+      }
+      await delay(10);
+    }
+    assert.equal(running, false, `Process ${pid} survived runtime.stop()`);
+  }
+  const attempts = kill.mock.callCount();
+  await runtime.stop();
+  assert.equal(kill.mock.callCount(), attempts);
 });

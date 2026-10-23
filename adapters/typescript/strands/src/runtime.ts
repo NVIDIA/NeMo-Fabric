@@ -48,6 +48,7 @@ function failed(
 export class StrandsAdapterRuntime implements AdapterRuntime {
   private readonly factory: StrandsSessionFactory;
   private session?: StrandsSessionHandle;
+  private invalidated = false;
   private invocations = 0;
   private maxInvocations = 100;
 
@@ -64,14 +65,14 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
     }
     this.maxInvocations = selectSettings(input.config).maxInvocations;
     this.session = await this.factory.create(input);
+    this.invalidated = false;
     this.invocations = 0;
   }
 
   private async invalidate(session: StrandsSessionHandle): Promise<void> {
     if (this.session !== session) return;
-    this.session = undefined;
     try {
-      await session.stop();
+      await this.stop();
     } catch {
       // Preserve the invocation failure that made the session unusable.
     }
@@ -81,7 +82,7 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
     request: AgentRunRequest,
     context: RuntimeContext,
   ): Promise<AgentRunResult> {
-    if (this.session === undefined) {
+    if (this.session === undefined || this.invalidated) {
       throw new LifecycleError(
         "strands_not_started",
         "Strands adapter runtime is not started",
@@ -178,6 +179,7 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
   async stop(): Promise<void> {
     const session = this.session;
     if (session !== undefined) {
+      this.invalidated = true;
       await session.stop();
       this.session = undefined;
     }
