@@ -62,6 +62,31 @@ test("duplicate message identities deduplicate; conflicting duplicates add a gap
   assert.equal(result.extensions[key].observed.input_tokens, 40);
 });
 
+test("a completion without an id closes its pending call", async () => {
+  const usage = new ClineInvocationUsage();
+  await usage.run(async () => {
+    clineUsageHooks.beforeModel();
+    clineUsageHooks.afterModel({ assistantMessage: message(undefined, { inputTokens: 40, outputTokens: 8 }) });
+  });
+  const gaps = usage.finish().extensions[key].gaps.map(gap => gap.reason);
+  assert.ok(gaps.includes("scope_unverified"));
+  assert.ok(!gaps.includes("unfinished_work"));
+});
+
+test("an unfinished cumulative snapshot needs a baseline after completed calls", async () => {
+  const usage = new ClineInvocationUsage();
+  await usage.run(async () => {
+    clineUsageHooks.beforeModel();
+    clineUsageHooks.afterModel({ assistantMessage: message("first", { inputTokens: 40, outputTokens: 8 }) });
+    clineUsageHooks.beforeModel();
+    clineUsageHooks.onEvent({ type: "usage-updated", usage: { inputTokens: 100, outputTokens: 18 } });
+  });
+  const result = usage.finish();
+  assert.equal(result.extensions[key].observed.input_tokens, 40);
+  assert.equal(result.extensions[key].observed.output_tokens, 8);
+  assert.ok(result.extensions[key].gaps.some(gap => gap.reason === "unfinished_work"));
+});
+
 test("compaction preserves observed source metrics without certifying hidden calls", async () => {
   for (const phase of ["skipped", "started"]) {
     const usage = new ClineInvocationUsage();

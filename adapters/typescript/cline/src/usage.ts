@@ -83,7 +83,11 @@ export class ClineInvocationUsage {
       // hide physical retries and paid empty-response retries inside that call.
       gap: "scope_unverified",
     };
-    if (id === undefined) { this.unverified = true; return; }
+    if (id === undefined) {
+      if (this.pending.length > 0) this.pending.pop();
+      this.unverified = true;
+      return;
+    }
     const previous = this.records.get(id);
     if (previous !== undefined) {
       if (JSON.stringify(previous) !== JSON.stringify(evidence)) this.unverified = true;
@@ -106,9 +110,9 @@ export class ClineInvocationUsage {
     for (const call of this.pending) {
       const delta: ObjectValue = {};
       // Cline's usage-updated event is cumulative within this run. Recover only
-      // the unfinished call's increments, never add the cumulative snapshot.
+      // the unfinished call's increments only when a baseline proves the delta.
       for (const field of ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "reasoningTokenCount"]) {
-        const before = call.baseline[field] ?? 0;
+        const before = call.baseline[field];
         const after = call.latest?.[field];
         if (typeof before === "number" && Number.isSafeInteger(before) && before >= 0 &&
             typeof after === "number" && Number.isSafeInteger(after) && after >= before) delta[field] = after - before;
