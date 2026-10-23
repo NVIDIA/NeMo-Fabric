@@ -12,7 +12,7 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 Model price catalogs for estimating token cost.
 
-A catalog uses the NeMo Relay model pricing catalog format, version 1, so one file can configure both tools. NVIDIA NeMo Fabric parses the format itself and does not depend on NeMo Relay. Names are trimmed and compared case-insensitively. An explicit provider restricts aliases and model-path suffixes to that provider. Without a provider, model-only lookup uses the first matching entry in listed order.
+A catalog uses the NeMo Relay model pricing catalog format, version 1, so one file can configure both tools. NVIDIA NeMo Fabric parses the format itself and does not depend on NeMo Relay. Names are trimmed and compared case-insensitively. An explicit provider restricts aliases and model-path suffixes to that provider. Without a provider, lookup tries provider-qualified keys from the model path before model-only suffixes. For each candidate key, the first matching catalog entry wins.
 
 NeMo Fabric ships one catalog, embedded at build time, with the list prices of models that its presets, docs, and examples use. Each entry cites the provider pricing page it was taken from and the date it was checked. A caller can add a catalog of their own, whose entries take precedence.
 
