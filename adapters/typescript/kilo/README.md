@@ -79,17 +79,17 @@ The adapter accepts plain-text input and returns the terminal assistant text in
 Usage comes from each retained `step-finish` record owned by the invocation's
 prompt, including in-turn compaction and foreground `task` child-session
 windows. The adapter sends source observations through
-`nemo_fabric.usage_accounting.v1`; Fabric's shared accounting code owns sums,
+`nemo_fabric.usage_accounting.v1`; NeMo Fabric's shared accounting code owns sums,
 complete totals and pricing. Missing evidence preserves useful observations
 without publishing incomplete counts as complete.
 
 Kilo Code 7.7.12 subtracts cache reads/writes from its stored input and reasoning
 from stored output, then clamps at zero. The adapter reverses that source
 transform only when a positive adjusted counter proves the clamp lost no
-information. Fabric's normalized input includes cache and output includes
-reasoning. Kilo zero-fills omitted dimensions, so a stored cache or reasoning
+information. NeMo Fabric's normalized input includes cache and output includes
+reasoning. Kilo Code zero-fills omitted dimensions, so a stored cache or reasoning
 zero cannot establish provider field presence. A positive cache count stays
-independently useful even when input is unknown. Kilo's derived `total` and
+independently useful even when input is unknown. Kilo Code's derived `total` and
 mixed provider/catalog `cost` do not become reported totals or `cost_usd`.
 
 A transient event observer detects actual retries hidden by the final message
@@ -106,7 +106,7 @@ Actual background tasks leave complete totals unknown because their child work
 and injected parent reply can outlive the invocation. Settled owned steps
 remain observed. Late work never moves into a later invocation. Unread,
 ambiguous or deeper child sessions also leave gaps. Merely enabling delegation
-does not. The adapter sets a fixed session title to avoid Kilo's separate title
+does not. The adapter sets a fixed session title to avoid Kilo Code's separate title
 model call.
 
 When prompt communication fails, the adapter uses the same bounded history
