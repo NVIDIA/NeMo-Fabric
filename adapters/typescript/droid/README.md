@@ -125,7 +125,7 @@ retained in `nemo_fabric.usage_accounting.v1` with a `scope_unverified` gap.
 Droid's debounced usage notifications have no stable model-call identity and
 cannot establish exhaustive per-call reporting.
 
-The adapter preserves the persisted provider input convention for Fabric core
+The adapter preserves the persisted provider input convention for NeMo Fabric core
 to normalize. Anthropic and Bedrock input excludes cache reads and writes;
 Gemini input includes cache reads. Responses subtracts reads without subtracting nonstandard cache writes.
 Whether input includes those writes is not established, so the shared binary
