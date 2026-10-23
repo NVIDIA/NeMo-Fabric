@@ -252,7 +252,9 @@ def test_wait_for_relay_gateway_rejects_exit_during_successful_probe(monkeypatch
         relay_gateway.wait_for_relay_gateway(process, "http://127.0.0.1:43210/healthz")
 
 
-def test_wait_for_relay_gateway_rejects_success_after_deadline(monkeypatch, gateway_clock):
+def test_wait_for_relay_gateway_rejects_success_after_deadline(
+    monkeypatch, gateway_clock
+):
     process = MagicMock()
     process.poll.return_value = None
     response = MagicMock()
