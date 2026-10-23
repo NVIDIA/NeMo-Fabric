@@ -430,6 +430,7 @@ def record_fixture(tmp_path, result):
         "kind": "end",
         "status": "succeeded",
         "elapsed_ms": 1000,
+        "exchange_elapsed_ms": 10,
         "outcome_scope": "invocation",
         "model_usage": result["model_usage"],
     }
@@ -462,6 +463,8 @@ def test_record_accounting_survives_missing_full_result_without_creating_outer_s
     assert view["state"] != "available"
     assert view["accounting_source"] == "record"
     assert view["accounting_boundary"] == "core_invocation"
+    recorded = view["summary"] if condition == "direct" else view["record_summary"]
+    assert recorded["exchange_elapsed_ms"] == 10
     assert row["usage"]["dimensions"]["input_tokens"]["complete_total"] == 100
     execution = summary["configurations"]["baseline"]["execution"]
     assert execution["available_result_count"] == 0
