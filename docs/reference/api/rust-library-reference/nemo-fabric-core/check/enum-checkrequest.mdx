@@ -1,7 +1,7 @@
 ---
 title: "Enum Check Request"
 sidebar-title: "CheckRequest"
-description: "Select server or runtime health; the environment is supplied separately."
+description: "Select server, runtime, or registered service health."
 position: 17
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -9,9 +9,9 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum CheckRequest &#123;\n    Server &#123;\n        schema_version: <a href=\"enum-checkversion.mdx\">CheckVersion</a>,\n        timeout_seconds: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.f64.html\">f64</a>,\n    &#125;,\n    Runtime &#123;\n        schema_version: <a href=\"enum-checkversion.mdx\">CheckVersion</a>,\n        runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        level: <a href=\"enum-checklevel.mdx\">CheckLevel</a>,\n        timeout_seconds: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.f64.html\">f64</a>,\n    &#125;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum CheckRequest &#123;\n    Server &#123;\n        schema_version: <a href=\"enum-checkversion.mdx\">CheckVersion</a>,\n        timeout_seconds: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.f64.html\">f64</a>,\n    &#125;,\n    Runtime &#123;\n        schema_version: <a href=\"enum-checkversion.mdx\">CheckVersion</a>,\n        runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        level: <a href=\"enum-checklevel.mdx\">CheckLevel</a>,\n        timeout_seconds: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.f64.html\">f64</a>,\n    &#125;,\n    Service &#123;\n        schema_version: <a href=\"enum-checkversion.mdx\">CheckVersion</a>,\n        service_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        level: <a href=\"enum-checklevel.mdx\">CheckLevel</a>,\n        timeout_seconds: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.f64.html\">f64</a>,\n    &#125;,\n&#125;"}} /></pre>
 
-Select server or runtime health; the environment is supplied separately.
+Select server, runtime, or registered service health.
 
 ## Variants
 
@@ -55,6 +55,30 @@ Highest requested level; earlier levels run first.
 
 One budget for all routing and probes.
 
+### `Service`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Service"}} /></pre>
+
+Check a prepared or attached service.
+
+#### Fields
+
+##### `schema_version: CheckVersion`
+
+Version of this contract.
+
+##### `service_id: String`
+
+Exact process-local service returned by preparation or attachment.
+
+##### `level: CheckLevel`
+
+Highest requested level; earlier levels run first.
+
+##### `timeout_seconds: f64`
+
+One budget for routing and every probe.
+
 ## Implementations
 
 ### `impl CheckRequest`
@@ -71,7 +95,7 @@ Requested timeout, in seconds.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn level(&amp;self) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-checklevel.mdx\">CheckLevel</a>&gt;"}} /></pre>
 
-Requested runtime level; absent for server checks.
+Requested runtime or service level; absent for server checks.
 
 ## Trait Implementations
 

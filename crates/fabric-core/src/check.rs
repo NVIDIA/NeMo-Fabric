@@ -17,10 +17,12 @@ use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Deserializer, Serialize};
 use sha2::Sha256;
 
-use crate::{EnvironmentHandle, Result, RuntimeHandle};
+use crate::{EnvironmentHandle, Result, RuntimeHandle, ServiceHandle};
 
 const LIMIT: u64 = 16 * 1024;
 static BINDINGS: LazyLock<Mutex<BTreeMap<String, Arc<Binding>>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static SERVICE_BINDINGS: LazyLock<Mutex<BTreeMap<String, Arc<ServiceBinding>>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 /// Version of the health request and report contract.
@@ -32,7 +34,7 @@ pub enum CheckVersion {
     V1Alpha1,
 }
 
-/// Agent health level.
+/// Runtime or service health level.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckLevel {
@@ -41,7 +43,7 @@ pub enum CheckLevel {
     Live,
     /// Observe the initialized request interface.
     Active,
-    /// Observe required local model, tool, and connection setup.
+    /// Observe the selected target's required native setup and connections.
     Ready,
 }
 
@@ -94,6 +96,8 @@ pub enum CheckReason {
     CapabilitiesUnverified,
     /// No matching runtime binding exists.
     RuntimeUnavailable,
+    /// No matching active service binding exists.
+    ServiceUnavailable,
     /// The owned process exited.
     AgentExited,
     /// The native session closed.
@@ -137,6 +141,15 @@ pub enum CheckSource {
     /// Pi model, tool, and connection inspection.
     #[serde(rename = "fabric.adapter.pi.setup")]
     PiSetup,
+    /// Fresh native OpenClaw Gateway liveness observation.
+    #[serde(rename = "fabric.adapter.openclaw.gateway")]
+    OpenClawGateway,
+    /// OpenClaw Gateway authenticated API observation.
+    #[serde(rename = "fabric.adapter.openclaw.interface")]
+    OpenClawInterface,
+    /// Native OpenClaw Gateway readiness, including configured channels.
+    #[serde(rename = "fabric.adapter.openclaw.readiness")]
+    OpenClawReadiness,
 }
 
 fn timeout_default() -> f64 {
@@ -161,6 +174,15 @@ fn required_fields(schema: &mut Schema) {
         schema.insert("required".into(), serde_json::Value::Array(names));
     }
 }
+fn report_required_fields(schema: &mut Schema) {
+    required_fields(schema);
+    if let Some(required) = schema
+        .get_mut("required")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        required.retain(|name| name != "service_id");
+    }
+}
 fn timeout<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result<f64, D::Error> {
     let value = f64::deserialize(deserializer)?;
     if !value.is_finite() || value <= 0.0 {
@@ -178,7 +200,7 @@ fn runtime_id<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result
     Ok(value)
 }
 
-/// Select server or runtime health; the environment is supplied separately.
+/// Select server, runtime, or registered service health.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CheckRequest {
@@ -209,6 +231,23 @@ pub enum CheckRequest {
         #[schemars(extend("exclusiveMinimum" = 0))]
         timeout_seconds: f64,
     },
+    /// Check a prepared or attached service.
+    Service {
+        /// Version of this contract.
+        #[serde(default)]
+        schema_version: CheckVersion,
+        /// Exact process-local service returned by preparation or attachment.
+        #[serde(deserialize_with = "runtime_id")]
+        #[schemars(length(min = 1), regex(pattern = "\\S"))]
+        service_id: String,
+        /// Highest requested level; earlier levels run first.
+        #[serde(default)]
+        level: CheckLevel,
+        /// One budget for routing and every probe.
+        #[serde(default = "timeout_default", deserialize_with = "timeout")]
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        timeout_seconds: f64,
+    },
 }
 
 impl CheckRequest {
@@ -220,14 +259,17 @@ impl CheckRequest {
             }
             | Self::Runtime {
                 timeout_seconds, ..
+            }
+            | Self::Service {
+                timeout_seconds, ..
             } => *timeout_seconds,
         }
     }
-    /// Requested runtime level; absent for server checks.
+    /// Requested runtime or service level; absent for server checks.
     pub fn level(&self) -> Option<CheckLevel> {
         match self {
             Self::Server { .. } => None,
-            Self::Runtime { level, .. } => Some(*level),
+            Self::Runtime { level, .. } | Self::Service { level, .. } => Some(*level),
         }
     }
 }
@@ -296,7 +338,7 @@ pub enum ServerState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AdapterCheckRequest {
-    /// Exact runtime selected by the core.
+    /// Exact adapter host selected by the core, including service host IDs.
     #[serde(deserialize_with = "runtime_id")]
     #[schemars(length(min = 1), regex(pattern = "\\S"))]
     pub runtime_id: String,
@@ -349,15 +391,18 @@ pub struct CheckObservation {
 /// Health check report.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(transform = required_fields)]
+#[schemars(transform = report_required_fields)]
 pub struct CheckReport {
     /// Version of this contract.
     pub schema_version: CheckVersion,
     /// Scope requested by the caller.
     pub scope: CheckScope,
-    /// Selected runtime ID, or null for server scope.
+    /// Selected runtime ID, or null for server and service scopes.
     #[serde(deserialize_with = "required_option")]
     pub runtime_id: Option<String>,
+    /// Selected service ID; omitted for server and runtime reports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_id: Option<String>,
     /// Defaulted level, or null for server scope.
     #[serde(deserialize_with = "required_option")]
     pub requested_level: Option<CheckLevel>,
@@ -372,7 +417,7 @@ pub struct CheckReport {
     /// Elapsed time across all routing and probes.
     #[schemars(range(min = 0))]
     pub elapsed_ms: f64,
-    /// Server evidence, absent for runtime scope.
+    /// Server evidence, absent for runtime and service scopes.
     #[serde(deserialize_with = "required_option")]
     pub server: Option<ServerObservation>,
     /// Runtime evidence when the binding is verified.
@@ -390,6 +435,8 @@ pub enum CheckScope {
     Server,
     /// Agent in a selected runtime.
     Runtime,
+    /// Prepared or attached long-lived service.
+    Service,
 }
 
 pub(crate) fn unobserved_report(request: &CheckRequest, reason: CheckReason) -> CheckReport {
@@ -402,13 +449,17 @@ pub(crate) fn unobserved_report(request: &CheckRequest, reason: CheckReason) -> 
     let server = matches!(request, CheckRequest::Server { .. });
     CheckReport {
         schema_version: CheckVersion::V1Alpha1,
-        scope: if server {
-            CheckScope::Server
-        } else {
-            CheckScope::Runtime
+        scope: match request {
+            CheckRequest::Server { .. } => CheckScope::Server,
+            CheckRequest::Runtime { .. } => CheckScope::Runtime,
+            CheckRequest::Service { .. } => CheckScope::Service,
         },
         runtime_id: match request {
             CheckRequest::Runtime { runtime_id, .. } => Some(runtime_id.clone()),
+            _ => None,
+        },
+        service_id: match request {
+            CheckRequest::Service { service_id, .. } => Some(service_id.clone()),
             _ => None,
         },
         requested_level: request.level(),
@@ -441,6 +492,7 @@ pub(crate) fn unobserved_report(request: &CheckRequest, reason: CheckReason) -> 
 fn valid_server_report(report: &CheckReport) -> bool {
     let completed = DateTime::parse_from_rfc3339(&report.completed_at).ok();
     if report.scope != CheckScope::Server
+        || report.service_id.is_some()
         || report.runtime_id.is_some()
         || report.requested_level.is_some()
         || report.runtime.is_some()
@@ -500,6 +552,7 @@ fn valid_remote_report(report: &CheckReport, request: &CheckRequest) -> bool {
     };
     let completed = DateTime::parse_from_rfc3339(&report.completed_at).ok();
     if report.scope != CheckScope::Runtime
+        || report.service_id.is_some()
         || report.runtime_id.as_ref() != Some(runtime_id)
         || report.requested_level != Some(*level)
         || report.server.is_some()
@@ -652,6 +705,130 @@ struct Binding {
     generation: AtomicU64,
 }
 
+struct ServiceBinding {
+    service: ServiceHandle,
+    runtime: RuntimeHandle,
+    levels: Vec<CheckLevel>,
+    generation: AtomicU64,
+}
+
+pub(crate) fn register_service(
+    service: &ServiceHandle,
+    runtime: &RuntimeHandle,
+    levels: Vec<CheckLevel>,
+) {
+    let mut bindings = SERVICE_BINDINGS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(previous) = bindings.insert(
+        service.service_id.clone(),
+        Arc::new(ServiceBinding {
+            service: service.clone(),
+            runtime: runtime.clone(),
+            levels,
+            generation: AtomicU64::new(0),
+        }),
+    ) {
+        previous.generation.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+pub(crate) fn invalidate_service(service: &ServiceHandle) {
+    let mut bindings = SERVICE_BINDINGS.lock().unwrap_or_else(|e| e.into_inner());
+    if bindings
+        .get(&service.service_id)
+        .is_some_and(|binding| binding.service == *service)
+        && let Some(binding) = bindings.remove(&service.service_id)
+    {
+        binding.generation.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// Check health for a registered service.
+///
+/// The complete handle must match the active binding. Releasing a service
+/// invalidates observations in flight, including failed transport observations.
+pub fn check_service(service: &ServiceHandle, request: &CheckRequest) -> Result<CheckReport> {
+    let started = Instant::now();
+    let CheckRequest::Service {
+        service_id, level, ..
+    } = request
+    else {
+        return Err(crate::FabricError::InvalidConfig {
+            field: "check.scope".into(),
+            reason: "service checks require service scope".into(),
+        });
+    };
+    if !request.timeout_seconds().is_finite()
+        || request.timeout_seconds() <= 0.0
+        || service_id.trim().is_empty()
+        || service_id.contains('\0')
+    {
+        return Err(crate::FabricError::InvalidConfig {
+            field: "check".into(),
+            reason: "service ID and positive finite timeout are required".into(),
+        });
+    }
+    let mut report = unobserved_report(request, CheckReason::ServiceUnavailable);
+    let binding = SERVICE_BINDINGS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(service_id)
+        .filter(|binding| binding.service == *service)
+        .map(|binding| (binding.clone(), binding.generation.load(Ordering::SeqCst)));
+    if let Some((binding, generation)) = binding {
+        for (probe, stage) in [
+            (CheckLevel::Live, CheckStage::Live),
+            (CheckLevel::Active, CheckStage::Active),
+            (CheckLevel::Ready, CheckStage::Ready),
+        ] {
+            if !binding.levels.contains(&probe) {
+                report.outcome = CheckOutcome::Unsupported;
+                report.reason_code = Some(if binding.levels.is_empty() {
+                    CheckReason::UnsupportedAdapter
+                } else {
+                    CheckReason::UnsupportedLevel
+                });
+                break;
+            }
+            let remaining = request.timeout_seconds() - started.elapsed().as_secs_f64();
+            let result = if remaining <= 0.0 {
+                unobserved(CheckReason::ProbeTimeout)
+            } else {
+                probe_target(
+                    &binding.runtime.runtime_id,
+                    probe,
+                    remaining,
+                    CheckScope::Service,
+                )
+            };
+            report.outcome = result.outcome;
+            report.reason_code = result.reason_code;
+            report.checks.push(CheckObservation {
+                name: stage,
+                outcome: result.outcome,
+                reason_code: result.reason_code,
+                source: result.source,
+                observed_at: result.observed_at,
+            });
+            if result.outcome != CheckOutcome::Passed || probe == *level {
+                break;
+            }
+        }
+        if binding.generation.load(Ordering::SeqCst) != generation {
+            report.outcome = CheckOutcome::Unknown;
+            report.reason_code = Some(CheckReason::ObservationChanged);
+        }
+    }
+    report.elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+    if report.outcome == CheckOutcome::Passed
+        && report.elapsed_ms >= request.timeout_seconds() * 1000.0
+    {
+        report.outcome = CheckOutcome::Unknown;
+        report.reason_code = Some(CheckReason::ProbeTimeout);
+    }
+    report.completed_at = utc_now();
+    Ok(report)
+}
+
 pub(crate) fn register(runtime: &RuntimeHandle, levels: Vec<CheckLevel>) {
     let mut bindings = BINDINGS.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(previous) = bindings.insert(
@@ -695,11 +872,11 @@ fn utc_now() -> String {
     DateTime::<Utc>::from(SystemTime::now()).to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
-/// Check server or runtime health in the selected environment.
+/// Check server or runtime health through a supplied environment.
 ///
-/// Local runtimes use their authenticated adapter health channel. OpenShell
-/// server and runtime checks execute `fabric-agent-ctl check` in the sandbox.
-/// Local server checks and other providers return `unsupported_scope`.
+/// Local runtime checks use the adapter health channel. OpenShell checks use
+/// the sandbox command bridge. Local server checks return `unsupported_scope`.
+/// Use [`check_service`] for registered local services.
 /// Timeouts and ownership changes return `unknown` health evidence.
 pub fn check_environment(
     environment: &EnvironmentHandle,
@@ -720,19 +897,7 @@ pub fn check_environment(
             reason: "runtime ID must be nonempty".into(),
         });
     }
-    let mut report = CheckReport {
-        schema_version: CheckVersion::V1Alpha1,
-        scope: CheckScope::Server,
-        runtime_id: None,
-        requested_level: request.level(),
-        outcome: CheckOutcome::Unsupported,
-        reason_code: Some(CheckReason::UnsupportedScope),
-        completed_at: utc_now(),
-        elapsed_ms: 0.0,
-        server: None,
-        runtime: None,
-        checks: vec![],
-    };
+    let mut report = unobserved_report(request, CheckReason::UnsupportedScope);
     if let CheckRequest::Runtime {
         runtime_id, level, ..
     } = request
@@ -885,6 +1050,15 @@ fn verify_health_mac(
 }
 
 fn probe_runtime(runtime_id: &str, level: CheckLevel, timeout: f64) -> AdapterCheckResult {
+    probe_target(runtime_id, level, timeout, CheckScope::Runtime)
+}
+
+fn probe_target(
+    runtime_id: &str,
+    level: CheckLevel,
+    timeout: f64,
+    scope: CheckScope,
+) -> AdapterCheckResult {
     let started = Instant::now();
     let budget = Duration::try_from_secs_f64(timeout).unwrap_or(Duration::MAX);
     let remaining = || budget.saturating_sub(started.elapsed());
@@ -976,19 +1150,23 @@ fn probe_runtime(runtime_id: &str, level: CheckLevel, timeout: f64) -> AdapterCh
                     && time <= DateTime::<Utc>::from(SystemTime::now())
             })
         });
-        let expected_source = match level {
-            CheckLevel::Live => CheckSource::PiSession,
-            CheckLevel::Active => CheckSource::PiInterface,
-            CheckLevel::Ready => CheckSource::PiSetup,
+        let expected_source = match (scope, level) {
+            (CheckScope::Service, CheckLevel::Live) => CheckSource::OpenClawGateway,
+            (CheckScope::Service, CheckLevel::Active) => CheckSource::OpenClawInterface,
+            (CheckScope::Service, CheckLevel::Ready) => CheckSource::OpenClawReadiness,
+            (_, CheckLevel::Live) => CheckSource::PiSession,
+            (_, CheckLevel::Active) => CheckSource::PiInterface,
+            (_, CheckLevel::Ready) => CheckSource::PiSetup,
         };
         if (observation.outcome == CheckOutcome::Passed) != observation.reason_code.is_none()
             || (observation.outcome == CheckOutcome::Passed
                 && (!valid_time
                     || observation.source != expected_source
-                    || !matches!(
-                        observation.activity,
-                        RuntimeActivity::Idle | RuntimeActivity::Busy
-                    )))
+                    || scope != CheckScope::Service
+                        && !matches!(
+                            observation.activity,
+                            RuntimeActivity::Idle | RuntimeActivity::Busy
+                        )))
             || observation.observed_at.is_some() && !valid_time
         {
             return Err(std::io::Error::other("invalid health observation"));
@@ -1149,6 +1327,107 @@ mod tests {
     fn cleanup(runtime: &RuntimeHandle) {
         invalidate_runtime(runtime);
         std::fs::remove_dir_all(crate::runtime::local_host_directory(&runtime.runtime_id)).unwrap();
+    }
+
+    fn gateway_service(runtime: &RuntimeHandle) -> crate::ServiceHandle {
+        serde_json::from_value(serde_json::json!({
+            "service_id": runtime.runtime_id,
+            "service_binding": "test-service-binding",
+            "adapter_id": "nvidia.fabric.openclaw",
+            "service_type": "openclaw_gateway",
+            "ownership": "caller_owned",
+        }))
+        .unwrap()
+    }
+
+    fn service_request(service: &crate::ServiceHandle, level: CheckLevel) -> CheckRequest {
+        CheckRequest::Service {
+            schema_version: CheckVersion::V1Alpha1,
+            service_id: service.service_id.clone(),
+            level,
+            timeout_seconds: 3.0,
+        }
+    }
+
+    fn gateway_passed(level: CheckLevel) -> serde_json::Value {
+        serde_json::json!({"outcome": "passed", "reason_code": null, "activity": "unknown",
+            "source": match level {
+                CheckLevel::Live => "fabric.adapter.openclaw.gateway",
+                CheckLevel::Active => "fabric.adapter.openclaw.interface",
+                _ => "fabric.adapter.openclaw.readiness",
+            }, "observed_at": utc_now()})
+    }
+
+    #[test]
+    fn gateway_service_checks_do_not_require_a_runtime_binding() {
+        let runtime = runtime();
+        let service = gateway_service(&runtime);
+        register_service(
+            &service,
+            &runtime,
+            vec![CheckLevel::Live, CheckLevel::Active, CheckLevel::Ready],
+        );
+        let peer = peer(&runtime, 3, |_, level| gateway_passed(level));
+        let report =
+            check_service(&service, &service_request(&service, CheckLevel::Ready)).unwrap();
+        assert_eq!(report.outcome, CheckOutcome::Passed);
+        assert_eq!(report.scope, CheckScope::Service);
+        assert_eq!(report.service_id.as_ref(), Some(&service.service_id));
+        assert!(report.runtime_id.is_none());
+        assert!(report.runtime.is_none());
+        assert_eq!(report.checks.len(), 3);
+        assert_eq!(peer.join().unwrap().len(), 3);
+        let runtime_report = check_environment(
+            &runtime.environment,
+            &request(&runtime, CheckLevel::Live, 3.0),
+        )
+        .unwrap();
+        assert_eq!(
+            runtime_report.reason_code,
+            Some(CheckReason::RuntimeUnavailable)
+        );
+        invalidate_service(&service);
+        cleanup(&runtime);
+    }
+
+    #[test]
+    fn gateway_service_checks_reject_forged_handles_without_probing() {
+        let runtime = runtime();
+        let service = gateway_service(&runtime);
+        register_service(&service, &runtime, vec![CheckLevel::Live]);
+        let mut forged = service.clone();
+        forged.service_binding = "forged".into();
+        let report = check_service(&forged, &service_request(&service, CheckLevel::Live)).unwrap();
+        assert_eq!(report.outcome, CheckOutcome::Unknown);
+        assert_eq!(report.reason_code, Some(CheckReason::ServiceUnavailable));
+        assert!(report.checks.is_empty());
+        invalidate_service(&service);
+    }
+
+    #[test]
+    fn releasing_gateway_service_invalidates_in_flight_evidence() {
+        let runtime = runtime();
+        let service = gateway_service(&runtime);
+        register_service(&service, &runtime, vec![CheckLevel::Live]);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let peer = peer(&runtime, 1, move |_, level| {
+            entered_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            gateway_passed(level)
+        });
+        let selected = service.clone();
+        let checking = thread::spawn(move || {
+            check_service(&selected, &service_request(&selected, CheckLevel::Live)).unwrap()
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        invalidate_service(&service);
+        release_tx.send(()).unwrap();
+        let report = checking.join().unwrap();
+        assert_eq!(report.outcome, CheckOutcome::Unknown);
+        assert_eq!(report.reason_code, Some(CheckReason::ObservationChanged));
+        peer.join().unwrap();
+        cleanup(&runtime);
     }
 
     #[test]

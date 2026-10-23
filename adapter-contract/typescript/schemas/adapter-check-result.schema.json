@@ -44,6 +44,11 @@
           "type": "string"
         },
         {
+          "const": "service_unavailable",
+          "description": "No matching active service binding exists.",
+          "type": "string"
+        },
+        {
           "const": "agent_exited",
           "description": "The owned process exited.",
           "type": "string"
@@ -126,6 +131,21 @@
         {
           "const": "fabric.adapter.pi.setup",
           "description": "Pi model, tool, and connection inspection.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter.openclaw.gateway",
+          "description": "Fresh native OpenClaw Gateway liveness observation.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter.openclaw.interface",
+          "description": "OpenClaw Gateway authenticated API observation.",
+          "type": "string"
+        },
+        {
+          "const": "fabric.adapter.openclaw.readiness",
+          "description": "Native OpenClaw Gateway readiness, including configured channels.",
           "type": "string"
         }
       ]

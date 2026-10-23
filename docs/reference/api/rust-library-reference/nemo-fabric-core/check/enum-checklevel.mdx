@@ -1,7 +1,7 @@
 ---
 title: "Enum Check Level"
 sidebar-title: "CheckLevel"
-description: "Agent health level."
+description: "Runtime or service health level."
 position: 12
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -17,7 +17,7 @@ pub enum CheckLevel {
 }
 ```
 
-Agent health level.
+Runtime or service health level.
 
 ## Variants
 
@@ -37,7 +37,7 @@ Observe the initialized request interface.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Ready"}} /></pre>
 
-Observe required local model, tool, and connection setup.
+Observe the selected target's required native setup and connections.
 
 ## Implementations
 

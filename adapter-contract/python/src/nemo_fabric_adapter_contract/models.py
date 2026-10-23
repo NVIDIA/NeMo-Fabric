@@ -122,6 +122,7 @@ CheckReason = Literal[
     "server_stopping",
     "capabilities_unverified",
     "runtime_unavailable",
+    "service_unavailable",
     "agent_exited",
     "session_closed",
     "endpoint_unavailable",
@@ -167,6 +168,9 @@ class AdapterCheckResult(ContractModel):
         "fabric.adapter.pi.session",
         "fabric.adapter.pi.interface",
         "fabric.adapter.pi.setup",
+        "fabric.adapter.openclaw.gateway",
+        "fabric.adapter.openclaw.interface",
+        "fabric.adapter.openclaw.readiness",
     ]
     observed_at: str | None
 

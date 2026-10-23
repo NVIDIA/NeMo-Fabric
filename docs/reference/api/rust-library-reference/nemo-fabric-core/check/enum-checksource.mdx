@@ -17,6 +17,9 @@ pub enum CheckSource {
     PiSession,
     PiInterface,
     PiSetup,
+    OpenClawGateway,
+    OpenClawInterface,
+    OpenClawReadiness,
 }
 ```
 
@@ -59,6 +62,24 @@ Pi initialization and interface guards.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "PiSetup"}} /></pre>
 
 Pi model, tool, and connection inspection.
+
+### `OpenClawGateway`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "OpenClawGateway"}} /></pre>
+
+Fresh native OpenClaw Gateway liveness observation.
+
+### `OpenClawInterface`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "OpenClawInterface"}} /></pre>
+
+OpenClaw Gateway authenticated API observation.
+
+### `OpenClawReadiness`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "OpenClawReadiness"}} /></pre>
+
+Native OpenClaw Gateway readiness, including configured channels.
 
 ## Trait Implementations
 

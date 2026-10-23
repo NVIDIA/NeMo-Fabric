@@ -89,19 +89,25 @@ class Fabric:
         pass
 
     async def check(
-        self, *, environment: EnvironmentHandle, request: CheckRequest
+        self,
+        *,
+        request: CheckRequest,
+        environment: EnvironmentHandle | None = None,
+        service: ServiceHandle | None = None,
     ) -> CheckReport:
-        """Check server or runtime health in the selected environment.
+        """Check server, runtime, or service health.
 
         OpenShell checks execute ``fabric-agent-ctl check`` inside the selected
         sandbox. Runtime checks then use the local SDK and an independent
         adapter health channel. Local server checks return unsupported.
         The request's single deadline covers routing, all levels, and decoding.
         Timeouts return ``unknown`` with reason ``probe_timeout``.
+        Service checks use the selected process-local ``ServiceHandle``.
 
         Args:
-            environment: Prepared or attached execution environment.
-            request: Typed scope, runtime target, highest level, and timeout.
+            environment: Prepared or attached environment for server or runtime scope.
+            service: Prepared or attached service handle for service scope.
+            request: Typed scope, runtime or service target, highest level, and timeout.
 
         Returns:
             An immutable ``CheckReport`` with ordered health observations.
@@ -114,7 +120,22 @@ class Fabric:
         started = time.monotonic()
         if not isinstance(request, CheckRequest):
             raise FabricConfigError("request must be a CheckRequest")
-        environment_json = _environment_json(environment)
+        if request.scope == "service":
+            if environment is not None or not isinstance(service, ServiceHandle):
+                raise FabricConfigError(
+                    "service checks require a ServiceHandle and no environment"
+                )
+            if service.service_id != request.service_id:
+                raise FabricConfigError(
+                    "service handle does not match the requested service ID"
+                )
+            target_json = json.dumps(service.to_mapping())
+        else:
+            if service is not None:
+                raise FabricConfigError(
+                    "server and runtime checks cannot select a service"
+                )
+            target_json = _environment_json(environment)
         native = self._require_native_module("check")
         remaining = request.timeout_seconds - (time.monotonic() - started)
         if remaining <= 0:
@@ -126,9 +147,12 @@ class Fabric:
                 return None
             payload = request.to_mapping()
             payload["timeout_seconds"] = budget
-            return native.check_environment(
-                environment_json, json.dumps(payload, allow_nan=False)
+            check = (
+                native.check_service
+                if request.scope == "service"
+                else native.check_environment
             )
+            return check(target_json, json.dumps(payload, allow_nan=False))
 
         try:
             raw = await asyncio.wait_for(
@@ -157,9 +181,15 @@ class Fabric:
             report = CheckReport.from_mapping(decoded)
         except (ValueError, TypeError):
             raise FabricConfigError("The check report is invalid.") from None
-        if (report.scope, report.runtime_id, report.requested_level) != (
+        if (
+            report.scope,
+            report.runtime_id,
+            report.service_id,
+            report.requested_level,
+        ) != (
             request.scope,
             request.runtime_id,
+            request.service_id,
             request.level,
         ):
             raise FabricConfigError(

@@ -123,19 +123,25 @@ The adapter validates the reference against the normalized configuration and wri
 ### <kbd>method</kbd> `check`
 
 ```python
-async def check(*, environment: EnvironmentHandle, request: CheckRequest) -> CheckReport
+async def check(
+    *,
+    request: CheckRequest,
+    environment: EnvironmentHandle | None = None,
+    service: ServiceHandle | None = None,
+) -> CheckReport
 ```
 
-Check server or runtime health in the selected environment.
+Check server, runtime, or service health.
 
-OpenShell checks execute ``fabric-agent-ctl check`` inside the selected sandbox. Runtime checks then use the local SDK and an independent adapter health channel. Local server checks return unsupported. The request's single deadline covers routing, all levels, and decoding. Timeouts return ``unknown`` with reason ``probe_timeout``.
+OpenShell checks execute ``fabric-agent-ctl check`` inside the selected sandbox. Runtime checks then use the local SDK and an independent adapter health channel. Local server checks return unsupported. The request's single deadline covers routing, all levels, and decoding. Timeouts return ``unknown`` with reason ``probe_timeout``. Service checks use the selected process-local ``ServiceHandle``.
 
 
 
 **Args:**
 
- - <b>`environment`</b>:  Prepared or attached execution environment.
- - <b>`request`</b>:  Typed scope, runtime target, highest level, and timeout.
+ - <b>`environment`</b>:  Prepared or attached environment for server or runtime scope.
+ - <b>`service`</b>:  Prepared or attached service handle for service scope.
+ - <b>`request`</b>:  Typed scope, runtime or service target, highest level, and timeout.
 
 
 

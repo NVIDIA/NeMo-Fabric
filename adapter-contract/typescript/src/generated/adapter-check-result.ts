@@ -11,6 +11,7 @@ export type CheckReason =
   | "server_stopping"
   | "capabilities_unverified"
   | "runtime_unavailable"
+  | "service_unavailable"
   | "agent_exited"
   | "session_closed"
   | "endpoint_unavailable"
@@ -51,5 +52,8 @@ export interface AdapterCheckResult {
     | "fabric.adapter"
     | "fabric.adapter.pi.session"
     | "fabric.adapter.pi.interface"
-    | "fabric.adapter.pi.setup";
+    | "fabric.adapter.pi.setup"
+    | "fabric.adapter.openclaw.gateway"
+    | "fabric.adapter.openclaw.interface"
+    | "fabric.adapter.openclaw.readiness";
 }

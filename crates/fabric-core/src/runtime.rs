@@ -1046,6 +1046,7 @@ pub fn release_service(plan: &RunPlan, service: &ServiceHandle) -> Result<Vec<Fa
             runtime_ids: service_record.active_runtime_ids.iter().cloned().collect(),
         });
     }
+    crate::check::invalidate_service(&service_record.handle);
     service_record.state = LocalServiceState::Releasing;
     if let Err(error) = stop_service_host(&mut service_record) {
         service_record.state = LocalServiceState::ReleaseFailed;
@@ -1146,6 +1147,19 @@ fn start_service(
         connection: info.connection,
         metadata: info.metadata,
     };
+    let levels = plan
+        .capabilities
+        .metadata
+        .get("service_health_checks")
+        .and_then(Value::as_array)
+        .map(|levels| {
+            levels
+                .iter()
+                .filter_map(|level| serde_json::from_value(level.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::check::register_service(&handle, &runtime, levels);
     local_services().insert(
         service_id,
         Arc::new(Mutex::new(LocalServiceRecord {

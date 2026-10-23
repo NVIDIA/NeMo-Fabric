@@ -13,7 +13,7 @@ export interface AdapterCheckRequest {
    */
   level: "live" | "active" | "ready";
   /**
-   * Exact runtime selected by the core.
+   * Exact adapter host selected by the core, including service host IDs.
    */
   runtime_id: string;
   /**

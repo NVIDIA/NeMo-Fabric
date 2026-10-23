@@ -216,8 +216,7 @@ Agent Trajectory Interchange Format (ATIF).
 | [Kiro](typescript/kiro/README.md) | Kiro CLI V3 child process and ACP session | Not supported | Reuses one ACP session and submits ordered text prompts | Closes the ACP session and terminates the Kiro child process | Not implemented |
 | [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a shared ATOF collector | Registers the request ID, maps it into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |
 
-Telemetry output names use the descriptor contract values. Claude, Codex,
-Hermes Agent, mini-SWE-agent, and Pi can emit NeMo Relay ATIF, OpenTelemetry, and
+Telemetry output names use the descriptor contract values. Claude, Codex, Hermes Agent, mini-SWE-agent, and Pi can emit NeMo Relay ATIF, OpenTelemetry, and
 OpenInference output. Deep Agents supports the same Relay outputs plus native
 OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry. The
 Remote Agent adapter maps the request ID into the remote API body. The
@@ -228,6 +227,8 @@ serve multiple runtimes when each request ID is unique.
 Local Pi runtimes also support `Fabric.check()` at the `live`, `active`, and
 `ready` levels. These observations can run during an invocation and inspect
 native session and local setup state. Refer to the [Pi health contract](typescript/pi/README.md#runtime-health).
+
+Prepared and attached OpenClaw Gateways support service-scoped `Fabric.check()` calls before any runtime exists. Gateway `ready` follows OpenClaw's native `/readyz`, including configured channels. Refer to the [Gateway health contract](python/openclaw/README.md#gateway-health).
 
 Shared lifecycle, Relay gateway, hook, and payload helpers are documented in
 the [adapter utilities guide](python/common/README.md).

@@ -17,9 +17,9 @@ Health requests and immutable health reports.
 
 ## <kbd>class</kbd> `CheckRequest`
 
-Select server or runtime health in a separately supplied environment.
+Select server, runtime, or registered service health.
 
-Runtime checks default to ``live``. One positive, finite timeout covers all requested levels. Server checks reject runtime IDs and levels, including explicit nulls.
+Runtime and service checks default to ``live``. One positive, finite timeout covers all requested levels. Server checks reject runtime IDs, service IDs, and levels, including explicit nulls.
 
 
 
@@ -30,8 +30,9 @@ The model defines the following fields:
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
 | `schema_version` | `Literal['fabric.check/v1alpha1']` | No | `'fabric.check/v1alpha1'` | — | — |
-| `scope` | `Literal['server', 'runtime']` | Yes | — | — | — |
+| `scope` | `Literal['server', 'runtime', 'service']` | Yes | — | — | — |
 | `runtime_id` | `str \| None` | No | `None` | — | — |
+| `service_id` | `str \| None` | No | `None` | — | — |
 | `level` | `CheckLevel \| None` | No | `None` | — | — |
 | `timeout_seconds` | `float` | No | `3.0` | `Gt(gt=0)` | — |
 
@@ -105,6 +106,12 @@ The mapping exposes the following typed fields:
 ### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
+
+---
+
+### <kbd>property</kbd> service_id
+
+Return the selected service, or null for other check targets.
 
 
 

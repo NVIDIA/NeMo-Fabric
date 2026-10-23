@@ -86,6 +86,36 @@ OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gate
 
 Relay telemetry and native OpenTelemetry are not supported.
 
+## Gateway Health
+
+Use `Fabric.check()` with a prepared or attached service handle to observe the Gateway before starting any NeMo Fabric runtimes. Gateway checks use the local SDK and the selected Gateway.
+
+| Level | Native observation |
+|---|---|
+| `live` | `GET /healthz` returns the expected liveness response. |
+| `active` | Authenticated `GET /v1/models` returns a valid model inventory. |
+| `ready` | `GET /readyz` reports native Gateway readiness, including configured channel health. |
+
+Requesting `ready` evaluates `live`, `active`, and `ready` in order under one deadline, stopping at the first nonpassing result. A configured channel failure can fail Gateway readiness while the first two levels pass. Native readiness follows OpenClaw's channel policies and can use cached observations.
+
+Check an owned Gateway with the following code, or pass the handle returned by `attach_service()`:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+async with await fabric.prepare_service(config, base_dir=base_dir) as service:
+    report = await fabric.check(
+        service=service.handle,
+        request=CheckRequest(
+            scope="service", service_id=service.service_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+```
+
+Checks can run while connected runtimes are invoking. Timeouts return `unknown/probe_timeout`. Release during a check returns `unknown/observation_changed`; checks after release return `unknown/service_unavailable`.
+
 ## Use a NeMo Fabric-Owned Service
 
 `prepare_service()` maps the normalized `FabricConfig` to `openclaw.json`,
