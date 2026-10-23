@@ -4379,7 +4379,7 @@ for line in sys.stdin:
             }
             result = {
                 "status": "succeeded",
-                "output": {**output, "pricing_route": __import__("os").environ.get("OPENAI_BASE_URL")},
+                "output": output,
                 "usage": {"extensions": {"nemo_fabric.usage_accounting.v1": {
                     "models_exhaustive": True, "gaps": [], "models": [{
                         "model": "gpt-5.4", "provider": "openai", "reported": counts, "gaps": [],
@@ -6130,6 +6130,38 @@ for line in sys.stdin:
         assert!(usage.cost.pricing.is_none());
         assert!(usage.cost.applied_rates.is_empty());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_keeps_independent_dimensions_with_partial_accounting() {
+        let (root, plan) = local_host_plan("accounted_partial_usage_result");
+        let result = run_plan(&plan, RunRequest::text("partial")).expect("valid partial result");
+        let usage = result.model_usage.expect("normalized partial usage");
+        assert_eq!(usage.tokens.input_tokens, None);
+        assert_eq!(usage.tokens.output_tokens, Some(5));
+        assert!(usage.gaps.iter().any(|gap| {
+            gap.dimensions
+                .contains(&crate::model_usage::UsageDimension::InputTokens)
+                && gap.reason == crate::usage_accounting::GapReason::UnfinishedWork
+        }));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_rejects_invalid_accounting_extensions() {
+        for mode in [
+            "accounted_undeclared_usage_result",
+            "accounted_schema_invalid_usage_result",
+        ] {
+            let (root, plan) = local_host_plan(mode);
+            let error = run_plan(&plan, RunRequest::text("invalid"))
+                .expect_err("invalid extension must fail the adapter contract");
+            assert!(
+                matches!(error, FabricError::InvalidAdapterExtension { .. }),
+                "{mode}: {error}"
+            );
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]
