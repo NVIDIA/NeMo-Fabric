@@ -17,7 +17,7 @@ import tomllib
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -1854,6 +1854,34 @@ async def test_hermes_version_probe_times_out_and_starts_no_second_call():
     assert calls == ["called"]
 
 
+async def test_timeout_version_probe_is_not_repeated_after_turn(monkeypatch):
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._runtime_id = "runtime-version-timeout"
+    runtime._agent_config = _agent_config(
+        {"models": {"default": {"provider": "test", "model": "test-model"}}}
+    )
+    runtime._model_config = runtime._agent_config.models["default"]
+    runtime._agent = MagicMock()
+    runtime._mcp_authentication_checked = True
+    runtime._harness_version = _version_state("collection_failed", "timeout")
+    monkeypatch.setattr(
+        adapter,
+        "_invoke_hermes_turn",
+        lambda **_kwargs: ({"completed": True, "final_response": "done"}, ""),
+    )
+    probe = AsyncMock(return_value=_version_state("collection_failed", "timeout"))
+    monkeypatch.setattr(adapter, "probe_hermes_version", probe)
+
+    context = _runtime_context(runtime_id=runtime._runtime_id)
+    for message in ("first", "second"):
+        result = await runtime.invoke(AgentRunRequest(input=message), context)
+        assert result.extensions["nemo_fabric.versions.v1"]["harness"]["version"] == (
+            _version_state("collection_failed", "timeout")
+        )
+    probe.assert_not_awaited()
+
+
 def test_hermes_version_keeps_the_commit_and_dirty_marker(monkeypatch):
     version_info = ModuleType("hermes_cli.version_info")
     version_info.get_version_info = lambda: MagicMock(  # type: ignore[attr-defined]
@@ -1862,64 +1890,6 @@ def test_hermes_version_keeps_the_commit_and_dirty_marker(monkeypatch):
     monkeypatch.setitem(sys.modules, "hermes_cli.version_info", version_info)
 
     assert adapter.hermes_version() == "0.21.6+3.gabc1234.dirty"
-
-
-async def test_cancellation_during_version_probe_freezes_usage(monkeypatch):
-    from nemo_fabric_adapters.hermes import usage as usage_evidence
-
-    owners = []
-    original = usage_evidence.InvocationUsage
-
-    def capture_owner(tag):
-        owner = original(tag)
-        owners.append(owner)
-        return owner
-
-    monkeypatch.setattr(usage_evidence, "InvocationUsage", capture_owner)
-    monkeypatch.setattr(
-        adapter,
-        "_invoke_hermes_turn",
-        lambda **_kwargs: (
-            {"response": "completed", "completed": True, "messages": []},
-            "",
-        ),
-    )
-    probe_entered = asyncio.Event()
-
-    async def blocked_probe(_probe):
-        probe_entered.set()
-        await asyncio.Event().wait()
-
-    monkeypatch.setattr(adapter, "probe_hermes_version", blocked_probe)
-    runtime = adapter.HermesRuntime()
-    runtime._started = True
-    runtime._runtime_id = "runtime-probe-cancellation"
-    runtime._agent_config = _agent_config(
-        {"models": {"default": {"provider": "test", "model": "test-model"}}}
-    )
-    runtime._model_config = runtime._agent_config.models["default"]
-    runtime._agent = MagicMock()
-    runtime._harness_version = {"reason": "timeout"}
-    invocation = {
-        "runtime_context": _runtime_context(
-            runtime_id=runtime._runtime_id
-        ).to_mapping(),
-        "request": {"input": "work"},
-    }
-    task = asyncio.create_task(runtime.invoke(*_invocation(invocation)))
-    await asyncio.wait_for(probe_entered.wait(), timeout=1)
-    owner = owners[0]
-    assert owner.snapshot is None  # Calls may still settle during the probe.
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert owner.snapshot is not None
-    frozen = owner.snapshot.to_mapping()
-    from nemo_fabric_adapter_contract.models import ReportedUsage
-
-    late = owner.start("late")
-    owner.settle(late, ReportedUsage(input_tokens=99))
-    assert owner.finish().to_mapping() == frozen
 
 
 async def test_pre_call_relay_rejection_propagates_with_unverified_scope(monkeypatch):
