@@ -24,6 +24,7 @@ from typing import Self
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import StrictBool
 from pydantic import SerializerFunctionWrapHandler
 from pydantic import field_validator
 from pydantic import model_serializer
@@ -187,6 +188,20 @@ class InstructionsConfig(FabricBaseModel):
     system: InstructionConfig | None = None
 
 
+class RecordConfig(FabricBaseModel):
+    """Opt-in per-invocation run record.
+
+    When ``enabled`` is true, NeMo Fabric writes
+    ``<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl``
+    for each invocation. It requires an artifact root, the ``local``
+    environment provider, and a ``process`` or ``python`` adapter.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: StrictBool
+
+
 class RuntimeConfig(FabricBaseModel):
     """Invocation runtime contract."""
 
@@ -199,6 +214,7 @@ class RuntimeConfig(FabricBaseModel):
         allow_inf_nan=False,
     )
     max_turns: int | None = Field(default=None, gt=0, le=(1 << 32) - 1)
+    record: RecordConfig | None = None
 
 
 class EnvironmentConfig(FabricBaseModel):
@@ -1118,6 +1134,19 @@ class SystemStatsConfig(FabricBaseModel):
         return value
 
 
+class PricingConfig(FabricBaseModel):
+    """Frozen Relay-compatible price-catalog override, read during planning."""
+
+    catalog_path: str | Path | None = None
+
+    @field_validator("catalog_path")
+    @classmethod
+    def _validate_catalog_path(cls, value: str | Path | None) -> str | Path | None:
+        if value is not None and not str(value).strip():
+            raise ValueError("pricing catalog path must not be empty")
+        return value
+
+
 class FabricConfig(FabricBaseModel):
     """SDK-facing typed NeMo Fabric agent configuration.
 
@@ -1141,6 +1170,7 @@ class FabricConfig(FabricBaseModel):
     system_stats: SystemStatsConfig | None = Field(default_factory=SystemStatsConfig)
     telemetry: TelemetryConfig | None = None
     relay: RelayConfig | None = None
+    pricing: PricingConfig | None = None
     tools: ToolsConfig | None = None
 
     @model_serializer(mode="wrap")

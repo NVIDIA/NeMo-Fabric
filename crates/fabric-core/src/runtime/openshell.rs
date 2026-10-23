@@ -129,6 +129,11 @@ fn task_config(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<crate:
         &environment.env,
         env_names,
     )?);
+    // Catalog files belong to the host filesystem. The host applies its frozen
+    // override to returned raw usage rather than asking the task to reopen it.
+    if let Some(pricing) = &mut config.pricing {
+        pricing.catalog_path = None;
+    }
     config.runtime.artifacts = Some(artifacts.clone());
     config.runtime.timeout_seconds = Some(timeout as f64);
     if let Some(harness) = &mut config.harness {
@@ -156,6 +161,97 @@ fn task_config(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<crate:
         relay.output_dir = Some(artifacts.join("relay"));
     }
     Ok(config)
+}
+fn task_has_bundled_tariff(
+    task_usage: Option<&crate::model_usage::ModelUsage>,
+    provider: Option<&str>,
+    model: &str,
+    prices: &crate::price_catalog::PriceCatalogs<'_>,
+) -> bool {
+    let Some(task) = task_usage else {
+        return false;
+    };
+    let Some((bundled, _)) = prices.find(provider, model, false) else {
+        return false;
+    };
+    let rates = match &bundled.rate_schedule {
+        Some(crate::price_catalog::TokenRateSchedule::PromptTokenThreshold { tiers, .. }) => {
+            tiers.iter().map(|tier| tier.rates).collect::<Vec<_>>()
+        }
+        None => bundled.rates.into_iter().collect(),
+    };
+    let canonical_rates = rates
+        .into_iter()
+        .filter_map(|rates| crate::pricing::RateSnapshot::from_rates(rates).ok())
+        .collect::<Vec<_>>();
+    // A task-core tariff decision supplies sandbox-local route evidence. Host
+    // endpoint inheritance cannot establish which route the sandbox used.
+    task.models.iter().any(|entry| {
+        entry.provider.as_deref() == provider
+            && entry.model == model
+            && entry.cost.pricing.as_ref().is_some_and(|basis| {
+                basis.user_catalog_sha256.is_none()
+                    && basis.bundled_catalog_sha256 == prices.bundled_sha256()
+            })
+            && !entry.cost.applied_rates.is_empty()
+            && entry.cost.applied_rates.iter().all(|applied| {
+                applied.catalog_sha256 == prices.bundled_sha256()
+                    && applied.provider == bundled.provider
+                    && applied.model_id == bundled.model_id
+                    && applied.pricing_as_of == bundled.pricing_as_of
+                    && applied.pricing_source == bundled.pricing_source
+                    && canonical_rates.contains(&applied.rates)
+            })
+    })
+}
+fn apply_host_catalog(
+    result: &mut RunResult,
+    catalog: Option<&crate::price_catalog::UserPriceCatalog>,
+) {
+    let Some(catalog) = catalog else {
+        // The task core observes the sandbox's actual provider endpoints. Keep
+        // its independently fingerprinted bundled estimates when no override
+        // was supplied, rather than inferring routes from host environment.
+        return;
+    };
+    let raw = result.usage.as_ref().map(|usage| AgentUsage {
+        input_tokens: usage.input_tokens,
+        cached_input_tokens: usage.cached_input_tokens,
+        input_tokens_include_cache: usage.input_tokens_include_cache,
+        output_tokens: usage.output_tokens,
+        total_tokens: usage.total_tokens,
+        cost_usd: usage.cost_usd,
+        extensions: usage.metadata.clone(),
+    });
+    let task_usage = result.model_usage.as_ref();
+    let prices = crate::price_catalog::PriceCatalogs::with_user_catalog(None);
+    result.model_usage = match raw
+        .as_ref()
+        .map(|usage| {
+            crate::model_usage::normalize_model_usage_for_routes(
+                usage,
+                Some(catalog),
+                |provider, model| task_has_bundled_tariff(task_usage, provider, model, &prices),
+            )
+        })
+        .transpose()
+    {
+        Ok(usage) => usage.flatten(),
+        Err(_) => {
+            if !result
+                .events
+                .iter()
+                .any(|event| event.kind == "model_usage_invalid")
+            {
+                result.events.push(event_with_metadata(
+                    "model_usage_invalid",
+                    "model accounting could not be normalized; execution outcome and raw usage were retained".to_string(),
+                    BTreeMap::new(),
+                ));
+            }
+            None
+        }
+    };
 }
 fn set_state(key: &str, runtime_id: &str, state: State) {
     BINDINGS
@@ -433,6 +529,8 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                     "",
                 ));
             }
+            adopt_task_what_ran(&mut result, &runtime.environment);
+            apply_host_catalog(&mut result, plan.user_price_catalog.as_ref());
             for telemetry in &mut result.telemetry {
                 telemetry.relay_enabled = telemetry
                     .metadata
@@ -513,6 +611,16 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 Value::String(runtime.runtime_id.clone()),
             )]),
         )])
+    }
+}
+
+/// Attribute the task core's `what_ran` to the task core, this host's
+/// version and this host's environment provider. A task result without a
+/// readable `what_ran`, from an older task core or one this host cannot
+/// decode, keeps `what_ran` absent and is otherwise unchanged.
+fn adopt_task_what_ran(result: &mut RunResult, environment: &EnvironmentHandle) {
+    if let Some(what_ran) = result.what_ran.as_mut() {
+        crate::what_ran::attribute_to_task_core(what_ran, &environment.provider);
     }
 }
 
@@ -845,6 +953,313 @@ mod tests {
                 ("sandbox_id".to_string(), Value::String(new_id("sandbox"))),
             ]),
         }
+    }
+
+    /// A task result as the task core returns it, with `what_ran` from the
+    /// shared reader vectors when given.
+    fn task_result(what_ran: Option<Value>) -> RunResult {
+        let mut result = serde_json::json!({
+            "agent_name": "agent", "harness": "nvidia.fabric.claude", "adapter_kind": "python",
+            "runtime_id": "runtime-task", "invocation_id": "invocation-1",
+            "request_id": "request-1", "status": "succeeded", "output": "done"
+        });
+        if let Some(what_ran) = what_ran {
+            result["what_ran"] = what_ran;
+        }
+        serde_json::from_value(result).expect("a task result decodes whatever what_ran holds")
+    }
+
+    fn task_what_ran() -> Value {
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../../../../tests/fixtures/what_ran/reader-vectors.json"
+        ))
+        .expect("reader vectors JSON");
+        vectors["base"].clone()
+    }
+
+    fn facts_collected_by(value: &Value, collector: &str) -> usize {
+        match value {
+            Value::Object(map) if map.contains_key("source") => {
+                usize::from(map.get("collected_by") == Some(&Value::from(collector)))
+            }
+            Value::Object(map) => map
+                .values()
+                .map(|value| facts_collected_by(value, collector))
+                .sum(),
+            _ => 0,
+        }
+    }
+
+    #[test]
+    fn task_what_ran_is_attributed_to_the_task_core_and_this_host() {
+        for task_version in [crate::version(), "0.5.0"] {
+            let mut what_ran = task_what_ran();
+            what_ran["fabric"]["core_version"]["value"] = Value::from(task_version);
+            let mut result = task_result(Some(what_ran));
+
+            adopt_task_what_ran(&mut result, &environment());
+
+            let what_ran = serde_json::to_value(result.what_ran).expect("what_ran JSON");
+            assert_task_facts_are_attributed(&what_ran, task_version);
+        }
+    }
+
+    fn assert_task_facts_are_attributed(what_ran: &Value, task_version: &str) {
+        let host_version = serde_json::json!({"value": crate::version(), "source": "observed",
+            "collected_by": "host_core", "method": "crate_version"});
+        let task_core_version = serde_json::json!({"value": task_version, "source": "observed",
+            "collected_by": "task_core", "method": "crate_version"});
+        assert_eq!(what_ran["fabric"]["core_version"], task_core_version);
+        assert_eq!(what_ran["fabric"]["host_core_version"], host_version);
+        assert_eq!(
+            facts_collected_by(what_ran, "host_core"),
+            1,
+            "only host_core_version is the host's fact"
+        );
+        assert_eq!(what_ran["environment"]["provider"], "openshell");
+        assert_eq!(
+            what_ran["models"]["default"]["requested"]["collected_by"],
+            "task_core"
+        );
+        assert_eq!(
+            what_ran["mcp"]["servers"]["docs"]["endpoint"]["collected_by"],
+            "task_core"
+        );
+        assert_eq!(
+            what_ran["harness"]["version"]["collected_by"], "adapter",
+            "adapter facts keep their collector"
+        );
+    }
+
+    #[test]
+    fn task_what_ran_over_the_byte_budget_becomes_minimal_on_this_host() {
+        let minimal = serde_json::json!({
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": {"reason": "byte_budget", "dropped": 1}
+        });
+        let mut oversized = task_what_ran();
+        oversized["adapter"]["id"] = Value::from("a".repeat(140_000));
+        for what_ran in [oversized, minimal.clone()] {
+            let mut result = task_result(Some(what_ran));
+
+            adopt_task_what_ran(&mut result, &environment());
+
+            assert_eq!(
+                serde_json::to_value(result.what_ran).expect("what_ran JSON"),
+                minimal
+            );
+            assert_eq!(result.status, RunStatus::Succeeded);
+            assert_eq!(result.output, Value::from("done"));
+        }
+    }
+
+    #[test]
+    fn task_what_ran_past_the_entry_caps_is_bounded_on_this_host() {
+        let mut what_ran = task_what_ran();
+        let server = what_ran["mcp"]["servers"]["docs"].clone();
+        what_ran["mcp"]["servers"] = (0..35)
+            .map(|index| (format!("server-{index:02}"), server.clone()))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        what_ran["mcp"]["servers_truncated"] =
+            serde_json::json!({"reason": "key_too_long", "dropped": 2});
+        let mut result = task_result(Some(what_ran));
+
+        adopt_task_what_ran(&mut result, &environment());
+
+        let what_ran = serde_json::to_value(result.what_ran).expect("what_ran JSON");
+        let servers = what_ran["mcp"]["servers"].as_object().expect("servers");
+        let expected: Vec<String> = (0..32).map(|index| format!("server-{index:02}")).collect();
+        assert_eq!(servers.keys().cloned().collect::<Vec<_>>(), expected);
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            serde_json::json!({"reason": "entry_cap", "dropped": 5})
+        );
+    }
+
+    #[test]
+    fn task_result_without_readable_what_ran_is_kept_without_it() {
+        let mut undecodable = task_what_ran();
+        undecodable["harness"]["version"]["state"] = Value::from("withheld");
+        for what_ran in [None, Some(undecodable)] {
+            let mut result = task_result(what_ran);
+
+            adopt_task_what_ran(&mut result, &environment());
+
+            assert_eq!(result.what_ran, None);
+            assert_eq!(result.status, RunStatus::Succeeded);
+            assert_eq!(result.output, Value::from("done"));
+        }
+    }
+
+    fn catalog_for_task_usage() -> crate::price_catalog::UserPriceCatalog {
+        crate::price_catalog::UserPriceCatalog::from_bytes(
+            PathBuf::from("host-only-catalog.json"),
+            br#"{"version":1,"entries":[{"provider":"fixture","model_id":"model","currency":"USD","unit":"per_token","rates":{"input_per_million":1.0,"output_per_million":2.0,"cache_read_per_million":0.1,"cache_write_per_million":1.25},"prompt_cache":{"read_accounting":"included_in_prompt_tokens"},"pricing_as_of":"2026-10-22","pricing_source":"test fixture"}]}"#,
+        ).expect("frozen test catalog")
+    }
+
+    fn task_usage_result() -> RunResult {
+        let raw: AgentUsage = serde_json::from_value(serde_json::json!({
+            "extensions": {"nemo_fabric.usage_accounting.v1": {
+                "models_exhaustive": true, "gaps": [], "models": [{
+                    "model": "model", "provider": "fixture", "gaps": [],
+                    "reported": {"input_tokens": 100, "input_tokens_include_cache": true,
+                        "cached_input_tokens": 0, "cache_write_input_tokens": 0,
+                        "output_tokens": 5, "output_tokens_include_reasoning": true,
+                        "peak_request_input_tokens": 100}
+                }]
+            }}
+        }))
+        .expect("raw task accounting");
+        let mut result: RunResult = serde_json::from_value(serde_json::json!({
+            "agent_name": "agent", "harness": "fixture", "adapter_kind": "process",
+            "runtime_id": "runtime-task", "invocation_id": "invocation-1",
+            "request_id": "request-1", "status": "failed", "output": "partial output",
+            "error": {"stage": "invoke", "code": "fixture_failure", "message": "fixture failure", "retryable": false}
+        })).expect("task result");
+        result.usage = Some(run_usage(&raw));
+        result.model_usage = crate::model_usage::normalize_model_usage(&raw, None, false)
+            .expect("normalized task accounting");
+        result
+    }
+
+    #[test]
+    fn task_projection_does_not_send_a_host_catalog_path_to_the_sandbox() {
+        let plan: RunPlan = serde_json::from_value(serde_json::json!({
+            "agent_name": "agent", "base_dir": "/host", "agent_config": {}, "capabilities": {},
+            "config": {"schema_version": "fabric.agent/v1alpha1", "metadata": {"name": "agent"},
+                "runtime": {}, "pricing": {"catalog_path": "/host-only/catalog.json"}}
+        }))
+        .expect("projection plan");
+        let projected = task_config(&plan, &environment()).expect("task configuration");
+        assert!(projected.pricing.unwrap().catalog_path.is_none());
+        assert_eq!(
+            plan.config.pricing.unwrap().catalog_path,
+            Some(PathBuf::from("/host-only/catalog.json"))
+        );
+    }
+
+    #[test]
+    fn task_usage_uses_the_host_frozen_catalog_without_changing_the_outcome() {
+        let mut result = task_usage_result();
+        let original = result.clone();
+        assert!(
+            result
+                .model_usage
+                .as_ref()
+                .unwrap()
+                .cost
+                .estimated
+                .amount_nano_usd
+                .is_none()
+        );
+        let catalog = catalog_for_task_usage();
+        apply_host_catalog(&mut result, Some(&catalog));
+        let usage = result
+            .model_usage
+            .as_ref()
+            .expect("host-normalized accounting");
+        assert_eq!(usage.cost.estimated.amount_nano_usd, Some(110_000));
+        assert_eq!(
+            usage
+                .cost
+                .pricing
+                .as_ref()
+                .unwrap()
+                .user_catalog_sha256
+                .as_deref(),
+            Some(catalog.sha256.as_str())
+        );
+        assert_eq!(result.status, original.status);
+        assert_eq!(result.error, original.error);
+        assert_eq!(result.output, original.output);
+        assert_eq!(result.usage, original.usage);
+    }
+
+    #[test]
+    fn task_usage_without_a_host_override_keeps_the_task_core_route_evidence() {
+        let mut result = task_usage_result();
+        let mut raw = AgentUsage::default();
+        raw.extensions = result.usage.as_ref().unwrap().metadata.clone();
+        let model = &mut raw
+            .extensions
+            .get_mut("nemo_fabric.usage_accounting.v1")
+            .unwrap()["models"][0];
+        model["provider"] = Value::from("openai");
+        model["model"] = Value::from("gpt-5.4");
+        result.usage = Some(run_usage(&raw));
+        result.model_usage = crate::model_usage::normalize_model_usage(&raw, None, true).unwrap();
+        assert!(
+            result
+                .model_usage
+                .as_ref()
+                .unwrap()
+                .cost
+                .estimated
+                .amount_nano_usd
+                .is_some()
+        );
+        let original = result.clone();
+        apply_host_catalog(&mut result, None);
+        assert_eq!(result, original);
+        apply_host_catalog(&mut result, Some(&catalog_for_task_usage()));
+        assert_eq!(
+            result.model_usage.as_ref().unwrap().cost.estimated,
+            original.model_usage.as_ref().unwrap().cost.estimated,
+            "a partial override keeps the task-qualified bundled tariff for other models"
+        );
+        for invalid_proof in ["provider", "fingerprint", "rates", "user_catalog"] {
+            let mut unqualified = original.clone();
+            let entry = &mut unqualified.model_usage.as_mut().unwrap().models[0];
+            match invalid_proof {
+                "provider" => entry.provider = Some("another-provider".into()),
+                "fingerprint" => {
+                    entry.cost.pricing.as_mut().unwrap().bundled_catalog_sha256 =
+                        "sha256:another-catalog".into()
+                }
+                "rates" => entry.cost.applied_rates[0].rates.input += 1,
+                "user_catalog" => {
+                    entry.cost.pricing.as_mut().unwrap().user_catalog_sha256 =
+                        Some("sha256:user-catalog".into())
+                }
+                _ => unreachable!(),
+            }
+            apply_host_catalog(&mut unqualified, Some(&catalog_for_task_usage()));
+            assert!(
+                unqualified
+                    .model_usage
+                    .as_ref()
+                    .unwrap()
+                    .cost
+                    .estimated
+                    .amount_nano_usd
+                    .is_none(),
+                "{invalid_proof}"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_task_accounting_with_a_host_catalog_keeps_the_execution_and_raw_evidence() {
+        let mut result = task_usage_result();
+        result.usage.as_mut().unwrap().metadata.insert(
+            "nemo_fabric.usage_accounting.v1".into(),
+            serde_json::json!({"models_exhaustive": "invalid"}),
+        );
+        let original = result.clone();
+        apply_host_catalog(&mut result, Some(&catalog_for_task_usage()));
+        assert!(result.model_usage.is_none());
+        assert_eq!(result.status, original.status);
+        assert_eq!(result.error, original.error);
+        assert_eq!(result.usage, original.usage);
+        assert!(
+            result
+                .events
+                .iter()
+                .any(|event| event.kind == "model_usage_invalid")
+        );
     }
 
     #[test]

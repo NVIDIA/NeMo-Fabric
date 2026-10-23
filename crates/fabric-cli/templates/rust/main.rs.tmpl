@@ -33,6 +33,7 @@ fn build_config() -> FabricConfig {
         models: {{MODELS}},
         instructions: {{INSTRUCTIONS}},
         runtime: RuntimeConfig {
+            record: None,
             input_schema: "text".to_string(),
             output_schema: "message".to_string(),
             artifacts: None,
@@ -62,6 +63,7 @@ fn build_config() -> FabricConfig {
         telemetry: None,
         system_stats: Some(Default::default()),
         relay: None,
+        pricing: None,
         extensions: BTreeMap::new(),
     }
 }

@@ -26,6 +26,8 @@ schemas/
 │   ├── agent.schema.json
 │   ├── run-plan.schema.json
 │   └── ...
+├── extensions/                # Descriptor-declared extension payloads
+│   └── usage-accounting.schema.json
 └── adapter-contract/          # Southbound adapter-facing contract
     ├── adapter-descriptor.schema.json
     ├── adapter-target-descriptor.schema.json
@@ -38,14 +40,17 @@ schemas/
     └── openai-stream-record.schema.json
 ```
 
-An adapter author can treat `adapter-contract/` as the complete schema entry
-point. Contract versions remain explicit fields in the wire format rather than
-directory names.
+`adapter-contract/` defines the base adapter wire objects. Adapters returning
+supported extension payloads must also declare the applicable schema from
+`extensions/`. Contract versions remain explicit fields in the wire format
+rather than directory names.
 
 Start with the
 [adapter contract overview](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/adapter-contract/README.md)
 for the implementation sequence. Use these generated schemas for exact wire
 shapes; do not reconstruct the contract from examples.
+
+`extensions/usage-accounting.schema.json` defines the optional `nemo_fabric.usage_accounting.v1` evidence carried in adapter usage. An adapter must declare this key in its descriptor before returning it. Core reduces supported evidence into northbound `sdk/run-result.model_usage`; legacy usage alone does not establish completeness.
 
 The language bindings preserve this boundary:
 
@@ -124,12 +129,16 @@ descriptor schema.
 
 ### Results, Artifacts, and Diagnostics
 
+- `sdk/request-record`: outer request evidence when startup or invocation returns no result.
+- `sdk/run-record-line`: bounded opt-in invocation start/end evidence, including validated normalized accounting when available.
 - `sdk/run-result`: normalized consumer-facing invocation result.
 - `sdk/artifact-manifest`: normalized artifact references.
 - `sdk/error-info`: structured runtime or adapter error metadata.
 - `sdk/fabric-event`: NeMo Fabric lifecycle or progress event.
 - `sdk/runtime-resource-snapshot`: timestamped memory, process count, and CPU
   time of a runtime's local adapter host and its descendants.
+
+`model_usage` separates independently nullable complete token counts, available observations, dimension-specific gaps and provider-reported cost. Observations are not guaranteed lower bounds. Results freeze at invocation return; late usage never transfers to a later invocation. Typed access requires an updated SDK; closed validators must use the updated result schema. The [Python SDK guide](../docs/sdk/python.mdx) documents the result and coverage-aware summary helper.
 
 ### Deferred Core Objects
 
@@ -169,6 +178,10 @@ just generate-typescript-contract
 
 Run `just test-typescript` to check generated-file drift, strict compile-time
 fixtures, package contents, and clean-consumer imports.
+
+### Invocation Provenance
+
+`what_ran` in `sdk/run-result` is optional provenance with schema `nemo.fabric.what_ran` and version `v1alpha1`. Rust and Python readers treat malformed provenance or an unsupported schema or version as absent while preserving the rest of the result. Fact `source` and `state` values are closed sets; collector, method, and reason codes are open. Unknown properties are accepted. A `what_ran_truncated` marker permits sections to be absent. This northbound field does not change the adapter result contract. See the [SDK guide](../docs/sdk/python.mdx#what-ran) for facts, bounds, and truncation rules.
 
 ### Invocation System Measurements
 

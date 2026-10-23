@@ -10,6 +10,8 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 ## Modules
 
+- [`nemo_fabric.accounting`](./nemo_fabric.accounting.md#module-nemo_fabricaccounting): Typed model accounting and invocation summaries with explicit coverage.
+- [`nemo_fabric.reporting`](./nemo_fabric.reporting.md#module-nemo_fabricreporting): Inspect saved invocation evidence without a benchmark manifest or trace import.
 - [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 - [`nemo_fabric.capabilities`](./nemo_fabric.capabilities.md#module-nemo_fabriccapabilities): Metadata-only adapter inspection for host-side admission.
 - [`nemo_fabric.runtime`](./nemo_fabric.runtime.md#module-nemo_fabricruntime): Runtime lifecycle support for the NVIDIA NeMo Fabric Python SDK.
@@ -22,6 +24,8 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 ## Classes
 
+- [`accounting.DimensionSummary`](./nemo_fabric.accounting.md#class-dimensionsummary): An aggregate together with its explicit invocation coverage.
+- [`accounting.UsageSummary`](./nemo_fabric.accounting.md#class-usagesummary): Coverage of an explicit invocation manifest, including missing results.
 - [`client.Fabric`](./nemo_fabric.client.md#class-fabric): Primary Python entrypoint for NeMo Fabric.
 - [`capabilities.AdapterCapabilityProfile`](./nemo_fabric.capabilities.md#class-adaptercapabilityprofile): Declared support for a standalone runtime, not observed execution provenance.
 - [`runtime.Runtime`](./nemo_fabric.runtime.md#class-runtime): One logical, stateful harness execution.
@@ -42,6 +46,8 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`models.McpServerConfig`](./nemo_fabric.models.md#class-mcpserverconfig): MCP server configuration.
 - [`models.MetadataConfig`](./nemo_fabric.models.md#class-metadataconfig): Human-readable agent identity.
 - [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Configuration for one model role.
+- [`models.PricingConfig`](./nemo_fabric.models.md#class-pricingconfig): Frozen Relay-compatible price-catalog override, read during planning.
+- [`models.RecordConfig`](./nemo_fabric.models.md#class-recordconfig): Opt-in per-invocation run record.
 - [`models.RelayAtifConfig`](./nemo_fabric.models.md#class-relayatifconfig): NeMo Relay ATIF export configuration.
 - [`models.RelayAtofConfig`](./nemo_fabric.models.md#class-relayatofconfig): NeMo Relay ATOF export configuration.
 - [`models.RelayAtofFileSinkConfig`](./nemo_fabric.models.md#class-relayatoffilesinkconfig): NeMo Relay ATOF file sink configuration.
@@ -65,11 +71,13 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`models.ToolsConfig`](./nemo_fabric.models.md#class-toolsconfig): Harness-neutral tool capability configuration.
 - [`models.WorkflowConfig`](./nemo_fabric.models.md#class-workflowconfig): Registered workflow target and immutable construction settings.
 - [`types.AdapterInfo`](./nemo_fabric.types.md#class-adapterinfo): Resolved adapter identity attached to a run plan.
+- [`types.AppliedPricing`](./nemo_fabric.types.md#class-appliedpricing): Selected price entry and integer nano-USD rates per million tokens.
 - [`types.ArtifactManifest`](./nemo_fabric.types.md#class-artifactmanifest): Normalized collection of artifacts produced by a run.
 - [`types.ArtifactRef`](./nemo_fabric.types.md#class-artifactref): Reference to one artifact produced by a run.
 - [`types.CgroupObservation`](./nemo_fabric.types.md#class-cgroupobservation): Native cgroup snapshot or explicit unavailable/unsupported reason.
 - [`types.CgroupSnapshot`](./nemo_fabric.types.md#class-cgroupsnapshot): Native adapter-host cgroup measurements, separate from process RSS.
 - [`types.CgroupStats`](./nemo_fabric.types.md#class-cgroupstats): Cgroup endpoint observations and counter deltas over an invocation.
+- [`types.CostAmount`](./nemo_fabric.types.md#class-costamount): Complete and observed amounts in integer nano-USD, never an invoice guarantee.
 - [`types.DoctorCheck`](./nemo_fabric.types.md#class-doctorcheck): One diagnostic check in a ``DoctorReport``.
 - [`types.DoctorReport`](./nemo_fabric.types.md#class-doctorreport): Aggregate preflight diagnostics for a resolved run plan.
 - [`types.EnvironmentHandle`](./nemo_fabric.types.md#class-environmenthandle): Durable identity and provider binding for a prepared or attached environment.
@@ -79,6 +87,9 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`types.GaugeSummary`](./nemo_fabric.types.md#class-gaugesummary): Sampled gauge extrema, hold-last-value mean, and covered time.
 - [`types.InvocationSystemStats`](./nemo_fabric.types.md#class-invocationsystemstats): System measurements for one invocation in its executing runner.
 - [`types.Measurement`](./nemo_fabric.types.md#class-measurement): Measured numeric value, an unlimited limit, or explicit missing evidence.
+- [`types.ModelUsage`](./nemo_fabric.types.md#class-modelusage): Complete normalized tokens, observations, gaps and separately typed costs.
+- [`types.PerModelUsage`](./nemo_fabric.types.md#class-permodelusage): Normalized counts for a source-established accounting model/provider.
+- [`types.PricingBasis`](./nemo_fabric.types.md#class-pricingbasis): Validated comparison basis for persisted catalog estimates.
 - [`types.ResourceObservation`](./nemo_fabric.types.md#class-resourceobservation): Adapter host process-tree reading, or an explicit collection failure.
 - [`types.RunOutput`](./nemo_fabric.types.md#class-runoutput): Normalized adapter output.
 - [`types.RunPlan`](./nemo_fabric.types.md#class-runplan): Immutable execution plan produced before a runtime is started.
@@ -91,6 +102,9 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`types.ServiceHandle`](./nemo_fabric.types.md#class-servicehandle): Opaque identity and binding for one prepared or attached service.
 - [`types.ServiceReference`](./nemo_fabric.types.md#class-servicereference): Reference to an already-running caller-owned service.
 - [`types.TelemetryRef`](./nemo_fabric.types.md#class-telemetryref): Reference to external or persisted telemetry for a run.
+- [`types.TokenCost`](./nemo_fabric.types.md#class-tokencost): Provider-reported amounts and separate catalog estimates with their basis.
+- [`types.TokenCounts`](./nemo_fabric.types.md#class-tokencounts): Independently nullable tokens in one fixed invocation/model scope.
+- [`types.UsageGap`](./nemo_fabric.types.md#class-usagegap): Dimension-specific incompleteness with an optional stable diagnostic.
 - [`errors.FabricCapabilityError`](./nemo_fabric.errors.md#class-fabriccapabilityerror): Operation rejected by resolved runtime capabilities or implementation status.
 - [`errors.FabricConfigError`](./nemo_fabric.errors.md#class-fabricconfigerror): Invalid SDK input, request shape, factory, or resolved config.
 - [`errors.FabricError`](./nemo_fabric.errors.md#class-fabricerror): Base class for structured SDK-level NeMo Fabric errors.
@@ -102,6 +116,16 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 ## Functions
 
+- [`accounting.summarize_usage`](./nemo_fabric.accounting.md#function-summarize_usage): Summarize invocations against an explicit expected identity manifest.
+- [`reporting.main`](./nemo_fabric.reporting.md#function-main): Inspect a saved invocation result as a concise summary or JSON.
+- [`reporting.read_evidence`](./nemo_fabric.reporting.md#function-read_evidence): Read a full result, invocation record or outer request record; never follow references.
+- [`reporting.read_invocation_record`](./nemo_fabric.reporting.md#function-read_invocation_record): Read bounded start/end evidence; a truncated tail never creates a result.
+- [`reporting.read_result`](./nemo_fabric.reporting.md#function-read_result): Read one saved full result without requiring task labels or a manifest.
+- [`reporting.render_invocation_record_summary`](./nemo_fabric.reporting.md#function-render_invocation_record_summary): Describe the invocation interval without assuming whole-runtime success.
+- [`reporting.render_request_summary`](./nemo_fabric.reporting.md#function-render_request_summary): Explain missing execution evidence without assigning zero spend.
+- [`reporting.render_result_summary`](./nemo_fabric.reporting.md#function-render_result_summary): Render a concise overview; details add resource evidence.
+- [`reporting.summarize_request`](./nemo_fabric.reporting.md#function-summarize_request): Describe outer dispatch evidence without fabricating an invocation result.
+- [`reporting.summarize_result`](./nemo_fabric.reporting.md#function-summarize_result): Describe one returned invocation, preserving independent usable evidence.
 - [`capabilities.inspect_adapter`](./nemo_fabric.capabilities.md#function-inspect_adapter): Inspect a standalone runtime using descriptor metadata without loading its SDK.
 
 

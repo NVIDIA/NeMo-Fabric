@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from copy import deepcopy
 from enum import Enum
+from pathlib import Path
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
@@ -972,11 +973,62 @@ def _run_request_payload(
     return payload
 
 
+def _record_root(
+    plan: Mapping[str, Any], runtime_config: Mapping[str, Any]
+) -> str | None:
+    environment_plan = plan.get("environment_plan", {})
+    artifact_root = runtime_config.get("artifacts") or (
+        environment_plan.get("artifacts")
+        if isinstance(environment_plan, Mapping)
+        else None
+    )
+    if artifact_root is None:
+        return None
+    root = Path(artifact_root)
+    if not root.is_absolute():
+        root = Path(plan["base_dir"]) / root
+    return str(root / ".fabric")
+
+
 async def _run_native_lifecycle(
     native: Any,
     plan: Mapping[str, Any],
     request: Mapping[str, Any],
 ) -> dict[str, Any]:
+    config = plan.get("config", {})
+    runtime_config = config.get("runtime", {}) if isinstance(config, Mapping) else {}
+    record = (
+        runtime_config.get("record", {}) if isinstance(runtime_config, Mapping) else {}
+    )
+    if isinstance(record, Mapping) and record.get("enabled") is True:
+        # Core owns the final snapshot after shutdown. Saving an invocation-only
+        # snapshot here would omit stop events and a possible stop failure.
+        try:
+            return json.loads(
+                await _call_blocking(
+                    lambda: native.run_plan(
+                        json.dumps(dict(plan)), json.dumps(dict(request))
+                    )
+                )
+            )
+        except asyncio.CancelledError as error:
+            root = _record_root(plan, runtime_config)
+            if root is not None:
+                error.add_note(f"Run evidence location: {root}")
+            raise
+        except Exception as error:
+            stage = getattr(error, "fabric_stage", "run")
+            if stage not in {"plan", "prepare", "start", "invoke", "stop"}:
+                stage = "run"
+            failure = _runtime_error(error, stage=stage)
+            root = _record_root(plan, runtime_config)
+            if root is not None:
+                failure.details["record_root"] = root
+                failure.add_note(f"Run evidence location: {root}")
+            if failure is error:
+                raise
+            raise failure from error
+
     def run() -> dict[str, Any]:
         plan_json = json.dumps(dict(plan))
         try:

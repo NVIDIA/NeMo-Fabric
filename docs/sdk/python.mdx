@@ -1178,6 +1178,7 @@ Important fields:
 | `status` | Terminal invocation status such as success, failure, or cancellation. |
 | `output` | Harness output normalized to the configured output schema. |
 | `error` | Structured failure metadata when available. |
+| `model_usage` | Optional normalized complete counts, observations, gaps and separately reported/estimated cost. |
 | `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
 | `system_stats` | Optional `InvocationSystemStats`: monotonic adapter exchange duration, before/after observations with availability, and an optional CPU counter difference estimate. |
 | `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. |
@@ -1185,6 +1186,7 @@ Important fields:
 | `telemetry` | References to NeMo Relay or other telemetry streams produced by the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
+| `what_ran` | What executed for this invocation, and how NeMo Fabric learned each fact. |
 | `runtime_id`, `invocation_id`, `request_id` | IDs for correlation across runtimes, logs, telemetry, and artifacts. |
 
 These are structured correlation fields, not interchangeable metadata:
@@ -1213,6 +1215,150 @@ Each counter is optional: missing values are unknown, not zero. `cached_input_to
 If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial
 `RunResult`.
+
+### Complete counts and useful observations
+
+`result.model_usage` is present when the adapter supplies the declared
+`nemo_fabric.usage_accounting.v1` evidence. Its token fields are independently
+nullable counts: input includes cache reads and writes, output includes
+reasoning, and total requires known input plus output. The independent raw
+provider total remains in `result.usage`.
+
+Typed access to `model_usage` requires an updated SDK. Permissive readers can retain or ignore the new field; closed validators must use the updated result schema. Current readers still accept older results without this field.
+
+```python
+from nemo_fabric import summarize_usage
+
+if result.model_usage is not None:
+    print(result.model_usage.input_tokens)          # Complete count, or None.
+    print(result.model_usage.observed.input_tokens) # Available observations.
+    print(result.model_usage.gaps)                 # Affected dimensions/reasons.
+    print(result.model_usage.cost.estimated.amount_nano_usd)
+
+summary = summarize_usage(
+    [result], expected=[(result.runtime_id, result.invocation_id)]
+)
+print(summary["dimensions"]["input_tokens"])
+```
+
+A complete count covers work initiated by the invocation, including descendants,
+at return. Owned unfinished work or missing usage leaves only the affected
+complete counts unknown. Failure alone is not a gap. Observations remain visible
+but are not guaranteed mathematical lower bounds. Returned evidence is frozen;
+late usage never transfers to a later invocation. If accounting passes the adapter contract but cannot be normalized, `model_usage` is absent and a sanitized
+`model_usage_invalid` event records the accounting failure. The execution status,
+output and raw usage remain available. Undeclared or structurally invalid adapter
+extensions still fail the adapter contract. Legacy usage without supported
+accounting remains available in `result.usage` and is not certified complete by
+`summarize_usage`.
+
+`cost.reported` contains only provider-reported amounts; `cost.estimated` contains
+catalog estimates. Both distinguish `amount_nano_usd` from `observed_nano_usd`
+in integer nano-USD.
+Estimates retain their pricing basis and distinct selected rate snapshots.
+Set `FabricConfig(pricing=PricingConfig(catalog_path="prices.json"))` for a
+Relay-compatible catalog override; planning freezes its bytes. An explicitly established provider must match the catalog entry's provider, including aliases and shorter model paths. A different provider's entry cannot price that source solely because the model name matches. When no provider identity is available, an explicit user catalog can match the model name alone. Bundled provider prices apply only
+when the configured route establishes the native provider. Unknown model,
+cache-price or request-tier evidence affects estimates without erasing tokens.
+Nonzero Anthropic cache writes currently lack expiry-price evidence, so their
+complete estimate remains unknown; independently priceable parts remain observed.
+Known zero writes need no expiry evidence. Estimates are not invoices.
+
+`summarize_usage` requires an explicit expected invocation inventory. It retains
+missing results in coverage, keeps complete totals separate from observed sums,
+checks uint64 overflow and separates incompatible pricing bases. It never adds
+legacy, log or Relay/ATIF values to native accounting. Do not rank partial spend
+as cheaper or silently remove timed-out attempts from comparisons.
+
+
+### What Ran
+
+`what_ran` records what executed for the invocation, as schema
+`nemo.fabric.what_ran` version `v1alpha1`. Each fact is an object with a
+`value`, or with a `state` and a `reason` when it has no value. Both forms
+carry `source`, `collected_by`, and `method`:
+
+- `source` is `observed` when NeMo Fabric core saw the fact itself, `reported`
+  when the adapter, harness, an MCP server, or a remote service said so, and
+  `configured` when it comes from the resolved plan.
+- `state` is `not_applicable` when the fact cannot exist for this run,
+  `unsupported` when there is no source for it, `collection_failed` when the
+  source failed, and `unavailable` when NeMo Fabric holds no value and no
+  evidence for the other states.
+- `collected_by`, `method`, and `reason` are open codes that match
+  `^[a-z0-9_.:#+/-]{1,128}$`. Accept values you do not recognize.
+  `collected_by` is `task_core` for facts a core inside an OpenShell sandbox
+  collected. `method` names the technique, such as `crate_version`,
+  `resolved_plan`, or `adapter_report`.
+
+| Part | Facts |
+| --- | --- |
+| `fabric` | `core_version` of the core that ran the adapter. `host_core_version` is `not_applicable` with reason `local_run` in a local run, and the host core's version in an OpenShell run. |
+| `adapter` | `id` from the plan, and the reported `package_version`. |
+| `harness` | The reported `name` and `version` of the harness program. |
+| `models.<role>` | `provider` and the `requested` model from the plan, and the reported `served` model. |
+| `mcp.servers.<name>` | `origin`, `transport`, the configured `endpoint`, and a `runtime` block with the reported `connected`, `protocol_version`, `server_name`, `server_version`, and `tool_names`. |
+| `environment` | The environment `provider`, such as `local` or `openshell`. |
+
+NeMo Fabric reads no adapter-reported facts yet, so every reported fact has
+state `unsupported` with reason `key_not_declared` and method
+`adapter_report`.
+
+Today every MCP entry has `origin` `plan`. An entry with `origin` `harness`
+describes a server the harness reports but the plan does not configure. It has
+the same shape, except that `endpoint` has state `not_applicable` with reason
+`not_configured`. A `plan` entry always has `transport`. An entry of any other
+origin can leave it out.
+
+`endpoint` keeps no secret. A network server's endpoint is its lowercase scheme
+and host and its port. A URL without a port gets 80 for `http` and `ws` and 443
+for `https` and `wss`, so `https://example.com` and `https://example.com:443`
+give the same endpoint. An IPv6 host keeps its brackets, in compressed lowercase
+form such as `[2001:db8::1]`. A `stdio` server's endpoint is the file name of
+its executable, such as `server.exe` for `C:\MCP\server.exe`.
+User info, paths, queries, fragments, headers, arguments, and environment values
+are never copied.
+
+An endpoint NeMo Fabric cannot reduce safely has state `collection_failed` with
+reason `endpoint_unparsed` or `executable_unparsed`. Examples are a URL with an
+`@` after the host, a bracketed host that is not an IPv6 address, and an
+executable that contains `=` or any whitespace, even in a folder name. An empty
+URL or executable has state `unavailable` with reason `not_configured`.
+
+A string value longer than 256 characters keeps its first 240 characters, then
+`~`, then the first 15 hex digits of its SHA-256. The rule applies to each
+element of a list value too.
+
+`models` keeps at most 16 roles and `mcp.servers` at most 32 servers, taken in
+sorted key order. An entry whose key is longer than 128 characters is dropped.
+While the whole `what_ran` is larger than 128 KiB of compact JSON, MCP servers
+are dropped from the end of the sorted order, and then model roles. A map that
+lost entries has a marker next to it, `models_truncated` or
+`mcp.servers_truncated`, with the `reason` (`key_too_long`, `entry_cap`, or
+`byte_budget`) and the `dropped` count. Each map has one marker: when more than
+one rule dropped entries, `reason` names the last rule applied, in that order,
+and `dropped` counts every dropped entry. `dropped` is a JSON integer. The Rust
+core and the Python SDK reject `1.0`, although a JSON Schema validator may
+accept it. If `what_ran` is still too large with no MCP server and no model
+role left, it holds only `schema`, `version`, and `what_ran_truncated` with
+reason `byte_budget` and `dropped` 1. Check for `what_ran_truncated` before you
+read a section. Dropping entries never changes the run's status or error.
+
+`what_ran` is `None` when the core that produced the result predates it. The
+Rust core and the Python SDK apply the same structural checks. A `what_ran`
+that is not an object, names another schema or version, or has a malformed
+section or fact reads as `None`, and the rest of the result is unchanged. A
+fact with both `value` and `state` is malformed. Unknown properties are
+ignored. Treat `what_ran` as evidence, not as a key for grouping runs.
+
+```python
+what_ran = result.what_ran
+if what_ran is not None and "what_ran_truncated" not in what_ran:
+    core = what_ran["fabric"]["core_version"]
+    print(core.get("value"), core["source"])
+    for role, model in what_ran["models"].items():
+        print(role, model["requested"].get("value"), model["served"].get("state"))
+```
 
 ## Events
 
@@ -1432,3 +1578,102 @@ backpressure. The consumer decides whether to wait, retry, scale out, or fail.
 
 ## Next Steps
 - Review the examples in the GitHub repo [`examples/`](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples).
+
+
+## Opt-in run recording
+
+Set `runtime.record.enabled` and a host-side artifact root to save local runs:
+
+```python
+from nemo_fabric import RecordConfig
+
+config.runtime.record = RecordConfig(enabled=True)
+config.runtime.artifacts = "./runs"
+```
+
+The CLI accepts the same settings:
+
+```bash
+nemo-fabric run --preset scripted --input "Inspect the example" --record --artifacts ./runs
+```
+
+Recording supports the local environment provider with Python or process adapters.
+It is disabled when the record setting is omitted. Enabling it without an artifact
+root or with an unsupported execution location fails validation.
+
+Each invocation writes bounded start/end lines to
+`.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`. The start line retains
+identities and configured model names. It omits prompts, output, credentials,
+exception messages and arbitrary adapter metadata. Allowlisted context identity
+keys retain string or integer values; other context values are omitted.
+
+The sibling `run-result.json` contains the complete returned result and can
+contain sensitive output. One-shot results are finalized after runtime shutdown;
+persistent-runtime results describe the invocation before a later shutdown.
+An invocation end record never establishes the outcome of a later shutdown.
+Saved results are created exclusively and never replace an existing file or
+symlink. Recording failures add diagnostics without retrying paid work or
+replacing the execution outcome. No result file is promised when execution
+raises before returning a result.
+
+The start/end record's elapsed time covers its invocation window, including start
+record I/O and core preparation. It excludes end-record writes, full-result
+persistence and one-shot runtime startup/shutdown. It is not pure model time or
+the caller's task schedule interval. Record I/O is synchronous and best effort.
+Each record line is limited to 64 KiB. The end line copies bounded `what_ran`
+from the finalized invocation result. If those optional facts would exceed the
+line budget, the record keeps a minimal `what_ran_truncated` marker with reason
+`byte_budget` and `dropped: 1`. If even that marker does not fit, the record omits
+`what_ran`. The separate full result keeps its original facts. Other oversized
+lines stop that record without replacing the available execution result.
+
+### Inspect a saved run
+
+```bash
+python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json
+python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json --details
+python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json --json
+```
+
+Replace the placeholder IDs with the returned `run_result` artifact path. The
+default overview separates execution, scoped elapsed time, complete token totals,
+observed subtotals, cache breakdown and each cost amount. It names accounting
+gaps and exposes diagnostic paths. Estimates retain their pricing basis and are
+not invoices. An execution failure can retain complete usage; successful
+execution does not establish task correctness or complete accounting.
+
+Use `--details` for the final resource snapshot and pricing evidence. Resource
+snapshots describe the runtime process tree, not inference GPU usage. The CPU
+counter is cumulative since host start; endpoint RSS is not a peak. Rounded
+currency and human-readable units affect text only. JSON retains exact values,
+and positive amounts never display as zero.
+
+The inspector accepts an explicit `run-record.jsonl` to show the invocation
+boundary when a full result is unavailable. It retains complete lines before a
+truncated tail and rejects duplicate or conflicting lines. The bounded record preserves validated normalized accounting, including complete
+and observed counts, when present in the invocation result. Legacy numeric usage
+remains unverified diagnostics. Missing evidence never becomes zero.
+
+A full result remains authoritative over its matching sibling record. The reader
+checks identities, skips sibling symlinks, and never opens referenced logs or
+telemetry payloads or uses them to fill missing counts. Each inspected file is
+limited to 16 MiB; larger saved results remain unchanged and can be inspected
+separately. Recording requires no benchmark framework, task labels or Relay.
+
+
+### Requests without a returned result
+
+When recording is enabled, one-shot runs also save bounded request-level evidence
+under `.fabric/requests/<dispatch_id>/`. Each request record is limited to
+64 KiB; an oversized record adds a recording diagnostic without replacing the
+execution outcome or preventing full-result publication. The request start is
+written before runtime startup. The end distinguishes a returned result reference from no
+result at the startup or invocation boundary. It retains the caller's request ID
+without inventing runtime/invocation IDs, tokens or spend.
+
+Inspect an explicit `request-start.json` or `request-end.json` path with
+`python -m nemo_fabric.reporting`. The inspector never follows a returned result
+reference automatically or treats it as proof that publication succeeded. An
+outer timeout does not establish that inner or remote work stopped. Existing
+invocation status and error stage/code remain the stop evidence for returned
+results; this adds no competing stop-reason field.
