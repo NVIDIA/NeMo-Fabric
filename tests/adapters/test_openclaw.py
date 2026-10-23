@@ -1169,6 +1169,38 @@ async def test_openclaw_process_exit_fails_active_invocation(
     assert mock_invoke.await_count == 1
 
 
+async def test_openclaw_process_exit_preserves_usage_seen_before_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    context = _context(tmp_path)
+    runtime = adapter.OpenClawRuntime()
+    runtime._client = MagicMock(spec=adapter.httpx.AsyncClient)
+    runtime._config = _config(tmp_path / "openclaw")
+    runtime._context = context
+    runtime._port = 12345
+    seen = asyncio.Event()
+    usage = adapter.openai_chat._usage(
+        {"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24},
+        zero_filled_counts=True,
+    )
+    assert usage is not None
+
+    async def report_then_wait(*_args, **kwargs):
+        kwargs["on_usage"](usage)
+        seen.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(adapter, "_invoke_gateway", report_then_wait)
+    invoke_task = asyncio.create_task(runtime.invoke(AgentRunRequest(input="Hello."), context))
+    await seen.wait()
+    runtime._record_gateway_failure("openclaw_gateway_exited", "Gateway exited")
+
+    result = await asyncio.wait_for(invoke_task, timeout=1)
+    assert result.status == "failed"
+    assert result.error.code == "openclaw_gateway_exited"
+    assert result.usage is usage
+
+
 async def test_openclaw_health_monitor_detects_unresponsive_gateway(
     monkeypatch: pytest.MonkeyPatch,
 ):

@@ -1414,12 +1414,14 @@ class OpenClawRuntime:
             nonlocal observed
             observed = value
 
-        def failure(code: str, message: str) -> contract.AgentRunResult:
+        def failure(
+            code: str, message: str, *, retryable: bool = False
+        ) -> contract.AgentRunResult:
             return contract.AgentRunResult(
                 status=contract.AgentRunStatus.FAILED,
                 output={},
                 error=contract.AgentRunError(
-                    code=code, message=message, retryable=False
+                    code=code, message=message, retryable=retryable
                 ),
                 usage=observed,
                 extensions=self._versions_extensions(),
@@ -1437,7 +1439,9 @@ class OpenClawRuntime:
                 agent_id=self._agent_id,
                 on_usage=remember_usage,
             )
-        except lifecycle.LifecycleError:
+        except lifecycle.LifecycleError as error:
+            if observed is not None:
+                return failure(error.code, error.message, retryable=error.retryable)
             raise
         except httpx.HTTPStatusError as error:
             return contract.AgentRunResult(
