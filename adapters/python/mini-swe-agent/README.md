@@ -82,7 +82,7 @@ The result includes the submitted final output. `output.usage.api_calls` counts
 mini-SWE-agent model queries, including queries that retry their provider call. Raw provider usage is captured per LiteLLM attempt in the declared
 `nemo_fabric.usage_accounting.v1` extension, before omitted fields can become
 zeros. A count the provider omitted stays unknown; a reported zero stays zero.
-Fabric's shared normalizer combines these observations, accounts for cache
+NeMo Fabric's shared normalizer combines these observations, accounts for cache
 and reasoning conventions, and exposes complete counts separately from observed
 subtotals in `RunResult.model_usage`.
 
