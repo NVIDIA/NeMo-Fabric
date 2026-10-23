@@ -2047,10 +2047,10 @@
     },
     "PricingCatalog": {
       "additionalProperties": false,
-      "description": "A model price catalog in the NeMo Relay model pricing catalog format,\nversion 1.\n\nNeMo Fabric reads and writes the format unchanged, with one extra check:\nevery rate must be below one million US dollars per million tokens.",
+      "description": "A model price catalog in the NeMo Relay model pricing catalog format,\nversion 1.\n\nNVIDIA NeMo Fabric reads and writes the format unchanged, with one extra check:\nevery rate must be below one million US dollars per million tokens.",
       "properties": {
         "entries": {
-          "description": "Price entries. Lookup uses the first entry that matches.",
+          "description": "Price entries. For each lookup key, the first matching entry wins.",
           "items": {
             "$ref": "#/$defs/ModelPricing"
           },
