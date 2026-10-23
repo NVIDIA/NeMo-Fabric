@@ -47,6 +47,11 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        if self.path == "/v1/chat/completions":
+            self.send_response(405)
+            self.send_header("Allow", "POST")
+            self.end_headers()
+            return
         if self.path == "/healthz":
             body = json.dumps({"ok": True, "status": "live"}).encode()
             self.send_response(200)

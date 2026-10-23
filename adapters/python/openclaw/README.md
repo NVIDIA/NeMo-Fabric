@@ -116,6 +116,42 @@ async with await fabric.prepare_service(config, base_dir=base_dir) as service:
 
 Checks can run while connected runtimes are invoking. Timeouts return `unknown/probe_timeout`. Release during a check returns `unknown/observation_changed`; checks after release return `unknown/service_unavailable`.
 
+## Runtime Health
+
+Use runtime-scoped `Fabric.check()` to check the agent selected by a NeMo Fabric runtime. These checks support owned Gateways and runtimes connected to a prepared or attached service. The SDK uses the same request for local and OpenShell environments; OpenShell forwards the request through `fabric-agent-ctl check`.
+
+| Level | Native evidence |
+|---|---|
+| `live` | `GET /healthz` returns the liveness response. An owned Gateway process is running. |
+| `active` | `GET /startupz` confirms startup; authenticated `GET /v1/models` includes `openclaw/<agent_id>`; `GET /v1/chat/completions` returns the native `405` response with `Allow: POST`. |
+| `ready` | `GET /readyz` returns HTTP 200 with `ready: true`, including configured channel health. |
+
+The `GET /v1/chat/completions` check confirms that the Chat Completions endpoint is enabled. The model inventory can remain available through the Responses API when Chat Completions is disabled. Malformed native responses return `unknown/probe_error`; a missing selected agent or disabled request endpoint returns `failed/endpoint_unavailable`. An interface disabled after an invocation failure cannot pass `active`.
+
+Check a runtime with the following code:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+environment = await fabric.prepare_environment(config, base_dir=base_dir)
+try:
+    async with await fabric.start_runtime_in(
+        config, environment, base_dir=base_dir
+    ) as runtime:
+        report = await fabric.check(
+            environment=environment,
+            request=CheckRequest(
+                scope="runtime", runtime_id=runtime.runtime_id, level="ready"
+            ),
+        )
+        print(report.outcome)
+finally:
+    await fabric.release_environment(environment)
+```
+
+Levels run in order under one deadline and stop at the first nonpassing result. A busy runtime can pass; a timeout returns `unknown/probe_timeout`. Reported runtime activity covers NeMo Fabric invocations. Stop or ownership changes invalidate observations.
+
 ## Use a NeMo Fabric-Owned Service
 
 `prepare_service()` maps the normalized `FabricConfig` to `openclaw.json`,

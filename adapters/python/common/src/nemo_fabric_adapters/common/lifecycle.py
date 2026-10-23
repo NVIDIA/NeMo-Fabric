@@ -605,6 +605,11 @@ async def _handle_start(
                     or state.runtime is not candidate
                 ):
                     return health_transport.unobserved_health("observation_changed")
+                if state.failed and level != "live" and result["outcome"] != "failed":
+                    return {
+                        **health_transport.unobserved_health("endpoint_unavailable"),
+                        "outcome": "failed",
+                    }
                 return result
 
             try:

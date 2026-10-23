@@ -21,6 +21,8 @@ from nemo_fabric import (
     CheckRequest,
     DiscoveryConfig,
     EnvironmentConfig,
+    EnvironmentHandle,
+    EnvironmentReference,
     Fabric,
     FabricConfig,
     FabricRuntimeError,
@@ -36,7 +38,14 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest_asyncio.fixture(name="native_gateway", loop_scope="function")
 async def native_gateway_fixture(unused_tcp_port):
     app = FastAPI()
-    state = {"ready": True, "authorized": True, "hold_ready": False}
+    state = {
+        "ready": True,
+        "authorized": True,
+        "hold_ready": False,
+        "agent_registered": True,
+        "startup": True,
+        "chat_enabled": True,
+    }
     paths = []
     ready_entered, ready_release = asyncio.Event(), asyncio.Event()
     invoke_entered, invoke_release = asyncio.Event(), asyncio.Event()
@@ -49,7 +58,14 @@ async def native_gateway_fixture(unused_tcp_port):
     @app.get("/startupz")
     async def startup():
         paths.append("/startupz")
-        return {"ok": True, "status": "started", "version": "2026.9.4"}
+        return JSONResponse(
+            {
+                "ok": state["startup"],
+                "status": "started" if state["startup"] else "starting",
+                "version": "2026.9.4",
+            },
+            status_code=200 if state["startup"] else 503,
+        )
 
     @app.get("/v1/models")
     async def models(request: Request):
@@ -63,8 +79,19 @@ async def native_gateway_fixture(unused_tcp_port):
             )
         return {
             "object": "list",
-            "data": [{"id": "openclaw/default", "object": "model"}],
+            "data": [{"id": "openclaw/default", "object": "model"}]
+            if state["agent_registered"]
+            else [],
         }
+
+    @app.get("/v1/chat/completions")
+    async def chat_interface():
+        paths.append("/v1/chat/completions")
+        return JSONResponse(
+            {},
+            status_code=405 if state["chat_enabled"] else 404,
+            headers={"Allow": "POST"} if state["chat_enabled"] else {},
+        )
 
     @app.get("/readyz")
     async def ready():
@@ -278,13 +305,8 @@ async def test_gateway_release_invalidates_a_pending_readiness_observation(
         await asyncio.gather(checking, return_exceptions=True)
 
 
-@pytest.mark.skipif(
-    sys.platform != "linux",
-    reason="Owned Gateway fixture requires Linux process supervision",
-)
-async def test_fabric_owned_gateway_can_be_checked_and_released_without_runtimes(
-    tmp_path,
-):
+@pytest.fixture(name="owned_gateway_config")
+def owned_gateway_config_fixture(tmp_path):
     state_path = tmp_path / "health-state.json"
     state_path.write_text(json.dumps({"ready": True}))
     stopped_path = tmp_path / "stopped.txt"
@@ -319,6 +341,17 @@ async def test_fabric_owned_gateway_can_be_checked_and_released_without_runtimes
         },
     )
     os.environ["ADAPTER_PYTHON"] = sys.executable
+    return config, state_path, stopped_path, request_path
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="Owned Gateway fixture requires Linux process supervision",
+)
+async def test_fabric_owned_gateway_can_be_checked_and_released_without_runtimes(
+    owned_gateway_config,
+):
+    config, state_path, stopped_path, request_path = owned_gateway_config
     fabric = Fabric()
     service = await fabric.prepare_service(config, base_dir=ROOT)
     try:
@@ -342,4 +375,188 @@ async def test_fabric_owned_gateway_can_be_checked_and_released_without_runtimes
         assert not request_path.exists()
     finally:
         await service.release()
+    assert stopped_path.read_text() == "stopped"
+
+
+async def test_runtime_health_checks_selected_interface_and_survives_a_busy_timeout(
+    gateway_service, native_gateway
+):
+    fabric, service, config = gateway_service
+    _, state, paths, ready_entered, ready_release, invoke_entered, invoke_release = (
+        native_gateway
+    )
+    runtime = await fabric.start_runtime(config, service=service, base_dir=ROOT)
+    environment = EnvironmentHandle.from_mapping(runtime.handle.environment)
+    request = CheckRequest(
+        scope="runtime", runtime_id=runtime.runtime_id, level="ready"
+    )
+    invocation = None
+    try:
+        paths.clear()
+        report = await fabric.check(environment=environment, request=request)
+        assert report.outcome == "passed", report.to_mapping()
+        assert report.runtime == {"state": "active", "activity": "idle"}
+        assert paths == [
+            "/healthz",
+            "/startupz",
+            "/v1/models",
+            "/v1/chat/completions",
+            "/readyz",
+        ]
+        for field, expected_paths in [
+            ("startup", ["/healthz", "/startupz"]),
+            ("agent_registered", ["/healthz", "/startupz", "/v1/models"]),
+            (
+                "chat_enabled",
+                ["/healthz", "/startupz", "/v1/models", "/v1/chat/completions"],
+            ),
+        ]:
+            state[field] = False
+            paths.clear()
+            failed = await fabric.check(environment=environment, request=request)
+            assert failed.reason_code == "endpoint_unavailable"
+            assert [check["name"] for check in failed.checks] == ["live", "active"]
+            assert paths == expected_paths
+            state[field] = True
+        invocation = asyncio.create_task(
+            runtime.invoke(input="TEST_ONLY_PRIVATE_PROMPT")
+        )
+        await asyncio.wait_for(invoke_entered.wait(), 5)
+        busy = await fabric.check(environment=environment, request=request)
+        assert busy.outcome == "passed"
+        assert busy.runtime["activity"] == "busy"
+        assert runtime.invocations == []
+        state["hold_ready"] = True
+        timed_out = await fabric.check(
+            environment=environment,
+            request=CheckRequest(
+                scope="runtime",
+                runtime_id=runtime.runtime_id,
+                level="ready",
+                timeout_seconds=0.1,
+            ),
+        )
+        assert timed_out.reason_code == "probe_timeout"
+        assert not invocation.done()
+        assert "TEST_ONLY" not in json.dumps(timed_out.to_mapping())
+        ready_release.set()
+        state["hold_ready"] = False
+        assert (
+            await fabric.check(environment=environment, request=request)
+        ).outcome == "passed"
+        invoke_release.set()
+        assert (await asyncio.wait_for(invocation, 5)).status == "succeeded"
+        state["ready"] = False
+        assert (
+            await fabric.check(environment=environment, request=request)
+        ).reason_code == "health_failed"
+    finally:
+        ready_release.set()
+        invoke_release.set()
+        if invocation is not None:
+            await asyncio.gather(invocation, return_exceptions=True)
+        await runtime.stop()
+    assert (
+        await fabric.check(environment=environment, request=request)
+    ).reason_code == "runtime_unavailable"
+    assert (
+        await fabric.check(
+            service=service.handle,
+            request=CheckRequest(scope="service", service_id=service.service_id),
+        )
+    ).outcome == "passed"
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="Owned Gateway fixture requires Linux process supervision",
+)
+@pytest.mark.parametrize("execution", ["local", "openshell"])
+async def test_owned_runtime_checks_through_sdk_and_sandbox_command_bridge(
+    execution, owned_gateway_config, server_sdk_bridge, tmp_path
+):
+    config, state_path, stopped_path, request_path = owned_gateway_config
+    fabric = Fabric()
+    if execution == "local":
+        environment = await fabric.prepare_environment(config, base_dir=ROOT)
+    else:
+        workspace, artifacts = tmp_path / "workspace", tmp_path / "task-artifacts"
+        workspace.mkdir()
+        artifacts.mkdir()
+        config = config.model_copy(
+            update={
+                "environment": EnvironmentConfig(
+                    provider="openshell",
+                    ownership="caller_owned",
+                    workspace=str(workspace),
+                    artifacts=str(artifacts),
+                    env=config.environment.env,
+                    connection={
+                        "gateway": "https://fixture.invalid",
+                        "workspace": "default",
+                        "sandbox_name": "openclaw-check",
+                        "sandbox_id": f"openclaw-check-{tmp_path.name}",
+                    },
+                    settings={
+                        "task_discovery_paths": [
+                            str(
+                                ROOT
+                                / "adapters/python/openclaw/openclaw.fabric-adapter.json"
+                            )
+                        ]
+                    },
+                )
+            }
+        )
+        environment = await fabric.attach_environment(
+            config,
+            EnvironmentReference.from_mapping(
+                {
+                    "provider": "openshell",
+                    "resource": {
+                        "sandbox_name": "openclaw-check",
+                        "sandbox_id": config.environment.connection["sandbox_id"],
+                    },
+                }
+            ),
+            base_dir=ROOT,
+        )
+    runtime = await fabric.start_runtime_in(config, environment, base_dir=ROOT)
+    request = CheckRequest(
+        scope="runtime", runtime_id=runtime.runtime_id, level="ready"
+    )
+    try:
+        report = await fabric.check(environment=environment, request=request)
+        assert report.outcome == "passed", report.to_mapping()
+        assert [check["name"] for check in report.checks] == ["live", "active", "ready"]
+        assert all(
+            check["source"].startswith("fabric.adapter.openclaw.")
+            for check in report.checks
+        )
+        assert not request_path.exists()
+        state_path.write_text(json.dumps({"ready": False}))
+        assert (
+            await fabric.check(environment=environment, request=request)
+        ).reason_code == "health_failed"
+        with pytest.raises(ValidationError, match="level"):
+            CheckRequest(
+                scope="runtime", runtime_id=runtime.runtime_id, level="operational"
+            )
+        if execution == "openshell":
+            commands = [
+                json.loads(line)
+                for line in server_sdk_bridge[1].read_text().splitlines()
+            ]
+            checks = [
+                command for command in commands if command["operation"] == "check"
+            ]
+            assert checks
+            assert all(
+                command["agent"] == config.metadata.name
+                and command["runtime_id"] == runtime.runtime_id
+                for command in checks
+            )
+    finally:
+        await runtime.stop()
+        await fabric.release_environment(environment)
     assert stopped_path.read_text() == "stopped"

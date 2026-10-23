@@ -441,6 +441,47 @@ async def test_python_host_stop_invalidates_pending_health_observations(
         await state.health.close()
 
 
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+@pytest.mark.parametrize("native_failure", [False, True])
+async def test_python_host_invocation_failure_invalidates_pending_interface_health(
+    tmp_path, health_runtime, health_exchange, level, native_failure
+):
+    os.environ["FABRIC_HOME"] = str(tmp_path)
+    entered, release = asyncio.Event(), asyncio.Event()
+    if native_failure:
+        health_runtime.check.return_value.update(
+            outcome="failed", reason_code="agent_exited", activity="stopped"
+        )
+
+    async def probe(level):
+        entered.set()
+        await release.wait()
+        return health_runtime.check.return_value
+
+    health_runtime.check.side_effect = probe
+    state = lifecycle._HostState()
+    await lifecycle._handle_start(state, lambda: health_runtime, {}, "service-1", None)
+    endpoint = json.loads((tmp_path / "health.endpoint.json").read_text())
+    checking = asyncio.create_task(health_exchange(endpoint, changes={"level": level}))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        state.failed = True
+        release.set()
+        result = await checking
+        if native_failure:
+            assert result == health_runtime.check.return_value
+        else:
+            assert result["outcome"] == ("passed" if level == "live" else "failed")
+            assert result["reason_code"] == (
+                None if level == "live" else "endpoint_unavailable"
+            )
+    finally:
+        release.set()
+        await asyncio.gather(checking, return_exceptions=True)
+        await lifecycle._handle_stop(state, health_runtime)
+        await state.health.close()
+
+
 async def test_python_host_cleans_up_when_health_channel_startup_fails(
     tmp_path, health_runtime
 ):

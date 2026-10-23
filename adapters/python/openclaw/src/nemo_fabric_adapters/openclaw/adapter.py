@@ -802,12 +802,15 @@ class OpenClawRuntime:
         self._previous_signal_handlers: dict[int, Any] = {}
         self._signal_handler: Any = None
         self._windows_job: int | None = None
+        self._service_host = False
+        self._active_invoke_task: asyncio.Task | None = None
 
     async def check(self, level: str) -> dict[str, Any]:
-        """Check Gateway health using its native endpoints.
+        """Check Gateway or runtime health using native endpoints.
 
         Gateway readiness follows native ``/readyz``, including configured
-        channels. The health-channel caller supplies the shared deadline.
+        channels. Runtime activity covers NeMo Fabric invocations. The health-channel
+        caller supplies one deadline for every native request.
         """
         result: dict[str, Any] = {
             "outcome": "unknown",
@@ -830,23 +833,67 @@ class OpenClawRuntime:
         if self._stopping:
             return {**result, "reason_code": "observation_changed"}
         client, gateway_url = self._client, self._gateway_url
+        context, config, agent_id = self._context, self._config, self._agent_id
+        service_host = self._service_host
         if client is None or client.is_closed or gateway_url is None:
+            return {**result, "reason_code": "runtime_unavailable"}
+        if not service_host and (context is None or config is None):
             return {**result, "reason_code": "runtime_unavailable"}
         path, source = endpoints[level]
 
+        def unchanged() -> bool:
+            return (
+                not self._stopping
+                and self._client is client
+                and self._gateway_url == gateway_url
+                and self._context is context
+                and self._config is config
+                and self._agent_id == agent_id
+                and self._service_host == service_host
+            )
+
         def observed(outcome: str, reason: str | None) -> dict[str, Any]:
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if self._process is not None and self._process.returncode is not None:
+                outcome, reason = "failed", "agent_exited"
+            elif (
+                not service_host
+                and level != "live"
+                and self._gateway_failure is not None
+            ):
+                outcome, reason = "failed", "endpoint_unavailable"
             return {
                 **result,
                 "outcome": outcome,
                 "reason_code": reason,
+                "activity": "unknown"
+                if service_host
+                else "stopped"
+                if reason == "agent_exited"
+                else (
+                    "busy"
+                    if self._active_invoke_task is not None
+                    and not self._active_invoke_task.done()
+                    else "idle"
+                ),
                 "source": source,
                 "observed_at": datetime.now(timezone.utc)
                 .isoformat(timespec="milliseconds")
                 .replace("+00:00", "Z"),
             }
 
+        def unobserved(reason: str = "probe_error") -> dict[str, Any]:
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if self._process is not None and self._process.returncode is not None:
+                return observed("failed", "agent_exited")
+            return {**result, "reason_code": reason}
+
         if self._process is not None and self._process.returncode is not None:
             return observed("failed", "agent_exited")
+        if not service_host and level != "live" and self._gateway_failure is not None:
+            return observed("failed", "endpoint_unavailable")
 
         def unique(pairs):
             value = {}
@@ -856,59 +903,80 @@ class OpenClawRuntime:
                 value[key] = item
             return value
 
-        try:
-            async with client.stream(
-                "GET",
-                f"{gateway_url}{path}",
-                follow_redirects=False,
-                headers={"Accept-Encoding": "identity"},
-            ) as response:
-                status = response.status_code
-                if status != 200 and not (level == "ready" and status == 503):
-                    return observed("failed", "endpoint_unavailable")
-                if (
-                    response.headers.get("content-encoding", "identity").lower()
-                    != "identity"
-                ):
-                    return result
-                body = bytearray()
-                async for chunk in response.aiter_raw(chunk_size=16 * 1024 + 1):
-                    body.extend(chunk)
-                    if len(body) > 16 * 1024:
-                        return result
-                data = json.loads(body, object_pairs_hook=unique)
-        except httpx.TimeoutException:
-            return {**result, "reason_code": "probe_timeout"}
-        except (httpx.HTTPError, ValueError):
-            return result
-        if (
-            self._stopping
-            or self._client is not client
-            or self._gateway_url != gateway_url
-        ):
-            return {**result, "reason_code": "observation_changed"}
-        if not isinstance(data, dict):
-            return result
-        if level == "live":
-            valid = data.get("ok") is True and data.get("status") == "live"
-        elif level == "active":
-            models = data.get("data")
-            valid = (
-                data.get("object") == "list"
-                and isinstance(models, list)
-                and all(
-                    isinstance(model, dict)
-                    and isinstance(model.get("id"), str)
-                    and bool(model["id"])
-                    and model.get("object") == "model"
-                    for model in models
+        paths = [path]
+        if not service_host and level == "active":
+            paths = ["/startupz", "/v1/models", "/v1/chat/completions"]
+        for path in paths:
+            try:
+                async with client.stream(
+                    "GET",
+                    f"{gateway_url}{path}",
+                    follow_redirects=False,
+                    headers={"Accept-Encoding": "identity"},
+                ) as response:
+                    status = response.status_code
+                    if path == "/v1/chat/completions":
+                        # The Chat Completions route returns 405 with Allow: POST
+                        # for GET requests. A disabled route returns 404 even when
+                        # the Responses API serves /v1/models.
+                        if status != 405:
+                            return observed("failed", "endpoint_unavailable")
+                        if response.headers.get("allow", "").strip() != "POST":
+                            return unobserved()
+                        continue
+                    if status != 200 and not (level == "ready" and status == 503):
+                        return observed("failed", "endpoint_unavailable")
+                    if (
+                        response.headers.get("content-encoding", "identity").lower()
+                        != "identity"
+                    ):
+                        return unobserved()
+                    body = bytearray()
+                    async for chunk in response.aiter_raw(chunk_size=16 * 1024 + 1):
+                        body.extend(chunk)
+                        if len(body) > 16 * 1024:
+                            return unobserved()
+                    data = json.loads(body, object_pairs_hook=unique)
+            except httpx.TimeoutException:
+                return unobserved("probe_timeout")
+            except (httpx.HTTPError, ValueError):
+                return unobserved()
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if not isinstance(data, dict):
+                return unobserved()
+            if path in {"/healthz", "/startupz"}:
+                valid = data.get("ok") is True and data.get("status") == (
+                    "live" if path == "/healthz" else "started"
                 )
-            )
-        else:
-            if status == 503 and data.get("ready") is False:
-                return observed("failed", "health_failed")
-            valid = status == 200 and data.get("ready") is True
-        return observed("passed", None) if valid else result
+            elif path == "/v1/models":
+                models = data.get("data")
+                valid = (
+                    data.get("object") == "list"
+                    and isinstance(models, list)
+                    and all(
+                        isinstance(model, dict)
+                        and isinstance(model.get("id"), str)
+                        and bool(model["id"])
+                        and model.get("object") == "model"
+                        for model in models
+                    )
+                )
+                if (
+                    valid
+                    and not service_host
+                    and not any(
+                        model["id"] == f"openclaw/{agent_id}" for model in models
+                    )
+                ):
+                    return observed("failed", "endpoint_unavailable")
+            else:
+                if status == 503 and data.get("ready") is False:
+                    return observed("failed", "health_failed")
+                valid = status == 200 and data.get("ready") is True
+            if not valid:
+                return unobserved()
+        return observed("passed", None)
 
     async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         config: contract.AgentConfig = payload["config"]
@@ -921,6 +989,10 @@ class OpenClawRuntime:
                 "openclaw_invalid_service_context",
                 "OpenClaw service context must be an object",
             )
+        self._service_host = service is not None and service.get("operation") in {
+            "prepare",
+            "attach",
+        }
         common_instructions.system_instruction(
             config, adapter="OpenClaw", supported_modes={"replace"}
         )
@@ -1387,6 +1459,7 @@ class OpenClawRuntime:
                 agent_id=agent_id,
             )
         )
+        self._active_invoke_task = invoke_task
         failure_task = asyncio.create_task(self._gateway_failed.wait())
         try:
             await asyncio.wait(
@@ -1400,6 +1473,8 @@ class OpenClawRuntime:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(invoke_task, failure_task, return_exceptions=True)
+            if self._active_invoke_task is invoke_task:
+                self._active_invoke_task = None
 
     def _install_signal_handlers(self) -> None:
         if os.name == "nt":

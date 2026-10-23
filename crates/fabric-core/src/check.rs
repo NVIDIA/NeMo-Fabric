@@ -566,6 +566,23 @@ fn valid_remote_report(report: &CheckReport, request: &CheckRequest) -> bool {
         return false;
     }
     let levels = [CheckStage::Live, CheckStage::Active, CheckStage::Ready];
+    let openclaw = report
+        .checks
+        .first()
+        .is_some_and(|check| check.source == CheckSource::OpenClawGateway);
+    let sources = if openclaw {
+        [
+            CheckSource::OpenClawGateway,
+            CheckSource::OpenClawInterface,
+            CheckSource::OpenClawReadiness,
+        ]
+    } else {
+        [
+            CheckSource::PiSession,
+            CheckSource::PiInterface,
+            CheckSource::PiSetup,
+        ]
+    };
     let count = match level {
         CheckLevel::Live => 1,
         CheckLevel::Active => 2,
@@ -588,13 +605,7 @@ fn valid_remote_report(report: &CheckReport, request: &CheckRequest) -> bool {
             return false;
         }
         if check.outcome == CheckOutcome::Passed
-            && (check.observed_at.is_none()
-                || check.source
-                    != [
-                        CheckSource::PiSession,
-                        CheckSource::PiInterface,
-                        CheckSource::PiSetup,
-                    ][index])
+            && (check.observed_at.is_none() || check.source != sources[index])
         {
             return false;
         }
@@ -798,6 +809,7 @@ pub fn check_service(service: &ServiceHandle, request: &CheckRequest) -> Result<
                     probe,
                     remaining,
                     CheckScope::Service,
+                    Some(&binding.service.adapter_id),
                 )
             };
             report.outcome = result.outcome;
@@ -935,7 +947,7 @@ pub fn check_environment(
                     let result = if remaining <= 0.0 {
                         unobserved(CheckReason::ProbeTimeout)
                     } else {
-                        probe_runtime(runtime_id, probe, remaining)
+                        probe_runtime(&binding.runtime, probe, remaining)
                     };
                     report.outcome = result.outcome;
                     report.reason_code = result.reason_code;
@@ -1049,8 +1061,14 @@ fn verify_health_mac(
         .is_ok()
 }
 
-fn probe_runtime(runtime_id: &str, level: CheckLevel, timeout: f64) -> AdapterCheckResult {
-    probe_target(runtime_id, level, timeout, CheckScope::Runtime)
+fn probe_runtime(runtime: &RuntimeHandle, level: CheckLevel, timeout: f64) -> AdapterCheckResult {
+    probe_target(
+        &runtime.runtime_id,
+        level,
+        timeout,
+        CheckScope::Runtime,
+        runtime.adapter_id.as_deref(),
+    )
 }
 
 fn probe_target(
@@ -1058,6 +1076,7 @@ fn probe_target(
     level: CheckLevel,
     timeout: f64,
     scope: CheckScope,
+    adapter_id: Option<&str>,
 ) -> AdapterCheckResult {
     let started = Instant::now();
     let budget = Duration::try_from_secs_f64(timeout).unwrap_or(Duration::MAX);
@@ -1150,10 +1169,11 @@ fn probe_target(
                     && time <= DateTime::<Utc>::from(SystemTime::now())
             })
         });
-        let expected_source = match (scope, level) {
-            (CheckScope::Service, CheckLevel::Live) => CheckSource::OpenClawGateway,
-            (CheckScope::Service, CheckLevel::Active) => CheckSource::OpenClawInterface,
-            (CheckScope::Service, CheckLevel::Ready) => CheckSource::OpenClawReadiness,
+        let openclaw = scope == CheckScope::Service || adapter_id == Some("nvidia.fabric.openclaw");
+        let expected_source = match (openclaw, level) {
+            (true, CheckLevel::Live) => CheckSource::OpenClawGateway,
+            (true, CheckLevel::Active) => CheckSource::OpenClawInterface,
+            (true, CheckLevel::Ready) => CheckSource::OpenClawReadiness,
             (_, CheckLevel::Live) => CheckSource::PiSession,
             (_, CheckLevel::Active) => CheckSource::PiInterface,
             (_, CheckLevel::Ready) => CheckSource::PiSetup,
@@ -1356,6 +1376,30 @@ mod tests {
                 CheckLevel::Active => "fabric.adapter.openclaw.interface",
                 _ => "fabric.adapter.openclaw.readiness",
             }, "observed_at": utc_now()})
+    }
+
+    #[test]
+    fn openclaw_runtime_checks_accept_qualified_native_evidence() {
+        let mut runtime = runtime();
+        runtime.adapter_id = Some("nvidia.fabric.openclaw".into());
+        register(
+            &runtime,
+            vec![CheckLevel::Live, CheckLevel::Active, CheckLevel::Ready],
+        );
+        let peer = peer(&runtime, 3, |_, level| {
+            let mut observation = gateway_passed(level);
+            observation["activity"] = "busy".into();
+            observation
+        });
+        let request = request(&runtime, CheckLevel::Ready, 3.0);
+        let report = check_environment(&runtime.environment, &request).unwrap();
+        assert_eq!(report.outcome, CheckOutcome::Passed);
+        assert!(valid_remote_report(&report, &request));
+        assert_eq!(peer.join().unwrap().len(), 3);
+        let mut mixed = report;
+        mixed.checks[1].source = CheckSource::PiInterface;
+        assert!(!valid_remote_report(&mixed, &request));
+        cleanup(&runtime);
     }
 
     #[test]
