@@ -1965,7 +1965,7 @@
         },
         "currency": {
           "default": "USD",
-          "description": "ISO 4217 currency of the rates. NeMo Fabric estimates cost only from\n`USD` entries.",
+          "description": "ISO 4217 currency of the rates. NVIDIA NeMo Fabric estimates cost only from\n`USD` entries.",
           "type": "string"
         },
         "model_id": {
