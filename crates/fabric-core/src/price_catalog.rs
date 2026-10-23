@@ -54,7 +54,7 @@ struct BundledCatalog {
 /// A model price catalog in the NeMo Relay model pricing catalog format,
 /// version 1.
 ///
-/// NeMo Fabric reads and writes the format unchanged, with one extra check:
+/// NVIDIA NeMo Fabric reads and writes the format unchanged, with one extra check:
 /// every rate must be below one million US dollars per million tokens.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
