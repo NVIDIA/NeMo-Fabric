@@ -252,6 +252,26 @@ def test_wait_for_relay_gateway_rejects_exit_during_successful_probe(monkeypatch
         relay_gateway.wait_for_relay_gateway(process, "http://127.0.0.1:43210/healthz")
 
 
+def test_wait_for_relay_gateway_rejects_success_after_deadline(
+    monkeypatch, gateway_clock
+):
+    process = MagicMock()
+    process.poll.return_value = None
+    response = MagicMock()
+    response.__enter__.return_value.status = 200
+
+    def probe_health(url, *, timeout):
+        gateway_clock.monotonic.return_value += 0.26
+        return response
+
+    monkeypatch.setattr(relay_gateway.urllib.request, "urlopen", probe_health)
+
+    with pytest.raises(relay_gateway.RelayGatewayError, match="did not become ready"):
+        relay_gateway.wait_for_relay_gateway(
+            process, "http://127.0.0.1:43210/healthz", timeout=0.25
+        )
+
+
 def test_wait_for_relay_gateway_times_out():
     process = MagicMock()
     process.poll.return_value = None
