@@ -36,3 +36,16 @@ test("invalidates the runtime after transport failure", async () => {
   await assert.rejects(runtime.invoke({input: "two"}, context), (error) => error.code === "kilo_not_started");
   assert.equal(stopped, 1);
 });
+
+
+test("forwards the Fabric deadline to Kilo observation without changing the result", async () => {
+  let received;
+  const runtime = new KiloAdapterRuntime({create: async () => ({id: "s",
+    prompt: async (_text, deadline) => { received = deadline; return {text: "answer"}; }, stop: async () => {},
+  })});
+  await runtime.start({agentName: "agent", baseDir: ".", config: {}, runtimeContext: context});
+  assert.deepEqual(await runtime.invoke({input: "one"}, {...context, deadline_millis: 12345}),
+    {status: "succeeded", output: {response: "answer"}});
+  assert.equal(received, 12345);
+  await runtime.stop();
+});

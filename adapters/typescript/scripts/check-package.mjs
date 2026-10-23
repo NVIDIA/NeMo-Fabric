@@ -110,6 +110,10 @@ const expectedByPackage = {
     "qwen.fabric-adapter.json",
   ],
   "nemo-fabric-adapters-kilo": [
+    "dist/usage.d.ts",
+    "dist/usage.js",
+    "dist/usage-events.d.ts",
+    "dist/usage-events.js",
     "LICENSE",
     "README.md",
     "dist/cli.d.ts",

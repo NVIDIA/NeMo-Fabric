@@ -74,7 +74,53 @@ authentication and per-server tool filters are unsupported.
 ### Runtime Behavior
 
 The adapter accepts plain-text input and returns the terminal assistant text in
-`output.response`. Ordered invocations reuse one warm Kilo Code session and its
+`output.response`.
+
+Usage comes from each retained `step-finish` record owned by the invocation's
+prompt, including in-turn compaction and foreground `task` child-session
+windows. The adapter sends source observations through
+`nemo_fabric.usage_accounting.v1`; NeMo Fabric's shared accounting code owns sums,
+complete totals and pricing. Missing evidence preserves useful observations
+without publishing incomplete counts as complete.
+
+Kilo Code 7.7.12 subtracts cache reads/writes from its stored input and reasoning
+from stored output, then clamps at zero. The adapter reverses that source
+transform only when a positive adjusted counter proves the clamp lost no
+information. NeMo Fabric's normalized input includes cache and output includes
+reasoning. Kilo Code zero-fills omitted dimensions, so a stored cache or reasoning
+zero cannot establish provider field presence. A positive cache count stays
+independently useful even when input is unknown. Kilo Code's derived `total` and
+mixed provider/catalog `cost` do not become reported totals or `cost_usd`.
+
+A transient event observer detects actual retries hidden by the final message
+history. Startup waits up to 500 ms for event readiness. After a prompt, history
+reads and the terminal event watermark share a 500 ms budget, ending 100 ms
+before the invocation deadline when one is supplied. An unavailable observer
+does not add a watermark wait. Missing or dropped events create a scope gap;
+they do not fail execution or replay a prompt. A completed failed turn can retain settled
+counts. A failed call without usable usage creates a gap regardless of HTTP
+status. An explicit `overflow: false` compaction marker distinguishes a
+preflight that sent no request from a provider context-overflow rejection.
+
+Actual background tasks leave complete totals unknown because their child work
+and injected parent reply can outlive the invocation. Settled owned steps
+remain observed. Late work never moves into a later invocation. Unread,
+ambiguous or deeper child sessions also leave gaps. Merely enabling delegation
+does not. The adapter sets a fixed session title to avoid Kilo Code's separate title
+model call.
+
+When prompt communication fails, the adapter uses the same bounded history
+reader to retain provably owned settled steps before retiring the session.
+The failed result keeps its original error code and observed usage with an
+unfinished-work gap. If the history boundary or remaining observation budget
+is unavailable, no subtotal is invented. The prompt is never replayed.
+
+Each assistant message supplies its own accounting model/provider identity.
+A custom configured endpoint does not establish native provider pricing.
+The adapter retains source-established model and provider evidence for separate
+pricing; it does not compute catalog estimates.
+
+Ordered invocations reuse one warm Kilo Code session and its
 conversation history. A prompt has a 30-minute deadline; on timeout the adapter
 asks Kilo Code to abort the prompt and reports `kilo_prompt_timeout`.
 

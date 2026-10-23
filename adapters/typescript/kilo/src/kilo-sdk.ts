@@ -8,9 +8,14 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { isAbsolute, join, resolve } from "node:path";
 
-import type { AgentUsage } from "nemo-fabric-adapter-contract";
 import type { AdapterStartInput } from "nemo-fabric-adapters-common";
 import { LifecycleError } from "nemo-fabric-adapters-common";
+
+import {KiloPromptError} from "./runtime.js";
+import {KiloUsageEvents} from "./usage-events.js";
+import {usageFromObservations, type AgentUsage} from "nemo-fabric-adapter-contract";
+import {extractInvocationUsage, findPrompt, ownedChildSessions, messageId} from "./usage.js";
+export {extractInvocationUsage, findPrompt} from "./usage.js";
 
 import { selectMaxTurns, selectModel, selectSystemInstruction } from "./configuration.js";
 import type { KiloPromptOutcome, KiloSessionFactory, KiloSessionHandle } from "./runtime.js";
@@ -18,6 +23,7 @@ import type { KiloPromptOutcome, KiloSessionFactory, KiloSessionHandle } from ".
 interface KiloRequestOptions { throwOnError: true; signal?: AbortSignal }
 
 interface KiloClient {
+  event?: {subscribe(parameters: {directory: string}, options: {signal: AbortSignal; sseMaxRetryAttempts: number; onSseError: () => void}): Promise<{stream: AsyncIterable<unknown>}>};
   app: {
     skills(parameters: Record<string, unknown>, options: {throwOnError: true}): Promise<{data: unknown}>;
   };
@@ -26,6 +32,7 @@ interface KiloClient {
   };
   session: {
     create(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
+    messages(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
     prompt(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
     abort(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<unknown>;
     delete(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<unknown>;
@@ -40,6 +47,20 @@ type PortFactory = () => Promise<number>;
 const START_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 5_000;
 const PROMPT_TIMEOUT_MS = 30 * 60_000;
+// Observation must not consume the caller's remaining execution deadline.
+const USAGE_EVENT_TIMEOUT_MS = 500;
+const USAGE_RETURN_MARGIN_MS = 100;
+
+function observationDeadline(deadlineMillis?: number): number {
+  const localDeadline = Date.now() + USAGE_EVENT_TIMEOUT_MS;
+  return deadlineMillis !== undefined && Number.isFinite(deadlineMillis)
+    ? Math.min(localDeadline, deadlineMillis - USAGE_RETURN_MARGIN_MS)
+    : localDeadline;
+}
+// Kilo Code generates a title with a separate model call for a session that
+// still has its default title, and that call never appears in the session's
+// messages. An explicit title skips it.
+const SESSION_TITLE = "NeMo Fabric";
 const ENVIRONMENT_VARIABLE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/gu;
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
 const INHERITED_ENVIRONMENT_NAMES = new Set([
@@ -322,20 +343,12 @@ export async function startKiloServer(workspace: string, environment: NodeJS.Pro
   });
 }
 
+/** The terminal text and error state of the last assistant message that a Kilo Code prompt returns. */
 export function extractPromptOutcome(data: unknown): KiloPromptOutcome {
   if (!isRecord(data)) return {};
   const info = isRecord(data.info) ? data.info : {};
-  const tokens = isRecord(info.tokens) ? info.tokens : {};
-  const usage: AgentUsage = {};
-  const inputTokens = typeof tokens.input === "number" ? tokens.input : undefined;
-  const outputTokens = typeof tokens.output === "number" ? tokens.output : undefined;
-  if (inputTokens !== undefined) usage.input_tokens = inputTokens;
-  if (outputTokens !== undefined) usage.output_tokens = outputTokens;
-  if (typeof tokens.total === "number") usage.total_tokens = tokens.total;
-  else if (inputTokens !== undefined && outputTokens !== undefined) usage.total_tokens = inputTokens + outputTokens;
-  if (typeof info.cost === "number") usage.cost_usd = info.cost;
   const text = Array.isArray(data.parts) ? data.parts.filter(isRecord).filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("") : "";
-  return { ...(text.length === 0 ? {} : {text}), ...(info.error === undefined ? {} : {error: true}), ...(Object.keys(usage).length === 0 ? {} : {usage}) };
+  return { ...(text.length === 0 ? {} : {text}), ...(info.error === undefined ? {} : {error: true}), ...(typeof info.id === "string" ? {messageId: info.id} : {}) };
 }
 
 async function loadClientFactory(): Promise<ClientFactory> {
@@ -359,13 +372,90 @@ async function resolveKiloExecutable(): Promise<string> {
 
 class KiloSdkSessionHandle implements KiloSessionHandle {
   private stopped = false;
+  private readonly usageEvents = new KiloUsageEvents();
+  private readonly eventController = new AbortController();
+  private eventTask?: Promise<void>;
+  /** The IDs of the user messages of the adapter's prompts, in this session. */
+  private readonly prompts = new Set<string>();
   constructor(readonly id: string, private readonly workspace: string, private readonly model: ReturnType<typeof selectModel>, private readonly client: KiloClient, private readonly server: KiloServer, private readonly profile: string, private readonly promptTimeoutMs: number) {}
+  async startUsageEvents(): Promise<void> {
+    if (this.client.event === undefined) { this.usageEvents.end(); return; }
+    this.eventTask = (async () => {
+      try {
+        const subscription = await this.client.event!.subscribe({directory: this.workspace}, {signal: this.eventController.signal,
+          sseMaxRetryAttempts: 1, onSseError: () => this.usageEvents.end()});
+        for await (const value of subscription.stream) this.usageEvents.observe(value);
+      } catch {
+        // Event visibility must not change whether paid execution succeeds.
+      } finally {
+        if (!this.eventController.signal.aborted) this.usageEvents.end();
+      }
+    })();
+    await this.usageEvents.waitFor(() => this.usageEvents.connected, USAGE_EVENT_TIMEOUT_MS);
+  }
+  private async stopUsageEvents(): Promise<void> {
+    this.eventController.abort();
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<void>(resolve => { timer = setTimeout(resolve, STOP_TIMEOUT_MS); timer.unref(); });
+    try { await Promise.race([this.eventTask, deadline]); }
+    finally { if (timer !== undefined) clearTimeout(timer); }
+  }
   private async abortPrompt(): Promise<void> {
     try {
       await this.client.session.abort({sessionID: this.id, directory: this.workspace}, {throwOnError: true, signal: AbortSignal.timeout(STOP_TIMEOUT_MS)});
     } catch { /* Preserve the timeout failure. */ }
   }
-  async prompt(text: string): Promise<KiloPromptOutcome> {
+  /** A session's messages, oldest first, or the newest `limit` of them; undefined when listing fails. */
+  private async listMessages(sessionID: string, limit?: number, deadline = observationDeadline()): Promise<unknown[] | undefined> {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return undefined;
+    try {
+      const {data} = await this.client.session.messages({sessionID, directory: this.workspace, ...(limit === undefined ? {} : {limit})}, {throwOnError: true, signal: AbortSignal.timeout(Math.max(1, Math.ceil(remaining)))});
+      return Array.isArray(data) ? data : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  async prompt(text: string, deadlineMillis?: number): Promise<KiloPromptOutcome> {
+    const before = await this.listMessages(this.id, 1, observationDeadline(deadlineMillis));
+    // Connecting during execution cannot prove that its earliest retries were seen.
+    // A later invocation can recover once the stream is ready before its call.
+    const eventCoverageAtStart = this.usageEvents.connected && !this.usageEvents.failed;
+    let outcome: KiloPromptOutcome;
+    try {
+      outcome = await this.sendPrompt(text);
+    } catch (error) {
+      const failure = error instanceof LifecycleError ? error : new LifecycleError("kilo_session_failed", "Kilo Code session communication failed", {retryable: true});
+      const usage = await this.collectUsage(before, {deadlineMillis, eventCoverageAtStart, unfinished: true});
+      throw new KiloPromptError(failure, usage);
+    }
+    const finalMessageId = outcome.messageId;
+    delete outcome.messageId;
+    return {...outcome, usage: await this.collectUsage(before, {deadlineMillis, eventCoverageAtStart, finalMessageId})};
+  }
+  private async collectUsage(before: unknown[] | undefined, options: {deadlineMillis?: number; eventCoverageAtStart: boolean; finalMessageId?: string; unfinished?: boolean}): Promise<AgentUsage> {
+    const {deadlineMillis, eventCoverageAtStart, finalMessageId, unfinished = false} = options;
+    const deadline = observationDeadline(deadlineMillis);
+    const unverified = (): AgentUsage => usageFromObservations([{reported: {}, gap: unfinished ? "unfinished_work" : "scope_unverified"}]);
+    if (before === undefined) return unverified();
+    const lastId = messageId(before[0]);
+    if (before.length > 0 && lastId === undefined) return unverified();
+    const messages = await this.listMessages(this.id, undefined, deadline);
+    const prompt = findPrompt(messages, lastId);
+    if (prompt === undefined) return unverified();
+    this.prompts.add(prompt);
+    const children = new Map<string, unknown[]>();
+    for (const sessionID of ownedChildSessions(messages, prompt, this.prompts)) {
+      const child = await this.listMessages(sessionID, undefined, deadline);
+      if (child !== undefined) children.set(sessionID, child);
+    }
+    const drained = eventCoverageAtStart && !this.usageEvents.failed && finalMessageId !== undefined &&
+      await this.usageEvents.through(finalMessageId, Math.max(0, deadline - Date.now()));
+    return extractInvocationUsage(messages, prompt, this.prompts, children, {events: this.usageEvents,
+      eventCoverage: drained && !this.usageEvents.failed, unfinished,
+      ...(this.model.baseUrl === undefined ? {} : {customProvider: this.model.provider})});
+  }
+  private async sendPrompt(text: string): Promise<KiloPromptOutcome> {
     const controller = new AbortController();
     let timedOut = false;
     let abortPromise: Promise<void> | undefined;
@@ -397,6 +487,7 @@ class KiloSdkSessionHandle implements KiloSessionHandle {
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
+    await this.stopUsageEvents();
     try { await this.client.session.delete({sessionID: this.id, directory: this.workspace}, {throwOnError: true, signal: AbortSignal.timeout(STOP_TIMEOUT_MS)}); } catch { /* Continue local cleanup. */ }
     try { await this.server.close(); } finally { await rm(this.profile, {recursive: true, force: true}); }
   }
@@ -419,10 +510,12 @@ export class KiloSdkSessionFactory implements KiloSessionFactory {
       server = await this.serverFactory(workspace, childEnvironment(input, profile, configured.content, model.apiKeyEnv, configured.credential), executable);
       const client = clientFactory({baseUrl: server.url, directory: workspace});
       await verifySkills(client, workspace, skills);
-      const created = await client.session.create({directory: workspace, agent: "build", model: {providerID: model.provider, id: model.model}}, {throwOnError: true});
+      const created = await client.session.create({directory: workspace, title: SESSION_TITLE, agent: "build", model: {providerID: model.provider, id: model.model}}, {throwOnError: true});
       if (!isRecord(created.data) || typeof created.data.id !== "string") throw new Error("missing session id");
       await verifyMcp(client, workspace, mcpNames);
-      return new KiloSdkSessionHandle(created.data.id, workspace, model, client, server, profile, this.promptTimeoutMs);
+      const handle = new KiloSdkSessionHandle(created.data.id, workspace, model, client, server, profile, this.promptTimeoutMs);
+      await handle.startUsageEvents();
+      return handle;
     } catch (error) {
       try { await server?.close(); } catch { /* Preserve startup failure. */ }
       await rm(profile, {recursive: true, force: true});

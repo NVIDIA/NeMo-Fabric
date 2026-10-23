@@ -2519,6 +2519,381 @@ class InvocationSystemStats(FabricMapping):
         return data
 
 
+class PricingBasis(FabricMapping):
+    """Validated comparison basis for persisted catalog estimates."""
+
+    basis: str
+    currency: str
+    normalization_version: str
+    assumption_policy: str
+    bundled_catalog_sha256: str
+    _fields = frozenset(
+        {
+            "basis",
+            "currency",
+            "normalization_version",
+            "assumption_policy",
+            "bundled_catalog_sha256",
+            "user_catalog_sha256",
+        }
+    )
+
+    @property
+    def user_catalog_sha256(self) -> str | None:
+        """Return the user catalog fingerprint when supplied, otherwise None."""
+        return self._data.get("user_catalog_sha256")
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if set(data).difference(cls._fields) or any(
+            not isinstance(data.get(k), str) or not data[k]
+            for k in ("basis", "currency", "normalization_version", "assumption_policy")
+        ):
+            raise FabricConfigError("unsupported or incomplete pricing basis")
+        for key in ("bundled_catalog_sha256", "user_catalog_sha256"):
+            value = data.get(key)
+            if key == "user_catalog_sha256" and value is None:
+                continue
+            if (
+                not isinstance(value, str)
+                or re.fullmatch(r"sha256:[0-9a-f]{64}", value) is None
+            ):
+                raise FabricConfigError("pricing basis requires catalog fingerprints")
+        return data
+
+
+class AppliedPricing(FabricMapping):
+    """Selected price entry and integer nano-USD rates per million tokens."""
+
+    catalog_sha256: str
+    provider: str
+    model_id: str
+    pricing_as_of: str
+    pricing_source: str
+    rates: dict[str, int | None]
+    _fields = frozenset(
+        {
+            "catalog_sha256",
+            "provider",
+            "model_id",
+            "pricing_as_of",
+            "pricing_source",
+            "rates",
+        }
+    )
+    _json_fields = frozenset({"rates"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if set(data) != cls._fields:
+            raise FabricConfigError("incomplete applied pricing")
+        for key in cls._fields - {"rates"}:
+            _required_text(data.get(key), "pricing " + key)
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", data["catalog_sha256"]) is None:
+            raise FabricConfigError("invalid applied pricing fingerprint")
+        rates = _mapping(data["rates"], "pricing rates")
+        allowed = {"input", "output", "cache_read", "cache_write"}
+        if not {"input", "output"} <= set(rates) <= allowed:
+            raise FabricConfigError("incomplete pricing rates")
+        rates.setdefault("cache_read", None)
+        rates.setdefault("cache_write", None)
+        for key, value in rates.items():
+            if value is not None or key in {"input", "output"}:
+                _usage_counter(value, "pricing rate")
+        data["rates"] = rates
+        return data
+
+
+_MODEL_USAGE_TOKEN_FIELDS = frozenset(
+    {
+        "input_tokens",
+        "cached_input_tokens",
+        "cache_write_input_tokens",
+        "output_tokens",
+        "total_tokens",
+    }
+)
+_MODEL_USAGE_DIMENSIONS = (
+    *sorted(_MODEL_USAGE_TOKEN_FIELDS),
+    "reported_cost",
+    "estimated_cost",
+)
+_USAGE_GAP_REASONS = frozenset({"unfinished_work", "missing_usage", "scope_unverified"})
+
+
+def _usage_counter(value: Any, name: str) -> int:
+    if type(value) is not int or not 0 <= value <= _UINT64_MAX:
+        raise FabricConfigError(f"{name} must be a nonnegative uint64 integer")
+    return value
+
+
+class TokenCounts(FabricMapping):
+    """Independently nullable tokens in one fixed invocation/model scope."""
+
+    input_tokens: int | None
+    cached_input_tokens: int | None
+    cache_write_input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    _fields = _MODEL_USAGE_TOKEN_FIELDS
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        for field in cls._fields:
+            value = data.setdefault(field, None)
+            if value is not None:
+                _usage_counter(value, field)
+        return data
+
+
+class UsageGap(FabricMapping):
+    """Dimension-specific incompleteness with an optional stable diagnostic."""
+
+    dimensions: tuple[str, ...]
+    reason: str
+    code: str | None
+    _fields = frozenset({"dimensions", "reason", "code"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        dimensions = data.get("dimensions")
+        if (
+            not isinstance(dimensions, list)
+            or not dimensions
+            or any(
+                not isinstance(d, str) or d not in _MODEL_USAGE_DIMENSIONS
+                for d in dimensions
+            )
+            or len(set(dimensions)) != len(dimensions)
+        ):
+            raise FabricConfigError("gap dimensions must be nonempty, known and unique")
+        if data.get("reason") not in _USAGE_GAP_REASONS:
+            raise FabricConfigError("unsupported usage gap reason")
+        code = data.setdefault("code", None)
+        if code is not None and (
+            not isinstance(code, str) or not code or len(code) > 64
+        ):
+            raise FabricConfigError("usage diagnostic must be 1 to 64 characters")
+        data["dimensions"] = tuple(dimensions)
+        return data
+
+
+class CostAmount(FabricMapping):
+    """Complete and observed amounts in integer nano-USD, never an invoice guarantee."""
+
+    amount_nano_usd: int | None
+    observed_nano_usd: int | None
+    _fields = frozenset({"amount_nano_usd", "observed_nano_usd"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        for field in cls._fields:
+            value = data.setdefault(field, None)
+            if value is not None:
+                _usage_counter(value, field)
+        complete = data["amount_nano_usd"]
+        observed = data["observed_nano_usd"]
+        if complete is not None and observed is not None and observed > complete:
+            raise FabricConfigError("cost observation exceeds complete amount")
+        return data
+
+
+class TokenCost(FabricMapping):
+    """Provider-reported amounts and separate catalog estimates with their basis."""
+
+    reported: CostAmount
+    estimated: CostAmount
+    pricing: PricingBasis | None
+    applied_rates: tuple[AppliedPricing, ...]
+    _fields = frozenset({"reported", "estimated", "pricing", "applied_rates"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        for name in ("reported", "estimated"):
+            data[name] = CostAmount.from_mapping(data.get(name, {}))
+        data["pricing"] = (
+            None
+            if data.get("pricing") is None
+            else PricingBasis.from_mapping(data["pricing"])
+        )
+        rates = data.get("applied_rates", [])
+        if not isinstance(rates, list):
+            raise FabricConfigError("applied_rates must be an array")
+        data["applied_rates"] = tuple(
+            AppliedPricing.from_mapping(rate) for rate in rates
+        )
+        for rate in data["applied_rates"]:
+            basis = data["pricing"]
+            if basis is None or rate.catalog_sha256 not in {
+                basis.bundled_catalog_sha256,
+                basis.get("user_catalog_sha256"),
+            }:
+                raise FabricConfigError(
+                    "applied pricing must belong to the persisted basis"
+                )
+        return data
+
+
+def _usage_value(
+    data: Mapping[str, Any], dimension: str, *, observed: bool = False
+) -> int | None:
+    if dimension in _MODEL_USAGE_TOKEN_FIELDS:
+        return data["observed"].get(dimension) if observed else data.get(dimension)
+    amount = data["cost"]["reported" if dimension == "reported_cost" else "estimated"]
+    return amount.observed_nano_usd if observed else amount.amount_nano_usd
+
+
+def _normalize_model_usage(data: dict[str, Any]) -> dict[str, Any]:
+    for field in _MODEL_USAGE_TOKEN_FIELDS:
+        value = data.setdefault(field, None)
+        if value is not None:
+            _usage_counter(value, field)
+    data["observed"] = TokenCounts.from_mapping(data.get("observed", {}))
+    raw_gaps = data.get("gaps")
+    if not isinstance(raw_gaps, list):
+        raise FabricConfigError("gaps must be an array")
+    data["gaps"] = tuple(UsageGap.from_mapping(gap) for gap in raw_gaps)
+    data["cost"] = TokenCost.from_mapping(data.get("cost", {}))
+    for gap in data["gaps"]:
+        if any(
+            _usage_value(data, dimension) is not None for dimension in gap.dimensions
+        ):
+            raise FabricConfigError("complete count conflicts with accounting gap")
+    total = data["total_tokens"]
+    if total is not None and (
+        data["input_tokens"] is None
+        or data["output_tokens"] is None
+        or total != data["input_tokens"] + data["output_tokens"]
+    ):
+        raise FabricConfigError("normalized total must equal known input plus output")
+    # Complete cache dimensions share the invocation's inclusive input scope.
+    # Compare only the known subset; missing cache counters remain unknown.
+    known_cache = sum(
+        count
+        for count in (data["cached_input_tokens"], data["cache_write_input_tokens"])
+        if count is not None
+    )
+    if data["input_tokens"] is not None and known_cache > data["input_tokens"]:
+        raise FabricConfigError("complete cache counts exceed inclusive input")
+    observed = data["observed"]
+    observed_total = observed.total_tokens
+    if observed_total is not None and (
+        observed.input_tokens is None
+        or observed.output_tokens is None
+        or observed_total != observed.input_tokens + observed.output_tokens
+    ):
+        raise FabricConfigError("observed total must equal known input plus output")
+    for field in _MODEL_USAGE_TOKEN_FIELDS:
+        complete = data[field]
+        observation = observed.get(field)
+        if complete is not None and observation is not None and observation > complete:
+            raise FabricConfigError("token observation exceeds complete count")
+    return data
+
+
+class PerModelUsage(FabricMapping):
+    """Normalized counts for a source-established accounting model/provider.
+
+    A configured identity requires source proof that the included calls used it.
+    An outer requested alias alone does not establish accounting attribution.
+    This identity does not replace served-model provenance.
+    """
+
+    model: str
+    input_tokens: int | None
+    cached_input_tokens: int | None
+    cache_write_input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    observed: TokenCounts
+    gaps: tuple[UsageGap, ...]
+    cost: TokenCost
+    _fields = frozenset(
+        {*_MODEL_USAGE_TOKEN_FIELDS, "model", "provider", "observed", "gaps", "cost"}
+    )
+
+    @property
+    def provider(self) -> str | None:
+        """Return the accounting provider when reported, otherwise None."""
+        return self._data.get("provider")
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["model"] = _required_text(data.get("model"), "model")
+        if data.get("provider") is not None:
+            _required_text(data["provider"], "provider")
+        return _normalize_model_usage(data)
+
+
+class ModelUsage(FabricMapping):
+    """Complete normalized tokens, observations, gaps and separately typed costs.
+
+    Input includes cache and output includes reasoning. All counts belong to
+    this invocation, including descendants. Late work never moves to another
+    invocation. Observations are not guaranteed mathematical lower bounds.
+    """
+
+    input_tokens: int | None
+    cached_input_tokens: int | None
+    cache_write_input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    observed: TokenCounts
+    gaps: tuple[UsageGap, ...]
+    models_exhaustive: bool
+    models: tuple[PerModelUsage, ...]
+    cost: TokenCost
+    _fields = frozenset(
+        {
+            *_MODEL_USAGE_TOKEN_FIELDS,
+            "observed",
+            "gaps",
+            "models_exhaustive",
+            "models",
+            "cost",
+        }
+    )
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        _normalize_model_usage(data)
+        if type(data.get("models_exhaustive")) is not bool:
+            raise FabricConfigError("models_exhaustive must be boolean")
+        models = data.get("models", [])
+        if not isinstance(models, list):
+            raise FabricConfigError("models must be an array")
+        data["models"] = tuple(PerModelUsage.from_mapping(model) for model in models)
+        identities = [(model.get("provider"), model.model) for model in data["models"]]
+        if len(set(identities)) != len(identities):
+            raise FabricConfigError("duplicate provider/model identity")
+        for field in _MODEL_USAGE_TOKEN_FIELDS:
+            complete = data[field]
+            if complete is None:
+                continue
+            parts = [
+                model[field] if model[field] is not None else model.observed.get(field)
+                for model in data["models"]
+            ]
+            subtotal = sum(value for value in parts if value is not None)
+            complete_parts = [
+                model[field] for model in data["models"] if model[field] is not None
+            ]
+            if (
+                subtotal > _UINT64_MAX
+                or subtotal > complete
+                or (
+                    data["models_exhaustive"]
+                    and data["models"]
+                    and len(complete_parts) == len(data["models"])
+                    and sum(complete_parts) != complete
+                )
+            ):
+                raise FabricConfigError(
+                    f"model token totals contradict invocation {field}"
+                )
+        return data
+
+
 class RunResult(FabricMapping):
     """Normalized terminal result from one NeMo Fabric invocation.
 
@@ -2539,6 +2914,8 @@ class RunResult(FabricMapping):
             are preserved as-is.
         error: Structured failure, or ``None`` on success.
         usage: Normalized invocation usage, or ``None`` when unavailable.
+        model_usage: Complete counts, observations and accounting gaps, or
+            ``None`` when supported accounting evidence is unavailable.
         resource_snapshot: Runtime resource snapshot read once after the
             adapter returned this result, or ``None`` when the runtime's
             resources could not be observed.
@@ -2561,6 +2938,7 @@ class RunResult(FabricMapping):
     output: RunOutput | JSONValue
     error: ErrorInfo | None
     usage: RunUsage | None
+    model_usage: ModelUsage | None
     system_stats: InvocationSystemStats | None
     resource_snapshot: RuntimeResourceSnapshot | None
     artifacts: ArtifactManifest
@@ -2580,6 +2958,7 @@ class RunResult(FabricMapping):
             "output",
             "error",
             "usage",
+            "model_usage",
             "resource_snapshot",
             "system_stats",
             "artifacts",
@@ -2607,6 +2986,11 @@ class RunResult(FabricMapping):
         )
         data["usage"] = (
             None if data.get("usage") is None else RunUsage.from_mapping(data["usage"])
+        )
+        data["model_usage"] = (
+            None
+            if data.get("model_usage") is None
+            else ModelUsage.from_mapping(data["model_usage"])
         )
         data["system_stats"] = (
             None
