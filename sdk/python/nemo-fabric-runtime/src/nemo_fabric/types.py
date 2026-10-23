@@ -2769,6 +2769,7 @@ class AppliedPricing(FabricMapping):
             "rates",
         }
     )
+    _json_fields = frozenset({"rates"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
