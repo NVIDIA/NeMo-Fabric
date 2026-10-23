@@ -1162,7 +1162,8 @@ fn apply_mcp_report(what_ran: &mut WhatRan, plan: &RunPlan, report: &Report<'_>)
                 transport: entry
                     .get("transport")
                     .and_then(Value::as_str)
-                    .map(str::to_lowercase),
+                    .map(str::to_lowercase)
+                    .filter(|transport| is_code(transport)),
                 endpoint: Fact::missing(
                     FactState::NotApplicable,
                     REASON_NOT_CONFIGURED,
@@ -2454,6 +2455,22 @@ mod tests {
         assert_eq!(
             what_ran["mcp"]["servers_truncated"],
             json!({"reason": "key_too_long", "dropped": 1})
+        );
+    }
+
+    #[test]
+    fn long_reported_transport_is_discarded_without_dropping_its_server() {
+        let plan = plan_declaring(&[MCP_REPORT_KEY]);
+        let report = json!({"servers": {
+            "plugin-docs": {"transport": "X".repeat(60 * 1024), "runtime": {}}
+        }});
+
+        let (what_ran, _) = ingest(&plan, json!({MCP_REPORT_KEY: report}));
+
+        assert!(what_ran["mcp"]["servers"]["plugin-docs"]["transport"].is_null());
+        assert_eq!(
+            what_ran["mcp"]["servers"]["plugin-docs"]["origin"],
+            "harness"
         );
     }
 
