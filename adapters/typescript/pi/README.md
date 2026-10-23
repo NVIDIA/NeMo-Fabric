@@ -319,8 +319,8 @@ observation without certifying all attempts.
 Accounting provider identity comes from a qualified HTTPS endpoint and protocol,
 not Pi's configured provider label. Native OpenAI, Anthropic, Google Generative AI,
 and Mistral routes qualify; custom or unverified routes retain their literal model
-and counts without inheriting native-provider pricing. Such routes can use an
-explicit user pricing catalog. Overrides and cache warm-ups follow the same rule.
+and counts without inheriting native-provider pricing. The adapter retains this evidence for separate
+pricing; it does not compute catalog estimates. Overrides and cache warm-ups follow the same rule.
 Redirects and mixed routes cannot restore a native identity after qualification
 fails. This changes accounting identity only; model execution settings are preserved.
 
