@@ -124,3 +124,19 @@ Each invocation returns only the final response and usage for that turn. `stop`
 closes the conversation and removes the adapter-owned temporary profile state.
 Create a new runtime to change the model, workspace, tools, MCP servers, or
 skills.
+
+## Token Usage
+
+The adapter sends invocation-owned model observations to the shared usage reducer through `nemo_fabric.usage_accounting.v1`. The OpenHands completion-log callback and retry listener cover the configured primary LLM and the shared default condenser LLM. It retains token fields and response identities, discards completion payloads, and configures no completion-log directory.
+
+`RunResult.model_usage` distinguishes complete counts from observations and names accounting gaps. Complete input includes cache reads and writes; complete output includes reasoning. Core derives the normalized total from complete input and output. LiteLLM's stored total is not promoted as an independent provider report.
+
+OpenHands and LiteLLM zero-fill omitted input and output counts before this callback. Positive per-response counts remain usable, but a main counter of 0 cannot establish whether the provider reported zero. Cache counts remain independent of those main counts where field presence survives normalization. On the Anthropic path, LiteLLM fills omitted cache buckets with 0, so this callback cannot certify a zero cache count. Positive cache buckets remain useful; inclusive input and its derived total remain incomplete until all constituent buckets are established. Normalized positive input remains an observation and positive output stays known. LiteLLM's estimated or clamped reasoning breakdown is not published as provider-reported reasoning. Server-iteration aggregates retain observations with an unverified-scope gap. Missing or invalid counts stay unknown. Native Gemini routes can omit a zero cache-read count; a custom configured or inherited endpoint disables that interpretation.
+
+A failed model attempt without usable usage leaves complete counts unknown and preserves observations from completed calls. A failed invocation alone does not invalidate settled model usage. An SDK interrupt leaves complete accounting unknown because a model call can be interrupted before telemetry records its response. Returned snapshots are frozen; late callbacks neither amend a result nor transfer usage into a later invocation.
+
+The SDK can automatically add a profile-backed vision tool when a saved vision profile is available. Dispatching that tool makes complete accounting unknown because its separate client is outside the primary LLM callback. Available primary/condenser observations remain inspectable.
+
+Accounting identities come from the actual constructed LiteLLM model name. A transport prefix does not establish the operator of a custom effective endpoint, so its provider identity stays unknown. The adapter retains this evidence for separate pricing without claiming native-provider prices for an unverified route. This identity establishes accounting attribution; it does not establish the served model.
+
+OpenHands combines proxy-provided costs with LiteLLM catalog estimates in an unlabeled accumulator. The adapter does not publish that value as provider-reported `cost_usd`. This collector does not compute catalog estimates. Independent external tools and services do not acquire accounting coverage merely because OpenHands called them.

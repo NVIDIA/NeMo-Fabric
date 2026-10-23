@@ -119,6 +119,14 @@ closes the conversation and removes the adapter-owned temporary profile state.
 Create a new runtime to change the model, workspace, tools, MCP servers, or
 skills.
 
+## Token Usage
+
+The adapter reports invocation-owned primary and condenser observations through the shared usage reducer. `RunResult.model_usage` separates complete counts, observations, accounting gaps, provider-reported cost and catalog estimates. Missing or ambiguous counters stay unknown; they do not become zero.
+
+The completion-log callback supplies per-response evidence; the SDK's retry listener exposes intermediate failures. A model attempt without usable usage or an interrupted invocation withholds complete counts while preserving settled observations. An ordinary failed invocation keeps complete usage when its model calls were accounted for. Snapshots freeze at return, and late callbacks never transfer to another invocation.
+
+LiteLLM zero-fills omitted main token counts, so a main counter of 0 cannot establish a literal provider zero at this boundary. Cache counts remain independent of those main counts where field presence survives normalization. On the Anthropic path, LiteLLM fills omitted cache buckets with 0, so this callback cannot certify a zero cache count. Positive cache buckets remain useful; inclusive input and its derived total remain incomplete until all constituent buckets are established. Normalized positive input remains an observation and positive output stays known. LiteLLM's estimated or clamped reasoning breakdown is not published as provider-reported reasoning. Server-iteration aggregates retain observations with an unverified-scope gap. Dispatching the SDK's separate profile-backed vision client makes full scope unknown. OpenHands' unlabeled cost accumulator is not published as provider-reported cost. See the [adapter accounting details](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/openhands#token-usage) for source boundaries and the model/provider evidence retained for separate pricing. This collector does not compute catalog estimates.
+
 ## Run the Code Review Example
 
 Set `NVIDIA_API_KEY`. For a source checkout, also point NeMo Fabric at the Python

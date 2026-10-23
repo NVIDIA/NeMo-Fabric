@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import utils as common_utils
+from nemo_fabric_adapters.openhands.usage import CompletionReports
 
 HARNESS = "OpenHands"
 DEFAULT_MAX_ITERATIONS = 500
@@ -106,11 +108,23 @@ def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
     return model
 
 
+def _wire_model(model: contract.AgentModelConfig) -> str:
+    """Return the LiteLLM model name, prefixed with its provider."""
+    return model.model if "/" in model.model else f"{model.provider}/{model.model}"
+
+
+def _omits_zero_cache_reads(wire_model: str) -> bool:
+    """Whether the model's API leaves out a cache-read count of 0.
+
+    Gemini usage counters are proto3 ``int32`` fields without presence, and
+    proto3 JSON omits such a field when its value is 0.
+    """
+    provider, _, name = wire_model.partition("/")
+    return provider in {"gemini", "vertex_ai"} and name.startswith("gemini")
+
+
 def _llm(api: OpenHandsApi, model: contract.AgentModelConfig) -> Any:
-    wire_model = (
-        model.model if "/" in model.model else f"{model.provider}/{model.model}"
-    )
-    kwargs: dict[str, Any] = {"model": wire_model, "usage_id": "agent"}
+    kwargs: dict[str, Any] = {"model": _wire_model(model), "usage_id": "agent"}
     if model.api_key_env is not None:
         api_key = os.environ.get(model.api_key_env)
         if not api_key:
@@ -311,19 +325,31 @@ def _mcp_servers(api: OpenHandsApi, config: contract.AgentConfig) -> dict[str, A
     return result
 
 
-def _usage(api_llm: Any, baseline: Any) -> contract.AgentUsage | None:
-    metrics = api_llm.metrics.diff(baseline)
-    tokens = metrics.accumulated_token_usage
-    if tokens is None:
-        return None
-    input_tokens = int(tokens.prompt_tokens)
-    output_tokens = int(tokens.completion_tokens)
-    return contract.AgentUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=input_tokens + output_tokens,
-        cost_usd=float(metrics.accumulated_cost),
+def _accounting_identity(model: contract.AgentModelConfig) -> tuple[str | None, str]:
+    """Use the actual LiteLLM model prefix and effective native-route overrides."""
+    provider, _, name = _wire_model(model).partition("/")
+    endpoints = {
+        "openai": (
+            ("OPENAI_BASE_URL", "OPENAI_API_BASE"),
+            {"https://api.openai.com/v1", "https://api.openai.com"},
+        ),
+        "anthropic": (
+            ("ANTHROPIC_API_BASE", "ANTHROPIC_BASE_URL"),
+            {"https://api.anthropic.com", "https://api.anthropic.com/v1"},
+        ),
+    }
+    endpoints["gemini"] = (
+        ("GEMINI_API_BASE",),
+        {"https://generativelanguage.googleapis.com"},
     )
+    keys, native_urls = endpoints.get(provider, ((), set()))
+    base = model.base_url or getattr(sys.modules.get("litellm"), "api_base", None)
+    base = base or next((os.environ[key] for key in keys if os.environ.get(key)), None)
+    # A transport prefix establishes the API convention, not who operates a
+    # custom endpoint. User catalogs may explicitly price an unqualified model.
+    if base is not None and str(base).rstrip("/") not in native_urls:
+        provider = None
+    return provider, name
 
 
 class OpenHandsRuntime:
@@ -333,6 +359,7 @@ class OpenHandsRuntime:
         self._conversation: Any = None
         self._profile_store_temp: tempfile.TemporaryDirectory[str] | None = None
         self._runtime_id: str | None = None
+        self._completion_reports: CompletionReports | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
@@ -344,7 +371,24 @@ class OpenHandsRuntime:
             supported_modes={"replace", "append"},
         )
         api = _load_openhands_api()
-        llm = _llm(api, _selected_model(config))
+        model = _selected_model(config)
+        llm = _llm(api, model)
+        # Terminal responses/errors use the completion callback. The SDK's
+        # retry listener exposes intermediate failures before they are consumed.
+        # No log directory is configured, so completion payloads are not saved.
+        provider, model_id = _accounting_identity(model)
+        completion_reports = CompletionReports(
+            model_id,
+            provider,
+            anthropic_usage=_wire_model(model).split("/", 1)[0] == "anthropic",
+            omitted_cache_is_zero=(
+                provider in {"gemini", "vertex_ai"}
+                and _omits_zero_cache_reads(_wire_model(model))
+            ),
+        )
+        llm.telemetry.set_log_completions_callback(completion_reports.record)
+        llm.retry_listener = completion_reports.retry
+        llm.telemetry.log_enabled = True
         agent_context = api.AgentContext(
             skills=_skills(api, config, base_dir),
             system_message_suffix=(
@@ -391,6 +435,7 @@ class OpenHandsRuntime:
         except BaseException:
             profile_store_temp.cleanup()
             raise
+        self._completion_reports = completion_reports
         self._api = api
         self._llm_instance = llm
         self._conversation = conversation
@@ -406,6 +451,7 @@ class OpenHandsRuntime:
             self._api is None
             or self._llm_instance is None
             or self._conversation is None
+            or self._completion_reports is None
         ):
             raise lifecycle.LifecycleError(
                 "openhands_not_started", "The OpenHands runtime is not started."
@@ -419,24 +465,34 @@ class OpenHandsRuntime:
         conversation = self._conversation
         event_count = len(conversation.state.events)
         baseline = self._llm_instance.metrics.deep_copy()
-        try:
-            conversation.send_message(common_utils.normalize_user_input(request.input))
-            await conversation.arun()
-        except Exception:
-            return contract.AgentRunResult(
-                status=contract.AgentRunStatus.FAILED,
-                output=None,
-                error=contract.AgentRunError(
-                    code="openhands_invocation_failed",
-                    message="OpenHands could not complete the invocation.",
-                ),
-                usage=_usage(self._llm_instance, baseline),
+        with self._completion_reports.invocation() as reports:
+            try:
+                conversation.send_message(
+                    common_utils.normalize_user_input(request.input)
+                )
+                await conversation.arun()
+            except Exception:
+                return contract.AgentRunResult(
+                    status=contract.AgentRunStatus.FAILED,
+                    output=None,
+                    error=contract.AgentRunError(
+                        code="openhands_invocation_failed",
+                        message="OpenHands could not complete the invocation.",
+                    ),
+                    usage=reports.usage(
+                        self._llm_instance.metrics.diff(baseline),
+                        events=conversation.state.events[event_count:],
+                    ),
+                )
+            new_events = conversation.state.events[event_count:]
+            usage = reports.usage(
+                self._llm_instance.metrics.diff(baseline),
+                events=new_events,
             )
 
         status = conversation.state.execution_status
         new_events = conversation.state.events[event_count:]
         response = self._api.get_agent_final_response(new_events)
-        usage = _usage(self._llm_instance, baseline)
         if status != self._api.ConversationExecutionStatus.FINISHED:
             return contract.AgentRunResult(
                 status=contract.AgentRunStatus.FAILED,
@@ -468,6 +524,7 @@ class OpenHandsRuntime:
         profile_store_temp, self._profile_store_temp = self._profile_store_temp, None
         self._api = None
         self._llm_instance = None
+        self._completion_reports = None
         self._runtime_id = None
         try:
             if conversation is not None:
