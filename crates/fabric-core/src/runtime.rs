@@ -7110,19 +7110,20 @@ for line in sys.stdin:
             }
             let (record, _) = only_record(&root);
             assert!(!record.contains("peak_request_input_tokens"));
-            let record_ref = result
-                .artifacts
-                .artifacts
-                .iter()
-                .find(|a| a.kind == "run_record")
-                .expect("record artifact");
-            println!("ACCOUNTING_RECORD_RECEIPT={}", record_ref.path.display());
+            assert!(
+                result
+                    .artifacts
+                    .artifacts
+                    .iter()
+                    .any(|a| a.kind == "run_record")
+            );
+            let _ = fs::remove_dir_all(root);
         }
     }
 
     #[test]
     fn recorded_native_stream_publishes_the_returned_result() {
-        let (_, mut plan) = record_plan("success");
+        let (root, mut plan) = record_plan("success");
         plan.capabilities.streaming = true;
         plan.adapter_descriptor
             .as_mut()
@@ -7147,5 +7148,6 @@ for line in sys.stdin:
                 .expect("typed saved result");
         assert_eq!(decoded, result);
         assert!(saved.path.with_file_name("run-record.jsonl").is_file());
+        let _ = fs::remove_dir_all(root);
     }
 }
