@@ -179,7 +179,8 @@ WebSocket calls retain available observations with accounting gaps. Session
 counter fallback preserves positive observations with unverified scope.
 
 The `nemo_fabric.usage_accounting.v1` extension preserves raw provider conventions
-for core normalization and central pricing. OpenCode's client-side cost estimate
+for core normalization and separate pricing. This collector does not compute
+catalog estimates. OpenCode's client-side cost estimate
 is not `cost_usd`. Custom endpoints cannot inherit native-provider pricing
 identity. Usage freezes at return; late child usage never moves to the next
 invocation. Transport failure after submission invalidates the session and

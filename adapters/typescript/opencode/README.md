@@ -110,7 +110,7 @@ WebSocket request leaves affected complete totals unknown. Positive session
 counter growth remains an observation when raw HTTP evidence is unavailable;
 the projected counters cannot prove completeness or a reported zero. Accounting
 observations and gaps travel in `nemo_fabric.usage_accounting.v1`. Core normalizes
-provider conventions and applies the selected pricing catalog. OpenCode's local
+provider conventions. Catalog estimation is a separate shared feature. OpenCode's local
 cost estimate is not provider-reported `cost_usd`. Custom endpoints retain their
 actual model identifier without inheriting native-provider pricing identity.
 
