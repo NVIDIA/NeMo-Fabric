@@ -80,14 +80,15 @@ def test_recording_rejects_unrecognized_settings():
         RecordConfig(enabled=True, retries=2)
 
 
-async def test_recorded_failure_preserves_native_lifecycle_stage(recorded_plan):
-    original = RuntimeError("native start error")
-    original.fabric_stage = "start"
+@pytest.mark.parametrize("stage", ["plan", "prepare", "start", "invoke", "stop"])
+async def test_recorded_failure_preserves_native_lifecycle_stage(recorded_plan, stage):
+    original = RuntimeError("native lifecycle error")
+    original.fabric_stage = stage
     native = MagicMock(spec=["run_plan"])
     native.run_plan.side_effect = original
     with pytest.raises(FabricRuntimeError) as caught:
         await _run_native_lifecycle(native, recorded_plan, {"request_id": "req"})
-    assert caught.value.stage == "start"
+    assert caught.value.stage == stage
     assert caught.value.__cause__ is original
 
 
