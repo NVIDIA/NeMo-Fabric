@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
-from nemo_fabric import RecordConfig
+from nemo_fabric import Fabric, RecordConfig
 from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric.runtime import _run_native_lifecycle
 
@@ -89,6 +89,20 @@ async def test_recorded_failure_preserves_native_lifecycle_stage(recorded_plan):
         await _run_native_lifecycle(native, recorded_plan, {"request_id": "req"})
     assert caught.value.stage == "start"
     assert caught.value.__cause__ is original
+
+
+async def test_recorded_process_launch_failure_retains_start_stage(
+    blocking_adapter_config, tmp_path
+):
+    descriptor_path = tmp_path / "blocking.fabric-adapter.json"
+    descriptor = json.loads(descriptor_path.read_text())
+    descriptor["runner"]["command"] = str(tmp_path / "missing-runner")
+    descriptor_path.write_text(json.dumps(descriptor))
+    blocking_adapter_config.runtime.record = RecordConfig(enabled=True)
+
+    with pytest.raises(FabricRuntimeError) as caught:
+        await Fabric().run(blocking_adapter_config, base_dir=tmp_path, input="hello")
+    assert caught.value.stage == "start"
 
 
 async def test_recorded_cancellation_keeps_cancellation_and_evidence_location(
