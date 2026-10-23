@@ -10,9 +10,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use nemo_fabric_core::{
-    EnvironmentHandle, EnvironmentReference, FabricConfig, FabricError, OpenAiStreamTransport,
-    ResolveContext, RunPlan, RunRequest, RuntimeHandle, ServiceHandle, ServiceReference,
-    doctor_plan, inspect_adapter_config,
+    EnvironmentHandle, EnvironmentReference, ErrorStage, FabricConfig, FabricError,
+    OpenAiStreamTransport, ResolveContext, RunPlan, RunRequest, RuntimeHandle, ServiceHandle,
+    ServiceReference, doctor_plan, inspect_adapter_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
@@ -149,6 +149,34 @@ fn run_config(
     let result = py
         .detach(|| run_plan(&plan, request))
         .map_err(to_py_error)?;
+    to_json(&result)
+}
+
+/// Execute an already resolved one-shot plan, including final result recording.
+#[pyfunction(name = "run_plan")]
+fn run_resolved_plan(py: Python<'_>, plan_json: String, request_json: String) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let request = parse_run_request(request_json)?;
+    let result = match py.detach(|| nemo_fabric_core::runtime::run_plan_with_stage(&plan, request))
+    {
+        Ok(result) => result,
+        Err((error, stage)) => {
+            let stage = match stage {
+                ErrorStage::Config => "config",
+                ErrorStage::Plan => "plan",
+                ErrorStage::Prepare => "prepare",
+                ErrorStage::Start => "start",
+                ErrorStage::Invoke => "invoke",
+                ErrorStage::Stop => "stop",
+                ErrorStage::Release => "release",
+                ErrorStage::Artifact => "artifact",
+            };
+            let failure = to_py_error(error);
+            // Preserve lifecycle stage without parsing diagnostic text.
+            failure.value(py).setattr("fabric_stage", stage)?;
+            return Err(failure);
+        }
+    };
     to_json(&result)
 }
 
@@ -338,6 +366,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(inspect_adapter_metadata, m)?)?;
     m.add_function(wrap_pyfunction!(doctor_config, m)?)?;
     m.add_function(wrap_pyfunction!(run_config, m)?)?;
+    m.add_function(wrap_pyfunction!(run_resolved_plan, m)?)?;
     m.add_function(wrap_pyfunction!(start_runtime, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_environment, m)?)?;
     m.add_function(wrap_pyfunction!(attach_environment, m)?)?;

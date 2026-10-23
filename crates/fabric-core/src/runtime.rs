@@ -32,6 +32,7 @@ use crate::config::{
 };
 use crate::environment::resolve_environment_provider;
 use crate::error::{FabricError, Result};
+use crate::record::{InvocationRecorder, RecordStart};
 use crate::resource_snapshot::{LocalHostProcess, RuntimeResourceSnapshot, snapshot_local_host};
 #[cfg(test)]
 use crate::system_stats::ResourceObservation;
@@ -41,6 +42,8 @@ mod openshell;
 use openshell::OpenShellRuntimeAdapter;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+/// Lifecycle code for a result rejected by core.
+pub(crate) const INVALID_AGENT_RUN_RESULT: &str = "invalid_agent_run_result";
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
 const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
@@ -148,6 +151,9 @@ pub struct RunResult {
     /// Normalized invocation usage when reported by the adapter target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<RunUsage>,
+    /// Complete and observed usage normalized from supported accounting evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_usage: Option<crate::model_usage::ModelUsage>,
     /// Resource snapshot of the runtime, read once after the adapter returned this
     /// result. Absent when the runtime's resources could not be observed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -870,6 +876,7 @@ struct LocalAdapterHost {
     relay_config: Option<RelayRuntimeConfig>,
     // Adapter startup values stay in memory, never in a serialized handle or plan.
     environment_env: BTreeMap<String, String>,
+    bundled_pricing_allowed: crate::pricing::NativePricingRoutes,
 }
 
 struct LocalServiceRecord {
@@ -891,12 +898,21 @@ enum LocalServiceState {
 
 /// Invoke a NeMo Fabric run plan.
 pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
-    let runtime = start_runtime(plan)?;
-    let mut result = match invoke_runtime(plan, &runtime, request) {
+    run_plan_with_stage(plan, request).map_err(|(error, _)| error)
+}
+
+/// Preserve the phase of a one-shot failure for language bindings.
+#[doc(hidden)]
+pub fn run_plan_with_stage(
+    plan: &RunPlan,
+    request: RunRequest,
+) -> std::result::Result<RunResult, (FabricError, ErrorStage)> {
+    let runtime = start_runtime_staged(plan)?;
+    let mut result = match invoke_runtime_unpersisted(plan, &runtime, request) {
         Ok(result) => result,
         Err(error) => {
             let _ = stop_runtime(plan, &runtime);
-            return Err(error);
+            return Err((error, ErrorStage::Invoke));
         }
     };
     match stop_runtime(plan, &runtime) {
@@ -913,7 +929,11 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
         }
         Err(_) => {}
     }
-    Ok(result)
+    Ok(crate::record::persist_result(
+        plan,
+        result,
+        "one_shot_lifecycle",
+    ))
 }
 
 /// Prepare an execution environment for a run plan.
@@ -1171,19 +1191,37 @@ fn validate_start_plan(plan: &RunPlan) -> Result<()> {
 /// For a non-local provider, prepare or attach to the environment explicitly
 /// and call [`start_runtime_in`] with the returned handle.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
-    validate_start_plan(plan)?;
+    start_runtime_staged(plan).map_err(|(error, _)| error)
+}
+
+fn start_runtime_staged(
+    plan: &RunPlan,
+) -> std::result::Result<RuntimeHandle, (FabricError, ErrorStage)> {
+    validate_start_plan(plan).map_err(|error| (error, ErrorStage::Plan))?;
     let provider = planned_environment_provider(plan);
     if provider != "local" {
-        return Err(FabricError::EnvironmentHandleRequired {
-            provider: provider.to_string(),
-        });
+        return Err((
+            FabricError::EnvironmentHandleRequired {
+                provider: provider.to_string(),
+            },
+            ErrorStage::Prepare,
+        ));
     }
-    let environment = prepare_environment(plan)?;
-    start_runtime_in_validated(plan, &environment)
+    let environment = prepare_environment(plan).map_err(|error| (error, ErrorStage::Prepare))?;
+    start_runtime_in_validated(plan, &environment).map_err(|error| (error, ErrorStage::Start))
 }
 
 /// Invoke a started harness runtime.
 pub fn invoke_runtime(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    request: RunRequest,
+) -> Result<RunResult> {
+    invoke_runtime_unpersisted(plan, runtime, request)
+        .map(|result| crate::record::persist_result(plan, result, "invocation"))
+}
+
+fn invoke_runtime_unpersisted(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
     request: RunRequest,
@@ -1267,7 +1305,9 @@ pub fn invoke_openai_stream(
         if runtime.environment.provider == "openshell" {
             return OpenShellRuntimeAdapter.invoke_openai_stream(plan, runtime, request, transport);
         }
-        return LocalHostAdapter.invoke_openai_stream(plan, runtime, request, transport);
+        return LocalHostAdapter
+            .invoke_openai_stream(plan, runtime, request, transport)
+            .map(|result| crate::record::persist_result(plan, result, "invocation"));
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
         harness: harness(plan),
@@ -1963,9 +2003,32 @@ impl LocalHostInvocation {
 fn run_local_host_invocation_with_timeout(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
+    request: RunRequest,
+    invocation_kind: LocalHostInvocation,
+    invoke_timeout: Duration,
+) -> Result<RunResult> {
+    let mut recorder = None;
+    let outcome = local_host_invocation_result(
+        plan,
+        runtime,
+        request,
+        invocation_kind,
+        invoke_timeout,
+        &mut recorder,
+    );
+    match recorder {
+        Some(recorder) => recorder.finish(outcome),
+        None => outcome,
+    }
+}
+
+fn local_host_invocation_result(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
     mut request: RunRequest,
     invocation_kind: LocalHostInvocation,
     invoke_timeout: Duration,
+    recorder: &mut Option<InvocationRecorder>,
 ) -> Result<RunResult> {
     let operation = invocation_kind.operation();
     if request.request_id.is_empty() {
@@ -2007,6 +2070,17 @@ fn run_local_host_invocation_with_timeout(
             &host_guard.environment_env,
             &adapter_invocation.runtime_context.environment.env,
         )?;
+        // Record preparation precedes the adapter deadline, preserving its budget.
+        if plan.config.runtime.record_enabled() && artifacts.root.is_some() {
+            *recorder = Some(InvocationRecorder::start(RecordStart {
+                plan,
+                runtime,
+                invocation: &invocation,
+                request: &request,
+                fabric_home: &fabric_home,
+                timeout: invoke_timeout,
+            }));
+        }
         adapter_invocation.runtime_context.deadline_millis =
             adapter_deadline_millis(invoke_timeout);
         let (lifecycle_request, adapter_payload) = match invocation_kind {
@@ -2138,6 +2212,7 @@ fn run_local_host_invocation_with_timeout(
                     relay_config,
                     fabric_home,
                     fabric_invocation,
+                    host_guard.bundled_pricing_allowed.clone(),
                 ))
             }
             Err(error) => {
@@ -2163,6 +2238,7 @@ fn run_local_host_invocation_with_timeout(
         relay_config,
         fabric_home,
         fabric_invocation,
+        bundled_pricing_allowed,
     ) = exchange_result?;
 
     let agent_result: AgentRunResult = serde_json::from_value(adapter_output).map_err(|error| {
@@ -2315,6 +2391,31 @@ fn run_local_host_invocation_with_timeout(
             serde_json::to_value(&agent_result.extensions).map_err(FabricError::SerializeJson)?,
         );
     }
+    // Accounting is observational after structural adapter validation. A
+    // contradictory aggregate must not replace a valid execution outcome or
+    // invite callers to replay work that already ran.
+    let model_usage = match agent_result
+        .usage
+        .as_ref()
+        .map(|raw| {
+            crate::model_usage::normalize_model_usage_for_routes(
+                raw,
+                plan.user_price_catalog.as_ref(),
+                |provider, model| bundled_pricing_allowed.allows(provider, model),
+            )
+        })
+        .transpose()
+    {
+        Ok(usage) => usage.flatten(),
+        Err(_) => {
+            events.push(event_with_metadata(
+                "model_usage_invalid",
+                "model accounting could not be normalized; execution outcome and raw usage were retained".to_string(),
+                BTreeMap::new(),
+            ));
+            None
+        }
+    };
     Ok(RunResult {
         agent_name: plan.agent_name.clone(),
         harness: harness(plan),
@@ -2327,6 +2428,7 @@ fn run_local_host_invocation_with_timeout(
         output,
         error,
         usage: agent_result.usage.as_ref().map(run_usage),
+        model_usage,
         resource_snapshot,
         system_stats,
         artifacts,
@@ -2561,6 +2663,10 @@ fn spawn_local_host(
     if let Some(root) = artifacts.root.as_ref() {
         command.env("FABRIC_ARTIFACTS", root);
     }
+    let bundled_pricing_allowed =
+        snapshot_pricing_route(&plan.config.models, &mut command, |name| {
+            std::env::var_os(name)
+        });
     // Start suspended so the host joins its job before it can start a process.
     #[cfg(windows)]
     std::os::windows::process::CommandExt::creation_flags(
@@ -2659,7 +2765,44 @@ fn spawn_local_host(
         artifacts,
         relay_config,
         environment_env,
+        bundled_pricing_allowed,
     })
+}
+
+// Freeze endpoint inheritance on the command itself so pricing describes the
+// persistent child's startup route, not a later mutation of the controller's env.
+fn snapshot_pricing_route(
+    models: &BTreeMap<String, crate::ModelConfig>,
+    command: &mut Command,
+    inherited: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> crate::pricing::NativePricingRoutes {
+    let mut endpoints = BTreeMap::new();
+    for name in crate::pricing::OPENAI_ENDPOINT_ENV_KEYS
+        .into_iter()
+        .chain(crate::pricing::ANTHROPIC_ENDPOINT_ENV_KEYS)
+    {
+        let value = command
+            .get_envs()
+            .find_map(|(key, value)| {
+                let matches = if cfg!(windows) {
+                    key.to_string_lossy().eq_ignore_ascii_case(name)
+                } else {
+                    key == name
+                };
+                matches.then(|| value.map(std::ffi::OsStr::to_owned))
+            })
+            .unwrap_or_else(|| inherited(name));
+        match value {
+            Some(value) => {
+                endpoints.insert(name.to_string(), value.to_string_lossy().into_owned());
+                command.env(name, value);
+            }
+            None => {
+                command.env_remove(name);
+            }
+        }
+    }
+    crate::pricing::NativePricingRoutes::from_models(models, &endpoints)
 }
 
 fn local_host_command(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<(Command, String)> {
@@ -3650,7 +3793,7 @@ fn relay_artifact_media_type(kind: &str, format: Option<&str>) -> Option<&'stati
     }
 }
 
-fn unique_artifact_name(manifest: &ArtifactManifest, base: &str) -> String {
+pub(crate) fn unique_artifact_name(manifest: &ArtifactManifest, base: &str) -> String {
     if !manifest
         .artifacts
         .iter()
@@ -4015,7 +4158,7 @@ fn telemetry_ref(
     })
 }
 
-fn event_with_metadata(
+pub(crate) fn event_with_metadata(
     kind: impl Into<String>,
     message: impl Into<String>,
     metadata: BTreeMap<String, Value>,
@@ -4095,6 +4238,7 @@ mod tests {
       "type": "object",
       "properties": {
         "provider": {"type": "string"},
+        "nemo_fabric.usage_accounting.v1": {"type": "object"},
         "nemo_fabric.detailed_token_usage.v1": {
           "type": "object",
           "properties": {
@@ -4313,12 +4457,13 @@ for line in sys.stdin:
             "context_env": invocation["runtime_context"]["environment"].get("env", {}),
             "deadline_millis": invocation["runtime_context"].get("deadline_millis"),
         }
-        if MODE in {"adapter_reported_failure", "blank_error_code"}:
+        if MODE in {"adapter_reported_failure", "blank_error_code", "free_text_error_code"}:
+            codes = {"blank_error_code": " \t", "free_text_error_code": "Rate limit for key sk-live-123 exceeded"}
             result = {
                 "status": "failed",
                 "output": output,
                 "error": {
-                    "code": " \t" if MODE == "blank_error_code" else "fake_adapter_failure",
+                    "code": codes.get(MODE, "fake_adapter_failure"),
                     "message": "adapter rejected the invocation",
                     "retryable": True,
                     "extensions": {"source": "fake-host"},
@@ -4346,6 +4491,38 @@ for line in sys.stdin:
                 }],
                 "extensions": {"trace_id": "trace-1"},
             }
+        elif MODE in ("accounted_usage_result", "accounted_partial_usage_result", "accounted_conflict_usage_result", "accounted_conflict_failed_usage_result", "accounted_undeclared_usage_result", "accounted_schema_invalid_usage_result"):
+            counts = {
+                "input_tokens": 100, "cached_input_tokens": 20,
+                "cache_write_input_tokens": 0, "input_tokens_include_cache": True,
+                "output_tokens": 5, "output_tokens_include_reasoning": True,
+                "peak_request_input_tokens": 100,
+            }
+            result = {
+                "status": "succeeded",
+                "output": {**output, "pricing_route": __import__("os").environ.get("OPENAI_BASE_URL")},
+                "usage": {"extensions": {"nemo_fabric.usage_accounting.v1": {
+                    "models_exhaustive": True, "gaps": [], "models": [{
+                        "model": "gpt-5.4", "provider": "openai", "reported": counts, "gaps": [],
+                    }],
+                }}},
+            }
+            if MODE == "accounted_partial_usage_result":
+                result["usage"]["extensions"]["nemo_fabric.usage_accounting.v1"]["gaps"] = [{
+                    "dimensions": ["input_tokens"], "reason": "unfinished_work",
+                }]
+            if MODE in ("accounted_conflict_usage_result", "accounted_conflict_failed_usage_result"):
+                model = result["usage"]["extensions"]["nemo_fabric.usage_accounting.v1"]["models"][0]
+                model["model"] = "private-accounting-identity"
+                model["requests_exhaustive"] = True
+                model["requests"] = [{"usage": {**counts, "input_tokens": 200, "peak_request_input_tokens": 200}}]
+                if MODE == "accounted_conflict_failed_usage_result":
+                    result["status"] = "failed"
+                    result["error"] = {"code": "original_failure", "message": "execution failed", "retryable": False}
+            if MODE == "accounted_undeclared_usage_result":
+                result["usage"]["extensions"]["undeclared_accounting"] = {}
+            if MODE == "accounted_schema_invalid_usage_result":
+                result["usage"]["extensions"]["nemo_fabric.usage_accounting.v1"] = "not an object"
         elif MODE == "detailed_usage_result":
             result = {
                 "status": "succeeded",
@@ -4581,6 +4758,7 @@ for line in sys.stdin:
             output: Value::Null,
             error: None,
             usage: None,
+            model_usage: None,
             resource_snapshot: None,
             system_stats: None,
             artifacts: ArtifactManifest::default(),
@@ -5589,11 +5767,32 @@ for line in sys.stdin:
     fn local_host_start_failure_preserves_stage_and_diagnostics() {
         let (root, plan) = local_host_plan("start_failure");
 
-        let error = start_runtime(&plan).expect_err("start must fail");
+        let (error, stage) =
+            run_plan_with_stage(&plan, RunRequest::text("input")).expect_err("start must fail");
+        assert_eq!(stage, ErrorStage::Start);
         let message = error.to_string();
         assert!(message.contains("lifecycle start"), "{message}");
         assert!(message.contains("fake_start"), "{message}");
         assert!(message.contains("start diagnostic"), "{message}");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn one_shot_reports_prepare_stage_when_environment_is_required() {
+        let (root, mut plan) = local_host_plan("success");
+        plan.environment_plan
+            .as_mut()
+            .expect("resolved environment plan")
+            .provider = "docker".to_string();
+
+        let (error, stage) = run_plan_with_stage(&plan, RunRequest::text("input"))
+            .expect_err("non-local provider needs an environment handle");
+        assert!(matches!(
+            error,
+            FabricError::EnvironmentHandleRequired { .. }
+        ));
+        assert_eq!(stage, ErrorStage::Prepare);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -6052,6 +6251,55 @@ for line in sys.stdin:
             ),
             "{error}"
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unused_custom_model_does_not_disable_native_call_pricing() {
+        let models = serde_json::from_value(serde_json::json!({
+            "default": {"provider": "openai", "model": "gpt-5.4"},
+            "unused": {
+                "provider": "openai", "model": "other-model",
+                "base_url": "https://custom.invalid/v1"
+            }
+        }))
+        .expect("model roles");
+        let allowed = snapshot_pricing_route(&models, &mut Command::new("unused"), |_| None);
+        let raw = serde_json::from_value(serde_json::json!({
+            "extensions": {"nemo_fabric.usage_accounting.v1": {
+                "models_exhaustive": true, "gaps": [], "models": [{
+                    "provider": "openai", "model": "gpt-5.4", "gaps": [],
+                    "reported": {
+                        "input_tokens": 100, "cached_input_tokens": 20,
+                        "cache_write_input_tokens": 0, "input_tokens_include_cache": true,
+                        "output_tokens": 5, "output_tokens_include_reasoning": true
+                    }
+                }]
+            }}
+        }))
+        .expect("source-established usage");
+        let usage =
+            crate::model_usage::normalize_model_usage_for_routes(&raw, None, |provider, model| {
+                allowed.allows(provider, model)
+            })
+            .expect("valid accounting")
+            .expect("normalized accounting");
+        assert!(usage.cost.estimated.amount_nano_usd.is_some());
+    }
+
+    #[test]
+    fn local_host_returns_flat_supported_accounting_with_the_normalized_result() {
+        let (root, plan) = local_host_plan("accounted_usage_result");
+        let result = run_plan(&plan, RunRequest::text("accounted")).expect("normalized result");
+        assert_eq!(result.status, RunStatus::Succeeded);
+        let usage = result.model_usage.expect("supported accounting");
+        assert_eq!(usage.tokens.input_tokens, Some(100));
+        assert_eq!(usage.tokens.cached_input_tokens, Some(20));
+        assert_eq!(usage.tokens.output_tokens, Some(5));
+        assert_eq!(usage.tokens.total_tokens, Some(105));
+        assert!(usage.models_exhaustive);
+        assert_eq!(usage.models[0].model, "gpt-5.4");
+        assert_eq!(usage.observed.input_tokens, Some(100));
         let _ = fs::remove_dir_all(root);
     }
 
@@ -6579,6 +6827,366 @@ for line in sys.stdin:
                 adapter_kind: AdapterKind::Python,
             } if provider == "docker"
         ));
+        let _ = fs::remove_dir_all(root);
+    }
+    fn record_plan(mode: &str) -> (PathBuf, RunPlan) {
+        let (root, mut plan) = local_host_plan(mode);
+        plan.config.runtime.record = Some(crate::config::RecordConfig { enabled: true });
+        (root, plan)
+    }
+
+    fn record_files(root: &Path) -> Vec<PathBuf> {
+        let mut records = Vec::new();
+        let mut folders = vec![root.join("artifacts/.fabric")];
+        while let Some(folder) = folders.pop() {
+            let Ok(entries) = fs::read_dir(&folder) else {
+                continue;
+            };
+            for path in entries.flatten().map(|entry| entry.path()) {
+                if path.is_dir() {
+                    folders.push(path);
+                } else if path.ends_with("run-record.jsonl") {
+                    records.push(path);
+                }
+            }
+        }
+        records
+    }
+
+    fn record_line_validator() -> jsonschema::Validator {
+        let schema = crate::schema::generate_schema(crate::schema::SchemaName::RunRecordLine)
+            .expect("record line schema");
+        jsonschema::validator_for(&schema).expect("valid schema")
+    }
+
+    /// The only record under `root`, with every line checked against the
+    /// published line schema.
+    fn only_record(root: &Path) -> (String, Vec<Value>) {
+        let records = record_files(root);
+        assert_eq!(records.len(), 1, "{records:?}");
+        let text = fs::read_to_string(&records[0]).expect("read record");
+        let validator = record_line_validator();
+        let lines: Vec<Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("record line is JSON"))
+            .collect();
+        for line in &lines {
+            assert!(validator.is_valid(line), "{line}");
+        }
+        (text, lines)
+    }
+
+    /// The one line of `kind`. Lookup by kind keeps these tests independent
+    /// of other line kinds written between the start and end lines.
+    fn line_of_kind<'a>(lines: &'a [Value], kind: &str) -> &'a Value {
+        let mut matching = lines.iter().filter(|line| line["kind"] == kind);
+        let line = matching.next().unwrap_or_else(|| panic!("no {kind} line"));
+        assert!(matching.next().is_none(), "more than one {kind} line");
+        line
+    }
+
+    #[test]
+    fn record_off_with_an_artifact_root_writes_no_record() {
+        let (root, plan) = local_host_plan("typed_result");
+        assert!(plan.config.runtime.artifacts.is_some());
+
+        let result = run_plan(&plan, RunRequest::text("no record")).expect("run");
+
+        assert!(record_files(&root).is_empty());
+        assert!(
+            result
+                .artifacts
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.kind != "run_record")
+        );
+        assert!(
+            result
+                .events
+                .iter()
+                .all(|event| event.kind != "record_write_failed")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_on_writes_a_start_line_and_an_end_line() {
+        let (root, plan) = record_plan("typed_result");
+        let mut request = RunRequest::text("record");
+        request.context = BTreeMap::from([
+            ("task_id".to_string(), serde_json::json!("repo-io-fix")),
+            ("attempt".to_string(), serde_json::json!(2)),
+            (
+                "harbor_trial_name".to_string(),
+                serde_json::json!("trial-1"),
+            ),
+            ("step".to_string(), serde_json::json!({"nested": "value"})),
+            ("api_key".to_string(), serde_json::json!("sk-live-SECRET")),
+        ]);
+
+        let result = run_plan(&plan, request).expect("run");
+        let (text, lines) = only_record(&root);
+
+        let (start, end) = (line_of_kind(&lines, "start"), line_of_kind(&lines, "end"));
+        assert_eq!(lines.first(), Some(start), "{text}");
+        assert_eq!(lines.last(), Some(end), "{text}");
+        for line in &lines {
+            assert_eq!(line["schema"], "nemo.fabric.run_record");
+            assert_eq!(line["version"], "v1alpha1");
+            assert_eq!(line["runtime_id"], result.runtime_id.as_str());
+            assert_eq!(line["invocation_id"], result.invocation_id.as_str());
+            assert_eq!(line["request_id"], result.request_id.as_str());
+        }
+        assert_eq!(start["agent_name"], "local-host-test-agent");
+        assert_eq!(start["adapter_id"], "acme.fabric.local-host");
+        assert_eq!(start["timeout_ms"], 3_600_000);
+        assert_eq!(
+            start["context"],
+            serde_json::json!({
+                "api_key": {"recorded": false},
+                "attempt": 2,
+                "harbor_trial_name": "trial-1",
+                "step": {"recorded": false},
+                "task_id": "repo-io-fix",
+            })
+        );
+        assert!(!text.contains("SECRET"), "{text}");
+        assert_eq!(end["status"], "succeeded");
+        assert!(end["elapsed_ms"].is_u64());
+        assert_eq!(
+            end["usage"],
+            serde_json::json!({
+                "input_tokens": 3,
+                "cached_input_tokens": 1,
+                "input_tokens_include_cache": true,
+                "output_tokens": 5,
+                "total_tokens": 8,
+                "cost_usd": 0.25,
+            })
+        );
+        let report = end["artifacts"]
+            .as_array()
+            .expect("artifacts")
+            .iter()
+            .find(|artifact| artifact["name"] == "report")
+            .expect("report artifact");
+        assert_eq!(
+            report,
+            &serde_json::json!({
+                "name": "report",
+                "kind": "report",
+                "media_type": "application/json",
+                "path": "reports/result.json",
+            })
+        );
+        for marker in ["fake-host", "\"fake\"", "trace-1"] {
+            assert!(!text.contains(marker), "{marker} in {text}");
+        }
+        let record = result
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == "record")
+            .expect("record artifact");
+        assert_eq!(record.kind, "run_record");
+        assert_eq!(record.media_type.as_deref(), Some("application/jsonl"));
+        assert_eq!(record.path, record_files(&root)[0]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_end_line_keeps_the_error_code_and_drops_the_message() {
+        let (root, plan) = record_plan("adapter_reported_failure");
+
+        let result = run_plan(&plan, RunRequest::text("fail")).expect("failed result");
+        let (text, lines) = only_record(&root);
+
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(
+            line_of_kind(&lines, "end")["error"],
+            serde_json::json!({"code": "fake_adapter_failure", "stage": "invoke", "retryable": true})
+        );
+        assert!(!text.contains("adapter rejected"), "{text}");
+        let mut wrong_kind = line_of_kind(&lines, "end").clone();
+        wrong_kind["kind"] = serde_json::json!("start");
+        assert!(!record_line_validator().is_valid(&wrong_kind));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_end_line_replaces_a_free_text_error_code() {
+        let (root, plan) = record_plan("free_text_error_code");
+
+        let result = run_plan(&plan, RunRequest::text("fail")).expect("failed result");
+        let (text, lines) = only_record(&root);
+
+        assert!(result.error.expect("error").code.contains("sk-live-123"));
+        assert_eq!(line_of_kind(&lines, "end")["error"]["code"], "unrecognized");
+        assert!(!text.contains("sk-live-123"), "{text}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_lifecycle_error_writes_a_failed_end_line() {
+        let (root, plan) = record_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let error = run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("timeout raises");
+        let (_, lines) = only_record(&root);
+
+        assert!(error.to_string().contains("host_timeout"), "{error}");
+        let end = line_of_kind(&lines, "end");
+        assert_eq!(line_of_kind(&lines, "start")["timeout_ms"], 100);
+        assert_eq!(end["status"], "failed");
+        assert_eq!(
+            end["error"],
+            serde_json::json!({"code": "host_timeout", "stage": "invoke", "retryable": false})
+        );
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_preparation_does_not_shorten_the_adapter_deadline() {
+        let (root, mut plan) = record_plan("success");
+        plan.config.runtime.timeout_seconds = Some(60.0);
+        let runtime = start_runtime(&plan).expect("start local host");
+        let delay = Duration::from_millis(500);
+        crate::record::test_hooks::CREATE_DELAY.with(|slot| slot.set(delay));
+
+        let before = now_millis();
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("slow record storage"));
+        let after = now_millis();
+        crate::record::test_hooks::CREATE_DELAY.with(|slot| slot.set(Duration::ZERO));
+
+        let result = result.expect("invoke");
+        let deadline = u128::from(result.output["deadline_millis"].as_u64().expect("deadline"));
+        // The adapter's 50-second budget starts after the record is created,
+        // so slow record storage does not eat into it.
+        assert!(
+            (before + delay.as_millis() + 50_000..=after + 50_000).contains(&deadline),
+            "deadline {deadline}, before {before}, after {after}"
+        );
+        assert_eq!(record_files(&root).len(), 1);
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn record_warm_runtime_writes_one_record_per_invocation() {
+        let (root, plan) = record_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let first = invoke_runtime(&plan, &runtime, RunRequest::text("one")).expect("first");
+        let second = invoke_runtime(&plan, &runtime, RunRequest::text("two")).expect("second");
+        stop_runtime(&plan, &runtime).expect("stop");
+
+        let records = record_files(&root);
+        assert_eq!(records.len(), 2);
+        for result in [&first, &second] {
+            assert!(records.iter().any(|path| path.ends_with(format!(
+                ".fabric/{}/{}/run-record.jsonl",
+                result.runtime_id, result.invocation_id
+            ))));
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+    #[test]
+    fn semantic_accounting_conflict_preserves_execution_and_raw_evidence() {
+        for (mode, status) in [
+            ("accounted_conflict_usage_result", RunStatus::Succeeded),
+            ("accounted_conflict_failed_usage_result", RunStatus::Failed),
+        ] {
+            let (root, plan) = local_host_plan(mode);
+            let result = run_plan(&plan, RunRequest::text("preserve execution"))
+                .expect("accounting must not replace execution outcome");
+            assert_eq!(result.status, status);
+            assert_eq!(result.output["input"], "preserve execution");
+            if status == RunStatus::Failed {
+                assert_eq!(result.error.as_ref().unwrap().code, "original_failure");
+            } else {
+                assert!(result.error.is_none());
+            }
+            assert!(result.model_usage.is_none());
+            let raw = &result.usage.as_ref().expect("raw usage").metadata;
+            assert_eq!(
+                raw["nemo_fabric.usage_accounting.v1"]["models"][0]["model"],
+                "private-accounting-identity"
+            );
+            let events: Vec<_> = result
+                .events
+                .iter()
+                .filter(|event| event.kind == "model_usage_invalid")
+                .collect();
+            assert_eq!(events.len(), 1);
+            let diagnostic = serde_json::to_string(events[0]).unwrap();
+            assert!(!diagnostic.contains("private-accounting-identity"));
+            assert!(!diagnostic.contains("request totals"));
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+    #[test]
+    fn recorded_accounting_projection_matches_returned_normalized_result() {
+        for mode in ["accounted_usage_result", "accounted_partial_usage_result"] {
+            let (root, plan) = record_plan(mode);
+            let result = run_plan(&plan, RunRequest::text("accounted")).expect("result");
+            let (_, rows) = only_record(&root);
+            let end = line_of_kind(&rows, "end");
+            let usage = result.model_usage.expect("normalized accounting");
+            assert_eq!(end["model_usage"], serde_json::to_value(&usage).unwrap());
+            assert_eq!(usage.tokens.output_tokens, Some(5));
+            if mode == "accounted_partial_usage_result" {
+                assert_eq!(usage.tokens.input_tokens, None);
+                assert_eq!(usage.observed.input_tokens, Some(100));
+            } else {
+                assert_eq!(usage.tokens.input_tokens, Some(100));
+            }
+            let (record, _) = only_record(&root);
+            assert!(!record.contains("peak_request_input_tokens"));
+            assert!(
+                result
+                    .artifacts
+                    .artifacts
+                    .iter()
+                    .any(|a| a.kind == "run_record")
+            );
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn recorded_native_stream_publishes_the_returned_result() {
+        let (root, mut plan) = record_plan("success");
+        plan.capabilities.streaming = true;
+        plan.adapter_descriptor
+            .as_mut()
+            .expect("resolved descriptor")
+            .descriptor
+            .capabilities
+            .streaming = true;
+        let runtime = start_runtime(&plan).expect("start local host");
+        let (transport, capture) = openai_stream_listener("recorded-stream-secret");
+        let result = invoke_openai_stream(&plan, &runtime, RunRequest::text("stream"), transport)
+            .expect("stream invocation");
+        assert_eq!(capture.join().expect("stream capture").len(), 3);
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let saved = result
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == "run_result")
+            .expect("streaming saves the full result");
+        let decoded: RunResult =
+            serde_json::from_slice(&fs::read(&saved.path).expect("saved result"))
+                .expect("typed saved result");
+        assert_eq!(decoded, result);
+        assert!(saved.path.with_file_name("run-record.jsonl").is_file());
         let _ = fs::remove_dir_all(root);
     }
 }
