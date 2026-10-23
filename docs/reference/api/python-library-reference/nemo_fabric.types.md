@@ -2067,7 +2067,6 @@ The mapping exposes the following typed fields:
 | `normalization_version` | `str` |
 | `assumption_policy` | `str` |
 | `bundled_catalog_sha256` | `str` |
-| `user_catalog_sha256` | `str \| None` |
 
 ### <kbd>method</kbd> `__init__`
 
@@ -2086,6 +2085,13 @@ def __init__(mapping: Mapping[str, Any]) -> None
 
 Return an immutable view of preserved extension fields.
 
+
+
+---
+
+### <kbd>property</kbd> user_catalog_sha256
+
+Return the user catalog fingerprint when supplied, otherwise None.
 
 
 ---
@@ -2475,7 +2481,6 @@ The mapping exposes the following typed fields:
 | Field | Type |
 | --- | --- |
 | `model` | `str` |
-| `provider` | `str \| None` |
 | `input_tokens` | `int \| None` |
 | `cached_input_tokens` | `int \| None` |
 | `cache_write_input_tokens` | `int \| None` |
@@ -2502,6 +2507,13 @@ def __init__(mapping: Mapping[str, Any]) -> None
 
 Return an immutable view of preserved extension fields.
 
+
+
+---
+
+### <kbd>property</kbd> provider
+
+Return the accounting provider when reported, otherwise None.
 
 
 ---

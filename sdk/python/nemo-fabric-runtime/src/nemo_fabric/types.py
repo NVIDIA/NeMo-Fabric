@@ -2719,7 +2719,6 @@ class PricingBasis(FabricMapping):
     normalization_version: str
     assumption_policy: str
     bundled_catalog_sha256: str
-    user_catalog_sha256: str | None
     _fields = frozenset(
         {
             "basis",
@@ -2730,6 +2729,11 @@ class PricingBasis(FabricMapping):
             "user_catalog_sha256",
         }
     )
+
+    @property
+    def user_catalog_sha256(self) -> str | None:
+        """Return the user catalog fingerprint when supplied, otherwise None."""
+        return self._data.get("user_catalog_sha256")
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -2988,7 +2992,6 @@ class PerModelUsage(FabricMapping):
     """
 
     model: str
-    provider: str | None
     input_tokens: int | None
     cached_input_tokens: int | None
     cache_write_input_tokens: int | None
@@ -3000,6 +3003,11 @@ class PerModelUsage(FabricMapping):
     _fields = frozenset(
         {*_MODEL_USAGE_TOKEN_FIELDS, "model", "provider", "observed", "gaps", "cost"}
     )
+
+    @property
+    def provider(self) -> str | None:
+        """Return the accounting provider when reported, otherwise None."""
+        return self._data.get("provider")
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
