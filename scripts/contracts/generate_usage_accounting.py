@@ -22,6 +22,7 @@ def synchronize(*, check: bool) -> None:
     descriptors = [
         *ROOT.glob("adapters/python/*/*.fabric-adapter.json"),
         *ROOT.glob("adapters/typescript/*/*.fabric-adapter.json"),
+        *ROOT.glob("crates/fabric-cli/assets/adapters/*/*.fabric-adapter.json"),
     ]
     for path in descriptors:
         original = path.read_text()
