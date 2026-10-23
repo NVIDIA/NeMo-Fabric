@@ -132,7 +132,7 @@ is not reported as provider `cost_usd`. Only an observed native HTTPS provider
 endpoint establishes native-provider pricing identity; a custom endpoint retains
 its actual model identity without claiming native-provider prices.
 
-For Hermes revision `a62979dc`, Fabric observes the HTTP clients it owns through
+For Hermes revision `a62979dc`, NeMo Fabric observes the HTTP clients it owns through
 one qualified per-agent client-construction override. It preserves Hermes'
 client settings, connection-pool lifecycle, retries and lazy stream consumption.
 The observer reads usage before response normalization, including replies that

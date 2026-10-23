@@ -1920,3 +1920,28 @@ async def test_cancellation_during_version_probe_freezes_usage(monkeypatch):
     late = owner.start("late")
     owner.settle(late, ReportedUsage(input_tokens=99))
     assert owner.finish().to_mapping() == frozen
+
+
+async def test_pre_call_relay_rejection_propagates_with_unverified_scope(monkeypatch):
+    from nemo_fabric_adapters.hermes import adapter
+
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._runtime_id = "runtime-pre-call-error"
+    runtime._agent_config = _agent_config(
+        {"models": {"default": {"provider": "test", "model": "test-model"}}}
+    )
+    runtime._model_config = runtime._agent_config.models["default"]
+    runtime._agent = MagicMock()
+    runtime._usage_scope_unverified = True
+    runtime._relay_plugin_config = object()
+
+    def reject_config():
+        raise RuntimeError("ambient Relay configuration is invalid")
+
+    monkeypatch.setattr(
+        adapter.common_utils, "reject_ambient_relay_plugin_config", reject_config
+    )
+    context = _runtime_context(runtime_id=runtime._runtime_id)
+    with pytest.raises(RuntimeError, match="ambient Relay configuration is invalid"):
+        await runtime.invoke(AgentRunRequest(input="work"), context)

@@ -131,7 +131,7 @@ is not reported as provider `cost_usd`. Only an observed native HTTPS provider
 endpoint establishes native-provider pricing identity; a custom endpoint retains
 its actual model identity without claiming native-provider prices.
 
-For Hermes revision `a62979dc`, Fabric observes the HTTP clients it owns through
+For Hermes revision `a62979dc`, NeMo Fabric observes the HTTP clients it owns through
 one qualified per-agent client-construction override. It preserves Hermes'
 client settings, connection-pool lifecycle, retries and lazy stream consumption.
 The observer reads usage before response normalization, including replies that
@@ -158,7 +158,7 @@ schedules it asynchronously. Cancellation still propagates through Fabric's
 existing lifecycle; a cancelled call that produces no result has no returned
 usage payload.
 
-Fabric disables automatic post-turn memory/skill review with
+NeMo Fabric disables automatic post-turn memory/skill review with
 `skip_background_review`, and disables model-generated title upgrades with
 `auxiliary.title_generation.model_upgrade_enabled=false`. Local title generation
 remains enabled without Relay; Relay runs retain their existing title disablement.

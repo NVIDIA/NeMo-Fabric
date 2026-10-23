@@ -564,16 +564,23 @@ def observe_context_engine(
 ) -> MethodObservation | None:
     """Observe actual calls to an owned plugin engine's public compression method."""
     from functools import wraps
-    from agent.context_compressor import ContextCompressor
 
     engine = getattr(agent, "context_compressor", None)
-    if engine is None or type(engine) is ContextCompressor:
+    if engine is None:
         return None
-    from hermes_cli.plugins import get_plugin_context_engine
-
     original = getattr(engine, "compress", None)
     if not callable(original):
         return None
+    try:
+        from agent.context_compressor import ContextCompressor
+    except ImportError:
+        return MethodObservation(None, original, original, scope_unverified=True)
+    if type(engine) is ContextCompressor:
+        return None
+    try:
+        from hermes_cli.plugins import get_plugin_context_engine
+    except ImportError:
+        return MethodObservation(None, original, original, scope_unverified=True)
     if engine is get_plugin_context_engine():
         # An engine that returned its registry singleton from clone_for_agent
         # violates the per-agent ownership premise. Preserve execution untouched.

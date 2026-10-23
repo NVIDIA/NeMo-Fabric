@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import builtins
 from contextlib import contextmanager
 import json
 import socket
@@ -569,6 +570,26 @@ def test_shared_plugin_engine_keeps_execution_unmodified_and_declines_scope(
     lease = usage.observe_context_engine(
         SimpleNamespace(context_compressor=engine), object()
     )
+    assert lease is not None and lease.scope_unverified
+    assert engine.compress is original
+    lease.dispose()
+
+
+def test_missing_context_compressor_module_keeps_execution_unmodified(monkeypatch):
+    engine = MagicMock()
+    original = engine.compress
+    real_import = builtins.__import__
+
+    def import_without_compressor(name, *args, **kwargs):
+        if name == "agent.context_compressor":
+            raise ImportError("context compressor unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_compressor)
+    lease = usage.observe_context_engine(
+        SimpleNamespace(context_compressor=engine), object()
+    )
+
     assert lease is not None and lease.scope_unverified
     assert engine.compress is original
     lease.dispose()

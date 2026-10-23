@@ -370,6 +370,7 @@ class HermesRuntime:
                 ReportedUsage(),
                 gap=GapReason.SCOPE_UNVERIFIED,
             )
+        pre_turn_call_count = len(invocation_usage.calls)
 
         def run_hermes_turn() -> tuple[dict[str, Any], str]:
             if self._relay_plugin_config is not None:
@@ -416,12 +417,13 @@ class HermesRuntime:
             invocation_usage.finish()
             raise
         except Exception as error:
-            if not invocation_usage.calls:
+            if len(invocation_usage.calls) == pre_turn_call_count:
                 raise
             return AgentRunResult(
                 status=AgentRunStatus.FAILED,
                 error=AgentRunError(
-                    code="hermes_invocation_failed", message=str(error)
+                    code="hermes_invocation_failed",
+                    message=str(error) or type(error).__name__,
                 ),
                 usage=invocation_usage.finish(),
             )
