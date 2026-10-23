@@ -327,9 +327,12 @@ fails. This changes accounting identity only; model execution settings are prese
 The adapter uses the shared usage-evidence reducer. Complete counts appear in
 `usage`; deduplicated source observations and gaps appear in
 `usage.extensions["nemo_fabric.usage_accounting.v1"]`. Failed execution does not
-by itself discard reported usage. A call without usable usage, an unsettled call,
-or an internal retry with unaccounted attempts leaves the affected complete
-counts unknown. An HTTP rejection never invents a zero-token report. The snapshot
+by itself discard reported usage. A call without usable usage or an unsettled
+call leaves the affected complete counts unknown. For the fetch-observed
+protocols, a 408, 5xx, or unanswered attempt keeps complete counts unknown even
+if a later attempt succeeds. Bedrock SDK attempts are not visible through this
+fetch path; Bedrock counts remain observations as described above. An HTTP
+rejection never invents a zero-token report. The snapshot
 freezes when the prompt returns; late callbacks cannot alter it or transfer tokens
 to a later invocation.
 

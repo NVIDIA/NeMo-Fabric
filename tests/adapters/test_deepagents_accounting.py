@@ -210,7 +210,8 @@ async def test_remote_tool_callback_dispatch_marks_new_work_only_unit(
     dispatched = operation in {"start_async_task", "update_async_task"}
     assert result.input_tokens == (100 if foreground_call and not dispatched else None)
     reasons = {gap["reason"] for gap in result.extensions[KEY]["gaps"]}
-    assert ("scope_unverified" in reasons) is dispatched
+    # With no foreground call, an empty callback list cannot prove zero usage.
+    assert ("scope_unverified" in reasons) is (dispatched or not foreground_call)
     if foreground_call:
         assert result.extensions[KEY]["observed"]["input_tokens"] == 100
     elif dispatched:
