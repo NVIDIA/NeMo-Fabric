@@ -192,7 +192,9 @@ def selected_model_name(model_config: AgentModelConfig) -> str:
     return model_config.model
 
 
-def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | None]:
+def build_chat_model(
+    model_config: AgentModelConfig, settings: dict[str, Any]
+) -> tuple[Any, str, str | None]:
     """Build a LangChain chat model from Fabric model config.
 
     Known OpenAI-compatible providers use ``ChatOpenAI``. Other providers are
@@ -208,6 +210,21 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
     temperature = model_config.temperature
     top_p = model_config.top_p
     max_tokens = model_config.max_tokens
+
+    if "reasoning_effort" in settings:
+        if settings["reasoning_effort"] not in (
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        ):
+            raise AdapterConfigError("harness.settings.reasoning_effort is invalid.")
+        if provider not in OPENAI_COMPATIBLE_PROVIDERS:
+            raise AdapterConfigError(
+                "harness.settings.reasoning_effort requires an OpenAI-compatible provider."
+            )
 
     if provider in OPENAI_COMPATIBLE_PROVIDERS - {"openai"} and not base_url:
         raise AdapterConfigError(
@@ -244,6 +261,8 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
         kwargs["top_p"] = top_p
     if max_tokens is not None:
         kwargs["max_completion_tokens"] = max_tokens
+    if "reasoning_effort" in settings:
+        kwargs["reasoning_effort"] = settings["reasoning_effort"]
     return ChatOpenAI(**_supported_kwargs(ChatOpenAI, kwargs)), model_name, base_url
 
 
@@ -627,7 +646,9 @@ class DeepAgentsRuntime:
             settings = agent_config.harness.settings if agent_config.harness else {}
             base_dir = common_utils.base_dir(payload)
             runtime_id = runtime_context.runtime_id
-            model, self._model_name, self._base_url = build_chat_model(model_config)
+            model, self._model_name, self._base_url = build_chat_model(
+                model_config, settings
+            )
             self._runtime_id = runtime_id
             self._thread_id = uuid.uuid4().hex
 

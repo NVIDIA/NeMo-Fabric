@@ -99,6 +99,14 @@ NeMo Fabric maps the following into the harness:
 
 ### Harness Settings
 
+Set `harness.settings.reasoning_effort` to `none`, `minimal`, `low`, `medium`,
+`high`, or `xhigh` to pass a reasoning effort to `ChatOpenAI`. For example,
+`settings={"reasoning_effort": "none"}` disables reasoning on endpoints that
+support that value. This setting requires an OpenAI-compatible provider, and
+the endpoint must support the selected value. Omit the setting to preserve the
+model default. Subagents inherit the setting when they inherit the main model;
+a subagent with its own `model` override uses that model's defaults.
+
 Use `harness.settings.deepagents` for Deep Agents-native controls that do not
 have a normalized NeMo Fabric field:
 

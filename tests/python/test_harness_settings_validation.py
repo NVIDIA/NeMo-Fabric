@@ -91,6 +91,7 @@ _config = partial(
         pytest.param(
             "nvidia.fabric.langchain.deepagents",
             {
+                "reasoning_effort": "none",
                 "deepagents": {
                     "backend": {"type": "local_shell"},
                     "interrupt_on": {
@@ -122,7 +123,7 @@ _config = partial(
                             "headers": {"X-Test": "value"},
                         },
                     ],
-                }
+                },
             },
             id="deepagents",
         ),
@@ -537,6 +538,18 @@ def test_invalid_settings_report_resolved_descriptor_and_path(
     assert adapter_id in message
     assert str(ADAPTER_DESCRIPTORS[adapter_id].resolve()) in message
     assert settings_path in message
+
+
+@pytest.mark.parametrize("effort", ["invalid", "", None, True, 1, [], {}])
+def test_deepagents_rejects_invalid_reasoning_effort(tmp_path, effort):
+    with pytest.raises(FabricConfigError, match="harness.settings.reasoning_effort"):
+        Fabric().plan(
+            _config(
+                {"reasoning_effort": effort},
+                adapter_id="nvidia.fabric.langchain.deepagents",
+            ),
+            base_dir=tmp_path,
+        )
 
 
 def test_unknown_adapter_fails_before_settings_validation(tmp_path: Path):
