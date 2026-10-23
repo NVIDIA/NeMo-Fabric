@@ -58,6 +58,8 @@ const expectedByPackage = {
     "package.json",
   ],
   "nemo-fabric-adapters-pi": [
+    "dist/usage.d.ts",
+    "dist/usage.js",
     "LICENSE",
     "README.md",
     "dist/cli.d.ts",

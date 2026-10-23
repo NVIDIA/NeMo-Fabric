@@ -72,6 +72,8 @@ test("enforces the runtime start and invoke lifecycle guards", async () => {
 });
 
 test("normalizes successful plain-text prompts and reuses one session", async () => {
+  // Existing forwarding behavior: keep usage independent of lifecycle status.
+  const usage = { input_tokens: 3, output_tokens: 1 };
   const prompts = [];
   let turnCount = 0;
   let stopped = false;
@@ -81,7 +83,7 @@ test("normalizes successful plain-text prompts and reuses one session", async ()
         async prompt(text) {
           prompts.push(text);
           turnCount += 1;
-          return { accepted: true, turnStarted: true, turnCount, text: `reply:${text}`, stopReason: "stop" };
+          return { accepted: true, turnStarted: true, turnCount, text: `reply:${text}`, stopReason: "stop", usage };
         },
         async stop() {
           stopped = true;
@@ -99,11 +101,13 @@ test("normalizes successful plain-text prompts and reuses one session", async ()
   assert.deepEqual(first, {
     status: "succeeded",
     output: { response: "reply:one" },
+    usage,
     extensions: { pi_turn_count: 1, pi_turn_started: true },
   });
   assert.deepEqual(second, {
     status: "succeeded",
     output: { response: "reply:two" },
+    usage,
     extensions: { pi_turn_count: 2, pi_turn_started: true },
   });
   assert.equal(stopped, true);
@@ -216,17 +220,20 @@ test("rejects non-text input without invoking Pi", async () => {
 });
 
 test("normalizes rejected, failed, empty, and aborted Pi outcomes", async () => {
+  // Regression coverage for existing usage forwarding on non-success results.
+  const usage = { input_tokens: 3, cached_input_tokens: 0 };
   const outcomes = [
-    { accepted: false, turnStarted: false, turnCount: 0 },
+    { accepted: false, turnStarted: false, turnCount: 0, usage },
     {
       accepted: true,
       turnStarted: true,
       turnCount: 1,
       stopReason: "error",
       errorMessage: "provider rejected the request",
+      usage,
     },
-    { accepted: true, turnStarted: true, turnCount: 2, stopReason: "stop" },
-    { accepted: true, turnStarted: false, turnCount: 2, stopReason: "aborted" },
+    { accepted: true, turnStarted: true, turnCount: 2, stopReason: "stop", usage },
+    { accepted: true, turnStarted: false, turnCount: 2, stopReason: "aborted", usage },
   ];
   const runtime = new PiAdapterRuntime({
     async create() {
@@ -244,6 +251,11 @@ test("normalizes rejected, failed, empty, and aborted Pi outcomes", async () => 
   const failed = await runtime.invoke({ input: "two" }, context);
   const empty = await runtime.invoke({ input: "three" }, context);
   const aborted = await runtime.invoke({ input: "four" }, context);
+
+  for (const result of [rejected, failed, empty, aborted]) {
+    assert.deepEqual(result.usage, usage);
+    assert.equal(result.usage.output_tokens, undefined);
+  }
 
   assert.equal(rejected.status, "failed");
   assert.equal(rejected.error.code, "pi_prompt_rejected");

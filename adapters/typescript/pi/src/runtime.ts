@@ -5,7 +5,7 @@
 // to a PiSessionHandle and normalized results while keeping SDK construction
 // behind a factory for focused lifecycle testing.
 
-import type { AgentRunRequest, AgentRunResult, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
+import type { AgentRunRequest, AgentRunResult, AgentUsage, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import { collectRelayArtifacts, type RelayArtifact } from "./relay-config.js";
@@ -21,6 +21,9 @@ export interface PiPromptOutcome {
   stopReason?: PiStopReason;
   errorMessage?: string;
   shutdownRequested?: boolean;
+  /** Invocation-owned source observations, reduced by the shared contract. */
+  usage?: AgentUsage;
+  promptFailed?: boolean;
 }
 
 export interface PiSessionHandle {
@@ -47,9 +50,11 @@ async function withRelayOutput(
   relay: PiRelayRuntime | undefined,
   turnStarted: boolean,
   turnCount: number,
+  usage?: AgentUsage,
 ): Promise<AgentRunResult> {
   const annotated = {
     ...result,
+    ...(usage === undefined ? {} : { usage }),
     extensions: { ...result.extensions, pi_turn_count: turnCount, pi_turn_started: turnStarted },
   };
   if (relay === undefined) {
@@ -121,12 +126,22 @@ export class PiAdapterRuntime implements AdapterRuntime {
       throw new LifecycleError("pi_invalid_turn_count", "Pi returned an invalid cumulative turn count");
     }
     this.turnCount = outcome.turnCount;
+    if (outcome.promptFailed) {
+      return withRelayOutput(
+        failed("pi_prompt_failed", outcome.errorMessage || "The Pi prompt failed"),
+        relay,
+        outcome.turnStarted,
+        outcome.turnCount,
+        outcome.usage,
+      );
+    }
     if (!outcome.accepted) {
       return withRelayOutput(
         failed("pi_prompt_rejected", "Pi rejected the prompt before starting an agent run"),
         relay,
         outcome.turnStarted,
         outcome.turnCount,
+        outcome.usage,
       );
     }
     if (outcome.shutdownRequested || outcome.stopReason === "aborted") {
@@ -148,6 +163,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         relay,
         outcome.turnStarted,
         outcome.turnCount,
+        outcome.usage,
       );
     }
     if (outcome.stopReason === "error") {
@@ -156,6 +172,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         relay,
         outcome.turnStarted,
         outcome.turnCount,
+        outcome.usage,
       );
     }
     if (outcome.text === undefined || outcome.text.length === 0) {
@@ -164,6 +181,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
         relay,
         outcome.turnStarted,
         outcome.turnCount,
+        outcome.usage,
       );
     }
     return withRelayOutput(
@@ -171,6 +189,7 @@ export class PiAdapterRuntime implements AdapterRuntime {
       relay,
       outcome.turnStarted,
       outcome.turnCount,
+      outcome.usage,
     );
   }
 

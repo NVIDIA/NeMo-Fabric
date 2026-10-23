@@ -122,6 +122,22 @@ state during `start`. Adapter stdout is reserved for the protocol; diagnostics
 are redirected to stderr. A host crash or protocol timeout terminates that
 runtime.
 
+## Relay Gateway Readiness
+
+The Claude and Codex adapters wait up to 30 seconds for the supervised Relay
+gateway's HTTP health endpoint. This budget includes configuration validation
+and required worker initialization. Process exit is checked before each health
+probe and again before accepting a successful response. An exit during an
+unsuccessful probe is detected at the next poll. A gateway that never becomes
+healthy fails when the budget expires and is stopped.
+The adapters retain its log for diagnosis. Local Python hosts separately enforce
+a 90-second adapter startup limit.
+
+Relay 0.10.3 includes an
+[upstream startup-memory fix](https://github.com/NVIDIA/NeMo-Relay/pull/1375).
+Use that release to obtain the fix on 0.10 installations. NeMo Fabric continues to
+accept the supported `>=0.9,<0.11` CLI range.
+
 ## Relay Request Correlation
 
 In-process Relay SDK adapters that own their Agent scope can use

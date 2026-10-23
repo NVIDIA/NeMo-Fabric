@@ -296,3 +296,63 @@ create divergent implementations.
 
 `typescript` and `@types/node` are exact-pinned build inputs and are absent from
 the published production dependency graph.
+
+## Token Usage
+
+Each invocation records model calls through Pi's agent stream function, including
+its compaction summaries and calls retried by the agent. The adapter reads raw provider events before
+Pi fills omitted fields with zero. An omitted count stays unknown; a reported zero
+stays zero. Cache reads and literal provider totals are retained independently of
+input. Input and output inclusion flags preserve each protocol's conventions for
+core normalization. Pi's catalog cost estimates are not `cost_usd`. The `pi-messages` protocol
+forwards normalized harness usage, so those values remain observations with
+unverified scope; its `totalTokens` is not promoted to a provider total.
+
+HTTP attempts sent through Pi's supplied fetch are observed. Bedrock's SDK can
+retry a transport failure without exposing the attempt count through Pi 1.0.3,
+so Bedrock counts remain observations. Google Generative AI and Vertex counts
+remain observations when in-call provider retries are enabled; their default
+zero-retry setting retains complete counts when the provider reports them.
+A recovered Codex WebSocket error keeps the successful response's usage as an
+observation without certifying all attempts.
+
+Accounting provider identity comes from a qualified HTTPS endpoint and protocol,
+not Pi's configured provider label. Native OpenAI, Anthropic, Google Generative AI,
+and Mistral routes qualify; custom or unverified routes retain their literal model
+and counts without inheriting native-provider pricing. The adapter retains this evidence for separate
+pricing; it does not compute catalog estimates. Overrides and cache warm-ups follow the same rule.
+Redirects and mixed routes cannot restore a native identity after qualification
+fails. This changes accounting identity only; model execution settings are preserved.
+
+The adapter uses the shared usage-evidence reducer. Complete counts appear in
+`usage`; deduplicated source observations and gaps appear in
+`usage.extensions["nemo_fabric.usage_accounting.v1"]`. Failed execution does not
+by itself discard reported usage. A call without usable usage or an unsettled
+call leaves the affected complete counts unknown. For the fetch-observed
+protocols, a 408, 5xx, or unanswered attempt keeps complete counts unknown even
+if a later attempt succeeds. Bedrock SDK attempts are not visible through this
+fetch path; Bedrock counts remain observations as described above. An HTTP
+rejection never invents a zero-token report. The snapshot
+freezes when the prompt returns; late callbacks cannot alter it or transfer tokens
+to a later invocation.
+
+Explicit tool usage reports are additional observations. Each source tool message
+counts once, even when distinct calls share one usage object. Tool reports assembled
+from nested calls have unverified source coverage. An actual dispatch of a configured
+custom tool leaves a scope gap unless it supplies an explicit usage report or its
+report is already covered by the model observer. Unused custom tools and built-in
+file/shell tools do not create that gap. Independent model clients in user extensions
+remain outside the observer. Replacing the stream function after startup also
+bypasses it; unobserved assistant messages and compaction events leave a scope gap.
+
+Cache warm-ups retain the invocation that initiated the session request. A sequential
+warm-up after the original stream ends keeps its literal counts when its raw provider
+terminal event arrives. Overlapping or unfinished warm-ups remain incomplete; frames
+that cannot be assigned to one call are excluded from observations. If idle warming
+still schedules owned work when that invocation returns, complete counts remain
+unknown. It does not add usage or a warming gap to a later invocation. Successful
+compaction summaries are counted per call, without adding their combined event again.
+
+The source boundary is qualified against Pi `1.0.3`. Focused tests use its real
+chat-completions parser, tool loop, retry loop, and split-turn compaction against a
+local scripted endpoint; they do not certify every provider protocol.

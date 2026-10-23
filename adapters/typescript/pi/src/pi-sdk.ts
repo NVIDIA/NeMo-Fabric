@@ -29,6 +29,7 @@ import {
   type PiRelayRuntime,
 } from "./relay.js";
 import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runtime.js";
+import { PiUsageCollector } from "./usage.js";
 
 // ProviderConfigInput isn't re-exported from pi's public entrypoint; derive it from
 // registerProvider's param type (ModelRuntime's constructor is private, so no InstanceType).
@@ -868,12 +869,19 @@ class PiSdkSessionHandle implements PiSessionHandle {
   private stopped = false;
   private cumulativeTurnCount = 0;
   private readonly runtimeDir: string;
+  private readonly usageCollector: PiUsageCollector;
 
-  constructor(session: AgentSession, state: { shutdownRequested: boolean }, runtimeDir: string, relay?: PiRelayRuntime) {
+  constructor(session: AgentSession, state: { shutdownRequested: boolean }, runtimeDir: string, relay?: PiRelayRuntime, customToolNames: readonly string[] = []) {
     this.session = session;
     this.state = state;
     this.runtimeDir = runtimeDir;
     this.relay = relay;
+    this.usageCollector = new PiUsageCollector(session.agent, {
+      customToolNames: new Set(customToolNames),
+      sessionId: session.sessionManager.getSessionId(),
+      warmingStatus: () => session.cacheWarmingStatus,
+      providerMaxRetries: () => session.settingsManager.getProviderRetrySettings().maxRetries,
+    });
     this.unsubscribeTurnCounter = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         this.cumulativeTurnCount += 1;
@@ -899,7 +907,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
         finalAssistant = event.message;
       }
     });
-    try {
+    const accounted = await this.usageCollector.prompt(async () => {
       await this.session.prompt(text, {
         expandPromptTemplates: true,
         source: "interactive",
@@ -907,16 +915,16 @@ class PiSdkSessionHandle implements PiSessionHandle {
           accepted = true;
         },
       });
-    } finally {
-      unsubscribe();
-    }
+    }, this.session).finally(unsubscribe);
     return {
       accepted,
       turnStarted,
       turnCount: this.cumulativeTurnCount,
       text: finalAssistant === undefined ? undefined : promptText(finalAssistant),
-      stopReason: finalAssistant?.stopReason,
-      errorMessage: finalAssistant?.errorMessage,
+      stopReason: accounted.ok ? finalAssistant?.stopReason : "error",
+      errorMessage: accounted.ok ? finalAssistant?.errorMessage : accounted.error instanceof Error ? accounted.error.message : String(accounted.error),
+      usage: accounted.usage,
+      promptFailed: !accounted.ok,
       shutdownRequested: this.state.shutdownRequested,
     };
   }
@@ -1169,7 +1177,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         tools: enabled === null ? undefined : enabled,
         excludeTools: blocked,
       });
-      handle = new PiSdkSessionHandle(session, state, runtimeDir, relay);
+      handle = new PiSdkSessionHandle(session, state, runtimeDir, relay, customTools.map(tool => tool.name));
       const blockedNames = new Set(blocked);
       const availableNames = new Set(session.getAllTools().map((tool) => tool.name));
       const missing = (enabled ?? []).filter((name) => !blockedNames.has(name) && !availableNames.has(name));
