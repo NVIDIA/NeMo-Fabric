@@ -155,7 +155,7 @@ plugin engine cannot be safely instrumented and remains unverified.
 An unfinished request or child at return creates an accounting gap. Results
 freeze at that boundary; late completion cannot change them or transfer tokens
 to the next invocation. Task delegation remains asynchronous where Hermes
-schedules it asynchronously. Cancellation still propagates through Fabric's
+schedules it asynchronously. Cancellation still propagates through NeMo Fabric's
 existing lifecycle; a cancelled call that produces no result has no returned
 usage payload.
 
