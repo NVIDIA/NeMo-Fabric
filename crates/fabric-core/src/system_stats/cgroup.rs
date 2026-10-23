@@ -4,8 +4,6 @@
 //! Native, read-only cgroup v2 observations of the executing adapter host.
 //! A cgroup is a scope, not a claim of exclusive ownership by this invocation.
 
-// Discovery checks extend Maryam Najafian's reader in NVIDIA/NeMo-Fabric#426.
-
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;
