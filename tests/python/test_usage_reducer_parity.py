@@ -51,6 +51,9 @@ def test_python_reducer_matches_shared_independent_expectations(reduced):
     for vector, usage in zip(VECTORS, reduced, strict=True):
         accounting = usage["extensions"][KEY]
         for field, value in vector["expected"].items():
+            if field == "gap_reason":
+                assert [gap["reason"] for gap in accounting["gaps"]] == [value]
+                continue
             if field == "exhaustive":
                 actual = accounting["models_exhaustive"]
             elif field.startswith("observed_"):

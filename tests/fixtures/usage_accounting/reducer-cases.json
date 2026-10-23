@@ -1,5 +1,15 @@
 [
   {
+    "name": "empty_observations",
+    "records": [],
+    "expected": {
+      "input_tokens": null,
+      "output_tokens": null,
+      "exhaustive": false,
+      "gap_reason": "scope_unverified"
+    }
+  },
+  {
     "name": "complete_calls",
     "records": [
       {
