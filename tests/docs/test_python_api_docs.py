@@ -192,7 +192,7 @@ def test_python_reference_exactly_covers_exported_sdk_classes() -> None:
         documented = {
             match.group(1) for match in FUNCTION_SIGNATURE.finditer(page.read_text(encoding="utf-8"))
         }
-        assert names <= documented
+        assert names == documented
         assert f'slug: "{MODULE_SLUGS[module]}"' in page.read_text(encoding="utf-8")
 
 

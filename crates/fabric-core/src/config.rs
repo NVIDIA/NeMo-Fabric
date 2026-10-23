@@ -2535,6 +2535,8 @@ pub fn inspect_adapter_config(
         );
     }
     config.discovery = None;
+    // Inspection returns metadata only; catalog paths belong to the execution host.
+    config.pricing = None;
     validate_config(&config)?;
     let path = descriptor_path
         .canonicalize()
@@ -4437,6 +4439,10 @@ mod tests {
         let mut config = typed_config("nvidia.fabric.hermes");
         config.discovery = Some(DiscoveryConfig {
             local_paths: vec![PathBuf::from("/task-only/nonexistent-descriptor")],
+            ..Default::default()
+        });
+        config.pricing = Some(PricingConfig {
+            catalog_path: Some(PathBuf::from("/task-only/nonexistent-pricing-catalog.json")),
             ..Default::default()
         });
         let inspection = inspect_adapter_config(config.clone(), &path).expect("host inspection");

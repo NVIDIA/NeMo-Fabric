@@ -4,7 +4,7 @@
 //! Model price catalogs for estimating token cost.
 //!
 //! A catalog uses the NeMo Relay model pricing catalog format, version 1, so
-//! one file can configure both tools. NeMo Fabric parses the format itself and
+//! one file can configure both tools. NVIDIA NeMo Fabric parses the format itself and
 //! does not depend on NeMo Relay. Names are trimmed and compared case-insensitively.
 //! An explicit provider restricts aliases and model-path suffixes to that provider.
 //! Without a provider, model-only lookup uses the first matching entry in listed order.
@@ -74,7 +74,7 @@ pub struct ModelPricing {
     /// Other identifiers of the same model, such as dated snapshots.
     #[serde(default)]
     pub aliases: Vec<String>,
-    /// ISO 4217 currency of the rates. NeMo Fabric estimates cost only from
+    /// ISO 4217 currency of the rates. NVIDIA NeMo Fabric estimates cost only from
     /// `USD` entries.
     #[serde(default = "default_currency")]
     pub currency: String,
