@@ -27,7 +27,21 @@ pub(crate) fn native_catalog_route(
     forwarded: &std::collections::BTreeMap<String, String>,
     inherited: impl Fn(&str) -> Option<String>,
 ) -> bool {
-    let (keys, urls): (&[&str], &[&str]) = match model.provider.as_str() {
+    native_catalog_endpoint(
+        &model.provider,
+        model.base_url.as_deref(),
+        forwarded,
+        inherited,
+    )
+}
+
+fn native_catalog_endpoint(
+    provider: &str,
+    base_url: Option<&str>,
+    forwarded: &std::collections::BTreeMap<String, String>,
+    inherited: impl Fn(&str) -> Option<String>,
+) -> bool {
+    let (keys, urls): (&[&str], &[&str]) = match provider {
         "openai" => (&OPENAI_ENDPOINT_ENV_KEYS, &["https://api.openai.com/v1"]),
         "anthropic" => (
             &ANTHROPIC_ENDPOINT_ENV_KEYS,
@@ -36,7 +50,7 @@ pub(crate) fn native_catalog_route(
         _ => return false,
     };
     let native = |url: &str| urls.contains(&url.trim_end_matches('/'));
-    if let Some(url) = &model.base_url {
+    if let Some(url) = base_url {
         return native(url);
     }
     keys.iter().all(|key| {
@@ -53,6 +67,7 @@ pub(crate) fn native_catalog_route(
 #[derive(Debug, Clone)]
 pub(crate) struct NativePricingRoutes {
     models: Vec<NativeModelRoute>,
+    endpoints: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +91,7 @@ impl NativePricingRoutes {
                     native: native_catalog_route(model, endpoints, |_| None),
                 })
                 .collect(),
+            endpoints: endpoints.clone(),
         }
     }
 
@@ -98,8 +114,13 @@ impl NativePricingRoutes {
         if provider_routes.peek().is_some() {
             return provider_routes.all(|route| route.native);
         }
-        // Preserve the prior all-native case for source-qualified child models.
-        !self.models.is_empty() && self.models.iter().all(|route| route.native)
+        // A child provider's inherited endpoint can differ from configured roles.
+        let accounted_endpoint_native = provider.is_none_or(|provider| {
+            native_catalog_endpoint(provider, None, &self.endpoints, |_| None)
+        });
+        accounted_endpoint_native
+            && !self.models.is_empty()
+            && self.models.iter().all(|route| route.native)
     }
 }
 
@@ -159,7 +180,7 @@ pub struct AppliedPricing {
 }
 
 impl RateSnapshot {
-    fn from_rates(rates: TokenPricingRates) -> Result<Self, &'static str> {
+    pub(crate) fn from_rates(rates: TokenPricingRates) -> Result<Self, &'static str> {
         let convert = |rate| {
             nano_usd_per_million_tokens(rate)
                 .and_then(|value| u64::try_from(value).ok())
@@ -710,6 +731,33 @@ mod tests {
 
         let empty = super::NativePricingRoutes::from_models(&BTreeMap::new(), &BTreeMap::new());
         assert!(!empty.allows(Some("openai"), "gpt-5.4"));
+    }
+
+    #[test]
+    fn child_provider_pricing_checks_its_own_endpoint() {
+        let models = serde_json::from_value(json!({
+            "default": {"provider": "openai", "model": "gpt-5.4"}
+        }))
+        .unwrap();
+        for (endpoint, expected) in [
+            (None, true),
+            (Some("https://api.anthropic.com/"), true),
+            (Some("https://proxy.invalid"), false),
+        ] {
+            let endpoints = endpoint
+                .map(|url| BTreeMap::from([("ANTHROPIC_BASE_URL".into(), url.into())]))
+                .unwrap_or_default();
+            let routes = super::NativePricingRoutes::from_models(&models, &endpoints);
+            assert_eq!(
+                routes.allows(Some("anthropic"), "source-qualified-child"),
+                expected,
+                "child endpoint: {endpoint:?}"
+            );
+            assert!(routes.allows(Some("openai"), "served-alias"));
+            assert!(routes.allows(None, "source-qualified-child"));
+        }
+        let routes = super::NativePricingRoutes::from_models(&models, &BTreeMap::new());
+        assert!(!routes.allows(Some("unknown-provider"), "source-qualified-child"));
     }
 
     #[test]
