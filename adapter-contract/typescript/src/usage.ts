@@ -111,7 +111,7 @@ function reduce(records: readonly UsageObservation[]): { reported: ReportedUsage
     if (values.length !== records.length) causes.add("missing_usage");
     if (values.length && value === undefined) causes.add("scope_unverified");
     if (value !== undefined && !causes.size) reported[key] = value;
-    else if (!causes.size) causes.add("missing_usage");
+    else if (!causes.size) causes.add(records.length ? "missing_usage" : "scope_unverified");
     for (const reason of causes) gap(reason, key);
   }
   for (const [flag, counter] of [["input_tokens_include_cache", "input_tokens"], ["output_tokens_include_reasoning", "output_tokens"]] as const) {
