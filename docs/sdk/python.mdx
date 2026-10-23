@@ -1230,7 +1230,8 @@ accounting remains available in `result.usage` and is not certified complete by
 `summarize_usage`.
 
 `cost.reported` contains only provider-reported amounts; `cost.estimated` contains
-catalog estimates. Both distinguish `amount_nano_usd` from `observed_nano_usd`.
+catalog estimates. Both distinguish `amount_nano_usd` from `observed_nano_usd`
+in integer nano-USD.
 Estimates retain their pricing basis and distinct selected rate snapshots.
 Set `FabricConfig(pricing=PricingConfig(catalog_path="prices.json"))` for a
 Relay-compatible catalog override; planning freezes its bytes. An explicitly established provider must match the catalog entry's provider, including aliases and shorter model paths. A different provider's entry cannot price that source solely because the model name matches. When no provider identity is available, an explicit user catalog can match the model name alone. Bundled provider prices apply only
