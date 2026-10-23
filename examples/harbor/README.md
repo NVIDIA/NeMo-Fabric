@@ -155,7 +155,7 @@ docker version
 docker compose version
 ```
 
-The Harbor command must report 0.23.x, and the Python command must print
+The Harbor command must report 0.23.x or 0.24.x, and the Python command must print
 `nemo_fabric.integrations.harbor.fabric_agent:FabricAgent`.
 
 ### Docker Installed with Snap

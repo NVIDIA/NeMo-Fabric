@@ -93,7 +93,7 @@ openclaw = [
 
 harbor = [
   "nemo-fabric-adapter-catalog == 0.6.0",
-  "harbor>=0.23,<0.24; python_version >= '3.12'",
+  "harbor>=0.23,<0.25; python_version >= '3.12'",
   "pyyaml>=6.0",
 ]
 
