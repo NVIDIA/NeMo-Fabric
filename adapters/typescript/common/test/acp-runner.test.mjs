@@ -221,6 +221,7 @@ test("retries process-group termination after a failed stop", { skip: process.pl
     }
     return originalKill(pid, signal);
   });
+  let cleanupError;
   try {
     await assert.rejects(session.stop(), { code: "EPERM" });
     originalKill(pids.child, 0);
@@ -233,12 +234,21 @@ test("retries process-group termination after a failed stop", { skip: process.pl
     await session.stop();
     assert.equal(kill.mock.callCount(), signalCount);
   } finally {
-    kill.mock.restore();
+    try {
+      kill.mock.restore();
+    } catch (error) {
+      cleanupError ??= error;
+    }
     for (const pid of [pids.parent, pids.child]) {
       try { originalKill(pid, "SIGKILL"); } catch (error) {
-        if (error.code !== "ESRCH") throw error;
+        if (error.code !== "ESRCH") cleanupError ??= error;
       }
     }
-    await session.stop();
+    try {
+      await session.stop();
+    } catch (error) {
+      cleanupError ??= error;
+    }
   }
+  if (cleanupError !== undefined) throw cleanupError;
 });
