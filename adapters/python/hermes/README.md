@@ -126,11 +126,11 @@ is complete before the result returns.
 
 Hermes reports invocation-owned model evidence through the shared
 `nemo_fabric.usage_accounting.v1` extension. An omitted count stays unknown;
-a reported 0 stays 0. Core normalizes cache and reasoning conventions and
-calculates separately labeled catalog estimates. Hermes' session cost estimate
+a reported 0 stays 0. Core normalizes cache and reasoning conventions.
+Catalog estimation is a separate shared feature. Hermes' session cost estimate
 is not reported as provider `cost_usd`. Only an observed native HTTPS provider
-endpoint qualifies for bundled prices; a custom endpoint retains its actual
-model identity and requires an explicit user catalog for estimates.
+endpoint establishes native-provider pricing identity; a custom endpoint retains
+its actual model identity without claiming native-provider prices.
 
 For Hermes revision `a62979dc`, Fabric observes the HTTP clients it owns through
 one qualified per-agent client-construction override. It preserves Hermes'
