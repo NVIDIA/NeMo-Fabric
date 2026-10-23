@@ -47,7 +47,9 @@ function reportedMetrics(value: unknown): UsageObservation["reported"] {
 
 export class ClineInvocationUsage {
   private readonly records = new Map<string, UsageObservation>();
-  private readonly pending: { baseline: ObjectValue; latest?: ObjectValue }[] = [];
+  private readonly unidentified: UsageObservation[] = [];
+  private readonly pending: { baseline: ObjectValue; latest?: ObjectValue; first: boolean }[] = [];
+  private startedCount = 0;
   private unverified = false;
   private frozen = false;
 
@@ -56,7 +58,7 @@ export class ClineInvocationUsage {
   run<T>(operation: () => Promise<T>): Promise<T> { return owner.run(this, operation); }
 
   started(value?: unknown): void {
-    if (!this.frozen) this.pending.push({ baseline: { ...object(value) } });
+    if (!this.frozen) this.pending.push({ baseline: { ...object(value) }, first: this.startedCount++ === 0 });
   }
 
   updated(value: unknown): void {
@@ -84,7 +86,10 @@ export class ClineInvocationUsage {
       gap: "scope_unverified",
     };
     if (id === undefined) {
-      if (this.pending.length > 0) this.pending.pop();
+      if (this.pending.length > 0) {
+        this.pending.pop();
+        if (Object.keys(evidence.reported).length > 0) this.unidentified.push(evidence);
+      }
       this.unverified = true;
       return;
     }
@@ -102,7 +107,7 @@ export class ClineInvocationUsage {
 
   finish(terminalUsage?: unknown): AgentUsage {
     this.frozen = true;
-    const records = [...this.records.values()];
+    const records = [...this.records.values(), ...this.unidentified];
     if (!records.length && !this.pending.length) {
       // A terminal aggregate cannot prove that every call reported each field.
       records.push({ reported: reportedMetrics(terminalUsage), gap: "scope_unverified" });
@@ -112,7 +117,7 @@ export class ClineInvocationUsage {
       // Cline's usage-updated event is cumulative within this run. Recover only
       // the unfinished call's increments only when a baseline proves the delta.
       for (const field of ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "reasoningTokenCount"]) {
-        const before = call.baseline[field];
+        const before = call.baseline[field] ?? (call.first ? 0 : undefined);
         const after = call.latest?.[field];
         if (typeof before === "number" && Number.isSafeInteger(before) && before >= 0 &&
             typeof after === "number" && Number.isSafeInteger(after) && after >= before) delta[field] = after - before;

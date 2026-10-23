@@ -68,9 +68,24 @@ test("a completion without an id closes its pending call", async () => {
     clineUsageHooks.beforeModel();
     clineUsageHooks.afterModel({ assistantMessage: message(undefined, { inputTokens: 40, outputTokens: 8 }) });
   });
-  const gaps = usage.finish().extensions[key].gaps.map(gap => gap.reason);
+  const result = usage.finish();
+  const gaps = result.extensions[key].gaps.map(gap => gap.reason);
+  assert.equal(result.extensions[key].observed.input_tokens, 40);
+  assert.equal(result.extensions[key].observed.output_tokens, 8);
   assert.ok(gaps.includes("scope_unverified"));
   assert.ok(!gaps.includes("unfinished_work"));
+});
+
+test("the first unfinished call keeps its cumulative usage without a baseline", async () => {
+  const usage = new ClineInvocationUsage();
+  await usage.run(async () => {
+    clineUsageHooks.beforeModel();
+    clineUsageHooks.onEvent({ type: "usage-updated", usage: { inputTokens: 100, outputTokens: 18 } });
+  });
+  const result = usage.finish();
+  assert.equal(result.extensions[key].observed.input_tokens, 100);
+  assert.equal(result.extensions[key].observed.output_tokens, 18);
+  assert.ok(result.extensions[key].gaps.some(gap => gap.reason === "unfinished_work"));
 });
 
 test("an unfinished cumulative snapshot needs a baseline after completed calls", async () => {
