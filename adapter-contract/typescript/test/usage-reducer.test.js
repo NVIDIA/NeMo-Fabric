@@ -46,3 +46,11 @@ test("scoped request gaps retain independent fields without certifying cache", (
   assert.equal(model.requests[0].gap, undefined);
   assert.equal(model.requests[0].tokens_aligned, true);
 });
+
+test("request usage omits provider-specific keys outside the wire schema", () => {
+  const usage = usageFromObservations([{ model: "m", is_model_call: true,
+    reported: { input_tokens: 7, input_tokens_include_cache: true, prompt_tokens: 7 },
+  }]);
+  const request = usage.extensions[USAGE_ACCOUNTING_KEY].models[0].requests[0].usage;
+  assert.deepEqual(request, { input_tokens: 7, input_tokens_include_cache: true });
+});
