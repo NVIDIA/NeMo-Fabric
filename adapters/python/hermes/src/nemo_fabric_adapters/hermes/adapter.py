@@ -458,10 +458,6 @@ class HermesRuntime:
                     code="hermes_reported_failure",
                     message="Hermes did not complete the invocation",
                 )
-        if self._harness_version.get("reason") == "timeout":
-            # Pick up a version call that finished after its limit. While it
-            # still runs, the probe starts no new one.
-            self._harness_version = await probe_hermes_version(self._version_probe)
         return AgentRunResult(
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
             output=output,

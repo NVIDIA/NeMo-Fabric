@@ -17,7 +17,7 @@ import tomllib
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -1847,6 +1847,34 @@ async def test_hermes_version_probe_times_out_and_starts_no_second_call():
 
     assert first == second == _version_state("collection_failed", "timeout")
     assert calls == ["called"]
+
+
+async def test_timeout_version_probe_is_not_repeated_after_turn(monkeypatch):
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._runtime_id = "runtime-version-timeout"
+    runtime._agent_config = _agent_config(
+        {"models": {"default": {"provider": "test", "model": "test-model"}}}
+    )
+    runtime._model_config = runtime._agent_config.models["default"]
+    runtime._agent = MagicMock()
+    runtime._mcp_authentication_checked = True
+    runtime._harness_version = _version_state("collection_failed", "timeout")
+    monkeypatch.setattr(
+        adapter,
+        "_invoke_hermes_turn",
+        lambda **_kwargs: ({"completed": True, "final_response": "done"}, ""),
+    )
+    probe = AsyncMock(return_value=_version_state("collection_failed", "timeout"))
+    monkeypatch.setattr(adapter, "probe_hermes_version", probe)
+
+    context = _runtime_context(runtime_id=runtime._runtime_id)
+    for message in ("first", "second"):
+        result = await runtime.invoke(AgentRunRequest(input=message), context)
+        assert result.extensions["nemo_fabric.versions.v1"]["harness"]["version"] == (
+            _version_state("collection_failed", "timeout")
+        )
+    probe.assert_not_awaited()
 
 
 def test_hermes_version_keeps_the_commit_and_dirty_marker(monkeypatch):
