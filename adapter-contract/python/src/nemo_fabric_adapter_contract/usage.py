@@ -79,7 +79,7 @@ def _reduce(
         if total is not None and not causes:
             complete[key] = total
         elif not causes:
-            causes.add(GapReason.MISSING_USAGE)
+            causes.add(GapReason.SCOPE_UNVERIFIED if not records else GapReason.MISSING_USAGE)
         for cause in sorted(causes):
             gaps[cause].append(dimension)
     for flag, counter in (
