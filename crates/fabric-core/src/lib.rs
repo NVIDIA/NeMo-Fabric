@@ -8,6 +8,7 @@ pub mod agent_config;
 pub mod agent_execution;
 pub mod config;
 pub mod doctor;
+mod endpoint;
 mod environment;
 pub mod error;
 pub mod resource_snapshot;
@@ -16,6 +17,7 @@ pub mod schema;
 pub mod system_stats;
 mod task_command;
 mod time;
+pub mod what_ran;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
 pub use agent_execution::{

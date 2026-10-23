@@ -36,6 +36,7 @@ from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 import nemo_fabric_adapters.common.utils as common_utils
 
 HARNESS = "deepagents"
@@ -587,6 +588,11 @@ def _gated_subagents(
     return gated
 
 
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-deepagents"
+_HARNESS_DISTRIBUTION = "deepagents"
+_HARNESS_MODULE = "deepagents"
+
+
 class DeepAgentsRuntime:
     """One compiled Deep Agents graph and checkpointer owned by a Fabric runtime."""
 
@@ -609,6 +615,10 @@ class DeepAgentsRuntime:
         self._callback_handler_type: Any = None
         self._telemetry_quarantine: str | None = None
         self._telemetry_quarantine_cause: str | None = None
+        self._harness_version = provenance.missing_fact(
+            "unavailable", "not_collected", provenance.METHOD_PACKAGE_METADATA
+        )
+        self._package_version = provenance.package_version_fact(_PACKAGE_DISTRIBUTION)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -669,6 +679,9 @@ class DeepAgentsRuntime:
 
             from deepagents import create_deep_agent
 
+            self._harness_version = provenance.loaded_module_version_fact(
+                _HARNESS_DISTRIBUTION, _HARNESS_MODULE
+            )
             agent = create_deep_agent(
                 **_supported_kwargs(create_deep_agent, agent_kwargs)
             )
@@ -705,7 +718,35 @@ class DeepAgentsRuntime:
         self._callback_handler_type = NemoRelayDeepAgentsCallbackHandler
         return add_nemo_relay_integration(agent_kwargs)
 
+    def _versions_extensions(self) -> dict[str, Any]:
+        return {
+            provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
+                package_version=self._package_version,
+                harness_name=provenance.known_fact(
+                    "deepagents", provenance.METHOD_ADAPTER_REPORT
+                ),
+                harness_version=self._harness_version,
+                served_models={
+                    role: provenance.no_source_fact()
+                    for role in (
+                        self._start_payload["config"].models
+                        if self._start_payload is not None
+                        else ()
+                    )
+                },
+            )
+        }
+
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        result = await self._invoke(request, runtime_context)
+        result.extensions.update(self._versions_extensions())
+        return result
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
@@ -799,6 +840,7 @@ class DeepAgentsRuntime:
                 if tokens or cost is not None
                 else None
             ),
+            extensions={},
         )
 
     async def _invoke_with_telemetry(

@@ -8,7 +8,7 @@
 
 import { createRequire } from "node:module";
 
-import { serve } from "nemo-fabric-adapters-common";
+import { serve, withPackageVersion } from "nemo-fabric-adapters-common";
 
 import { assertSupportedNodeVersion } from "./node-version.js";
 
@@ -22,5 +22,5 @@ await serve(async () => {
     import("./pi-sdk.js"),
     import("./runtime.js"),
   ]);
-  return new PiAdapterRuntime(new PiSdkSessionFactory());
+  return withPackageVersion(new PiAdapterRuntime(new PiSdkSessionFactory()), new URL("../package.json", import.meta.url));
 });

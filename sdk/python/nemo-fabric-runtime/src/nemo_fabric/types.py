@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Callable
 from collections.abc import Iterator
 from collections.abc import Mapping
 from collections.abc import Sequence
@@ -2518,6 +2519,199 @@ class InvocationSystemStats(FabricMapping):
             data[field] = float(value)
         return data
 
+_WHAT_RAN_SCHEMA = "nemo.fabric.what_ran"
+_WHAT_RAN_VERSION = "v1alpha1"
+_FACT_SOURCES = frozenset({"observed", "reported", "configured"})
+_FACT_STATES = frozenset(
+    {"not_applicable", "unsupported", "collection_failed", "unavailable"}
+)
+_FACT_CODE = re.compile(r"[a-z0-9_.:#+/-]{1,128}")
+_MAX_U64 = 2**64 - 1
+
+
+def _is_text(value: Any) -> bool:
+    return isinstance(value, str)
+
+
+def _is_flag(value: Any) -> bool:
+    return isinstance(value, bool)
+
+
+def _is_text_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _is_code(value: Any) -> bool:
+    return isinstance(value, str) and _FACT_CODE.fullmatch(value) is not None
+
+
+def _is_fact(fact: Any, is_value: Callable[[Any], bool]) -> bool:
+    """Whether ``fact`` holds ``value``, or ``state`` and ``reason``, never both."""
+
+    if not isinstance(fact, Mapping):
+        return False
+    source = fact.get("source")
+    if not (isinstance(source, str) and source in _FACT_SOURCES):
+        return False
+    if not (_is_code(fact.get("collected_by")) and _is_code(fact.get("method"))):
+        return False
+    if "value" in fact:
+        return "state" not in fact and "reason" not in fact and is_value(fact["value"])
+    state = fact.get("state")
+    return (
+        isinstance(state, str)
+        and state in _FACT_STATES
+        and _is_code(fact.get("reason"))
+    )
+
+
+def _has_facts(section: Any, facts: Mapping[str, Callable[[Any], bool]]) -> bool:
+    return isinstance(section, Mapping) and all(
+        _is_fact(section.get(name), is_value) for name, is_value in facts.items()
+    )
+
+
+def _is_model_entry(model: Any) -> bool:
+    return _has_facts(
+        model, {"requested": _is_text, "served": _is_text}
+    ) and isinstance(model.get("provider"), str)
+
+
+def _is_mcp_server_entry(server: Any) -> bool:
+    if not _has_facts(server, {"endpoint": _is_text}):
+        return False
+    origin = server.get("origin")
+    transport = server.get("transport")
+    # A `plan` entry requires `transport`. An entry of any other origin,
+    # including an origin this SDK does not know, may leave it out.
+    transport_ok = isinstance(transport, str) or (
+        transport is None and origin != "plan"
+    )
+    runtime_facts = {
+        "connected": _is_flag,
+        "protocol_version": _is_text,
+        "server_name": _is_text,
+        "server_version": _is_text,
+        "tool_names": _is_text_list,
+    }
+    runtime = server.get("runtime")
+    return (
+        isinstance(origin, str)
+        and transport_ok
+        and _has_facts(runtime, runtime_facts)
+        and _has_valid_marker(runtime, "tool_names_truncated")
+    )
+
+
+def _is_truncation_marker(marker: Any) -> bool:
+    """Whether ``marker`` counts the entries dropped from a map or section."""
+
+    if not isinstance(marker, Mapping):
+        return False
+    dropped = marker.get("dropped")
+    return (
+        _is_code(marker.get("reason"))
+        and isinstance(dropped, int)
+        and not isinstance(dropped, bool)
+        and 1 <= dropped <= _MAX_U64
+    )
+
+
+def _has_valid_marker(section: Mapping[str, Any], name: str) -> bool:
+    """Whether marker ``name`` is absent from ``section`` or well formed.
+
+    A marker is never ``null``.
+    """
+
+    return name not in section or _is_truncation_marker(section[name])
+
+
+def _is_fabric_section(fabric: Any) -> bool:
+    return _has_facts(fabric, {"core_version": _is_text, "host_core_version": _is_text})
+
+
+def _is_adapter_section(adapter: Any) -> bool:
+    return _has_facts(adapter, {"package_version": _is_text}) and (
+        adapter.get("id") is None or isinstance(adapter.get("id"), str)
+    )
+
+
+def _is_harness_section(harness: Any) -> bool:
+    return _has_facts(harness, {"name": _is_text, "version": _is_text})
+
+
+def _is_models_section(models: Any) -> bool:
+    return isinstance(models, Mapping) and all(
+        _is_model_entry(model) for model in models.values()
+    )
+
+
+def _is_mcp_section(mcp: Any) -> bool:
+    if not isinstance(mcp, Mapping):
+        return False
+    servers = mcp.get("servers")
+    return (
+        isinstance(servers, Mapping)
+        and all(_is_mcp_server_entry(server) for server in servers.values())
+        and _has_valid_marker(mcp, "servers_truncated")
+    )
+
+
+def _is_environment_section(environment: Any) -> bool:
+    return isinstance(environment, Mapping) and isinstance(
+        environment.get("provider"), str
+    )
+
+
+_WHAT_RAN_SECTIONS: Mapping[str, Callable[[Any], bool]] = {
+    "fabric": _is_fabric_section,
+    "adapter": _is_adapter_section,
+    "harness": _is_harness_section,
+    "models": _is_models_section,
+    "mcp": _is_mcp_section,
+    "environment": _is_environment_section,
+}
+
+
+def _is_readable_what_ran(value: Any) -> bool:
+    """Whether ``value`` is a ``what_ran`` object this SDK reads.
+
+    Mirrors the Rust core's reader: the schema and version match, every
+    present section and fact is well formed, no section is ``null``, and
+    unknown properties are ignored. Every section is required unless
+    ``what_ran_truncated`` is present, which marks a minimal object that
+    the byte budget left with only its schema name and version.
+    """
+
+    if not isinstance(value, Mapping):
+        return False
+    if (
+        value.get("schema") != _WHAT_RAN_SCHEMA
+        or value.get("version") != _WHAT_RAN_VERSION
+    ):
+        return False
+    minimal = "what_ran_truncated" in value
+    if minimal and not _is_truncation_marker(value["what_ran_truncated"]):
+        return False
+    for name, is_section in _WHAT_RAN_SECTIONS.items():
+        if name in value:
+            if not is_section(value[name]):
+                return False
+        elif not minimal:
+            return False
+    return _has_valid_marker(value, "models_truncated")
+
+
+def _readable_what_ran(value: Any) -> Mapping[str, Any] | None:
+    """Return ``what_ran``, or ``None`` when this SDK cannot read it.
+
+    As in the Rust core, a value that is absent, not a JSON object, names
+    another schema or version, or breaks the section's structure reads as
+    absent instead of failing the result.
+    """
+
+    return value if _is_readable_what_ran(value) else None
+
 
 class RunResult(FabricMapping):
     """Normalized terminal result from one NeMo Fabric invocation.
@@ -2548,6 +2742,15 @@ class RunResult(FabricMapping):
         telemetry: Ordered telemetry references.
         events: Ordered lifecycle and invocation events.
         metadata: Result-specific structured details.
+        what_ran: What executed for this invocation, schema
+            ``nemo.fabric.what_ran`` version ``v1alpha1``, as a JSON mapping.
+            Each fact holds ``value``, or ``state`` and ``reason``, plus
+            ``source``, ``collected_by`` and ``method``. A minimal object
+            that the byte budget left holds only ``schema``, ``version`` and
+            ``what_ran_truncated``, and reads as present. ``None`` when the
+            producing core predates it, or when the value is not a
+            ``what_ran`` object of that schema and version with every present
+            section and fact well formed, as the Rust core reads it.
     """
 
     agent_name: str
@@ -2567,6 +2770,7 @@ class RunResult(FabricMapping):
     telemetry: Sequence[TelemetryRef]
     events: Sequence[FabricEvent]
     metadata: Mapping[str, Any]
+    what_ran: Mapping[str, Any] | None
     _fields = frozenset(
         {
             "agent_name",
@@ -2586,9 +2790,10 @@ class RunResult(FabricMapping):
             "telemetry",
             "events",
             "metadata",
+            "what_ran",
         }
     )
-    _json_fields = frozenset({"metadata"})
+    _json_fields = frozenset({"metadata", "what_ran"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -2634,6 +2839,7 @@ class RunResult(FabricMapping):
             FabricEvent.from_mapping(event) for event in data.get("events", [])
         )
         data["metadata"] = _mapping(data.get("metadata", {}), "result metadata")
+        data["what_ran"] = _readable_what_ran(data.get("what_ran"))
         raw_output = data.get("output")
         if isinstance(raw_output, RunOutput):
             data["output"] = raw_output

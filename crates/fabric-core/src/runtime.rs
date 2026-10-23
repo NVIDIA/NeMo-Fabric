@@ -37,6 +37,8 @@ use crate::resource_snapshot::{LocalHostProcess, RuntimeResourceSnapshot, snapsh
 use crate::system_stats::ResourceObservation;
 use crate::system_stats::{CgroupStats, InvocationSystemStats, StatsSession, SystemReader};
 
+use crate::what_ran::WhatRan;
+
 mod openshell;
 use openshell::OpenShellRuntimeAdapter;
 
@@ -168,6 +170,15 @@ pub struct RunResult {
     /// Adapter-specific metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, Value>,
+    /// What executed for this invocation, and how NeMo Fabric learned each
+    /// fact. Absent when the producing core predates it, or when this core
+    /// finds it malformed or of another schema or version.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::what_ran::deserialize_lenient"
+    )]
+    pub what_ran: Option<WhatRan>,
 }
 
 /// Runtime completion status.
@@ -1976,6 +1987,11 @@ fn run_local_host_invocation_with_timeout(
         request_id: request.request_id.clone(),
         runtime_id: runtime.runtime_id.clone(),
     };
+    let mut what_ran = crate::what_ran::collect_before_request(
+        plan,
+        adapter_id(plan),
+        &runtime.environment.provider,
+    );
     let host = local_hosts()
         .get(&runtime.runtime_id)
         .cloned()
@@ -2165,15 +2181,16 @@ fn run_local_host_invocation_with_timeout(
         fabric_invocation,
     ) = exchange_result?;
 
-    let agent_result: AgentRunResult = serde_json::from_value(adapter_output).map_err(|error| {
-        lifecycle_error(
-            operation,
-            &runtime.runtime_id,
-            "invalid_agent_run_result",
-            format!("adapter returned an invalid AgentRunResult: {error}"),
-            &stderr,
-        )
-    })?;
+    let mut agent_result: AgentRunResult =
+        serde_json::from_value(adapter_output).map_err(|error| {
+            lifecycle_error(
+                operation,
+                &runtime.runtime_id,
+                "invalid_agent_run_result",
+                format!("adapter returned an invalid AgentRunResult: {error}"),
+                &stderr,
+            )
+        })?;
     agent_result.validate().map_err(|error| {
         lifecycle_error(
             operation,
@@ -2184,6 +2201,7 @@ fn run_local_host_invocation_with_timeout(
         )
     })?;
     validate_agent_run_result_extensions(&agent_result, plan.adapter_descriptor.as_ref())?;
+    crate::what_ran::ingest_adapter_reports(&mut what_ran, plan, &mut agent_result.extensions);
     if !agent_result.artifacts.is_empty() && artifacts.root.is_none() {
         return Err(lifecycle_error(
             operation,
@@ -2335,6 +2353,7 @@ fn run_local_host_invocation_with_timeout(
             .collect(),
         events,
         metadata,
+        what_ran: Some(what_ran),
     })
 }
 
@@ -4324,6 +4343,25 @@ for line in sys.stdin:
                     "extensions": {"source": "fake-host"},
                 },
             }
+        elif MODE == "versions_report":
+            fact = lambda value, method: {
+                "value": value, "source": "reported", "collected_by": "adapter",
+                "method": method,
+            }
+            result = {
+                "status": "succeeded",
+                "output": output,
+                "extensions": {
+                    "trace_id": "trace-1",
+                    "nemo_fabric.versions.v1": {
+                        "adapter": {"package_version": fact("1.2.3", "package_metadata")},
+                        "harness": {
+                            "name": fact("fake-harness", "harness_api"),
+                            "version": fact("4.5.6", "harness_api"),
+                        },
+                    },
+                },
+            }
         elif MODE == "typed_result":
             result = {
                 "status": "succeeded",
@@ -4604,6 +4642,7 @@ for line in sys.stdin:
             ],
             events: Vec::new(),
             metadata: BTreeMap::new(),
+            what_ran: None,
         };
 
         let encoded = serde_json::to_value(&result).expect("serialize SDK run result");
@@ -6091,6 +6130,325 @@ for line in sys.stdin:
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_result_carries_what_ran_without_changing_the_outcome() {
+        let run_result_schema =
+            crate::schema::generate_schema(crate::schema::SchemaName::RunResult)
+                .expect("run result schema");
+        let validator = jsonschema::validator_for(&run_result_schema).expect("valid schema");
+        let not_declared = serde_json::json!({
+            "state": "unsupported", "reason": "key_not_declared", "source": "reported",
+            "collected_by": "adapter", "method": "adapter_report"
+        });
+        for (mode, status) in [
+            ("success", RunStatus::Succeeded),
+            ("adapter_reported_failure", RunStatus::Failed),
+        ] {
+            let (root, plan) = local_host_plan(mode);
+
+            let result = run_plan(&plan, RunRequest::text("provenance")).expect("result");
+
+            assert_eq!(result.status, status);
+            let result_json = serde_json::to_value(&result).expect("result JSON");
+            assert!(validator.is_valid(&result_json), "{result_json}");
+            let what_ran = &result_json["what_ran"];
+            assert_eq!(what_ran["schema"], "nemo.fabric.what_ran");
+            assert_eq!(what_ran["version"], "v1alpha1");
+            assert_eq!(
+                what_ran["fabric"]["core_version"]["value"],
+                crate::version()
+            );
+            assert_eq!(what_ran["adapter"]["id"], "acme.fabric.local-host");
+            assert_eq!(what_ran["adapter"]["package_version"], not_declared);
+            assert_eq!(what_ran["harness"]["name"], not_declared);
+            assert_eq!(what_ran["harness"]["version"], not_declared);
+            assert_eq!(what_ran["models"], serde_json::json!({}));
+            assert_eq!(what_ran["mcp"], serde_json::json!({"servers": {}}));
+            assert_eq!(
+                what_ran["environment"],
+                serde_json::json!({"provider": "local"})
+            );
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    /// The `what_ran` a user gets from a normal benchmark config: two model
+    /// roles and three MCP servers on an adapter that accepts both, and no
+    /// `environment` section, so the provider defaults to `local`.
+    #[test]
+    fn local_host_what_ran_reports_a_realistic_config() {
+        use serde_json::json;
+        let (root, plan) = local_host_plan("success");
+        let descriptor_path = root.join("adapters/local-host/local-host.fabric-adapter.json");
+        let mut descriptor: Value =
+            serde_json::from_str(&fs::read_to_string(&descriptor_path).expect("read descriptor"))
+                .expect("descriptor JSON");
+        descriptor["config"] = json!({"accepts": ["models", "mcp"]});
+        fs::write(&descriptor_path, descriptor.to_string()).expect("write descriptor");
+        let mut config = serde_json::to_value(&plan.config).expect("config JSON");
+        config
+            .as_object_mut()
+            .expect("config")
+            .remove("environment");
+        config["models"] = json!({
+            "default": {"provider": "anthropic", "model": "anthropic/claude-sonnet-4-5"},
+            "summarizer": {"provider": "nvidia", "model": "nvidia/nemotron-nano-9b-v2"},
+        });
+        config["mcp"] = json!({"servers": {
+            "filesystem": {
+                "transport": "stdio",
+                "url": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/SECRET_ARGUMENT"],
+                "env": {"FS_TOKEN": "SECRET_ENVIRONMENT"},
+                "exposure": "harness_native"
+            },
+            "search": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.com/mcp?api_key=SECRET_QUERY",
+                "custom_headers": {"Authorization": "Bearer SECRET_HEADER"},
+                "exposure": "harness_native"
+            },
+            "events": {
+                "transport": "sse",
+                "url": "http://localhost:8931/sse",
+                "exposure": "harness_native"
+            }
+        }});
+        let config: crate::config::FabricConfig =
+            serde_json::from_value(config).expect("typed config");
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(&root))
+            .expect("resolve realistic plan");
+
+        let result = run_plan(&plan, RunRequest::text("provenance")).expect("result");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        let what_ran = serde_json::to_value(result.what_ran.expect("what_ran")).expect("JSON");
+        let configured = |value: &str| {
+            json!({"value": value, "source": "configured", "collected_by": "host_core",
+                   "method": "resolved_plan"})
+        };
+        let not_declared = json!({"state": "unsupported", "reason": "key_not_declared",
+            "source": "reported", "collected_by": "adapter", "method": "adapter_report"});
+        let model = |provider: &str, requested: &str| {
+            json!({"provider": provider, "requested": configured(requested),
+                   "served": not_declared})
+        };
+        let server = |transport: &str, endpoint: &str| {
+            json!({"origin": "plan", "transport": transport, "endpoint": configured(endpoint),
+                   "runtime": {"connected": not_declared, "protocol_version": not_declared,
+                       "server_name": not_declared, "server_version": not_declared,
+                       "tool_names": not_declared}})
+        };
+        assert_eq!(
+            what_ran,
+            json!({
+                "schema": "nemo.fabric.what_ran",
+                "version": "v1alpha1",
+                "fabric": {
+                    "core_version": {"value": crate::version(), "source": "observed",
+                        "collected_by": "host_core", "method": "crate_version"},
+                    "host_core_version": {"state": "not_applicable", "reason": "local_run",
+                        "source": "observed", "collected_by": "host_core",
+                        "method": "crate_version"}
+                },
+                "adapter": {"id": "acme.fabric.local-host", "package_version": not_declared},
+                "harness": {"name": not_declared, "version": not_declared},
+                "models": {
+                    "default": model("anthropic", "anthropic/claude-sonnet-4-5"),
+                    "summarizer": model("nvidia", "nvidia/nemotron-nano-9b-v2")
+                },
+                "mcp": {"servers": {
+                    "events": server("sse", "http://localhost:8931"),
+                    "filesystem": server("stdio", "npx"),
+                    "search": server("streamable-http", "https://mcp.example.com:443")
+                }},
+                "environment": {"provider": "local"}
+            })
+        );
+        assert!(!what_ran.to_string().contains("SECRET"), "{what_ran}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// An adapter that declares the versions key and reports it gets its
+    /// facts into `what_ran`, and the key leaves `metadata.adapter`. The
+    /// existing result-extension check runs first: a descriptor with no
+    /// `run_result` schema, or one that rejects the key, fails the
+    /// invocation, and one that accepts the key without naming it leaves
+    /// the facts `key_not_declared`.
+    #[test]
+    fn local_host_what_ran_ingests_a_declared_versions_report() {
+        use serde_json::json;
+        let (root, plan) = local_host_plan("versions_report");
+        let descriptor_path = root.join("adapters/local-host/local-host.fabric-adapter.json");
+        let original: Value =
+            serde_json::from_str(&fs::read_to_string(&descriptor_path).expect("read descriptor"))
+                .expect("descriptor JSON");
+        // Run the same emitted report under the given `run_result` schema.
+        let run_with = |run_result: Option<Value>| {
+            let mut descriptor = original.clone();
+            let schemas = descriptor["extension_schemas"]
+                .as_object_mut()
+                .expect("extension schemas");
+            match run_result {
+                Some(schema) => schemas.insert("run_result".to_string(), schema),
+                None => schemas.remove("run_result"),
+            };
+            fs::write(&descriptor_path, descriptor.to_string()).expect("write descriptor");
+            let plan =
+                resolve_run_plan_from_config(plan.config.clone(), ResolveContext::new(&root))
+                    .expect("resolve plan");
+            run_plan(&plan, RunRequest::text("provenance"))
+        };
+        let declared = json!({"type": "object", "properties": {
+            "trace_id": {"type": "string"},
+            "nemo_fabric.versions.v1": {"type": "object"}
+        }, "additionalProperties": false});
+
+        let result = run_with(Some(declared)).expect("result");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        assert_eq!(result.metadata["adapter"], json!({"trace_id": "trace-1"}));
+        let what_ran = serde_json::to_value(result.what_ran.expect("what_ran")).expect("JSON");
+        let reported = |value: &str, method: &str| {
+            json!({"value": value, "source": "reported", "collected_by": "adapter",
+                   "method": method})
+        };
+        assert_eq!(
+            what_ran["adapter"]["package_version"],
+            reported("1.2.3", "package_metadata")
+        );
+        assert_eq!(
+            what_ran["harness"],
+            json!({"name": reported("fake-harness", "harness_api"),
+                   "version": reported("4.5.6", "harness_api")})
+        );
+
+        // No `run_result` schema, and one that rejects the undeclared key,
+        // both fail the invocation before ingestion.
+        let error = run_with(None).expect_err("no run_result schema");
+        assert!(
+            matches!(
+                &error,
+                FabricError::AdapterCompatibility { field, reason, .. }
+                    if field == "result.extensions"
+                        && reason
+                            == "the adapter descriptor does not declare an extension schema for run_result"
+            ),
+            "{error:?}"
+        );
+        let rejecting = json!({"type": "object", "properties": {"trace_id": {"type": "string"}},
+                               "additionalProperties": false});
+        let error = run_with(Some(rejecting)).expect_err("rejecting run_result schema");
+        assert!(
+            matches!(
+                &error,
+                FabricError::InvalidAdapterExtension { extension_path, reason, .. }
+                    if extension_path == "result.extensions.nemo_fabric.versions.v1"
+                        && reason == "is not declared by the adapter extension schema"
+            ),
+            "{error:?}"
+        );
+
+        // A schema that accepts the key without naming it keeps the run and
+        // the key in `metadata.adapter`, and ingestion leaves the facts
+        // `key_not_declared`.
+        let permissive = json!({"type": "object", "properties": {"trace_id": {"type": "string"}}});
+
+        let result = run_with(Some(permissive)).expect("result");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        assert_eq!(
+            result.metadata["adapter"]["nemo_fabric.versions.v1"]["harness"]["version"],
+            reported("4.5.6", "harness_api")
+        );
+        let what_ran = serde_json::to_value(result.what_ran.expect("what_ran")).expect("JSON");
+        let not_declared = json!({"state": "unsupported", "reason": "key_not_declared",
+            "source": "reported", "collected_by": "adapter", "method": "adapter_report"});
+        assert_eq!(what_ran["adapter"]["package_version"], not_declared);
+        assert_eq!(
+            what_ran["harness"],
+            json!({"name": not_declared, "version": not_declared})
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_what_ran_bounds_keep_the_status_and_error() {
+        let model = |provider: &str| -> crate::config::ModelConfig {
+            serde_json::from_value(serde_json::json!({"provider": provider, "model": "m"}))
+                .expect("model config")
+        };
+        // One `default` role keeps the adapter's single-role check satisfied.
+        let roles = || {
+            std::iter::once("default".to_string())
+                .chain((0..16).map(|index| format!("role-{index:02}")))
+        };
+        for mode in ["success", "adapter_reported_failure"] {
+            let (root, plan) = local_host_plan(mode);
+            let baseline = run_plan(&plan, RunRequest::text("provenance")).expect("result");
+            let mut accepting_models = plan.clone();
+            accepting_models
+                .adapter_descriptor
+                .as_mut()
+                .expect("adapter descriptor")
+                .descriptor
+                .config
+                .accepts
+                .push(crate::config::AdapterConfigField::Models);
+
+            let mut past_the_cap = accepting_models.clone();
+            past_the_cap.config.models = roles().map(|role| (role, model("openai"))).collect();
+            let mut past_the_budget = accepting_models.clone();
+            past_the_budget.config.models = roles()
+                .map(|role| (role, model(&"p".repeat(9_000))))
+                .collect();
+            let mut minimal = plan.clone();
+            minimal
+                .adapter_descriptor
+                .as_mut()
+                .expect("adapter descriptor")
+                .descriptor
+                .adapter_id = "a".repeat(140_000);
+
+            for (case, bounded_plan) in [
+                ("entry cap", past_the_cap),
+                ("byte budget", past_the_budget),
+                ("minimal", minimal),
+            ] {
+                let result =
+                    run_plan(&bounded_plan, RunRequest::text("provenance")).expect("result");
+
+                assert_eq!(result.status, baseline.status, "{case}");
+                assert_eq!(
+                    serde_json::to_value(&result.error).expect("error JSON"),
+                    serde_json::to_value(&baseline.error).expect("error JSON"),
+                    "{case}"
+                );
+                let what_ran = result.what_ran.expect("what_ran");
+                let marker = |marker: Option<crate::what_ran::TruncatedEntries>| {
+                    marker.map(|marker| (marker.reason, marker.dropped))
+                };
+                match case {
+                    "entry cap" => assert_eq!(
+                        marker(what_ran.models_truncated),
+                        Some(("entry_cap".to_string(), 1))
+                    ),
+                    "byte budget" => {
+                        let (reason, dropped) =
+                            marker(what_ran.models_truncated).expect("models marker");
+                        assert_eq!(reason, "byte_budget");
+                        assert!(dropped > 1, "{dropped}");
+                    }
+                    _ => assert_eq!(
+                        marker(what_ran.what_ran_truncated),
+                        Some(("byte_budget".to_string(), 1))
+                    ),
+                }
+            }
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]

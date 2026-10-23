@@ -79,7 +79,9 @@ class ShimRuntime:
             "runtime_context": context.to_mapping(),
             "request": request.to_mapping(),
         }
-        return agent_result(run_selected_mode(payload))
+        result = agent_result(run_selected_mode(payload))
+        result.extensions.update(request.context.get("result_extensions", {}))
+        return result
 
     async def invoke_openai_stream(
         self,
