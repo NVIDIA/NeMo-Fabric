@@ -23,7 +23,7 @@ The credential-free smoke does not require an API key. Export `NVIDIA_API_KEY`
 for OpenClaw and Pi runs; `ANTHROPIC_API_KEY` for Claude; or
 `OPENAI_API_KEY` for Codex. The first image build can take several minutes.
 
-Harbor 0.23 and 0.24 resolve literal `${VAR}` values in `--ae` against the host
+Harbor 0.24 resolves literal `${VAR}` values in `--ae` against the host
 environment. The commands below keep those templates quoted so the shell does
 not put API keys in the Harbor process arguments.
 
